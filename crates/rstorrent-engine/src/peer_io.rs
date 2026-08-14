@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use rstorrent_protocol::mse::{MseCipherPair, MseHandshakeError, Rc4};
 use rstorrent_protocol::peer_wire::{
-    FrameDecoder, FrameError, HandshakeError, PeerMessage, encode_message,
+    FrameDecoder, FrameError, HandshakeError, PeerMessage, PeerProtocol, encode_message,
 };
 use tokio::time::{Instant, timeout_at};
 
@@ -65,6 +65,10 @@ impl PeerIo {
 
     pub(crate) fn attach_bandwidth(&mut self, bandwidth: Option<TorrentBandwidth>) {
         self.bandwidth = bandwidth;
+    }
+
+    pub(crate) fn set_protocol(&mut self, protocol: PeerProtocol) {
+        self.decoder.set_protocol(protocol);
     }
 
     pub(crate) fn bandwidth(&self) -> Option<TorrentBandwidth> {

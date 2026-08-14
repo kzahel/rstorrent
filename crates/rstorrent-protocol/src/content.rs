@@ -5,10 +5,11 @@ use std::ops::Range;
 use crate::identity::{InfoHashes, SwarmKey, V1InfoHash};
 use crate::merkle::{MERKLE_BLOCK_SIZE, MerkleTreeShape, Sha256Hash, piece_layer};
 use crate::metainfo::{
-    CompletePieceLayers, Metainfo, MetainfoError, MetainfoFile, MetainfoFormat, MetainfoLimits,
-    MetainfoTracker, ParsedInfoKind, ParsedOuterMetainfo, V2File, V2Metainfo,
+    Metainfo, MetainfoError, MetainfoFile, MetainfoFormat, MetainfoLimits, MetainfoTracker,
+    ParsedInfo, ParsedInfoKind, ParsedOuterMetainfo, V2File, V2Metainfo,
 };
 use crate::storage_layout::{LayoutError, TorrentLayout};
+use crate::v2_hashes::{HashRequest, MAX_HASH_REQUEST_COUNT, V2FileHashGeometry, V2HashCatalog};
 use crate::v2_layout::{V2LayoutError, V2PieceGeometry, V2TorrentLayout};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -35,12 +36,14 @@ pub struct V1TorrentContent {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct V2TorrentContent {
+pub struct V2ContentDescriptor {
     pub info_hashes: InfoHashes,
+    pub raw_info: Vec<u8>,
     pub metainfo: V2Metainfo,
-    pub piece_layers: CompletePieceLayers,
     pub trackers: Vec<MetainfoTracker>,
 }
+
+pub type V2TorrentContent = V2ContentDescriptor;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TorrentContent {
@@ -57,7 +60,60 @@ impl From<Metainfo> for TorrentContent {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TorrentContentProjection {
     pub content: TorrentContent,
+    pub integrity: TorrentIntegrity,
     pub info_span: Range<usize>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TorrentContentWithIntegrity {
+    pub content: TorrentContent,
+    pub integrity: TorrentIntegrity,
+}
+
+impl From<TorrentContentProjection> for TorrentContentWithIntegrity {
+    fn from(value: TorrentContentProjection) -> Self {
+        Self {
+            content: value.content,
+            integrity: value.integrity,
+        }
+    }
+}
+
+impl From<Metainfo> for TorrentContentWithIntegrity {
+    fn from(value: Metainfo) -> Self {
+        Self {
+            content: TorrentContent::from_v1_metainfo(value),
+            integrity: TorrentIntegrity::V1,
+        }
+    }
+}
+
+impl From<TorrentContent> for TorrentContentWithIntegrity {
+    fn from(content: TorrentContent) -> Self {
+        let integrity = match &content {
+            TorrentContent::V1(_) => TorrentIntegrity::V1,
+            TorrentContent::V2(content) => TorrentIntegrity::V2(
+                V2HashCatalog::new(content.metainfo.layout.piece_count())
+                    .expect("parsed v2 piece count fits the catalog bound"),
+            ),
+        };
+        Self { content, integrity }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TorrentIntegrity {
+    V1,
+    V2(V2HashCatalog),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum V2ExpectedPieceQuery {
+    Known(ExpectedPieceIntegrity),
+    Missing {
+        geometry: V2FileHashGeometry,
+        request: HashRequest,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -95,29 +151,92 @@ impl TorrentContentProjection {
     ) -> Result<Self, MetainfoError> {
         let parsed = ParsedOuterMetainfo::from_bytes_with_limits(bytes, limits)?;
         let info_span = parsed.info_span();
-        let content = TorrentContent::from_parsed_outer(&parsed)?;
-        Ok(Self { content, info_span })
+        let (content, integrity) = TorrentContent::from_parsed_outer(&parsed)?;
+        Ok(Self {
+            content,
+            integrity,
+            info_span,
+        })
     }
 }
 
 impl TorrentContent {
-    pub fn from_parsed_outer(parsed: &ParsedOuterMetainfo<'_>) -> Result<Self, MetainfoError> {
+    pub fn from_v2_info_bytes_with_limits(
+        bytes: &[u8],
+        limits: MetainfoLimits,
+    ) -> Result<TorrentContentWithIntegrity, MetainfoError> {
+        let parsed = ParsedInfo::from_bytes_with_limits(bytes, limits)?;
+        let ParsedInfoKind::V2(metainfo) = parsed.kind() else {
+            return Err(MetainfoError::Unsupported("pure-v2 info required"));
+        };
+        let catalog =
+            V2HashCatalog::new(metainfo.layout.piece_count()).map_err(map_hash_catalog_error)?;
+        Ok(TorrentContentWithIntegrity {
+            content: Self::V2(V2ContentDescriptor {
+                info_hashes: parsed.info_hashes(),
+                raw_info: bytes.to_vec(),
+                metainfo: metainfo.clone(),
+                trackers: Vec::new(),
+            }),
+            integrity: TorrentIntegrity::V2(catalog),
+        })
+    }
+
+    pub fn from_parsed_outer(
+        parsed: &ParsedOuterMetainfo<'_>,
+    ) -> Result<(Self, TorrentIntegrity), MetainfoError> {
         let trackers = parsed.trackers().to_vec();
         match parsed.info().kind() {
-            ParsedInfoKind::V1(metainfo) => Ok(Self::V1(V1TorrentContent {
-                layout: TorrentLayout::from_metainfo(metainfo),
-                metainfo: metainfo.clone(),
-                trackers,
-            })),
-            ParsedInfoKind::V2(metainfo) => Ok(Self::V2(V2TorrentContent {
-                info_hashes: parsed.info().info_hashes(),
-                metainfo: metainfo.clone(),
-                piece_layers: parsed
+            ParsedInfoKind::V1(metainfo) => Ok((
+                Self::V1(V1TorrentContent {
+                    layout: TorrentLayout::from_metainfo(metainfo),
+                    metainfo: metainfo.clone(),
+                    trackers,
+                }),
+                TorrentIntegrity::V1,
+            )),
+            ParsedInfoKind::V2(metainfo) => {
+                let layers = parsed
                     .piece_layers()
-                    .cloned()
-                    .ok_or(MetainfoError::MissingPieceLayers)?,
-                trackers,
-            })),
+                    .ok_or(MetainfoError::MissingPieceLayers)?;
+                let mut catalog = V2HashCatalog::new(metainfo.layout.piece_count())
+                    .map_err(map_hash_catalog_error)?;
+                for (file, geometry) in metainfo.files.iter().zip(metainfo.layout.files()) {
+                    if geometry.piece_count() <= 1 {
+                        continue;
+                    }
+                    let root = file.pieces_root.ok_or(MetainfoError::MissingPieceLayers)?;
+                    let entry = layers
+                        .entries()
+                        .iter()
+                        .find(|entry| entry.pieces_root == root)
+                        .ok_or(MetainfoError::MissingPieceLayers)?;
+                    let hashes = layers
+                        .hashes()
+                        .get(entry.hashes.clone())
+                        .ok_or(MetainfoError::MissingPieceLayers)?;
+                    let hash_geometry = V2FileHashGeometry::new(
+                        root,
+                        file.length,
+                        metainfo.piece_length,
+                        geometry.start_piece(),
+                        geometry.piece_count(),
+                    )
+                    .map_err(map_hash_catalog_error)?;
+                    catalog
+                        .seed_complete_piece_layer(hash_geometry, hashes)
+                        .map_err(map_hash_catalog_error)?;
+                }
+                Ok((
+                    Self::V2(V2ContentDescriptor {
+                        info_hashes: parsed.info().info_hashes(),
+                        raw_info: parsed.info().exact_info_bytes().to_vec(),
+                        metainfo: metainfo.clone(),
+                        trackers,
+                    }),
+                    TorrentIntegrity::V2(catalog),
+                ))
+            }
             ParsedInfoKind::Hybrid(_) => Err(MetainfoError::Unsupported("hybrid runtime content")),
         }
     }
@@ -243,6 +362,7 @@ impl TorrentContent {
 
     pub fn expected_piece(
         &self,
+        integrity: &TorrentIntegrity,
         index: u32,
     ) -> Result<ExpectedPieceIntegrity, ContentGeometryError> {
         match self {
@@ -253,7 +373,73 @@ impl TorrentContent {
                 .copied()
                 .map(ExpectedPieceIntegrity::V1Sha1)
                 .ok_or(ContentGeometryError::InvalidPieceIndex(index)),
-            Self::V2(content) => expected_v2_piece(content, index),
+            Self::V2(content) => match integrity {
+                TorrentIntegrity::V2(catalog) => {
+                    match expected_v2_piece(content, catalog, index)? {
+                        V2ExpectedPieceQuery::Known(expected) => Ok(expected),
+                        V2ExpectedPieceQuery::Missing { .. } => {
+                            Err(ContentGeometryError::MissingPieceLayer(
+                                content
+                                    .metainfo
+                                    .layout
+                                    .piece(index)
+                                    .map_err(ContentGeometryError::V2)?
+                                    .file_index,
+                            ))
+                        }
+                    }
+                }
+                TorrentIntegrity::V1 => Err(ContentGeometryError::WrongFormat),
+            },
+        }
+    }
+
+    pub fn v2_expected_piece(
+        &self,
+        integrity: &TorrentIntegrity,
+        index: u32,
+    ) -> Result<V2ExpectedPieceQuery, ContentGeometryError> {
+        match (self, integrity) {
+            (Self::V2(content), TorrentIntegrity::V2(catalog)) => {
+                expected_v2_piece(content, catalog, index)
+            }
+            _ => Err(ContentGeometryError::WrongFormat),
+        }
+    }
+
+    pub fn piece_hash_target_height(&self, index: u32) -> Result<Option<u8>, ContentGeometryError> {
+        match self {
+            Self::V1(content) => content
+                .layout
+                .piece_length_at(index)
+                .map(|_| None)
+                .map_err(ContentGeometryError::V1),
+            Self::V2(content) => {
+                let piece = content
+                    .metainfo
+                    .layout
+                    .piece(index)
+                    .map_err(ContentGeometryError::V2)?;
+                let file = content
+                    .metainfo
+                    .files
+                    .get(piece.file_index)
+                    .ok_or(ContentGeometryError::ArithmeticOverflow)?;
+                let file_geometry = content
+                    .metainfo
+                    .layout
+                    .files()
+                    .get(piece.file_index)
+                    .ok_or(ContentGeometryError::ArithmeticOverflow)?;
+                if file_geometry.piece_count() <= 1 {
+                    return MerkleTreeShape::new(file.length.div_ceil(MERKLE_BLOCK_SIZE as u64))
+                        .map(|shape| Some(shape.height()))
+                        .map_err(ContentGeometryError::Merkle);
+                }
+                piece_layer(content.metainfo.piece_length)
+                    .map(Some)
+                    .map_err(ContentGeometryError::Merkle)
+            }
         }
     }
 
@@ -274,8 +460,9 @@ impl TorrentContent {
 
 fn expected_v2_piece(
     content: &V2TorrentContent,
+    catalog: &V2HashCatalog,
     index: u32,
-) -> Result<ExpectedPieceIntegrity, ContentGeometryError> {
+) -> Result<V2ExpectedPieceQuery, ContentGeometryError> {
     let piece = content
         .metainfo
         .layout
@@ -300,40 +487,78 @@ fn expected_v2_piece(
         let target_height = MerkleTreeShape::new(leaf_count)
             .map_err(ContentGeometryError::Merkle)?
             .height();
-        return Ok(ExpectedPieceIntegrity::V2Merkle {
-            expected_root: file_root,
-            target_height,
-            source: V2ExpectedRootSource::FileRoot,
-        });
+        return Ok(V2ExpectedPieceQuery::Known(
+            ExpectedPieceIntegrity::V2Merkle {
+                expected_root: file_root,
+                target_height,
+                source: V2ExpectedRootSource::FileRoot,
+            },
+        ));
+    }
+    let expected_root = catalog.piece_root(index);
+    if let Some(expected_root) = expected_root {
+        return Ok(V2ExpectedPieceQuery::Known(
+            ExpectedPieceIntegrity::V2Merkle {
+                expected_root,
+                target_height: piece_layer(content.metainfo.piece_length)
+                    .map_err(ContentGeometryError::Merkle)?,
+                source: V2ExpectedRootSource::PieceLayer,
+            },
+        ));
     }
 
-    let entry = content
-        .piece_layers
-        .entries()
-        .iter()
-        .find(|entry| entry.pieces_root == file_root)
-        .ok_or(ContentGeometryError::MissingPieceLayer(piece.file_index))?;
-    let hash_index = entry
-        .hashes
-        .start
-        .checked_add(
-            usize::try_from(piece.local_piece)
-                .map_err(|_| ContentGeometryError::ArithmeticOverflow)?,
-        )
+    let geometry = V2FileHashGeometry::new(
+        file_root,
+        file.length,
+        content.metainfo.piece_length,
+        file_geometry.start_piece(),
+        file_geometry.piece_count(),
+    )
+    .map_err(|_| ContentGeometryError::ArithmeticOverflow)?;
+    let padded_pieces = file_geometry.piece_count().next_power_of_two();
+    let count = padded_pieces.min(MAX_HASH_REQUEST_COUNT);
+    let request_index = piece.local_piece / count * count;
+    let shape = MerkleTreeShape::new(
+        geometry
+            .leaf_count()
+            .map_err(|_| ContentGeometryError::ArithmeticOverflow)?,
+    )
+    .map_err(ContentGeometryError::Merkle)?;
+    let base_layer = geometry
+        .piece_layer()
+        .map_err(|_| ContentGeometryError::ArithmeticOverflow)?;
+    let range_height = u8::try_from(count.trailing_zeros())
+        .map_err(|_| ContentGeometryError::ArithmeticOverflow)?;
+    base_layer
+        .checked_add(range_height)
+        .filter(|subject| *subject <= shape.height())
         .ok_or(ContentGeometryError::ArithmeticOverflow)?;
-    let expected_root = content
-        .piece_layers
-        .hashes()
-        .get(hash_index)
-        .copied()
-        .filter(|_| hash_index < entry.hashes.end)
-        .ok_or(ContentGeometryError::MissingPieceLayer(piece.file_index))?;
-    Ok(ExpectedPieceIntegrity::V2Merkle {
-        expected_root,
-        target_height: piece_layer(content.metainfo.piece_length)
-            .map_err(ContentGeometryError::Merkle)?,
-        source: V2ExpectedRootSource::PieceLayer,
+    let proof_layers = u32::from(
+        shape
+            .height()
+            .checked_sub(base_layer)
+            .ok_or(ContentGeometryError::ArithmeticOverflow)?,
+    );
+    Ok(V2ExpectedPieceQuery::Missing {
+        geometry,
+        request: HashRequest {
+            pieces_root: file_root,
+            base_layer: u32::from(base_layer),
+            index: request_index,
+            count,
+            proof_layers,
+        },
     })
+}
+
+fn map_hash_catalog_error(error: crate::v2_hashes::HashExchangeError) -> MetainfoError {
+    match error {
+        crate::v2_hashes::HashExchangeError::Merkle(error) => MetainfoError::Merkle(error),
+        crate::v2_hashes::HashExchangeError::TooManyPieceRoots { actual, maximum } => {
+            MetainfoError::TooManyPieces { actual, maximum }
+        }
+        _ => MetainfoError::Unsupported("invalid complete v2 hash catalog"),
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -449,7 +674,7 @@ mod tests {
             &Sha256::digest(&source[projection.info_span]).as_slice()[..20]
         );
         assert!(matches!(
-            projection.content.expected_piece(0),
+            projection.content.expected_piece(&projection.integrity, 0),
             Ok(ExpectedPieceIntegrity::V2Merkle {
                 target_height: 0,
                 source: V2ExpectedRootSource::FileRoot,
@@ -458,7 +683,9 @@ mod tests {
         ));
         for piece in [1, 2] {
             assert!(matches!(
-                projection.content.expected_piece(piece),
+                projection
+                    .content
+                    .expected_piece(&projection.integrity, piece),
                 Ok(ExpectedPieceIntegrity::V2Merkle {
                     target_height: 1,
                     source: V2ExpectedRootSource::PieceLayer,
@@ -469,16 +696,44 @@ mod tests {
     }
 
     #[test]
-    fn info_only_and_hybrid_cannot_construct_complete_runtime_content() {
+    fn info_only_v2_has_geometry_and_explicit_missing_hash_need() {
         let data = vec![1; 40_000];
         let source = pure_v2_source(&[(b"a", &data)], 32 * 1024);
         let info =
             ParsedOuterMetainfo::from_bytes_with_limits(&source, EXPLICIT_IMPORT_METAINFO_LIMITS)
                 .expect("complete source")
                 .info_span();
+        let runtime = TorrentContent::from_v2_info_bytes_with_limits(
+            &source[info.clone()],
+            EXPLICIT_IMPORT_METAINFO_LIMITS,
+        )
+        .expect("strict info-only v2 descriptor");
+        assert_eq!(runtime.content.piece_count(), 2);
+        assert_eq!(
+            runtime.content.v2().expect("v2 descriptor").raw_info,
+            source[info]
+        );
+        assert!(matches!(
+            runtime.content.v2_expected_piece(&runtime.integrity, 0),
+            Ok(V2ExpectedPieceQuery::Missing {
+                request: HashRequest {
+                    base_layer: 1,
+                    index: 0,
+                    count: 2,
+                    proof_layers: 1,
+                    ..
+                },
+                ..
+            })
+        ));
         assert!(
             ParsedOuterMetainfo::from_bytes_with_limits(
-                &source[info],
+                runtime
+                    .content
+                    .v2()
+                    .expect("v2 descriptor")
+                    .raw_info
+                    .as_slice(),
                 EXPLICIT_IMPORT_METAINFO_LIMITS,
             )
             .is_err()

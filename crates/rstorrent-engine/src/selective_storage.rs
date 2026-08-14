@@ -6,7 +6,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
-use rstorrent_protocol::content::{ExpectedPieceIntegrity, TorrentContent};
+use rstorrent_protocol::content::TorrentContent;
 use rstorrent_protocol::merkle::{MerkleAccumulator, MerkleError, Sha256Hash, hash_block};
 use rstorrent_protocol::metainfo::{Metainfo, MetainfoFormat};
 use rstorrent_protocol::peer_wire::{BlockRequest, MAX_REQUEST_BLOCK_LENGTH};
@@ -3068,15 +3068,15 @@ impl SelectiveStorage {
         let algorithm = match self
             .content
             .as_ref()
-            .map(|content| content.expected_piece(piece_index))
+            .map(|content| content.piece_hash_target_height(piece_index))
             .transpose()
             .map_err(|_| {
                 SelectiveStorageError::InvalidStorageOperation("invalid expected piece geometry")
-            })? {
-            Some(ExpectedPieceIntegrity::V2Merkle { target_height, .. }) => {
-                PieceHashAlgorithm::V2Merkle { target_height }
-            }
-            Some(ExpectedPieceIntegrity::V1Sha1(_)) | None => PieceHashAlgorithm::Sha1,
+            })?
+            .flatten()
+        {
+            Some(target_height) => PieceHashAlgorithm::V2Merkle { target_height },
+            None => PieceHashAlgorithm::Sha1,
         };
         self.prepare_blocking_hash_plan(piece_index_usize, &segments, algorithm)
     }
@@ -4962,6 +4962,21 @@ mod tests {
         root.join(name)
     }
 
+    fn make_test_file_writable(path: &Path) {
+        let mut permissions = std::fs::metadata(path)
+            .expect("read test file permissions")
+            .permissions();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            permissions.set_mode(permissions.mode() | 0o200);
+        }
+        #[cfg(not(unix))]
+        permissions.set_readonly(false);
+        std::fs::set_permissions(path, permissions).expect("make test file writable");
+    }
+
     fn fixture() -> Metainfo {
         let lengths = [20_000, 50_000, 7_000, 18_000, 0, 3_304, 35_000];
         let paths = [
@@ -5006,7 +5021,13 @@ mod tests {
         output.extend_from_slice(value);
     }
 
-    fn pure_v2_content(files: &[(&[u8], &[u8])], piece_length: u32) -> TorrentContent {
+    fn pure_v2_content(
+        files: &[(&[u8], &[u8])],
+        piece_length: u32,
+    ) -> (
+        TorrentContent,
+        rstorrent_protocol::content::TorrentIntegrity,
+    ) {
         let roots = files
             .iter()
             .map(|(_, data)| file_root_from_data(data).expect("nonempty fixture file"))
@@ -5038,9 +5059,12 @@ mod tests {
             bstr(&mut source, &hashes.concat());
         }
         source.extend_from_slice(b"ee");
-        TorrentContentProjection::from_bytes_with_limits(&source, EXPLICIT_IMPORT_METAINFO_LIMITS)
-            .expect("complete pure-v2 fixture")
-            .content
+        let projection = TorrentContentProjection::from_bytes_with_limits(
+            &source,
+            EXPLICIT_IMPORT_METAINFO_LIMITS,
+        )
+        .expect("complete pure-v2 fixture");
+        (projection.content, projection.integrity)
     }
 
     #[tokio::test]
@@ -5050,10 +5074,11 @@ mod tests {
             .map(|index| (index % 251) as u8)
             .collect::<Vec<_>>();
         let selected_small = vec![0x5a; 17];
-        let content = Arc::new(pure_v2_content(
+        let (content, integrity) = pure_v2_content(
             &[(b"a", &skipped), (b"b", &selected), (b"c", &selected_small)],
             32 * 1024,
-        ));
+        );
+        let content = Arc::new(content);
         let output = test_path("root");
         let parent = output.parent().expect("test parent").to_path_buf();
         let mut storage = SelectiveStorage::create_content(
@@ -5096,7 +5121,9 @@ mod tests {
                 .hash_piece_content(piece_index)
                 .await
                 .expect("hash v2 piece");
-            let expected = content.expected_piece(piece_index).expect("expected root");
+            let expected = content
+                .expected_piece(&integrity, piece_index)
+                .expect("expected root");
             let (
                 ComputedPieceHash::Sha256 {
                     root,
@@ -5119,7 +5146,9 @@ mod tests {
             .hash_piece_content(3)
             .await
             .expect("hash one-piece v2 file");
-        let expected = content.expected_piece(3).expect("one-piece expected root");
+        let expected = content
+            .expected_piece(&integrity, 3)
+            .expect("one-piece expected root");
         assert!(matches!(
             (actual, expected),
             (
@@ -5200,7 +5229,7 @@ mod tests {
                 .await
                 .expect("hash exact read-only v2 publication");
             let expected = content
-                .expected_piece(piece_index)
+                .expected_piece(&integrity, piece_index)
                 .expect("expected read-only v2 root");
             assert!(matches!(
                 (actual, expected),
@@ -5220,11 +5249,7 @@ mod tests {
         drop(resumed);
 
         let b = output.join("b");
-        let mut permissions = std::fs::metadata(&b)
-            .expect("read v2 file permissions")
-            .permissions();
-        permissions.set_readonly(false);
-        std::fs::set_permissions(&b, permissions).expect("make v2 file writable");
+        make_test_file_writable(&b);
         let mut corrupted = selected.clone();
         corrupted[17] ^= 0x80;
         std::fs::write(&b, corrupted).expect("corrupt v2 publication in place");
@@ -5243,7 +5268,9 @@ mod tests {
             .hash_piece_content(1)
             .await
             .expect("hash same-length corrupt v2 piece");
-        let expected = content.expected_piece(1).expect("expected v2 root");
+        let expected = content
+            .expected_piece(&integrity, 1)
+            .expect("expected v2 root");
         assert!(matches!(
             (actual, expected),
             (
@@ -5275,11 +5302,7 @@ mod tests {
         drop(truncated);
 
         let c = output.join("c");
-        let mut permissions = std::fs::metadata(&c)
-            .expect("read final v2 file permissions")
-            .permissions();
-        permissions.set_readonly(false);
-        std::fs::set_permissions(&c, permissions).expect("make final v2 file writable");
+        make_test_file_writable(&c);
         std::fs::remove_file(&c).expect("remove v2 publication file");
         let (mut missing, state) = SelectiveStorage::resume_content(
             output,
@@ -6343,10 +6366,11 @@ mod tests {
             .map(|index| (index % 251) as u8)
             .collect::<Vec<_>>();
         let v2_final = vec![0x5a; 17];
-        let v2_content = Arc::new(pure_v2_content(
+        let (v2_content, _) = pure_v2_content(
             &[(b"a", &v2_skipped), (b"b", &v2_selected), (b"c", &v2_final)],
             32 * 1024,
-        ));
+        );
+        let v2_content = Arc::new(v2_content);
         let v2_torrent_id = TorrentId::new([0x61; 16]).expect("v2 platform owner");
         let v2_identity = TorrentArtifactIdentity {
             torrent_id: v2_torrent_id,

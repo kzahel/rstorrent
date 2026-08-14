@@ -308,6 +308,11 @@ impl MetadataSeedServer {
                         "unnegotiated Fast message",
                     ));
                 }
+                PeerMessage::HashRequest(_)
+                | PeerMessage::Hashes(_)
+                | PeerMessage::HashReject(_) => {
+                    return Err(MetadataSeedError::UnexpectedMessage("v2 hash exchange"));
+                }
             }
         }
     }

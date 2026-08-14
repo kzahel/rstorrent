@@ -2,6 +2,10 @@ use std::error::Error;
 use std::fmt;
 
 use crate::metainfo::MAX_METAINFO_PIECES;
+use crate::v2_hashes::{
+    HASH_REQUEST_PAYLOAD_LENGTH, HashRequest, HashResponse, MAX_HASH_MESSAGE_LENGTH,
+    MAX_HASH_PROOF_LAYERS, MAX_HASH_REQUEST_COUNT, MAX_HASHES_PER_RESPONSE,
+};
 
 pub const HANDSHAKE_LENGTH: usize = 68;
 pub const MAX_REQUEST_BLOCK_LENGTH: u32 = 16 * 1024;
@@ -16,6 +20,13 @@ pub const FAST_EXTENSION_RESERVED_INDEX: usize = 7;
 pub const FAST_EXTENSION_RESERVED_BIT: u8 = 0x04;
 const MAX_MESSAGES_PER_PUSH: usize = 1024;
 const PROTOCOL_NAME: &[u8; 19] = b"BitTorrent protocol";
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PeerProtocol {
+    #[default]
+    V1,
+    V2,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Handshake {
@@ -152,6 +163,9 @@ pub enum PeerMessage {
         id: u8,
         payload: Vec<u8>,
     },
+    HashRequest(HashRequest),
+    Hashes(HashResponse),
+    HashReject(HashRequest),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -160,6 +174,8 @@ pub enum FrameError {
     FrameLengthTooLarge { length: usize, maximum: usize },
     InvalidMessageLength { id: u8, length: usize },
     RequestBlockTooLarge { length: u32, maximum: u32 },
+    InvalidHashRequest,
+    InvalidHashCount { expected: usize, actual: usize },
     UnsupportedMessage { id: u8 },
     TooManyMessages { maximum: usize },
 }
@@ -184,6 +200,11 @@ impl fmt::Display for FrameError {
                 formatter,
                 "peer request block length {length} exceeds limit {maximum}"
             ),
+            Self::InvalidHashRequest => formatter.write_str("invalid v2 hash request shape"),
+            Self::InvalidHashCount { expected, actual } => write!(
+                formatter,
+                "v2 hashes message has {actual} hashes, expected {expected}"
+            ),
             Self::UnsupportedMessage { id } => {
                 write!(
                     formatter,
@@ -205,11 +226,23 @@ impl Error for FrameError {}
 #[derive(Debug, Default)]
 pub struct FrameDecoder {
     buffer: Vec<u8>,
+    protocol: PeerProtocol,
 }
 
 impl FrameDecoder {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn for_v2() -> Self {
+        Self {
+            buffer: Vec::new(),
+            protocol: PeerProtocol::V2,
+        }
+    }
+
+    pub fn set_protocol(&mut self, protocol: PeerProtocol) {
+        self.protocol = protocol;
     }
 
     pub fn push(&mut self, input: &[u8]) -> Result<Vec<PeerMessage>, FrameError> {
@@ -233,7 +266,7 @@ impl FrameDecoder {
                 }
             }
 
-            let required = self.required_buffer_length()?;
+            let mut required = self.required_buffer_length()?;
             if self.buffer.len() < required {
                 if consumed == input.len() {
                     break;
@@ -243,6 +276,7 @@ impl FrameDecoder {
                     .extend_from_slice(&input[consumed..consumed + copy_length]);
                 consumed += copy_length;
             }
+            required = self.required_buffer_length()?;
             if self.buffer.len() < required {
                 continue;
             }
@@ -257,7 +291,7 @@ impl FrameDecoder {
                 self.buffer.clear();
             } else {
                 let frame = std::mem::take(&mut self.buffer);
-                messages.push(decode_frame(frame)?);
+                messages.push(decode_frame(frame, self.protocol)?);
             }
         }
         Ok(messages)
@@ -275,6 +309,19 @@ impl FrameDecoder {
                 length: frame_length,
                 maximum: MAX_FRAME_LENGTH,
             });
+        }
+        if frame_length != 0 && self.buffer.len() == 4 {
+            return Ok(5);
+        }
+        if frame_length != 0 {
+            let id = self.buffer[4];
+            let maximum = frame_maximum(id, self.protocol)?;
+            if frame_length > maximum {
+                return Err(FrameError::FrameLengthTooLarge {
+                    length: frame_length,
+                    maximum,
+                });
+            }
         }
         Ok(4 + frame_length)
     }
@@ -350,10 +397,40 @@ pub fn encode_message(message: &PeerMessage) -> Result<Vec<u8>, FrameError> {
             payload.push(*id);
             payload.extend_from_slice(extension_payload);
         }
+        PeerMessage::HashRequest(request) => {
+            validate_hash_wire_request(*request, false)?;
+            payload.push(21);
+            encode_hash_request_payload(&mut payload, *request);
+        }
+        PeerMessage::Hashes(response) => {
+            validate_hash_wire_request(response.request, true)?;
+            let expected = response
+                .request
+                .response_hash_count()
+                .map_err(|_| FrameError::InvalidHashRequest)?;
+            if response.hashes.len() != expected {
+                return Err(FrameError::InvalidHashCount {
+                    expected,
+                    actual: response.hashes.len(),
+                });
+            }
+            payload.push(22);
+            encode_hash_request_payload(&mut payload, response.request);
+            for hash in &response.hashes {
+                payload.extend_from_slice(hash);
+            }
+        }
+        PeerMessage::HashReject(request) => {
+            validate_hash_wire_request(*request, true)?;
+            payload.push(23);
+            encode_hash_request_payload(&mut payload, *request);
+        }
     }
     let maximum = match message {
         PeerMessage::Extended { .. } => 2 + MAX_EXTENSION_PAYLOAD_LENGTH,
         PeerMessage::Bitfield(_) => 1 + MAX_BITFIELD_PAYLOAD_LENGTH,
+        PeerMessage::HashRequest(_) | PeerMessage::HashReject(_) => 1 + HASH_REQUEST_PAYLOAD_LENGTH,
+        PeerMessage::Hashes(_) => MAX_HASH_MESSAGE_LENGTH,
         _ => MAX_CORE_FRAME_LENGTH,
     };
     if payload.len() > maximum {
@@ -369,14 +446,10 @@ pub fn encode_message(message: &PeerMessage) -> Result<Vec<u8>, FrameError> {
     Ok(frame)
 }
 
-fn decode_frame(mut frame: Vec<u8>) -> Result<PeerMessage, FrameError> {
+fn decode_frame(mut frame: Vec<u8>, protocol: PeerProtocol) -> Result<PeerMessage, FrameError> {
     let id = frame[4];
     let length = frame.len() - 4;
-    let maximum = match id {
-        5 => 1 + MAX_BITFIELD_PAYLOAD_LENGTH,
-        20 => 2 + MAX_EXTENSION_PAYLOAD_LENGTH,
-        _ => MAX_CORE_FRAME_LENGTH,
-    };
+    let maximum = frame_maximum(id, protocol)?;
     if length > maximum {
         return Err(FrameError::FrameLengthTooLarge { length, maximum });
     }
@@ -448,8 +521,95 @@ fn decode_frame(mut frame: Vec<u8>) -> Result<PeerMessage, FrameError> {
                 payload: frame,
             })
         }
+        21 | 23 => {
+            exact_length(id, length, 1 + HASH_REQUEST_PAYLOAD_LENGTH)?;
+            let request = decode_hash_request_payload(&frame)?;
+            validate_hash_wire_request(request, id == 23)?;
+            Ok(if id == 21 {
+                PeerMessage::HashRequest(request)
+            } else {
+                PeerMessage::HashReject(request)
+            })
+        }
+        22 => {
+            if length < 1 + HASH_REQUEST_PAYLOAD_LENGTH {
+                return Err(FrameError::InvalidMessageLength { id, length });
+            }
+            let request = decode_hash_request_payload(&frame)?;
+            validate_hash_wire_request(request, true)?;
+            let expected = request
+                .response_hash_count()
+                .map_err(|_| FrameError::InvalidHashRequest)?;
+            let hash_bytes = length - 1 - HASH_REQUEST_PAYLOAD_LENGTH;
+            if !hash_bytes.is_multiple_of(32) {
+                return Err(FrameError::InvalidMessageLength { id, length });
+            }
+            let actual = hash_bytes / 32;
+            if actual != expected || actual > MAX_HASHES_PER_RESPONSE {
+                return Err(FrameError::InvalidHashCount { expected, actual });
+            }
+            let mut hashes = Vec::with_capacity(actual);
+            for chunk in frame[5 + HASH_REQUEST_PAYLOAD_LENGTH..].chunks_exact(32) {
+                hashes.push(chunk.try_into().expect("validated SHA-256 hash length"));
+            }
+            Ok(PeerMessage::Hashes(HashResponse { request, hashes }))
+        }
         _ => Err(FrameError::UnsupportedMessage { id }),
     }
+}
+
+fn frame_maximum(id: u8, protocol: PeerProtocol) -> Result<usize, FrameError> {
+    match id {
+        5 => Ok(1 + MAX_BITFIELD_PAYLOAD_LENGTH),
+        20 => Ok(2 + MAX_EXTENSION_PAYLOAD_LENGTH),
+        21..=23 if protocol == PeerProtocol::V1 => Err(FrameError::UnsupportedMessage { id }),
+        21 | 23 => Ok(1 + HASH_REQUEST_PAYLOAD_LENGTH),
+        22 => Ok(MAX_HASH_MESSAGE_LENGTH),
+        _ => Ok(MAX_CORE_FRAME_LENGTH),
+    }
+}
+
+fn validate_hash_wire_request(
+    request: HashRequest,
+    allow_count_one: bool,
+) -> Result<(), FrameError> {
+    if request.count == 0
+        || request.count > MAX_HASH_REQUEST_COUNT
+        || !request.count.is_power_of_two()
+        || (request.count == 1 && !allow_count_one)
+        || !request.index.is_multiple_of(request.count)
+        || request.proof_layers > MAX_HASH_PROOF_LAYERS
+        || request.proof_layers < request.count.trailing_zeros()
+    {
+        return Err(FrameError::InvalidHashRequest);
+    }
+    Ok(())
+}
+
+fn encode_hash_request_payload(output: &mut Vec<u8>, request: HashRequest) {
+    output.extend_from_slice(&request.pieces_root);
+    output.extend_from_slice(&request.base_layer.to_be_bytes());
+    output.extend_from_slice(&request.index.to_be_bytes());
+    output.extend_from_slice(&request.count.to_be_bytes());
+    output.extend_from_slice(&request.proof_layers.to_be_bytes());
+}
+
+fn decode_hash_request_payload(frame: &[u8]) -> Result<HashRequest, FrameError> {
+    if frame.len() < 5 + HASH_REQUEST_PAYLOAD_LENGTH {
+        return Err(FrameError::InvalidMessageLength {
+            id: frame.get(4).copied().unwrap_or_default(),
+            length: frame.len().saturating_sub(4),
+        });
+    }
+    Ok(HashRequest {
+        pieces_root: frame[5..37]
+            .try_into()
+            .expect("validated pieces root length"),
+        base_layer: read_u32(frame, 37),
+        index: read_u32(frame, 41),
+        count: read_u32(frame, 45),
+        proof_layers: read_u32(frame, 49),
+    })
 }
 
 fn exact_length(id: u8, actual: usize, expected: usize) -> Result<(), FrameError> {
@@ -479,6 +639,8 @@ fn validate_request_length(length: u32) -> Result<(), FrameError> {
 
 #[cfg(test)]
 mod tests {
+    use crate::v2_hashes::{HashRequest, HashResponse};
+
     use super::{
         BlockRequest, EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX,
         FAST_EXTENSION_RESERVED_BIT, FAST_EXTENSION_RESERVED_INDEX, FrameDecoder, FrameError,
@@ -690,7 +852,7 @@ mod tests {
     }
 
     #[test]
-    fn deferred_v2_hash_messages_fail_closed_inside_core_frame_bound() {
+    fn v2_hash_messages_fail_closed_for_v1_decoders() {
         for id in [21, 22, 23] {
             let frame = [0, 0, 0, 1, id];
             assert_eq!(
@@ -706,12 +868,124 @@ mod tests {
             frame.resize(4 + super::MAX_CORE_FRAME_LENGTH + 1, 0);
             assert_eq!(
                 FrameDecoder::new().push(&frame),
-                Err(FrameError::FrameLengthTooLarge {
-                    length: super::MAX_CORE_FRAME_LENGTH + 1,
-                    maximum: super::MAX_CORE_FRAME_LENGTH,
-                })
+                Err(FrameError::UnsupportedMessage { id })
             );
         }
+    }
+
+    #[test]
+    fn v2_hash_messages_round_trip_exact_bep52_fields() {
+        let request = HashRequest {
+            pieces_root: [0x11; 32],
+            base_layer: 3,
+            index: 4,
+            count: 2,
+            proof_layers: 5,
+        };
+        let response = HashResponse {
+            request,
+            hashes: vec![
+                [0x21; 32], [0x22; 32], [0x31; 32], [0x32; 32], [0x33; 32], [0x34; 32],
+            ],
+        };
+        let messages = [
+            PeerMessage::HashRequest(request),
+            PeerMessage::Hashes(response),
+            PeerMessage::HashReject(request),
+        ];
+        let mut wire = Vec::new();
+        for message in &messages {
+            wire.extend(encode_message(message).expect("encode v2 hash message"));
+        }
+        assert_eq!(&wire[..5], &[0, 0, 0, 49, 21]);
+        assert_eq!(&wire[5..37], &[0x11; 32]);
+        assert_eq!(
+            &wire[37..53],
+            &[0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0, 2, 0, 0, 0, 5]
+        );
+
+        let mut decoder = FrameDecoder::for_v2();
+        let mut decoded = Vec::new();
+        for chunk in wire.chunks(17) {
+            decoded.extend(decoder.push(chunk).expect("decode fragmented v2 hashes"));
+        }
+        assert_eq!(decoded, messages);
+    }
+
+    #[test]
+    fn v2_hash_decoder_rejects_hostile_shape_before_hash_allocation() {
+        let request = HashRequest {
+            pieces_root: [7; 32],
+            base_layer: 0,
+            index: 0,
+            count: 2,
+            proof_layers: 0,
+        };
+        assert_eq!(
+            encode_message(&PeerMessage::HashRequest(request)),
+            Err(FrameError::InvalidHashRequest)
+        );
+
+        let mut malformed = vec![0, 0, 0, 49, 21];
+        malformed.extend_from_slice(&[0; 32]);
+        malformed.extend_from_slice(&0_u32.to_be_bytes());
+        malformed.extend_from_slice(&0_u32.to_be_bytes());
+        malformed.extend_from_slice(&u32::MAX.to_be_bytes());
+        malformed.extend_from_slice(&u32::MAX.to_be_bytes());
+        assert_eq!(
+            FrameDecoder::for_v2().push(&malformed),
+            Err(FrameError::InvalidHashRequest)
+        );
+
+        let valid = HashRequest {
+            count: 2,
+            proof_layers: 2,
+            ..request
+        };
+        let mut wrong_count = encode_message(&PeerMessage::Hashes(HashResponse {
+            request: valid,
+            hashes: vec![[1; 32], [2; 32], [3; 32]],
+        }))
+        .expect("encode valid hashes");
+        wrong_count.truncate(wrong_count.len() - 32);
+        let wrong_length = u32::try_from(wrong_count.len() - 4).unwrap();
+        wrong_count[..4].copy_from_slice(&wrong_length.to_be_bytes());
+        assert_eq!(
+            FrameDecoder::for_v2().push(&wrong_count),
+            Err(FrameError::InvalidHashCount {
+                expected: 3,
+                actual: 2,
+            })
+        );
+
+        let mut oversized = (super::MAX_HASH_MESSAGE_LENGTH as u32 + 1)
+            .to_be_bytes()
+            .to_vec();
+        oversized.push(22);
+        assert_eq!(
+            FrameDecoder::for_v2().push(&oversized),
+            Err(FrameError::FrameLengthTooLarge {
+                length: super::MAX_HASH_MESSAGE_LENGTH + 1,
+                maximum: super::MAX_HASH_MESSAGE_LENGTH,
+            })
+        );
+
+        let singleton = HashRequest {
+            count: 1,
+            proof_layers: 2,
+            ..valid
+        };
+        assert_eq!(
+            encode_message(&PeerMessage::HashRequest(singleton)),
+            Err(FrameError::InvalidHashRequest)
+        );
+        let reject = PeerMessage::HashReject(singleton);
+        assert_eq!(
+            FrameDecoder::for_v2()
+                .push(&encode_message(&reject).expect("count-one compatibility reject"))
+                .expect("decode count-one compatibility reject"),
+            [reject]
+        );
     }
 
     #[test]

@@ -6,7 +6,7 @@ use std::mem::size_of;
 
 use crate::merkle::{
     MAX_MERKLE_HEIGHT, MerkleAccumulator, MerkleError, MerkleTreeShape, Sha256Hash,
-    file_root_from_piece_hashes, piece_layer, verify_proof, zero_hash,
+    file_root_from_piece_hashes, hash_pair, piece_layer, verify_proof, zero_hash,
 };
 
 pub const MAX_HASH_REQUEST_COUNT: u32 = 512;
@@ -31,6 +31,20 @@ pub struct HashRequest {
     pub index: u32,
     pub count: u32,
     pub proof_layers: u32,
+}
+
+impl HashRequest {
+    pub fn response_hash_count(self) -> Result<usize, HashExchangeError> {
+        let omitted = self.count.trailing_zeros();
+        let proof_hashes = self
+            .proof_layers
+            .checked_sub(omitted)
+            .ok_or(HashExchangeError::InvalidProofLayers)?;
+        usize::try_from(self.count)
+            .ok()
+            .and_then(|count| count.checked_add(proof_hashes as usize))
+            .ok_or(HashExchangeError::ArithmeticOverflow)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -115,7 +129,7 @@ struct HashNode {
     hash: Sha256Hash,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct PieceRoots {
     total: usize,
     chunks: Vec<Option<Box<[[u8; 32]; PIECE_ROOT_CHUNK]>>>,
@@ -183,7 +197,7 @@ impl PieceRoots {
 /// Piece roots use lazily allocated fixed chunks plus a compact presence
 /// bitmap. Proof and leaf nodes are sorted flat values so the maximum retained
 /// allocation remains below the tactical's per-torrent ceiling.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct V2HashCatalog {
     piece_roots: PieceRoots,
     proof_nodes: Vec<HashNode>,
@@ -278,7 +292,7 @@ impl V2HashCatalog {
         response: &HashResponse,
     ) -> Result<usize, HashExchangeError> {
         let validated = validate_request_range(geometry, response.request, false)?;
-        let expected = response.request.count as usize + response.request.proof_layers as usize;
+        let expected = response.request.response_hash_count()?;
         if response.hashes.len() != expected {
             return Err(HashExchangeError::InvalidHashCount {
                 expected,
@@ -394,13 +408,17 @@ impl V2HashCatalog {
         allow_count_one: bool,
     ) -> Result<HashResponse, HashExchangeError> {
         let validated = validate_request_range(geometry, request, allow_count_one)?;
-        let mut hashes = Vec::with_capacity(request.count as usize + request.proof_layers as usize);
+        let mut hashes = Vec::with_capacity(request.response_hash_count()?);
         for offset in 0..request.count {
             let index = u64::from(request.index) + u64::from(offset);
             hashes.push(self.node_hash(geometry, validated.base_layer, index)?);
         }
         let mut proof_index = validated.subject_index;
-        for layer in validated.subject_layer..validated.subject_layer + request.proof_layers as u8 {
+        let proof_hashes = request
+            .proof_layers
+            .checked_sub(request.count.trailing_zeros())
+            .ok_or(HashExchangeError::InvalidProofLayers)?;
+        for layer in validated.subject_layer..validated.subject_layer + proof_hashes as u8 {
             let sibling = proof_index ^ 1;
             let sibling_start = sibling
                 .checked_shl(u32::from(layer))
@@ -408,12 +426,7 @@ impl V2HashCatalog {
             let hash = if sibling_start >= geometry.leaf_count()? {
                 zero_hash(layer)?
             } else {
-                self.find_node(HashNodeKey {
-                    pieces_root: geometry.pieces_root,
-                    layer,
-                    index: sibling,
-                })
-                .ok_or(HashExchangeError::HashesUnavailable)?
+                self.node_hash(geometry, layer, sibling)?
             };
             hashes.push(hash);
             proof_index >>= 1;
@@ -444,6 +457,19 @@ impl V2HashCatalog {
                 .piece_roots
                 .get(global)
                 .ok_or(HashExchangeError::HashesUnavailable);
+        }
+        if layer > geometry.piece_layer()? {
+            let child_layer = layer - 1;
+            let left = index
+                .checked_mul(2)
+                .ok_or(HashExchangeError::ArithmeticOverflow)?;
+            let right = left
+                .checked_add(1)
+                .ok_or(HashExchangeError::ArithmeticOverflow)?;
+            return Ok(hash_pair(
+                &self.node_hash(geometry, child_layer, left)?,
+                &self.node_hash(geometry, child_layer, right)?,
+            ));
         }
         self.find_node(HashNodeKey {
             pieces_root: geometry.pieces_root,
@@ -524,7 +550,7 @@ fn validate_request_range(
         .checked_add(range_height)
         .ok_or(HashExchangeError::ArithmeticOverflow)?;
     if subject_layer > shape.height()
-        || u32::from(shape.height() - subject_layer) != request.proof_layers
+        || u32::from(shape.height() - base_layer) != request.proof_layers
     {
         return Err(HashExchangeError::InvalidProofLayers);
     }
@@ -704,7 +730,7 @@ mod tests {
             base_layer: 0,
             index: 2,
             count: 2,
-            proof_layers: 1,
+            proof_layers: 2,
         };
         let response = HashResponse {
             request,
@@ -739,6 +765,38 @@ mod tests {
     }
 
     #[test]
+    fn complete_piece_layer_constructs_a_proved_tail_response() {
+        let (geometry, piece_hashes) = geometry();
+        let request = HashRequest {
+            pieces_root: geometry.pieces_root,
+            base_layer: 0,
+            index: 2,
+            count: 2,
+            proof_layers: 2,
+        };
+        let mut source = V2HashCatalog::new(8).unwrap();
+        source
+            .seed_complete_piece_layer(geometry, &piece_hashes)
+            .unwrap();
+        let response = source.response_for(geometry, request, false).unwrap();
+        assert_eq!(
+            response.hashes,
+            vec![
+                piece_hashes[2],
+                [0; 32],
+                hash_pair(&piece_hashes[0], &piece_hashes[1])
+            ]
+        );
+
+        let mut leecher = V2HashCatalog::new(8).unwrap();
+        assert_eq!(leecher.insert_response(geometry, &response), Ok(1));
+        assert_eq!(
+            leecher.piece_root(geometry.first_piece + 2),
+            Some(piece_hashes[2])
+        );
+    }
+
+    #[test]
     fn request_shape_rejects_hostile_counts_layers_and_ranges() {
         let (geometry, _) = geometry();
         let valid = HashRequest {
@@ -746,7 +804,7 @@ mod tests {
             base_layer: 0,
             index: 0,
             count: 2,
-            proof_layers: 1,
+            proof_layers: 2,
         };
         assert_eq!(validate_request(geometry, valid, false), Ok(()));
         for count in [0, 1, 3, 513] {

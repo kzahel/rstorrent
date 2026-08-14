@@ -1,9 +1,10 @@
 # Tactical 155: V2 Magnet And Authenticated Hash Exchange
 
 Status: **Implementation in progress and authoritative Now on 2026-08-14.**
-Stages 0 and 1 are complete. Pure-v2 magnet identity, persistence, export,
-and exact SHA-256 BEP 9 metadata admission are live; piece payload remains
-fail-closed until authenticated hash exchange lands.
+Stages 0--2 are complete. Pure-v2 magnet identity, persistence, export,
+exact SHA-256 BEP 9 metadata admission, content/hash separation, and strict
+hash-message framing are live; piece payload remains fail-closed until the
+Stage 3 authenticated-hash scheduler lands.
 
 Topics: `bittorrent-v2-and-hybrid`, `protocol-support`,
 `download-correctness`, `client-persistence`, `peer-lifecycle`,
@@ -990,5 +991,36 @@ unless a bounded artifact is explicitly retained and linked.
   252 passed/four ignored, and session 243 passed/two ignored, with all other
   crate and doc tests green.
 
-Stage 2 begins with the complete descriptor/catalog split and messages
-21--23. Do not infer payload download support from metadata admission alone.
+### 2026-08-14 Stage 2 descriptor, catalog, and wire
+
+- `V2ContentDescriptor` now owns only immutable authenticated info bytes,
+  identity, file roots, layout, and source facts. `TorrentIntegrity` owns the
+  separate `V2HashCatalog`; complete outer metainfo seeds it from validated
+  piece layers while info-only magnet metadata starts empty except for direct
+  one-piece file-root queries. Storage derives algorithms and geometry from
+  the descriptor without treating absent expected hashes as errors or truth.
+- The task-free catalog proves aligned piece or leaf ranges to the exact file
+  root before atomic insertion, rejects conflicts and invalid padding, answers
+  known ranges, and reports explicit `Known` or bounded `Missing` queries.
+  Complete catalogs construct proof siblings from authenticated piece roots;
+  sparse catalogs retain only bounded proof nodes. Accounting remains under
+  the Stage 0 80-MiB ceiling.
+- Source comparison corrected an important BEP 52 field interpretation:
+  `proof layers` is the number of tree levels omitted above the named base,
+  so a response carries `count + proof_layers - log2(count)` hashes. Request,
+  proof, and exact-frame validation now share that checked rule.
+- `PeerMessage` encodes and decodes IDs 21, 22, and 23 with exact big-endian
+  fields and message-specific preallocation bounds. Only a v2-negotiated
+  decoder accepts them; v1, malformed, oversized, mismatched-count, invalid-
+  range-shape, and outbound count-one requests fail closed. Metadata and
+  content dial paths select the decoder from the full torrent identity.
+- Runtime-free BEP vectors independently hash three 16-KiB leaves, construct
+  the padded file root, round-trip a proved tail between complete source and
+  empty leecher catalogs, and exercise exact wire bytes. Focused catalog and
+  wire tests pass. The full engine suite passes with 553 tests and nine
+  opt-in tests ignored; warning-denying workspace clippy passes after the
+  Stage 2 commit gate.
+
+Stage 3 begins with the torrent-owned logical-need and attempt scheduler,
+payload gating, candidate verification, and complete-file reconstruction. Do
+not infer payload download support from wire decoding alone.

@@ -4,7 +4,7 @@ use crate::{
     FileSelectionUpdate, IncomingPeerService, IncomingPeerServiceConfig, IncomingTcpBootstrap,
     PeerBudget, ResumeValidationIntent, TorrentPeerHandle,
 };
-use rstorrent_protocol::content::TorrentContentProjection;
+use rstorrent_protocol::content::{TorrentContentProjection, TorrentIntegrity};
 use rstorrent_protocol::merkle::{file_root_from_data, piece_root_from_data};
 use rstorrent_protocol::metainfo::DURABLE_METAINFO_LIMITS;
 
@@ -664,6 +664,7 @@ async fn full_recheck_verifies_readable_skipped_pieces() {
     let checked = full_recheck_managed_storage(
         &mut storage,
         &content,
+        &TorrentIntegrity::V1,
         &content_layout,
         &vec![false; layout.piece_count()],
         &mut selection,
@@ -764,6 +765,7 @@ async fn selection_fence_and_slow_hash_heartbeat_share_one_check_generation() {
         let result = full_recheck_managed_storage(
             &mut storage,
             &task_content,
+            &TorrentIntegrity::V1,
             &task_content_layout,
             &vec![false; task_piece_count],
             &mut selection,

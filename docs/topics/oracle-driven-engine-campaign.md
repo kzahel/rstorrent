@@ -596,10 +596,11 @@ separate control-transport investigation is explicitly authorized.
 
 Current engine-campaign action: execute decision-complete Stage 4 Tactical
 `155` for v2 magnets and authenticated hash exchange. Its Stage 0 source and
-resource baseline and Stage 1 typed `btmh` intake/export, full-identity
-persistence, and SHA-256 BEP 9 admission are complete. Continue with Stage 2
-descriptor/catalog separation and messages 21--23, then the already bounded
-scheduling, restart, upload, platform, and two-role interoperability stages.
+resource baseline, Stage 1 typed `btmh` intake/export, full-identity
+persistence and SHA-256 BEP 9 admission, and Stage 2 descriptor/catalog split
+and strict messages 21--23 are complete. Continue with Stage 3 torrent-owned
+hash scheduling, candidate verification, and local reconstruction, then the
+already bounded upload, platform, and two-role interoperability stages.
 Completed Tacticals `151`, `152`, and
 `154` close the pure-v2 complete-source vertical and intervening iOS repairs.
 Completed Tacticals `142`, `145`, and `150` leave uTP at a reconciled checkpoint. The

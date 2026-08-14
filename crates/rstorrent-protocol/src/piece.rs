@@ -419,6 +419,9 @@ impl OnePieceDownload {
             | PeerMessage::HaveNone
             | PeerMessage::RejectRequest(_)
             | PeerMessage::AllowedFast(_) => Err(PieceError::UnexpectedMessage("fast extension")),
+            PeerMessage::HashRequest(_) | PeerMessage::Hashes(_) | PeerMessage::HashReject(_) => {
+                Err(PieceError::UnexpectedMessage("v2 hash exchange"))
+            }
         }
     }
 

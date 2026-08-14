@@ -8,7 +8,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use rstorrent_protocol::content::{
-    ExpectedPieceIntegrity, TorrentContent, TorrentContentProjection,
+    ExpectedPieceIntegrity, TorrentContent, TorrentContentProjection, TorrentContentWithIntegrity,
+    TorrentIntegrity,
 };
 use rstorrent_protocol::extension::{
     ExtensionAdvertisement, ExtensionMap, PexFlags, UT_PEX_LOCAL_ID,
@@ -30,7 +31,7 @@ use rstorrent_protocol::metainfo::{
     ParsedInfo, ParsedInfoKind, V2Metainfo,
 };
 use rstorrent_protocol::peer_wire::{
-    FrameError, Handshake, HandshakeError, NegotiatedPeerCapabilities, PeerMessage,
+    FrameError, Handshake, HandshakeError, NegotiatedPeerCapabilities, PeerMessage, PeerProtocol,
 };
 use rstorrent_protocol::piece::{PieceError, VerifiedPiece};
 use rstorrent_protocol::storage_layout::{ContentLayout, FileSelection, LayoutError};
@@ -1228,6 +1229,11 @@ impl PremetadataPeerState {
             PeerMessage::Extended { .. } => {
                 return Err(DownloadError::InvalidPremetadataState(
                     "extension message was dispatched as core peer state",
+                ));
+            }
+            PeerMessage::HashRequest(_) | PeerMessage::Hashes(_) | PeerMessage::HashReject(_) => {
+                return Err(DownloadError::InvalidPremetadataState(
+                    "hash exchange arrived before verified metadata",
                 ));
             }
         }
@@ -3151,6 +3157,9 @@ impl TorrentPeerCoordinator {
         let info_hash = identity.swarm_key().into_bytes();
         let mut sockets = PeerSocketSet::with_owners(self.peer_budget.clone(), self.mse_dh.clone())
             .with_bandwidth(self.peers.bandwidth());
+        if matches!(identity, FullInfoHash::V2(_)) {
+            sockets.set_protocol(PeerProtocol::V2);
+        }
         let mut workers = JoinSet::new();
         let mut worker_cancellations: BTreeMap<DialAttemptId, (DialAttempt, CancellationToken)> =
             BTreeMap::new();
@@ -3514,6 +3523,9 @@ async fn run_metadata_peer(
     control: DownloadControl,
     metadata: Arc<Mutex<TorrentMetadataDownload>>,
 ) -> MetadataPeerResult {
+    if matches!(identity, FullInfoHash::V2(_)) {
+        connection.set_protocol(PeerProtocol::V2);
+    }
     let attempt = connection.attempt();
     let result = tokio::select! {
         biased;
@@ -3976,11 +3988,12 @@ async fn run_resumable_metainfo_download(
         DURABLE_METAINFO_LIMITS,
     )
     .map_err(DownloadError::Metainfo)?;
-    let content = projection.content;
-    validate_content_runtime_identity(config.identity, &content)?;
+    let raw_info_span = projection.info_span.clone();
+    let content = &projection.content;
+    validate_content_runtime_identity(config.identity, content)?;
     validate_publication_name(content.name()).map_err(DownloadError::SelectiveStorage)?;
     let raw_info = Arc::<[u8]>::from(
-        config.metainfo_source[projection.info_span]
+        config.metainfo_source[raw_info_span]
             .to_vec()
             .into_boxed_slice(),
     );
@@ -4030,7 +4043,7 @@ async fn run_resumable_metainfo_download(
     };
     let result = run_content_download(
         content_config,
-        content,
+        projection,
         control,
         None,
         &mut peers,
@@ -4396,7 +4409,7 @@ async fn run_download(
 
 async fn run_content_download(
     config: ContentDownloadConfig,
-    content: impl Into<TorrentContent>,
+    content: impl Into<TorrentContentWithIntegrity>,
     control: DownloadControl,
     descriptors: Option<DescriptorStorage>,
     peers: &mut TorrentPeerCoordinator,
@@ -4437,6 +4450,7 @@ struct ContentSwarmDownload<'a> {
     outgoing_uploads: BTreeMap<ConnectionId, OutgoingUploadPeer>,
     incoming_content: BTreeMap<ConnectionId, IncomingContentPeer>,
     content: &'a TorrentContent,
+    integrity: &'a TorrentIntegrity,
     layout: &'a ContentLayout,
     resume: Option<&'a ResumeContext>,
     control: &'a DownloadControl,
@@ -4484,6 +4498,7 @@ struct AppliedFileSelection {
 
 struct ContentDownloadContext<'a> {
     content: &'a TorrentContent,
+    integrity: &'a TorrentIntegrity,
     layout: &'a ContentLayout,
     resume: Option<&'a ResumeContext>,
     control: &'a DownloadControl,
@@ -4566,6 +4581,7 @@ impl<'a> ContentSwarmDownload<'a> {
     ) -> Result<Self, DownloadError> {
         let ContentDownloadContext {
             content,
+            integrity,
             layout,
             resume,
             control,
@@ -4627,6 +4643,7 @@ impl<'a> ContentSwarmDownload<'a> {
             outgoing_uploads: BTreeMap::new(),
             incoming_content: BTreeMap::new(),
             content,
+            integrity,
             layout,
             resume,
             control,
@@ -5397,6 +5414,12 @@ impl<'a> ContentSwarmDownload<'a> {
             | PeerMessage::Cancel(_)
             | PeerMessage::Extended { .. } => {}
             PeerMessage::SuggestPiece(_) | PeerMessage::AllowedFast(_) => {}
+            PeerMessage::HashRequest(_) | PeerMessage::Hashes(_) | PeerMessage::HashReject(_) => {
+                return Ok(ContentMessageDisposition::ClosePeer {
+                    failure: PeerFailure::Protocol,
+                    reason: "v2 hash exchange has no active integrity owner",
+                });
+            }
         }
         Ok(ContentMessageDisposition::Continue)
     }
@@ -5480,7 +5503,7 @@ impl<'a> ContentSwarmDownload<'a> {
                         .map_err(DownloadError::Layout)?;
                     let expected = self
                         .content
-                        .expected_piece(block.piece)
+                        .expected_piece(self.integrity, block.piece)
                         .map_err(|error| DownloadError::StorageTask(error.to_string()))?;
                     let durable = self.resume.is_some();
                     self.state
@@ -5843,12 +5866,13 @@ fn torrent_payload_offset(
 
 fn diagnostic_piece_hash(
     content: &TorrentContent,
+    integrity: &TorrentIntegrity,
     piece_index: usize,
 ) -> Result<[u8; 20], DownloadError> {
     let piece = u32::try_from(piece_index)
         .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
     match content
-        .expected_piece(piece)
+        .expected_piece(integrity, piece)
         .map_err(|error| DownloadError::StorageTask(error.to_string()))?
     {
         ExpectedPieceIntegrity::V1Sha1(hash) => Ok(hash),
@@ -6937,6 +6961,9 @@ async fn download_content_swarm<'a>(
 ) -> Result<ContentSwarmDownload<'a>, DownloadError> {
     let mut sockets = PeerSocketSet::with_owners(peers.peer_budget.clone(), peers.mse_dh.clone())
         .with_bandwidth(peers.peers.bandwidth());
+    if matches!(download.content, TorrentContent::V2(_)) {
+        sockets.set_protocol(PeerProtocol::V2);
+    }
     let (incoming_sender, mut incoming_events) = mpsc::channel(INCOMING_CONTENT_EVENT_CAPACITY);
     let incoming_route = peers.peers.install_incoming_content_route(incoming_sender);
     let mut discovery = ContentDiscovery::start(peers, download.content.swarm_key().into_bytes());
@@ -7027,6 +7054,7 @@ async fn wait_for_checking_resume(
 async fn full_recheck_managed_storage(
     storage: &mut SelectiveStorage,
     content: &TorrentContent,
+    integrity: &TorrentIntegrity,
     layout: &ContentLayout,
     previous: &[bool],
     selection: &mut AppliedFileSelection,
@@ -7184,7 +7212,7 @@ async fn full_recheck_managed_storage(
                     }
                 };
                 let expected = content
-                    .expected_piece(piece_index)
+                    .expected_piece(integrity, piece_index)
                     .map_err(|error| DownloadError::StorageTask(error.to_string()))?;
                 let outcome = match result {
                     Ok(actual) if content_hash_matches(actual, expected) => {
@@ -7235,12 +7263,13 @@ async fn full_recheck_managed_storage(
 
 async fn run_selective_download(
     config: ContentDownloadConfig,
-    content: TorrentContent,
+    runtime_content: TorrentContentWithIntegrity,
     control: DownloadControl,
     descriptors: Option<DescriptorStorage>,
     peers: &mut TorrentPeerCoordinator,
     resume: Option<ResumeContext>,
 ) -> Result<DownloadReport, DownloadError> {
+    let TorrentContentWithIntegrity { content, integrity } = runtime_content;
     let layout = ContentLayout::from_content(&content);
     let selection =
         FileSelection::new_content(&layout, &config.skip_files).map_err(DownloadError::Layout)?;
@@ -7565,6 +7594,7 @@ async fn run_selective_download(
                 match full_recheck_managed_storage(
                     &mut storage,
                     &content,
+                    &integrity,
                     &layout,
                     &previous,
                     &mut applied_selection,
@@ -7675,7 +7705,7 @@ async fn run_selective_download(
     {
         return Ok(DownloadReport {
             info_hash: content.swarm_key().into_bytes(),
-            piece_hash: diagnostic_piece_hash(&content, last_wanted_piece)?,
+            piece_hash: diagnostic_piece_hash(&content, &integrity, last_wanted_piece)?,
             bytes_written: 0,
             block_count: 0,
             payload_limit: config.max_buffered_payload_bytes,
@@ -7724,6 +7754,7 @@ async fn run_selective_download(
             ContentStorage(Box::new(storage)),
             ContentDownloadContext {
                 content: &content,
+                integrity: &integrity,
                 layout: &layout,
                 resume: resume.as_ref(),
                 control: &control,
@@ -7771,7 +7802,7 @@ async fn run_selective_download(
         let part_slots = storage.part_slots();
         return Ok(DownloadReport {
             info_hash: content.swarm_key().into_bytes(),
-            piece_hash: diagnostic_piece_hash(&content, last_wanted_piece)?,
+            piece_hash: diagnostic_piece_hash(&content, &integrity, last_wanted_piece)?,
             bytes_written: total_bytes,
             block_count: total_blocks,
             payload_limit: config.max_buffered_payload_bytes,
@@ -7892,7 +7923,7 @@ async fn run_selective_download(
         // Selective pieces may complete in any order. Keep the diagnostic
         // report stable by naming the highest-index wanted piece rather than
         // whichever verification completion happened to arrive last.
-        piece_hash: diagnostic_piece_hash(&content, last_wanted_piece)?,
+        piece_hash: diagnostic_piece_hash(&content, &integrity, last_wanted_piece)?,
         bytes_written: total_bytes,
         block_count: total_blocks,
         payload_limit: config.max_buffered_payload_bytes,

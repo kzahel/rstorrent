@@ -17,7 +17,8 @@ use rstorrent_protocol::mse::{
 use rstorrent_protocol::peer_wire::{
     EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX,
     FAST_EXTENSION_RESERVED_BIT, FAST_EXTENSION_RESERVED_INDEX, HANDSHAKE_LENGTH, Handshake,
-    NegotiatedPeerCapabilities, PeerMessage, decode_handshake, encode_handshake_with_reserved,
+    NegotiatedPeerCapabilities, PeerMessage, PeerProtocol, decode_handshake,
+    encode_handshake_with_reserved,
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -68,6 +69,10 @@ pub(crate) struct PeerConnection {
 }
 
 impl PeerConnection {
+    pub(crate) fn set_protocol(&mut self, protocol: PeerProtocol) {
+        self.io.set_protocol(protocol);
+    }
+
     pub(crate) const fn attempt(&self) -> DialAttempt {
         self.attempt
     }
@@ -1144,6 +1149,7 @@ pub(crate) struct PeerSocketSet {
     dial_progress_tx: mpsc::Sender<PeerDialProgress>,
     dial_progress_rx: mpsc::Receiver<PeerDialProgress>,
     bandwidth: Option<TorrentBandwidth>,
+    protocol: PeerProtocol,
 }
 
 impl PeerSocketSet {
@@ -1169,12 +1175,18 @@ impl PeerSocketSet {
             dial_progress_tx,
             dial_progress_rx,
             bandwidth: None,
+            protocol: PeerProtocol::V1,
         }
     }
 
     pub(crate) fn with_bandwidth(mut self, bandwidth: Option<TorrentBandwidth>) -> Self {
         self.bandwidth = bandwidth;
         self
+    }
+
+    pub(crate) fn set_protocol(&mut self, protocol: PeerProtocol) {
+        debug_assert!(self.tasks.is_empty() && self.pending_attempts.is_empty());
+        self.protocol = protocol;
     }
 
     pub(crate) fn established_len(&self) -> usize {
@@ -1246,6 +1258,7 @@ impl PeerSocketSet {
         let progress = self.dial_progress_tx.clone();
         let mse_dh = self.mse_dh.clone();
         let bandwidth = self.bandwidth.clone();
+        let protocol = self.protocol;
         self.pending_attempts
             .insert(attempt.id(), (attempt, cancellation.clone()));
         self.pending.spawn(async move {
@@ -1272,6 +1285,7 @@ impl PeerSocketSet {
             };
             if let Ok((connection, _)) = &mut result {
                 connection.io.attach_bandwidth(bandwidth);
+                connection.set_protocol(protocol);
             }
             (attempt, utp_outcome, result)
         });
