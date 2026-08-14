@@ -456,6 +456,35 @@ impl TorrentContent {
             Self::V2(content) => Some(content),
         }
     }
+
+    pub fn v2_hash_geometry_for_root(
+        &self,
+        pieces_root: Sha256Hash,
+    ) -> Result<Option<V2FileHashGeometry>, ContentGeometryError> {
+        let Self::V2(content) = self else {
+            return Err(ContentGeometryError::WrongFormat);
+        };
+        for (file, geometry) in content
+            .metainfo
+            .files
+            .iter()
+            .zip(content.metainfo.layout.files())
+        {
+            if file.pieces_root != Some(pieces_root) || geometry.piece_count() == 0 {
+                continue;
+            }
+            return V2FileHashGeometry::new(
+                pieces_root,
+                file.length,
+                content.metainfo.piece_length,
+                geometry.start_piece(),
+                geometry.piece_count(),
+            )
+            .map(Some)
+            .map_err(|_| ContentGeometryError::ArithmeticOverflow);
+        }
+        Ok(None)
+    }
 }
 
 fn expected_v2_piece(

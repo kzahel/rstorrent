@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use rstorrent_protocol::content::ExpectedPieceIntegrity;
+use rstorrent_protocol::merkle::Sha256Hash;
 use rstorrent_protocol::peer_wire::MAX_REQUEST_BLOCK_LENGTH;
 use rstorrent_protocol::storage_layout::LayoutError;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc};
@@ -72,20 +73,28 @@ pub(super) enum ContentStorageCommand {
         expected: ExpectedPieceIntegrity,
         durable: bool,
     },
+    DiagnoseV2Piece {
+        piece: u32,
+        length: u32,
+    },
 }
 
 impl ContentStorageCommand {
     fn kind(&self) -> StorageCommandKind {
         match self {
             Self::Write { .. } => StorageCommandKind::Write,
-            Self::Verify { .. } | Self::VerifyCandidate { .. } => StorageCommandKind::Hash,
+            Self::Verify { .. } | Self::VerifyCandidate { .. } | Self::DiagnoseV2Piece { .. } => {
+                StorageCommandKind::Hash
+            }
         }
     }
 
     pub(super) fn write_bytes(&self) -> Option<usize> {
         match self {
             Self::Write { bytes, .. } => Some(bytes.len()),
-            Self::Verify { .. } | Self::VerifyCandidate { .. } => None,
+            Self::Verify { .. } | Self::VerifyCandidate { .. } | Self::DiagnoseV2Piece { .. } => {
+                None
+            }
         }
     }
 }
@@ -142,22 +151,38 @@ struct ContentHashOperation(SelectiveHashPlan);
 
 struct ContentHashJob {
     piece: u32,
-    generation: Option<PieceGeneration>,
     length: u32,
-    expected: ExpectedPieceIntegrity,
-    durable: bool,
-    durability_targets: Vec<DurabilityTarget>,
+    kind: ContentHashJobKind,
     operation: ContentHashOperation,
+}
+
+enum ContentHashJobKind {
+    Verify {
+        generation: Option<PieceGeneration>,
+        expected: ExpectedPieceIntegrity,
+        durable: bool,
+        durability_targets: Vec<DurabilityTarget>,
+    },
+    DiagnoseV2Piece,
 }
 
 struct ContentHashJobResult {
     piece: u32,
-    generation: Option<PieceGeneration>,
     length: u32,
-    expected: ExpectedPieceIntegrity,
-    durable: bool,
-    durability_targets: Vec<DurabilityTarget>,
-    result: Result<ComputedPieceHash, DownloadError>,
+    kind: ContentHashJobResultKind,
+}
+
+enum ContentHashJobResultKind {
+    Verify {
+        generation: Option<PieceGeneration>,
+        expected: ExpectedPieceIntegrity,
+        durable: bool,
+        durability_targets: Vec<DurabilityTarget>,
+        result: Result<ComputedPieceHash, DownloadError>,
+    },
+    DiagnoseV2Piece {
+        result: Result<Vec<Sha256Hash>, DownloadError>,
+    },
 }
 
 enum ContentStorageJobResult {
@@ -189,6 +214,11 @@ pub(super) enum ContentStorageCompletion {
         piece: u32,
         length: u32,
         result: Result<ContentVerification, DownloadError>,
+    },
+    DiagnoseV2Piece {
+        piece: u32,
+        length: u32,
+        result: Result<Vec<Sha256Hash>, DownloadError>,
     },
 }
 
@@ -868,7 +898,8 @@ async fn run_content_storage_task(
                 .filter_map(|command| match &command.command {
                     ContentStorageCommand::Write { block, .. } => Some(*block),
                     ContentStorageCommand::Verify { .. }
-                    | ContentStorageCommand::VerifyCandidate { .. } => None,
+                    | ContentStorageCommand::VerifyCandidate { .. }
+                    | ContentStorageCommand::DiagnoseV2Piece { .. } => None,
                 })
                 .collect::<Vec<_>>();
             let bytes = batch.iter().fold(0_usize, |total, command| {
@@ -909,7 +940,8 @@ async fn run_content_storage_task(
                 .expect("nonempty hash-ready queue has a command");
             let (piece, length) = match &command.command {
                 ContentStorageCommand::Verify { piece, length, .. }
-                | ContentStorageCommand::VerifyCandidate { piece, length, .. } => (*piece, *length),
+                | ContentStorageCommand::VerifyCandidate { piece, length, .. }
+                | ContentStorageCommand::DiagnoseV2Piece { piece, length } => (*piece, *length),
                 ContentStorageCommand::Write { .. } => {
                     unreachable!("hash-ready queue contains only verify commands")
                 }
@@ -1441,80 +1473,154 @@ fn prepare_content_storage_hash(
     storage: &ContentStorage,
     command: ContentStorageCommand,
 ) -> Result<ContentHashJob, ContentStorageCompletion> {
-    let (piece, generation, length, expected, durable) = match command {
+    let (piece, length, kind) = match command {
         ContentStorageCommand::Verify {
             piece,
             generation,
             length,
             expected,
             durable,
-        } => (piece, Some(generation), length, expected, durable),
+        } => (
+            piece,
+            length,
+            ContentHashJobKind::Verify {
+                generation: Some(generation),
+                expected,
+                durable,
+                durability_targets: Vec::new(),
+            },
+        ),
         ContentStorageCommand::VerifyCandidate {
             piece,
             length,
             expected,
             durable,
-        } => (piece, None, length, expected, durable),
+        } => (
+            piece,
+            length,
+            ContentHashJobKind::Verify {
+                generation: None,
+                expected,
+                durable,
+                durability_targets: Vec::new(),
+            },
+        ),
+        ContentStorageCommand::DiagnoseV2Piece { piece, length } => {
+            (piece, length, ContentHashJobKind::DiagnoseV2Piece)
+        }
         ContentStorageCommand::Write { .. } => {
             unreachable!("write commands execute through the bounded batch path")
         }
     };
-    let durability_targets = if durable {
-        storage
-            .0
-            .durability_targets(piece)
-            .map_err(DownloadError::SelectiveStorage)
-    } else {
-        Ok(Vec::new())
-    };
-    let prepared = durability_targets.and_then(|durability_targets| {
-        storage
-            .0
-            .prepare_hash(piece)
-            .map(|operation| (ContentHashOperation(operation), durability_targets))
-            .map_err(DownloadError::SelectiveStorage)
-    });
-    match prepared {
-        Ok((operation, durability_targets)) => Ok(ContentHashJob {
-            piece,
+    let kind = match kind {
+        ContentHashJobKind::Verify {
             generation,
-            length,
             expected,
             durable,
-            durability_targets,
-            operation,
+            ..
+        } => {
+            let durability_targets = if durable {
+                storage
+                    .0
+                    .durability_targets(piece)
+                    .map_err(DownloadError::SelectiveStorage)
+            } else {
+                Ok(Vec::new())
+            };
+            match durability_targets {
+                Ok(durability_targets) => ContentHashJobKind::Verify {
+                    generation,
+                    expected,
+                    durable,
+                    durability_targets,
+                },
+                Err(error) => {
+                    return Err(match generation {
+                        Some(generation) => ContentStorageCompletion::Verify {
+                            piece,
+                            generation,
+                            length,
+                            result: Err(error),
+                        },
+                        None => ContentStorageCompletion::VerifyCandidate {
+                            piece,
+                            length,
+                            result: Err(error),
+                        },
+                    });
+                }
+            }
+        }
+        ContentHashJobKind::DiagnoseV2Piece => ContentHashJobKind::DiagnoseV2Piece,
+    };
+    match storage.0.prepare_hash(piece) {
+        Ok(operation) => Ok(ContentHashJob {
+            piece,
+            length,
+            kind,
+            operation: ContentHashOperation(operation),
         }),
-        Err(error) => Err(match generation {
-            Some(generation) => ContentStorageCompletion::Verify {
-                piece,
-                generation,
-                length,
-                result: Err(error),
-            },
-            None => ContentStorageCompletion::VerifyCandidate {
-                piece,
-                length,
-                result: Err(error),
-            },
-        }),
+        Err(error) => {
+            let error = DownloadError::SelectiveStorage(error);
+            Err(match kind {
+                ContentHashJobKind::Verify {
+                    generation: Some(generation),
+                    ..
+                } => ContentStorageCompletion::Verify {
+                    piece,
+                    generation,
+                    length,
+                    result: Err(error),
+                },
+                ContentHashJobKind::Verify {
+                    generation: None, ..
+                } => ContentStorageCompletion::VerifyCandidate {
+                    piece,
+                    length,
+                    result: Err(error),
+                },
+                ContentHashJobKind::DiagnoseV2Piece => ContentStorageCompletion::DiagnoseV2Piece {
+                    piece,
+                    length,
+                    result: Err(error),
+                },
+            })
+        }
     }
 }
 
 async fn execute_content_hash_job(job: ContentHashJob) -> ContentHashJobResult {
-    let result = job
-        .operation
-        .0
-        .execute_content()
-        .await
-        .map_err(DownloadError::SelectiveStorage);
+    let kind = match job.kind {
+        ContentHashJobKind::Verify {
+            generation,
+            expected,
+            durable,
+            durability_targets,
+        } => ContentHashJobResultKind::Verify {
+            generation,
+            expected,
+            durable,
+            durability_targets,
+            result: job
+                .operation
+                .0
+                .execute_content()
+                .await
+                .map_err(DownloadError::SelectiveStorage),
+        },
+        ContentHashJobKind::DiagnoseV2Piece => ContentHashJobResultKind::DiagnoseV2Piece {
+            result: job
+                .operation
+                .0
+                .hash_v2_leaves()
+                .await
+                .map_err(DownloadError::SelectiveStorage),
+        },
+    };
     ContentHashJobResult {
         piece: job.piece,
-        generation: job.generation,
         length: job.length,
-        expected: job.expected,
-        durable: job.durable,
-        durability_targets: job.durability_targets,
-        result,
+        kind,
     }
 }
 
@@ -1523,44 +1629,61 @@ fn finish_content_hash_job(
     result: ContentHashJobResult,
     control: &DownloadControl,
 ) -> ContentStorageCompletion {
-    let verification = result.result.and_then(|actual| {
-        let matched = content_hash_matches(actual, result.expected);
-        if matched {
-            let piece_index = usize::try_from(result.piece)
-                .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
-            storage
-                .0
-                .record_verified(piece_index)
-                .map_err(DownloadError::SelectiveStorage)?;
+    match result.kind {
+        ContentHashJobResultKind::DiagnoseV2Piece { result: leaves } => {
+            ContentStorageCompletion::DiagnoseV2Piece {
+                piece: result.piece,
+                length: result.length,
+                result: leaves,
+            }
         }
-        Ok(ContentVerification {
-            actual,
-            matched,
-            durability_targets: if matched {
-                result.durability_targets
-            } else {
-                Vec::new()
-            },
-        })
-    });
-    if verification
-        .as_ref()
-        .is_ok_and(|verification| verification.matched)
-    {
-        control.disk_piece_hash_verified(result.piece, result.length, result.durable);
-    }
-    match result.generation {
-        Some(generation) => ContentStorageCompletion::Verify {
-            piece: result.piece,
+        ContentHashJobResultKind::Verify {
             generation,
-            length: result.length,
-            result: verification,
-        },
-        None => ContentStorageCompletion::VerifyCandidate {
-            piece: result.piece,
-            length: result.length,
-            result: verification,
-        },
+            expected,
+            durable,
+            durability_targets,
+            result: hash_result,
+        } => {
+            let verification = hash_result.and_then(|actual| {
+                let matched = content_hash_matches(actual, expected);
+                if matched {
+                    let piece_index = usize::try_from(result.piece)
+                        .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+                    storage
+                        .0
+                        .record_verified(piece_index)
+                        .map_err(DownloadError::SelectiveStorage)?;
+                }
+                Ok(ContentVerification {
+                    actual,
+                    matched,
+                    durability_targets: if matched {
+                        durability_targets
+                    } else {
+                        Vec::new()
+                    },
+                })
+            });
+            if verification
+                .as_ref()
+                .is_ok_and(|verification| verification.matched)
+            {
+                control.disk_piece_hash_verified(result.piece, result.length, durable);
+            }
+            match generation {
+                Some(generation) => ContentStorageCompletion::Verify {
+                    piece: result.piece,
+                    generation,
+                    length: result.length,
+                    result: verification,
+                },
+                None => ContentStorageCompletion::VerifyCandidate {
+                    piece: result.piece,
+                    length: result.length,
+                    result: verification,
+                },
+            }
+        }
     }
 }
 

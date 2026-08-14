@@ -231,6 +231,14 @@ impl V2HashCatalog {
             .and_then(|index| self.piece_roots.get(index))
     }
 
+    pub fn leaf_hash(&self, pieces_root: Sha256Hash, index: u64) -> Option<Sha256Hash> {
+        self.find_node(HashNodeKey {
+            pieces_root,
+            layer: 0,
+            index,
+        })
+    }
+
     pub fn accounting(&self) -> HashCatalogAccounting {
         let raw_hashes = self
             .piece_roots
@@ -434,6 +442,101 @@ impl V2HashCatalog {
         Ok(HashResponse { request, hashes })
     }
 
+    /// Construct a leaf-layer response from a bounded set of locally hashed,
+    /// piece-aligned leaves. Every supplied real piece is first checked
+    /// against its authenticated piece-layer root, so local payload cannot
+    /// become proof authority merely because it is readable.
+    pub fn response_from_authenticated_leaves(
+        &self,
+        geometry: V2FileHashGeometry,
+        request: HashRequest,
+        supplied_leaf_start: u64,
+        supplied_leaves: &[Sha256Hash],
+        allow_count_one: bool,
+    ) -> Result<HashResponse, HashExchangeError> {
+        let validated = validate_request_range(geometry, request, allow_count_one)?;
+        if validated.base_layer != 0 {
+            return Err(HashExchangeError::UnsupportedBaseLayer);
+        }
+        let piece_layer = geometry.piece_layer()?;
+        let leaves_per_piece = 1_u64
+            .checked_shl(u32::from(piece_layer))
+            .ok_or(HashExchangeError::ArithmeticOverflow)?;
+        if !supplied_leaf_start.is_multiple_of(leaves_per_piece) {
+            return Err(HashExchangeError::MisalignedIndex);
+        }
+        let supplied_end = supplied_leaf_start
+            .checked_add(supplied_leaves.len() as u64)
+            .ok_or(HashExchangeError::ArithmeticOverflow)?;
+        let request_end = u64::from(request.index)
+            .checked_add(u64::from(request.count))
+            .ok_or(HashExchangeError::ArithmeticOverflow)?;
+        if u64::from(request.index) < supplied_leaf_start || request_end > supplied_end {
+            return Err(HashExchangeError::HashesUnavailable);
+        }
+
+        let first_piece = supplied_leaf_start / leaves_per_piece;
+        let last_piece = supplied_end.div_ceil(leaves_per_piece);
+        for local_piece in first_piece..last_piece {
+            let piece_start = local_piece
+                .checked_mul(leaves_per_piece)
+                .ok_or(HashExchangeError::ArithmeticOverflow)?;
+            if piece_start >= geometry.leaf_count()? {
+                break;
+            }
+            let real_end = piece_start
+                .checked_add(leaves_per_piece)
+                .ok_or(HashExchangeError::ArithmeticOverflow)?
+                .min(geometry.leaf_count()?);
+            if piece_start < supplied_leaf_start || real_end > supplied_end {
+                return Err(HashExchangeError::HashesUnavailable);
+            }
+            let start = usize::try_from(piece_start - supplied_leaf_start)
+                .map_err(|_| HashExchangeError::ArithmeticOverflow)?;
+            let end = usize::try_from(real_end - supplied_leaf_start)
+                .map_err(|_| HashExchangeError::ArithmeticOverflow)?;
+            let mut accumulator = MerkleAccumulator::new(0)?;
+            for hash in &supplied_leaves[start..end] {
+                accumulator.push(*hash)?;
+            }
+            let actual = accumulator.finish_padded_to(piece_layer)?;
+            let global_piece = u64::from(geometry.first_piece)
+                .checked_add(local_piece)
+                .and_then(|piece| usize::try_from(piece).ok())
+                .ok_or(HashExchangeError::ArithmeticOverflow)?;
+            if self.piece_roots.get(global_piece) != Some(actual) {
+                return Err(HashExchangeError::BadProof);
+            }
+        }
+
+        let supplied_node = |layer: u8, index: u64| {
+            supplied_node_hash(geometry, supplied_leaf_start, supplied_leaves, layer, index)
+        };
+        let mut hashes = Vec::with_capacity(request.response_hash_count()?);
+        for offset in 0..request.count {
+            hashes.push(supplied_node(
+                0,
+                u64::from(request.index) + u64::from(offset),
+            )?);
+        }
+        let mut proof_index = validated.subject_index;
+        let proof_hashes = request
+            .proof_layers
+            .checked_sub(request.count.trailing_zeros())
+            .ok_or(HashExchangeError::InvalidProofLayers)?;
+        for layer in validated.subject_layer..validated.subject_layer + proof_hashes as u8 {
+            let sibling = proof_index ^ 1;
+            let hash = if layer < piece_layer {
+                supplied_node(layer, sibling)?
+            } else {
+                self.node_hash(geometry, layer, sibling)?
+            };
+            hashes.push(hash);
+            proof_index >>= 1;
+        }
+        Ok(HashResponse { request, hashes })
+    }
+
     fn node_hash(
         &self,
         geometry: V2FileHashGeometry,
@@ -501,6 +604,61 @@ impl V2HashCatalog {
             .expect_err("new proof node was checked before insertion");
         self.proof_nodes.insert(index, HashNode { key, hash });
     }
+}
+
+fn supplied_node_hash(
+    geometry: V2FileHashGeometry,
+    supplied_leaf_start: u64,
+    supplied_leaves: &[Sha256Hash],
+    layer: u8,
+    index: u64,
+) -> Result<Sha256Hash, HashExchangeError> {
+    let width = 1_u64
+        .checked_shl(u32::from(layer))
+        .ok_or(HashExchangeError::ArithmeticOverflow)?;
+    let start = index
+        .checked_mul(width)
+        .ok_or(HashExchangeError::ArithmeticOverflow)?;
+    if start >= geometry.leaf_count()? {
+        return zero_hash(layer).map_err(HashExchangeError::Merkle);
+    }
+    let supplied_end = supplied_leaf_start
+        .checked_add(supplied_leaves.len() as u64)
+        .ok_or(HashExchangeError::ArithmeticOverflow)?;
+    let end = start
+        .checked_add(width)
+        .ok_or(HashExchangeError::ArithmeticOverflow)?
+        .min(geometry.leaf_count()?);
+    if start < supplied_leaf_start || end > supplied_end {
+        return Err(HashExchangeError::HashesUnavailable);
+    }
+    if layer == 0 {
+        let offset = usize::try_from(start - supplied_leaf_start)
+            .map_err(|_| HashExchangeError::ArithmeticOverflow)?;
+        return supplied_leaves
+            .get(offset)
+            .copied()
+            .ok_or(HashExchangeError::HashesUnavailable);
+    }
+    let left = index
+        .checked_mul(2)
+        .ok_or(HashExchangeError::ArithmeticOverflow)?;
+    Ok(hash_pair(
+        &supplied_node_hash(
+            geometry,
+            supplied_leaf_start,
+            supplied_leaves,
+            layer - 1,
+            left,
+        )?,
+        &supplied_node_hash(
+            geometry,
+            supplied_leaf_start,
+            supplied_leaves,
+            layer - 1,
+            left + 1,
+        )?,
+    ))
 }
 
 pub fn validate_request(
@@ -793,6 +951,41 @@ mod tests {
         assert_eq!(
             leecher.piece_root(geometry.first_piece + 2),
             Some(piece_hashes[2])
+        );
+    }
+
+    #[test]
+    fn authenticated_local_leaves_construct_base_zero_proof_without_retention() {
+        let leaves = [b"a", b"b", b"c", b"d"].map(|block| hash_block(block).unwrap());
+        let piece_roots = [
+            hash_pair(&leaves[0], &leaves[1]),
+            hash_pair(&leaves[2], &leaves[3]),
+        ];
+        let root = hash_pair(&piece_roots[0], &piece_roots[1]);
+        let geometry = V2FileHashGeometry::new(root, 4 * 16 * 1024, 32 * 1024, 3, 2).unwrap();
+        let request = HashRequest {
+            pieces_root: root,
+            base_layer: 0,
+            index: 0,
+            count: 2,
+            proof_layers: 2,
+        };
+        let mut catalog = V2HashCatalog::new(8).unwrap();
+        catalog
+            .seed_complete_piece_layer(geometry, &piece_roots)
+            .unwrap();
+        let before = catalog.accounting();
+        let response = catalog
+            .response_from_authenticated_leaves(geometry, request, 0, &leaves[..2], false)
+            .unwrap();
+        assert_eq!(response.hashes, vec![leaves[0], leaves[1], piece_roots[1]]);
+        assert_eq!(catalog.accounting(), before);
+
+        let mut corrupt = leaves[..2].to_vec();
+        corrupt[1] = [9; 32];
+        assert_eq!(
+            catalog.response_from_authenticated_leaves(geometry, request, 0, &corrupt, false),
+            Err(HashExchangeError::BadProof)
         );
     }
 

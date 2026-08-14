@@ -29,6 +29,289 @@ fn two_piece_v2_info(first: &[u8], second: &[u8]) -> (Vec<u8>, [[u8; 32]; 2]) {
     (info, piece_roots)
 }
 
+fn four_block_v2_info(blocks: &[Vec<u8>; 4]) -> (Vec<u8>, [[u8; 32]; 4], [[u8; 32]; 2]) {
+    assert!(blocks.iter().all(|block| block.len() == 16 * 1024));
+    let leaves = blocks
+        .each_ref()
+        .map(|block| rstorrent_protocol::merkle::hash_block(block).unwrap());
+    let piece_roots = [
+        rstorrent_protocol::merkle::hash_pair(&leaves[0], &leaves[1]),
+        rstorrent_protocol::merkle::hash_pair(&leaves[2], &leaves[3]),
+    ];
+    let file_root = rstorrent_protocol::merkle::hash_pair(&piece_roots[0], &piece_roots[1]);
+    let mut info = b"d9:file treed1:ad0:d6:lengthi65536e11:pieces root32:".to_vec();
+    info.extend_from_slice(&file_root);
+    info.extend_from_slice(b"eee12:meta versioni2e4:name4:root12:piece lengthi32768ee");
+    (info, leaves, piece_roots)
+}
+
+async fn begin_v2_scripted_peer(
+    listener: &TcpListener,
+    wire_hash: [u8; 20],
+    peer_id: [u8; 20],
+) -> PeerConnection {
+    let (mut stream, _) = listener.accept().await.expect("accept v2 scripted peer");
+    let mut handshake_bytes = [0; HANDSHAKE_LENGTH];
+    stream
+        .read_exact(&mut handshake_bytes)
+        .await
+        .expect("read v2 scripted handshake");
+    decode_handshake(&handshake_bytes, wire_hash).expect("v2 scripted wire identity");
+    let mut reserved = [0; 8];
+    reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
+    stream
+        .write_all(&encode_handshake_with_reserved(
+            wire_hash, peer_id, reserved,
+        ))
+        .await
+        .expect("send v2 scripted handshake");
+    let mut peer = PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(5));
+    peer.set_protocol(rstorrent_protocol::peer_wire::PeerProtocol::V2);
+    peer
+}
+
+fn v2_hash_response(
+    request: rstorrent_protocol::v2_hashes::HashRequest,
+    leaves: &[[u8; 32]; 4],
+    piece_roots: &[[u8; 32]; 2],
+) -> rstorrent_protocol::v2_hashes::HashResponse {
+    let hashes = match request.base_layer {
+        1 => piece_roots.to_vec(),
+        0 if request.index == 0 && request.count == 2 => {
+            vec![leaves[0], leaves[1], piece_roots[1]]
+        }
+        0 if request.index == 2 && request.count == 2 => {
+            vec![leaves[2], leaves[3], piece_roots[0]]
+        }
+        _ => panic!("unexpected v2 hash request: {request:?}"),
+    };
+    rstorrent_protocol::v2_hashes::HashResponse { request, hashes }
+}
+
+async fn serve_corrupt_v2_contributor(
+    listener: TcpListener,
+    wire_hash: [u8; 20],
+    info: Vec<u8>,
+    blocks: [Vec<u8>; 4],
+    leaves: [[u8; 32]; 4],
+    piece_roots: [[u8; 32]; 2],
+    released: tokio::sync::watch::Sender<bool>,
+) -> u32 {
+    let mut peer = begin_v2_scripted_peer(
+        &listener,
+        wire_hash,
+        scripted_peer_id(&listener, *b"-RS-V2BAD-0000000000"),
+    )
+    .await;
+    assert!(matches!(
+        next_peer_message(&mut peer).await,
+        Ok(PeerMessage::Extended { id: 0, .. })
+    ));
+    send_message(
+        &mut peer,
+        &PeerMessage::Extended {
+            id: 0,
+            payload: encode_extension_handshake(Some(info.len())),
+        },
+    )
+    .await
+    .unwrap();
+    let PeerMessage::Extended {
+        id: UT_METADATA_LOCAL_ID,
+        payload,
+    } = next_peer_message(&mut peer).await.unwrap()
+    else {
+        panic!("expected v2 corruption metadata request");
+    };
+    assert!(matches!(
+        parse_metadata_message(&payload).unwrap(),
+        MetadataMessage::Request { piece: 0 }
+    ));
+    send_message(&mut peer, &PeerMessage::Bitfield(vec![0b1000_0000]))
+        .await
+        .unwrap();
+    send_message(&mut peer, &PeerMessage::Unchoke)
+        .await
+        .unwrap();
+    send_message(
+        &mut peer,
+        &PeerMessage::Extended {
+            id: UT_METADATA_LOCAL_ID,
+            payload: encode_metadata_data(0, info.len(), &info).unwrap(),
+        },
+    )
+    .await
+    .unwrap();
+
+    loop {
+        let message = match next_peer_message(&mut peer).await {
+            Ok(message) => message,
+            Err(_) => panic!("corrupt v2 peer closed before contributing payload"),
+        };
+        match message {
+            PeerMessage::HashRequest(request) => {
+                send_message(
+                    &mut peer,
+                    &PeerMessage::Hashes(v2_hash_response(request, &leaves, &piece_roots)),
+                )
+                .await
+                .unwrap();
+            }
+            PeerMessage::Request(request) if request.index == 0 => {
+                let begin = request.begin as usize;
+                let mut block = blocks[request.index as usize * 2 + begin / (16 * 1024)].clone();
+                block[0] ^= 0xff;
+                send_message(
+                    &mut peer,
+                    &PeerMessage::Piece {
+                        index: request.index,
+                        begin: request.begin,
+                        block,
+                    },
+                )
+                .await
+                .unwrap();
+                send_message(&mut peer, &PeerMessage::Choke).await.unwrap();
+                let _ = released.send(true);
+                return request.begin;
+            }
+            PeerMessage::KeepAlive
+            | PeerMessage::Interested
+            | PeerMessage::NotInterested
+            | PeerMessage::HaveNone
+            | PeerMessage::Have(_)
+            | PeerMessage::Cancel(_)
+            | PeerMessage::Request(_)
+            | PeerMessage::Extended { .. } => {}
+            message => panic!("unexpected corrupt v2 message: {message:?}"),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum LeafProofBehavior {
+    Serve,
+    Reject,
+    Stall,
+}
+
+async fn serve_clean_v2_repair_peer(
+    listener: TcpListener,
+    wire_hash: [u8; 20],
+    blocks: [Vec<u8>; 4],
+    leaves: [[u8; 32]; 4],
+    piece_roots: [[u8; 32]; 2],
+    mut released: tokio::sync::watch::Receiver<bool>,
+    leaf_proofs: LeafProofBehavior,
+) -> Vec<(u32, u32)> {
+    let mut requested = Vec::new();
+    let mut requested_active_leaf_proof = false;
+    let mut received_active_leaf_proof = false;
+    let mut saw_final_have = false;
+    loop {
+        let mut peer = begin_v2_scripted_peer(
+            &listener,
+            wire_hash,
+            scripted_peer_id(&listener, *b"-RS-V2FIX-0000000000"),
+        )
+        .await;
+        if send_message(&mut peer, &PeerMessage::Bitfield(vec![0b1100_0000]))
+            .await
+            .is_err()
+        {
+            continue;
+        }
+        while !*released.borrow_and_update() {
+            released
+                .changed()
+                .await
+                .expect("corrupt peer release signal");
+        }
+        if send_message(&mut peer, &PeerMessage::Unchoke)
+            .await
+            .is_err()
+        {
+            continue;
+        }
+        loop {
+            match next_peer_message(&mut peer).await {
+                Ok(PeerMessage::HashRequest(request)) => match (leaf_proofs, request.base_layer) {
+                    (LeafProofBehavior::Reject, 0) => {
+                        send_message(&mut peer, &PeerMessage::HashReject(request))
+                            .await
+                            .unwrap();
+                    }
+                    (LeafProofBehavior::Stall, 0) => {}
+                    _ => {
+                        send_message(
+                            &mut peer,
+                            &PeerMessage::Hashes(v2_hash_response(request, &leaves, &piece_roots)),
+                        )
+                        .await
+                        .unwrap();
+                    }
+                },
+                Ok(PeerMessage::Request(request)) => {
+                    requested.push((request.index, request.begin));
+                    let block = blocks
+                        [request.index as usize * 2 + request.begin as usize / (16 * 1024)]
+                        .clone();
+                    send_message(
+                        &mut peer,
+                        &PeerMessage::Piece {
+                            index: request.index,
+                            begin: request.begin,
+                            block,
+                        },
+                    )
+                    .await
+                    .unwrap();
+                }
+                Ok(PeerMessage::Have(0)) if !requested_active_leaf_proof => {
+                    let request = rstorrent_protocol::v2_hashes::HashRequest {
+                        pieces_root: rstorrent_protocol::merkle::hash_pair(
+                            &piece_roots[0],
+                            &piece_roots[1],
+                        ),
+                        base_layer: 0,
+                        index: 0,
+                        count: 2,
+                        proof_layers: 2,
+                    };
+                    send_message(&mut peer, &PeerMessage::HashRequest(request))
+                        .await
+                        .unwrap();
+                    requested_active_leaf_proof = true;
+                }
+                Ok(PeerMessage::Have(1)) => saw_final_have = true,
+                Ok(PeerMessage::Hashes(response)) if requested_active_leaf_proof => {
+                    assert_eq!(
+                        response,
+                        v2_hash_response(response.request, &leaves, &piece_roots),
+                        "initiated active peer serves the authenticated base-zero proof"
+                    );
+                    received_active_leaf_proof = true;
+                }
+                Ok(
+                    PeerMessage::KeepAlive
+                    | PeerMessage::Interested
+                    | PeerMessage::NotInterested
+                    | PeerMessage::HaveNone
+                    | PeerMessage::Have(_)
+                    | PeerMessage::Cancel(_)
+                    | PeerMessage::Extended { .. },
+                ) => {}
+                Ok(message) => panic!("unexpected clean v2 message: {message:?}"),
+                Err(_) if requested.is_empty() => break,
+                Err(_) => return requested,
+            }
+            if saw_final_have && received_active_leaf_proof {
+                return requested;
+            }
+        }
+    }
+}
+
 async fn serve_info_only_metadata(listener: TcpListener, wire_hash: [u8; 20], info: Vec<u8>) {
     let (mut stream, _) = listener.accept().await.expect("accept metadata client");
     let mut handshake_bytes = [0; HANDSHAKE_LENGTH];
@@ -389,6 +672,284 @@ async fn pure_v2_magnet_authenticates_piece_layer_before_payload() {
     );
     peer.await.expect("join v2 peer");
     let _ = tokio::fs::remove_dir_all(output).await;
+}
+
+#[tokio::test]
+async fn pure_v2_leaf_proof_repairs_only_the_corrupt_block() {
+    let blocks = [
+        vec![0x11; 16 * 1024],
+        vec![0x22; 16 * 1024],
+        vec![0x33; 16 * 1024],
+        vec![0x44; 16 * 1024],
+    ];
+    let (info, leaves, piece_roots) = four_block_v2_info(&blocks);
+    let full_hash = <[u8; 32]>::from(Sha256::digest(&info));
+    let identity = V2InfoHash::new(full_hash);
+    let wire_hash = identity.swarm_key().into_bytes();
+    let corrupt_listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind corrupt v2 contributor");
+    let corrupt_address = corrupt_listener
+        .local_addr()
+        .expect("corrupt v2 contributor address");
+    let clean_listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind clean v2 repair peer");
+    let clean_address = clean_listener
+        .local_addr()
+        .expect("clean v2 repair address");
+    let (released, release) = tokio::sync::watch::channel(false);
+    let corrupt_peer = tokio::spawn(serve_corrupt_v2_contributor(
+        corrupt_listener,
+        wire_hash,
+        info,
+        blocks.clone(),
+        leaves,
+        piece_roots,
+        released,
+    ));
+    let clean_peer = tokio::spawn(serve_clean_v2_repair_peer(
+        clean_listener,
+        wire_hash,
+        blocks.clone(),
+        leaves,
+        piece_roots,
+        release,
+        LeafProofBehavior::Serve,
+    ));
+    let output = test_path("v2-leaf-repair-output");
+    let report = timeout(
+        Duration::from_secs(15),
+        download_magnet(MagnetDownloadConfig {
+            identity: test_v2_identity(full_hash),
+            magnet: format!(
+                "magnet:?xt=urn:btmh:1220{identity}&x.pe={corrupt_address}&x.pe={clean_address}"
+            ),
+            output_path: output.clone(),
+            network: loopback_network(Duration::from_secs(2)),
+            resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
+            skip_files: Vec::new(),
+            materialize_files: Vec::new(),
+            dht: None,
+        }),
+    )
+    .await
+    .expect("bounded v2 corrupt-block recovery")
+    .expect("recover v2 corrupt block");
+    let corrupt_begin = corrupt_peer.await.expect("join corrupt v2 peer");
+    let clean_requests = clean_peer.await.expect("join clean v2 peer");
+
+    assert_eq!(report.verified_piece_count, 2);
+    assert_eq!(
+        tokio::fs::read(output.join("a"))
+            .await
+            .expect("read repaired v2 file"),
+        blocks.concat()
+    );
+    assert_eq!(
+        clean_requests
+            .iter()
+            .filter(|request| **request == (0, corrupt_begin))
+            .count(),
+        1,
+        "the diagnosed corrupt block is fetched exactly once from the repair peer"
+    );
+    let retained_begin = if corrupt_begin == 0 { 16 * 1024 } else { 0 };
+    assert_eq!(
+        clean_requests
+            .iter()
+            .filter(|request| **request == (0, retained_begin))
+            .count(),
+        1,
+        "the already-good block is not discarded and fetched again after diagnosis"
+    );
+    tokio::fs::remove_dir_all(output)
+        .await
+        .expect("remove v2 repair output");
+}
+
+#[tokio::test]
+async fn pure_v2_leaf_reject_falls_back_to_whole_piece_repair() {
+    let blocks = [
+        vec![0x51; 16 * 1024],
+        vec![0x62; 16 * 1024],
+        vec![0x73; 16 * 1024],
+        vec![0x84; 16 * 1024],
+    ];
+    let (info, leaves, piece_roots) = four_block_v2_info(&blocks);
+    let full_hash = <[u8; 32]>::from(Sha256::digest(&info));
+    let identity = V2InfoHash::new(full_hash);
+    let wire_hash = identity.swarm_key().into_bytes();
+    let corrupt_listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind fallback corrupt contributor");
+    let corrupt_address = corrupt_listener
+        .local_addr()
+        .expect("fallback corrupt contributor address");
+    let clean_listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind fallback repair peer");
+    let clean_address = clean_listener
+        .local_addr()
+        .expect("fallback repair address");
+    let (released, release) = tokio::sync::watch::channel(false);
+    let corrupt_peer = tokio::spawn(serve_corrupt_v2_contributor(
+        corrupt_listener,
+        wire_hash,
+        info,
+        blocks.clone(),
+        leaves,
+        piece_roots,
+        released,
+    ));
+    let clean_peer = tokio::spawn(serve_clean_v2_repair_peer(
+        clean_listener,
+        wire_hash,
+        blocks.clone(),
+        leaves,
+        piece_roots,
+        release,
+        LeafProofBehavior::Reject,
+    ));
+    let output = test_path("v2-leaf-reject-output");
+    timeout(
+        Duration::from_secs(15),
+        download_magnet(MagnetDownloadConfig {
+            identity: test_v2_identity(full_hash),
+            magnet: format!(
+                "magnet:?xt=urn:btmh:1220{identity}&x.pe={corrupt_address}&x.pe={clean_address}"
+            ),
+            output_path: output.clone(),
+            network: loopback_network(Duration::from_secs(2)),
+            resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
+            skip_files: Vec::new(),
+            materialize_files: Vec::new(),
+            dht: None,
+        }),
+    )
+    .await
+    .expect("bounded v2 leaf-reject fallback")
+    .expect("recover whole v2 piece after leaf reject");
+    let corrupt_begin = corrupt_peer.await.expect("join fallback corrupt peer");
+    let clean_requests = clean_peer.await.expect("join fallback repair peer");
+
+    assert_eq!(
+        tokio::fs::read(output.join("a"))
+            .await
+            .expect("read fallback-repaired v2 file"),
+        blocks.concat()
+    );
+    assert_eq!(
+        clean_requests
+            .iter()
+            .filter(|request| **request == (0, corrupt_begin))
+            .count(),
+        1
+    );
+    let discarded_good_begin = if corrupt_begin == 0 { 16 * 1024 } else { 0 };
+    assert_eq!(
+        clean_requests
+            .iter()
+            .filter(|request| **request == (0, discarded_good_begin))
+            .count(),
+        2,
+        "leaf rejection conservatively resets and fetches the whole piece"
+    );
+    tokio::fs::remove_dir_all(output)
+        .await
+        .expect("remove fallback repair output");
+}
+
+#[tokio::test]
+async fn pure_v2_leaf_stall_falls_back_to_whole_piece_repair() {
+    let blocks = [
+        vec![0x91; 16 * 1024],
+        vec![0xa2; 16 * 1024],
+        vec![0xb3; 16 * 1024],
+        vec![0xc4; 16 * 1024],
+    ];
+    let (info, leaves, piece_roots) = four_block_v2_info(&blocks);
+    let full_hash = <[u8; 32]>::from(Sha256::digest(&info));
+    let identity = V2InfoHash::new(full_hash);
+    let wire_hash = identity.swarm_key().into_bytes();
+    let corrupt_listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind stalled-proof corrupt contributor");
+    let corrupt_address = corrupt_listener
+        .local_addr()
+        .expect("stalled-proof corrupt contributor address");
+    let clean_listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind stalled-proof repair peer");
+    let clean_address = clean_listener
+        .local_addr()
+        .expect("stalled-proof repair address");
+    let (released, release) = tokio::sync::watch::channel(false);
+    let corrupt_peer = tokio::spawn(serve_corrupt_v2_contributor(
+        corrupt_listener,
+        wire_hash,
+        info,
+        blocks.clone(),
+        leaves,
+        piece_roots,
+        released,
+    ));
+    let clean_peer = tokio::spawn(serve_clean_v2_repair_peer(
+        clean_listener,
+        wire_hash,
+        blocks.clone(),
+        leaves,
+        piece_roots,
+        release,
+        LeafProofBehavior::Stall,
+    ));
+    let output = test_path("v2-leaf-stall-output");
+    timeout(
+        Duration::from_secs(15),
+        download_magnet(MagnetDownloadConfig {
+            identity: test_v2_identity(full_hash),
+            magnet: format!(
+                "magnet:?xt=urn:btmh:1220{identity}&x.pe={corrupt_address}&x.pe={clean_address}"
+            ),
+            output_path: output.clone(),
+            network: loopback_network(Duration::from_secs(2)),
+            resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
+            skip_files: Vec::new(),
+            materialize_files: Vec::new(),
+            dht: None,
+        }),
+    )
+    .await
+    .expect("bounded v2 stalled-leaf fallback")
+    .expect("recover whole v2 piece after stalled leaf proof");
+    let corrupt_begin = corrupt_peer.await.expect("join stalled-proof corrupt peer");
+    let clean_requests = clean_peer.await.expect("join stalled-proof repair peer");
+
+    assert_eq!(
+        tokio::fs::read(output.join("a"))
+            .await
+            .expect("read stalled-proof repaired v2 file"),
+        blocks.concat()
+    );
+    assert_eq!(
+        clean_requests
+            .iter()
+            .filter(|request| **request == (0, corrupt_begin))
+            .count(),
+        1
+    );
+    let discarded_good_begin = if corrupt_begin == 0 { 16 * 1024 } else { 0 };
+    assert_eq!(
+        clean_requests
+            .iter()
+            .filter(|request| **request == (0, discarded_good_begin))
+            .count(),
+        2,
+        "leaf timeout conservatively resets and fetches the whole piece"
+    );
+    tokio::fs::remove_dir_all(output)
+        .await
+        .expect("remove stalled-proof repair output");
 }
 
 #[tokio::test]

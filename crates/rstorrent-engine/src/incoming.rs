@@ -12,25 +12,29 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::Duration;
 
+use rstorrent_protocol::content::{TorrentContent, TorrentIntegrity};
 use rstorrent_protocol::extension::{
     ExtensionAdvertisement, ExtensionMap, PexFlags, UT_PEX_LOCAL_ID,
     encode_extension_handshake as encode_recognized_extension_handshake,
     parse_extension_handshake as parse_recognized_extension_handshake,
 };
 use rstorrent_protocol::identity::{SwarmKey, V1InfoHash};
+use rstorrent_protocol::merkle::{MERKLE_BLOCK_SIZE, MerkleAccumulator, hash_block, zero_hash};
 use rstorrent_protocol::metadata::{
     MetadataExtensionUpdate, MetadataMessage, MetadataUpload, MetadataUploadAction,
     UT_METADATA_LOCAL_ID, encode_metadata_data, encode_metadata_reject, parse_extension_handshake,
     parse_metadata_message,
 };
+use rstorrent_protocol::metainfo::DURABLE_METAINFO_LIMITS;
 use rstorrent_protocol::mse::{
     DH_PRIVATE_EXPONENT_LEN, MSE_KNOWN_METHODS, MSE_MAX_PADDING_LEN, MseAction, MseCipherPair,
     MseHandshake, MseMethod, MsePadding, MseResume, MseRole, MseStep, req2_hash,
 };
 use rstorrent_protocol::peer_wire::{
     BlockRequest, HANDSHAKE_LENGTH, MAX_REQUEST_BLOCK_LENGTH, NegotiatedPeerCapabilities,
-    PeerMessage, decode_handshake, encode_handshake_with_reserved,
+    PeerMessage, PeerProtocol, decode_handshake, encode_handshake_with_reserved,
 };
+use rstorrent_protocol::v2_hashes::{HashRequest, HashResponse, V2FileHashGeometry, V2HashCatalog};
 use sha1::{Digest, Sha1};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpSocket, UdpSocket};
@@ -75,6 +79,7 @@ pub const MAX_INCOMING_PENDING: usize = 8;
 pub const DEFAULT_UPLOAD_READ_JOBS: usize = 10;
 pub const MAX_CONFIGURED_UPLOAD_READ_JOBS: usize = 1_024;
 pub const MAX_DEFERRED_METADATA_REQUESTS: usize = 1_024;
+pub const MAX_V2_HASH_SERVICE_JOBS_PER_TORRENT: usize = 8;
 pub const METADATA_SEND_BUFFER_WATERMARK: usize = 160 * 1_024;
 pub const DEFAULT_INCOMING_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 pub const DEFAULT_INCOMING_PEER_ACTIVITY_TIMEOUT: Duration = Duration::from_secs(120);
@@ -164,6 +169,14 @@ pub struct SeedRegistration {
     piece_lengths: Arc<[u32]>,
     torrent_peers: TorrentPeerHandle,
     private: bool,
+    v2_hashes: Option<Arc<V2SeedHashService>>,
+}
+
+#[derive(Debug)]
+pub(crate) struct V2SeedHashService {
+    content: TorrentContent,
+    catalog: Mutex<V2HashCatalog>,
+    jobs: Semaphore,
 }
 
 #[derive(Clone, Debug)]
@@ -196,6 +209,203 @@ impl RegisteredSeedContent {
             Self::Published(content) => content.read_block(request).await.map_err(|_| ()),
             Self::Active(content) => content.read_block(request).await.map_err(|_| ()),
         }
+    }
+}
+
+impl V2SeedHashService {
+    pub(crate) fn new(content: TorrentContent, catalog: V2HashCatalog) -> Arc<Self> {
+        Arc::new(Self {
+            content,
+            catalog: Mutex::new(catalog),
+            jobs: Semaphore::new(MAX_V2_HASH_SERVICE_JOBS_PER_TORRENT),
+        })
+    }
+
+    fn from_raw_info(
+        raw_info: &[u8],
+        swarm_key: SwarmKey,
+    ) -> Result<Option<Arc<Self>>, IncomingPeerError> {
+        if !matches!(swarm_key, SwarmKey::V2Truncated(_)) {
+            return Ok(None);
+        }
+        let runtime =
+            TorrentContent::from_v2_info_bytes_with_limits(raw_info, DURABLE_METAINFO_LIMITS)
+                .map_err(|_| {
+                    IncomingPeerError::InvalidRegistration(
+                        "v2 seed metadata is not strict pure-v2 info",
+                    )
+                })?;
+        if runtime.content.swarm_key() != swarm_key {
+            return Err(IncomingPeerError::InvalidRegistration(
+                "v2 seed metadata and swarm key differ",
+            ));
+        }
+        let TorrentIntegrity::V2(catalog) = runtime.integrity else {
+            return Err(IncomingPeerError::InvalidRegistration(
+                "v2 seed metadata has non-v2 integrity",
+            ));
+        };
+        Ok(Some(Self::new(runtime.content, catalog)))
+    }
+
+    pub(crate) fn replace_catalog(&self, catalog: V2HashCatalog) {
+        *self
+            .catalog
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = catalog;
+    }
+
+    pub(crate) async fn response_active(
+        &self,
+        seed: &ActiveSeedContent,
+        request: HashRequest,
+    ) -> Result<HashResponse, ()> {
+        self.response(&RegisteredSeedContent::Active(seed.clone()), request)
+            .await
+    }
+
+    async fn response(
+        &self,
+        seed: &RegisteredSeedContent,
+        request: HashRequest,
+    ) -> Result<HashResponse, ()> {
+        let _job = self.jobs.acquire().await.map_err(|_| ())?;
+        let geometry = self
+            .content
+            .v2_hash_geometry_for_root(request.pieces_root)
+            .map_err(|_| ())?
+            .ok_or(())?;
+        let catalog = self
+            .catalog
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        if let Ok(response) = catalog.response_for(geometry, request, true) {
+            return Ok(response);
+        }
+        let piece_layer = geometry.piece_layer().map_err(|_| ())?;
+        if request.base_layer == u32::from(piece_layer) {
+            let mut reconstructed = catalog.clone();
+            self.ensure_piece_layer(seed, geometry, &mut reconstructed)
+                .await?;
+            let response = reconstructed
+                .response_for(geometry, request, true)
+                .map_err(|_| ())?;
+            let mut current = self
+                .catalog
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if *current == catalog {
+                *current = reconstructed;
+            }
+            return Ok(response);
+        }
+        if request.base_layer != 0 {
+            return Err(());
+        }
+
+        let leaves_per_piece = 1_u64.checked_shl(u32::from(piece_layer)).ok_or(())?;
+        let request_end = u64::from(request.index)
+            .checked_add(u64::from(request.count))
+            .ok_or(())?;
+        let first_local_piece = u64::from(request.index) / leaves_per_piece;
+        let last_local_piece = request_end.div_ceil(leaves_per_piece);
+        let supplied_leaf_start = first_local_piece.checked_mul(leaves_per_piece).ok_or(())?;
+        let supplied_count = last_local_piece
+            .checked_sub(first_local_piece)
+            .and_then(|pieces| pieces.checked_mul(leaves_per_piece))
+            .and_then(|count| usize::try_from(count).ok())
+            .ok_or(())?;
+        let mut supplied = Vec::with_capacity(supplied_count);
+        for local_piece in first_local_piece..last_local_piece {
+            if local_piece < u64::from(geometry.piece_count) {
+                let global_piece = u64::from(geometry.first_piece)
+                    .checked_add(local_piece)
+                    .and_then(|piece| u32::try_from(piece).ok())
+                    .ok_or(())?;
+                supplied.extend(self.read_piece_leaves(seed, global_piece).await?);
+            }
+            let target_length = usize::try_from(
+                local_piece
+                    .checked_sub(first_local_piece)
+                    .and_then(|piece| piece.checked_add(1))
+                    .and_then(|pieces| pieces.checked_mul(leaves_per_piece))
+                    .ok_or(())?,
+            )
+            .map_err(|_| ())?;
+            supplied.resize(target_length, zero_hash(0).map_err(|_| ())?);
+        }
+        catalog
+            .response_from_authenticated_leaves(
+                geometry,
+                request,
+                supplied_leaf_start,
+                &supplied,
+                true,
+            )
+            .map_err(|_| ())
+    }
+
+    async fn ensure_piece_layer(
+        &self,
+        seed: &RegisteredSeedContent,
+        geometry: V2FileHashGeometry,
+        catalog: &mut V2HashCatalog,
+    ) -> Result<(), ()> {
+        if catalog.piece_root(geometry.first_piece).is_some() {
+            return Ok(());
+        }
+        let mut roots = Vec::with_capacity(geometry.piece_count as usize);
+        for piece in geometry.first_piece..geometry.first_piece + geometry.piece_count {
+            let leaves = self.read_piece_leaves(seed, piece).await?;
+            let mut accumulator = MerkleAccumulator::new(0).map_err(|_| ())?;
+            for leaf in leaves {
+                accumulator.push(leaf).map_err(|_| ())?;
+            }
+            roots.push(
+                accumulator
+                    .finish_padded_to(geometry.piece_layer().map_err(|_| ())?)
+                    .map_err(|_| ())?,
+            );
+        }
+        catalog
+            .seed_complete_piece_layer(geometry, &roots)
+            .map_err(|_| ())
+    }
+
+    async fn read_piece_leaves(
+        &self,
+        seed: &RegisteredSeedContent,
+        piece: u32,
+    ) -> Result<Vec<[u8; 32]>, ()> {
+        let descriptor = self.content.v2().ok_or(())?;
+        let length = descriptor
+            .metainfo
+            .layout
+            .piece(piece)
+            .map_err(|_| ())?
+            .payload_length;
+        let mut leaves = Vec::with_capacity(
+            usize::try_from(u64::from(length).div_ceil(MERKLE_BLOCK_SIZE as u64))
+                .map_err(|_| ())?,
+        );
+        let mut begin = 0_u32;
+        while begin < length {
+            let block_length = (length - begin).min(MERKLE_BLOCK_SIZE as u32);
+            let block = seed
+                .read_block(BlockRequest {
+                    index: piece,
+                    begin,
+                    length: block_length,
+                })
+                .await?;
+            if block.len() != block_length as usize {
+                return Err(());
+            }
+            leaves.push(hash_block(&block).map_err(|_| ())?);
+            begin = begin.checked_add(block_length).ok_or(())?;
+        }
+        Ok(leaves)
     }
 }
 
@@ -237,6 +447,7 @@ impl SeedRegistration {
             .piece_lengths()
             .map_err(|_| IncomingPeerError::InvalidRegistration("invalid seed piece geometry"))?;
         let private = content.is_private();
+        let v2_hashes = V2SeedHashService::from_raw_info(&raw_info, swarm_key)?;
         Ok(Self {
             swarm_key,
             raw_info,
@@ -244,6 +455,7 @@ impl SeedRegistration {
             piece_lengths: piece_lengths.into(),
             torrent_peers,
             private,
+            v2_hashes,
         })
     }
 
@@ -259,6 +471,7 @@ impl SeedRegistration {
             SwarmKey::V1(info_hash.into()),
             content,
             torrent_peers,
+            None,
         )
     }
 
@@ -267,6 +480,7 @@ impl SeedRegistration {
         swarm_key: SwarmKey,
         content: ActiveSeedContent,
         torrent_peers: TorrentPeerHandle,
+        shared_v2_hashes: Option<Arc<V2SeedHashService>>,
     ) -> Result<Self, IncomingPeerError> {
         let info_hash = swarm_key.into_bytes();
         if info_hash != content.info_hash()
@@ -282,6 +496,18 @@ impl SeedRegistration {
         })?;
         let piece_lengths = content.piece_lengths();
         let private = content.is_private();
+        let v2_hashes = match (swarm_key, shared_v2_hashes) {
+            (SwarmKey::V2Truncated(_), Some(service)) => Some(service),
+            (SwarmKey::V2Truncated(_), None) => {
+                V2SeedHashService::from_raw_info(&raw_info, swarm_key)?
+            }
+            (SwarmKey::V1(_), None) => None,
+            (SwarmKey::V1(_), Some(_)) => {
+                return Err(IncomingPeerError::InvalidRegistration(
+                    "v1 active seed received a v2 hash service",
+                ));
+            }
+        };
         Ok(Self {
             swarm_key,
             raw_info,
@@ -289,11 +515,17 @@ impl SeedRegistration {
             piece_lengths,
             torrent_peers,
             private,
+            v2_hashes,
         })
     }
 
     pub fn info_hash(&self) -> [u8; 20] {
         self.swarm_key.into_bytes()
+    }
+
+    async fn hash_response(&self, request: HashRequest) -> Option<HashResponse> {
+        let service = self.v2_hashes.as_ref()?;
+        service.response(&self.content, request).await.ok()
     }
 }
 
@@ -2748,13 +2980,18 @@ async fn run_incoming_peer(
         torrent: torrent_upload,
         session: shared.session_upload.clone(),
     });
-    let mut io = match IncomingPeerIo::new_with_mse_and_bandwidth(
+    let protocol = match registration.swarm_key {
+        SwarmKey::V1(_) => PeerProtocol::V1,
+        SwarmKey::V2Truncated(_) => PeerProtocol::V2,
+    };
+    let mut io = match IncomingPeerIo::new_with_mse_bandwidth_and_protocol(
         stream,
         shared.peer_activity_timeout,
         Some(byte_metric_sink),
         ciphers,
         &carried,
         registration.torrent_peers.bandwidth(),
+        protocol,
     ) {
         Ok(io) => io,
         Err(_) => return (PeerTermination::Protocol, peer_attachment),
@@ -3129,6 +3366,8 @@ async fn run_incoming_peer_loop(
                         | PeerMessage::Piece { .. }
                         | PeerMessage::SuggestPiece(_)
                         | PeerMessage::AllowedFast(_)
+                        | PeerMessage::Hashes(_)
+                        | PeerMessage::HashReject(_)
                 ) && let Some(bridge) = runtime.content_bridge.as_ref()
                     && bridge.forward(message.clone()).await.is_err()
                 {
@@ -3145,6 +3384,23 @@ async fn run_incoming_peer_loop(
                 }
                 if matches!(message, PeerMessage::Request(_)) {
                     last_request_or_unchoke = last_peer_activity;
+                }
+                if let PeerMessage::HashRequest(request) = &message {
+                    let request = *request;
+                    let response = match shared.upload_reads.clone().acquire_owned().await {
+                        Ok(_permit) => {
+                            let _observation = ObservationGuard::read(shared, 0);
+                            registration.hash_response(request).await
+                        }
+                        Err(_) => None,
+                    };
+                    let reply =
+                        response.map_or(PeerMessage::HashReject(request), PeerMessage::Hashes);
+                    if io.queue_message(&reply).is_err() {
+                        join_read(read.take()).await;
+                        return PeerTermination::Closed;
+                    }
+                    last_meaningful_activity = last_peer_activity;
                 }
                 if let PeerMessage::Extended { id: 0, payload } = &message {
                     let handshake = match parse_recognized_extension_handshake(payload) {
@@ -3673,7 +3929,7 @@ mod tests {
     use rstorrent_protocol::mse::MseMethod;
     use rstorrent_protocol::peer_wire::{
         BlockRequest, EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX,
-        FrameDecoder, HANDSHAKE_LENGTH, PeerMessage, decode_handshake,
+        FrameDecoder, HANDSHAKE_LENGTH, PeerMessage, PeerProtocol, decode_handshake,
         encode_handshake_with_reserved, encode_message,
     };
     use rstorrent_protocol::storage_layout::{FileSelection, TorrentLayout};
@@ -4870,6 +5126,161 @@ mod tests {
         tokio::fs::remove_dir_all(root)
             .await
             .expect("remove active root");
+    }
+
+    #[tokio::test]
+    async fn v2_seed_hash_service_reconstructs_piece_and_leaf_proofs_on_demand() {
+        let blocks = [
+            vec![0x11; 16 * 1024],
+            vec![0x22; 16 * 1024],
+            vec![0x33; 16 * 1024],
+            vec![0x44; 16 * 1024],
+        ];
+        let leaves = blocks
+            .each_ref()
+            .map(|block| rstorrent_protocol::merkle::hash_block(block).unwrap());
+        let piece_roots = [
+            rstorrent_protocol::merkle::hash_pair(&leaves[0], &leaves[1]),
+            rstorrent_protocol::merkle::hash_pair(&leaves[2], &leaves[3]),
+        ];
+        let file_root = rstorrent_protocol::merkle::hash_pair(&piece_roots[0], &piece_roots[1]);
+        let mut raw_info = b"d9:file treed1:ad0:d6:lengthi65536e11:pieces root32:".to_vec();
+        raw_info.extend_from_slice(&file_root);
+        raw_info.extend_from_slice(b"eee12:meta versioni2e4:name4:root12:piece lengthi32768ee");
+        let runtime = super::TorrentContent::from_v2_info_bytes_with_limits(
+            &raw_info,
+            super::DURABLE_METAINFO_LIMITS,
+        )
+        .expect("v2 seed descriptor");
+        let root = root("v2-hash-service");
+        tokio::fs::create_dir_all(&root)
+            .await
+            .expect("create v2 hash root");
+        let artifact_identity = crate::TorrentArtifactIdentity {
+            torrent_id: crate::TorrentId::new([0x73; 16]).expect("nonzero v2 seed owner"),
+            content_fingerprint: crate::ContentFingerprint::for_info_bytes(&raw_info),
+        };
+        let mut storage = SelectiveStorage::create_content(
+            root.join(runtime.content.name()),
+            artifact_identity,
+            Arc::new(runtime.content.clone()),
+            &[],
+        )
+        .await
+        .expect("create active v2 seed storage");
+        for piece in 0..2_u32 {
+            for block in 0..2_u32 {
+                storage
+                    .write_block(
+                        piece,
+                        block * 16 * 1024,
+                        blocks[(piece * 2 + block) as usize].clone(),
+                    )
+                    .await
+                    .expect("write v2 seed block");
+            }
+            storage
+                .record_verified(piece as usize)
+                .expect("verify v2 seed piece");
+        }
+        let availability = PieceAvailability::new(storage.route_epoch(), &[true, true])
+            .expect("v2 seed availability");
+        let (plans, mut requests) = mpsc::channel(ACTIVE_UPLOAD_PLAN_CAPACITY);
+        let storage_owner = tokio::spawn(async move {
+            while let Some(ActiveUploadPlanRequest {
+                request,
+                route_epoch,
+                response,
+            }) = requests.recv().await
+            {
+                let _ = response.send(storage.prepare_upload_read(request, route_epoch));
+            }
+            storage
+        });
+        let active = ActiveSeedContent::new(
+            runtime.content.swarm_key().into_bytes(),
+            false,
+            vec![32 * 1024, 32 * 1024],
+            availability,
+            plans,
+        );
+        let peers = TorrentPeerHandle::new(Arc::new(TestPeerActivity::default()))
+            .expect("v2 seed peer state");
+        let registration = SeedRegistration::new_active_with_swarm_key(
+            Arc::<[u8]>::from(raw_info),
+            runtime.content.swarm_key(),
+            active,
+            peers,
+            None,
+        )
+        .expect("v2 active registration");
+        let info_hash = registration.info_hash();
+        let mut service_config = config(IncomingTcpBootstrap::AutomaticLoopback);
+        service_config.peer_activity_timeout = Duration::from_secs(5);
+        let service = IncomingPeerService::bind(service_config)
+            .await
+            .expect("bind v2 incoming service")
+            .expect("v2 incoming service enabled");
+        let handle = service.handle();
+        let token = handle
+            .register(registration)
+            .await
+            .expect("register active v2 seed");
+        let (mut peer, mut decoder, mut queued) = connect(
+            service.listen_address(),
+            info_hash,
+            *b"-RS-V2LEECH-00000000",
+        )
+        .await;
+        decoder.set_protocol(PeerProtocol::V2);
+        assert_eq!(
+            next_message(&mut peer, &mut decoder, &mut queued).await,
+            PeerMessage::Bitfield(vec![0b1100_0000])
+        );
+        assert!(matches!(
+            next_message(&mut peer, &mut decoder, &mut queued).await,
+            PeerMessage::Extended { id: 0, .. }
+        ));
+        let piece_request = super::HashRequest {
+            pieces_root: file_root,
+            base_layer: 1,
+            index: 0,
+            count: 2,
+            proof_layers: 1,
+        };
+        send(&mut peer, &PeerMessage::HashRequest(piece_request)).await;
+        assert_eq!(
+            next_message(&mut peer, &mut decoder, &mut queued).await,
+            PeerMessage::Hashes(super::HashResponse {
+                request: piece_request,
+                hashes: piece_roots.to_vec(),
+            })
+        );
+        let leaf_request = super::HashRequest {
+            pieces_root: file_root,
+            base_layer: 0,
+            index: 0,
+            count: 2,
+            proof_layers: 2,
+        };
+        send(&mut peer, &PeerMessage::HashRequest(leaf_request)).await;
+        assert_eq!(
+            next_message(&mut peer, &mut decoder, &mut queued).await,
+            PeerMessage::Hashes(super::HashResponse {
+                request: leaf_request,
+                hashes: vec![leaves[0], leaves[1], piece_roots[1]],
+            })
+        );
+        assert_eq!(handle.snapshot().read_high_water, 1);
+        drop(peer);
+        assert!(handle.unregister(token).await.expect("unregister v2 seed"));
+        drop(handle);
+        service.shutdown().await.expect("shutdown v2 service");
+        drop(runtime);
+        drop(storage_owner.await.expect("join v2 seed storage owner"));
+        tokio::fs::remove_dir_all(root)
+            .await
+            .expect("remove v2 hash root");
     }
 
     #[tokio::test]

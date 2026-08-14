@@ -953,7 +953,17 @@ impl PieceStorageJoin {
         }
     }
 
+    #[cfg(test)]
     fn reset(&mut self) -> Result<(), SwarmError> {
+        self.reset_for_writes(self.writes_expected)
+    }
+
+    fn reset_for_writes(&mut self, writes_expected: usize) -> Result<(), SwarmError> {
+        if writes_expected == 0 {
+            return Err(SwarmError::InvalidTransition(
+                "piece storage reset requires at least one write",
+            ));
+        }
         let generation = self
             .generation
             .0
@@ -962,7 +972,7 @@ impl PieceStorageJoin {
             .ok_or(SwarmError::IdentifierOverflow("piece generation"))?;
         *self = Self {
             generation,
-            writes_expected: self.writes_expected,
+            writes_expected,
             writes_completed: 0,
             write_failed: false,
             hash: PieceHashJoinState::NotStarted,
@@ -2704,6 +2714,36 @@ impl SwarmState {
             .ok_or(SwarmError::UnknownPiece(piece))?
             .blocks
             .clone();
+        self.mark_piece_hash_failed_blocks_for_generation(piece, generation, &blocks)
+    }
+
+    pub fn mark_piece_hash_failed_blocks_for_generation(
+        &mut self,
+        piece: u32,
+        generation: PieceGeneration,
+        bad_blocks: &[BlockKey],
+    ) -> Result<PieceHashFailure, SwarmError> {
+        let blocks = self
+            .pieces
+            .get(&piece)
+            .ok_or(SwarmError::UnknownPiece(piece))?
+            .blocks
+            .clone();
+        if bad_blocks.is_empty() {
+            return Err(SwarmError::InvalidTransition(
+                "piece hash failure requires at least one bad block",
+            ));
+        }
+        let bad = bad_blocks.iter().copied().collect::<BTreeSet<_>>();
+        if bad.len() != bad_blocks.len()
+            || bad
+                .iter()
+                .any(|block| block.piece != piece || blocks.binary_search(block).is_err())
+        {
+            return Err(SwarmError::InvalidTransition(
+                "piece hash failure names an invalid block subset",
+            ));
+        }
         let storage = &self
             .pieces
             .get(&piece)
@@ -2724,19 +2764,20 @@ impl SwarmState {
                 "piece cannot fail its hash before every block is stored",
             ));
         }
-        let contributor_sources = self.piece_contributor_sources(&blocks)?;
+        let contributor_sources = self.piece_contributor_sources(bad_blocks)?;
         let contributors = contributor_sources
             .iter()
             .copied()
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect::<Vec<_>>();
-        let failed_bytes = blocks.iter().try_fold(0_usize, |total, block| {
+        let failed_bytes = bad_blocks.iter().try_fold(0_usize, |total, block| {
             total
                 .checked_add(block.length as usize)
                 .ok_or(SwarmError::ArithmeticOverflow("failed piece bytes"))
         })?;
         let block_count = blocks.len();
+        let failed_block_count = bad.len();
         let piece_state = self
             .pieces
             .get(&piece)
@@ -2746,36 +2787,45 @@ impl SwarmState {
                 "failed piece block counters do not match received blocks",
             ));
         }
-        for block in blocks {
+        for block in &bad {
             self.blocks
-                .get_mut(&block)
-                .ok_or(SwarmError::UnknownBlock(block))?
+                .get_mut(block)
+                .ok_or(SwarmError::UnknownBlock(*block))?
                 .phase = BlockPhase::Missing;
         }
         self.received_blocks = self
             .received_blocks
-            .checked_sub(block_count)
+            .checked_sub(failed_block_count)
             .ok_or(SwarmError::Invariant("received block count underflow"))?;
         self.missing_blocks = self
             .missing_blocks
-            .checked_add(block_count)
+            .checked_add(failed_block_count)
             .ok_or(SwarmError::ArithmeticOverflow("missing block count"))?;
         let piece_state = self
             .pieces
             .get_mut(&piece)
             .ok_or(SwarmError::UnknownPiece(piece))?;
-        piece_state.missing_blocks = block_count;
-        piece_state.active_blocks = 0;
-        piece_state.first_missing_block = 0;
+        piece_state.missing_blocks = failed_block_count;
+        piece_state.active_blocks = block_count
+            .checked_sub(failed_block_count)
+            .ok_or(SwarmError::Invariant("failed block subset exceeds piece"))?;
+        piece_state.first_missing_block = blocks
+            .iter()
+            .position(|block| bad.contains(block))
+            .ok_or(SwarmError::Invariant("bad block subset is empty"))?;
         for source in contributor_sources {
             self.release_unverified_contribution(source)?;
         }
-        self.deactivate_piece(piece)?;
         self.pieces
             .get_mut(&piece)
             .ok_or(SwarmError::UnknownPiece(piece))?
             .storage
-            .reset()?;
+            .reset_for_writes(failed_block_count)?;
+        if failed_block_count == block_count {
+            self.deactivate_piece(piece)?;
+        } else {
+            self.refresh_requestable_piece(piece)?;
+        }
         self.piece_hash_failures = self.piece_hash_failures.saturating_add(1);
         self.failed_piece_bytes = self.failed_piece_bytes.saturating_add(failed_bytes);
         self.last_hash_failure_contributors = contributors.len();
@@ -5516,6 +5566,57 @@ mod tests {
             state.mark_piece_hash_failed(0),
             Err(SwarmError::InvalidTransition(_))
         ));
+    }
+
+    #[test]
+    fn authenticated_bad_block_reset_retains_good_payload_and_contributor() {
+        let mut state = state(1, vec![plan(0, 2)], 1);
+        add_peer(&mut state, connection(1), &[0], false);
+        let first = state.schedule(Duration::ZERO).unwrap()[0];
+        state
+            .receive_block(first.connection, first.block, Duration::ZERO)
+            .unwrap();
+        state
+            .finish_write(first.block, true, Duration::ZERO)
+            .unwrap();
+        state.set_choking(connection(1), true).unwrap();
+        add_peer(&mut state, connection(2), &[0], false);
+        let second = state.schedule(Duration::ZERO).unwrap()[0];
+        state
+            .receive_block(second.connection, second.block, Duration::ZERO)
+            .unwrap();
+        state
+            .finish_write(second.block, true, Duration::ZERO)
+            .unwrap();
+
+        let generation = state.piece_generation(0).unwrap();
+        state.begin_piece_hash(0, generation).unwrap();
+        state.finish_piece_hash(0, generation, false).unwrap();
+        let failure = state
+            .mark_piece_hash_failed_blocks_for_generation(0, generation, &[second.block])
+            .unwrap();
+        assert_eq!(failure.contributors, vec![connection(2)]);
+        assert_eq!(failure.failed_bytes, BLOCK as usize);
+        assert_eq!(state.block_status(first.block), Ok(BlockStatus::Received));
+        assert_eq!(state.block_status(second.block), Ok(BlockStatus::Missing));
+        assert_eq!(state.snapshot(Duration::ZERO).missing_blocks, 1);
+
+        state.set_choking(connection(2), true).unwrap();
+        add_peer(&mut state, connection(3), &[0], false);
+        let retry = state.schedule(Duration::ZERO).unwrap();
+        assert_eq!(retry.len(), 1);
+        assert_eq!(retry[0].block, second.block);
+        state
+            .receive_block(retry[0].connection, retry[0].block, Duration::ZERO)
+            .unwrap();
+        state
+            .finish_write(retry[0].block, true, Duration::ZERO)
+            .unwrap();
+        assert_eq!(
+            state.mark_piece_verified(0).unwrap(),
+            vec![connection(1), connection(3)]
+        );
+        assert_cached_indexes(&state);
     }
 
     #[test]

@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
 use rstorrent_protocol::content::TorrentContent;
-use rstorrent_protocol::merkle::{MerkleAccumulator, MerkleError, Sha256Hash, hash_block};
+use rstorrent_protocol::merkle::{
+    MERKLE_BLOCK_SIZE, MerkleAccumulator, MerkleError, Sha256Hash, hash_block,
+};
 use rstorrent_protocol::metainfo::{Metainfo, MetainfoFormat};
 use rstorrent_protocol::peer_wire::{BlockRequest, MAX_REQUEST_BLOCK_LENGTH};
 use rstorrent_protocol::storage_layout::{
@@ -1104,6 +1106,64 @@ impl SelectiveHashPlan {
             root,
             retained_hash_high_water: high_water,
         })
+    }
+
+    pub(crate) async fn hash_v2_leaves(self) -> Result<Vec<Sha256Hash>, SelectiveStorageError> {
+        if !matches!(self.algorithm, PieceHashAlgorithm::V2Merkle { .. }) {
+            return Err(SelectiveStorageError::InvalidStorageOperation(
+                "v2 leaf hashing requires a v2 Merkle plan",
+            ));
+        }
+        if self.spans.len() != 1 {
+            return Err(SelectiveStorageError::InvalidStorageOperation(
+                "v2 piece leaf hashing requires one file-local span",
+            ));
+        }
+        let span = self
+            .spans
+            .into_iter()
+            .next()
+            .expect("one v2 leaf span was checked");
+        let BlockingHashSpan::WantedFile {
+            file,
+            file_offset,
+            length,
+        } = span
+        else {
+            return Err(SelectiveStorageError::InvalidStorageOperation(
+                "v2 leaf hashing cannot use part or padding spans",
+            ));
+        };
+        let file = file.acquire(StorageFileAccess::ReadExisting).await?;
+        tokio::task::spawn_blocking(move || {
+            let mut leaves = Vec::with_capacity(length.div_ceil(MERKLE_BLOCK_SIZE));
+            let mut buffer = [0_u8; MERKLE_BLOCK_SIZE];
+            let mut consumed = 0_usize;
+            while consumed < length {
+                let block_length = (length - consumed).min(MERKLE_BLOCK_SIZE);
+                let offset = file_offset
+                    .checked_add(u64::try_from(consumed).map_err(|_| {
+                        SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow)
+                    })?)
+                    .ok_or(SelectiveStorageError::Layout(
+                        LayoutError::ArithmeticOverflow,
+                    ))?;
+                read_exact_at(file.file(), &mut buffer[..block_length], offset).map_err(
+                    |source| SelectiveStorageError::Io {
+                        operation: "read selected v2 leaves in blocking verification job",
+                        source,
+                    },
+                )?;
+                leaves.push(hash_block(&buffer[..block_length])?);
+                consumed += block_length;
+            }
+            Ok(leaves)
+        })
+        .await
+        .map_err(|source| SelectiveStorageError::Io {
+            operation: "join selected v2 leaf verification job",
+            source: io::Error::other(source),
+        })?
     }
 }
 

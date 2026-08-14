@@ -295,6 +295,7 @@ impl IncomingPeerIo {
         )
     }
 
+    #[cfg(test)]
     pub fn new_with_mse_and_bandwidth(
         stream: impl Into<PeerStream>,
         io_timeout: Duration,
@@ -303,7 +304,28 @@ impl IncomingPeerIo {
         carried: &[u8],
         bandwidth: Option<TorrentBandwidth>,
     ) -> Result<Self, PeerIoError> {
+        Self::new_with_mse_bandwidth_and_protocol(
+            stream,
+            io_timeout,
+            byte_metric_sink,
+            ciphers,
+            carried,
+            bandwidth,
+            rstorrent_protocol::peer_wire::PeerProtocol::V1,
+        )
+    }
+
+    pub fn new_with_mse_bandwidth_and_protocol(
+        stream: impl Into<PeerStream>,
+        io_timeout: Duration,
+        byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
+        ciphers: Option<MseCipherPair>,
+        carried: &[u8],
+        bandwidth: Option<TorrentBandwidth>,
+        protocol: rstorrent_protocol::peer_wire::PeerProtocol,
+    ) -> Result<Self, PeerIoError> {
         let mut decoder = FrameDecoder::new();
+        decoder.set_protocol(protocol);
         let queued_messages = decoder
             .push(carried)
             .map_err(PeerIoError::Frame)?

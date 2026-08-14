@@ -110,14 +110,36 @@ impl V2HashScheduler {
         self.needs.values().all(|need| need.complete)
     }
 
+    #[cfg(test)]
     pub(crate) fn schedule(
         &mut self,
         now: Duration,
+        eligible: impl FnMut(&[u32]) -> Vec<ConnectionId>,
+    ) -> Vec<HashAssignment> {
+        self.schedule_with_capacity(now, MAX_HASH_ATTEMPTS_PER_TORRENT, eligible)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn schedule_with_capacity(
+        &mut self,
+        now: Duration,
+        maximum_total_attempts: usize,
+        eligible: impl FnMut(&[u32]) -> Vec<ConnectionId>,
+    ) -> Vec<HashAssignment> {
+        self.schedule_with_reservations(now, maximum_total_attempts, eligible, |_| 0)
+    }
+
+    pub(crate) fn schedule_with_reservations(
+        &mut self,
+        now: Duration,
+        maximum_total_attempts: usize,
         mut eligible: impl FnMut(&[u32]) -> Vec<ConnectionId>,
+        mut reserved_peer_attempts: impl FnMut(ConnectionId) -> usize,
     ) -> Vec<HashAssignment> {
         let mut assignments = Vec::new();
         let mut peer_counts = self.peer_attempt_counts();
         let mut total = peer_counts.values().sum::<usize>();
+        let maximum_total_attempts = maximum_total_attempts.min(MAX_HASH_ATTEMPTS_PER_TORRENT);
         let mut keys = self
             .needs
             .iter()
@@ -137,7 +159,7 @@ impl V2HashScheduler {
             .collect::<Vec<_>>();
         keys.sort_unstable();
         for (_, _, request) in keys {
-            if total >= MAX_HASH_ATTEMPTS_PER_TORRENT {
+            if total >= maximum_total_attempts {
                 break;
             }
             let need = self
@@ -164,7 +186,11 @@ impl V2HashScheduler {
                 .collect::<Vec<_>>();
             let Some(connection) = eligible(&pieces).into_iter().find(|connection| {
                 !need.attempts.contains_key(connection)
-                    && peer_counts.get(connection).copied().unwrap_or(0)
+                    && peer_counts
+                        .get(connection)
+                        .copied()
+                        .unwrap_or(0)
+                        .saturating_add(reserved_peer_attempts(*connection))
                         < MAX_HASH_ATTEMPTS_PER_PEER
             }) else {
                 continue;
@@ -283,6 +309,23 @@ impl V2HashScheduler {
                 .map(|need| need.attempts.len().saturating_sub(1))
                 .sum(),
         }
+    }
+
+    pub(crate) fn active_attempts(&self) -> usize {
+        self.needs.values().map(|need| need.attempts.len()).sum()
+    }
+
+    pub(crate) fn peer_attempt_count(&self, connection: ConnectionId) -> usize {
+        self.needs
+            .values()
+            .filter(|need| need.attempts.contains_key(&connection))
+            .count()
+    }
+
+    pub(crate) fn owns_attempt(&self, connection: ConnectionId, request: HashRequest) -> bool {
+        self.needs
+            .get(&request)
+            .is_some_and(|need| need.attempts.contains_key(&connection))
     }
 
     fn peer_attempt_counts(&self) -> BTreeMap<ConnectionId, usize> {

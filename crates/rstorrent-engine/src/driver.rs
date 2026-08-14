@@ -20,6 +20,7 @@ use rstorrent_protocol::identity::{FullInfoHash, InfoHashes, SwarmKey};
 #[cfg(test)]
 use rstorrent_protocol::magnet::UdpTrackerUrl;
 use rstorrent_protocol::magnet::{Magnet, MagnetError, PeerHint, TrackerUrl, TrackerUrlTransport};
+use rstorrent_protocol::merkle::{MERKLE_BLOCK_SIZE, MerkleTreeShape, Sha256Hash};
 use rstorrent_protocol::metadata::{
     MetadataError, MetadataExtensionUpdate, MetadataInstant, MetadataMessage,
     TorrentMetadataDownload, TorrentMetadataEvent, UT_METADATA_LOCAL_ID,
@@ -50,6 +51,7 @@ use crate::http_tracker::{HTTP_TRACKER_TIMEOUT, HttpTrackerClients, TrackerRetry
 use crate::identity::{ContentFingerprint, TorrentIdentityContext};
 use crate::incoming::{
     IncomingPeerHandle, SeedRegistration, SeedRegistrationToken, SessionUploadMembership,
+    V2SeedHashService,
 };
 use crate::metrics::ByteMetric;
 use crate::mse::MseDhWorkOwner;
@@ -151,6 +153,10 @@ const DHT_RETRY_INITIAL_DELAY: Duration = Duration::from_secs(15);
 const DHT_RETRY_MAX_DELAY: Duration = Duration::from_secs(5 * 60);
 const DHT_SUCCESS_REQUERY_DELAY: Duration = Duration::from_secs(60);
 const CONTENT_SWARM_MAINTENANCE_INTERVAL: Duration = Duration::from_millis(100);
+#[cfg(not(test))]
+const V2_LEAF_DIAGNOSIS_TIMEOUT: Duration = Duration::from_secs(10);
+#[cfg(test)]
+const V2_LEAF_DIAGNOSIS_TIMEOUT: Duration = Duration::from_millis(250);
 const MAX_METADATA_PEERS: usize = 8;
 const METADATA_SCHEDULER_TICK: Duration = Duration::from_millis(100);
 const MAX_ENGINE_PIECES: usize = MAX_METAINFO_PIECES;
@@ -4456,6 +4462,8 @@ struct ContentSwarmDownload<'a> {
     content: &'a TorrentContent,
     integrity: &'a mut TorrentIntegrity,
     hash_scheduler: V2HashScheduler,
+    v2_hashes: Option<Arc<V2SeedHashService>>,
+    leaf_diagnosis: Option<V2LeafDiagnosis>,
     candidate_pieces: BTreeSet<u32>,
     candidate_verifications: BTreeSet<u32>,
     layout: &'a ContentLayout,
@@ -4472,6 +4480,16 @@ struct ContentSwarmDownload<'a> {
     maximum_planned_bytes: usize,
     storage_limits: ContentStorageLimits,
     selection_revision: u64,
+}
+
+struct V2LeafDiagnosis {
+    piece: u32,
+    generation: crate::swarm::PieceGeneration,
+    geometry: V2FileHashGeometry,
+    first_leaf: u64,
+    scheduler: V2HashScheduler,
+    local_leaves: Option<Vec<Sha256Hash>>,
+    deadline: Duration,
 }
 
 struct IncomingContentPeer {
@@ -4621,6 +4639,12 @@ impl<'a> ContentSwarmDownload<'a> {
         }
         let hash_scheduler = V2HashScheduler::new(hash_needs)
             .map_err(|error| DownloadError::StorageTask(error.to_owned()))?;
+        let v2_hashes = match &*integrity {
+            TorrentIntegrity::V2(catalog) => {
+                Some(V2SeedHashService::new(content.clone(), catalog.clone()))
+            }
+            TorrentIntegrity::V1 => None,
+        };
         let maximum_planned_bytes = config.max_active_piece_bytes;
         let mut state = SwarmState::new_with_wanted(
             config,
@@ -4680,6 +4704,8 @@ impl<'a> ContentSwarmDownload<'a> {
             content,
             integrity,
             hash_scheduler,
+            v2_hashes,
+            leaf_diagnosis: None,
             candidate_pieces,
             candidate_verifications: BTreeSet::new(),
             layout,
@@ -4706,14 +4732,42 @@ impl<'a> ContentSwarmDownload<'a> {
     fn is_complete(&self) -> bool {
         self.state.is_complete()
             && self.hash_scheduler.is_complete()
+            && self.leaf_diagnosis.is_none()
             && self.candidate_pieces.is_empty()
             && self.candidate_verifications.is_empty()
     }
 
     fn schedule_hashes(&mut self, now: Duration) -> Vec<crate::v2_hash_scheduler::HashAssignment> {
         let state = &self.state;
-        self.hash_scheduler
-            .schedule(now, |pieces| state.connections_with_any_piece(pieces))
+        let leaf_active = self
+            .leaf_diagnosis
+            .as_ref()
+            .map_or(0, |diagnosis| diagnosis.scheduler.active_attempts());
+        let leaf_scheduler = self
+            .leaf_diagnosis
+            .as_ref()
+            .map(|diagnosis| &diagnosis.scheduler);
+        let mut assignments = self.hash_scheduler.schedule_with_reservations(
+            now,
+            crate::v2_hash_scheduler::MAX_HASH_ATTEMPTS_PER_TORRENT.saturating_sub(leaf_active),
+            |pieces| state.connections_with_any_piece(pieces),
+            |connection| {
+                leaf_scheduler.map_or(0, |scheduler| scheduler.peer_attempt_count(connection))
+            },
+        );
+        let primary_active = self.hash_scheduler.active_attempts();
+        if let Some(diagnosis) = self.leaf_diagnosis.as_mut() {
+            assignments.extend(
+                diagnosis.scheduler.schedule_with_reservations(
+                    now,
+                    crate::v2_hash_scheduler::MAX_HASH_ATTEMPTS_PER_TORRENT
+                        .saturating_sub(primary_active),
+                    |pieces| state.connections_with_any_piece(pieces),
+                    |connection| self.hash_scheduler.peer_attempt_count(connection),
+                ),
+            );
+        }
+        assignments
     }
 
     fn enqueue_candidate_verification(&mut self, piece: u32) -> Result<(), DownloadError> {
@@ -4751,6 +4805,216 @@ impl<'a> ContentSwarmDownload<'a> {
         Ok(())
     }
 
+    fn begin_leaf_diagnosis(
+        &mut self,
+        piece: u32,
+        generation: crate::swarm::PieceGeneration,
+        length: u32,
+        now: Duration,
+    ) -> Result<bool, DownloadError> {
+        if self.leaf_diagnosis.is_some() {
+            return Ok(false);
+        }
+        let Some(content) = self.content.v2() else {
+            return Ok(false);
+        };
+        let piece_geometry = content
+            .metainfo
+            .layout
+            .piece(piece)
+            .map_err(|error| DownloadError::StorageTask(error.to_string()))?;
+        let file = content
+            .metainfo
+            .files
+            .get(piece_geometry.file_index)
+            .ok_or_else(|| DownloadError::StorageTask("v2 diagnosis file is absent".to_owned()))?;
+        let pieces_root = file.pieces_root.ok_or_else(|| {
+            DownloadError::StorageTask("v2 diagnosis file root is absent".to_owned())
+        })?;
+        let geometry = self
+            .content
+            .v2_hash_geometry_for_root(pieces_root)
+            .map_err(|error| DownloadError::StorageTask(error.to_string()))?
+            .ok_or_else(|| {
+                DownloadError::StorageTask("v2 diagnosis geometry is absent".to_owned())
+            })?;
+        let piece_layer = geometry
+            .piece_layer()
+            .map_err(|error| DownloadError::StorageTask(error.to_string()))?;
+        if piece_layer == 0 {
+            return Ok(false);
+        }
+        let leaves_per_piece = 1_u64
+            .checked_shl(u32::from(piece_layer))
+            .ok_or(DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+        let first_leaf = u64::from(piece_geometry.local_piece)
+            .checked_mul(leaves_per_piece)
+            .ok_or(DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+        let proof_layers = u32::from(
+            MerkleTreeShape::new(
+                geometry
+                    .leaf_count()
+                    .map_err(|error| DownloadError::StorageTask(error.to_string()))?,
+            )
+            .map_err(|error| DownloadError::StorageTask(error.to_string()))?
+            .height(),
+        );
+        let mut needs = Vec::new();
+        let mut offset = 0_u64;
+        while offset < leaves_per_piece {
+            let count = (leaves_per_piece - offset).min(512);
+            let count = u32::try_from(count)
+                .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+            let index = u32::try_from(
+                first_leaf
+                    .checked_add(offset)
+                    .ok_or(DownloadError::Layout(LayoutError::ArithmeticOverflow))?,
+            )
+            .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+            needs.push(HashNeedInput {
+                geometry,
+                request: rstorrent_protocol::v2_hashes::HashRequest {
+                    pieces_root,
+                    base_layer: 0,
+                    index,
+                    count,
+                    proof_layers,
+                },
+                piece,
+                candidate: false,
+            });
+            offset = offset
+                .checked_add(u64::from(count))
+                .ok_or(DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+        }
+        let scheduler = V2HashScheduler::new(needs)
+            .map_err(|error| DownloadError::StorageTask(error.to_owned()))?;
+        self.storage_pipeline_mut()?
+            .enqueue(ContentStorageCommand::DiagnoseV2Piece { piece, length })?;
+        self.leaf_diagnosis = Some(V2LeafDiagnosis {
+            piece,
+            generation,
+            geometry,
+            first_leaf,
+            scheduler,
+            local_leaves: None,
+            deadline: now.saturating_add(V2_LEAF_DIAGNOSIS_TIMEOUT),
+        });
+        Ok(true)
+    }
+
+    fn finish_leaf_diagnosis_if_ready(
+        &mut self,
+    ) -> Result<Option<PieceHashFailure>, DownloadError> {
+        let Some(diagnosis) = self.leaf_diagnosis.as_ref() else {
+            return Ok(None);
+        };
+        let Some(local_leaves) = diagnosis.local_leaves.as_ref() else {
+            return Ok(None);
+        };
+        if !diagnosis.scheduler.is_complete() {
+            return Ok(None);
+        }
+        let TorrentIntegrity::V2(catalog) = &*self.integrity else {
+            return Err(DownloadError::StorageTask(
+                "v2 leaf diagnosis lost its hash catalog".to_owned(),
+            ));
+        };
+        let mut bad_blocks = Vec::new();
+        for (offset, actual) in local_leaves.iter().enumerate() {
+            let leaf = diagnosis
+                .first_leaf
+                .checked_add(offset as u64)
+                .ok_or(DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+            let expected = catalog
+                .leaf_hash(diagnosis.geometry.pieces_root, leaf)
+                .ok_or_else(|| {
+                    DownloadError::StorageTask(
+                        "completed leaf diagnosis is missing an authenticated leaf".to_owned(),
+                    )
+                })?;
+            if *actual == expected {
+                continue;
+            }
+            let begin = u32::try_from(offset.saturating_mul(MERKLE_BLOCK_SIZE))
+                .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+            let piece_length = self
+                .layout
+                .piece_length_at(diagnosis.piece)
+                .map_err(DownloadError::Layout)?;
+            let block_length = (piece_length - begin).min(MERKLE_BLOCK_SIZE as u32);
+            bad_blocks.push(
+                BlockKey::new(diagnosis.piece, begin, block_length)
+                    .map_err(DownloadError::Swarm)?,
+            );
+        }
+        let piece = diagnosis.piece;
+        let generation = diagnosis.generation;
+        if bad_blocks.is_empty() {
+            return self.fallback_leaf_diagnosis();
+        }
+        let failure = self
+            .state
+            .mark_piece_hash_failed_blocks_for_generation(piece, generation, &bad_blocks)
+            .map_err(DownloadError::Swarm)?;
+        self.leaf_diagnosis = None;
+        Ok(Some(failure))
+    }
+
+    fn fallback_leaf_diagnosis(&mut self) -> Result<Option<PieceHashFailure>, DownloadError> {
+        let Some(diagnosis) = self.leaf_diagnosis.take() else {
+            return Ok(None);
+        };
+        let failure = self
+            .state
+            .mark_piece_hash_failed_for_generation(diagnosis.piece, diagnosis.generation)
+            .map_err(DownloadError::Swarm)?;
+        Ok(Some(failure))
+    }
+
+    fn piece_failure_disposition(
+        &self,
+        failure: PieceHashFailure,
+        reason: &'static str,
+    ) -> ContentMessageDisposition {
+        self.control.emit(DownloadActivityEvent::PieceHashFailed {
+            piece_index: failure.piece,
+            contributor_count: failure.contributors.len(),
+            failed_bytes: failure.failed_bytes,
+        });
+        self.control
+            .record_bytes(ByteMetric::PayloadHashFailed, failure.failed_bytes);
+        let length = self
+            .layout
+            .piece_length_at(failure.piece)
+            .unwrap_or(u32::MAX);
+        self.control
+            .disk_piece_failed(failure.piece, length, reason);
+        ContentMessageDisposition::PieceHashFailed(failure)
+    }
+
+    fn sync_v2_hash_service(&self) {
+        if let (Some(service), TorrentIntegrity::V2(catalog)) = (&self.v2_hashes, &*self.integrity)
+        {
+            service.replace_catalog(catalog.clone());
+        }
+    }
+
+    async fn active_v2_hash_response(
+        &self,
+        request: rstorrent_protocol::v2_hashes::HashRequest,
+    ) -> Option<rstorrent_protocol::v2_hashes::HashResponse> {
+        let service = self.v2_hashes.as_ref()?;
+        let _read_permit = match self.control.incoming_peer_handle() {
+            Some(handle) => Some(handle.acquire_upload_read().await?),
+            None => None,
+        };
+        service
+            .response_active(&self.active_content, request)
+            .await
+            .ok()
+    }
+
     async fn send_content_message(
         &self,
         sockets: &PeerSocketSet,
@@ -4779,6 +5043,9 @@ impl<'a> ContentSwarmDownload<'a> {
         removal: ConnectionRemoval,
     ) -> Result<(), DownloadError> {
         self.hash_scheduler.peer_disconnected(connection);
+        if let Some(diagnosis) = self.leaf_diagnosis.as_mut() {
+            diagnosis.scheduler.peer_disconnected(connection);
+        }
         if let Some(incoming) = self.incoming_content.remove(&connection) {
             peers.peers.cancel_incoming_content(incoming.attachment);
             self.state
@@ -4803,6 +5070,9 @@ impl<'a> ContentSwarmDownload<'a> {
         for (connection, peer) in incoming {
             peers.cancel_incoming_content(peer.attachment);
             self.hash_scheduler.peer_disconnected(connection);
+            if let Some(diagnosis) = self.leaf_diagnosis.as_mut() {
+                diagnosis.scheduler.peer_disconnected(connection);
+            }
             let _ = self
                 .state
                 .remove_connection(connection, ConnectionRemoval::Disconnected);
@@ -4818,6 +5088,9 @@ impl<'a> ContentSwarmDownload<'a> {
         for connection in closed {
             self.incoming_content.remove(&connection);
             self.hash_scheduler.peer_disconnected(connection);
+            if let Some(diagnosis) = self.leaf_diagnosis.as_mut() {
+                diagnosis.scheduler.peer_disconnected(connection);
+            }
             self.state
                 .remove_connection(connection, ConnectionRemoval::Disconnected)
                 .map_err(DownloadError::Swarm)?;
@@ -5510,30 +5783,54 @@ impl<'a> ContentSwarmDownload<'a> {
                         reason: "v2 hash request arrived on v1 content",
                     });
                 }
+                let response = self.active_v2_hash_response(request).await;
+                let reply = response.map_or(PeerMessage::HashReject(request), PeerMessage::Hashes);
                 if self
-                    .send_content_message(sockets, connection, PeerMessage::HashReject(request))
+                    .send_content_message(sockets, connection, reply)
                     .await
                     .is_err()
                 {
                     return Ok(ContentMessageDisposition::ClosePeer {
                         failure: PeerFailure::RemoteClosed,
-                        reason: "v2 hash reject send failed",
+                        reason: "v2 hash response send failed",
                     });
                 }
             }
             PeerMessage::Hashes(response) => {
+                let leaf_attempt = self.leaf_diagnosis.as_ref().is_some_and(|diagnosis| {
+                    diagnosis
+                        .scheduler
+                        .owns_attempt(connection, response.request)
+                });
                 let TorrentIntegrity::V2(catalog) = &mut *self.integrity else {
                     return Ok(ContentMessageDisposition::ClosePeer {
                         failure: PeerFailure::Protocol,
                         reason: "v2 hashes arrived on v1 content",
                     });
                 };
-                let disposition = self
-                    .hash_scheduler
-                    .receive_response(connection, &response, catalog);
+                let disposition = if leaf_attempt {
+                    self.leaf_diagnosis
+                        .as_mut()
+                        .expect("owned leaf attempt has a diagnosis")
+                        .scheduler
+                        .receive_response(connection, &response, catalog)
+                } else {
+                    self.hash_scheduler
+                        .receive_response(connection, &response, catalog)
+                };
+                self.sync_v2_hash_service();
                 match disposition {
                     HashResponseDisposition::Accepted(authenticated) => {
-                        self.adopt_authenticated_pieces(authenticated)?;
+                        if leaf_attempt {
+                            if let Some(failure) = self.finish_leaf_diagnosis_if_ready()? {
+                                return Ok(self.piece_failure_disposition(
+                                    failure,
+                                    "authenticated leaf mismatch; retrying bad blocks",
+                                ));
+                            }
+                        } else {
+                            self.adopt_authenticated_pieces(authenticated)?;
+                        }
                     }
                     HashResponseDisposition::BadProof(_) => {
                         return Ok(ContentMessageDisposition::ClosePeer {
@@ -5556,7 +5853,20 @@ impl<'a> ContentSwarmDownload<'a> {
                 }
             }
             PeerMessage::HashReject(request) => {
-                match self.hash_scheduler.receive_reject(connection, request) {
+                let leaf_attempt = self
+                    .leaf_diagnosis
+                    .as_ref()
+                    .is_some_and(|diagnosis| diagnosis.scheduler.owns_attempt(connection, request));
+                let disposition = if leaf_attempt {
+                    self.leaf_diagnosis
+                        .as_mut()
+                        .expect("owned leaf reject has a diagnosis")
+                        .scheduler
+                        .receive_reject(connection, request)
+                } else {
+                    self.hash_scheduler.receive_reject(connection, request)
+                };
+                match disposition {
                     HashRejectDisposition::Accepted => {}
                     HashRejectDisposition::Unsolicited => {
                         return Ok(ContentMessageDisposition::ClosePeer {
@@ -5703,20 +6013,19 @@ impl<'a> ContentSwarmDownload<'a> {
                     .finish_piece_hash(piece, generation, verification.matched)
                     .map_err(DownloadError::Swarm)?;
                 if !verification.matched {
+                    if self.begin_leaf_diagnosis(piece, generation, length, now)? {
+                        self.control.disk_piece_failed(
+                            piece,
+                            length,
+                            "piece hash failed; acquiring authenticated leaf hashes",
+                        );
+                        return Ok(ContentMessageDisposition::Continue);
+                    }
                     let failure = self
                         .state
                         .mark_piece_hash_failed_for_generation(piece, generation)
                         .map_err(DownloadError::Swarm)?;
-                    self.control.emit(DownloadActivityEvent::PieceHashFailed {
-                        piece_index: piece,
-                        contributor_count: failure.contributors.len(),
-                        failed_bytes: failure.failed_bytes,
-                    });
-                    self.control
-                        .record_bytes(ByteMetric::PayloadHashFailed, failure.failed_bytes);
-                    self.control
-                        .disk_piece_failed(piece, length, "piece hash failed; retrying");
-                    ContentMessageDisposition::PieceHashFailed(failure)
+                    self.piece_failure_disposition(failure, "piece hash failed; retrying")
                 } else {
                     if self.resume.is_some() {
                         self.storage_pipeline_mut()?
@@ -5807,6 +6116,41 @@ impl<'a> ContentSwarmDownload<'a> {
                     }
                 }
             }
+            ContentStorageCompletion::DiagnoseV2Piece {
+                piece,
+                length,
+                result,
+            } => {
+                self.control
+                    .record_bytes(ByteMetric::LogicalHashRead, length as usize);
+                let Some(diagnosis) = self.leaf_diagnosis.as_mut() else {
+                    return Ok(ContentMessageDisposition::Continue);
+                };
+                if diagnosis.piece != piece {
+                    return Err(DownloadError::StorageTask(
+                        "v2 leaf diagnosis completion named another piece".to_owned(),
+                    ));
+                }
+                match result {
+                    Ok(leaves) => diagnosis.local_leaves = Some(leaves),
+                    Err(_) => {
+                        let failure = self
+                            .fallback_leaf_diagnosis()?
+                            .expect("active diagnosis has a fallback failure");
+                        return Ok(self.piece_failure_disposition(
+                            failure,
+                            "leaf hashing failed; resetting whole piece",
+                        ));
+                    }
+                }
+                match self.finish_leaf_diagnosis_if_ready()? {
+                    Some(failure) => self.piece_failure_disposition(
+                        failure,
+                        "authenticated leaf mismatch; retrying bad blocks",
+                    ),
+                    None => ContentMessageDisposition::Continue,
+                }
+            }
         };
         Ok(disposition)
     }
@@ -5854,6 +6198,9 @@ impl<'a> ContentSwarmDownload<'a> {
     ) -> Result<(), DownloadError> {
         if update.revision <= self.selection_revision {
             return Ok(());
+        }
+        if self.leaf_diagnosis.is_some() {
+            let _ = self.fallback_leaf_diagnosis()?;
         }
         let next_selection = FileSelection::new_content(self.layout, &update.skip_files)
             .map_err(DownloadError::Layout)?;
@@ -6006,6 +6353,7 @@ impl<'a> ContentSwarmDownload<'a> {
             self.content.swarm_key(),
             self.active_content.clone(),
             torrent_peers,
+            self.v2_hashes.clone(),
         )
         .map_err(|error| DownloadError::PeerTask(error.to_string()))?;
         let token = handle
@@ -6701,6 +7049,11 @@ async fn run_selective_swarm_loop(
         download
             .hash_scheduler
             .retain_connections(|connection| state.has_connection(connection));
+        if let Some(diagnosis) = download.leaf_diagnosis.as_mut() {
+            diagnosis
+                .scheduler
+                .retain_connections(|connection| state.has_connection(connection));
+        }
         let address_families = peers.peers.address_family_policy();
         sockets.cancel_disallowed(address_families);
         peers
@@ -6756,8 +7109,12 @@ async fn run_selective_swarm_loop(
             }
             download.control.observe_swarm(&download.state, now);
             let hash_snapshot = download.hash_scheduler.snapshot();
+            let leaf_attempts = download
+                .leaf_diagnosis
+                .as_ref()
+                .map_or(0, |diagnosis| diagnosis.scheduler.active_attempts());
             debug_assert!(
-                hash_snapshot.active_attempts
+                hash_snapshot.active_attempts.saturating_add(leaf_attempts)
                     <= crate::v2_hash_scheduler::MAX_HASH_ATTEMPTS_PER_TORRENT
             );
             download.control.emit_storage_state();
@@ -6775,6 +7132,19 @@ async fn run_selective_swarm_loop(
             next_maintenance_at = now.saturating_add(CONTENT_SWARM_MAINTENANCE_INTERVAL);
         }
 
+        if download
+            .leaf_diagnosis
+            .as_ref()
+            .is_some_and(|diagnosis| now >= diagnosis.deadline)
+        {
+            let failure = download
+                .fallback_leaf_diagnosis()?
+                .expect("expired leaf diagnosis has a fallback failure");
+            let disposition = download
+                .piece_failure_disposition(failure, "leaf proof timed out; resetting whole piece");
+            apply_content_disposition(peers, sockets, download, None, disposition).await?;
+        }
+
         let hash_assignments = download.schedule_hashes(now);
         let mut failed_connections = BTreeSet::new();
         for assignment in hash_assignments {
@@ -6787,9 +7157,22 @@ async fn run_selective_swarm_loop(
                 .await
                 .is_err()
             {
-                download
-                    .hash_scheduler
-                    .send_failed(assignment.connection, assignment.request);
+                if download.leaf_diagnosis.as_ref().is_some_and(|diagnosis| {
+                    diagnosis
+                        .scheduler
+                        .owns_attempt(assignment.connection, assignment.request)
+                }) {
+                    download
+                        .leaf_diagnosis
+                        .as_mut()
+                        .expect("owned leaf send has a diagnosis")
+                        .scheduler
+                        .send_failed(assignment.connection, assignment.request);
+                } else {
+                    download
+                        .hash_scheduler
+                        .send_failed(assignment.connection, assignment.request);
+                }
                 failed_connections.insert(assignment.connection);
             }
         }
