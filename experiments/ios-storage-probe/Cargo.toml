@@ -18,3 +18,14 @@ sha1 = "0.10.6"
 tokio = { version = "1.47.1", features = ["rt", "sync"] }
 
 [workspace]
+
+# Keep routine dev and test builds small while retaining file/line backtraces.
+[profile.dev]
+debug = "line-tables-only"
+incremental = false
+
+# Opt into full source-level debugger data in an isolated output directory.
+[profile.debugging]
+inherits = "dev"
+opt-level = 0
+debug = "full"

@@ -13,3 +13,14 @@ crate-type = ["cdylib"]
 libc = "0.2.189"
 
 [workspace]
+
+# Keep routine dev and test builds small while retaining file/line backtraces.
+[profile.dev]
+debug = "line-tables-only"
+incremental = false
+
+# Opt into full source-level debugger data in an isolated output directory.
+[profile.debugging]
+inherits = "dev"
+opt-level = 0
+debug = "full"
