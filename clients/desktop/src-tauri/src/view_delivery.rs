@@ -566,6 +566,7 @@ mod tests {
             }
             task.await.expect("join stream task");
             service.shutdown().await.expect("shutdown application");
+            drop(service);
             std::fs::remove_dir_all(&root).expect("remove test root");
         });
     }
@@ -612,6 +613,7 @@ mod tests {
                 .expect("stream task did not stop promptly")
                 .expect("join stream task");
             service.shutdown().await.expect("shutdown application");
+            drop(service);
             std::fs::remove_dir_all(&root).expect("remove test root");
         });
     }
