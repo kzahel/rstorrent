@@ -1,8 +1,8 @@
 # Tactical 159: Cross-Platform Presubmit CI
 
-Status: **In progress and selected as Now (2026-08-22).** Maintainer direction
-prioritized cheap deterministic build and test coverage across every maintained
-product platform ahead of Tactical `158` updater implementation.
+Status: **Complete (2026-08-22).** Cheap deterministic build and test coverage
+now passes on hosted runners across every maintained product platform.
+Tactical `158` is the single current implementation priority.
 
 Topics: `beta-release-readiness`, `capability-readiness`, `client-surfaces`,
 `product-direction`, `product-surfaces-and-migration`
@@ -177,7 +177,42 @@ notification, and system-bar APIs. The Apple archive reports asynchronous
 `NSLock` and `DispatchGroup.wait` calls that become errors under Swift 6 mode.
 These are recorded release-hardening gaps, not silently filtered warnings.
 
-The Windows and Linux packages, hosted runner dependencies, workflow
-permissions, performance artifact production, and aggregate runtime remain
-unverified until the first GitHub-hosted run. Accordingly this tactical stays
-**In progress**, and the release-readiness CI checkboxes stay open.
+Hosted execution then proved the portability and signal contract rather than
+merely accepting the first YAML draft. Iteration exposed and corrected the
+Android SDK-manager location, clean-checkout Tauri asset dependency, an E2E
+timing boundary, Windows SQLite handle lifetime, and loopback tests that had
+silently depended on a global IPv6 route. None of those failures was converted
+to a skip or hidden by automatic retry.
+
+Final `main` run
+[`32569246987`](https://github.com/kzahel/rstorrent/actions/runs/32569246987)
+passes all seven stable jobs:
+
+- Rust format, warnings-denied workspace clippy/tests, workflow lint, and the
+  locked exact first-piece libtorrent transfer;
+- generated web-contract drift, typecheck, unit and production/CSP build, plus
+  33 deterministic Chromium E2E tests with 12 explicit live-only skips;
+- desktop native tests and one unsigned arm64 macOS app, x86_64 Windows NSIS,
+  and x86_64 Linux AppImage package;
+- both Android Rust ABIs, generated Kotlin, JVM tests, lint, debug app APK, and
+  instrumentation test APK; and
+- generated iOS boundary/project, 25 simulator unit tests, 2 simulator UI
+  tests, and one unsigned device archive under exact Xcode 26.6.
+
+The complete hosted run took 23 minutes 56 seconds. Individual job wall times
+were 5:54 web, 6:49 Linux desktop, 7:14 macOS desktop, 8:35 Android, 13:13
+iOS, 18:17 Rust/interop, and 23:47 Windows desktop. Windows compilation is the
+ordinary critical path; every job remains below its explicit timeout.
+
+Manual performance run
+[`32568169955`](https://github.com/kzahel/rstorrent/actions/runs/32568169955)
+also passes the repaired hosted smoke and retains JSON-only artifact
+`performance-32568169955-1`. This proves workflow artifact production but does
+not close the separate requirement for the first successful weekly scheduled
+run.
+
+The tactical stopping condition is satisfied. Remaining macOS x86_64/Linux
+arm64 package breadth, signing, install/update, Android emulator/release AAB,
+physical mobile evidence, broad application lifecycle interoperability,
+public-swarm reliability, and branch protection remain explicit release gates
+under the beta-readiness topic.

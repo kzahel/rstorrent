@@ -4,13 +4,16 @@ Topic: `beta-release-readiness`
 
 Status: **Active as of 2026-08-22.** RSTorrent is a functional unreleased
 alpha with maintained desktop, Android, and iOS clients, but it does not yet
-have supported distribution, upgrades, or proven presubmit/release CI. The
-public product name is RSTorrent for the foreseeable release line; a later
-JSTorrent merger is a separate migration campaign. This topic is the
-authoritative beta gap ledger and release checklist. Tactical
+have supported distribution, upgrades, or release automation. Credential-free
+cross-platform presubmit CI is proven on hosted runners. The public product
+name is RSTorrent for the foreseeable release line; a later JSTorrent merger
+is a separate migration campaign. This topic is the authoritative beta gap
+ledger and release checklist. Tactical
 [`157`](../tactical/157-beta-release-foundation.md) completed the first cleanup
-slice; cross-platform presubmit Tactical
-[`159`](../tactical/159-cross-platform-presubmit-ci.md) is **Now**.
+slice, cross-platform presubmit Tactical
+[`159`](../tactical/159-cross-platform-presubmit-ci.md) is complete, and
+desktop release/updater Tactical
+[`158`](../tactical/158-desktop-signed-packaging-and-updater.md) is **Now**.
 
 ## Scope And Release Definition
 
@@ -42,11 +45,11 @@ Store review, and mobile beta is not implied by a desktop tag:
 
 | Lane | Intended beta channel | Current release state |
 | --- | --- | --- |
-| macOS desktop | signed/notarized DMG plus in-app updates | product runs; packaging, signing, updater, and installed-app evidence absent |
-| Windows desktop | signed per-user NSIS plus in-app updates | product code compiles in the workspace; native package/install evidence absent |
-| Linux desktop | AppImage plus in-app updates; DEB/RPM remain package-manager channels | product code compiles in the workspace; native package/install evidence absent |
-| Android/ChromeOS | signed Android App Bundle through a closed testing channel | maintained Compose app works through real in-process Rust engine and SAF; release identity, signing, bundle, store, and upgrade evidence absent |
-| iOS/iPadOS | signed TestFlight build | maintained SwiftUI app and unsigned/development archives work; distribution identity, signing automation, TestFlight, and upgrade evidence absent |
+| macOS desktop | signed/notarized DMG plus in-app updates | product and hosted unsigned arm64 app bundle pass; DMG, signing, install, updater, and x86_64 evidence absent |
+| Windows desktop | signed per-user NSIS plus in-app updates | hosted unsigned x86_64 NSIS package passes; signing, clean install, and updater evidence absent |
+| Linux desktop | AppImage plus in-app updates; DEB/RPM remain package-manager channels | hosted unsigned x86_64 AppImage passes; arm64, install, updater, and distro-package evidence absent |
+| Android/ChromeOS | signed Android App Bundle through a closed testing channel | maintained Compose/in-process Rust/SAF app and hosted dual-ABI debug/test APK gates pass; release identity, signed AAB, emulator/store, and upgrade evidence absent |
+| iOS/iPadOS | signed TestFlight build | maintained SwiftUI app plus hosted simulator tests and unsigned device archive pass; distribution identity, signing, TestFlight, and upgrade evidence absent |
 
 The first external lane may ship when its own blockers and the shared product
 blockers pass. Unsupported lanes must remain labelled development preview; the
@@ -108,43 +111,50 @@ without corrupting or silently reinterpreting user state.
 
 ### CI and repository health
 
-- [ ] **CI-001 — Add ordinary presubmit CI.** Required checks must run Rust
-  formatting, workspace clippy with warnings denied, workspace tests, generated
-  contract drift, web typecheck/unit/build, and documentation/config checks.
-  Tactical `159` now defines this credential-free job and workflow lint, with
-  local commands green; the item remains open until one hosted run proves the
-  runner and permissions contract.
-- [ ] **CI-002 — Add shared-web end-to-end coverage.** Run the deterministic
+- [x] **CI-001 — Add ordinary presubmit CI.** Required checks run Rust
+  formatting, workspace clippy with warnings denied, workspace tests,
+  generated-contract drift, web typecheck/unit/build, and workflow/config
+  checks. Hosted `main` run
+  [`32569246987`](https://github.com/kzahel/rstorrent/actions/runs/32569246987)
+  proves the credential-free runner and read-only permissions contract.
+- [x] **CI-002 — Add shared-web end-to-end coverage.** Run the deterministic
   Playwright suite in CI, retain failure traces/screenshots, and keep public-
   swarm cases opt-in rather than required. The locked Chromium job passes 33
-  tests locally with 12 live cases skipped; hosted execution remains unproven.
+  deterministic tests with 12 live cases skipped locally and on the hosted
+  `main` run; failures retain bounded traces/screenshots.
 - [ ] **CI-003 — Add a desktop OS matrix.** Compile and package on macOS arm64
   and x86_64, Windows x86_64, and Linux x86_64; add Linux arm64 when a native
   runner or deliberate cross-build path exists. A compile-only matrix does not
-  satisfy installer or update evidence. Tactical `159` provides the ordinary
-  macOS arm64/Windows/Linux package floor; the hosted legs, macOS x86_64, Linux
-  arm64, and release installer breadth remain open.
+  satisfy installer or update evidence. The hosted ordinary floor now passes
+  an arm64 macOS app bundle, x86_64 Windows NSIS package, and x86_64 Linux
+  AppImage. macOS x86_64, Linux arm64, signing, clean install/update, and
+  release installer breadth remain open.
 - [ ] **CI-004 — Add Android gates.** Build both Rust ABIs, lint, unit test,
   assemble a release bundle, and run a bounded owned-emulator product smoke.
   Physical-device and ChromeOS evidence remains a release-candidate campaign,
-  not an unattended presubmit mutation. The initial presubmit now covers both
-  ABIs, lint/JVM tests, debug app APK, and instrumentation APK compilation;
-  hosted execution, release AAB, and an emulator run remain open.
-- [ ] **CI-005 — Add iOS gates.** Generate bindings/project, build the device
+  not an unattended presubmit mutation. Hosted presubmit now passes both Rust
+  ABIs, generated Kotlin, lint/JVM tests, debug app APK, and instrumentation
+  APK compilation; a signed release AAB and emulator run remain open.
+- [x] **CI-005 — Add iOS gates.** Generate bindings/project, build the device
   Rust library, run simulator unit/UI tests, and create an unsigned release
   archive on a pinned macOS/Xcode runner. Signed TestFlight work remains a
-  protected release job. All commands pass locally; the hosted Apple leg is
-  still required.
+  protected release job. The exact Xcode 26.6 hosted Apple leg passes generated
+  drift, 25 unit tests, 2 UI tests, and the unsigned device archive.
 - [ ] **CI-006 — Add a bounded controlled interoperability smoke.** Choose a
   short v1 magnet/torrent intake, transfer, publication, restart, and seeding
   path against pinned libtorrent. Keep the long matrix and public catalog out
-  of ordinary PR latency. Tactical `159` adds a sub-second verified first-piece
-  transfer as the initial floor; its broader application lifecycle remains
-  open.
+  of ordinary PR latency. The hosted presubmit passes Tactical `159`'s locked
+  exact first-piece transfer and cleanup as the initial floor; intake,
+  publication, restart, and seeding in one broader application lifecycle
+  remain open.
 - [ ] **CI-007 — Repair scheduled performance CI.** The 2026-08-10 and
   2026-08-17 runs failed before tests because `astral-sh/setup-uv@v8` could not
-  be resolved. The workflow now pins reviewed `setup-uv` `v8.3.2`; a successful
-  hosted scheduled artifact-producing run is still required.
+  be resolved. The workflow now pins reviewed `setup-uv` `v8.3.2`; manual
+  hosted run
+  [`32568169955`](https://github.com/kzahel/rstorrent/actions/runs/32568169955)
+  passes both smoke profiles and retains JSON artifact
+  `performance-32568169955-1`. The first successful weekly scheduled run is
+  still required before closing this gate.
 - [ ] **CI-008 — Protect the release branch.** Require the release-readiness
   checks and review after their signal is stable. `main` was unprotected when
   audited on 2026-08-22.
@@ -323,11 +333,11 @@ no single optional BEP is mandatory.
    ledger, graduated the Android module path, added provisional platform
    artwork/bundle metadata, corrected entry-point status, and preserved
    historical evidence.
-2. **Now — Tactical `159`: cross-platform presubmit CI.** Land proportional
-   Rust/web, native desktop, Android, iOS, deterministic E2E, and short
-   loopback-interoperability jobs; repair performance CI and prove the hosted
-   matrix before selecting required checks.
-3. **Next — Tactical `158`: desktop signed packaging and updater adoption.**
+2. **Complete — Tactical `159`: cross-platform presubmit CI.** Hosted Rust/web,
+   native desktop, Android, iOS, deterministic E2E, and short locked
+   loopback-interoperability jobs pass; the repaired performance workflow also
+   retains a successful manual smoke artifact.
+3. **Now — Tactical `158`: desktop signed packaging and updater adoption.**
    Implement the product-owned side of `desktop-update-v1`, release
    validation, draft artifacts, and platform testbed runbook. RSTorrent naming
    is settled; application identifiers, per-app key, and production route

@@ -4,11 +4,11 @@ Topic: `capability-readiness`
 
 Status: Authoritative cross-cutting feature-readiness scoreboard and current
 work queue for the functional, unreleased alpha. Maintainer direction on
-2026-08-22 completed beta-release foundation Tactical `157`, then prioritized
-cross-platform presubmit Tactical `159` as the single **Now** ahead of desktop
-release/updater Tactical `158`. The tables below record current support,
-evidence, and highest-risk gaps; implementation history remains in the linked
-tacticals and focused topics.
+2026-08-22 completed beta-release foundation Tactical `157` and
+cross-platform presubmit Tactical `159`, then selected decision-complete
+desktop release/updater Tactical `158` as the single **Now**. The tables below
+record current support, evidence, and highest-risk gaps; implementation
+history remains in the linked tacticals and focused topics.
 
 ## Purpose And Ownership
 
@@ -484,19 +484,27 @@ exactly.
 
 ### Now
 
-- **Execute cross-platform presubmit Tactical
-  [`159`](../tactical/159-cross-platform-presubmit-ci.md).** It adds cheap
-  credential-free Rust/web, deterministic browser E2E, native desktop,
-  Android, iOS, and short loopback-interoperability build/test signal. Hosted
-  runner evidence is required before closure.
+- **Execute desktop signed packaging and updater Tactical
+  [`158`](../tactical/158-desktop-signed-packaging-and-updater.md).** Its
+  decision-complete plan adopts the shared `desktop-update-v1` contract while
+  retaining explicit application-identifier, per-app key, production-route,
+  signing-credential, testbed, and publication gates.
 
 ### Next
 
-- Decision-complete desktop signed packaging and updater Tactical
-  [`158`](../tactical/158-desktop-signed-packaging-and-updater.md) returns to
-  **Now** after CI closure.
+- Freeze the application identities, first supported persistence baseline,
+  changelog, privacy/support presentation, and repeatable beta torrent cohort
+  around the first release candidate.
 
 ### Later
+
+Completed cross-platform presubmit Tactical
+[`159`](../tactical/159-cross-platform-presubmit-ci.md) provides credential-free
+Rust/web, deterministic browser E2E, native desktop package, Android dual-ABI,
+iOS simulator/archive, and short loopback-interoperability signal on every
+`main` update and pull request. Signed/installable release artifacts, updater
+evidence, native architecture breadth, mobile emulator/device runs, and broad
+interoperability remain separate gates.
 
 Decision-complete measurement Tactical
 [`153`](../tactical/153-wired-lan-utp-data-plane-scalability.md) remains ready

@@ -1716,8 +1716,20 @@ all-view gates with exact payload hashes and clean teardown; hosted Ubuntu
 then exposed a separate cold-build problem: the diagnostic's internal
 two-minute build timeout could expire before measurement. The workflow now
 builds both diagnostics explicitly outside measured time, retains the build
-cache, and pins the uv executable; hosted evidence remains pending the
-replacement run.
+cache, and pins the uv executable.
+
+The replacement manual hosted smoke
+[`32568169955`](https://github.com/kzahel/rstorrent/actions/runs/32568169955)
+then passed on Ubuntu 24.04 x64 and retained artifact
+`performance-32568169955-1`. Its 1 GiB engine pair measured RSTorrent at
+201.2 MiB/s and pinned libtorrent 2.0.13 at 341.5 MiB/s with exact SHA-1,
+zero failed/redundant payload, bounded `4/4` storage ownership, publication,
+and cleanup. Its 512 MiB application smoke measured idle at 59.5 MiB/s,
+all views at 25.6 MiB/s, and the one-second delayed all-view consumer at
+43.0 MiB/s; all three verified 2,048 pieces, the exact SHA-1, and cleanup.
+This proves the repaired workflow and generous hosted catastrophe gates by
+manual dispatch. It does not substitute for the first successful weekly
+scheduled run or calibrate hosted performance claims.
 
 ## Availability-Ranked Activation: 2026-08-05
 

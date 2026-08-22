@@ -1,18 +1,18 @@
 # Tactical 158: Desktop Signed Packaging And Updater
 
-Status: **Decision-complete and Later (2026-08-22); implementation not
-started.** Maintainer direction selected RSTorrent as the foreseeable public
-product name and temporarily prioritized cross-platform presubmit Tactical
-`159`. Pure product integration can proceed after that slice; identifier,
-route, and per-app key provisioning retain the gates below. No release or
-production mutation is implied.
+Status: **Decision-complete and selected as Now (2026-08-22); implementation
+not started.** Maintainer direction selected RSTorrent as the foreseeable
+public product name, and cross-platform presubmit Tactical `159` is complete.
+Identifier, route, and per-app key provisioning retain the gates below. No
+release or production mutation is implied.
 
 Topics: `beta-release-readiness`, `client-surfaces`,
 `product-state-and-feedback`, `product-surfaces-and-migration`,
 `client-persistence`
 
 Dependencies: completed Tactical
-[`157`](157-beta-release-foundation.md); the maintained Tauri/React product;
+[`157`](157-beta-release-foundation.md); completed presubmit Tactical
+[`159`](159-cross-platform-presubmit-ci.md); the maintained Tauri/React product;
 the accepted external
 [`desktop-update-v1`](https://github.com/kzahel/desktop-release-kit/blob/main/contract/desktop-update-v1.md)
 contract; the completed signed canary campaign in `kzahel/desktop-release-kit`;
