@@ -729,11 +729,16 @@ that scope and its cleanup or compatibility rules explicitly.
   art/metadata, and reconciles status before signed updater and cross-platform
   CI slices.
 - [`158-desktop-signed-packaging-and-updater.md`](158-desktop-signed-packaging-and-updater.md):
-  decision-complete and selected as Now; adopts `desktop-update-v1` through a
+  decision-complete and Later; adopts `desktop-update-v1` through a
   Tauri-only product UI/state boundary, per-app identity/key/route, signed
   package matrix, fail-closed draft finalization, and exact installed
   older-to-newer evidence while retaining explicit provisioning/publication
   gates.
+- [`159-cross-platform-presubmit-ci.md`](159-cross-platform-presubmit-ci.md):
+  active and selected as Now; installs credential-free Rust, web,
+  deterministic browser E2E, native desktop, Android, iOS, and short
+  controlled-interoperability checks, with hosted runner evidence required
+  before closure.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

@@ -4,12 +4,13 @@ Topic: `beta-release-readiness`
 
 Status: **Active as of 2026-08-22.** RSTorrent is a functional unreleased
 alpha with maintained desktop, Android, and iOS clients, but it does not yet
-have supported distribution, upgrades, release CI, or a frozen public product
-identity. This topic is the authoritative beta gap ledger and release
-checklist. Tactical
+have supported distribution, upgrades, or proven presubmit/release CI. The
+public product name is RSTorrent for the foreseeable release line; a later
+JSTorrent merger is a separate migration campaign. This topic is the
+authoritative beta gap ledger and release checklist. Tactical
 [`157`](../tactical/157-beta-release-foundation.md) completed the first cleanup
-slice; Tactical
-[`158`](../tactical/158-desktop-signed-packaging-and-updater.md) is **Now**.
+slice; cross-platform presubmit Tactical
+[`159`](../tactical/159-cross-platform-presubmit-ci.md) is **Now**.
 
 ## Scope And Release Definition
 
@@ -78,9 +79,12 @@ without corrupting or silently reinterpreting user state.
 
 ### Product identity and release contract
 
-- [ ] **REL-001 — Freeze the beta name and publisher identity.** Decide whether
-  the preview ships as RSTorrent or JSTorrent and record the relationship to
-  existing JSTorrent store identities. This blocks every public lane.
+- [x] **REL-001 — Freeze the beta name and publisher identity.** Maintainer
+  direction on 2026-08-22 selects RSTorrent as the public product identity for
+  the foreseeable release line. RSTorrent remains independent from current
+  JSTorrent installations; any later merger requires an explicit migration,
+  coexistence, and store-identity campaign rather than silently changing the
+  meaning of released RSTorrent clients.
 - [ ] **REL-002 — Freeze application identifiers.** Desktop currently uses
   `org.jstorrent.rstorrent`, Android uses the unreleased
   `org.rstorrent.bootstrap`, and iOS uses `org.rstorrent.ios.dev`. Do not
@@ -107,30 +111,40 @@ without corrupting or silently reinterpreting user state.
 - [ ] **CI-001 — Add ordinary presubmit CI.** Required checks must run Rust
   formatting, workspace clippy with warnings denied, workspace tests, generated
   contract drift, web typecheck/unit/build, and documentation/config checks.
-  Today only website and performance workflows exist.
+  Tactical `159` now defines this credential-free job and workflow lint, with
+  local commands green; the item remains open until one hosted run proves the
+  runner and permissions contract.
 - [ ] **CI-002 — Add shared-web end-to-end coverage.** Run the deterministic
   Playwright suite in CI, retain failure traces/screenshots, and keep public-
-  swarm cases opt-in rather than required.
+  swarm cases opt-in rather than required. The locked Chromium job passes 33
+  tests locally with 12 live cases skipped; hosted execution remains unproven.
 - [ ] **CI-003 — Add a desktop OS matrix.** Compile and package on macOS arm64
   and x86_64, Windows x86_64, and Linux x86_64; add Linux arm64 when a native
   runner or deliberate cross-build path exists. A compile-only matrix does not
-  satisfy installer or update evidence.
+  satisfy installer or update evidence. Tactical `159` provides the ordinary
+  macOS arm64/Windows/Linux package floor; the hosted legs, macOS x86_64, Linux
+  arm64, and release installer breadth remain open.
 - [ ] **CI-004 — Add Android gates.** Build both Rust ABIs, lint, unit test,
   assemble a release bundle, and run a bounded owned-emulator product smoke.
   Physical-device and ChromeOS evidence remains a release-candidate campaign,
-  not an unattended presubmit mutation.
+  not an unattended presubmit mutation. The initial presubmit now covers both
+  ABIs, lint/JVM tests, debug app APK, and instrumentation APK compilation;
+  hosted execution, release AAB, and an emulator run remain open.
 - [ ] **CI-005 — Add iOS gates.** Generate bindings/project, build the device
   Rust library, run simulator unit/UI tests, and create an unsigned release
   archive on a pinned macOS/Xcode runner. Signed TestFlight work remains a
-  protected release job.
+  protected release job. All commands pass locally; the hosted Apple leg is
+  still required.
 - [ ] **CI-006 — Add a bounded controlled interoperability smoke.** Choose a
   short v1 magnet/torrent intake, transfer, publication, restart, and seeding
   path against pinned libtorrent. Keep the long matrix and public catalog out
-  of ordinary PR latency.
+  of ordinary PR latency. Tactical `159` adds a sub-second verified first-piece
+  transfer as the initial floor; its broader application lifecycle remains
+  open.
 - [ ] **CI-007 — Repair scheduled performance CI.** The 2026-08-10 and
   2026-08-17 runs failed before tests because `astral-sh/setup-uv@v8` could not
-  be resolved. Pin an existing reviewed action revision and prove a successful
-  scheduled artifact-producing run.
+  be resolved. The workflow now pins reviewed `setup-uv` `v8.3.2`; a successful
+  hosted scheduled artifact-producing run is still required.
 - [ ] **CI-008 — Protect the release branch.** Require the release-readiness
   checks and review after their signal is stable. `main` was unprotected when
   audited on 2026-08-22.
@@ -140,8 +154,10 @@ without corrupting or silently reinterpreting user state.
 - [x] **QA-001 — Core deterministic and local product suites pass.** On
   2026-08-22, Rust format/clippy/workspace tests, web typecheck and 248 passing
   unit tests with 2 skips, the production web build/CSP check, 33 deterministic
-  Playwright tests with 12 live tests skipped, both Android ABIs plus Kotlin
-  unit/APK build, and an unsigned arm64 iOS archive passed locally.
+  Playwright tests with 12 live tests skipped, five Tauri desktop tests plus an
+  unsigned arm64 macOS app, both Android ABIs plus Kotlin unit/lint/app and
+  instrumentation APK builds, 25 iOS unit tests, 2 iOS UI tests, and an
+  unsigned arm64 iOS archive passed locally.
 - [ ] **QA-002 — Record a repeatable beta torrent cohort.** Cover small and
   large single/multifile v1 torrents, magnets and `.torrent` files, public and
   controlled discovery, selective files, pause/resume/restart/recheck,
@@ -223,10 +239,10 @@ is still pending and is not the compatibility oracle.
   contract, dual ABI packaging, AVD, ChromeOS, and physical Android evidence
   exist. Tactical `157` graduates the complete module from `experiments/` to
   `clients/android` without splitting these owners.
-- [ ] **AND-002 — Freeze application identity and upgrade semantics.** Resolve
-  whether beta is a distinct RSTorrent listing or an update/replacement for
-  `com.jstorrent.app`; exercise data/state coexistence rather than silently
-  claiming the existing identity.
+- [ ] **AND-002 — Freeze application identity and upgrade semantics.** The beta
+  is a distinct RSTorrent listing rather than an update/replacement for
+  `com.jstorrent.app`; select its durable package ID and exercise data/state
+  coexistence without silently claiming the existing identity.
 - [ ] **AND-003 — Create a signed release App Bundle.** Configure release
   signing through protected CI/store credentials, version code/name checks,
   minification/resource rules, mapping retention, and artifact inspection.
@@ -238,6 +254,10 @@ is still pending and is not the compatibility oracle.
   privacy, foreground service, notification, local-network/network behavior,
   content rating, listing text/screenshots, and support link must match actual
   behavior.
+- [ ] **AND-006 — Retire Android platform deprecations.** The current build
+  still warns on the legacy activity-result path plus Wi-Fi, notification, and
+  system-bar APIs. Migrate or deliberately bound each before a target-SDK or
+  toolchain update turns warning debt into a release failure.
 
 ## iOS/iPadOS Beta Checklist
 
@@ -246,8 +266,8 @@ is still pending and is not the compatibility oracle.
   simulator/physical lifecycle evidence, system preview, and reproducible
   unsigned/development archives exist.
 - [ ] **IOS-002 — Freeze the distribution bundle identity.** Replace the
-  `.dev` identifiers only after deciding RSTorrent versus JSTorrent public
-  identity and migration/coexistence.
+  `.dev` identifiers with a durable RSTorrent namespace while preserving the
+  explicit independent-product and later-migration posture.
 - [ ] **IOS-003 — Add complete app artwork and metadata.** Tactical `157`
   supplies provisional buildable artwork; final App Store icon, display copy,
   screenshots, privacy manifest review, support/privacy links, and localization
@@ -258,6 +278,11 @@ is still pending and is not the compatibility oracle.
 - [ ] **IOS-005 — Prove TestFlight upgrade and lifecycle.** Install an older
   beta, update through TestFlight, validate retained state/roots and schema,
   run phone/iPad cohort cases, and record finite-background limitations.
+- [ ] **IOS-006 — Make storage bridging Swift 6 concurrency-clean.** Current
+  archives warn that asynchronous `NSLock` and `DispatchGroup.wait` calls in
+  `PlatformStorageBridge` become errors in Swift 6 language mode. Replace them
+  with an async-safe ownership design before enabling that mode or requiring a
+  toolchain that does so.
 
 ## Beta Feature Boundary
 
@@ -298,15 +323,16 @@ no single optional BEP is mandatory.
    ledger, graduated the Android module path, added provisional platform
    artwork/bundle metadata, corrected entry-point status, and preserved
    historical evidence.
-2. **Now — Tactical `158`: desktop signed packaging and updater adoption.**
-   Implement the
-   product-owned side of `desktop-update-v1`, release validation, draft
-   artifacts, and platform testbed runbook. Provisioning the per-app key and
-   production route is an explicit maintainer/operations gate.
-3. **Next — cross-platform presubmit CI.** Land the proportional Rust/web,
-   desktop matrix, Android, iOS, deterministic E2E, and short interop jobs;
-   repair performance CI and then select required checks.
-4. **Next — beta product identity and upgrade baseline.** Freeze names/IDs,
+2. **Now — Tactical `159`: cross-platform presubmit CI.** Land proportional
+   Rust/web, native desktop, Android, iOS, deterministic E2E, and short
+   loopback-interoperability jobs; repair performance CI and prove the hosted
+   matrix before selecting required checks.
+3. **Next — Tactical `158`: desktop signed packaging and updater adoption.**
+   Implement the product-owned side of `desktop-update-v1`, release
+   validation, draft artifacts, and platform testbed runbook. RSTorrent naming
+   is settled; application identifiers, per-app key, and production route
+   provisioning retain their explicit maintainer/operations gates.
+4. **Next — application identity and upgrade baseline.** Freeze package IDs,
    persistence compatibility, changelog, privacy/support, diagnostics export,
    and a repeatable cohort before any public installer.
 5. **Later — platform release campaigns.** Close desktop, Android closed-

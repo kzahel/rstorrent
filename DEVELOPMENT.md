@@ -26,13 +26,13 @@ under `docs/topics/`.
 ## Current Tactical State
 
 The authoritative **Now** is
-[`158-desktop-signed-packaging-and-updater.md`](docs/tactical/158-desktop-signed-packaging-and-updater.md).
-It owns adoption of the shared desktop update contract, signed package and
-draft-release validation, product updater presentation, and exact installed
-older-to-newer evidence. Completed Tactical `157` established the release
-ledger, graduated the Android client to `clients/android`, and added
-provisional packaging artwork. The durable release backlog and platform gates
-live in
+[`159-cross-platform-presubmit-ci.md`](docs/tactical/159-cross-platform-presubmit-ci.md).
+It owns cheap credential-free Rust/web, deterministic browser E2E, native
+desktop, Android, iOS, and short loopback-interoperability presubmit signal.
+Decision-complete updater Tactical `158` is Next. Completed Tactical `157`
+established the release ledger, graduated the Android client to
+`clients/android`, and added provisional packaging artwork. The durable
+release backlog and platform gates live in
 [`docs/topics/beta-release-readiness.md`](docs/topics/beta-release-readiness.md).
 Decision-complete wired-LAN uTP Tactical `153` remains Later; completed
 Tactical `156` closes the strict hybrid runtime slice. The chronological notes

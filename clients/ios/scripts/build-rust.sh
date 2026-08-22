@@ -5,7 +5,9 @@ script_root=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 client_root=$(cd "${script_root}/.." && pwd)
 repository_root=$(cd "${client_root}/../.." && pwd)
 
-source "${HOME}/.profile"
+if [[ -f "${HOME}/.profile" ]]; then
+  source "${HOME}/.profile"
+fi
 
 case "${PLATFORM_NAME:-${1:-}}" in
   iphoneos)

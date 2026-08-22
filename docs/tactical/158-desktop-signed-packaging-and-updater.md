@@ -1,9 +1,11 @@
 # Tactical 158: Desktop Signed Packaging And Updater
 
-Status: **Decision-complete and selected as Now (2026-08-22); implementation
-not started.** Pure product integration can proceed before credential work.
-Freezing/provisioning the product route and per-app updater key requires the
-maintainer decision named below; no release or production mutation is implied.
+Status: **Decision-complete and Later (2026-08-22); implementation not
+started.** Maintainer direction selected RSTorrent as the foreseeable public
+product name and temporarily prioritized cross-platform presubmit Tactical
+`159`. Pure product integration can proceed after that slice; identifier,
+route, and per-app key provisioning retain the gates below. No release or
+production mutation is implied.
 
 Topics: `beta-release-readiness`, `client-surfaces`,
 `product-state-and-feedback`, `product-surfaces-and-migration`,
@@ -39,11 +41,13 @@ condition.
 
 - Stable versions are `MAJOR.MINOR.PATCH`; the desktop tag prefix is
   `desktop-v`.
-- Before route/key provisioning, maintainer direction must freeze whether the
-  beta route is permanently RSTorrent or JSTorrent and whether the current
-  `org.jstorrent.rstorrent` identifier is retained. A provisional name must
-  not create released clients whose embedded route later changes meaning.
-- If RSTorrent is selected, the intended product route is
+- The foreseeable public product name is RSTorrent. A later merger into
+  JSTorrent is a separate migration campaign and must not change the meaning
+  of already released RSTorrent routes or clients silently.
+- Before route/key provisioning, maintainer direction must still freeze whether
+  the current `org.jstorrent.rstorrent` identifier is retained or replaced by
+  a clean RSTorrent identifier.
+- The intended product route is
   `https://updates.graehlarts.com/rstorrent/tauri/{{target}}/{{arch}}/{{current_version}}`
   and the server product config uses a stable RSTorrent ID, `/rstorrent` path
   prefix, `kzahel/rstorrent` repository, and `desktop-v` tags.
@@ -280,7 +284,7 @@ deliberate omission.
 Pure model/UI/tests, product-state file implementation, plugin integration,
 config validators, draft-workflow construction, and build-only fixes within
 these contracts are authorized. Stop for maintainer direction before freezing
-the public brand/identifier/route, generating or storing the long-lived updater
+the application identifier/route, generating or storing the long-lived updater
 private key, changing the production server configuration, using publisher
 credentials, creating a tag/release, publishing, or mutating external
 testbeds. Those actions are required gates, not implied by this tactical.

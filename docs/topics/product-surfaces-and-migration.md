@@ -404,20 +404,21 @@ discard it: the visual and historical connection to JSTorrent is stronger in
 this product context. `KTorrent` is not a practical alternative because it is
 already the established KDE client name.
 
-This naming direction is not a final public-brand decision. Domain and package
-availability are time-sensitive and must be checked again when a release name
-is selected. More importantly, the successor should not discard JSTorrent's
+Maintainer direction on 2026-08-22 selects RSTorrent as the public product name
+for the foreseeable release line. Domain and clean package identifiers still
+require release-specific checks. A later merger should not discard JSTorrent's
 installed extension audience and product discovery merely to make the engine
-rewrite visible as a new brand.
+rewrite visible, but that future concern does not make current RSTorrent
+clients provisional identities.
 
 ## Existing Distribution And Coexistence
 
 The existing JSTorrent extension identity and store discovery are important
 assets. The preferred graduation path should evaluate updating that extension
 to support the successor application contract rather than launching an
-unrelated extension with no installed audience. This does not decide whether
-`RSTorrent` is a public preview name, a backend/component name, or only the
-incubation repository name.
+unrelated extension with no installed audience. RSTorrent remains the
+independently released product during that coexistence; an eventual
+extension/backend merger is separately versioned and migrated.
 
 During coexistence, one extension may need legacy and successor adapters. It
 must show which engine generation and backend it is controlling, avoid letting
@@ -460,8 +461,8 @@ fixture, or wire contract from either sibling project.
 
 ## Open Decisions And Required Evidence
 
-- Whether the public product, extension, and native components use the
-  JSTorrent or RSTorrent name at each migration stage.
+- The exact later stage at which an RSTorrent product may merge into JSTorrent,
+  including coexistence, store identity, rollback, and user-visible naming.
 - The exact desktop native-host/backend process, single-instance, window, and
   shutdown ownership model. Desktop beta updating now adopts the external
   `desktop-update-v1` contract; its product route/key, client presentation,

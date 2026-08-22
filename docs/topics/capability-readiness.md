@@ -4,10 +4,11 @@ Topic: `capability-readiness`
 
 Status: Authoritative cross-cutting feature-readiness scoreboard and current
 work queue for the functional, unreleased alpha. Maintainer direction on
-2026-08-22 completed beta-release foundation Tactical `157` and selects desktop
-release/updater Tactical `158` as the single **Now**. The tables below record current support, evidence, and
-highest-risk gaps; implementation history remains in the linked tacticals and
-focused topics.
+2026-08-22 completed beta-release foundation Tactical `157`, then prioritized
+cross-platform presubmit Tactical `159` as the single **Now** ahead of desktop
+release/updater Tactical `158`. The tables below record current support,
+evidence, and highest-risk gaps; implementation history remains in the linked
+tacticals and focused topics.
 
 ## Purpose And Ownership
 
@@ -483,18 +484,17 @@ exactly.
 
 ### Now
 
-- **Execute desktop signed packaging and updater Tactical
-  [`158`](../tactical/158-desktop-signed-packaging-and-updater.md).** It adopts
-  the accepted `desktop-update-v1` contract, product-owned update UI/state,
-  least-privileged package policy, signed draft release matrix, validation, and
-  exact older-to-newer testbed evidence. Pure integration can start, but
-  public identity/key/route provisioning, credentials, production changes,
-  tags, releases, and publication retain the tactical's explicit maintainer
-  gates.
+- **Execute cross-platform presubmit Tactical
+  [`159`](../tactical/159-cross-platform-presubmit-ci.md).** It adds cheap
+  credential-free Rust/web, deterministic browser E2E, native desktop,
+  Android, iOS, and short loopback-interoperability build/test signal. Hosted
+  runner evidence is required before closure.
 
 ### Next
 
-- There is no queued second authoritative item.
+- Decision-complete desktop signed packaging and updater Tactical
+  [`158`](../tactical/158-desktop-signed-packaging-and-updater.md) returns to
+  **Now** after CI closure.
 
 ### Later
 

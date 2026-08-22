@@ -60,13 +60,14 @@ tacticals and executable acceptance evidence.
 
 ## Accepted Initial Decisions
 
-### Independent implementation, possible product successor
+### Independent RSTorrent product, possible later successor
 
-RSTorrent is implemented independently from the current JSTorrent engine and
-may coexist with it during bring-up. Its likely destination is to graduate into
-a new generation of the JSTorrent product once evidence supports replacement,
-not necessarily to remain a separate public brand. It does not begin with a
-migration or parity obligation.
+RSTorrent is implemented and released independently from the current JSTorrent
+engine and may coexist with it for the foreseeable product line. Maintainer
+direction on 2026-08-22 selects RSTorrent as the public identity rather than a
+temporary preview label. It may later graduate into a new generation of the
+JSTorrent product once evidence supports replacement, but that is a separate
+migration campaign. It does not begin with a migration or parity obligation.
 
 ### First-party engine and clients
 
@@ -398,8 +399,6 @@ testing evidence justifies it.
 
 ## Open Decisions
 
-- Whether `RSTorrent` remains only an incubation name or is used for public
-  previews before the implementation graduates into JSTorrent.
 - The evidence, compatibility work, and release process required for that
   graduation.
 - The exact minimum useful BitTorrent feature set.

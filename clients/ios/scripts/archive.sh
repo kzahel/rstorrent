@@ -14,7 +14,9 @@ mode=$1
 output=$2
 [[ "${output}" = /* && "${output}" == *.xcarchive ]] || usage
 
-source "${HOME}/.profile"
+if [[ -f "${HOME}/.profile" ]]; then
+  source "${HOME}/.profile"
+fi
 "${script_root}/generate-project.sh"
 
 common=(

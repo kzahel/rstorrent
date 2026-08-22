@@ -1,0 +1,320 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  rust:
+    name: Rust and loopback interop
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Lint workflow definitions
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.9
+
+      - name: Install Rust 1.97.0
+        uses: dtolnay/rust-toolchain@889fac408b4da0905346410f253f0c55fbcb6613 # 1.97.0
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache Rust builds
+        uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7 # v2.9.2
+        with:
+          shared-key: ci-rust-ubuntu-24.04
+
+      - name: Install Linux desktop build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libwebkit2gtk-4.1-dev \
+            patchelf
+
+      - name: Install uv and locked Python 3.12 environment
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: tests/interop/uv.lock
+
+      - name: Check Rust formatting
+        run: cargo fmt --all -- --check
+
+      - name: Lint the Rust workspace
+        run: cargo clippy --workspace -- -D warnings
+
+      - name: Test the Rust workspace
+        run: cargo test --workspace
+
+      - name: Install the locked interoperability environment
+        run: uv sync --project tests/interop --locked --python 3.12
+
+      - name: Run one deterministic libtorrent transfer
+        run: >-
+          uv run --project tests/interop --locked
+          python tests/interop/first_verified_piece.py --runs 1
+
+  web:
+    name: Web type, unit, build, and deterministic E2E
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Install Node.js 22
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: clients/web/package-lock.json
+
+      - name: Install Rust 1.97.0
+        uses: dtolnay/rust-toolchain@889fac408b4da0905346410f253f0c55fbcb6613 # 1.97.0
+
+      - name: Cache generated-contract Rust builds
+        uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7 # v2.9.2
+        with:
+          shared-key: ci-web-contract-ubuntu-24.04
+
+      - name: Install locked web dependencies
+        run: npm ci --prefix clients/web
+
+      - name: Regenerate and verify the application contract
+        run: |
+          npm run generate --prefix clients/web
+          git diff --exit-code -- \
+            clients/web/src/api/generated \
+            clients/web/src/fixtures/reactive-trace.json \
+            clients/web/src/fixtures/view-set-trace.json
+
+      - name: Typecheck the shared web application
+        run: npm run typecheck --prefix clients/web
+
+      - name: Run web unit tests
+        run: npm run test --prefix clients/web
+
+      - name: Build the production web application
+        run: npm run build --prefix clients/web
+
+      - name: Install pinned Playwright Chromium and system dependencies
+        working-directory: clients/web
+        run: npx playwright install --with-deps chromium
+
+      - name: Run deterministic browser end-to-end tests
+        run: npm run test:e2e --prefix clients/web
+
+      - name: Retain browser failure traces
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: web-e2e-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: clients/web/test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  desktop:
+    name: Desktop ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS arm64
+            runner: macos-26
+            bundle: app
+          - name: Windows x86_64
+            runner: windows-2025
+            bundle: nsis
+          - name: Linux x86_64
+            runner: ubuntu-24.04
+            bundle: appimage
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      APPIMAGE_EXTRACT_AND_RUN: "1"
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Install Node.js 22
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: clients/web/package-lock.json
+
+      - name: Install Rust 1.97.0
+        uses: dtolnay/rust-toolchain@889fac408b4da0905346410f253f0c55fbcb6613 # 1.97.0
+
+      - name: Cache desktop Rust builds
+        uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7 # v2.9.2
+        with:
+          shared-key: ci-desktop-${{ matrix.runner }}
+
+      - name: Install Linux desktop packaging dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            desktop-file-utils \
+            libarchive-tools \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libwebkit2gtk-4.1-dev \
+            patchelf \
+            xdg-utils
+
+      - name: Install locked web dependencies
+        run: npm ci --prefix clients/web
+
+      - name: Run desktop native tests
+        run: cargo test -p rstorrent-desktop
+
+      - name: Build one unsigned native package
+        working-directory: clients/desktop
+        shell: bash
+        run: >-
+          ../web/node_modules/.bin/tauri build
+          --bundles "${{ matrix.bundle }}" --no-sign --ci
+
+      - name: Verify the native package exists
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in
+            macOS)
+              test "$(find target/release/bundle/macos -maxdepth 1 -type d -name '*.app' | wc -l)" -eq 1
+              ;;
+            Windows)
+              test "$(find target/release/bundle/nsis -maxdepth 1 -type f -name '*-setup.exe' | wc -l)" -eq 1
+              ;;
+            Linux)
+              test "$(find target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage' | wc -l)" -eq 1
+              ;;
+          esac
+
+  android:
+    name: Android dual ABI, lint, and tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Install Java 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Rust 1.97.0 and Android targets
+        uses: dtolnay/rust-toolchain@889fac408b4da0905346410f253f0c55fbcb6613 # 1.97.0
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+
+      - name: Cache Android Rust builds
+        uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7 # v2.9.2
+        with:
+          shared-key: ci-android-ubuntu-24.04
+
+      - name: Configure Gradle caches
+        uses: gradle/actions/setup-gradle@f236b35da9d031e13b1005234ebe4392ed54c580 # v5.0.0
+
+      - name: Install pinned Android SDK and NDK packages
+        run: >-
+          sdkmanager
+          'platforms;android-35'
+          'build-tools;35.0.0'
+          'ndk;27.0.12077973'
+
+      - name: Install cargo-ndk 4.1.2
+        run: cargo install cargo-ndk --version 4.1.2 --locked
+
+      - name: Cross-build both ABIs and run JVM tests
+        run: clients/android/build.sh
+
+      - name: Run Android lint and compile instrumentation tests
+        working-directory: clients/android
+        run: ./gradlew lintDebug assembleDebugAndroidTest
+
+      - name: Verify Android application and test APKs exist
+        run: |
+          test -f clients/android/app/build/outputs/apk/debug/app-debug.apk
+          test -f clients/android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+
+      - name: Retain Android failure reports
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            clients/android/app/build/reports
+            clients/android/app/build/test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  ios:
+    name: iOS simulator tests and unsigned archive
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Verify Xcode 26.6
+        run: test "$(xcodebuild -version | sed -n '1p')" = "Xcode 26.6"
+
+      - name: Install Rust 1.97.0 and Apple targets
+        uses: dtolnay/rust-toolchain@889fac408b4da0905346410f253f0c55fbcb6613 # 1.97.0
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - name: Cache iOS Rust builds
+        uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7 # v2.9.2
+        with:
+          shared-key: ci-ios-macos-26
+
+      - name: Install XcodeGen when the runner does not provide it
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+          xcodegen --version
+
+      - name: Run iOS simulator unit and UI tests
+        run: clients/ios/scripts/test.sh "$RUNNER_TEMP/RSTorrent.xcresult"
+
+      - name: Build an unsigned iOS device archive
+        run: clients/ios/scripts/archive.sh --unsigned "$RUNNER_TEMP/RSTorrent.xcarchive"
+
+      - name: Verify the archived application exists
+        run: test -d "$RUNNER_TEMP/RSTorrent.xcarchive/Products/Applications/RSTorrent.app"
+
+      - name: Retain iOS failure results
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ios-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/RSTorrent.xcresult
+          if-no-files-found: ignore
+          retention-days: 7

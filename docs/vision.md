@@ -1,12 +1,13 @@
 # Product Vision: JSTorrent Rebuilt Around A Native Engine
 
-Status: directional long-term vision; product naming and graduation timing
-remain open.
+Status: directional long-term vision; RSTorrent is the accepted foreseeable
+public identity, while any later JSTorrent graduation timing remains open.
 
 ## Thesis
 
-RSTorrent is likely the incubation project for a new generation of JSTorrent,
-not a permanently separate product.
+RSTorrent is the public product identity for the foreseeable release line. It
+also remains a likely incubation path for a later generation of JSTorrent, but
+that merger is a separate migration decision rather than a near-term rename.
 
 The implementation is independent because the engine needs a clean
 architecture, not because the existing product identity should be discarded.

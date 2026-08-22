@@ -60,10 +60,12 @@ explicitly as the **Android**, **Compose**, or **Android UI**; the Astro
 
 ## Intended Product And Deployment
 
-`RSTorrent` is the incubation and implementation name. The provisional plan is
-to graduate this work into the next generation of **JSTorrent**: replace the
-current engine and related internals while retaining the JSTorrent product
-name and providing a deliberate transition for existing installations.
+**RSTorrent** is the public product identity for the foreseeable release line,
+not merely a temporary beta label. A later, separately planned graduation into
+the next generation of **JSTorrent** may replace the current engine and related
+internals while providing a deliberate transition for existing installations;
+that future merger does not change current RSTorrent package or upgrade
+identity implicitly.
 
 Desktop, Android, ChromeOS, and the maintained iOS client use or are intended
 to use the same first-party Rust engine. A future JSTorrent browser extension

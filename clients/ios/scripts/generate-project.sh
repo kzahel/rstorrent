@@ -6,7 +6,9 @@ client_root=$(cd "${script_root}/.." && pwd)
 repository_root=$(cd "${client_root}/../.." && pwd)
 generated_root="${client_root}/Generated"
 
-source "${HOME}/.profile"
+if [[ -f "${HOME}/.profile" ]]; then
+  source "${HOME}/.profile"
+fi
 mkdir -p "${generated_root}"
 rm -f \
   "${generated_root}/RSTorrentIOS.swift" \
