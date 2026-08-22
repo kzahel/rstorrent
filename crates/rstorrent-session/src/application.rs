@@ -7915,22 +7915,24 @@ mod tests {
         store
             .record_metadata(&torrent_id, &raw_info)
             .expect("record verified metadata");
-        if https {
-            store
-                .handle_durable(&RequestEnvelope {
-                    version: CONTROL_VERSION,
-                    request_id: "disable-tracker-https-authentication".to_owned(),
-                    expected_revision: None,
-                    command: Command::SetClientSettings {
-                        settings: ClientSettings {
-                            tracker_https_server_authentication:
-                                HttpsServerAuthenticationPolicy::Disabled,
-                            ..ClientSettings::default()
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "configure-tracker-ipv6-loopback".to_owned(),
+                expected_revision: None,
+                command: Command::SetClientSettings {
+                    settings: ClientSettings {
+                        listener: ListenerPolicy::AutomaticLoopback,
+                        tracker_https_server_authentication: if https {
+                            HttpsServerAuthenticationPolicy::Disabled
+                        } else {
+                            HttpsServerAuthenticationPolicy::SystemTrust
                         },
+                        ..ClientSettings::default()
                     },
-                })
-                .expect("persist explicit unauthenticated HTTPS policy");
-        }
+                },
+            })
+            .expect("persist loopback IPv6 and HTTPS policy");
         drop(store);
 
         let mut service = ApplicationService::open(configuration)
@@ -10436,7 +10438,12 @@ mod tests {
             .map(|(_, _, port)| *port)
             .collect::<Vec<_>>();
         drop(reservations);
-        let mut application = ApplicationService::open(config(&root))
+        let mut configuration = config(&root);
+        configuration.initial_client_settings = ClientSettings {
+            listener: ListenerPolicy::AutomaticLoopback,
+            ..ClientSettings::default()
+        };
+        let mut application = ApplicationService::open(configuration)
             .await
             .expect("open rapid-settings application");
         let dht_before = dht_runtime(&application).await;
@@ -10910,7 +10917,13 @@ mod tests {
     #[tokio::test]
     async fn client_settings_mutation_publishes_configured_and_applying_state() {
         let root = test_root("client-settings-view-patch");
-        let mut service = ApplicationService::open(config(&root))
+        let initial_settings = ClientSettings {
+            ipv6_enabled: false,
+            ..ClientSettings::default()
+        };
+        let mut configuration = config(&root);
+        configuration.initial_client_settings = initial_settings.clone();
+        let mut service = ApplicationService::open(configuration)
             .await
             .expect("open service");
         let subscription = service
@@ -10980,7 +10993,7 @@ mod tests {
         assert_eq!(
             runtime.effective_listener,
             Some(crate::EffectiveListenerSettings::from_settings(
-                &ClientSettings::default()
+                &initial_settings
             ))
         );
         assert_eq!(
@@ -10994,7 +11007,7 @@ mod tests {
                 request_id: "revert-client-settings-view".to_owned(),
                 expected_revision: Some("1".to_owned()),
                 command: Command::SetClientSettings {
-                    settings: ClientSettings::default(),
+                    settings: initial_settings.clone(),
                 },
             })
             .await
@@ -11010,11 +11023,11 @@ mod tests {
         else {
             panic!("expected reverted settings replacement patch");
         };
-        assert_eq!(runtime.configured, ClientSettings::default());
+        assert_eq!(runtime.configured, initial_settings);
         assert_eq!(
             runtime.effective_listener,
             Some(crate::EffectiveListenerSettings::from_settings(
-                &ClientSettings::default()
+                &initial_settings
             ))
         );
         assert_eq!(
