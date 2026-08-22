@@ -1713,7 +1713,11 @@ paused, obtains the returned owner, opens owner-scoped views, resumes at the
 measurement boundary, and validates both the protocol identity and publication
 name. A local Apple M4 Pro smoke then passed idle, all-view, and delayed
 all-view gates with exact payload hashes and clean teardown; hosted Ubuntu
-evidence remains pending the replacement run.
+then exposed a separate cold-build problem: the diagnostic's internal
+two-minute build timeout could expire before measurement. The workflow now
+builds both diagnostics explicitly outside measured time, retains the build
+cache, and pins the uv executable; hosted evidence remains pending the
+replacement run.
 
 ## Availability-Ranked Activation: 2026-08-05
 
