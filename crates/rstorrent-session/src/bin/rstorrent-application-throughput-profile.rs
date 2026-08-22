@@ -8,10 +8,11 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use rstorrent_session::{
-    ApplicationConfig, ApplicationService, CONTROL_VERSION, Command, ConfiguredStorageRoot,
-    DiagnosticFilter, DiagnosticProfile, DiagnosticSeverity, NetworkConfig, NetworkPolicy,
-    OpenViewSetOptions, OpenViewSetRequest, PeerTransportPolicy, RequestEnvelope, ResponseOutcome,
-    TorrentState, UpdateBatch, ViewDeliveryPolicy, ViewSet, ViewSetOwner, ViewSetUpdate, ViewSpec,
+    ApplicationConfig, ApplicationService, CONTROL_VERSION, Command, CommandResult,
+    ConfiguredStorageRoot, DiagnosticFilter, DiagnosticProfile, DiagnosticSeverity, NetworkConfig,
+    NetworkPolicy, OpenViewSetOptions, OpenViewSetRequest, PeerTransportPolicy, RequestEnvelope,
+    ResponseOutcome, TorrentState, UpdateBatch, ViewDeliveryPolicy, ViewSet, ViewSetOwner,
+    ViewSetUpdate, ViewSpec,
 };
 use serde::Serialize;
 use tokio::task::JoinHandle;
@@ -127,7 +128,8 @@ struct Arguments {
     profile_root: PathBuf,
     payload_root: PathBuf,
     magnet: String,
-    torrent_id: String,
+    info_hash: String,
+    publication_name: String,
     payload_bytes: u64,
     mode: ViewMode,
     timeout: Duration,
@@ -157,6 +159,8 @@ struct RunReport {
     schema_version: u16,
     scenario: &'static str,
     mode: &'static str,
+    torrent_id: String,
+    publication_name: String,
     payload_bytes: u64,
     transfer_seconds: f64,
     throughput_mib_s: f64,
@@ -196,7 +200,34 @@ async fn run() -> Result<(), Box<dyn Error>> {
     config.storage_hash_concurrency_for_testing = arguments.hash_concurrency;
     let mut service = ApplicationService::open(config).await?;
 
-    let specs = arguments.mode.specs(&arguments.torrent_id);
+    let response = service
+        .dispatch(RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: "profile-add".to_owned(),
+            expected_revision: None,
+            command: Command::AddMagnet {
+                magnet: arguments.magnet.clone(),
+                storage_root: "downloads".to_owned(),
+                start_content: false,
+                skip_files: Vec::new(),
+            },
+        })
+        .await?;
+    let torrent_id = match response.result.as_ref() {
+        Some(CommandResult::AddTorrent { result }) => result.torrent_id.clone(),
+        _ => return Err(invalid_input("application add omitted the torrent owner").into()),
+    };
+    let snapshot = ensure_success(response)?;
+    let added_torrent = snapshot
+        .torrents
+        .iter()
+        .find(|torrent| torrent.torrent_id == torrent_id)
+        .ok_or_else(|| invalid_input("application add snapshot omitted the test torrent"))?;
+    if added_torrent.protocol_identities.v1.as_deref() != Some(arguments.info_hash.as_str()) {
+        return Err(invalid_input("application add returned the wrong protocol identity").into());
+    }
+
+    let specs = arguments.mode.specs(&torrent_id);
     let owner = ViewSetOwner::trusted("application-throughput-profile");
     let cancellation = CancellationToken::new();
     let mut view_set = None;
@@ -223,19 +254,16 @@ async fn run() -> Result<(), Box<dyn Error>> {
     let response = service
         .dispatch(RequestEnvelope {
             version: CONTROL_VERSION,
-            request_id: "profile-add".to_owned(),
+            request_id: "profile-resume".to_owned(),
             expected_revision: None,
-            command: Command::AddMagnet {
-                magnet: arguments.magnet.clone(),
-                storage_root: "downloads".to_owned(),
-                start_content: true,
-                skip_files: Vec::new(),
+            command: Command::Resume {
+                torrent_id: torrent_id.clone(),
             },
         })
         .await?;
     ensure_success(response)?;
 
-    let final_root = arguments.payload_root.join(&arguments.torrent_id);
+    let final_root = arguments.payload_root.join(&arguments.publication_name);
     let deadline = started + arguments.timeout;
     let mut next_status_poll = started;
     let mut completion_polls = 0_u64;
@@ -263,7 +291,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
             let torrent = snapshot
                 .torrents
                 .into_iter()
-                .find(|torrent| torrent.torrent_id == arguments.torrent_id)
+                .find(|torrent| torrent.torrent_id == torrent_id)
                 .ok_or_else(|| invalid_input("application snapshot lost the test torrent"))?;
             match torrent.state {
                 TorrentState::Complete => break torrent,
@@ -307,10 +335,17 @@ async fn run() -> Result<(), Box<dyn Error>> {
     {
         return Err(invalid_input("complete application snapshot has incomplete pieces").into());
     }
+    if final_torrent.protocol_identities.v1.as_deref() != Some(arguments.info_hash.as_str()) {
+        return Err(
+            invalid_input("complete application snapshot changed protocol identity").into(),
+        );
+    }
     let report = RunReport {
         schema_version: 1,
         scenario: "sqlite-application-view-throughput",
         mode: arguments.mode.as_str(),
+        torrent_id,
+        publication_name: arguments.publication_name,
         payload_bytes: arguments.payload_bytes,
         transfer_seconds,
         throughput_mib_s: arguments.payload_bytes as f64 / (1024.0 * 1024.0) / transfer_seconds,
@@ -424,7 +459,8 @@ fn parse_arguments(
     let mut profile_root = None;
     let mut payload_root = None;
     let mut magnet = None;
-    let mut torrent_id = None;
+    let mut info_hash = None;
+    let mut publication_name = None;
     let mut payload_bytes = None;
     let mut mode = None;
     let mut timeout = Duration::from_secs(600);
@@ -444,12 +480,25 @@ fn parse_arguments(
                 set_once(&mut payload_root, PathBuf::from(value), "--payload-root")?
             }
             "--magnet" => set_once(&mut magnet, utf8(value, name)?.to_owned(), name)?,
-            "--torrent-id" => {
+            "--info-hash" => {
                 let value = utf8(value, name)?;
                 if value.len() != 40 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-                    return Err(invalid_input("--torrent-id must be 40 hexadecimal bytes"));
+                    return Err(invalid_input("--info-hash must be 40 hexadecimal bytes"));
                 }
-                set_once(&mut torrent_id, value.to_ascii_lowercase(), name)?;
+                set_once(&mut info_hash, value.to_ascii_lowercase(), name)?;
+            }
+            "--publication-name" => {
+                let value = utf8(value, name)?;
+                if value.is_empty()
+                    || value.len() > 255
+                    || matches!(value, "." | "..")
+                    || value
+                        .bytes()
+                        .any(|byte| matches!(byte, 0 | b'/' | b'\\' | b':'))
+                {
+                    return Err(invalid_input("--publication-name is invalid"));
+                }
+                set_once(&mut publication_name, value.to_owned(), name)?;
             }
             "--payload-bytes" => {
                 let value = parse_u64(value, name, 1, MAX_PAYLOAD_BYTES)?;
@@ -482,7 +531,9 @@ fn parse_arguments(
         profile_root: profile_root.ok_or_else(|| invalid_input("--profile-root is required"))?,
         payload_root: payload_root.ok_or_else(|| invalid_input("--payload-root is required"))?,
         magnet: magnet.ok_or_else(|| invalid_input("--magnet is required"))?,
-        torrent_id: torrent_id.ok_or_else(|| invalid_input("--torrent-id is required"))?,
+        info_hash: info_hash.ok_or_else(|| invalid_input("--info-hash is required"))?,
+        publication_name: publication_name
+            .ok_or_else(|| invalid_input("--publication-name is required"))?,
         payload_bytes: payload_bytes.ok_or_else(|| invalid_input("--payload-bytes is required"))?,
         mode,
         timeout,

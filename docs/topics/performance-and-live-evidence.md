@@ -1704,6 +1704,17 @@ runs both comparators and uploads only JSON evidence. Its initial 20 MiB/s,
 detectors, not hosted-hardware performance claims; calibration requires a
 retained CI cohort.
 
+The first hosted manual smoke on 2026-08-22 exposed a stale ownership
+assumption in `application_view_throughput.py`: the diagnostic still treated a
+v1 protocol info hash as both the application torrent owner and publication
+directory. Application owners are opaque `t1-...` IDs and published payloads
+use the verified metainfo name. The corrected diagnostic adds the magnet
+paused, obtains the returned owner, opens owner-scoped views, resumes at the
+measurement boundary, and validates both the protocol identity and publication
+name. A local Apple M4 Pro smoke then passed idle, all-view, and delayed
+all-view gates with exact payload hashes and clean teardown; hosted Ubuntu
+evidence remains pending the replacement run.
+
 ## Availability-Ranked Activation: 2026-08-05
 
 Tactical [`091`](../tactical/091-availability-ranked-piece-activation.md)

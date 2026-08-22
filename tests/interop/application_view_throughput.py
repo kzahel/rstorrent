@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import statistics
 import subprocess
@@ -51,6 +52,7 @@ class ApplicationResult:
     mode: str
     run: int
     order: int
+    torrent_id: str
     transfer_seconds: float
     throughput_mib_s: float
     process_wall_seconds: float
@@ -248,8 +250,10 @@ def run_case(
         str(payload_root),
         "--magnet",
         magnet_uri(fixture.info_hash, f"127.0.0.1:{peer_port}"),
-        "--torrent-id",
+        "--info-hash",
         fixture.info_hash,
+        "--publication-name",
+        fixture.torrent_info.name(),
         "--payload-bytes",
         str(fixture.torrent_info.total_size()),
         "--mode",
@@ -295,6 +299,14 @@ def run_case(
         report = json.loads(lines[0])
         if report.get("schema_version") != 1 or report.get("mode") != case["mode"]:
             raise ScenarioFailure("application profile returned the wrong schema or mode")
+        torrent_id = report.get("torrent_id")
+        if not isinstance(torrent_id, str) or re.fullmatch(
+            r"t1-[0-9a-f]{32}", torrent_id
+        ) is None:
+            raise ScenarioFailure("application profile returned an invalid torrent owner")
+        publication_name = report.get("publication_name")
+        if publication_name != fixture.torrent_info.name():
+            raise ScenarioFailure("application profile returned the wrong publication name")
         expected_bytes = fixture.torrent_info.total_size()
         if report.get("payload_bytes") != expected_bytes:
             raise ScenarioFailure("application profile returned the wrong payload size")
@@ -302,7 +314,7 @@ def run_case(
             raise ScenarioFailure("application profile returned the wrong piece count")
         if report.get("verified_piece_count") != report.get("piece_count"):
             raise ScenarioFailure("application profile did not verify every piece")
-        published_root = payload_root / fixture.info_hash
+        published_root = payload_root / publication_name
         candidates = list(published_root.rglob("payload.bin"))
         if len(candidates) != 1:
             raise ScenarioFailure(
@@ -317,6 +329,7 @@ def run_case(
             mode=case["mode"],
             run=run,
             order=order,
+            torrent_id=torrent_id,
             transfer_seconds=float(report["transfer_seconds"]),
             throughput_mib_s=float(report["throughput_mib_s"]),
             process_wall_seconds=process_wall_seconds,
