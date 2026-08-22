@@ -33,6 +33,9 @@ Topics own the current truth for a continuing concern. Tactical docs under
 
 ## Current Topics
 
+- [`beta-release-readiness.md`](beta-release-readiness.md): authoritative beta
+  gap ledger, platform release lanes, CI/updater/distribution gates, deliberate
+  MVP deferrals, and ordered release tacticals.
 - [`product-direction.md`](product-direction.md): initial product motivation,
   first-party Rust engine decision, platform posture, non-goals, open choices,
   and recommended bring-up sequence.

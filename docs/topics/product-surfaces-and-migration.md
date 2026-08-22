@@ -16,6 +16,10 @@ common engine boundary. Explicit direction on 2026-08-13 schedules the first
 maintained SwiftUI product in Tacticals `147`--`149`; that campaign is complete
 with qualified external folder selection and physical lifecycle evidence,
 without migration or publication.
+Maintainer direction on 2026-08-22 starts the independent beta distribution
+campaign in [`beta-release-readiness.md`](beta-release-readiness.md). That
+campaign does not implicitly authorize legacy JSTorrent takeover, extension
+work, or semantic import.
 
 ## Scope
 
@@ -39,9 +43,10 @@ It complements:
 - [`client-persistence.md`](client-persistence.md), which owns the typed SQLite
   authority and verified resume invariants.
 
-This topic does not select the final public name or domain, promise an exact
-release sequence, turn the native engine into a general-purpose daemon, or
-make product migration the current engine-campaign priority.
+This topic does not select the final public name or domain, duplicate the
+platform release sequence now owned by `beta-release-readiness`, turn the
+native engine into a general-purpose daemon, or make product migration an
+implicit beta requirement.
 
 ## Product Model: Backend And Presentation Are Separate
 
@@ -457,8 +462,11 @@ fixture, or wire contract from either sibling project.
 
 - Whether the public product, extension, and native components use the
   JSTorrent or RSTorrent name at each migration stage.
-- The exact desktop native-host/backend process, single-instance, window,
-  update, and shutdown ownership model.
+- The exact desktop native-host/backend process, single-instance, window, and
+  shutdown ownership model. Desktop beta updating now adopts the external
+  `desktop-update-v1` contract; its product route/key, client presentation,
+  release pipeline, and installed evidence remain open in
+  [`beta-release-readiness.md`](beta-release-readiness.md).
 - Whether Tauri and extension views may remain attached simultaneously on
   desktop, and how command conflicts are presented.
 - Production pairing, authentication, origin, rate, replay, token rotation,
@@ -480,8 +488,9 @@ fixture, or wire contract from either sibling project.
 
 ## Recommended Next Work
 
-Do not interrupt the active engine tactical merely because this direction is
-now recorded. When product migration or extension work is authorized, begin
+The beta-readiness campaign is now the explicit product priority, but it does
+not pull legacy migration or extension control into the MVP. When product
+migration or extension work is separately authorized, begin
 with one bounded tactical that:
 
 1. inventories the exact supported legacy desktop, extension, and Android

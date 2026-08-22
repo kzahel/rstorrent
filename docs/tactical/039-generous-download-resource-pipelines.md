@@ -172,7 +172,7 @@ and compile against the current torrent projection.
 - `cargo fmt --all -- --check`, `cargo clippy --workspace -- -D warnings`, and
   `cargo test --workspace` pass. The workspace suite includes 150 engine tests
   passing and three opt-in public tests ignored.
-- `experiments/android-engine-bootstrap/build.sh` compiled release libraries
+- `clients/android/build.sh` compiled release libraries
   for `x86_64-linux-android` and `aarch64-linux-android` and regenerated both
   UniFFI Kotlin surfaces. Gradle `assembleDebug testDebugUnitTest` then passed.
 

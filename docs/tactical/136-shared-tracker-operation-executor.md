@@ -430,7 +430,7 @@ The clean final tree passed:
 - `npm run test --prefix clients/web` with 241 tests passing and two skipped;
 - warning-denying engine clippy with `test-platform-root` and all targets;
 - the controlled direct HTTPS harness above; and
-- `experiments/android-engine-bootstrap/build.sh`, including release
+- `clients/android/build.sh`, including release
   `x86_64-linux-android` and `aarch64-linux-android`, both UniFFI bindings,
   Android unit tests, and the debug APK.
 

@@ -43,5 +43,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "rstorrent-android-engine-bootstrap"
+rootProject.name = "rstorrent-android"
 include(":app")

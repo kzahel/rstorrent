@@ -592,7 +592,7 @@ Final repository evidence passes:
 - `cargo test --workspace`, including 514 passing engine library tests with
   nine ignored opt-in cases and 236 passing session library tests with two
   ignored resource profiles; and
-- `experiments/android-engine-bootstrap/build.sh` for both native ABIs,
+- `clients/android/build.sh` for both native ABIs,
   generated boundaries, JVM tests, and APK assembly.
 
 No application-boundary type changed, so web generation, typecheck, and tests

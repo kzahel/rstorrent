@@ -1,10 +1,10 @@
 # RSTorrent Development
 
 RSTorrent has a pure protocol core, a Tokio runtime, an application service,
-first-party desktop and Android clients, and loopback libtorrent
-interoperability harnesses. Product clients explicitly use online tracker and
-peer networking while diagnostic tools retain loopback-only policy. It is not
-yet a generally useful torrent client.
+maintained first-party desktop, Android, and iOS clients, and loopback
+libtorrent interoperability harnesses. Product clients explicitly use online
+tracker and peer networking while diagnostic tools retain loopback-only
+policy. It is not yet a generally useful torrent client.
 
 ## Starting A Session
 
@@ -15,14 +15,28 @@ Read these in order:
 3. [`docs/engineering-principles.md`](docs/engineering-principles.md)
 4. [`docs/topics/product-direction.md`](docs/topics/product-direction.md)
 5. [`docs/topics/capability-readiness.md`](docs/topics/capability-readiness.md)
-6. [`docs/references.md`](docs/references.md)
-7. The active document under [`docs/tactical/`](docs/tactical/README.md), once
+6. [`docs/topics/beta-release-readiness.md`](docs/topics/beta-release-readiness.md)
+7. [`docs/references.md`](docs/references.md)
+8. The active document under [`docs/tactical/`](docs/tactical/README.md), once
    one exists
 
 Before changing an established continuing concern, look for and read its topic
 under `docs/topics/`.
 
 ## Current Tactical State
+
+The authoritative **Now** is
+[`158-desktop-signed-packaging-and-updater.md`](docs/tactical/158-desktop-signed-packaging-and-updater.md).
+It owns adoption of the shared desktop update contract, signed package and
+draft-release validation, product updater presentation, and exact installed
+older-to-newer evidence. Completed Tactical `157` established the release
+ledger, graduated the Android client to `clients/android`, and added
+provisional packaging artwork. The durable release backlog and platform gates
+live in
+[`docs/topics/beta-release-readiness.md`](docs/topics/beta-release-readiness.md).
+Decision-complete wired-LAN uTP Tactical `153` remains Later; completed
+Tactical `156` closes the strict hybrid runtime slice. The chronological notes
+below are retained as implementation history, not a competing current queue.
 
 [`001-bounded-large-piece.md`](docs/tactical/001-bounded-large-piece.md) is
 complete. It replaced the first slice's piece-sized allocation with a
@@ -652,8 +666,8 @@ drain, exact payload hashes, bounded resource/file-descriptor high-waters,
 and cleanup:
 
 ```bash
-experiments/android-engine-bootstrap/build.sh
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+clients/android/build.sh
+python3 clients/android/run_bootstrap.py \
   --target pixel7a --profile product-concurrent-downloads --no-build
 ```
 
@@ -661,7 +675,7 @@ Use the same profile without a visible emulator window for routine parity:
 
 ```bash
 uv run --project tests/interop --locked \
-  python experiments/android-engine-bootstrap/run_bootstrap.py \
+  python clients/android/run_bootstrap.py \
   --target avd --avd jstorrent-tablet \
   --profile product-concurrent-downloads --runs 1 --no-build
 ```
@@ -673,8 +687,8 @@ exact wanted hashes, absent skipped/padding files, resource high waters, and
 managed cleanup:
 
 ```bash
-experiments/android-engine-bootstrap/build.sh
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+clients/android/build.sh
+python3 clients/android/run_bootstrap.py \
   --target avd --avd jstorrent-tablet --storage saf-internal --runs 1 \
   --profile product-incomplete-duplex --no-build
 ```

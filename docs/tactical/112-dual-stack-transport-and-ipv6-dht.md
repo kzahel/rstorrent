@@ -863,9 +863,9 @@ Validation:
 - `npm run generate --prefix clients/web` with no generated drift;
 - `npm run typecheck --prefix clients/web`;
 - `npm run test --prefix clients/web`;
-- `experiments/android-engine-bootstrap/build.sh` for `x86_64` and
+- `clients/android/build.sh` for `x86_64` and
   `arm64-v8a`; and
-- `python3 experiments/android-engine-bootstrap/run_bootstrap.py --target avd
+- `python3 clients/android/run_bootstrap.py --target avd
   --profile product-ipv6-policy --no-build`.
 
 ### Gate 6: Observability and recorded evidence

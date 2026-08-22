@@ -5,10 +5,10 @@ Rust engine. It is not released, has no users, and is not yet feature-complete.
 
 The current product can perform real v1 downloads from magnet intake through
 verified publication, with tracker and DHT discovery, multiple peers, durable
-session state, selective multi-file storage, and first-party desktop and
-Android clients. Exact support claims and their evidence live in the
-[feature-completeness scoreboard](docs/topics/capability-readiness.md) and
-[protocol support matrix](docs/topics/protocol-support.md).
+session state, selective multi-file storage, and maintained first-party
+desktop, Android, and iOS clients. Exact support claims and their evidence live
+in the [feature-completeness scoreboard](docs/topics/capability-readiness.md)
+and [protocol support matrix](docs/topics/protocol-support.md).
 
 ## Current Status
 
@@ -21,9 +21,10 @@ Android clients. Exact support claims and their evidence live in the
 - **Platforms are at different readiness levels.** Desktop/web is the leading
   product and inspection surface. Android is functional with native engine and
   durable storage integration but still has product gaps. ChromeOS deployment
-  and extension integration remain planned rather than released. A bounded
-  first-party in-process iOS implementation campaign is active; iOS remains
-  unsupported until its physical-device stopping conditions pass. See
+  and extension integration remain planned rather than released. The
+  first-party in-process iOS campaign now has simulator, physical-device,
+  public-swarm, system-preview, and unsigned/development archive evidence, but
+  no TestFlight or App Store distribution. See
   [client and platform readiness](docs/topics/client-surfaces.md).
 
 ## What RSTorrent Is
@@ -33,11 +34,9 @@ RSTorrent has one reusable Rust engine behind a typed application service:
 ```text
 Desktop client ─┐
 Android client ─┼──> application service ──> Rust torrent engine
-iOS client* ────┤
+iOS client ─────┤
 CLI and tests ──┘
 ```
-
-`*` Eventual; not currently implemented.
 
 The engine runs in-process in first-party clients and owns peer networking,
 discovery, protocol state, hashing, scheduling, persistence, and hot-path file
@@ -66,13 +65,12 @@ to graduate this work into the next generation of **JSTorrent**: replace the
 current engine and related internals while retaining the JSTorrent product
 name and providing a deliberate transition for existing installations.
 
-Desktop, Android, ChromeOS, and the in-progress iOS client are intended to use
-the same first-party Rust engine. A future JSTorrent browser extension may
-attach
-as a control and presentation surface, while networking, hashing, scheduling,
-persistence, and payload I/O remain in the native engine. The rollout, backend
-choices,
-coexistence, and user-state import direction are recorded in the
+Desktop, Android, ChromeOS, and the maintained iOS client use or are intended
+to use the same first-party Rust engine. A future JSTorrent browser extension
+may attach as a control and presentation surface, while networking, hashing,
+scheduling, persistence, and payload I/O remain in the native engine. The
+rollout, backend choices, coexistence, and user-state import direction are
+recorded in the
 [product deployment and migration plan](docs/topics/product-surfaces-and-migration.md)
 and [long-term product vision](docs/vision.md).
 
@@ -106,6 +104,7 @@ for toolchain setup, build, test, and launch instructions.
 
 ## Documentation
 
+- [Beta release readiness and gap checklist](docs/topics/beta-release-readiness.md)
 - [Feature completeness and current queue](docs/topics/capability-readiness.md)
 - [Client and platform readiness](docs/topics/client-surfaces.md)
 - [Exact protocol support](docs/topics/protocol-support.md)

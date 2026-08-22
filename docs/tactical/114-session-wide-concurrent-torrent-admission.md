@@ -777,7 +777,7 @@ npm run test --prefix clients/web
 npm run test:e2e --prefix clients/web -- \
   inspection-demo.spec.ts -g 'typed torrent ETA|torrent and file rows'
 python3 -m py_compile tests/interop/multi_torrent_throughput.py \
-  experiments/android-engine-bootstrap/run_bootstrap.py
+  clients/android/run_bootstrap.py
 git diff --check
 ```
 

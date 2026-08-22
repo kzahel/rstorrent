@@ -359,7 +359,7 @@ redesign.
   resource-default changes, performance tuning, or error-text redesign.
 - A hard repository-wide line limit or CI source-size gate.
 - Renaming or moving the Android application out of
-  `experiments/android-engine-bootstrap`; that graduation remains a separate
+  `clients/android`; that graduation remains a separate
   repository-structure tactical.
 
 ## Implementation Sequence And Intermediate Gates

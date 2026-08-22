@@ -453,7 +453,7 @@ active. Activity recreation and backgrounding detach collection without
 stopping the service. This proof uses app-private path storage and does not
 enable Android seeding.
 
-`experiments/android-engine-bootstrap/app/src/main/java/org/rstorrent/bootstrap/ui/PieceMap.kt`
+`clients/android/app/src/main/java/org/rstorrent/bootstrap/ui/PieceMap.kt`
 adapts the grid sizing, state layering, and color semantics from
 JSTorrent's
 `android/app/src/main/java/com/jstorrent/app/ui/components/PieceMap.kt` at
@@ -515,7 +515,7 @@ clients/web/node_modules/.bin/tauri build \
 
 cargo clippy -p rstorrent-android --all-features -- -D warnings
 cargo test -p rstorrent-android --all-features
-experiments/android-engine-bootstrap/build.sh
+clients/android/build.sh
 
 uv run --project tests/interop --locked \
   python tests/interop/gateway_reactive_surface.py

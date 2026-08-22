@@ -719,6 +719,11 @@ successful mutation unreadable after upgrade.
 
 ## Known Gaps And Open Decisions
 
+- Freeze the first externally supported beta schema/state baseline and prove
+  oldest-supported-to-current upgrade, interrupted migration, corrupt/newer
+  schema, and rollback behavior. The current development-only reset freedom
+  ends for a lane when its first beta ships; the release gate lives in
+  [`beta-release-readiness.md`](beta-release-readiness.md).
 - Backup, export, restore, and later schema policy after the accepted
   v2/hybrid clean-state reset; compatibility migration of current unreleased
   development torrents is explicitly not required.

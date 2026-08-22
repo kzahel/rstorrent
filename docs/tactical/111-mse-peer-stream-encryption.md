@@ -858,8 +858,8 @@ npm run build --prefix clients/web
 cargo check -p rstorrent-session --features uniffi
 cargo ndk -t x86_64 -t arm64-v8a -P 28 \
   check -p rstorrent-android --lib
-experiments/android-engine-bootstrap/build.sh
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+clients/android/build.sh
+python3 clients/android/run_bootstrap.py \
   --target pixel7a --profile product-mse --runs 1
 git diff --check
 ```

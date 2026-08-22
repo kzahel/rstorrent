@@ -544,7 +544,7 @@ cargo test -p rstorrent-session --lib      # 227 passed, 2 ignored
 npm run generate --prefix clients/web      # byte-identical
 npm run typecheck --prefix clients/web
 npm run test --prefix clients/web          # 239 passed, 2 skipped
-experiments/android-engine-bootstrap/build.sh
+clients/android/build.sh
 python tests/interop/android_saf_session.py --avd jstorrent-tablet --headless
 python tests/interop/android_reactive_surface.py --avd jstorrent-tablet --headless
 ```

@@ -1,31 +1,29 @@
-# Android Engine Bootstrap
+# RSTorrent for Android
 
-This is the Tactical 004/005 integration harness. It packages the real
-`rstorrent-engine` behind generated UniFFI Kotlin bindings and gives one
-foreground service sole ownership of the native session. It contains the
-current Compose product surface plus the original bounded diagnostic harness.
+This directory owns the maintained first-party Android and ChromeOS client. It
+packages the real `rstorrent-engine` behind generated UniFFI Kotlin bindings
+and gives one foreground service sole ownership of the native product session.
+It also retains the original Tactical 004/005 bounded diagnostic harness.
 The fixed-descriptor SAF proof is retained behind the engine's
 `descriptor-storage-diagnostics` compatibility feature for that diagnostic
 service only. The product application has one storage architecture: bounded
 dynamic acquisition through an explicitly granted Android Storage Access
 Framework tree.
 
-Despite the historical directory name, this is the maintained Android product
-boundary. It remains here because this module already owns the sole Android
-package, manifest, foreground-service lifecycle, generated UniFFI sources,
-two-ABI packaging, SAF platform adapter, and controlled AVD/physical evidence.
-Moving only the Compose sources to `clients/android` would split those owners;
-moving the complete module would invalidate the stable paths used by the
-accumulated Android evidence. Product sources are isolated under `Product*`,
-`AndroidPresentationRepository`, and `ui/`. The older diagnostic activity and
-service are retained as explicitly named evidence infrastructure, not as an
-alternate product UI.
+Tactical `157` graduated the complete module from its historical
+`experiments/android-engine-bootstrap` path without splitting package,
+manifest, foreground-service lifecycle, generated UniFFI, two-ABI packaging,
+SAF, Compose, or test ownership. Product sources are isolated under
+`Product*`, `AndroidPresentationRepository`, and `ui/`. The older diagnostic
+activity, service, and `run_bootstrap.py` profiles remain explicitly named
+evidence infrastructure, not an alternate product UI. Historical tacticals
+retain their original titles while current commands use this directory.
 
 Build both locked Android ABIs and the debug APK:
 
 ```bash
 source ~/.profile
-experiments/android-engine-bootstrap/build.sh
+clients/android/build.sh
 ```
 
 The build uses Android Gradle Plugin `8.7.3`, Gradle `8.11.1`, Kotlin
@@ -38,7 +36,7 @@ remain under ignored build directories.
 Run product lint, unit, and instrumentation packaging after the full build:
 
 ```bash
-cd experiments/android-engine-bootstrap
+cd clients/android
 ./gradlew lintDebug testDebugUnitTest assembleDebugAndroidTest
 ANDROID_SERIAL=emulator-5554 ./gradlew connectedDebugAndroidTest
 ```
@@ -54,34 +52,34 @@ The runner enters the pinned libtorrent environment automatically. Profiles
 are explicit and repeatable:
 
 ```bash
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+python3 clients/android/run_bootstrap.py \
   --target avd --avd jstorrent-tablet --runs 3 --profile success
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+python3 clients/android/run_bootstrap.py \
   --target avd --profile slow-storage --profile cancellation \
   --profile peer-failure --profile duplicate-start \
   --profile activity-recreation --profile preexisting-artifacts
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+python3 clients/android/run_bootstrap.py \
   --target chromeos --storage saf-internal --runs 3 --profile success
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+python3 clients/android/run_bootstrap.py \
   --target avd --storage saf-internal --runs 3 \
   --profile product-dynamic-saf
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+python3 clients/android/run_bootstrap.py \
   --target pixel7a --storage saf-internal \
   --profile product-saf-grant-repair
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+python3 clients/android/run_bootstrap.py \
   --target avd --storage saf-internal \
   --profile product-https-tracker
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+python3 clients/android/run_bootstrap.py \
   --target pixel7a --runs 1 --profile product-mse
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+python3 clients/android/run_bootstrap.py \
   --target avd --runs 1 --profile product-ipv6-policy
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+python3 clients/android/run_bootstrap.py \
   --target avd --avd jstorrent-tablet --storage saf-internal --runs 1 \
   --profile product-incomplete-duplex --no-build
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+python3 clients/android/run_bootstrap.py \
   --target avd --avd jstorrent-tablet --storage saf-internal --runs 1 \
   --profile product-hybrid-saf --no-build
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+python3 clients/android/run_bootstrap.py \
   --target motox4 --storage saf-sdcard --runs 3 --profile success
 ```
 

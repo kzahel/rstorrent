@@ -125,7 +125,7 @@ checked synchronous commit before any restart boundary.
 
 ### Android document ownership
 
-Extend `experiments/android-engine-bootstrap/` rather than creating a second
+Extend `clients/android/` rather than creating a second
 engine application. A visible activity obtains an
 `ACTION_OPEN_DOCUMENT_TREE` grant for one exact host-created empty child and
 persists the returned permission before forwarding work to the existing
@@ -298,19 +298,19 @@ source ~/.profile
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-experiments/android-engine-bootstrap/build.sh
+clients/android/build.sh
 ANDROID_HOME=/home/kgraehl/Android/Sdk \
-  experiments/android-engine-bootstrap/gradlew \
-  -p experiments/android-engine-bootstrap testDebugUnitTest lintDebug
+  clients/android/gradlew \
+  -p clients/android testDebugUnitTest lintDebug
 python3 -m py_compile \
-  experiments/android-engine-bootstrap/run_bootstrap.py
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  clients/android/run_bootstrap.py
+python3 clients/android/run_bootstrap.py \
   --target avd --avd jstorrent-tablet --storage saf-internal --runs 3
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+python3 clients/android/run_bootstrap.py \
   --target chromeos --storage saf-internal --runs 3
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+python3 clients/android/run_bootstrap.py \
   --target motox4 --storage saf-internal --runs 3
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+python3 clients/android/run_bootstrap.py \
   --target motox4 --storage saf-sdcard --runs 3
 python3 scripts/references.py status
 cargo tree --workspace --locked
@@ -400,38 +400,38 @@ Validation run for this implementation:
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-experiments/android-engine-bootstrap/build.sh
+clients/android/build.sh
 ANDROID_HOME=/home/kgraehl/Android/Sdk \
-  experiments/android-engine-bootstrap/gradlew \
-  -p experiments/android-engine-bootstrap testDebugUnitTest lintDebug
+  clients/android/gradlew \
+  -p clients/android testDebugUnitTest lintDebug
 ANDROID_HOME=/home/kgraehl/Android/Sdk \
   experiments/android-storage-probe/gradlew \
   -p experiments/android-storage-probe testDebugUnitTest lintDebug
 python3 -m py_compile \
-  experiments/android-engine-bootstrap/run_bootstrap.py \
+  clients/android/run_bootstrap.py \
   experiments/android-storage-probe/run_probe.py
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+python3 clients/android/run_bootstrap.py \
   --target avd --avd jstorrent-tablet \
   --storage saf-internal --runs 3 --profile success --no-build
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+python3 clients/android/run_bootstrap.py \
   --target avd --avd jstorrent-tablet \
   --storage saf-internal --profile slow-storage --no-build
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+python3 clients/android/run_bootstrap.py \
   --target avd --avd jstorrent-tablet \
   --storage saf-internal --profile peer-failure --no-build
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+python3 clients/android/run_bootstrap.py \
   --target avd --avd jstorrent-tablet \
   --storage saf-internal --profile duplicate-start --no-build
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+python3 clients/android/run_bootstrap.py \
   --target avd --avd jstorrent-tablet \
   --storage saf-internal --profile activity-recreation --no-build
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+python3 clients/android/run_bootstrap.py \
   --target avd --avd jstorrent-tablet \
   --storage saf-internal --profile cancellation --no-build
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+python3 clients/android/run_bootstrap.py \
   --target chromeos --storage saf-internal \
   --runs 3 --profile success --no-build
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+python3 clients/android/run_bootstrap.py \
   --target pixel7a --storage saf-internal \
   --runs 3 --profile success
 scripts/references.py status

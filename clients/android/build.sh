@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-bootstrap_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-repository_root="$(cd "$bootstrap_root/../.." && pwd)"
+android_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repository_root="$(cd "$android_root/../.." && pwd)"
 android_sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}"
 ndk_root="$android_sdk/ndk/27.0.12077973"
-generated_root="$bootstrap_root/app/build/generated"
+generated_root="$android_root/app/build/generated"
 
 if [[ ! -d "$android_sdk/platforms/android-35" ]]; then
     echo "Android platform 35 is unavailable under $android_sdk" >&2
@@ -25,7 +25,7 @@ done
 export ANDROID_HOME="$android_sdk"
 export ANDROID_NDK_HOME="$ndk_root"
 
-"$bootstrap_root/gradlew" -p "$bootstrap_root" clean
+"$android_root/gradlew" -p "$android_root" clean
 
 cargo ndk \
     -t x86_64 \
@@ -74,11 +74,11 @@ cargo run \
     --out-dir "$generated_root/source/uniffi" \
     --no-format
 
-"$bootstrap_root/gradlew" -p "$bootstrap_root" assembleDebug testDebugUnitTest
+"$android_root/gradlew" -p "$android_root" assembleDebug testDebugUnitTest
 
-apk="$bootstrap_root/app/build/outputs/apk/debug/app-debug.apk"
+apk="$android_root/app/build/outputs/apk/debug/app-debug.apk"
 if [[ ! -f "$apk" ]]; then
-    echo "Bootstrap APK was not created at $apk" >&2
+    echo "Android client APK was not created at $apk" >&2
     exit 1
 fi
 echo "$apk"

@@ -66,7 +66,7 @@ def parse_arguments() -> argparse.Namespace:
         type=Path,
         default=(
             repository
-            / "experiments/android-engine-bootstrap/app/build/outputs/apk/debug/app-debug.apk"
+            / "clients/android/app/build/outputs/apk/debug/app-debug.apk"
         ),
     )
     return parser.parse_args()

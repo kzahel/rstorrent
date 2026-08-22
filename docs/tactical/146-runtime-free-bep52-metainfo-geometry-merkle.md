@@ -578,7 +578,7 @@ data was copied. The final validation ran:
   four independently generated
   fixtures agree with pinned libtorrent `2.0.13.0`; all three intentional
   policy differences pass and all temporary files are cleaned.
-- `experiments/android-engine-bootstrap/build.sh`: release Rust libraries
+- `clients/android/build.sh`: release Rust libraries
   compile for `x86_64-linux-android` and `aarch64-linux-android`; regenerated
   UniFFI/Kotlin output, Android unit tests, and debug APK assembly pass. The
   existing Android deprecation warnings remain unrelated.
@@ -725,7 +725,7 @@ python3 scripts/references.py status
 cargo fmt --all -- --check
 cargo clippy --workspace -- -D warnings
 cargo test --workspace
-experiments/android-engine-bootstrap/build.sh
+clients/android/build.sh
 ```
 
 Inspect the protocol crate's dependency direction and keep the runtime-free

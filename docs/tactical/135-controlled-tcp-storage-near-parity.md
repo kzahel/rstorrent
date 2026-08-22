@@ -372,7 +372,7 @@ Final commands and outcomes:
   test passed;
 - the locked controlled diagnosis, public comparator contract, and public
   comparator suites: 32 tests passed;
-- `experiments/android-engine-bootstrap/build.sh`: x86_64 and arm64-v8a
+- `clients/android/build.sh`: x86_64 and arm64-v8a
   release libraries built, UniFFI regenerated, the debug APK assembled, and
   Android unit tests passed; only existing Kotlin deprecation warnings were
   emitted; and

@@ -7,6 +7,11 @@ coarse engagement counters, campaign-specific prompt state, and visible
 user-submitted diagnostic context belong together in a product-state boundary
 above any one profile. No store, feedback transport, prompt campaign, or
 remote analytics service is implemented yet.
+The accepted desktop beta update direction now requires one random, resettable
+installation ID for the `desktop-update-v1` `X-CFU-Id` request header. It is a
+bounded product-state use for estimating active installations, not analytics
+identity or authorization; implementation and visible privacy text remain open
+under [`beta-release-readiness.md`](beta-release-readiness.md).
 
 ## Scope
 
@@ -253,6 +258,10 @@ explicit-submit boundary is an intentional difference.
 
 ## Known Gaps And Next Work
 
+- Define the desktop updater installation-ID file, atomic create/repair/reset,
+  relationship to the eventual `product.db` ID, backup behavior, and visible
+  disclosure before automatic update checks ship. Do not create two durable
+  installation identities accidentally.
 - Define the first exact `product.db` schema, migration, SQLite durability,
   corruption recovery, reset, and platform backup policy in a bounded
   tactical.

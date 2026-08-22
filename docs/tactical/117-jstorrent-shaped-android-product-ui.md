@@ -452,16 +452,19 @@ source files or additional attribution artifacts were created.
 
 ### Maintained module boundary
 
-The product remains in `experiments/android-engine-bootstrap` rather than
-moving to a new `clients/android` directory. That module is already the only
-Android package, manifest, generated-UniFFI build, two-ABI build, foreground-
-service owner, SAF adapter, controlled runner, and accumulated physical/AVD
-evidence target. Moving it would either invalidate those stable evidence paths
-or create a second Android packaging and lifecycle authority. Product code is
+At this tactical's completion the product remained in the historical Android
+engine-bootstrap directory because that module was already the only Android
+package, manifest, generated-UniFFI build, two-ABI build, foreground-service
+owner, SAF adapter, controlled runner, and accumulated physical/AVD evidence
+target. Splitting only the Compose code into `clients/android` would have
+created a second packaging and lifecycle authority. Product code remained
 separated by `Product*`, `AndroidPresentationRepository`, and `ui/` sources;
-the older diagnostic activity/service remains an explicitly named evidence
-harness. The module README now records this as a maintained product boundary,
-not as a disposable UI experiment.
+the older diagnostic activity/service remained an explicitly named evidence
+harness.
+
+Tactical `157` later graduated that complete module intact to
+`clients/android` and updated executable evidence paths. It did not split the
+owners or rewrite the historical diagnostic contract.
 
 ### Evidence
 
@@ -470,7 +473,7 @@ The closing validation on 2026-08-10 passed:
 - `cargo fmt --all -- --check`, `cargo clippy --workspace -- -D warnings`, and
   `cargo test --workspace`, including the Rust Android raw-byte application
   intake test;
-- `experiments/android-engine-bootstrap/build.sh`, which regenerated both
+- `clients/android/build.sh`, which regenerated both
   UniFFI packages, cross-built and packaged `x86_64` and `arm64-v8a`, then ran
   the debug APK and Kotlin unit-test build;
 - Gradle `lintDebug`, `testDebugUnitTest`, and

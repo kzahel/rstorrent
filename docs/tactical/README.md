@@ -702,7 +702,7 @@ that scope and its cleanup or compatibility rules explicitly.
   controlled multifile hardware evidence, Big Buck Bunny public-swarm
   completion, Apple Files playback, and exact cleanup pass.
 - [`153-wired-lan-utp-data-plane-scalability.md`](153-wired-lan-utp-data-plane-scalability.md):
-  planned after the current queue; measures RSTorrent TCP/uTP and pinned-
+  decision-complete and Later; measures RSTorrent TCP/uTP and pinned-
   libtorrent throughput over a wired gigabit-effective Mac-to-Linux/Windows
   LAN, attributes packet-rate ceilings, and records native Windows separately
   without claiming 2.5 GbE through the Mac's 1 GbE adapter.
@@ -718,11 +718,22 @@ that scope and its cleanup or compatibility rules explicitly.
   two-role pinned-libtorrent interoperability, and proportional web, Tauri,
   Android, and iOS evidence while hybrid and creation remain deferred.
 - [`156-hybrid-dual-swarm-runtime-closure.md`](156-hybrid-dual-swarm-runtime-closure.md):
-  planned and decision-complete; owns strict hybrid source/magnet intake,
-  first-owner provisional reconciliation, one owner across v1/v2 discovery
-  and peer lanes, mandatory dual integrity, BEP 47 padding, restart/seeding,
-  both-swarm/both-role pinned-libtorrent evidence, and first-party platforms
-  while creation and single-format fallback remain deferred.
+  complete; implements strict hybrid source/magnet intake, first-owner
+  provisional reconciliation, one owner across v1/v2 discovery and peer lanes,
+  mandatory dual integrity, BEP 47 padding, restart/seeding, both-swarm/both-
+  role pinned-libtorrent evidence, and first-party platforms while creation and
+  single-format fallback remain deferred.
+- [`157-beta-release-foundation.md`](157-beta-release-foundation.md): complete;
+  establishes the beta-readiness ledger, graduates the complete
+  Android client to its durable module path, adds provisional packaging
+  art/metadata, and reconciles status before signed updater and cross-platform
+  CI slices.
+- [`158-desktop-signed-packaging-and-updater.md`](158-desktop-signed-packaging-and-updater.md):
+  decision-complete and selected as Now; adopts `desktop-update-v1` through a
+  Tauri-only product UI/state boundary, per-app identity/key/route, signed
+  package matrix, fail-closed draft finalization, and exact installed
+  older-to-newer evidence while retaining explicit provisioning/publication
+  gates.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

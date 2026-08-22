@@ -811,7 +811,7 @@ Completed evidence on 2026-08-06:
 - `cargo check -p rstorrent-session --features uniffi` and `cargo check -p
   rstorrent-desktop --all-targets` passed. `cargo ndk -t x86_64 -t arm64-v8a
   -P 28 check -p rstorrent-android --lib` passed for both established Android
-  targets; and `experiments/android-engine-bootstrap/build.sh` built both
+  targets; and `clients/android/build.sh` built both
   release libraries, generated both Kotlin binding sets, assembled the debug
   APK, and passed all ten JVM tests. Only pre-existing Android deprecation and
   generated `ts-rs` attribute warnings were emitted;

@@ -33,6 +33,9 @@ the application callback/test topology, historical store internals, and role-
 specific peer bootstrap paths exposed by MSE. No standalone refactor is
 selected. The completed storage slice does not justify a generic resume,
 storage, or recovery framework.
+Tactical `157` subsequently resolves the repository-level Android graduation
+item by moving the complete module to `clients/android`; diagnostic/service
+isolation remains a separate bounded cleanup.
 
 Completed Tactical
 [`136`](../tactical/136-shared-tracker-operation-executor.md) resolves one
@@ -599,23 +602,21 @@ product decides the compatibility surface can change. Preserve public paths
 and do not make the session advertisement owner a dependency of the download
 driver.
 
-### 7. Android Product Graduation
+### 7. Android Diagnostic Isolation
 
-The Android application still lives under
-`experiments/android-engine-bootstrap`. The 794-line legacy `EngineService`
-has one touch in the current 200-commit window, while the 1,076-line
-`ProductEngineService` has four and remains the active Compose/application
-path; both remain in the manifest, and `MainActivity` can still invoke both.
-Tactical `098` initializes platform trust before either service constructs
-native network owners, and Tactical `111`'s successful physical product-MSE
-profile further validates the product path without resolving the dual
-packaging.
+Tactical `157` resolves the repository-location question by graduating the
+complete maintained module to `clients/android`. Compose, SAF, foreground-
+service, generated Rust/Kotlin, ABI packaging, Gradle, and controlled evidence
+owners remain together.
 
-Graduation is a product/repository decision, not a response to Kotlin file
-size. It needs its own tactical after the durable Android location is
-accepted. Preserve Compose, SAF, foreground-service, and generated
-Rust/Kotlin contracts while removing or isolating the diagnostic path. Do not
-mix that decision into an engine, TLS, or storage refactor.
+The 794-line legacy `EngineService` and the active `ProductEngineService`
+still share the application package and manifest, and `MainActivity` can still
+invoke both. That is now the remaining cleanup boundary. Removing the retained
+Tactical 004/005 diagnostics, moving them to a diagnostic-only build variant,
+or extracting a separate harness must preserve explicit-target evidence and
+avoid creating a second production service owner. It requires its own bounded
+tactical; do not mix it into an engine, TLS, storage, or release-signing
+change merely because the directory move is complete.
 
 ## Watch List And Deliberate Non-Work
 

@@ -588,9 +588,16 @@ remote exposure, and Android streaming remain independent product decisions.
 - The loopback WebSocket gateway is an authenticated proof, not a production
   remote-access design. It has no pairing, principal/capability model, TLS,
   relay, wake-up path, or public wire compatibility promise.
-- The Tauri shell has basic macOS close-and-reopen behavior but no production
-  tray or cross-platform window policy, installers, updates, file associations,
-  or platform-capability adapter.
+- The Tauri shell has basic macOS close-and-reopen behavior and Tactical `157`
+  adds provisional icon assets plus ordinary local bundle configuration. It
+  still has no signed/notarized clean-machine installer evidence, updater,
+  file associations, production tray policy, or complete cross-platform
+  window/platform-capability evidence. The release gates live in
+  [`beta-release-readiness.md`](beta-release-readiness.md).
+- The maintained Android product module now lives at `clients/android`; the
+  unreleased `org.rstorrent.bootstrap` identity and retained diagnostic service
+  remain explicit release-cleanup decisions rather than evidence that the
+  Compose client is still an experiment.
 - Android durable SAF session storage and provider publication are proven for
   one persisted root. The Compose product presents root setup/health/repair,
   bounded file selection, `Download now`, and completed-file open. General
@@ -641,4 +648,6 @@ Tacticals `033` through `035` record the leased view-set boundary, responsive
 demo surface, and first live peer projection plus recovery evidence.
 Completed Tactical `117` records the Android product-presentation closure.
 Production remote authorization, dynamic Android network controls, and
-broader desktop lifecycle work remain later boundaries.
+broader desktop lifecycle work remain later capability boundaries. Signed
+distribution, updating, CI, product identity, and beta MVP triage are tracked
+in [`beta-release-readiness.md`](beta-release-readiness.md).

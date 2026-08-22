@@ -701,7 +701,7 @@ RSTORRENT_PLAYWRIGHT_BASE_URL=http://127.0.0.1:4178 \
   npx playwright test tests/inspection-demo.spec.ts \
   --grep "typed torrent ETA"
 
-cd ../../experiments/android-engine-bootstrap
+cd ../../clients/android
 ./gradlew -p . assembleDebug testDebugUnitTest
 ```
 

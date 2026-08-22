@@ -3,9 +3,11 @@
 Topic: `capability-readiness`
 
 Status: Authoritative cross-cutting feature-readiness scoreboard and current
-work queue for the functional, unreleased alpha. The tables below record
-current support, evidence, and highest-risk gaps; implementation history
-remains in the linked tacticals and focused topics.
+work queue for the functional, unreleased alpha. Maintainer direction on
+2026-08-22 completed beta-release foundation Tactical `157` and selects desktop
+release/updater Tactical `158` as the single **Now**. The tables below record current support, evidence, and
+highest-risk gaps; implementation history remains in the linked tacticals and
+focused topics.
 
 ## Purpose And Ownership
 
@@ -24,7 +26,10 @@ topic links those records and states the current priority.
 [`product-direction.md`](product-direction.md) owns durable product posture and
 sequence. [`protocol-support.md`](protocol-support.md) owns BEP-level claims.
 [`download-correctness.md`](download-correctness.md) owns completion, integrity,
-and recovery scenarios. This topic owns the cross-cutting readiness view.
+and recovery scenarios.
+[`beta-release-readiness.md`](beta-release-readiness.md) owns the external-beta
+gap ledger, distribution gates, and release feature boundary. This topic owns
+the cross-cutting capability view and its single current tactical.
 
 ## Reading The Scoreboard
 
@@ -478,18 +483,26 @@ exactly.
 
 ### Now
 
-- **Execute decision-complete measurement Tactical
-  [`153`](../tactical/153-wired-lan-utp-data-plane-scalability.md).** It owns a
-  bounded wired gigabit-effective Mac-to-native-desktop LAN matrix for the
-  higher packet-rate uTP data plane. This is evidence and diagnosis work, not
-  standing authorization for protocol redesign, a product support change, or
-  a 2.5 GbE claim while the Mac endpoint remains 1 GbE.
+- **Execute desktop signed packaging and updater Tactical
+  [`158`](../tactical/158-desktop-signed-packaging-and-updater.md).** It adopts
+  the accepted `desktop-update-v1` contract, product-owned update UI/state,
+  least-privileged package policy, signed draft release matrix, validation, and
+  exact older-to-newer testbed evidence. Pure integration can start, but
+  public identity/key/route provisioning, credentials, production changes,
+  tags, releases, and publication retain the tactical's explicit maintainer
+  gates.
 
 ### Next
 
 - There is no queued second authoritative item.
 
 ### Later
+
+Decision-complete measurement Tactical
+[`153`](../tactical/153-wired-lan-utp-data-plane-scalability.md) remains ready
+for a bounded wired gigabit-effective Mac-to-native-desktop LAN matrix. The
+explicit 2026-08-22 beta-readiness priority supersedes its queue position, not
+its measurement design or value.
 
 Completed Tacticals
 [`142`](../tactical/142-wan-transport-performance-matrix.md),

@@ -555,7 +555,7 @@ The pre-implementation survey found:
   policy;
 - `crates/rstorrent-android/src/lib.rs` has the in-process cdylib/UniFFI
   boundary but no platform-verifier initialization;
-- `experiments/android-engine-bootstrap/app/build.gradle.kts` does not package
+- `clients/android/app/build.gradle.kts` does not package
   the verifier Android component; and
 - both Android services can construct native network owners without a prior
   application-level TLS initializer.

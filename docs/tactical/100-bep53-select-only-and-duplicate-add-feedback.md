@@ -559,7 +559,7 @@ Evidence recorded on 2026-08-06:
   `npm run build` passed in `clients/web`: 201 tests passed, two remained
   explicitly skipped, generated artifacts were stable, CSP inspection passed,
   and the existing large-bundle warning remained informational; and
-- `experiments/android-engine-bootstrap/build.sh` passed the x86_64 and arm64
+- `clients/android/build.sh` passed the x86_64 and arm64
   release Rust cross-builds, regenerated both Kotlin bindings, and passed
   `assembleDebug` plus `testDebugUnitTest`.
 

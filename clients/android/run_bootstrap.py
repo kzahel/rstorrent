@@ -69,7 +69,7 @@ def repository_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def bootstrap_root() -> Path:
+def android_root() -> Path:
     return Path(__file__).resolve().parent
 
 
@@ -140,7 +140,7 @@ def load_support() -> tuple[
 
 def build_apk() -> Path:
     completed = subprocess.run(
-        [str(bootstrap_root() / "build.sh")],
+        [str(android_root() / "build.sh")],
         cwd=repository_root(),
         capture_output=True,
         text=True,
@@ -4361,7 +4361,7 @@ def main() -> int:
         hybrid_support,
     ) = load_support()
     apk = (
-        bootstrap_root() / "app" / "build" / "outputs" / "apk" / "debug" /
+        android_root() / "app" / "build" / "outputs" / "apk" / "debug" /
         "app-debug.apk"
         if arguments.no_build
         else build_apk()

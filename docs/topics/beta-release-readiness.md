@@ -1,0 +1,335 @@
+# Beta Release Readiness
+
+Topic: `beta-release-readiness`
+
+Status: **Active as of 2026-08-22.** RSTorrent is a functional unreleased
+alpha with maintained desktop, Android, and iOS clients, but it does not yet
+have supported distribution, upgrades, release CI, or a frozen public product
+identity. This topic is the authoritative beta gap ledger and release
+checklist. Tactical
+[`157`](../tactical/157-beta-release-foundation.md) completed the first cleanup
+slice; Tactical
+[`158`](../tactical/158-desktop-signed-packaging-and-updater.md) is **Now**.
+
+## Scope And Release Definition
+
+This topic answers whether a build is ready to be handed to people outside the
+development team. It owns:
+
+- the beta product boundary and deliberately deferred features;
+- platform packaging, signing, installation, update, rollback, and uninstall
+  readiness;
+- presubmit, scheduled, release, and post-release validation gates;
+- product identity, version, migration, privacy, support, licensing, and
+  release-note gates; and
+- the ordered backlog of bounded tacticals needed to reach beta.
+
+[`capability-readiness.md`](capability-readiness.md) remains the detailed
+engine and application capability scoreboard and owns exactly one **Now**.
+[`protocol-support.md`](protocol-support.md) owns exact BitTorrent protocol
+claims. Platform and UI truth remains in
+[`client-surfaces.md`](client-surfaces.md). This topic classifies those facts
+for release rather than duplicating their design.
+
+**Beta** means a versioned, signed build intentionally offered to external
+testers with a documented supported platform and upgrade path. A local debug
+APK, unsigned Apple archive, `tauri dev` window, website build, or headless web
+host is not a beta release.
+
+Beta is a program with independent lanes. Desktop beta is not blocked on App
+Store review, and mobile beta is not implied by a desktop tag:
+
+| Lane | Intended beta channel | Current release state |
+| --- | --- | --- |
+| macOS desktop | signed/notarized DMG plus in-app updates | product runs; packaging, signing, updater, and installed-app evidence absent |
+| Windows desktop | signed per-user NSIS plus in-app updates | product code compiles in the workspace; native package/install evidence absent |
+| Linux desktop | AppImage plus in-app updates; DEB/RPM remain package-manager channels | product code compiles in the workspace; native package/install evidence absent |
+| Android/ChromeOS | signed Android App Bundle through a closed testing channel | maintained Compose app works through real in-process Rust engine and SAF; release identity, signing, bundle, store, and upgrade evidence absent |
+| iOS/iPadOS | signed TestFlight build | maintained SwiftUI app and unsigned/development archives work; distribution identity, signing automation, TestFlight, and upgrade evidence absent |
+
+The first external lane may ship when its own blockers and the shared product
+blockers pass. Unsupported lanes must remain labelled development preview; the
+project must not imply simultaneous availability.
+
+## Release Policy
+
+Checklist meanings are exact:
+
+- `[x]` means repository evidence currently satisfies the stated gate.
+- `[ ]` means open. Text after the item records whether it blocks every beta,
+  one platform lane, or only a broader promise.
+- A gate closes from recorded commands, artifacts, or testbed evidence, not
+  from the presence of configuration or a code path.
+
+A release candidate is cut from one reviewed commit. Versions are stable
+three-component semantic versions. The application, package metadata,
+changelog, tag, installer metadata, and updater response must agree. A tagged
+workflow may create a draft release, but only a final validation job may make
+it public. Tags, publication, store submission, and production-route changes
+remain explicit maintainer actions.
+
+Until the first external beta, development data may be reset rather than
+migrated. The first published build freezes its application identifiers,
+updater key, update route, and a supported persistence/schema baseline. Every
+later build must either migrate that baseline transactionally or fail closed
+without corrupting or silently reinterpreting user state.
+
+## Shared Beta Blockers
+
+### Product identity and release contract
+
+- [ ] **REL-001 — Freeze the beta name and publisher identity.** Decide whether
+  the preview ships as RSTorrent or JSTorrent and record the relationship to
+  existing JSTorrent store identities. This blocks every public lane.
+- [ ] **REL-002 — Freeze application identifiers.** Desktop currently uses
+  `org.jstorrent.rstorrent`, Android uses the unreleased
+  `org.rstorrent.bootstrap`, and iOS uses `org.rstorrent.ios.dev`. Do not
+  inherit `com.jstorrent.app` or another existing store identity without an
+  explicit migration/coexistence decision.
+- [ ] **REL-003 — Establish one release version source and bump procedure.**
+  Desktop web, Cargo, and Tauri metadata currently agree at `0.1.0`; Android
+  and iOS use independent provisional values. Release validation must reject
+  drift for the lane being shipped.
+- [ ] **REL-004 — Add a changelog and release-note policy.** Release notes must
+  distinguish supported behavior, known limitations, data reset/migration,
+  and security/privacy changes.
+- [ ] **REL-005 — Freeze the first supported persistence baseline.** Exercise
+  upgrade from the oldest supported beta database and application-owned files,
+  including crash during migration, corrupt/newer schema, root loss, and
+  rollback policy.
+- [ ] **REL-006 — Define support, privacy, and legal presentation.** Ship
+  license/notices, a privacy statement for network behavior and any update
+  installation ID, support/report instructions, and a safe diagnostics export
+  with user-visible contents.
+
+### CI and repository health
+
+- [ ] **CI-001 — Add ordinary presubmit CI.** Required checks must run Rust
+  formatting, workspace clippy with warnings denied, workspace tests, generated
+  contract drift, web typecheck/unit/build, and documentation/config checks.
+  Today only website and performance workflows exist.
+- [ ] **CI-002 — Add shared-web end-to-end coverage.** Run the deterministic
+  Playwright suite in CI, retain failure traces/screenshots, and keep public-
+  swarm cases opt-in rather than required.
+- [ ] **CI-003 — Add a desktop OS matrix.** Compile and package on macOS arm64
+  and x86_64, Windows x86_64, and Linux x86_64; add Linux arm64 when a native
+  runner or deliberate cross-build path exists. A compile-only matrix does not
+  satisfy installer or update evidence.
+- [ ] **CI-004 — Add Android gates.** Build both Rust ABIs, lint, unit test,
+  assemble a release bundle, and run a bounded owned-emulator product smoke.
+  Physical-device and ChromeOS evidence remains a release-candidate campaign,
+  not an unattended presubmit mutation.
+- [ ] **CI-005 — Add iOS gates.** Generate bindings/project, build the device
+  Rust library, run simulator unit/UI tests, and create an unsigned release
+  archive on a pinned macOS/Xcode runner. Signed TestFlight work remains a
+  protected release job.
+- [ ] **CI-006 — Add a bounded controlled interoperability smoke.** Choose a
+  short v1 magnet/torrent intake, transfer, publication, restart, and seeding
+  path against pinned libtorrent. Keep the long matrix and public catalog out
+  of ordinary PR latency.
+- [ ] **CI-007 — Repair scheduled performance CI.** The 2026-08-10 and
+  2026-08-17 runs failed before tests because `astral-sh/setup-uv@v8` could not
+  be resolved. Pin an existing reviewed action revision and prove a successful
+  scheduled artifact-producing run.
+- [ ] **CI-008 — Protect the release branch.** Require the release-readiness
+  checks and review after their signal is stable. `main` was unprotected when
+  audited on 2026-08-22.
+
+### Product smoke and quality floor
+
+- [x] **QA-001 — Core deterministic and local product suites pass.** On
+  2026-08-22, Rust format/clippy/workspace tests, web typecheck and 248 passing
+  unit tests with 2 skips, the production web build/CSP check, 33 deterministic
+  Playwright tests with 12 live tests skipped, both Android ABIs plus Kotlin
+  unit/APK build, and an unsigned arm64 iOS archive passed locally.
+- [ ] **QA-002 — Record a repeatable beta torrent cohort.** Cover small and
+  large single/multifile v1 torrents, magnets and `.torrent` files, public and
+  controlled discovery, selective files, pause/resume/restart/recheck,
+  completion, opening, seeding, removal, low disk, corrupt data, and no-peer
+  behavior without retaining payloads or sensitive logs.
+- [ ] **QA-003 — Run installed release-candidate smokes.** Each claimed lane
+  must install outside a source checkout, launch without development tools,
+  complete the common cohort, survive relaunch/reboot where applicable, and
+  uninstall with documented retained/removed state.
+- [ ] **QA-004 — Establish a crash/support loop.** Users need an accessible
+  version/build identity, copyable bounded diagnostics, known-issues link, and
+  a report path. Automatic crash or analytics upload is not required for beta.
+- [ ] **QA-005 — Review dependencies, notices, and release artifacts.** Verify
+  license provenance, dependency advisories, archive contents, absence of
+  secrets/development endpoints, and published checksums.
+
+## Desktop Beta Checklist
+
+### Packaging and platform integration
+
+- [ ] **DESK-001 — Make the Tauri bundle real.** Tactical `157` supplies
+  provisional icon assets and local bundle configuration. Native DMG/NSIS/
+  AppImage builds, file metadata, clean-machine install, and uninstall remain
+  required.
+- [ ] **DESK-002 — Sign and notarize tagged builds.** Use the existing shared
+  publisher Developer ID/notarization and Windows Azure signing setup. Missing
+  credentials must fail a tagged build before publication; untagged CI must
+  remain buildable without release credentials.
+- [ ] **DESK-003 — Set least-privileged package ownership.** The default is a
+  DMG-installed self-contained app on macOS, per-user NSIS on Windows, and a
+  user-writable AppImage on Linux. MSI/DEB/RPM installs stay with their package
+  managers and show a manual-update path.
+- [ ] **DESK-004 — Finish lifecycle integration.** Decide single-instance,
+  open-file/magnet handoff, platform close/quit/reopen behavior, crash restart,
+  and whether tray/background operation is part of beta. File associations and
+  tray are not automatically blockers if the limitation is explicit.
+- [ ] **DESK-005 — Qualify native root pickers.** macOS works. Windows and
+  Linux picker behavior, permissions, unavailable roots, restart, and repair
+  remain open platform gates.
+
+### Desktop updater contract
+
+RSTorrent will adopt the proven
+[`desktop-update-v1`](https://github.com/kzahel/desktop-release-kit/blob/main/contract/desktop-update-v1.md)
+contract and shared multi-product update service. The local
+`desktop-release-kit` canary is the operational reference; AtPiano's updater
+is still pending and is not the compatibility oracle.
+
+- [ ] **UPD-001 — Provision RSTorrent's update identity.** Generate one unique
+  updater key, store only its public half in the app, add CI secrets for the
+  private half/passphrase, and register an RSTorrent product route/config with
+  the shared server. Credential values never enter this repository.
+- [ ] **UPD-002 — Implement client behavior.** Add the Tauri updater/process
+  plugins, stable random installation ID in the platform config directory,
+  `X-CFU-Id`, exact check reason, a silent startup check after five seconds, a
+  silent 24-hour check, bounded timeout/deduplication, manual check, visible
+  release notes/progress/errors, explicit install, and relaunch only after
+  successful installation.
+- [ ] **UPD-003 — Enforce package policy.** In-app replacement is allowed only
+  for macOS app, Windows per-user NSIS, and user-writable Linux AppImage.
+  MSI/DEB/RPM installations must use a visible manual/package-channel path.
+- [ ] **UPD-004 — Add release metadata validation.** Produce signed updater
+  artifacts for `darwin-aarch64`, `darwin-x86_64`, `windows-x86_64`,
+  `linux-x86_64`, and `linux-aarch64`; validate URLs, signatures, checksums,
+  version agreement, immutable release assets, and draft-before-finalize.
+- [ ] **UPD-005 — Prove a real cross-version update.** On each supported
+  desktop testbed, install an exact older public signed build, check through
+  the production route, download/install/relaunch, and verify new application
+  version/build identity. Source and metadata tests alone do not close this.
+- [ ] **UPD-006 — Document update privacy and recovery.** Explain the random
+  resettable installation ID, private server logging, automatic schedule,
+  manual retry/download path, rollback expectations, and behavior when an
+  update or metadata service fails.
+
+## Android/ChromeOS Beta Checklist
+
+- [x] **AND-001 — Maintain a real first-party product client.** Compose,
+  in-process Rust, foreground-service lifecycle, SAF storage, generated UniFFI
+  contract, dual ABI packaging, AVD, ChromeOS, and physical Android evidence
+  exist. Tactical `157` graduates the complete module from `experiments/` to
+  `clients/android` without splitting these owners.
+- [ ] **AND-002 — Freeze application identity and upgrade semantics.** Resolve
+  whether beta is a distinct RSTorrent listing or an update/replacement for
+  `com.jstorrent.app`; exercise data/state coexistence rather than silently
+  claiming the existing identity.
+- [ ] **AND-003 — Create a signed release App Bundle.** Configure release
+  signing through protected CI/store credentials, version code/name checks,
+  minification/resource rules, mapping retention, and artifact inspection.
+- [ ] **AND-004 — Qualify the closed-testing channel.** Install from the store
+  on representative Android and ChromeOS devices, update from an older build,
+  complete the cohort, recover foreground/background transitions, repair a
+  revoked root, open content, and remove/uninstall cleanly.
+- [ ] **AND-005 — Complete store and platform declarations.** Data safety,
+  privacy, foreground service, notification, local-network/network behavior,
+  content rating, listing text/screenshots, and support link must match actual
+  behavior.
+
+## iOS/iPadOS Beta Checklist
+
+- [x] **IOS-001 — Maintain a real first-party product client.** SwiftUI,
+  in-process Rust/UniFFI, app Documents and qualified selected roots,
+  simulator/physical lifecycle evidence, system preview, and reproducible
+  unsigned/development archives exist.
+- [ ] **IOS-002 — Freeze the distribution bundle identity.** Replace the
+  `.dev` identifiers only after deciding RSTorrent versus JSTorrent public
+  identity and migration/coexistence.
+- [ ] **IOS-003 — Add complete app artwork and metadata.** Tactical `157`
+  supplies provisional buildable artwork; final App Store icon, display copy,
+  screenshots, privacy manifest review, support/privacy links, and localization
+  review remain open.
+- [ ] **IOS-004 — Automate a signed archive/export.** Use protected Apple
+  credentials/profiles outside the repository, validate archive contents, and
+  upload the exact reviewed build to TestFlight.
+- [ ] **IOS-005 — Prove TestFlight upgrade and lifecycle.** Install an older
+  beta, update through TestFlight, validate retained state/roots and schema,
+  run phone/iPad cohort cases, and record finite-background limitations.
+
+## Beta Feature Boundary
+
+The beta MVP is an honest ordinary downloader/seeder, not feature parity with
+every mature BitTorrent client. The following are required product behavior
+for a lane unless the platform-specific checklist narrows them:
+
+- magnet and local `.torrent` intake with clear errors and duplicates;
+- path/root choice, selective files, pause/resume, queueing, recheck, remove
+  with safe keep/delete choices, restart, completion, open/share through the
+  platform's supported path, and basic speed/connection/seeding settings;
+- truthful progress, no-peer/retry/storage/checking explanations, bounded logs,
+  and version/support information; and
+- repeatable common public v1 behavior plus the controlled correctness cohort.
+
+These useful gaps are **not automatic beta blockers** when disclosed:
+
+- embedded/progressive media playback and a media catalog;
+- search, plugins, torrent creation, tracker mutation, rich numeric file
+  priorities, ratio/time seed goals, and durable transfer totals;
+- production remote access, extension control, relay, pairing, and migration
+  from legacy JSTorrent;
+- VPN-only, metered-network, proxy, interface-specific, and power policy;
+- local service discovery (BEP 14), HTTP web seeds (BEP 17/19), tracker scrape
+  (BEP 48), hole punching (BEP 55), PCP/NAT-PMP, and full IPv6/uTP breadth; and
+- complete BEP 52 coverage. Pure-v2 and hybrid behavior may be labelled beta
+  or experimental according to the public-swarm cohort actually passed.
+
+Missing features become blockers if the product advertises them, if their
+absence creates corruption/security risk, or if cohort evidence shows they
+are necessary for ordinary advertised downloads. Public incomplete-swarm
+reliability and ordinary performance remain evidence requirements even though
+no single optional BEP is mandatory.
+
+## Ordered Tactical Queue
+
+1. **Complete — Tactical `157`: beta release foundation.** Established this
+   ledger, graduated the Android module path, added provisional platform
+   artwork/bundle metadata, corrected entry-point status, and preserved
+   historical evidence.
+2. **Now — Tactical `158`: desktop signed packaging and updater adoption.**
+   Implement the
+   product-owned side of `desktop-update-v1`, release validation, draft
+   artifacts, and platform testbed runbook. Provisioning the per-app key and
+   production route is an explicit maintainer/operations gate.
+3. **Next — cross-platform presubmit CI.** Land the proportional Rust/web,
+   desktop matrix, Android, iOS, deterministic E2E, and short interop jobs;
+   repair performance CI and then select required checks.
+4. **Next — beta product identity and upgrade baseline.** Freeze names/IDs,
+   persistence compatibility, changelog, privacy/support, diagnostics export,
+   and a repeatable cohort before any public installer.
+5. **Later — platform release campaigns.** Close desktop, Android closed-
+   testing, and iOS TestFlight gates independently with real older-to-newer
+   installed evidence.
+6. **Later — Tactical `153`.** Wired-LAN uTP scalability remains valuable
+   engine evidence but no longer displaces the explicit beta-readiness
+   campaign.
+
+Each implementation item requires its own bounded tactical. This ordering is
+not authorization to tag, publish, alter production routing, create store
+listings, or provision credentials without the required maintainer action.
+
+## Maintenance Contract
+
+Every release-readiness tactical updates this checklist with actual evidence,
+newly discovered blockers, and deliberate deferrals. Keep item IDs stable.
+Do not check a platform gate from another platform's build, infer update
+success from generated artifacts, or turn a changing public swarm into a
+required presubmit.
+
+Before handing a build to external testers, copy the applicable open items
+into a version-specific release candidate record with the exact commit,
+versions, artifacts, checksums, CI runs, installed/update evidence, known
+issues, and final publication decision. This living topic remains the backlog;
+it is not itself a release attestation.

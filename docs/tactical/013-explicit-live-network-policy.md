@@ -335,7 +335,7 @@ clients/web/node_modules/.bin/tauri build \
 
 cargo clippy -p rstorrent-android --all-features -- -D warnings
 cargo test -p rstorrent-android --all-features
-experiments/android-engine-bootstrap/build.sh
+clients/android/build.sh
 ```
 
 The normal engine suite passed 46 tests with the public probe ignored. The
@@ -351,7 +351,7 @@ arm64-v8a, regenerated both UniFFI Kotlin packages, passed six Rust tests and
 the Compose/JVM unit tests, and assembled:
 
 ```text
-experiments/android-engine-bootstrap/app/build/outputs/apk/debug/app-debug.apk
+clients/android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
 The Kotlin compiler repeated existing deprecated Android API warnings; it

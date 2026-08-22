@@ -270,7 +270,7 @@ product MTU, and repeatable WAN-cohort evidence remain outside the claim.
   two throughput-profile tests, one incoming-seed test, and four CLI tests.
   `cargo test -p rstorrent-desktop` passes four tests, and
   `cargo test -p rstorrent-android` passes eight tests.
-- `experiments/android-engine-bootstrap/build.sh` passes the supported
+- `clients/android/build.sh` passes the supported
   cargo-ndk x86_64 and arm64-v8a release builds, host UniFFI generation,
   `assembleDebug`, and `testDebugUnitTest`. A raw Cargo cross-target attempt
   did not select the Android NDK compiler and was superseded by this documented

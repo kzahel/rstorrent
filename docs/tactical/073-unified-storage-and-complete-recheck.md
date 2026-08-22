@@ -729,7 +729,7 @@ The final Android build command was:
 
 ```bash
 source ~/.profile
-experiments/android-engine-bootstrap/build.sh
+clients/android/build.sh
 ```
 
 It cross-compiled `rstorrent-android` for x86_64 API 28 and arm64-v8a API 28,

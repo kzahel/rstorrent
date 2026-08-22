@@ -896,8 +896,8 @@ Android validation:
 
 ```text
 source ~/.profile
-experiments/android-engine-bootstrap/build.sh
-cd experiments/android-engine-bootstrap
+clients/android/build.sh
+cd clients/android
 ./gradlew lintDebug testDebugUnitTest assembleDebugAndroidTest
 python3 run_bootstrap.py --target avd --avd jstorrent-tablet \
   --storage saf-internal --runs 1 \

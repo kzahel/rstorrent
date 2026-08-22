@@ -413,7 +413,7 @@ The final tree passed:
 - `npm run test --prefix clients/web` with 247 tests passing and two skipped;
 - `npm run test:e2e --prefix clients/web` with 33 tests passing and 11
   explicitly opt-in live cases skipped; and
-- `experiments/android-engine-bootstrap/build.sh`, including release
+- `clients/android/build.sh`, including release
   `x86_64-linux-android` and `aarch64-linux-android`, both UniFFI generations,
   Android unit tests, and the debug APK.
 

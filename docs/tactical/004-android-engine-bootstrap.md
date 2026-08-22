@@ -110,7 +110,7 @@ tactical before implementation continues.
 ### Foreground-service ownership
 
 Add a minimal Android application under
-`experiments/android-engine-bootstrap/`. It is an integration harness, not the
+`clients/android/`. It is an integration harness, not the
 first product UI.
 
 A visible activity may start the work, but an Android foreground service owns
@@ -340,16 +340,16 @@ source ~/.profile
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-experiments/android-engine-bootstrap/build.sh
-experiments/android-engine-bootstrap/gradlew \
-  -p experiments/android-engine-bootstrap testDebugUnitTest lintDebug
+clients/android/build.sh
+clients/android/gradlew \
+  -p clients/android testDebugUnitTest lintDebug
 python3 -m py_compile \
-  experiments/android-engine-bootstrap/run_bootstrap.py
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  clients/android/run_bootstrap.py
+python3 clients/android/run_bootstrap.py \
   --target avd --avd jstorrent-tablet --runs 3
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+python3 clients/android/run_bootstrap.py \
   --target chromeos --runs 3
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+python3 clients/android/run_bootstrap.py \
   --target motox4 --runs 3
 python3 scripts/references.py status
 cargo tree --workspace --locked
@@ -516,28 +516,28 @@ source ~/.profile
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-experiments/android-engine-bootstrap/build.sh
+clients/android/build.sh
 ANDROID_HOME=/home/kgraehl/Android/Sdk \
-  experiments/android-engine-bootstrap/gradlew \
-  -p experiments/android-engine-bootstrap testDebugUnitTest lintDebug
+  clients/android/gradlew \
+  -p clients/android testDebugUnitTest lintDebug
 python3 -m py_compile \
-  experiments/android-engine-bootstrap/run_bootstrap.py
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  clients/android/run_bootstrap.py
+python3 clients/android/run_bootstrap.py \
   --target avd --avd jstorrent-tablet --runs 3 \
   --profile success --profile slow-storage --profile cancellation \
   --profile peer-failure --profile duplicate-start \
   --profile activity-recreation --profile preexisting-artifacts --no-build
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+python3 clients/android/run_bootstrap.py \
   --target motox4 --runs 3 \
   --profile success --profile slow-storage --profile cancellation \
   --profile peer-failure --profile duplicate-start \
   --profile activity-recreation --profile preexisting-artifacts --no-build
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+python3 clients/android/run_bootstrap.py \
   --target chromeos --runs 3 --profile success --no-build
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+python3 clients/android/run_bootstrap.py \
   --target avd --avd jstorrent-tablet \
   --profile cancellation --no-build
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+python3 clients/android/run_bootstrap.py \
   --target motox4 --profile cancellation --no-build
 python3 scripts/references.py status
 cargo tree --workspace --locked

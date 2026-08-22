@@ -224,7 +224,7 @@ acquisition crosses the platform boundary.
 - `crates/rstorrent-android/src/lib.rs::duplicate_descriptor` correctly uses
   `F_DUPFD_CLOEXEC`, but `AndroidApplicationClient::start_saf` receives the
   entire borrowed manifest while holding its application-service access path.
-- `experiments/android-engine-bootstrap/.../ProductSafDocuments.kt::openStaging`
+- `clients/android/.../ProductSafDocuments.kt::openStaging`
   eagerly creates every wanted document and two part descriptors.
 - `ProductEngineService::advanceSaf` reacts to coarse storage/publication/
   removal phases and owns the persisted tree grant and provider lifecycle.
@@ -688,7 +688,7 @@ Repository validation passed:
 - `cargo test -p rstorrent-engine --lib -q`: 185 passed, 3 ignored;
 - `cargo test --workspace --exclude rstorrent-engine -q`, including 91
   `rstorrent-session` tests and 6 `rstorrent-android` tests;
-- `experiments/android-engine-bootstrap/build.sh`: both locked Android Rust
+- `clients/android/build.sh`: both locked Android Rust
   targets, UniFFI generation, debug APK assembly, and Kotlin unit tests; and
 - Python bytecode validation for both Android runners.
 

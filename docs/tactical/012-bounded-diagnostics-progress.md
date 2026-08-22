@@ -485,7 +485,7 @@ clients/web/node_modules/.bin/tauri build \
 
 cargo clippy -p rstorrent-android --all-features -- -D warnings
 cargo test -p rstorrent-android --all-features
-experiments/android-engine-bootstrap/build.sh
+clients/android/build.sh
 
 uv run --project tests/interop --locked \
   python tests/interop/browser_diagnostics_surface.py \
@@ -627,7 +627,7 @@ automation, ChromeOS hardware, or physical Android device was used.
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-experiments/android-engine-bootstrap/build.sh
+clients/android/build.sh
 npm run typecheck --prefix clients/web
 npm test --prefix clients/web
 npm run build --prefix clients/web
@@ -763,7 +763,7 @@ clients/web/node_modules/.bin/tauri build \
   --config clients/desktop/src-tauri/tauri.conf.json --no-bundle
 cargo clippy -p rstorrent-android --all-features -- -D warnings
 cargo test -p rstorrent-android --all-features
-experiments/android-engine-bootstrap/build.sh
+clients/android/build.sh
 uv run --project tests/interop --locked \
   python tests/interop/browser_diagnostics_surface.py ...
 uv run --project tests/interop --locked \

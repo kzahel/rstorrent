@@ -262,7 +262,7 @@ clients/web/node_modules/.bin/tauri build \
 
 cargo clippy -p rstorrent-android --all-features -- -D warnings
 cargo test -p rstorrent-android --all-features
-experiments/android-engine-bootstrap/build.sh
+clients/android/build.sh
 
 uv run --project tests/interop --locked \
   python tests/interop/udp_tracker_magnet.py --runs 3
@@ -351,7 +351,7 @@ clients/web/node_modules/.bin/tauri build \
 
 cargo clippy -p rstorrent-android --all-features -- -D warnings
 cargo test -p rstorrent-android --all-features
-experiments/android-engine-bootstrap/build.sh
+clients/android/build.sh
 
 cargo tree --workspace --locked
 git diff --check

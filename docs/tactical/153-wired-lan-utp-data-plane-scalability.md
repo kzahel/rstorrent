@@ -1,9 +1,10 @@
 # Tactical 153: Wired-LAN uTP Data-Plane Scalability
 
-Status: **Planned and deferred on 2026-08-13.** This decision-complete
-measurement and attribution tactical does not displace active Tactical `152`
-or ready Tactical `151`. It begins only after an explicit readiness-queue
-selection and when the physical wired workstation is available.
+Status: **Decision-complete and Later (reconciled 2026-08-22).** The explicit
+beta-readiness campaign and active Tactical `157` supersede this tactical's
+former **Now** position without invalidating its measurement design. It begins
+only after a future readiness-queue selection and when the physical wired
+workstation is available.
 
 Topics: `utp-transport-campaign`, `performance-and-live-evidence`,
 `capability-readiness`, `oracle-driven-engine-campaign`, `protocol-support`
