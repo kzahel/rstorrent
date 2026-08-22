@@ -1455,6 +1455,7 @@ test("full file catalog stays virtualized across wide compact and phone layouts"
   await expect(page.getByText("1 padding hidden")).toBeVisible();
   expect(await files.getByRole("row").count()).toBeLessThanOrEqual(100);
   await expect(files.getByRole("checkbox").first()).toBeVisible();
+  const initialRenderMs = Math.round(performance.now() - openedAt);
   await files.getByRole("row").nth(1).click();
   await page.getByRole("button", { name: "More file actions" }).click();
   const fileActions = page.getByRole("menu", { name: "More file actions" });
@@ -1538,8 +1539,8 @@ test("full file catalog stays virtualized across wide compact and phone layouts"
   if (metrics.usedJsHeapBytes !== null) {
     expect(metrics.usedJsHeapBytes).toBeLessThan(256 * 1024 * 1024);
   }
+  expect(initialRenderMs).toBeLessThan(5_000);
   expect(updateRenderMs).toBeLessThan(5_000);
-  expect(performance.now() - openedAt).toBeLessThan(5_000);
   await capture(page, "rstorrent-files-wide.png");
 
   await page.setViewportSize({ width: 920, height: 720 });

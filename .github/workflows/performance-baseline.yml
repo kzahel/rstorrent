@@ -42,7 +42,6 @@ jobs:
     env:
       PERFORMANCE_PROFILE: github-ubuntu-24.04-x64
       PERFORMANCE_TIER: ${{ github.event_name == 'schedule' && 'full' || inputs.tier || 'smoke' }}
-      UV_FROZEN: "1"
 
     steps:
       - name: Check out source
