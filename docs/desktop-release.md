@@ -66,6 +66,14 @@ draft. The GitHub release is non-prerelease because the shared update server
 intentionally ignores prerelease entries; the `0.x` version and release notes
 carry the incubation-beta status.
 
+The first published release is
+[`desktop-v0.1.0`](https://github.com/kzahel/rstorrent/releases/tag/desktop-v0.1.0).
+Tagged workflow
+[`32656926123`](https://github.com/kzahel/rstorrent/actions/runs/32656926123)
+passed every source/build/finalizer job. Its independent checksum, route, and
+installed macOS smoke evidence is recorded in
+[`desktop-v0.1.0`](evidence/desktop-v0.1.0.md).
+
 ## Update Service
 
 The application checks
@@ -73,11 +81,10 @@ The application checks
 [`update-server/rstorrent.json`](../update-server/rstorrent.json) is the
 product-owned configuration consumed by the shared update service. The
 production `/rstorrent` route and product registration were deployed and the
-service health check passed on 2026-08-23. Before the first public
-`desktop-v*` release, the registered route has no release to resolve. After a
-release is public, a current version should return HTTP 204 and an older
-version should return signed Tauri metadata referencing that immutable GitHub
-Release.
+service health check passed on 2026-08-23. Public `desktop-v0.1.0` now resolves:
+a current version returns HTTP 204 and an older version returns signed Tauri
+metadata referencing that immutable GitHub Release. Both results passed for
+all five default updater targets after publication.
 
 After publishing, verify at least one exact current-version key and all five
 older-version keys. Do not treat metadata checks as installed-update evidence:

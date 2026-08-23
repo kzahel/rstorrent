@@ -2,13 +2,13 @@
 
 Topic: `beta-release-readiness`
 
-Status: **Active as of 2026-08-23.** RSTorrent is a functional unreleased
-alpha with maintained desktop, Android, and iOS clients, but it does not yet
-have supported public distribution or installed upgrade evidence.
-Credential-free cross-platform presubmit CI and a credentialed five-target
-signed desktop release rehearsal are proven on hosted runners. The public
-product name is RSTorrent for the foreseeable release line; current work
-targets its incubation beta. A later production
+Status: **Active as of 2026-08-23.** RSTorrent desktop `0.1.0` is the first
+public signed incubation release; Android and iOS remain unreleased alpha
+lanes. Exact installed cross-version upgrade evidence is still absent.
+Credential-free cross-platform presubmit CI, a credentialed five-target signed
+desktop rehearsal, tagged publication, production updater metadata, and one
+installed macOS arm64 launch smoke are proven. The public product name is
+RSTorrent for the foreseeable release line. A later production
 graduation is expected to retain JSTorrent's existing name, application
 identity, and updater trust root, with best-effort legacy-state migration
 scoped separately. It is not a beta requirement. This topic is the
@@ -49,9 +49,9 @@ Store review, and mobile beta is not implied by a desktop tag:
 
 | Lane | Intended beta channel | Current release state |
 | --- | --- | --- |
-| macOS desktop | signed/notarized DMG plus in-app updates | hosted Developer ID-signed, notarized, and stapled app/DMG packages pass for arm64 and x86_64; clean install and real update remain absent |
-| Windows desktop | signed per-user NSIS plus in-app updates | hosted NSIS and MSI packages have valid expected-publisher Authenticode signatures; clean install and real update remain absent |
-| Linux desktop | AppImage plus in-app updates; DEB/RPM remain package-manager channels | hosted AppImage, DEB, and RPM packages plus updater artifacts pass for x86_64 and arm64; installed and real update evidence remain absent |
+| macOS desktop | signed/notarized DMG plus in-app updates | public Developer ID-signed, notarized, and stapled app/DMG packages pass for arm64 and x86_64; an installed arm64 launch/updater-init smoke passes; clean-machine breadth and a real update remain absent |
+| Windows desktop | signed per-user NSIS plus in-app updates | public NSIS and MSI packages have valid expected-publisher Authenticode signatures; clean install and real update remain absent |
+| Linux desktop | AppImage plus in-app updates; DEB/RPM remain package-manager channels | public AppImage, DEB, and RPM packages plus updater artifacts pass for x86_64 and arm64; installed and real update evidence remain absent |
 | Android/ChromeOS | signed Android App Bundle through a closed testing channel | maintained Compose/in-process Rust/SAF app and hosted dual-ABI debug/test APK gates pass; release identity, signed AAB, emulator/store, and upgrade evidence absent |
 | iOS/iPadOS | signed TestFlight build | maintained SwiftUI app plus hosted simulator tests and unsigned device archive pass; distribution identity, signing, TestFlight, and upgrade evidence absent |
 
@@ -193,13 +193,19 @@ without corrupting or silently reinterpreting user state.
 - [ ] **QA-003 — Run installed release-candidate smokes.** Each claimed lane
   must install outside a source checkout, launch without development tools,
   complete the common cohort, survive relaunch/reboot where applicable, and
-  uninstall with documented retained/removed state.
+  uninstall with documented retained/removed state. The public `0.1.0` arm64
+  DMG passed a bounded `/Applications` install, notarized launch, updater-ID
+  initialization, and graceful-quit smoke; Windows/Linux installation, the
+  common cohort, reboot/relaunch, and full uninstall policy remain open.
 - [ ] **QA-004 — Establish a crash/support loop.** Users need an accessible
   version/build identity, copyable bounded diagnostics, known-issues link, and
   a report path. Automatic crash or analytics upload is not required for beta.
 - [ ] **QA-005 — Review dependencies, notices, and release artifacts.** Verify
   license provenance, dependency advisories, archive contents, absence of
-  secrets/development endpoints, and published checksums.
+  secrets/development endpoints, and published checksums. All public `0.1.0`
+  assets passed `SHA256SUMS`, manifest, target, signature, and immutable-URL
+  checks; dependency/notices review and reviewed archive-content policy remain
+  open.
 
 ## Desktop Beta Checklist
 
@@ -208,16 +214,19 @@ without corrupting or silently reinterpreting user state.
 - [ ] **DESK-001 — Make the Tauri bundle real.** Tactical `157` supplies
   provisional icon assets and local bundle configuration. Hosted native DMG,
   NSIS, MSI, AppImage, DEB, and RPM builds now pass across the intended matrix.
-  Clean-machine install, launch, uninstall, and retained-state evidence remain
-  required.
-- [ ] **DESK-002 — Sign and notarize tagged builds.** Use the existing shared
+  The public arm64 DMG also passed one installed macOS launch and graceful quit.
+  Clean-machine breadth, Windows/Linux launch, uninstall, and retained-state
+  evidence remain required.
+- [x] **DESK-002 — Sign and notarize tagged builds.** Use the existing shared
   publisher Developer ID/notarization and Windows Azure signing setup. Missing
   credentials must fail a tagged build before publication; untagged CI must
   remain buildable without release credentials. Credentialed rehearsal
   [`32627436936`](https://github.com/kzahel/rstorrent/actions/runs/32627436936)
   proves Developer ID signing, Apple notarization/stapling, and expected-
-  publisher Authenticode signing. The first tagged draft/finalizer path remains
-  required to close this gate.
+  publisher Authenticode signing. Tagged run
+  [`32656926123`](https://github.com/kzahel/rstorrent/actions/runs/32656926123)
+  repeated those checks and published only after every leg and the sole
+  finalizer passed.
 - [ ] **DESK-003 — Set least-privileged package ownership.** The default is a
   DMG-installed self-contained app on macOS, per-user NSIS on Windows, and a
   user-writable AppImage on Linux. MSI/DEB/RPM installs stay with their package
@@ -258,16 +267,20 @@ is still pending and is not the compatibility oracle.
 - [x] **UPD-003 — Enforce package policy.** In-app replacement is allowed only
   for macOS app, Windows per-user NSIS, and user-writable Linux AppImage.
   MSI/DEB/RPM installations must use a visible manual/package-channel path.
-- [ ] **UPD-004 — Add release metadata validation.** Produce signed updater
+- [x] **UPD-004 — Add release metadata validation.** Produce signed updater
   artifacts for `darwin-aarch64`, `darwin-x86_64`, `windows-x86_64`,
   `linux-x86_64`, and `linux-aarch64`; validate URLs, signatures, checksums,
   version agreement, immutable release assets, and draft-before-finalize. The
   source validators, negative tests, serialized five-leg workflow, and sole
   finalizer pass local checks. Hosted rehearsal
   [`32627436936`](https://github.com/kzahel/rstorrent/actions/runs/32627436936)
-  produced all five private signed package sets. A real tagged draft is still
-  required to exercise `latest.json`, immutable GitHub release URLs, checksum
-  generation, complete-draft validation, and publication finalization.
+  produced all five private signed package sets. Tagged run
+  [`32656926123`](https://github.com/kzahel/rstorrent/actions/runs/32656926123)
+  then exercised the real draft, all required and package-specific
+  `latest.json` entries, immutable GitHub release URLs, `SHA256SUMS`,
+  complete-draft validation, and publication finalization. Independent public
+  downloads and all five production routes passed after publication; see
+  [`desktop-v0.1.0`](../evidence/desktop-v0.1.0.md).
 - [ ] **UPD-005 — Prove a real cross-version update.** On each supported
   desktop testbed, install an exact older public signed build, check through
   the production route, download/install/relaunch, and verify new application
@@ -375,8 +388,9 @@ no single optional BEP is mandatory.
 3. **Now — Tactical `158`: desktop signed packaging and updater adoption.**
    The product-owned `desktop-update-v1` client, signed package workflow,
    release validation, per-app key, public configuration, production route,
-   and five-platform hosted rehearsal are complete. Next prove the tagged
-   draft/finalizer and exact installed older-to-newer production-route update
+   five-platform hosted rehearsal, first tagged publication, and one installed
+   macOS arm64 launch smoke are complete. Next prove an exact installed
+   `0.1.0`-to-newer production-route update on every supported updater target
    before closing the tactical.
 4. **Next — application identity and upgrade baseline.** Freeze package IDs,
    persistence compatibility, changelog, privacy/support, diagnostics export,

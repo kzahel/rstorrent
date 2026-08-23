@@ -8,8 +8,10 @@ per-app updater key and required repository secrets are provisioned. Native
 and React updater behavior, public configuration, release validators, and the
 five-leg signed workflow pass their local and hosted gates. The production
 route is deployed and a credentialed rehearsal produced all five signed
-package sets. The first tagged draft/finalizer, public cross-version release,
-and installed testbed evidence remain open.
+package sets. Tagged `desktop-v0.1.0` then passed draft finalization and became
+the first public release; one installed macOS arm64 launch/updater-init smoke
+also passes. Exact installed cross-version and Windows/Linux testbed evidence
+remain open.
 
 Topics: `beta-release-readiness`, `client-surfaces`,
 `product-state-and-feedback`, `product-surfaces-and-migration`,
@@ -335,11 +337,27 @@ passes the source gate and all five serialized release legs at that commit:
 
 The product-owned `/rstorrent` descriptor is also deployed through the shared
 production update service, whose health and product registration passed on
-2026-08-23. With no public `desktop-v*` release yet, the route cannot serve a
-current or older update response. Publisher signatures, package breadth, and
-route provisioning are therefore proven; tagged draft assembly, `latest.json`,
-checksums, public release lookup, clean installation, and installed update
-behavior remain external gates.
+2026-08-23.
+
+Tagged run
+[`32656926123`](https://github.com/kzahel/rstorrent/actions/runs/32656926123)
+published `desktop-v0.1.0` from exact green commit
+`768d7de3f5fabcdea4bc1619b127247d61df9ef9` only after the source gate, all five
+signed legs, complete-draft validator, and checksum finalizer passed. All 13
+files named by the public `SHA256SUMS` passed independent download verification;
+the public manifest has the five required updater keys, nonempty signatures,
+and immutable exact-release URLs. Every production target returned HTTP 204
+for current `0.1.0` and HTTP 200 signed metadata for older `0.0.0`.
+
+The public arm64 DMG then passed one bounded installed smoke outside the source
+checkout: checksum, Developer ID/Gatekeeper/notarization/stapling, exact bundle
+identity/version, `/Applications` launch, 12-second healthy lifetime including
+updater initialization, private UUIDv4 creation, and graceful quit. Smoke-only
+app/state were moved to Trash. Exact evidence and deliberate limits are in
+[`desktop-v0.1.0`](../evidence/desktop-v0.1.0.md). Publisher signatures,
+package breadth, tagged finalization, public lookup, and one installed launch
+are therefore proven; installed Windows/Linux behavior and an exact
+old-to-new cross-version update remain external gates.
 
 ## Escalation Contract
 
@@ -347,10 +365,11 @@ Pure model/UI/tests, product-state file implementation, plugin integration,
 config validators, draft-workflow construction, and build-only fixes within
 these contracts are authorized. The application identifier and distinct
 RSTorrent updater key are frozen/provisioned; production route deployment and
-credentialed private rehearsal are complete. Stop for maintainer direction
-before changing route meaning, rotating or recovering a long-lived updater
-private key, creating a tag/release, publishing, or mutating external testbeds.
-Those actions are required gates, not implied by this tactical.
+credentialed private rehearsal plus initial `desktop-v0.1.0` publication are
+complete. Stop for maintainer direction before changing route meaning,
+rotating or recovering a long-lived updater private key, creating or
+publishing another release, or mutating external testbeds. Those actions are
+required gates, not implied by this tactical.
 
 The next beta-readiness slice after this tactical freezes the remaining
 application identities, persistence baseline, changelog, privacy/support

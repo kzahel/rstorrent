@@ -730,10 +730,10 @@ that scope and its cleanup or compatibility rules explicitly.
   CI slices.
 - [`158-desktop-signed-packaging-and-updater.md`](158-desktop-signed-packaging-and-updater.md):
   implementation in progress and selected as Now; its Tauri-only
-  `desktop-update-v1` UI/state boundary, per-app identity/key/route, and hosted
-  signed five-target package rehearsal pass. Tagged draft finalization and
-  exact installed older-to-newer evidence remain open behind the publication
-  gate.
+  `desktop-update-v1` UI/state boundary, per-app identity/key/route, hosted
+  signed five-target package rehearsal, public `desktop-v0.1.0` finalization,
+  and one installed macOS arm64 launch smoke pass. Exact installed
+  older-to-newer evidence remains open behind the publication gate.
 - [`159-cross-platform-presubmit-ci.md`](159-cross-platform-presubmit-ci.md):
   complete; installs credential-free Rust, web, deterministic browser E2E,
   native desktop, Android, iOS, and short controlled-interoperability checks
