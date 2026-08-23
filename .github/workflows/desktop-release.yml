@@ -98,11 +98,11 @@ jobs:
         include:
           - name: macOS arm64
             runner: macos-26
-            args: "--target aarch64-apple-darwin --bundles dmg"
+            args: "--target aarch64-apple-darwin --bundles app,dmg"
             rust_target: aarch64-apple-darwin
           - name: macOS x86_64
             runner: macos-26
-            args: "--target x86_64-apple-darwin --bundles dmg"
+            args: "--target x86_64-apple-darwin --bundles app,dmg"
             rust_target: x86_64-apple-darwin
           - name: Linux x86_64
             runner: ubuntu-22.04
