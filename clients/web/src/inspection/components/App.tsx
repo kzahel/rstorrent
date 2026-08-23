@@ -18,11 +18,16 @@ import {
 import { formatRate } from "../format";
 import type { ApplicationDestination } from "../model";
 import { MAX_DETAIL_PANE_PERCENT, MIN_DETAIL_PANE_PERCENT } from "../state";
+import type { DesktopUpdater } from "../updater/types";
+import { useDesktopUpdater } from "../updater/useDesktopUpdater";
 import { DetailPane } from "./DetailPane";
 import { Icon, type IconName } from "./Icon";
 import { LibraryView } from "./LibraryView";
 import { ScenarioBar } from "./ScenarioBar";
-import { SettingsDialog } from "./SettingsDialog";
+import {
+  SettingsDialog,
+  type SettingsCategory,
+} from "./SettingsDialog";
 import { Sidebar } from "./Sidebar";
 import { TorrentActions } from "./TorrentActions";
 import { TorrentActionProvider } from "./TorrentActionContext";
@@ -43,17 +48,18 @@ const DESTINATIONS: readonly {
 
 export interface AppProps {
   readonly webAuth?: WebAuthClient | undefined;
+  readonly updater?: DesktopUpdater | undefined;
 }
 
-export function App({ webAuth }: AppProps) {
+export function App({ webAuth, updater }: AppProps) {
   return (
     <TorrentActionProvider>
-      <AppContent webAuth={webAuth} />
+      <AppContent webAuth={webAuth} updater={updater} />
     </TorrentActionProvider>
   );
 }
 
-function AppContent({ webAuth }: AppProps) {
+function AppContent({ webAuth, updater }: AppProps) {
   const session = useInspectionStore((state) => state.session);
   const demo = useInspectionStore((state) => state.demo);
   const storage = useInspectionStore((state) => state.storage);
@@ -93,6 +99,9 @@ function AppContent({ webAuth }: AppProps) {
   const setColorTheme = useInspectionStore((state) => state.setColorTheme);
   const setDataUnits = useInspectionStore((state) => state.setDataUnits);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsCategory, setSettingsCategory] =
+    useState<SettingsCategory>("appearance");
+  const updaterSnapshot = useDesktopUpdater(updater);
   const [resizingDetail, setResizingDetail] = useState(false);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const mainRef = useRef<HTMLElement>(null);
@@ -261,7 +270,10 @@ function AppContent({ webAuth }: AppProps) {
           aria-haspopup="dialog"
           aria-expanded={settingsOpen}
           title="Settings"
-          onClick={() => setSettingsOpen(true)}
+          onClick={() => {
+            setSettingsCategory("appearance");
+            setSettingsOpen(true);
+          }}
         >
           <Icon name="settings" />
         </button>
@@ -331,6 +343,31 @@ function AppContent({ webAuth }: AppProps) {
           )}
         </main>
       </div>
+      {updater !== undefined &&
+      updaterSnapshot?.state.phase === "available" ? (
+        <aside className={styles.updateNotice} role="status">
+          <div>
+            <strong>RSTorrent {updaterSnapshot.state.version} is available</strong>
+            <span>Review the update when you are ready.</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setSettingsCategory("updates");
+              setSettingsOpen(true);
+            }}
+          >
+            Review update
+          </button>
+          <button
+            type="button"
+            aria-label="Dismiss available update"
+            onClick={() => updater.dismiss()}
+          >
+            Later
+          </button>
+        </aside>
+      ) : null}
       {settingsOpen ? (
         <SettingsDialog
           colorTheme={colorTheme}
@@ -341,6 +378,9 @@ function AppContent({ webAuth }: AppProps) {
           downloadsManageable={demo === null}
           clientSettingsManageable={demo === null}
           webAuth={webAuth}
+          updater={updater}
+          updaterSnapshot={updaterSnapshot}
+          initialCategory={settingsCategory}
           returnFocus={settingsButtonRef}
           onColorThemeChange={setColorTheme}
           onInterfaceSizeChange={setInterfaceSize}

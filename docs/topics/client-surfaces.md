@@ -316,6 +316,11 @@ Platform-specific capabilities such as folder selection, tray state, external
 URL opening, or updater presentation use a separate platform-capability
 adapter. They do not enter torrent commands or view patches.
 
+The Tauri bootstrap now injects a separate desktop updater controller while
+browser/demo/live-gateway entry points omit it. Only that capability adds
+About & updates and the accessible availability notice; update state does not
+enter the generated application contract or torrent presentation owner.
+
 The shared presentation is a strict-TypeScript React application using
 component-scoped CSS Modules and a permanent named-demo adapter.
 It preserves JSTorrent's information hierarchy without inheriting its source
@@ -588,11 +593,12 @@ remote exposure, and Android streaming remain independent product decisions.
 - The loopback WebSocket gateway is an authenticated proof, not a production
   remote-access design. It has no pairing, principal/capability model, TLS,
   relay, wake-up path, or public wire compatibility promise.
-- The Tauri shell has basic macOS close-and-reopen behavior and Tactical `157`
-  adds provisional icon assets plus ordinary local bundle configuration. It
-  still has no signed/notarized clean-machine installer evidence, updater,
-  file associations, production tray policy, or complete cross-platform
-  window/platform-capability evidence. The release gates live in
+- The Tauri shell has basic macOS close-and-reopen behavior, provisional icon
+  assets, ordinary local bundle configuration, and implemented updater UI/
+  lifecycle behavior. It still has no signed/notarized clean-machine installer
+  or installed-update evidence, file associations, production tray policy, or
+  complete cross-platform window/platform-capability evidence. The release
+  gates live in
   [`beta-release-readiness.md`](beta-release-readiness.md).
 - The maintained Android product module now lives at `clients/android`; the
   unreleased `org.rstorrent.bootstrap` identity and retained diagnostic service

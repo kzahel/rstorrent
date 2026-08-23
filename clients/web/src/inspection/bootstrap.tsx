@@ -8,6 +8,7 @@ import { DemoApplication } from "./demo/DemoApplication";
 import { isDemoScenarioId } from "./demo/catalog";
 import { LiveApplication } from "./live/LiveApplication";
 import type { DemoScenarioId } from "./model";
+import type { DesktopUpdater } from "./updater/types";
 import { HttpApplicationClient } from "../api/client";
 import { TauriApplicationViewClient } from "../tauri-view-client";
 import { WebSocketApplicationViewClient } from "../websocket-view-client";
@@ -89,22 +90,29 @@ async function openLiveInspection(
 }
 
 export async function startTauriInspection(): Promise<void> {
-  const application = await LiveApplication.open(
-    new TauriApplicationViewClient(),
-  );
+  const [updater, application] = await Promise.all([
+    import("../tauri-updater")
+      .then(({ createTauriDesktopUpdater }) => createTauriDesktopUpdater())
+      .catch((error: unknown) => {
+        console.error("Desktop updater initialization failed:", error);
+        return undefined;
+      }),
+    LiveApplication.open(new TauriApplicationViewClient()),
+  ]);
   application.installBrowserWakeHints(window, document);
-  renderInspection(new InspectionController(application));
+  renderInspection(new InspectionController(application), undefined, undefined, updater);
 }
 
 function renderInspection(
   controller: InspectionController,
   root: Root = createRoot(applicationRoot()),
   webAuth?: WebAuthClient,
+  updater?: DesktopUpdater,
 ): void {
   controller.start();
   root.render(
     <InspectionProvider controller={controller}>
-      <App webAuth={webAuth} />
+      <App webAuth={webAuth} updater={updater} />
     </InspectionProvider>,
   );
 }

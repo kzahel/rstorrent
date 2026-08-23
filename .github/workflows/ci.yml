@@ -103,6 +103,14 @@ jobs:
       - name: Install locked web dependencies
         run: npm ci --prefix clients/web
 
+      - name: Validate desktop release configuration and tools
+        run: |
+          node scripts/validate-desktop-release.mjs
+          node --test \
+            scripts/validate-desktop-release.test.mjs \
+            .github/scripts/validate-desktop-release.test.mjs \
+            .github/scripts/write-release-checksums.test.mjs
+
       - name: Regenerate and verify the application contract
         run: |
           npm run generate --prefix clients/web

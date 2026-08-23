@@ -21,8 +21,10 @@ use tauri::{AppHandle, Manager, RunEvent, State, WebviewWindow, WindowEvent};
 use tokio::sync::{Mutex, Semaphore};
 use tokio_util::sync::CancellationToken;
 
+mod updater;
 mod view_delivery;
 
+use updater::{desktop_release_info, get_or_create_installation_id};
 use view_delivery::{
     DesktopViewResources, application_view_close, application_view_hello, application_view_open,
     application_view_stream, application_view_stream_ack, application_view_stream_close,
@@ -544,7 +546,17 @@ fn restore_main_window(app: &AppHandle) -> Result<(), String> {
 
 pub fn run() {
     let application = tauri::Builder::default()
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            let config_dir = app
+                .path()
+                .app_config_dir()
+                .map_err(|error| format!("resolve desktop config directory: {error}"))?;
+            let installation_id = get_or_create_installation_id(&config_dir)?;
+            let updater = tauri_plugin_updater::Builder::new()
+                .header("X-CFU-Id", &installation_id)?
+                .build();
+            app.handle().plugin(updater)?;
             let app_data = app
                 .path()
                 .app_data_dir()
@@ -594,6 +606,7 @@ pub fn run() {
             application_resync,
             application_unsubscribe,
             application_shutdown,
+            desktop_release_info,
         ])
         .build(tauri::generate_context!())
         .expect("build RSTorrent desktop application");

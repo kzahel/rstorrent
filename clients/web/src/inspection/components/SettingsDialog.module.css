@@ -116,6 +116,122 @@
   padding: var(--ui-space-lg) var(--ui-space-md);
 }
 
+.aboutUpdates {
+  display: grid;
+  gap: var(--ui-space-lg);
+}
+
+.releaseFacts {
+  display: grid;
+  gap: var(--ui-space-xs);
+  margin: var(--ui-space-md) 0 0;
+}
+
+.releaseFacts div {
+  display: grid;
+  grid-template-columns: minmax(6rem, 0.35fr) minmax(0, 1fr);
+  gap: var(--ui-space-md);
+  border-bottom: 1px solid var(--border-soft);
+  padding: var(--ui-space-xs) 0;
+}
+
+.releaseFacts dt {
+  color: var(--text-muted);
+  font-size: var(--ui-font-small);
+}
+
+.releaseFacts dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--ui-font-small);
+}
+
+.updateStatus {
+  display: grid;
+  gap: 0.2rem;
+  margin-top: var(--ui-space-md);
+}
+
+.updateStatus span,
+.updatePrivacy {
+  color: var(--text-muted);
+  font-size: var(--ui-font-small);
+  line-height: 1.45;
+}
+
+.aboutUpdates progress {
+  width: 100%;
+  margin-top: var(--ui-space-sm);
+  accent-color: var(--accent);
+}
+
+.releaseNotes {
+  display: grid;
+  gap: var(--ui-space-xs);
+  max-height: 13rem;
+  overflow: auto;
+  margin-top: var(--ui-space-md);
+  border: 1px solid var(--border-soft);
+  border-radius: 0.5rem;
+  padding: var(--ui-space-sm);
+  background: var(--surface-secondary);
+}
+
+.releaseNotes p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: var(--ui-font-small);
+}
+
+.updateActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-space-sm);
+  margin-top: var(--ui-space-md);
+}
+
+.updateActions button,
+.updateActions a {
+  display: inline-flex;
+  min-height: var(--ui-control-height);
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.5rem;
+  padding: 0 var(--ui-space-md);
+  color: var(--text-primary);
+  background: var(--surface-secondary);
+  font: inherit;
+  font-size: var(--ui-font-small);
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.updateActions button:hover,
+.updateActions a:hover {
+  background: var(--surface-hover);
+}
+
+.updateActions button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.updateActions .primaryAction {
+  border-color: var(--accent);
+  color: #fff;
+  background: var(--accent);
+}
+
+.updatePrivacy {
+  margin: var(--ui-space-md) 0 0;
+}
+
 @media (max-width: 620px) {
   .sheet {
     width: 100%;

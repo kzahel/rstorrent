@@ -440,6 +440,9 @@ describe("inspection application", () => {
     });
     await user.click(settings);
     const dialog = screen.getByRole("dialog", { name: "Settings" });
+    expect(
+      within(dialog).queryByRole("tab", { name: "About & updates" }),
+    ).not.toBeInTheDocument();
     const close = within(dialog).getByRole("button", {
       name: "Close settings",
     });

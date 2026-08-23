@@ -11,14 +11,24 @@ import type { ClientSettings, ClientSettingsRuntimeView } from "../../api";
 import type { ColorTheme, DataUnits, InterfaceSize } from "../appearance";
 import type { DownloadRoot, DownloadStorageSettings } from "../model";
 import { AppearanceSettingsSection } from "./AppearanceSettingsSection";
+import { AboutUpdatesSettingsSection } from "./AboutUpdatesSettingsSection";
 import { ConnectionSeedingSettingsSection } from "./ConnectionSeedingSettingsSection";
 import { DownloadSettingsSection } from "./DownloadSettingsSection";
 import { Icon } from "./Icon";
 import { WebAccessSettingsSection } from "./WebAccessSettingsSection";
 import styles from "./SettingsDialog.module.css";
 import type { WebAuthClient } from "../../web-auth-client";
+import type {
+  DesktopUpdater,
+  DesktopUpdaterSnapshot,
+} from "../updater/types";
 
-type SettingsCategory = "appearance" | "downloads" | "connection" | "web-access";
+export type SettingsCategory =
+  | "appearance"
+  | "downloads"
+  | "connection"
+  | "web-access"
+  | "updates";
 
 export interface SettingsDialogProps {
   readonly colorTheme: ColorTheme;
@@ -29,6 +39,9 @@ export interface SettingsDialogProps {
   readonly downloadsManageable: boolean;
   readonly clientSettingsManageable: boolean;
   readonly webAuth?: WebAuthClient | undefined;
+  readonly updater?: DesktopUpdater | undefined;
+  readonly updaterSnapshot?: DesktopUpdaterSnapshot | undefined;
+  readonly initialCategory?: SettingsCategory;
   readonly returnFocus: RefObject<HTMLButtonElement | null>;
   readonly onColorThemeChange: (colorTheme: ColorTheme) => void;
   readonly onInterfaceSizeChange: (interfaceSize: InterfaceSize) => void;
@@ -53,6 +66,9 @@ export function SettingsDialog({
   downloadsManageable,
   clientSettingsManageable,
   webAuth,
+  updater,
+  updaterSnapshot,
+  initialCategory = "appearance",
   returnFocus,
   onColorThemeChange,
   onInterfaceSizeChange,
@@ -67,7 +83,7 @@ export function SettingsDialog({
 }: SettingsDialogProps) {
   const dialogRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
-  const [category, setCategory] = useState<SettingsCategory>("appearance");
+  const [category, setCategory] = useState<SettingsCategory>(initialCategory);
   const categories: readonly { readonly id: SettingsCategory; readonly label: string }[] = [
     { id: "appearance", label: "Appearance" },
     { id: "downloads", label: "Downloads" },
@@ -75,6 +91,9 @@ export function SettingsDialog({
     ...(webAuth === undefined
       ? []
       : [{ id: "web-access" as const, label: "Web access" }]),
+    ...(updater === undefined || updaterSnapshot === undefined
+      ? []
+      : [{ id: "updates" as const, label: "About & updates" }]),
   ];
 
   useEffect(() => {
@@ -231,6 +250,19 @@ export function SettingsDialog({
                 <WebAccessSettingsSection
                   client={webAuth}
                   onSignedOut={onWebAuthSignedOut}
+                />
+              </div>
+            )}
+            {updater === undefined || updaterSnapshot === undefined ? null : (
+              <div
+                id="settings-panel-updates"
+                role="tabpanel"
+                aria-labelledby="settings-tab-updates"
+                hidden={category !== "updates"}
+              >
+                <AboutUpdatesSettingsSection
+                  updater={updater}
+                  snapshot={updaterSnapshot}
                 />
               </div>
             )}

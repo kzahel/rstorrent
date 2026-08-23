@@ -402,8 +402,9 @@ fixture, or wire contract from either sibling project.
   JSTorrent's existing product and updater identity.
 - The exact desktop native-host/backend process, single-instance, window, and
   shutdown ownership model. Desktop beta updating now adopts the external
-  `desktop-update-v1` contract; its product route/key, client presentation,
-  release pipeline, and installed evidence remain open in
+  `desktop-update-v1` contract; its independent route/key, client presentation,
+  and release pipeline are implemented through local gates, while hosted
+  signed packages, route deployment, and installed evidence remain open in
   [`beta-release-readiness.md`](beta-release-readiness.md).
 - Whether Tauri and extension views may remain attached simultaneously on
   desktop, and how command conflicts are presented.

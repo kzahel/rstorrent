@@ -6,12 +6,13 @@ Status: Direction accepted on 2026-08-03. Installation-wide local identity,
 coarse engagement counters, campaign-specific prompt state, and visible
 user-submitted diagnostic context belong together in a product-state boundary
 above any one profile. No store, feedback transport, prompt campaign, or
-remote analytics service is implemented yet.
-The accepted desktop beta update direction now requires one random, resettable
-installation ID for the `desktop-update-v1` `X-CFU-Id` request header. It is a
-bounded product-state use for estimating active installations, not analytics
-identity or authorization; implementation and visible privacy text remain open
-under [`beta-release-readiness.md`](beta-release-readiness.md).
+remote analytics service is implemented yet. The desktop updater now creates
+one random UUID in the application-config `cfu-id` file through bounded atomic
+create/repair, sends it only as the `desktop-update-v1` `X-CFU-Id` header, and
+discloses that use in About & updates. It is resettable installation counting,
+not analytics identity or authorization. The eventual installation-wide
+`product.db` must adopt or explicitly migrate this value rather than creating
+a second identity.
 
 ## Scope
 
@@ -61,10 +62,10 @@ Do not reuse one identifier across unrelated ownership boundaries:
 | Report ID | One user-submitted feedback or support case | Generated for that submission; may be sent with the visible report |
 | Analytics ID | Possible future remote longitudinal identity | Does not exist; must be separately justified, disclosed, resettable, and revocable |
 
-RSTorrent currently has stable profile identity and an ephemeral WebSocket
-client-instance identity. It has no durable installation ID or analytics ID.
-The installation ID introduced by a future tactical must not be derived from a
-profile ID, device serial, account, path, peer ID, or hardware fingerprint.
+RSTorrent currently has stable profile identity, an ephemeral WebSocket
+client-instance identity, and the desktop updater's random durable installation
+ID. It has no analytics ID. The installation ID is not derived from a profile
+ID, device serial, account, path, peer ID, or hardware fingerprint.
 
 An installation's age is the elapsed time since its product state was first
 created. Presentation should call this **days since first use** unless platform
@@ -258,10 +259,10 @@ explicit-submit boundary is an intentional difference.
 
 ## Known Gaps And Next Work
 
-- Define the desktop updater installation-ID file, atomic create/repair/reset,
-  relationship to the eventual `product.db` ID, backup behavior, and visible
-  disclosure before automatic update checks ship. Do not create two durable
-  installation identities accidentally.
+- Add a user-facing reset-all-data path and decide updater-ID backup/reinstall
+  behavior. The `cfu-id` create/repair and disclosure are implemented; define
+  its exact adoption or migration into eventual `product.db` before that store
+  lands so two durable installation identities are never created.
 - Define the first exact `product.db` schema, migration, SQLite durability,
   corruption recovery, reset, and platform backup policy in a bounded
   tactical.

@@ -221,6 +221,10 @@ Later runs reuse installed dependencies and Cargo build output while still
 refreshing the static web assets. The process remains attached to the terminal
 so `Ctrl+C` stops it.
 
+Signed packaging, updater rehearsals, version bumps, and tagged publication
+use the exact commands and validation gates in
+[`docs/desktop-release.md`](docs/desktop-release.md).
+
 ## Launching The Live Web UI
 
 For the ordinary headless product path with persistent first-run browser

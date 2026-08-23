@@ -186,6 +186,53 @@
   outline-offset: 1px;
 }
 
+.updateNotice {
+  position: fixed;
+  z-index: 120;
+  right: var(--ui-space-md);
+  bottom: var(--ui-space-md);
+  display: flex;
+  max-width: min(34rem, calc(100vw - 2 * var(--ui-space-md)));
+  align-items: center;
+  gap: var(--ui-space-sm);
+  border: 1px solid color-mix(in srgb, var(--accent) 60%, var(--border-strong));
+  border-radius: 0.65rem;
+  padding: var(--ui-space-sm);
+  color: var(--text-primary);
+  background: var(--surface-primary);
+  box-shadow: 0 0.8rem 2rem rgb(8 20 34 / 30%);
+}
+
+.updateNotice div {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 0.15rem;
+}
+
+.updateNotice span {
+  color: var(--text-muted);
+  font-size: var(--ui-font-small);
+}
+
+.updateNotice button {
+  min-height: var(--ui-control-height);
+  flex: 0 0 auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.48rem;
+  padding: 0 var(--ui-space-sm);
+  color: var(--text-primary);
+  background: var(--surface-secondary);
+  font: inherit;
+  font-size: var(--ui-font-small);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.updateNotice button:hover {
+  background: var(--surface-hover);
+}
+
 .workspace {
   display: grid;
   grid-row: 3;

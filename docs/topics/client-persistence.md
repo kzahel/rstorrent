@@ -157,6 +157,11 @@ reopen; malformed or out-of-range durable values fail closed. Effective
 session clamps, allocator credit, waiters, counters, and application state
 remain non-durable runtime facts.
 
+The desktop updater's random application-config `cfu-id` is deliberately
+installation-wide and separate from profile/session SQLite. A future
+installation product-state store must adopt or explicitly migrate it; profile
+creation/deletion must not silently rotate it or create a second identity.
+
 ## Scope
 
 This topic owns durable client state, resume and restart correctness, database

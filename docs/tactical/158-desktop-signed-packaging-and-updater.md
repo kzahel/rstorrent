@@ -1,12 +1,14 @@
 # Tactical 158: Desktop Signed Packaging And Updater
 
-Status: **Decision-complete and selected as Now (2026-08-22); implementation
-not started.** Maintainer direction selected RSTorrent as the foreseeable
-public product name and froze `com.jstorrent.rstorrent` as the desktop beta
-identifier on 2026-08-23. Cross-platform presubmit Tactical `159` is complete.
-The distinct per-app updater key and required repository secrets are
-provisioned; public-key embedding, route configuration, and implementation
-remain open. No release or production mutation is implied.
+Status: **Implementation in progress and selected as Now (2026-08-22).**
+Maintainer direction selected RSTorrent as the foreseeable public product name
+and froze `com.jstorrent.rstorrent` as the desktop beta identifier on
+2026-08-23. Cross-platform presubmit Tactical `159` is complete. The distinct
+per-app updater key and required repository secrets are provisioned. Native
+and React updater behavior, public configuration, release validators, and the
+five-leg signed workflow now pass their local source/build gates. The hosted
+signed rehearsal, production route deployment, public cross-version release,
+and installed testbed evidence remain open.
 
 Topics: `beta-release-readiness`, `client-surfaces`,
 `product-state-and-feedback`, `product-surfaces-and-migration`,
@@ -283,6 +285,37 @@ Record exact commands, workflow runs, artifact hashes, package types, target
 architectures, signing subjects, notarization/stapling outcomes, update route,
 old/new versions and build IDs, visible states, relaunch, cleanup, and every
 deliberate omission.
+
+## Implementation Evidence
+
+The 2026-08-23 source slice now includes:
+
+- `com.jstorrent.rstorrent`, the reviewed RSTorrent updater public key and
+  `/rstorrent` endpoint, native process/updater plugins, a private atomically
+  repaired `cfu-id`, exact build/version/target facts, and focused Rust tests;
+- an injected Tauri-only updater controller with five-second startup and
+  24-hour checks, timeout, check deduplication, package policy, progress,
+  explicit install/relaunch, About & updates presentation, and an accessible
+  non-modal availability notice; browser/demo entry points omit the adapter;
+- one root changelog, product-owned update-server descriptor, version/identity/
+  route/key drift validator, complete-release and checksum validators, and
+  focused negative tests;
+- a five-leg `desktop-v*` release workflow for notarized macOS arm64/x86_64,
+  Authenticode Windows x86_64, and Linux x86_64/arm64 packages. Manual runs
+  retain private signed rehearsal artifacts; tagged runs assemble one draft
+  and publish only through the complete-release validator; and
+- an explicit TLS-backend boundary: the updater uses native TLS while the
+  engine pins HTTP trackers to its existing Rustls/platform-verifier client,
+  preventing Cargo feature unification from changing tracker authentication.
+
+Local validation passed `cargo fmt --all -- --check`, workspace clippy with
+warnings denied, the full workspace test suite, web typecheck, 262 web unit
+tests with 2 skips, production build/CSP validation, 33 deterministic
+Playwright tests with 12 live tests skipped, release-tool tests, actionlint,
+and an unsigned optimized macOS `.app` whose bundle identifier/version are
+`com.jstorrent.rstorrent`/`0.1.0`. These results do not claim publisher
+signatures, route deployment, or installed update behavior; those are the next
+external gates.
 
 ## Escalation Contract
 

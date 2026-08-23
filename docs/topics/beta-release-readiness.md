@@ -96,18 +96,18 @@ without corrupting or silently reinterpreting user state.
   are later scope; released RSTorrent routes and clients do not silently change
   identity.
 - [ ] **REL-002 — Freeze application identifiers.** Desktop currently uses
-  the provisional `org.jstorrent.rstorrent`; the accepted beta target is
-  `com.jstorrent.rstorrent`, but configuration and release validation have not
-  landed. Android uses the unreleased `org.rstorrent.bootstrap`, and iOS uses
+  the accepted `com.jstorrent.rstorrent`, and release validation rejects drift.
+  Android still uses the unreleased `org.rstorrent.bootstrap`, and iOS uses
   `org.rstorrent.ios.dev`. Incubation clients do not inherit an existing
-  JSTorrent application/store identity.
+  JSTorrent application/store identity; the shared gate remains open for those
+  mobile lanes.
 - [ ] **REL-003 — Establish one release version source and bump procedure.**
   Desktop web, Cargo, and Tauri metadata currently agree at `0.1.0`; Android
   and iOS use independent provisional values. Release validation must reject
   drift for the lane being shipped.
-- [ ] **REL-004 — Add a changelog and release-note policy.** Release notes must
-  distinguish supported behavior, known limitations, data reset/migration,
-  and security/privacy changes.
+- [x] **REL-004 — Add a changelog and release-note policy.** `CHANGELOG.md` and
+  the desktop release runbook require supported behavior, known limitations,
+  data reset/migration, and security/privacy changes for each release.
 - [ ] **REL-005 — Freeze the first supported persistence baseline.** Exercise
   upgrade from the oldest supported beta database and application-owned files,
   including crash during migration, corrupt/newer schema, root loss, and
@@ -136,7 +136,10 @@ without corrupting or silently reinterpreting user state.
   satisfy installer or update evidence. The hosted ordinary floor now passes
   an arm64 macOS app bundle, x86_64 Windows NSIS package, and x86_64 Linux
   AppImage. macOS x86_64, Linux arm64, signing, clean install/update, and
-  release installer breadth remain open.
+  release installer breadth remain open. The signed release workflow now
+  defines both macOS architectures, both Linux architectures, Windows x86_64,
+  and the full installer/update artifact set; its first hosted run remains the
+  evidence gate.
 - [ ] **CI-004 — Add Android gates.** Build both Rust ABIs, lint, unit test,
   assemble a release bundle, and run a bounded owned-emulator product smoke.
   Physical-device and ChromeOS evidence remains a release-candidate campaign,
@@ -229,22 +232,26 @@ is still pending and is not the compatibility oracle.
   private half/passphrase, and register an RSTorrent product route/config with
   the shared server. The distinct RSTorrent key pair was generated and all
   required updater/macOS/Windows repository secrets were confirmed present on
-  2026-08-23; public-key embedding, product config, and route registration
-  remain open. Credential values never enter this repository. The JSTorrent
-  updater private key is not part of the incubation beta workflow.
-- [ ] **UPD-002 — Implement client behavior.** Add the Tauri updater/process
+  2026-08-23. The public key, app endpoint, and product-owned server config are
+  validated in source; production route registration remains open. Credential
+  values never enter this repository. The JSTorrent updater private key is not
+  part of the incubation beta workflow.
+- [x] **UPD-002 — Implement client behavior.** Add the Tauri updater/process
   plugins, stable random installation ID in the platform config directory,
   `X-CFU-Id`, exact check reason, a silent startup check after five seconds, a
   silent 24-hour check, bounded timeout/deduplication, manual check, visible
   release notes/progress/errors, explicit install, and relaunch only after
-  successful installation.
-- [ ] **UPD-003 — Enforce package policy.** In-app replacement is allowed only
+  successful installation. Native, controller, and component tests plus the
+  full web regression suite pass locally.
+- [x] **UPD-003 — Enforce package policy.** In-app replacement is allowed only
   for macOS app, Windows per-user NSIS, and user-writable Linux AppImage.
   MSI/DEB/RPM installations must use a visible manual/package-channel path.
 - [ ] **UPD-004 — Add release metadata validation.** Produce signed updater
   artifacts for `darwin-aarch64`, `darwin-x86_64`, `windows-x86_64`,
   `linux-x86_64`, and `linux-aarch64`; validate URLs, signatures, checksums,
-  version agreement, immutable release assets, and draft-before-finalize.
+  version agreement, immutable release assets, and draft-before-finalize. The
+  source validators, negative tests, serialized five-leg workflow, and sole
+  finalizer now pass local checks; real hosted assets remain required.
 - [ ] **UPD-005 — Prove a real cross-version update.** On each supported
   desktop testbed, install an exact older public signed build, check through
   the production route, download/install/relaunch, and verify new application

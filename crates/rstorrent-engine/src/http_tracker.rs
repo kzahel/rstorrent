@@ -362,7 +362,12 @@ fn configured_client_builder(
     family: AddressFamily,
     https_authentication: TrackerHttpsAuthentication,
 ) -> reqwest::ClientBuilder {
+    // The desktop updater deliberately uses reqwest's native-TLS backend so it
+    // does not enable a second rustls crypto provider in this process. Cargo
+    // features are workspace-unified, so keep tracker authentication pinned
+    // explicitly to the engine's reviewed rustls/platform-verifier path.
     let builder = reqwest::Client::builder()
+        .use_rustls_tls()
         .http1_only()
         .no_proxy()
         .connect_timeout(HTTP_TRACKER_CONNECT_TIMEOUT)

@@ -1,0 +1,9 @@
+{
+  "id": "rstorrent",
+  "displayName": "RSTorrent",
+  "hostnames": ["updates.graehlarts.com"],
+  "pathPrefix": "/rstorrent",
+  "githubRepo": "kzahel/rstorrent",
+  "tagPrefix": "desktop-v",
+  "tauriUpdates": true
+}

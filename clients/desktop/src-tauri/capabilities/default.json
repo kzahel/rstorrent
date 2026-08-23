@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Core desktop window capability",
+  "description": "Core desktop window and updater capability",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "process:default", "updater:default"]
 }
