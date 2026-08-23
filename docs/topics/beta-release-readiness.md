@@ -4,10 +4,11 @@ Topic: `beta-release-readiness`
 
 Status: **Active as of 2026-08-23.** RSTorrent is a functional unreleased
 alpha with maintained desktop, Android, and iOS clients, but it does not yet
-have supported distribution, upgrades, or release automation. Credential-free
-cross-platform presubmit CI is proven on hosted runners. The public product
-name is RSTorrent for the foreseeable release line; current work targets its
-incubation beta. A later production
+have supported public distribution or installed upgrade evidence.
+Credential-free cross-platform presubmit CI and a credentialed five-target
+signed desktop release rehearsal are proven on hosted runners. The public
+product name is RSTorrent for the foreseeable release line; current work
+targets its incubation beta. A later production
 graduation is expected to retain JSTorrent's existing name, application
 identity, and updater trust root, with best-effort legacy-state migration
 scoped separately. It is not a beta requirement. This topic is the
@@ -48,9 +49,9 @@ Store review, and mobile beta is not implied by a desktop tag:
 
 | Lane | Intended beta channel | Current release state |
 | --- | --- | --- |
-| macOS desktop | signed/notarized DMG plus in-app updates | product and hosted unsigned arm64 app bundle pass; DMG, signing, install, updater, and x86_64 evidence absent |
-| Windows desktop | signed per-user NSIS plus in-app updates | hosted unsigned x86_64 NSIS package passes; signing, clean install, and updater evidence absent |
-| Linux desktop | AppImage plus in-app updates; DEB/RPM remain package-manager channels | hosted unsigned x86_64 AppImage passes; arm64, install, updater, and distro-package evidence absent |
+| macOS desktop | signed/notarized DMG plus in-app updates | hosted Developer ID-signed, notarized, and stapled app/DMG packages pass for arm64 and x86_64; clean install and real update remain absent |
+| Windows desktop | signed per-user NSIS plus in-app updates | hosted NSIS and MSI packages have valid expected-publisher Authenticode signatures; clean install and real update remain absent |
+| Linux desktop | AppImage plus in-app updates; DEB/RPM remain package-manager channels | hosted AppImage, DEB, and RPM packages plus updater artifacts pass for x86_64 and arm64; installed and real update evidence remain absent |
 | Android/ChromeOS | signed Android App Bundle through a closed testing channel | maintained Compose/in-process Rust/SAF app and hosted dual-ABI debug/test APK gates pass; release identity, signed AAB, emulator/store, and upgrade evidence absent |
 | iOS/iPadOS | signed TestFlight build | maintained SwiftUI app plus hosted simulator tests and unsigned device archive pass; distribution identity, signing, TestFlight, and upgrade evidence absent |
 
@@ -123,23 +124,25 @@ without corrupting or silently reinterpreting user state.
   formatting, workspace clippy with warnings denied, workspace tests,
   generated-contract drift, web typecheck/unit/build, and workflow/config
   checks. Hosted `main` run
-  [`32569246987`](https://github.com/kzahel/rstorrent/actions/runs/32569246987)
-  proves the credential-free runner and read-only permissions contract.
+  [`32627431920`](https://github.com/kzahel/rstorrent/actions/runs/32627431920)
+  proves the credential-free runner and read-only permissions contract across
+  all seven Rust/interop, web/E2E, desktop, Android, and iOS jobs.
 - [x] **CI-002 — Add shared-web end-to-end coverage.** Run the deterministic
   Playwright suite in CI, retain failure traces/screenshots, and keep public-
   swarm cases opt-in rather than required. The locked Chromium job passes 33
   deterministic tests with 12 live cases skipped locally and on the hosted
   `main` run; failures retain bounded traces/screenshots.
-- [ ] **CI-003 — Add a desktop OS matrix.** Compile and package on macOS arm64
+- [x] **CI-003 — Add a desktop OS matrix.** Compile and package on macOS arm64
   and x86_64, Windows x86_64, and Linux x86_64; add Linux arm64 when a native
   runner or deliberate cross-build path exists. A compile-only matrix does not
-  satisfy installer or update evidence. The hosted ordinary floor now passes
-  an arm64 macOS app bundle, x86_64 Windows NSIS package, and x86_64 Linux
-  AppImage. macOS x86_64, Linux arm64, signing, clean install/update, and
-  release installer breadth remain open. The signed release workflow now
-  defines both macOS architectures, both Linux architectures, Windows x86_64,
-  and the full installer/update artifact set; its first hosted run remains the
-  evidence gate.
+  satisfy installer or update evidence. Hosted ordinary run
+  [`32627431920`](https://github.com/kzahel/rstorrent/actions/runs/32627431920)
+  passes the credential-free package floor. Signed rehearsal
+  [`32627436936`](https://github.com/kzahel/rstorrent/actions/runs/32627436936)
+  passes both macOS architectures, both native Linux architectures, and
+  Windows x86_64 with the complete intended package matrix. Clean install and
+  installed update evidence remain separately open under `QA-003` and
+  `UPD-005`.
 - [ ] **CI-004 — Add Android gates.** Build both Rust ABIs, lint, unit test,
   assemble a release bundle, and run a bounded owned-emulator product smoke.
   Physical-device and ChromeOS evidence remains a release-candidate campaign,
@@ -166,19 +169,22 @@ without corrupting or silently reinterpreting user state.
   passes both smoke profiles and retains JSON artifact
   `performance-32568169955-1`. The first successful weekly scheduled run is
   still required before closing this gate.
-- [ ] **CI-008 — Protect the release branch.** Require the release-readiness
-  checks and review after their signal is stable. `main` was unprotected when
-  audited on 2026-08-22.
+- [x] **CI-008 — Decide release branch protection policy.** Maintainer
+  direction on 2026-08-23 deliberately keeps direct `main` work available and
+  does not make branch protection an incubation-beta gate. Tagged publication
+  remains fail-closed behind source checks, all release legs, and the sole
+  finalizer.
 
 ### Product smoke and quality floor
 
 - [x] **QA-001 — Core deterministic and local product suites pass.** On
-  2026-08-22, Rust format/clippy/workspace tests, web typecheck and 248 passing
+  2026-08-23, Rust format/clippy/workspace tests, web typecheck and 262 passing
   unit tests with 2 skips, the production web build/CSP check, 33 deterministic
-  Playwright tests with 12 live tests skipped, five Tauri desktop tests plus an
-  unsigned arm64 macOS app, both Android ABIs plus Kotlin unit/lint/app and
-  instrumentation APK builds, 25 iOS unit tests, 2 iOS UI tests, and an
-  unsigned arm64 iOS archive passed locally.
+  Playwright tests with 12 live tests skipped, release-tool tests, and an
+  optimized macOS app passed locally. Hosted run
+  [`32627431920`](https://github.com/kzahel/rstorrent/actions/runs/32627431920)
+  additionally passes the full seven-job Rust/interop, web/E2E, desktop,
+  Android dual-ABI/lint/test, and iOS simulator/archive matrix.
 - [ ] **QA-002 — Record a repeatable beta torrent cohort.** Cover small and
   large single/multifile v1 torrents, magnets and `.torrent` files, public and
   controlled discovery, selective files, pause/resume/restart/recheck,
@@ -200,13 +206,18 @@ without corrupting or silently reinterpreting user state.
 ### Packaging and platform integration
 
 - [ ] **DESK-001 — Make the Tauri bundle real.** Tactical `157` supplies
-  provisional icon assets and local bundle configuration. Native DMG/NSIS/
-  AppImage builds, file metadata, clean-machine install, and uninstall remain
+  provisional icon assets and local bundle configuration. Hosted native DMG,
+  NSIS, MSI, AppImage, DEB, and RPM builds now pass across the intended matrix.
+  Clean-machine install, launch, uninstall, and retained-state evidence remain
   required.
 - [ ] **DESK-002 — Sign and notarize tagged builds.** Use the existing shared
   publisher Developer ID/notarization and Windows Azure signing setup. Missing
   credentials must fail a tagged build before publication; untagged CI must
-  remain buildable without release credentials.
+  remain buildable without release credentials. Credentialed rehearsal
+  [`32627436936`](https://github.com/kzahel/rstorrent/actions/runs/32627436936)
+  proves Developer ID signing, Apple notarization/stapling, and expected-
+  publisher Authenticode signing. The first tagged draft/finalizer path remains
+  required to close this gate.
 - [ ] **DESK-003 — Set least-privileged package ownership.** The default is a
   DMG-installed self-contained app on macOS, per-user NSIS on Windows, and a
   user-writable AppImage on Linux. MSI/DEB/RPM installs stay with their package
@@ -227,15 +238,16 @@ contract and shared multi-product update service. The local
 `desktop-release-kit` canary is the operational reference; AtPiano's updater
 is still pending and is not the compatibility oracle.
 
-- [ ] **UPD-001 — Provision RSTorrent's update identity.** Generate one unique
+- [x] **UPD-001 — Provision RSTorrent's update identity.** Generate one unique
   updater key, store only its public half in the app, add CI secrets for the
   private half/passphrase, and register an RSTorrent product route/config with
   the shared server. The distinct RSTorrent key pair was generated and all
   required updater/macOS/Windows repository secrets were confirmed present on
   2026-08-23. The public key, app endpoint, and product-owned server config are
-  validated in source; production route registration remains open. Credential
-  values never enter this repository. The JSTorrent updater private key is not
-  part of the incubation beta workflow.
+  validated in source. The `/rstorrent` product descriptor was deployed to the
+  shared production service and its health/product registration were verified
+  on 2026-08-23. Credential values never enter this repository. The JSTorrent
+  updater private key is not part of the incubation beta workflow.
 - [x] **UPD-002 — Implement client behavior.** Add the Tauri updater/process
   plugins, stable random installation ID in the platform config directory,
   `X-CFU-Id`, exact check reason, a silent startup check after five seconds, a
@@ -251,7 +263,11 @@ is still pending and is not the compatibility oracle.
   `linux-x86_64`, and `linux-aarch64`; validate URLs, signatures, checksums,
   version agreement, immutable release assets, and draft-before-finalize. The
   source validators, negative tests, serialized five-leg workflow, and sole
-  finalizer now pass local checks; real hosted assets remain required.
+  finalizer pass local checks. Hosted rehearsal
+  [`32627436936`](https://github.com/kzahel/rstorrent/actions/runs/32627436936)
+  produced all five private signed package sets. A real tagged draft is still
+  required to exercise `latest.json`, immutable GitHub release URLs, checksum
+  generation, complete-draft validation, and publication finalization.
 - [ ] **UPD-005 — Prove a real cross-version update.** On each supported
   desktop testbed, install an exact older public signed build, check through
   the production route, download/install/relaunch, and verify new application
@@ -357,11 +373,11 @@ no single optional BEP is mandatory.
    loopback-interoperability jobs pass; the repaired performance workflow also
    retains a successful manual smoke artifact.
 3. **Now — Tactical `158`: desktop signed packaging and updater adoption.**
-   Implement the product-owned side of `desktop-update-v1`, release
-   validation, draft artifacts, and platform testbed runbook. RSTorrent naming
-   and the `com.jstorrent.rstorrent` desktop target are settled; configuration,
-   public-key embedding, and production route provisioning remain open. The
-   per-app key and required repository secrets are provisioned.
+   The product-owned `desktop-update-v1` client, signed package workflow,
+   release validation, per-app key, public configuration, production route,
+   and five-platform hosted rehearsal are complete. Next prove the tagged
+   draft/finalizer and exact installed older-to-newer production-route update
+   before closing the tactical.
 4. **Next — application identity and upgrade baseline.** Freeze package IDs,
    persistence compatibility, changelog, privacy/support, diagnostics export,
    and a repeatable cohort before any public installer.

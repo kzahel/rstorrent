@@ -729,11 +729,11 @@ that scope and its cleanup or compatibility rules explicitly.
   art/metadata, and reconciles status before signed updater and cross-platform
   CI slices.
 - [`158-desktop-signed-packaging-and-updater.md`](158-desktop-signed-packaging-and-updater.md):
-  decision-complete and selected as Now; adopts `desktop-update-v1` through a
-  Tauri-only product UI/state boundary, per-app identity/key/route, signed
-  package matrix, fail-closed draft finalization, and exact installed
-  older-to-newer evidence while retaining explicit provisioning/publication
-  gates.
+  implementation in progress and selected as Now; its Tauri-only
+  `desktop-update-v1` UI/state boundary, per-app identity/key/route, and hosted
+  signed five-target package rehearsal pass. Tagged draft finalization and
+  exact installed older-to-newer evidence remain open behind the publication
+  gate.
 - [`159-cross-platform-presubmit-ci.md`](159-cross-platform-presubmit-ci.md):
   complete; installs credential-free Rust, web, deterministic browser E2E,
   native desktop, Android, iOS, and short controlled-interoperability checks

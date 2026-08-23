@@ -21,6 +21,15 @@ it does not create a tag or GitHub Release. Check the job assertions for both
 macOS notarization/stapling and Windows Authenticode validation before using a
 rehearsal package.
 
+The latest proven rehearsal is GitHub Actions run
+[`32627436936`](https://github.com/kzahel/rstorrent/actions/runs/32627436936)
+at commit `f34961c1cbd34508e2f62edc68d1c2a321d78767`. Its source gate and all five
+release legs passed on 2026-08-23. It retained separate private artifacts for
+macOS arm64/x86_64, Linux arm64/x86_64, and Windows x86_64. Both macOS legs
+passed Developer ID, Gatekeeper, notarization/stapling, and updater-artifact
+checks; both Windows installers passed expected-publisher Authenticode checks;
+both Linux legs passed the AppImage/DEB/RPM matrix.
+
 ## Cut A Release
 
 1. Update the same stable version in `clients/web/package.json`,
@@ -62,9 +71,13 @@ carry the incubation-beta status.
 The application checks
 `https://updates.graehlarts.com/rstorrent/tauri/<target>/<arch>/<version>`.
 [`update-server/rstorrent.json`](../update-server/rstorrent.json) is the
-product-owned configuration consumed by the shared update service. A current
-version should return HTTP 204; an older version should return signed Tauri
-metadata referencing the immutable public GitHub Release.
+product-owned configuration consumed by the shared update service. The
+production `/rstorrent` route and product registration were deployed and the
+service health check passed on 2026-08-23. Before the first public
+`desktop-v*` release, the registered route has no release to resolve. After a
+release is public, a current version should return HTTP 204 and an older
+version should return signed Tauri metadata referencing that immutable GitHub
+Release.
 
 After publishing, verify at least one exact current-version key and all five
 older-version keys. Do not treat metadata checks as installed-update evidence:

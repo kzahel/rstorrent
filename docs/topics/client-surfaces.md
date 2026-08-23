@@ -594,11 +594,13 @@ remote exposure, and Android streaming remain independent product decisions.
   remote-access design. It has no pairing, principal/capability model, TLS,
   relay, wake-up path, or public wire compatibility promise.
 - The Tauri shell has basic macOS close-and-reopen behavior, provisional icon
-  assets, ordinary local bundle configuration, and implemented updater UI/
-  lifecycle behavior. It still has no signed/notarized clean-machine installer
-  or installed-update evidence, file associations, production tray policy, or
-  complete cross-platform window/platform-capability evidence. The release
-  gates live in
+  assets, ordinary local bundle configuration, implemented updater UI/
+  lifecycle behavior, and hosted signed package evidence across macOS arm64/
+  x86_64, Windows x86_64, and Linux arm64/x86_64. Those artifacts have not yet
+  passed clean-machine installation or an installed older-to-newer update.
+  File associations, production tray policy, and complete cross-platform
+  window/platform-capability evidence also remain open. The release gates live
+  in
   [`beta-release-readiness.md`](beta-release-readiness.md).
 - The maintained Android product module now lives at `clients/android`; the
   unreleased `org.rstorrent.bootstrap` identity and retained diagnostic service

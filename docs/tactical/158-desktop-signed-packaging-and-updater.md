@@ -6,8 +6,9 @@ and froze `com.jstorrent.rstorrent` as the desktop beta identifier on
 2026-08-23. Cross-platform presubmit Tactical `159` is complete. The distinct
 per-app updater key and required repository secrets are provisioned. Native
 and React updater behavior, public configuration, release validators, and the
-five-leg signed workflow now pass their local source/build gates. The hosted
-signed rehearsal, production route deployment, public cross-version release,
+five-leg signed workflow pass their local and hosted gates. The production
+route is deployed and a credentialed rehearsal produced all five signed
+package sets. The first tagged draft/finalizer, public cross-version release,
 and installed testbed evidence remain open.
 
 Topics: `beta-release-readiness`, `client-surfaces`,
@@ -313,20 +314,43 @@ warnings denied, the full workspace test suite, web typecheck, 262 web unit
 tests with 2 skips, production build/CSP validation, 33 deterministic
 Playwright tests with 12 live tests skipped, release-tool tests, actionlint,
 and an unsigned optimized macOS `.app` whose bundle identifier/version are
-`com.jstorrent.rstorrent`/`0.1.0`. These results do not claim publisher
-signatures, route deployment, or installed update behavior; those are the next
-external gates.
+`com.jstorrent.rstorrent`/`0.1.0`.
+
+Hosted ordinary CI run
+[`32627431920`](https://github.com/kzahel/rstorrent/actions/runs/32627431920)
+passes all seven Rust/interop, web/E2E, desktop, Android, and iOS jobs at commit
+`f34961c1cbd34508e2f62edc68d1c2a321d78767`. Credentialed Desktop Release run
+[`32627436936`](https://github.com/kzahel/rstorrent/actions/runs/32627436936)
+passes the source gate and all five serialized release legs at that commit:
+
+- macOS arm64 and x86_64 app/DMG output passed Developer ID code-signing,
+  Gatekeeper assessment, Apple notarization/stapling, and emitted signed
+  `.app.tar.gz` updater archives;
+- Windows x86_64 emitted one NSIS and one MSI installer, and both passed
+  Authenticode validation against the expected publisher subject;
+- native Linux x86_64 and arm64 runners each emitted exactly one AppImage, DEB,
+  and RPM plus signed AppImage updater archives; and
+- five private Actions artifacts were retained for 14 days, ranging from
+  23,643,046 bytes for Windows to 259,452,543 bytes for Linux x86_64.
+
+The product-owned `/rstorrent` descriptor is also deployed through the shared
+production update service, whose health and product registration passed on
+2026-08-23. With no public `desktop-v*` release yet, the route cannot serve a
+current or older update response. Publisher signatures, package breadth, and
+route provisioning are therefore proven; tagged draft assembly, `latest.json`,
+checksums, public release lookup, clean installation, and installed update
+behavior remain external gates.
 
 ## Escalation Contract
 
 Pure model/UI/tests, product-state file implementation, plugin integration,
 config validators, draft-workflow construction, and build-only fixes within
 these contracts are authorized. The application identifier and distinct
-RSTorrent updater key are now frozen/provisioned. Stop for maintainer direction
-before changing the production server configuration, rotating or recovering a
-long-lived updater private key, using publisher credentials to sign artifacts,
-creating a tag/release, publishing, or mutating external testbeds. Those
-actions are required gates, not implied by this tactical.
+RSTorrent updater key are frozen/provisioned; production route deployment and
+credentialed private rehearsal are complete. Stop for maintainer direction
+before changing route meaning, rotating or recovering a long-lived updater
+private key, creating a tag/release, publishing, or mutating external testbeds.
+Those actions are required gates, not implied by this tactical.
 
 The next beta-readiness slice after this tactical freezes the remaining
 application identities, persistence baseline, changelog, privacy/support

@@ -6,8 +6,10 @@ Status: Authoritative cross-cutting feature-readiness scoreboard and current
 work queue for the functional, unreleased alpha. Maintainer direction on
 2026-08-22 completed beta-release foundation Tactical `157` and
 cross-platform presubmit Tactical `159`, then selected decision-complete
-desktop release/updater Tactical `158` as the single **Now**. The tables below
-record current support, evidence, and highest-risk gaps; implementation
+desktop release/updater Tactical `158` as the single **Now**. Its client,
+production route, and five-target signed hosted rehearsal now pass; tagged
+draft assembly and installed older-to-newer updates keep it active. The tables
+below record current support, evidence, and highest-risk gaps; implementation
 history remains in the linked tacticals and focused topics.
 
 ## Purpose And Ownership
@@ -486,9 +488,11 @@ exactly.
 
 - **Execute desktop signed packaging and updater Tactical
   [`158`](../tactical/158-desktop-signed-packaging-and-updater.md).** Its
-  decision-complete plan adopts the shared `desktop-update-v1` contract while
-  retaining explicit application-identifier, per-app key, production-route,
-  signing-credential, testbed, and publication gates.
+  shared `desktop-update-v1` client, application identity, per-app key,
+  production route, package matrix, and credentialed five-target rehearsal
+  now pass. Exercise the first tagged draft/finalizer and exact installed
+  older-to-newer production-route update without weakening the explicit
+  publication boundary.
 
 ### Next
 
@@ -502,9 +506,11 @@ Completed cross-platform presubmit Tactical
 [`159`](../tactical/159-cross-platform-presubmit-ci.md) provides credential-free
 Rust/web, deterministic browser E2E, native desktop package, Android dual-ABI,
 iOS simulator/archive, and short loopback-interoperability signal on every
-`main` update and pull request. Signed/installable release artifacts, updater
-evidence, native architecture breadth, mobile emulator/device runs, and broad
-interoperability remain separate gates.
+`main` update and pull request. Signed package and updater artifacts plus
+native desktop architecture breadth now pass the separate hosted release
+rehearsal. Clean-machine installation, exact installed updater
+evidence, mobile emulator/device release runs, and broad interoperability
+remain separate gates.
 
 Decision-complete measurement Tactical
 [`153`](../tactical/153-wired-lan-utp-data-plane-scalability.md) remains ready
