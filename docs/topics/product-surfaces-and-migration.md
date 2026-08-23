@@ -2,14 +2,13 @@
 
 Topic: `product-surfaces-and-migration`
 
-Status: The backend/presentation model, ChromeOS choices, desktop extension
-direction, and user-initiated semantic import posture were accepted in product
-discussion on 2026-08-02. This topic records graduation direction, not an
-authorization to implement the extension, Crostini packaging, production
-remote control, or migration in the current engine tactical. Exact transports,
-security boundaries, rollout policy, and imported fields remain to be designed
-and validated in bounded tacticals. Maintainer direction on 2026-08-09 accepts
-iOS as an eventual first-party in-process backend; Tactical
+Status: The backend/presentation model, ChromeOS choices, and desktop extension
+direction were accepted in product discussion on 2026-08-02. This topic
+records graduation direction, not an authorization to implement the extension,
+Crostini packaging, production remote control, or migration in the current
+engine tactical. Exact transports and security boundaries remain to be
+designed and validated in bounded tacticals. Maintainer direction on
+2026-08-09 accepts iOS as an eventual first-party in-process backend; Tactical
 [`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md)
 front-loads the physical storage/network/lifecycle feasibility that shaped the
 common engine boundary. Explicit direction on 2026-08-13 schedules the first
@@ -19,7 +18,11 @@ without migration or publication.
 Maintainer direction on 2026-08-22 starts the independent beta distribution
 campaign in [`beta-release-readiness.md`](beta-release-readiness.md). That
 campaign does not implicitly authorize legacy JSTorrent takeover, extension
-work, or semantic import.
+work, or semantic import. Direction on 2026-08-23 records only the broad later
+goal: a proven RSTorrent implementation may graduate through JSTorrent's
+existing desktop identity and updater channel, with best-effort state migration
+scoped at that time. This supersedes the earlier detailed import posture and
+does not make migration planning current work.
 
 ## Scope
 
@@ -319,81 +322,30 @@ to wake the VM and then hand off to the extension. Desktop native messaging can
 start or attach to the native backend, but its exact window and process
 lifecycle still requires a tactical.
 
-## Migration From Current JSTorrent
+## Later JSTorrent Graduation
 
-### Manual import is the initial policy
+RSTorrent's current work is an independent incubation beta. Desktop beta uses
+the `com.jstorrent.rstorrent` identifier, the RSTorrent update route, and its
+own updater key so it can coexist safely with current JSTorrent installations.
+There is no promise that an RSTorrent beta installation will silently change
+into the production JSTorrent application.
 
-Migration may be user-initiated rather than automatic. A current JSTorrent
-surface can show a notification, banner, or settings entry when an eligible
-successor backend is installed, then let the user inspect and start an import.
-Automatic destructive conversion is not required.
+The broad later goal is different: once the implementation is ready, ship it
+as a normal JSTorrent desktop update while retaining JSTorrent branding,
+`com.jstorrent.desktop`, and the updater trust root already embedded in
+installed JSTorrent clients. The new release may present a refreshed interface
+while using the Rust engine underneath.
 
-The prompt should be dismissible and should explain:
+Migration of useful legacy settings, torrent intent, and storage references is
+best effort. Its exact source versions, fields, UX, and evidence will be chosen
+from the products that exist when graduation work begins. Exhaustive parity or
+migration of every historical profile and runtime detail is not a prerequisite.
+Legacy completion claims still cannot become verified RSTorrent content without
+the new engine's ordinary integrity checks.
 
-- which source installation and profile were found;
-- which destination backend and profile will receive the import;
-- which state can be imported;
-- which content roots need confirmation or remapping;
-- that claimed progress will be checked before it is trusted; and
-- that the legacy installation remains available until the user removes it.
-
-Desktop's current multi-profile registry makes source selection explicit. The
-successor may still expose only one automatically created destination profile;
-supporting every legacy profile as a simultaneously running new profile is not
-a migration requirement.
-
-### Import semantics
-
-Import converts bounded semantic state into the typed successor schema. It
-does not open the current JSTorrent KV database as the new runtime authority or
-preserve the old process topology.
-
-Candidate imported state includes:
-
-- torrent identity and canonical source intent;
-- exact metainfo or info-dictionary bytes when available and independently
-  hash-authorized;
-- desired running, paused, archived, or selected-file intent where the new
-  application model has an equivalent;
-- supported user settings and organization; and
-- content-root references after explicit destination-specific remapping.
-
-Legacy bitfields and completion claims are hints for bounded recheck. They
-never establish verified successor content without hashing through the new
-engine's ordinary integrity path. The importer may conservatively omit or
-clear progress it cannot map safely.
-
-Do not import ephemeral or topology-specific state such as:
-
-- connected or cached peers, DHT routing entries, in-flight blocks, or recent
-  transfer rates;
-- PIDs, ports, process liveness, takeover ownership, or daemon discovery
-  records;
-- native-host, IO-daemon, Android-companion, or extension pairing tokens; or
-- transient errors, retries, and presentation replicas.
-
-Sensitive tracker or source credentials require a separately reviewed field
-and destination policy rather than accidental inclusion in a generic settings
-copy.
-
-### Safety, retry, and rollback
-
-The importer should treat legacy files as read-only, identify the exact source
-profile and schema it inspected, and retain an import receipt in the
-destination. Repeating the same import must not duplicate torrents or apply a
-stale source over newer destination intent without confirmation.
-
-An import writes through ordinary destination transactions and leaves the
-legacy database and payloads untouched. Content is not copied or deleted
-implicitly. If a root cannot be represented on the destination platform, the
-user remaps it or imports the torrent without trusted progress. Deleting the
-old application, databases, or content is a later explicit action after the
-user has inspected the new library and recheck results.
-
-Migration is scoped to a selected backend. Importing a JSTorrent Android
-profile into the successor Android backend does not populate Crostini, and
-importing a desktop profile does not populate Android. A later move between
-successor backends uses the same explicit export/import posture.
+This general direction reserves the production identity; it does not place the
+JSTorrent updater private key in RSTorrent beta automation, authorize a
+production update, or add migration work to the current beta checklist.
 
 ## Working Name And Product Identity
 
@@ -405,36 +357,21 @@ this product context. `KTorrent` is not a practical alternative because it is
 already the established KDE client name.
 
 Maintainer direction on 2026-08-22 selects RSTorrent as the public product name
-for the foreseeable release line. Domain and clean package identifiers still
-require release-specific checks. A later merger should not discard JSTorrent's
-installed extension audience and product discovery merely to make the engine
-rewrite visible, but that future concern does not make current RSTorrent
-clients provisional identities.
+for the foreseeable release line, beginning with the incubation beta.
+Direction on 2026-08-23 selects
+`com.jstorrent.rstorrent` as its desktop identifier. A later graduation should
+not discard JSTorrent's installed application or extension audience merely to
+make the engine rewrite visible, but that future concern does not make current
+RSTorrent clients provisional identities.
 
 ## Existing Distribution And Coexistence
 
-The existing JSTorrent extension identity and store discovery are important
-assets. The preferred graduation path should evaluate updating that extension
-to support the successor application contract rather than launching an
-unrelated extension with no installed audience. RSTorrent remains the
-independently released product during that coexistence; an eventual
-extension/backend merger is separately versioned and migrated.
-
-During coexistence, one extension may need legacy and successor adapters. It
-must show which engine generation and backend it is controlling, avoid letting
-both claim the same profile or content implicitly, and preserve a usable
-rollback path. A reasonable staged experience is:
-
-1. notify the user that a successor backend and manual import are available;
-2. let the user select desktop, Android, or Crostini as the destination;
-3. preview and run a read-only-source semantic import;
-4. recheck claimed content and show exceptions;
-5. keep legacy operation available while the user evaluates the result; and
-6. offer explicit legacy retirement only after the successor is proven useful.
-
-The exact Chrome Web Store, desktop installer, Android package, versioning,
-and rollback mechanics require release-specific evidence and maintainer
-approval.
+The existing JSTorrent desktop and extension identities and their installed
+audiences are important assets. A later graduation should normally update
+those products to use the proven Rust application contract instead of
+launching unrelated replacement identities. RSTorrent remains independently
+released during incubation. Exact extension, store, coexistence, and retirement
+mechanics are deliberately deferred until graduation work is authorized.
 
 ## Current Evidence And References
 
@@ -461,8 +398,8 @@ fixture, or wire contract from either sibling project.
 
 ## Open Decisions And Required Evidence
 
-- The exact later stage at which an RSTorrent product may merge into JSTorrent,
-  including coexistence, store identity, rollback, and user-visible naming.
+- The exact later stage at which the proven implementation graduates through
+  JSTorrent's existing product and updater identity.
 - The exact desktop native-host/backend process, single-instance, window, and
   shutdown ownership model. Desktop beta updating now adopts the external
   `desktop-update-v1` contract; its product route/key, client presentation,
@@ -476,8 +413,8 @@ fixture, or wire contract from either sibling project.
   permission, ChromeOS networking, and cold-start recovery behavior.
 - The exact Crostini package, service, local endpoint, storage, networking,
   update, rollback, and uninstall contracts.
-- The migration source versions, imported-field matrix, profile-selection UX,
-  root remapping, import receipts, retry behavior, and notification cadence.
+- The bounded best-effort set of legacy state worth migrating at graduation
+  time.
 - Physical desktop and ChromeOS handoff evidence, including repeated stopped
   backend launches and recovery from stale or incompatible installations.
 - Physical ChromeOS TCP and UDP torrent behavior and representative Android
@@ -489,18 +426,9 @@ fixture, or wire contract from either sibling project.
 
 ## Recommended Next Work
 
-The beta-readiness campaign is now the explicit product priority, but it does
-not pull legacy migration or extension control into the MVP. When product
-migration or extension work is separately authorized, begin
-with one bounded tactical that:
-
-1. inventories the exact supported legacy desktop, extension, and Android
-   persistence versions;
-2. fixes the backend identity and attachment model without designing a public
-   general-purpose daemon;
-3. defines the transport threat model and owner/task/cancellation map;
-4. defines a versioned semantic import plan and read-only-source fixtures;
-5. prototypes the desktop handoff and one ChromeOS backend without weakening
-   the other choices; and
-6. records deterministic, packaged, and physical acceptance gates before any
-   migration notification ships.
+The beta-readiness campaign is the explicit product priority. Complete the
+independent RSTorrent packaging, updater, product-quality, and installed-beta
+evidence without pulling legacy migration or extension control into its MVP.
+When JSTorrent graduation is separately authorized, create one bounded
+tactical that fixes the production handoff and the intentionally best-effort
+legacy-state scope from then-current evidence.

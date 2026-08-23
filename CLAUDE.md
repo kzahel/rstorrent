@@ -67,6 +67,12 @@ a living topic records an accepted replacement:
 - A future JSTorrent extension is expected to control and integrate with the
   native engine rather than carry peer or file hot paths. This vision does not
   authorize extension or IPC work in an unrelated tactical.
+- Incubation beta releases remain a separate RSTorrent product with the
+  `com.jstorrent.rstorrent` desktop identifier, RSTorrent update route, and a
+  per-app updater key. A later production graduation is expected to ship as a
+  normal JSTorrent update retaining `com.jstorrent.desktop`, JSTorrent
+  branding, and JSTorrent's existing updater trust root. Best-effort legacy
+  state migration is scoped later and is not a beta-readiness requirement.
 - Engine and product-client work both proceed, each under its own numbered
   tactical. Neither is globally paused in favor of the other, and neither is
   standing authorization to start implementing without one.

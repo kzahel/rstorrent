@@ -1,19 +1,25 @@
 # Product Vision: JSTorrent Rebuilt Around A Native Engine
 
 Status: directional long-term vision; RSTorrent is the accepted foreseeable
-public identity, while any later JSTorrent graduation timing remains open.
+public identity and current incubation beta, while any later JSTorrent
+graduation timing remains open.
 
 ## Thesis
 
-RSTorrent is the public product identity for the foreseeable release line. It
-also remains a likely incubation path for a later generation of JSTorrent, but
-that merger is a separate migration decision rather than a near-term rename.
+RSTorrent is the public product identity for the foreseeable release line,
+beginning with the current incubation beta. It also remains a likely incubation
+path for a later generation of JSTorrent, but that graduation is separate work
+rather than a near-term rename.
 
 The implementation is independent because the engine needs a clean
 architecture, not because the existing product identity should be discarded.
 Once the native engine and its clients are demonstrably ready, they may
 graduate into the JSTorrent product and replace the current TypeScript engine
-under the hood.
+under the hood. The intended desktop result is a normal JSTorrent update that
+retains JSTorrent's public name, `com.jstorrent.desktop` application identity,
+and existing updater trust root. The independent RSTorrent beta keeps its own
+identifier, update route, and updater key until such a graduation is actually
+planned.
 
 The `JS` in JSTorrent describes the project's origin, not necessarily a
 permanent implementation constraint or a promise users depend on. The durable
@@ -63,8 +69,8 @@ service during engine bring-up.
 
 The accepted graduation-level separation between native backends and
 detachable presentations, including desktop extension use, the two isolated
-ChromeOS backends, their three UI configurations, launch handoff, and manual
-JSTorrent import, is recorded in
+ChromeOS backends, their three UI configurations, launch handoff, and later
+JSTorrent graduation, is recorded in
 [`topics/product-surfaces-and-migration.md`](topics/product-surfaces-and-migration.md).
 That direction does not make extension or migration work part of the current
 engine tactical.
@@ -82,8 +88,8 @@ A likely progression is:
 3. Establish reliable desktop and Android/ChromeOS products around the same
    engine, while front-loading physical iOS storage and lifecycle constraints
    that could otherwise fracture that engine.
-4. Design migration and the browser-extension control boundary from proven
-   application contracts.
+4. Scope a best-effort legacy-state transition and browser-extension control
+   boundary from proven application contracts.
 5. Graduate the implementation into the JSTorrent product and brand when it is
    safer and more useful than the engine it replaces.
 6. Retire legacy engine paths deliberately rather than maintaining two product
@@ -108,11 +114,12 @@ works. Graduation should be supported by evidence that includes:
 - physical iOS storage, direct-networking, and lifecycle feasibility before a
   complete iOS product is planned;
 - stable application contracts used by more than one first-party client;
-- a reviewed migration path for user settings, torrent state, and content;
+- a reviewed, best-effort transition for the legacy state judged valuable at
+  graduation time;
 - a secured and lifecycle-aware extension control channel, if the extension is
   part of that release; and
-- an upgrade, coexistence, rollback, and retirement plan for the current
-  JSTorrent implementation.
+- evidence that the replacement travels through JSTorrent's established
+  application and updater identity without corrupting retained user state.
 
 Native performance and a single shared engine are strong architectural
 advantages, but performance and reliability claims should be measured rather
@@ -127,16 +134,16 @@ than assumed.
 - Building the browser extension before native application contracts exist.
 - Turning the native engine into a general-purpose remote daemon.
 - Preserving every historical feature before the new client is useful.
+- Exhaustive migration of every historical setting, profile, or runtime
+  detail.
 - Ending maintenance of the current JSTorrent product before a responsible
   transition is available.
 
 ## Open Product Questions
 
-- Whether RSTorrent remains only an internal/incubation name or is used for
-  public previews.
 - When the implementation is mature enough to carry the JSTorrent name.
-- The exact settings and torrent state included by the accepted user-initiated
-  semantic import, and the supported legacy source versions.
+- Which legacy settings and torrent state are valuable and practical enough to
+  migrate on a best-effort basis.
 - How an existing extension discovers, authenticates, and coordinates with the
   native product.
 - Which web integrations belong in the extension, local application API, or

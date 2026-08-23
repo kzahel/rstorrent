@@ -41,8 +41,8 @@ Topics own the current truth for a continuing concern. Tactical docs under
   and recommended bring-up sequence.
 - [`product-surfaces-and-migration.md`](product-surfaces-and-migration.md):
   backend/presentation separation, desktop extension use, ChromeOS Android and
-  Crostini choices, launch handoff, backend isolation, and manual JSTorrent
-  import.
+  Crostini choices, launch handoff, backend isolation, and later best-effort
+  JSTorrent graduation.
 - [`product-state-and-feedback.md`](product-state-and-feedback.md):
   installation identity, local usage summaries, prompt campaign state,
   lifecycle/version facts, and explicit user-submitted diagnostic context.

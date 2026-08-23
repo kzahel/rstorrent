@@ -2,13 +2,16 @@
 
 Topic: `beta-release-readiness`
 
-Status: **Active as of 2026-08-22.** RSTorrent is a functional unreleased
+Status: **Active as of 2026-08-23.** RSTorrent is a functional unreleased
 alpha with maintained desktop, Android, and iOS clients, but it does not yet
 have supported distribution, upgrades, or release automation. Credential-free
 cross-platform presubmit CI is proven on hosted runners. The public product
-name is RSTorrent for the foreseeable release line; a later JSTorrent merger
-is a separate migration campaign. This topic is the authoritative beta gap
-ledger and release checklist. Tactical
+name is RSTorrent for the foreseeable release line; current work targets its
+incubation beta. A later production
+graduation is expected to retain JSTorrent's existing name, application
+identity, and updater trust root, with best-effort legacy-state migration
+scoped separately. It is not a beta requirement. This topic is the
+authoritative beta gap ledger and release checklist. Tactical
 [`157`](../tactical/157-beta-release-foundation.md) completed the first cleanup
 slice, cross-platform presubmit Tactical
 [`159`](../tactical/159-cross-platform-presubmit-ci.md) is complete, and
@@ -84,15 +87,20 @@ without corrupting or silently reinterpreting user state.
 
 - [x] **REL-001 — Freeze the beta name and publisher identity.** Maintainer
   direction on 2026-08-22 selects RSTorrent as the public product identity for
-  the foreseeable release line. RSTorrent remains independent from current
-  JSTorrent installations; any later merger requires an explicit migration,
-  coexistence, and store-identity campaign rather than silently changing the
-  meaning of released RSTorrent clients.
+  the foreseeable release line, beginning with an incubation beta. RSTorrent
+  remains independent from current JSTorrent installations. Maintainer
+  direction on 2026-08-23 records
+  the general later goal: graduate the proven implementation through a normal
+  JSTorrent update retaining JSTorrent branding, `com.jstorrent.desktop`, and
+  its existing updater trust root. Exact timing and best-effort state migration
+  are later scope; released RSTorrent routes and clients do not silently change
+  identity.
 - [ ] **REL-002 — Freeze application identifiers.** Desktop currently uses
-  `org.jstorrent.rstorrent`, Android uses the unreleased
-  `org.rstorrent.bootstrap`, and iOS uses `org.rstorrent.ios.dev`. Do not
-  inherit `com.jstorrent.app` or another existing store identity without an
-  explicit migration/coexistence decision.
+  the provisional `org.jstorrent.rstorrent`; the accepted beta target is
+  `com.jstorrent.rstorrent`, but configuration and release validation have not
+  landed. Android uses the unreleased `org.rstorrent.bootstrap`, and iOS uses
+  `org.rstorrent.ios.dev`. Incubation clients do not inherit an existing
+  JSTorrent application/store identity.
 - [ ] **REL-003 — Establish one release version source and bump procedure.**
   Desktop web, Cargo, and Tauri metadata currently agree at `0.1.0`; Android
   and iOS use independent provisional values. Release validation must reject
@@ -219,7 +227,11 @@ is still pending and is not the compatibility oracle.
 - [ ] **UPD-001 — Provision RSTorrent's update identity.** Generate one unique
   updater key, store only its public half in the app, add CI secrets for the
   private half/passphrase, and register an RSTorrent product route/config with
-  the shared server. Credential values never enter this repository.
+  the shared server. The distinct RSTorrent key pair was generated and all
+  required updater/macOS/Windows repository secrets were confirmed present on
+  2026-08-23; public-key embedding, product config, and route registration
+  remain open. Credential values never enter this repository. The JSTorrent
+  updater private key is not part of the incubation beta workflow.
 - [ ] **UPD-002 — Implement client behavior.** Add the Tauri updater/process
   plugins, stable random installation ID in the platform config directory,
   `X-CFU-Id`, exact check reason, a silent startup check after five seconds, a
@@ -340,8 +352,9 @@ no single optional BEP is mandatory.
 3. **Now — Tactical `158`: desktop signed packaging and updater adoption.**
    Implement the product-owned side of `desktop-update-v1`, release
    validation, draft artifacts, and platform testbed runbook. RSTorrent naming
-   is settled; application identifiers, per-app key, and production route
-   provisioning retain their explicit maintainer/operations gates.
+   and the `com.jstorrent.rstorrent` desktop target are settled; configuration,
+   public-key embedding, and production route provisioning remain open. The
+   per-app key and required repository secrets are provisioned.
 4. **Next — application identity and upgrade baseline.** Freeze package IDs,
    persistence compatibility, changelog, privacy/support, diagnostics export,
    and a repeatable cohort before any public installer.

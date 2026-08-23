@@ -2,9 +2,11 @@
 
 Status: **Decision-complete and selected as Now (2026-08-22); implementation
 not started.** Maintainer direction selected RSTorrent as the foreseeable
-public product name, and cross-platform presubmit Tactical `159` is complete.
-Identifier, route, and per-app key provisioning retain the gates below. No
-release or production mutation is implied.
+public product name and froze `com.jstorrent.rstorrent` as the desktop beta
+identifier on 2026-08-23. Cross-platform presubmit Tactical `159` is complete.
+The distinct per-app updater key and required repository secrets are
+provisioned; public-key embedding, route configuration, and implementation
+remain open. No release or production mutation is implied.
 
 Topics: `beta-release-readiness`, `client-surfaces`,
 `product-state-and-feedback`, `product-surfaces-and-migration`,
@@ -41,19 +43,22 @@ condition.
 
 - Stable versions are `MAJOR.MINOR.PATCH`; the desktop tag prefix is
   `desktop-v`.
-- The foreseeable public product name is RSTorrent. A later merger into
-  JSTorrent is a separate migration campaign and must not change the meaning
-  of already released RSTorrent routes or clients silently.
-- Before route/key provisioning, maintainer direction must still freeze whether
-  the current `org.jstorrent.rstorrent` identifier is retained or replaced by
-  a clean RSTorrent identifier.
+- The foreseeable public product name is RSTorrent. Its desktop beta
+  identifier is `com.jstorrent.rstorrent`, replacing the unreleased provisional
+  `org.jstorrent.rstorrent` before the first package.
+- The general later goal is to graduate the proven implementation as a normal
+  JSTorrent update retaining JSTorrent branding, `com.jstorrent.desktop`, and
+  the existing JSTorrent updater trust root. That best-effort transition is
+  later scope. This tactical neither uses the JSTorrent updater private key nor
+  changes the meaning of released RSTorrent routes or clients.
 - The intended product route is
   `https://updates.graehlarts.com/rstorrent/tauri/{{target}}/{{arch}}/{{current_version}}`
   and the server product config uses a stable RSTorrent ID, `/rstorrent` path
   prefix, `kzahel/rstorrent` repository, and `desktop-v` tags.
-- Generate one unique Tauri updater key for this application. Commit only the
-  public key. The private key/passphrase live in maintainer secret storage and
-  repository Actions secrets; they never enter source, logs, or shell
+- One unique Tauri updater key was generated for this application and the
+  private key/passphrase plus shared publisher credentials were confirmed
+  present as repository Actions secrets on 2026-08-23. Commit only the
+  RSTorrent public key. Private values never enter source, logs, or shell
   arguments.
 - The app fails closed: no unsigned, wrongly signed, incompatible, draft,
   missing-target, or malformed response can be installed.
@@ -283,13 +288,15 @@ deliberate omission.
 
 Pure model/UI/tests, product-state file implementation, plugin integration,
 config validators, draft-workflow construction, and build-only fixes within
-these contracts are authorized. Stop for maintainer direction before freezing
-the application identifier/route, generating or storing the long-lived updater
-private key, changing the production server configuration, using publisher
-credentials, creating a tag/release, publishing, or mutating external
-testbeds. Those actions are required gates, not implied by this tactical.
+these contracts are authorized. The application identifier and distinct
+RSTorrent updater key are now frozen/provisioned. Stop for maintainer direction
+before changing the production server configuration, rotating or recovering a
+long-lived updater private key, using publisher credentials to sign artifacts,
+creating a tag/release, publishing, or mutating external testbeds. Those
+actions are required gates, not implied by this tactical.
 
-The next separate release slice is cross-platform presubmit CI for the whole
-workspace and maintained product clients. Mobile store distribution, release
-identity/migration, and the common beta torrent cohort remain independent
-tacticals in `beta-release-readiness`.
+The next beta-readiness slice after this tactical freezes the remaining
+application identities, persistence baseline, changelog, privacy/support
+presentation, diagnostics export, and common beta torrent cohort. Mobile store
+distribution remains an independent later campaign in
+`beta-release-readiness`.

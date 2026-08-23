@@ -62,18 +62,20 @@ explicitly as the **Android**, **Compose**, or **Android UI**; the Astro
 
 **RSTorrent** is the public product identity for the foreseeable release line,
 not merely a temporary beta label. A later, separately planned graduation into
-the next generation of **JSTorrent** may replace the current engine and related
-internals while providing a deliberate transition for existing installations;
-that future merger does not change current RSTorrent package or upgrade
-identity implicitly.
+the next generation of **JSTorrent** may ship as an ordinary JSTorrent update:
+it would retain JSTorrent's existing public name, desktop application identity,
+and updater trust root while replacing the engine and related internals. Any
+legacy-state migration will be best effort and scoped when that work begins.
+That future direction is not part of the incubation beta and does not change
+current RSTorrent package, route, or updater identity implicitly.
 
 Desktop, Android, ChromeOS, and the maintained iOS client use or are intended
 to use the same first-party Rust engine. A future JSTorrent browser extension
 may attach as a control and presentation surface, while networking, hashing,
 scheduling, persistence, and payload I/O remain in the native engine. The
-rollout, backend choices, coexistence, and user-state import direction are
+rollout, backend choices, coexistence, and later graduation direction are
 recorded in the
-[product deployment and migration plan](docs/topics/product-surfaces-and-migration.md)
+[product deployment and graduation plan](docs/topics/product-surfaces-and-migration.md)
 and [long-term product vision](docs/vision.md).
 
 ## Unreleased Development Policy
@@ -110,7 +112,7 @@ for toolchain setup, build, test, and launch instructions.
 - [Feature completeness and current queue](docs/topics/capability-readiness.md)
 - [Client and platform readiness](docs/topics/client-surfaces.md)
 - [Exact protocol support](docs/topics/protocol-support.md)
-- [Deployment and JSTorrent migration](docs/topics/product-surfaces-and-migration.md)
+- [Deployment and later JSTorrent graduation](docs/topics/product-surfaces-and-migration.md)
 - [Product vision](docs/vision.md)
 - [Project history and original motivation](docs/project-history.md)
 - [Reference implementations and provenance](docs/references.md)

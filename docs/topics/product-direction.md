@@ -66,8 +66,13 @@ RSTorrent is implemented and released independently from the current JSTorrent
 engine and may coexist with it for the foreseeable product line. Maintainer
 direction on 2026-08-22 selects RSTorrent as the public identity rather than a
 temporary preview label. It may later graduate into a new generation of the
-JSTorrent product once evidence supports replacement, but that is a separate
-migration campaign. It does not begin with a migration or parity obligation.
+JSTorrent product once evidence supports replacement. Maintainer direction on
+2026-08-23 clarifies that the expected desktop graduation is a normal
+JSTorrent update retaining the `com.jstorrent.desktop` application identity,
+JSTorrent branding, and its existing updater trust root while adopting the
+Rust engine and refreshed product surface. Legacy-state migration is best
+effort and scoped later. The incubation beta remains independent and does not
+begin with migration or parity obligations.
 
 ### First-party engine and clients
 
@@ -485,8 +490,8 @@ This is recommended direction beyond the accepted first slice:
     application service actually own. Desktop content UI remains web-based;
     native desktop code owns the shell, tray, and operating-system integration.
 17. The accepted graduation-level backend/presentation choices, extension
-    control posture, handoff requirements, backend isolation, and manual
-    JSTorrent import direction are recorded in
+    control posture, handoff requirements, backend isolation, and best-effort
+    JSTorrent graduation direction are recorded in
     [`product-surfaces-and-migration.md`](product-surfaces-and-migration.md).
     Their implementation still requires separate bounded tacticals.
 
