@@ -252,9 +252,11 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#desktop-v}"
           NOTES=$(awk "/^## \[$VERSION\]/{found=1; next} /^## \[/{found=0} found" CHANGELOG.md)
-          echo "notes<<__NOTES__" >> "$GITHUB_OUTPUT"
-          echo "$NOTES" >> "$GITHUB_OUTPUT"
-          echo "__NOTES__" >> "$GITHUB_OUTPUT"
+          {
+            echo "notes<<__NOTES__"
+            echo "$NOTES"
+            echo "__NOTES__"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build signed desktop packages
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
