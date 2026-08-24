@@ -181,8 +181,10 @@ security boundary. Implemented Tactical
 `magnet:` and local `.torrent` activation to that current product only. It does
 not implement extension routing, reuse JSTorrent identity, or decide the later
 successor handoff topology. Installed Linux arm64 and Windows
-x86_64-application acceptance pass; installed macOS arm64 Add-flow evidence is
-still required.
+x86_64-application plus macOS arm64 acceptance pass. The macOS campaign
+preserved JSTorrent as the inherited default handler and targeted RSTorrent by
+its current incubation bundle identifier; the exact hosted run is still
+required.
 
 ## ChromeOS Backends
 

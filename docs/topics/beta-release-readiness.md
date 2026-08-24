@@ -44,9 +44,10 @@ Maintainer direction on 2026-08-24 promotes OS-level `magnet:` and local
 `.torrent` activation from a post-beta deferral to a beta usability gap;
 implemented Tactical
 [`163`](../tactical/163-desktop-external-torrent-intake.md) is the first
-**Next** slice while installed macOS acceptance and its exact hosted run remain
-open. Installed Linux arm64 and Windows x86_64-application acceptance pass;
-the Windows package ran under Windows 11 arm64 x64 emulation.
+**Next** slice while its exact hosted run remains open. Installed Linux arm64,
+Windows x86_64-application, and macOS arm64 acceptance pass; the Windows
+package ran under Windows 11 arm64 x64 emulation, and the macOS campaign
+preserved JSTorrent's inherited default handler.
 
 ## Scope And Release Definition
 
@@ -312,12 +313,12 @@ without corrupting or silently reinterpreting user state.
   local `.torrent` activation, forwards cold and warm input through the
   existing single desktop owner, reuses root/start options, and requires
   installed macOS arm64, Windows x86_64, and Linux arm64 proof. Deterministic
-  and package gates plus installed Linux arm64 and Windows x86_64-application
-  campaigns pass. The Windows campaign exercised the real x86_64 NSIS/PE under
-  Windows 11 arm64 x64 emulation and covered cold, visible, hidden, cancel,
-  bounded failure, duplicate, Quit, and state restoration. macOS installed
-  Add-flow acceptance and the exact hosted run remain open. It does not adopt
-  JSTorrent identity, extension routing, or remote `.torrent` URLs.
+  and package gates plus all three installed campaigns pass. Windows exercised
+  the real x86_64 NSIS/PE under Windows 11 arm64 x64 emulation. macOS proved
+  targeted LaunchServices cold/visible/hidden delivery, cancellation, bounded
+  failures, duplicate handling, tray Quit, cleanup, and retention of JSTorrent
+  as the inherited default. The exact hosted run remains open. This work does
+  not adopt JSTorrent identity, extension routing, or remote `.torrent` URLs.
 
 ### Desktop updater contract
 
@@ -495,11 +496,11 @@ no single optional BEP is mandatory.
    setup. Publish a newer signed package, repeat clean Windows from the
    default, characterize firewall consent, and run Linux x86_64. Intel macOS
    installed testing is deliberately omitted.
-5. **Next — Tactical `163`: finish desktop external torrent intake
-   acceptance.** The bounded shell/UI implementation, package gates, and
-   installed Linux arm64 and Windows x86_64-application cold/visible/tray-
-   hidden/cancel/failure/duplicate/Quit campaigns pass. Finish installed macOS
-   arm64 Add-flow proof, then require the exact hosted package run.
+5. **Next — Tactical `163`: close desktop external torrent intake.** The
+   bounded shell/UI implementation, package gates, and installed Linux arm64,
+   Windows x86_64-application, and macOS arm64 cold/visible/tray-hidden/
+   cancel/failure/duplicate/Quit campaigns pass. Require the exact hosted
+   package run.
 6. **Complete — Tactical `160`: Windows local-network address selection.**
    Wildcard binding remains, only a concrete eligible address is reported,
    the bounded Windows best-route fallback and native CI regression pass, and

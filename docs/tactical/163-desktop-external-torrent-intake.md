@@ -1,6 +1,7 @@
 # Tactical 163: Desktop External Torrent Intake
 
-Status: **Implemented — installed acceptance in progress (2026-08-24).**
+Status: **Implemented — installed acceptance complete; hosted closure pending
+(2026-08-24).**
 Desktop release/updater Tactical
 [`158`](158-desktop-signed-packaging-and-updater.md) remains the sole **Now**.
 
@@ -402,22 +403,52 @@ workspace clippy with warnings denied, and the complete workspace test suite
 were repeated on the development host and passed.
 
 An unsigned macOS arm64 `0.1.1` application bundle was built locally and its
-generated `Info.plist` passed the checked-in package validator. A local
-LaunchServices cold activation started that installed bundle as one process,
-but the dedicated macOS testbed had no guest-administration or logged-in Aqua
-route and Computer Use refused before inspecting the Add dialog. The app,
-fresh profile, and temporary installation were removed; prior JSTorrent
-`.torrent` and RSTorrent `magnet:` handler choices were unchanged. This is
-partial launch evidence, not installed macOS acceptance.
+generated `Info.plist` passed the checked-in package validator. An initial
+host LaunchServices cold activation started that installed bundle as one
+process, but the first dedicated-testbed attempts appeared to have neither
+guest administration nor a logged-in Aqua route. No RSTorrent package or
+profile was installed during those attempts.
 
-A fresh machine-control attempt later on 2026-08-24 acquired the available,
-initially-off macOS claim and powered the Tart target on. After a normal boot
-interval, administration, a logged-in Aqua session, resident control,
-accessibility semantics, capture, and input all remained unavailable, so the
-installed Add flow could not be inspected or operated. Graceful shutdown then
-failed through the same unavailable guest route. Per the testbed safety policy,
-the target was left running rather than silently force-stopped; both claims
-were released. No RSTorrent package or profile was installed on that target.
+The apparent appliance failure was a controller configuration defect rather
+than a guest or password defect. The private inventory selected SSH to a
+stale endpoint even though the accepted appliance had a healthy Tart guest
+agent. Dotfiles commit `1ac93d1` selects Tart for the persistent macOS target
+and its derived workspaces. The common machine-control doctor then passed
+guest administration, logged-in Aqua, resident control, Accessibility
+semantics, capture, and input without needing a guest password.
+
+The installed macOS arm64 campaign then passed on that exact claimed target:
+
+- the ad-hoc-signed `0.1.1` bundle used `com.jstorrent.rstorrent`, contained an
+  arm64 Mach-O executable, occupied 36,632 KiB, and had signed executable
+  SHA-256 `3f1507a9e3196d976d003e4068e06e5494f5a82bcfc8ceee67cf07eb87ad62da`;
+- ordinary `open` continued to launch the preinstalled
+  `com.jstorrent.desktop` handler before and after the campaign, proving that
+  RSTorrent registration did not steal the inherited JSTorrent default;
+  targeted LaunchServices delivery used
+  `open -b com.jstorrent.rstorrent` for the incubation app;
+- cold controlled-magnet activation launched PID 895, presented the existing
+  Add dialog, exercised the native folder picker, and advanced the catalog
+  from zero to one;
+- visible `.torrent` activation retained PID 895 and advanced the catalog to
+  two; native Close Window left PID 895 alive with zero windows, and a hidden
+  `.torrent` activation restored the window on the same PID and advanced the
+  catalog to three;
+- cancellation left three rows while the already queued next activation
+  remained available and advanced the catalog to four when accepted;
+- malformed, empty, 65-MiB, and post-activation unreadable sources each
+  produced bounded visible feedback, retained four rows and PID 895, and did
+  not put the source path in the product error; a directly unreadable file was
+  refused by LaunchServices before application delivery;
+- repeating an accepted `.torrent` reported **Already in your session** and
+  retained four rows, while the tray's exact **Quit RSTorrent** action left
+  zero RSTorrent applications or processes; and
+- cleanup unregistered and removed only the campaign app, fixtures, download
+  root, application profile, WebKit data, preferences, and caches. A final
+  ordinary magnet launch again selected JSTorrent, which was returned to its
+  inherited stopped state, and the common doctor remained fully healthy. The
+  fetched resident capture was removed, the originally-off target shut down
+  cleanly, and both claims were released.
 
 The Linux arm64 installed AppImage campaign passed on the disposable desktop:
 
@@ -469,6 +500,5 @@ hardware:
   and the prior empty `.torrent` class, left inherited JSTorrent PID 8004
   untouched, kept the inherited-running VM running, and released the claim.
 
-Completion still requires installed macOS arm64 Add-flow acceptance on an
-operational test route and the exact hosted package run after an authorized
+Completion now requires only the exact hosted package run after the authorized
 push. Installed Intel macOS remains deliberately omitted.

@@ -62,9 +62,11 @@ evidence.
 Implemented Tactical `163` adds bounded installed `magnet:` and local
 `.torrent` activation, one opaque FIFO intake owner, the existing Add workflow,
 and actual macOS/Windows/Linux package assertions. Deterministic and Linux
-arm64 plus Windows x86_64-application installed evidence pass; macOS arm64
-installed Add-flow acceptance remains open. The Windows campaign ran the
-actual x86_64 NSIS/PE under Windows 11 arm64 x64 emulation.
+arm64, Windows x86_64-application, and macOS arm64 installed evidence pass;
+only its exact hosted package run remains open. The Windows campaign ran the
+actual x86_64 NSIS/PE under Windows 11 arm64 x64 emulation, while the macOS
+campaign preserved JSTorrent as the inherited default handler and targeted
+the incubation bundle through LaunchServices.
 Completed Tactical `157` established the release ledger, graduated the Android
 client to `clients/android`, and added provisional packaging artwork. The
 durable release backlog and platform gates live in

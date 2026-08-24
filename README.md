@@ -25,6 +25,9 @@ and [protocol support matrix](docs/topics/protocol-support.md).
   x86_64 and Linux arm64 packages also pass the selected single-instance,
   tray/background, updater-action, and joined-Quit lifecycle. The first signed
   package carrying those repairs and its installed update proof remain open.
+  Installed external `magnet:`/`.torrent` intake now passes on macOS arm64,
+  Windows x86_64 applications, and Linux arm64 without taking over JSTorrent's
+  inherited macOS default handler.
   See the
   [beta release ledger](docs/topics/beta-release-readiness.md).
 - **Platforms are at different readiness levels.** Desktop/web is the leading
