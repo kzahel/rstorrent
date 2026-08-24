@@ -1,6 +1,7 @@
 # Tactical 158: Desktop Signed Packaging And Updater
 
-Status: **Implementation in progress and selected as Now (2026-08-24).**
+Status: **Implementation in progress; blocked by Windows listener repair
+Tactical `160` (2026-08-24).**
 Maintainer direction selected RSTorrent as the foreseeable public product name
 and froze `com.jstorrent.rstorrent` as the desktop beta identifier on
 2026-08-23. Cross-platform presubmit Tactical `159` is complete. The distinct

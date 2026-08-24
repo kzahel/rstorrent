@@ -1804,30 +1804,53 @@ fn validate_supplied_listener(
 pub(crate) async fn select_local_network_ipv4(
     address_override: Option<Ipv4Addr>,
 ) -> Result<Ipv4Addr, IncomingPeerError> {
-    let address = if let Some(address) = address_override {
-        address
-    } else {
-        let probe = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))
-            .await
-            .map_err(|source| IncomingPeerError::LocalNetworkAddress { source })?;
-        probe
-            .connect(SocketAddrV4::new(Ipv4Addr::new(239, 255, 255, 250), 1900))
-            .await
-            .map_err(|source| IncomingPeerError::LocalNetworkAddress { source })?;
-        match probe
-            .local_addr()
-            .map_err(|source| IncomingPeerError::LocalNetworkAddress { source })?
-        {
-            SocketAddr::V4(address) => *address.ip(),
-            SocketAddr::V6(_) => {
-                return Err(IncomingPeerError::InvalidLocalNetworkAddress);
-            }
-        }
-    };
-    if !eligible_local_network_ipv4(address) {
-        return Err(IncomingPeerError::InvalidLocalNetworkAddress);
+    if let Some(address) = address_override {
+        return require_eligible_local_network_ipv4(address);
     }
-    Ok(address)
+
+    let primary =
+        probe_local_network_ipv4(SocketAddrV4::new(Ipv4Addr::new(239, 255, 255, 250), 1900))
+            .await
+            .and_then(require_eligible_local_network_ipv4);
+    if primary.is_ok() {
+        return primary;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // Windows may route a connected multicast socket through loopback even
+        // when an eligible default-route adapter exists. TEST-NET-1 exercises
+        // ordinary source selection without sending a datagram to a third party.
+        return probe_local_network_ipv4(SocketAddrV4::new(Ipv4Addr::new(192, 0, 2, 1), 1))
+            .await
+            .and_then(require_eligible_local_network_ipv4);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    primary
+}
+
+async fn probe_local_network_ipv4(target: SocketAddrV4) -> Result<Ipv4Addr, IncomingPeerError> {
+    let probe = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))
+        .await
+        .map_err(|source| IncomingPeerError::LocalNetworkAddress { source })?;
+    probe
+        .connect(target)
+        .await
+        .map_err(|source| IncomingPeerError::LocalNetworkAddress { source })?;
+    match probe
+        .local_addr()
+        .map_err(|source| IncomingPeerError::LocalNetworkAddress { source })?
+    {
+        SocketAddr::V4(address) => Ok(*address.ip()),
+        SocketAddr::V6(_) => Err(IncomingPeerError::InvalidLocalNetworkAddress),
+    }
+}
+
+fn require_eligible_local_network_ipv4(address: Ipv4Addr) -> Result<Ipv4Addr, IncomingPeerError> {
+    eligible_local_network_ipv4(address)
+        .then_some(address)
+        .ok_or(IncomingPeerError::InvalidLocalNetworkAddress)
 }
 
 fn eligible_local_network_ipv4(address: Ipv4Addr) -> bool {
@@ -4674,6 +4697,15 @@ mod tests {
         ] {
             assert!(super::eligible_local_network_ipv4(address));
         }
+    }
+
+    #[cfg(target_os = "windows")]
+    #[tokio::test]
+    async fn windows_native_local_network_selection_returns_an_eligible_route() {
+        let address = super::select_local_network_ipv4(None)
+            .await
+            .expect("Windows has an eligible local-network route");
+        assert!(super::eligible_local_network_ipv4(address));
     }
 
     #[tokio::test]

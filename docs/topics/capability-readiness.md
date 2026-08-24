@@ -5,8 +5,10 @@ Topic: `capability-readiness`
 Status: Authoritative cross-cutting feature-readiness scoreboard and current
 work queue for the functional, unreleased alpha. Maintainer direction on
 2026-08-22 completed beta-release foundation Tactical `157` and
-cross-platform presubmit Tactical `159`, then selected decision-complete
-desktop release/updater Tactical `158` as the single **Now**. Its client,
+cross-platform presubmit Tactical `159`, then selected desktop release/updater
+Tactical `158`. Native Windows evidence exposed its release-blocking default
+listener defect, so bounded repair Tactical `160` is the single **Now**. The
+updater tactical's client,
 production route, five-target signed hosted rehearsal, public `0.1.0` release,
 public `0.1.1` updater-validation release, installed macOS arm64 launch smoke,
 and exact macOS arm64 and Linux arm64 `0.1.0`-to-`0.1.1` updates now pass.
@@ -491,19 +493,21 @@ exactly.
 
 ### Now
 
-- **Execute desktop signed packaging and updater Tactical
-  [`158`](../tactical/158-desktop-signed-packaging-and-updater.md).** Its
-  shared `desktop-update-v1` client, application identity, per-app key,
-  production route, package matrix, and credentialed five-target rehearsal
-  now pass. Tagged draft/finalizers published `desktop-v0.1.0` and
-  `desktop-v0.1.1`; a public arm64 DMG installed-launch smoke and exact macOS
-  arm64 and Linux arm64 replacement/relaunch pass. Windows x86_64 NSIS
-  replacement also passes under an automatic-loopback profile, but a fresh
-  default profile does not start. Fix and repeat Windows from clean state and
-  run Linux x86_64 without weakening the explicit publication boundary;
-  retain installed Intel macOS as a deliberate omission.
+- **Execute Windows local-network address-selection repair Tactical
+  [`160`](../tactical/160-windows-local-network-address-selection.md).** A
+  target-native comparison proves Windows' SSDP multicast route chooses
+  loopback while a zero-byte documentation-unicast probe selects the active
+  eligible adapter and exactly matches Windows' best route. Land the bounded
+  fallback, prevent wildcard listener publication, add the native Windows CI
+  regression, and prove a clean fresh-profile package launch without
+  publishing another release.
 
 ### Next
+
+- Resume desktop signed packaging and updater Tactical
+  [`158`](../tactical/158-desktop-signed-packaging-and-updater.md), repeat the
+  repaired clean-profile Windows update, and run Linux x86_64. Retain installed
+  Intel macOS as a deliberate omission.
 
 - Freeze the application identities, first supported persistence baseline,
   changelog, privacy/support presentation, and repeatable beta torrent cohort

@@ -79,6 +79,10 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`160-windows-local-network-address-selection.md`](160-windows-local-network-address-selection.md):
+  current bounded repair for fresh-profile Windows startup, concrete
+  local-network listener selection, and a native presubmit regression.
+
 - [`000-first-verified-piece.md`](000-first-verified-piece.md): completed
   download and verification of one multi-block piece from a controlled
   libtorrent peer, establishing the pure protocol/runtime boundary.

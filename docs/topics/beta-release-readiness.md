@@ -21,7 +21,11 @@ authoritative beta gap ledger and release checklist. Tactical
 slice, cross-platform presubmit Tactical
 [`159`](../tactical/159-cross-platform-presubmit-ci.md) is complete, and
 desktop release/updater Tactical
-[`158`](../tactical/158-desktop-signed-packaging-and-updater.md) is **Now**.
+Bounded Windows listener repair Tactical
+[`160`](../tactical/160-windows-local-network-address-selection.md) is
+**Now**. Desktop release/updater Tactical
+[`158`](../tactical/158-desktop-signed-packaging-and-updater.md) resumes when
+that blocker closes.
 
 ## Scope And Release Definition
 
@@ -416,22 +420,27 @@ no single optional BEP is mandatory.
    native desktop, Android, iOS, deterministic E2E, and short locked
    loopback-interoperability jobs pass; the repaired performance workflow also
    retains a successful manual smoke artifact.
-3. **Now — Tactical `158`: desktop signed packaging and updater adoption.**
+3. **In progress — Tactical `158`: desktop signed packaging and updater
+   adoption.**
    The product-owned `desktop-update-v1` client, signed package workflow,
    release validation, per-app key, public configuration, production route,
    five-platform hosted rehearsal, two tagged publications, one installed
    macOS arm64 launch smoke, and exact macOS arm64 and Linux arm64
    `0.1.0`-to-`0.1.1` production-route updates are complete. Windows x86_64
-   updater replacement also passes under an automatic-loopback profile. Next
-   fix and repeat Windows from a fresh default profile and run Linux x86_64;
-   Intel macOS installed testing is deliberately omitted.
-4. **Next — application identity and upgrade baseline.** Freeze package IDs,
+   updater replacement also passes under an automatic-loopback profile. It is
+   blocked by Tactical `160`, then resumes for the fresh-default Windows and
+   Linux x86_64 gates; Intel macOS installed testing is deliberately omitted.
+4. **Now — Tactical `160`: Windows local-network address selection.** Preserve
+   wildcard binding, report only a concrete eligible address, add the bounded
+   Windows best-route fallback and native CI regression, and prove a clean
+   fresh-profile package launch without publishing another release.
+5. **Next — application identity and upgrade baseline.** Freeze package IDs,
    persistence compatibility, changelog, privacy/support, diagnostics export,
    and a repeatable cohort before any public installer.
-5. **Later — platform release campaigns.** Close desktop, Android closed-
+6. **Later — platform release campaigns.** Close desktop, Android closed-
    testing, and iOS TestFlight gates independently with real older-to-newer
    installed evidence.
-6. **Later — Tactical `153`.** Wired-LAN uTP scalability remains valuable
+7. **Later — Tactical `153`.** Wired-LAN uTP scalability remains valuable
    engine evidence but no longer displaces the explicit beta-readiness
    campaign.
 

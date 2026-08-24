@@ -231,10 +231,14 @@ incoming peers locally or through one proven UPnP-mapped public TCP endpoint:
   for reachability bookkeeping, and report fixed bind failure as typed state;
 - clean installed Windows x86_64 `0.1.0` and `0.1.1` do not currently start
   under that fresh ordinary default: the multicast source-selection probe
-  returns `127.0.0.1`, the engine rejects loopback and falls back to
-  `0.0.0.0`, and application validation rejects the wildcard. The supported
-  loopback profile starts, but the default needs a Windows-native repair and
-  clean installed evidence before the Windows beta lane is runnable;
+  returns loopback, the engine rejects it and falls back to `0.0.0.0`, and
+  application validation rejects the wildcard. Target-native comparison
+  proves a zero-byte documentation-unicast probe selects the active eligible
+  adapter and exactly matches Windows' best route. Tactical
+  [`160`](../tactical/160-windows-local-network-address-selection.md) owns the
+  dependency-free fallback, removal of wildcard publication, native CI
+  regression, and clean installed proof required before the Windows beta lane
+  is runnable;
 - one joined session listener uses a five-entry backlog, bounds eight
   pre-handshake tasks, and routes version-tagged 20-byte v1 or v2 swarm keys
   through up to 1,024 generation-fenced registrations. It admits peers under

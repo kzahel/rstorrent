@@ -373,11 +373,10 @@ async fn bind_ipv4(
         config.tcp,
         IncomingTcpBootstrap::AutomaticLocalNetwork | IncomingTcpBootstrap::FixedLocalNetwork(_)
     ) {
-        select_local_network_ipv4(config.local_network_address_override)
+        let address = select_local_network_ipv4(config.local_network_address_override)
             .await
-            .ok()
-            .map(|address| SocketAddr::from((address, tcp_address.port())))
-            .or(Some(tcp_address))
+            .map_err(SessionSocketError::LocalNetworkAddress)?;
+        Some(SocketAddr::from((address, tcp_address.port())))
     } else {
         Some(tcp_address)
     };
@@ -917,6 +916,23 @@ mod tests {
             sockets.tcp_peer_address(),
             Some(SocketAddr::from((Ipv4Addr::new(192, 0, 2, 10), port)))
         );
+    }
+
+    #[tokio::test]
+    async fn ineligible_local_address_is_never_replaced_by_wildcard() {
+        let port = available_port().await;
+        let sockets = SessionSocketSet::bind(
+            dual_config(IncomingTcpBootstrap::AutomaticLocalNetwork, port)
+                .with_local_network_address_for_testing(Ipv4Addr::LOCALHOST),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(
+            sockets.ipv4(),
+            SessionSocketFamilyState::Unavailable(SessionSocketError::LocalNetworkAddress(
+                IncomingPeerError::InvalidLocalNetworkAddress
+            ))
+        ));
     }
 
     #[tokio::test]

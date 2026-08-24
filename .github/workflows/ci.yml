@@ -205,6 +205,13 @@ jobs:
       - name: Run desktop native tests
         run: cargo test -p rstorrent-desktop
 
+      - name: Exercise native Windows local-address selection
+        if: runner.os == 'Windows'
+        run: >-
+          cargo test -p rstorrent-engine
+          windows_native_local_network_selection_returns_an_eligible_route
+          --lib
+
       - name: Build one unsigned native package
         working-directory: clients/desktop
         shell: bash
