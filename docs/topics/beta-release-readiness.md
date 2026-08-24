@@ -40,6 +40,11 @@ desktop lifecycle Tactical
 [`162`](../tactical/162-desktop-single-instance-and-tray-lifecycle.md) is
 complete; signed release Tactical
 [`158`](../tactical/158-desktop-signed-packaging-and-updater.md) is **Now**.
+Maintainer direction on 2026-08-24 promotes OS-level `magnet:` and local
+`.torrent` activation from a post-beta deferral to a beta usability gap;
+planned Tactical
+[`163`](../tactical/163-desktop-external-torrent-intake.md) is the first
+**Next** slice.
 
 ## Scope And Release Definition
 
@@ -273,9 +278,9 @@ without corrupting or silently reinterpreting user state.
   tray/background operation, persisted close policy, visible manual updating,
   and joined close/Quit/restart shutdown. The credential-free eight-job matrix
   and installed Windows x86_64/Linux arm64 campaigns pass, including branded
-  shell icons and zero-process Quit. File/magnet handoff, autostart, crash
-  restart, and identity migration are deliberate post-beta decisions rather
-  than unfinished parts of the selected beta lifecycle.
+  shell icons and zero-process Quit. Autostart, crash restart, and identity
+  migration remain post-beta decisions; external file/magnet handoff is now
+  owned separately by DESK-008 and Tactical `163`.
 - [ ] **DESK-005 — Qualify native root pickers.** Tactical `161` is complete.
   Its parented native Tauri picker passes installed Windows choose, cancel,
   first-default, unavailable-root repair, and controlled process-restart
@@ -296,6 +301,12 @@ without corrupting or silently reinterpreting user state.
   the prompt appears, define the supported private/public-network choice, and
   document incoming-reachability consequences. Automation must not silently
   grant a firewall rule.
+- [ ] **DESK-008 — Handle external magnets and torrent files.** Planned
+  Tactical `163` registers the current RSTorrent packages for `magnet:` and
+  local `.torrent` activation, forwards cold and warm input through the
+  existing single desktop owner, reuses root/start options, and requires
+  installed macOS arm64, Windows x86_64, and Linux arm64 proof. It does not
+  adopt JSTorrent identity, extension routing, or remote `.torrent` URLs.
 
 ### Desktop updater contract
 
@@ -458,8 +469,9 @@ no single optional BEP is mandatory.
    One application owner, default-on persisted background policy,
    close-to-tray, visible manual updater action, joined Quit/restart, native
    Linux arm64 packaging, release-only Windows GUI launch, and installed
-   Windows x86_64/Linux arm64 proof pass. File/magnet handoff and autostart
-   stay outside this bounded slice.
+   Windows x86_64/Linux arm64 proof pass. File/magnet handoff remains outside
+   that completed slice and is now owned by Tactical `163`; autostart stays
+   deferred.
 4. **Now — Tactical `158`: desktop signed packaging and updater adoption.**
    The product-owned `desktop-update-v1` client, signed package workflow,
    release validation, per-app key, public configuration, production route,
@@ -472,20 +484,25 @@ no single optional BEP is mandatory.
    setup. Publish a newer signed package, repeat clean Windows from the
    default, characterize firewall consent, and run Linux x86_64. Intel macOS
    installed testing is deliberately omitted.
-5. **Complete — Tactical `160`: Windows local-network address selection.**
+5. **Next — Tactical `163`: desktop external torrent intake.** Register
+   RSTorrent for `magnet:` and local `.torrent` OS activation, retain one
+   process across cold/visible/tray-hidden delivery, reuse the existing Add
+   flow, and prove installed macOS arm64, Windows x86_64, and Linux arm64
+   behavior with hostile-input bounds.
+6. **Complete — Tactical `160`: Windows local-network address selection.**
    Wildcard binding remains, only a concrete eligible address is reported,
    the bounded Windows best-route fallback and native CI regression pass, and
    signed installed proof returns to Tactical `158`.
-6. **Complete — Tactical `161`: packaged desktop folder picker.** The native
+7. **Complete — Tactical `161`: packaged desktop folder picker.** The native
    parented Windows picker, self-contained packaged Linux picker, stable root
    boundary, and installed Windows cancel/select/repair/restart evidence pass.
-7. **Next — application identity and upgrade baseline.** Freeze package IDs,
+8. **Next — application identity and upgrade baseline.** Freeze package IDs,
    persistence compatibility, changelog, privacy/support, diagnostics export,
    and a repeatable cohort before any public installer.
-8. **Later — platform release campaigns.** Close desktop, Android closed-
+9. **Later — platform release campaigns.** Close desktop, Android closed-
    testing, and iOS TestFlight gates independently with real older-to-newer
    installed evidence.
-9. **Later — Tactical `153`.** Wired-LAN uTP scalability remains valuable
+10. **Later — Tactical `153`.** Wired-LAN uTP scalability remains valuable
    engine evidence but no longer displaces the explicit beta-readiness
    campaign.
 

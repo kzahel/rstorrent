@@ -616,9 +616,11 @@ remote exposure, and Android streaming remain independent product decisions.
   `162` adds the selected production tray policy, one desktop instance,
   default-on persisted background operation, visible tray update checking,
   joined shutdown/restart, native Linux arm64 packaging, and installed Windows
-  x86_64/Linux arm64 lifecycle/icon evidence. File associations and complete
-  cross-platform window/platform-capability evidence remain open. The release
-  gates live in
+  x86_64/Linux arm64 lifecycle/icon evidence. Planned Tactical
+  [`163`](../tactical/163-desktop-external-torrent-intake.md) now owns bounded
+  installed `magnet:` and local `.torrent` association/handoff through that
+  same owner and the existing Add flow. Complete cross-platform
+  window/platform-capability evidence remains open. The release gates live in
   [`beta-release-readiness.md`](beta-release-readiness.md).
 - The maintained Android product module now lives at `clients/android`; the
   unreleased `org.rstorrent.bootstrap` identity and retained diagnostic service

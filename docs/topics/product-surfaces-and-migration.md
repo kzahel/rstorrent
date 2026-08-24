@@ -176,7 +176,11 @@ The desktop handoff must eventually define and prove:
 
 The current in-process Tauri product remains the implementation and validation
 path until an extension-control tactical accepts a different lifecycle and
-security boundary.
+security boundary. Planned Tactical
+[`163`](../tactical/163-desktop-external-torrent-intake.md) adds RSTorrent-owned
+`magnet:` and local `.torrent` activation to that current product only. It does
+not implement extension routing, reuse JSTorrent identity, or decide the later
+successor handoff topology.
 
 ## ChromeOS Backends
 
