@@ -13,6 +13,9 @@ durable archive state, and an explicit restartable removal job spanning SQLite
 and path or SAF cleanup. Tactical `061` advances the root registry to schema
 version `5`; Tactical `062` advances it to version `6` with a durable verified
 publication component and managed-artifact ownership.
+Selected Tactical `161` changes no schema or locator representation: it must
+prove that a native Windows selection reaches this existing registry and that
+the same stable root/default restore after process restart.
 Tactical `063` now makes the existing sparse file-selection rows a live
 transactional control and separates paused start-content intent from metadata
 acquisition without adding a second pending-torrent authority. Tactical `067`

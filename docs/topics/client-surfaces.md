@@ -604,7 +604,9 @@ remote exposure, and Android streaming remain independent product decisions.
   selection prevents startup. Linux x86_64 remains unproven and installed
   Intel macOS testing is deliberately omitted. File associations, production
   tray policy, and complete cross-platform window/platform-capability evidence
-  also remain open. The release gates live in
+  also remain open. Selected Tactical `161` owns the missing native Windows
+  root picker, packaged Linux picker dependency, and installed Windows root
+  persistence evidence. The release gates live in
   [`beta-release-readiness.md`](beta-release-readiness.md).
 - The maintained Android product module now lives at `clients/android`; the
   unreleased `org.rstorrent.bootstrap` identity and retained diagnostic service

@@ -24,7 +24,11 @@ remains required because Computer Use cannot attach to the transient system
 folder panel. Tactical `076` lets a headless private host install one explicit
 configured payload root while making the native picker unavailable; it does
 not add ambient remote path authority or change durable root identity.
-Windows remains unimplemented, and Android already proves one user-selected
+Selected Tactical
+[`161`](../tactical/161-packaged-desktop-folder-picker.md) now owns the missing
+native Windows picker, packaged Linux self-contained picker, and installed
+Windows persistence evidence. Until it lands, Windows remains unimplemented.
+Android already proves one user-selected
 persisted SAF root but not general multi-root management. The maintained iOS
 product now supports app Documents plus distinct qualified selected roots.
 Tactical
@@ -416,12 +420,12 @@ source, fixture, or asset is imported by this topic.
 
 ## Recommended Next Work
 
-Close the remaining manual macOS chooser/restart evidence in Tactical 061 and
-resolve the Linux WebKitGTK live-bootstrap failure before claiming rendered
-Tauri parity. Then decide whether Linux packages must provide a picker,
-whether the shared UI should advertise picker availability proactively, or
-whether a same-boundary fallback is warranted; native KDialog evidence is
-still missing. Implement and validate the Windows picker separately. Keep
+Tactical `161` provides one native Tauri dialog implementation for Windows,
+packaged Linux, and macOS while leaving the local WebUI helper implementation
+unchanged. Prove installed Windows choose/cancel/restart behavior and retain
+hosted Linux package evidence. Separately close the remaining manual macOS
+chooser/restart evidence in Tactical 061 and resolve the Linux WebKitGTK
+live-bootstrap failure before claiming rendered Tauri parity. Keep
 first-root, stable-ID, default, repair, and per-torrent semantics identical
 while allowing native capability handling to differ.
 

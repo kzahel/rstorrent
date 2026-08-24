@@ -495,16 +495,20 @@ exactly.
 
 ### Now
 
-- **Resume desktop signed packaging and updater Tactical
-  [`158`](../tactical/158-desktop-signed-packaging-and-updater.md).** Completed
-  Tactical `160` repairs fresh-profile Windows address selection and adds a
-  passing native x86_64 regression. Produce the first signed package carrying
-  it, repeat the clean-profile Windows update, and run Linux x86_64 without
-  weakening the publication boundary. Retain installed Intel macOS as a
-  deliberate omission.
+- **Implement packaged desktop folder-picker Tactical
+  [`161`](../tactical/161-packaged-desktop-folder-picker.md).** Give Windows a
+  parented native folder picker, remove packaged Linux's Zenity/KDialog runtime
+  dependency, preserve the path-private stable-root boundary, and prove first
+  selection plus restart persistence in an installed Windows package. Then
+  resume release/updater Tactical `158` with both Windows blockers repaired.
 
 ### Next
 
+- Resume desktop signed packaging and updater Tactical
+  [`158`](../tactical/158-desktop-signed-packaging-and-updater.md): produce the
+  first signed package carrying Tacticals `160` and `161`, repeat the clean
+  Windows update, and run Linux x86_64. Retain installed Intel macOS as a
+  deliberate omission.
 - Freeze the application identities, first supported persistence baseline,
   changelog, privacy/support presentation, and repeatable beta torrent cohort
   around the first release candidate.

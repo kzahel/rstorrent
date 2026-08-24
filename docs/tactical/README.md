@@ -79,6 +79,10 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`161-packaged-desktop-folder-picker.md`](161-packaged-desktop-folder-picker.md):
+  selected **Now** to provide a parented native Tauri picker on Windows and
+  packaged Linux, preserve the path-private root registry boundary, and prove
+  first-root persistence in an installed Windows package.
 - [`160-windows-local-network-address-selection.md`](160-windows-local-network-address-selection.md):
   completed dependency-free repair for concrete Windows local-network
   listener selection and its native presubmit regression.
