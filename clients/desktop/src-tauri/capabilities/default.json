@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Core desktop window and updater capability",
   "windows": ["main"],
-  "permissions": ["core:default", "process:default", "updater:default"]
+  "permissions": ["core:default", "updater:default"]
 }

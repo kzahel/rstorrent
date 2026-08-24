@@ -18,7 +18,7 @@ import {
 import { formatRate } from "../format";
 import type { ApplicationDestination } from "../model";
 import { MAX_DETAIL_PANE_PERCENT, MIN_DETAIL_PANE_PERCENT } from "../state";
-import type { DesktopUpdater } from "../updater/types";
+import type { DesktopUpdater, UpdaterState } from "../updater/types";
 import { useDesktopUpdater } from "../updater/useDesktopUpdater";
 import { DetailPane } from "./DetailPane";
 import { Icon, type IconName } from "./Icon";
@@ -112,6 +112,16 @@ function AppContent({ webAuth, updater }: AppProps) {
   useLayoutEffect(() => {
     applyAppearancePreferences({ colorTheme, interfaceSize });
   }, [colorTheme, interfaceSize]);
+
+  useEffect(() => {
+    if (
+      updaterSnapshot !== undefined &&
+      presentsManualUpdateResult(updaterSnapshot.state)
+    ) {
+      setSettingsCategory("updates");
+      setSettingsOpen(true);
+    }
+  }, [updaterSnapshot]);
 
   const desiredDocumentTitle = documentTitleForSession(session, dataUnits);
 
@@ -414,4 +424,21 @@ function AppContent({ webAuth, updater }: AppProps) {
 
 function destinationLabel(destination: ApplicationDestination): string {
   return destination.slice(0, 1).toUpperCase() + destination.slice(1);
+}
+
+function presentsManualUpdateResult(state: UpdaterState): boolean {
+  switch (state.phase) {
+    case "checking":
+    case "up-to-date":
+    case "available":
+      return state.reason === "manual";
+    case "manual-install":
+      return true;
+    case "error":
+      return state.operation === "check";
+    case "idle":
+    case "downloading":
+    case "installing":
+      return false;
+  }
 }

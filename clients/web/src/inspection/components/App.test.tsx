@@ -34,6 +34,10 @@ import type {
   MagnetExport,
 } from "../model";
 import { WEBTORRENT_TEST_TORRENTS } from "../testTorrents";
+import type {
+  DesktopUpdater,
+  DesktopUpdaterSnapshot,
+} from "../updater/types";
 import { App } from "./App";
 import { RemoveTorrentDialog } from "./RemoveTorrentDialog";
 
@@ -512,6 +516,26 @@ describe("inspection application", () => {
         { name: /Binary/ },
       ),
     ).toBeChecked();
+  });
+
+  it("opens About and updates for a native manual check", async () => {
+    const updater = updaterWithSnapshot({
+      info: {
+        version: "0.1.1",
+        buildId: "lifecycle-test",
+        target: "x86_64-pc-windows-msvc",
+        arch: "x86_64",
+        bundleType: "nsis",
+      },
+      state: { phase: "checking", reason: "manual" },
+    });
+    renderScenario("empty-library", 0, null, updater);
+
+    const dialog = await screen.findByRole("dialog", { name: "Settings" });
+    expect(
+      within(dialog).getByRole("tab", { name: "About & updates" }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(within(dialog).getByText("Checking for updates")).toBeVisible();
   });
 
   it("switches named scenarios and advances the frozen clock", async () => {
@@ -2386,25 +2410,41 @@ function renderScenario(
   scenarioId: ConstructorParameters<typeof DemoApplication>[0]["scenarioId"],
   elapsedMs: number,
   appearanceStorage?: AppearanceStorage | null,
+  updater?: DesktopUpdater,
 ) {
   return renderApplication(
     new DemoApplication({ scenarioId, elapsedMs, running: false }),
     appearanceStorage,
+    updater,
   );
 }
 
 function renderApplication(
   application: InspectionApplication,
   appearanceStorage?: AppearanceStorage | null,
+  updater?: DesktopUpdater,
 ) {
   const controller = new InspectionController(application, appearanceStorage);
   controllers.push(controller);
   controller.start();
   return render(
     <InspectionProvider controller={controller}>
-      <App />
+      <App updater={updater} />
     </InspectionProvider>,
   );
+}
+
+function updaterWithSnapshot(
+  snapshot: DesktopUpdaterSnapshot,
+): DesktopUpdater {
+  return {
+    getSnapshot: () => snapshot,
+    subscribe: () => () => undefined,
+    check: vi.fn(async () => undefined),
+    install: vi.fn(async () => undefined),
+    dismiss: vi.fn(),
+    close: vi.fn(),
+  };
 }
 
 function torrentFileInput(): HTMLInputElement {

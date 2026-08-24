@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
@@ -14,17 +15,23 @@ use rstorrent_session::{
     ResponseEnvelope, StorageRootSnapshot, SubscriptionSpec, ViewSubscription, ViewUpdate,
     application_error_response,
 };
-#[cfg(target_os = "macos")]
 use tauri::WebviewWindowBuilder;
 use tauri::ipc::{Channel, InvokeBody, Request as IpcRequest};
-use tauri::{AppHandle, Manager, RunEvent, State, WebviewWindow, WindowEvent};
-use tauri_plugin_dialog::DialogExt;
-use tokio::sync::{Mutex, Semaphore};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WebviewWindow, WindowEvent};
+use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+use tokio::sync::{Mutex, Semaphore, watch};
 use tokio_util::sync::CancellationToken;
 
+mod desktop_lifecycle;
 mod updater;
 mod view_delivery;
 
+use desktop_lifecycle::{
+    CloseAction, DesktopShellSettings, ShutdownGate, ShutdownPhase, close_action,
+    load_desktop_shell_settings, persist_run_in_background,
+};
 use updater::{desktop_release_info, get_or_create_installation_id};
 use view_delivery::{
     DesktopViewResources, application_view_close, application_view_hello, application_view_open,
@@ -33,6 +40,12 @@ use view_delivery::{
 };
 
 const MAIN_WINDOW_LABEL: &str = "main";
+const TRAY_ID: &str = "rstorrent-tray";
+const TRAY_SHOW_ID: &str = "rstorrent-tray-show";
+const TRAY_UPDATE_ID: &str = "rstorrent-tray-update";
+const TRAY_BACKGROUND_ID: &str = "rstorrent-tray-background";
+const TRAY_QUIT_ID: &str = "rstorrent-tray-quit";
+const UPDATE_CHECK_EVENT: &str = "rstorrent://check-for-updates";
 const PEER_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const PEER_IO_TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_TORRENT_SOURCE_BYTES: usize = 64 * 1024 * 1024;
@@ -51,7 +64,14 @@ struct DesktopState {
     torrent_uploads: Arc<Semaphore>,
     media_server: Mutex<Option<LoopbackMediaServer>>,
     window_generation: AtomicU64,
-    allow_exit: AtomicBool,
+    shell_settings_path: PathBuf,
+    shell_settings: StdMutex<DesktopShellSettings>,
+    background_menu_item: CheckMenuItem<tauri::Wry>,
+    shutdown: ShutdownGate,
+    shutdown_status: watch::Sender<ShutdownPhase>,
+    shutdown_error: StdMutex<Option<String>>,
+    restart_after_shutdown: AtomicBool,
+    update_check_generation: AtomicU64,
 }
 
 struct DesktopSubscription {
@@ -454,7 +474,64 @@ async fn application_shutdown(
     app: AppHandle,
     state: State<'_, DesktopState>,
 ) -> Result<(), String> {
-    state.allow_exit.store(true, Ordering::Release);
+    let started = request_application_shutdown(&app, false);
+    if !started && state.shutdown.phase() == ShutdownPhase::Running {
+        return Err("desktop shutdown could not be started".to_owned());
+    }
+    wait_for_application_shutdown(&state).await
+}
+
+#[tauri::command]
+async fn application_restart(app: AppHandle, state: State<'_, DesktopState>) -> Result<(), String> {
+    let started = request_application_shutdown(&app, true);
+    if !started && state.shutdown.phase() == ShutdownPhase::Running {
+        return Err("desktop restart shutdown could not be started".to_owned());
+    }
+    wait_for_application_shutdown(&state).await
+}
+
+fn request_application_shutdown(app: &AppHandle, restart_after_shutdown: bool) -> bool {
+    let state = app.state::<DesktopState>();
+    if !state.shutdown.try_start() {
+        return false;
+    }
+    state
+        .restart_after_shutdown
+        .store(restart_after_shutdown, Ordering::Release);
+    state.shutdown_status.send_replace(ShutdownPhase::Stopping);
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        perform_application_shutdown(app).await;
+    });
+    true
+}
+
+async fn wait_for_application_shutdown(state: &DesktopState) -> Result<(), String> {
+    let mut status = state.shutdown_status.subscribe();
+    loop {
+        let phase = *status.borrow_and_update();
+        match phase {
+            ShutdownPhase::Running | ShutdownPhase::Stopping => {
+                status
+                    .changed()
+                    .await
+                    .map_err(|_| "desktop shutdown status closed unexpectedly".to_owned())?;
+            }
+            ShutdownPhase::FinalExit => return Ok(()),
+            ShutdownPhase::Failed => {
+                return Err(state
+                    .shutdown_error
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .clone()
+                    .unwrap_or_else(|| "desktop shutdown failed".to_owned()));
+            }
+        }
+    }
+}
+
+async fn perform_application_shutdown(app: AppHandle) {
+    let state = app.state::<DesktopState>();
     let subscriptions = {
         let mut subscriptions = state.subscriptions.lock().await;
         std::mem::take(&mut *subscriptions)
@@ -478,10 +555,62 @@ async fn application_shutdown(
     } else {
         Ok(())
     };
-    service_result?;
-    media_result?;
-    app.exit(0);
-    Ok(())
+    let result = match (service_result, media_result) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(service), Ok(())) => Err(format!("application service shutdown: {service}")),
+        (Ok(()), Err(media)) => Err(format!("media server shutdown: {media}")),
+        (Err(service), Err(media)) => Err(format!(
+            "application service shutdown: {service}; media server shutdown: {media}"
+        )),
+    };
+    match result {
+        Ok(()) => {
+            let restart = state.restart_after_shutdown.load(Ordering::Acquire);
+            state.shutdown.complete();
+            state.shutdown_status.send_replace(ShutdownPhase::FinalExit);
+            if restart {
+                app.request_restart();
+            } else {
+                app.exit(0);
+            }
+        }
+        Err(error) => {
+            let error = bounded_diagnostic(error);
+            *state
+                .shutdown_error
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(error.clone());
+            state.shutdown.fail();
+            state.shutdown_status.send_replace(ShutdownPhase::Failed);
+            eprintln!("desktop shutdown failed: {error}");
+            show_shutdown_failure(&app);
+        }
+    }
+}
+
+fn bounded_diagnostic(mut error: String) -> String {
+    const MAX_CHARS: usize = 1_024;
+    if error.chars().count() > MAX_CHARS {
+        error = error.chars().take(MAX_CHARS).collect();
+        error.push('…');
+    }
+    error
+}
+
+fn show_shutdown_failure(app: &AppHandle) {
+    if let Err(error) = restore_main_window(app) {
+        eprintln!("failed to restore desktop window after shutdown failure: {error}");
+    }
+    let dialog = app
+        .dialog()
+        .message("RSTorrent could not finish shutting down. Your data was not force-closed. Check the diagnostic log before trying again.")
+        .title("RSTorrent could not quit")
+        .kind(MessageDialogKind::Error);
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        dialog.parent(&window).show(|_| {});
+    } else {
+        dialog.show(|_| {});
+    }
 }
 
 async fn stop_subscription(subscription: DesktopSubscription) {
@@ -521,8 +650,33 @@ fn observe_window_destruction(
     window_generation: u64,
 ) {
     let label = window.label().to_owned();
-    window.on_window_event(move |event| {
-        if matches!(event, WindowEvent::Destroyed) {
+    let app = window.app_handle().clone();
+    window.on_window_event(move |event| match event {
+        WindowEvent::CloseRequested { api, .. } => {
+            let state = app.state::<DesktopState>();
+            let run_in_background = state
+                .shell_settings
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .run_in_background;
+            match close_action(state.shutdown.phase(), run_in_background) {
+                CloseAction::Allow => {}
+                CloseAction::Hide => {
+                    api.prevent_close();
+                    if let Some(window) = app.get_webview_window(&label)
+                        && let Err(error) = window.hide()
+                    {
+                        eprintln!("failed to hide desktop window: {error}");
+                    }
+                }
+                CloseAction::StartShutdown => {
+                    api.prevent_close();
+                    request_application_shutdown(&app, false);
+                }
+                CloseAction::Prevent => api.prevent_close(),
+            }
+        }
+        WindowEvent::Destroyed => {
             let service = service.clone();
             let subscriptions = subscriptions.clone();
             let view_resources = view_resources.clone();
@@ -534,15 +688,25 @@ fn observe_window_destruction(
                     .await;
             });
         }
+        _ => {}
     });
 }
 
-#[cfg(target_os = "macos")]
 fn restore_main_window(app: &AppHandle) -> Result<(), String> {
+    if let Some(state) = app.try_state::<DesktopState>()
+        && matches!(
+            state.shutdown.phase(),
+            ShutdownPhase::Stopping | ShutdownPhase::FinalExit
+        )
+    {
+        return Ok(());
+    }
     let window = if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
         window
     } else {
-        let state = app.state::<DesktopState>();
+        let state = app
+            .try_state::<DesktopState>()
+            .ok_or_else(|| "desktop application state is not ready".to_owned())?;
         let config = app
             .config()
             .app
@@ -565,6 +729,7 @@ fn restore_main_window(app: &AppHandle) -> Result<(), String> {
         );
         window
     };
+    apply_platform_window_icon(&window)?;
     window
         .unminimize()
         .map_err(|error| format!("restore main webview window: {error}"))?;
@@ -576,15 +741,175 @@ fn restore_main_window(app: &AppHandle) -> Result<(), String> {
         .map_err(|error| format!("focus main webview window: {error}"))
 }
 
+#[cfg(target_os = "linux")]
+fn apply_platform_window_icon(window: &WebviewWindow) -> Result<(), String> {
+    let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png"))
+        .map_err(|error| format!("decode Linux desktop window icon: {error}"))?;
+    window
+        .set_icon(icon)
+        .map_err(|error| format!("set Linux desktop window icon: {error}"))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn apply_platform_window_icon(_window: &WebviewWindow) -> Result<(), String> {
+    Ok(())
+}
+
+fn build_desktop_tray_menu(
+    app: &tauri::App,
+    run_in_background: bool,
+) -> Result<(Menu<tauri::Wry>, CheckMenuItem<tauri::Wry>), String> {
+    let show = MenuItem::with_id(app, TRAY_SHOW_ID, "Show RSTorrent", true, None::<&str>)
+        .map_err(|error| format!("create tray Show item: {error}"))?;
+    let update = MenuItem::with_id(app, TRAY_UPDATE_ID, "Check for Updates", true, None::<&str>)
+        .map_err(|error| format!("create tray update item: {error}"))?;
+    let background = CheckMenuItem::with_id(
+        app,
+        TRAY_BACKGROUND_ID,
+        "Run in Background",
+        true,
+        run_in_background,
+        None::<&str>,
+    )
+    .map_err(|error| format!("create tray background item: {error}"))?;
+    let quit = MenuItem::with_id(app, TRAY_QUIT_ID, "Quit RSTorrent", true, None::<&str>)
+        .map_err(|error| format!("create tray Quit item: {error}"))?;
+    let separator = PredefinedMenuItem::separator(app)
+        .map_err(|error| format!("create tray separator: {error}"))?;
+    let menu = Menu::with_items(app, &[&show, &update, &background, &separator, &quit])
+        .map_err(|error| format!("create desktop tray menu: {error}"))?;
+    Ok((menu, background))
+}
+
+fn install_desktop_tray(app: &tauri::App, menu: &Menu<tauri::Wry>) -> Result<(), String> {
+    let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png"))
+        .map_err(|error| format!("decode desktop tray icon: {error}"))?;
+    TrayIconBuilder::with_id(TRAY_ID)
+        .tooltip("RSTorrent")
+        .icon(icon)
+        .menu(menu)
+        .show_menu_on_left_click(cfg!(target_os = "macos"))
+        .on_menu_event(handle_desktop_menu_event)
+        .on_tray_icon_event(|tray, event| {
+            if !cfg!(target_os = "macos")
+                && matches!(
+                    event,
+                    TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    }
+                )
+                && let Err(error) = restore_main_window(tray.app_handle())
+            {
+                eprintln!("failed to restore desktop window from tray: {error}");
+            }
+        })
+        .build(app)
+        .map_err(|error| format!("build desktop tray: {error}"))?;
+    Ok(())
+}
+
+fn handle_desktop_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
+    match event.id().as_ref() {
+        TRAY_SHOW_ID => {
+            if let Err(error) = restore_main_window(app) {
+                eprintln!("failed to restore desktop window from menu: {error}");
+            }
+        }
+        TRAY_UPDATE_ID => request_manual_update_check(app),
+        TRAY_BACKGROUND_ID => toggle_run_in_background(app),
+        TRAY_QUIT_ID => {
+            request_application_shutdown(app, false);
+        }
+        _ => {}
+    }
+}
+
+fn toggle_run_in_background(app: &AppHandle) {
+    let state = app.state::<DesktopState>();
+    let mut settings = state
+        .shell_settings
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let current = *settings;
+    let requested = !current.run_in_background;
+    match persist_run_in_background(&state.shell_settings_path, current, requested) {
+        Ok(next) => {
+            *settings = next;
+            drop(settings);
+            if let Err(error) = state.background_menu_item.set_checked(requested) {
+                eprintln!("failed to update background menu checkmark: {error}");
+            }
+        }
+        Err(error) => {
+            drop(settings);
+            let _ = state
+                .background_menu_item
+                .set_checked(current.run_in_background);
+            eprintln!("failed to persist desktop background setting: {error}");
+            show_settings_failure(app);
+        }
+    }
+}
+
+fn show_settings_failure(app: &AppHandle) {
+    if let Err(error) = restore_main_window(app) {
+        eprintln!("failed to restore desktop window after settings failure: {error}");
+    }
+    let dialog = app
+        .dialog()
+        .message("RSTorrent could not save the Run in Background setting. The previous setting is still active.")
+        .title("RSTorrent setting was not saved")
+        .kind(MessageDialogKind::Error);
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        dialog.parent(&window).show(|_| {});
+    } else {
+        dialog.show(|_| {});
+    }
+}
+
+fn request_manual_update_check(app: &AppHandle) {
+    if let Err(error) = restore_main_window(app) {
+        eprintln!("failed to restore desktop window for update check: {error}");
+        return;
+    }
+    let generation = app
+        .state::<DesktopState>()
+        .update_check_generation
+        .fetch_add(1, Ordering::AcqRel)
+        .wrapping_add(1);
+    if let Err(error) = app.emit(UPDATE_CHECK_EVENT, generation) {
+        eprintln!("failed to deliver desktop update-check request: {error}");
+    }
+}
+
+#[tauri::command]
+fn desktop_update_check_generation(state: State<'_, DesktopState>) -> u64 {
+    state.update_check_generation.load(Ordering::Acquire)
+}
+
 pub fn run() {
     let application = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(
+            |app, _arguments, _cwd| {
+                if let Err(error) = restore_main_window(app) {
+                    eprintln!("failed to restore desktop window for second launch: {error}");
+                }
+            },
+        ))
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             let config_dir = app
                 .path()
                 .app_config_dir()
                 .map_err(|error| format!("resolve desktop config directory: {error}"))?;
+            let shell_settings = load_desktop_shell_settings(&config_dir);
+            if let Some(diagnostic) = &shell_settings.diagnostic {
+                eprintln!("{diagnostic}");
+            }
+            let (tray_menu, background_menu_item) =
+                build_desktop_tray_menu(app, shell_settings.settings.run_in_background)?;
             let installation_id = get_or_create_installation_id(&config_dir)?;
             let updater = tauri_plugin_updater::Builder::new()
                 .header("X-CFU-Id", &installation_id)?
@@ -610,7 +935,14 @@ pub fn run() {
                 torrent_uploads: Arc::new(Semaphore::new(1)),
                 media_server: Mutex::new(Some(media_server)),
                 window_generation: AtomicU64::new(1),
-                allow_exit: AtomicBool::new(false),
+                shell_settings_path: shell_settings.path,
+                shell_settings: StdMutex::new(shell_settings.settings),
+                background_menu_item,
+                shutdown: ShutdownGate::new(),
+                shutdown_status: watch::channel(ShutdownPhase::Running).0,
+                shutdown_error: StdMutex::new(None),
+                restart_after_shutdown: AtomicBool::new(false),
+                update_check_generation: AtomicU64::new(0),
             };
             let service = state.service.clone();
             let subscriptions = state.subscriptions.clone();
@@ -618,8 +950,10 @@ pub fn run() {
             let window = app
                 .get_webview_window(MAIN_WINDOW_LABEL)
                 .ok_or_else(|| "main webview window was not created".to_owned())?;
+            apply_platform_window_icon(&window)?;
             observe_window_destruction(&window, service, subscriptions, view_resources, 1);
             app.manage(state);
+            install_desktop_tray(app, &tray_menu)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -639,18 +973,19 @@ pub fn run() {
             application_resync,
             application_unsubscribe,
             application_shutdown,
+            application_restart,
+            desktop_update_check_generation,
             desktop_release_info,
         ])
         .build(tauri::generate_context!())
         .expect("build RSTorrent desktop application");
     application.run(|handle, event| match event {
-        RunEvent::ExitRequested { api, .. }
-            if !handle
-                .state::<DesktopState>()
-                .allow_exit
-                .load(Ordering::Acquire) =>
-        {
-            api.prevent_exit();
+        RunEvent::ExitRequested { api, .. } => {
+            let state = handle.state::<DesktopState>();
+            if state.shutdown.phase() != ShutdownPhase::FinalExit {
+                api.prevent_exit();
+                request_application_shutdown(handle, false);
+            }
         }
         #[cfg(target_os = "macos")]
         RunEvent::Reopen { .. } => {

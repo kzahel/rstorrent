@@ -19,14 +19,12 @@ rstorrent-media = { path = "../../../crates/rstorrent-media" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
-tauri = { version = "2.11.5", features = [] }
+tauri = { version = "2.11.5", features = ["image-png", "tray-icon"] }
 tauri-plugin-dialog = "=2.7.2"
-tauri-plugin-process = "=2.3.1"
+tauri-plugin-single-instance = "=2.4.3"
 tauri-plugin-updater = { version = "=2.10.1", default-features = false, features = ["native-tls", "zip"] }
+tempfile = "3.27.0"
 tokio = { workspace = true, features = ["net", "rt", "sync"] }
 tokio-util = { workspace = true }
 url = { workspace = true }
 uuid = { version = "1.24.0", features = ["v4"] }
-
-[dev-dependencies]
-tempfile = "3.27.0"

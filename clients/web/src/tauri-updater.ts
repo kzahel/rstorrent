@@ -1,6 +1,6 @@
 import { getBundleType } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
-import { relaunch } from "@tauri-apps/plugin-process";
+import { listen } from "@tauri-apps/api/event";
 import {
   check as checkForTauriUpdate,
   type DownloadEvent,
@@ -8,6 +8,7 @@ import {
 } from "@tauri-apps/plugin-updater";
 
 import { DesktopUpdaterController } from "./inspection/updater/controller";
+import { createNativeUpdateCheckHandler } from "./inspection/updater/native-check";
 import type {
   CheckReason,
   DesktopBundleType,
@@ -24,6 +25,8 @@ interface NativeDesktopReleaseInfo {
   readonly target: string;
   readonly arch: string;
 }
+
+const UPDATE_CHECK_EVENT = "rstorrent://check-for-updates";
 
 export async function createTauriDesktopUpdater(): Promise<DesktopUpdater> {
   const [nativeInfo, bundleType] = await Promise.all([
@@ -42,9 +45,55 @@ export async function createTauriDesktopUpdater(): Promise<DesktopUpdater> {
       });
       return update === null ? null : new TauriUpdateCandidate(update);
     },
-    relaunch,
+    relaunch: () => invoke("application_restart"),
   };
-  return new DesktopUpdaterController(backend, info);
+  const controller = new DesktopUpdaterController(backend, info);
+  const handleUpdateCheck = createNativeUpdateCheckHandler(() => {
+    void controller.check("manual");
+  });
+  const unlisten = await listen<unknown>(UPDATE_CHECK_EVENT, (event) => {
+    handleUpdateCheck(event.payload);
+  });
+  try {
+    handleUpdateCheck(await invoke<unknown>("desktop_update_check_generation"));
+  } catch (error) {
+    unlisten();
+    controller.close();
+    throw error;
+  }
+  return new TauriDesktopUpdater(controller, unlisten);
+}
+
+class TauriDesktopUpdater implements DesktopUpdater {
+  readonly getSnapshot = () => this.controller.getSnapshot();
+  readonly subscribe = (listener: () => void) =>
+    this.controller.subscribe(listener);
+
+  constructor(
+    private readonly controller: DesktopUpdaterController,
+    private readonly unlisten: () => void,
+  ) {}
+
+  private closed = false;
+
+  check(reason: CheckReason = "manual"): Promise<void> {
+    return this.controller.check(reason);
+  }
+
+  install(): Promise<void> {
+    return this.controller.install();
+  }
+
+  dismiss(): void {
+    this.controller.dismiss();
+  }
+
+  close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.unlisten();
+    this.controller.close();
+  }
 }
 
 class TauriUpdateCandidate implements UpdateCandidate {
