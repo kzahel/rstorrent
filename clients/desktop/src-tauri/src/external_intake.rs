@@ -300,6 +300,11 @@ impl TorrentSourceReadFailure {
 }
 
 pub(crate) fn read_torrent_source(path: &Path) -> Result<Vec<u8>, TorrentSourceReadFailure> {
+    let initial_metadata =
+        std::fs::metadata(path).map_err(|_| TorrentSourceReadFailure::Unreadable)?;
+    if !initial_metadata.is_file() {
+        return Err(TorrentSourceReadFailure::NotRegular);
+    }
     let file = File::open(path).map_err(|_| TorrentSourceReadFailure::Unreadable)?;
     let metadata = file
         .metadata()
@@ -346,12 +351,16 @@ mod tests {
                 super::ClassifiedActivation::Accepted(ExternalActivationSource::Magnet(_))
             ));
         }
+        let local_file_url =
+            url::Url::from_file_path(std::env::temp_dir().join("space and ☃.torrent"))
+                .expect("absolute platform-local torrent URL")
+                .to_string();
         for value in [
             "/tmp/example.torrent",
             "/tmp/example.TORRENT",
             "relative name.torrent",
             r"C:\Users\Test User\example.torrent",
-            "file:///tmp/space%20and%20%E2%98%83.torrent",
+            &local_file_url,
         ] {
             assert!(matches!(
                 classify_external_activation(value),
