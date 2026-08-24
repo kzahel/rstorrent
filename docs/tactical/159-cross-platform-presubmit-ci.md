@@ -216,3 +216,13 @@ arm64 package breadth, signing, install/update, Android emulator/release AAB,
 physical mobile evidence, broad application lifecycle interoperability,
 public-swarm reliability, and branch protection remain explicit release gates
 under the beta-readiness topic.
+
+Post-completion run
+[`32703372543`](https://github.com/kzahel/rstorrent/actions/runs/32703372543)
+on 2026-08-24 passes all seven jobs after the Windows local-network repair.
+The preceding run exposed one scheduler-dependent storage-pool test; commit
+`7be2397` replaces assumed concurrent timing with the existing controlled
+platform broker. The follow-up run's first iOS attempt timed out while Xcode
+launched the application on the hosted simulator. One failed-job rerun passed
+the unchanged simulator unit/UI tests and unsigned archive; no check was
+suppressed or automatically retried.

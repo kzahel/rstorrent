@@ -129,10 +129,10 @@ Tactical [`156`](../tactical/156-hybrid-dual-swarm-runtime-closure.md) then
 completed the strict hybrid dual-swarm consumption/seeding vertical.
 Measurement-only Tactical
 [`153`](../tactical/153-wired-lan-utp-data-plane-scalability.md) remains ready,
-but the authoritative product queue now selects release-blocking Windows
-listener repair Tactical
-[`160`](../tactical/160-windows-local-network-address-selection.md) as
-**Now**.
+but completed release-blocking Windows listener repair Tactical
+[`160`](../tactical/160-windows-local-network-address-selection.md) returns the
+authoritative product queue to desktop release/updater Tactical
+[`158`](../tactical/158-desktop-signed-packaging-and-updater.md) as **Now**.
 The completed
 maximum-throughput storage campaign
 remains recorded in
@@ -503,8 +503,10 @@ Engine campaign status: **Tacticals `151`, bounded iOS `154`, pure-v2 magnet
 [`156`](../tactical/156-hybrid-dual-swarm-runtime-closure.md) are complete.
 Measurement-only wired-LAN Tactical
 [`153`](../tactical/153-wired-lan-utp-data-plane-scalability.md) remains ready;
-execute release-blocking Windows listener repair Tactical
-[`160`](../tactical/160-windows-local-network-address-selection.md) first.**
+Windows listener repair Tactical
+[`160`](../tactical/160-windows-local-network-address-selection.md) is
+complete, and the product queue resumes desktop release/updater Tactical
+[`158`](../tactical/158-desktop-signed-packaging-and-updater.md).**
 Tacticals `142`, `145`, and `150` complete the uTP performance campaign at the
 maintainer-selected evidence stop. Completed Tactical `143` installs the
 v1-preserving opaque torrent owner, typed protocol aliases, schema-19 fresh

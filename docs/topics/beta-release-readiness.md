@@ -10,7 +10,10 @@ two tagged publications, production updater metadata, one installed macOS
 arm64 launch smoke, and exact macOS arm64 and Linux arm64
 `0.1.0`-to-`0.1.1` update passes. Windows x86_64 replacement/relaunch also
 passes under an automatic-loopback profile, but fresh default startup is
-blocked by local-network address selection. Linux x86_64 remains open and
+blocked in the public `0.1.0` and `0.1.1` builds by local-network address
+selection. Completed Tactical `160` repairs that defect on `main` and adds a
+passing native Windows regression; a newer signed package and exact installed
+proof remain open. Linux x86_64 remains open and
 installed Intel macOS testing is deliberately omitted. The public product
 name is RSTorrent for the foreseeable release line. A later production
 graduation is expected to retain JSTorrent's existing name, application
@@ -20,12 +23,10 @@ authoritative beta gap ledger and release checklist. Tactical
 [`157`](../tactical/157-beta-release-foundation.md) completed the first cleanup
 slice, cross-platform presubmit Tactical
 [`159`](../tactical/159-cross-platform-presubmit-ci.md) is complete, and
-desktop release/updater Tactical
-Bounded Windows listener repair Tactical
+bounded Windows listener repair Tactical
 [`160`](../tactical/160-windows-local-network-address-selection.md) is
-**Now**. Desktop release/updater Tactical
-[`158`](../tactical/158-desktop-signed-packaging-and-updater.md) resumes when
-that blocker closes.
+complete. Desktop release/updater Tactical
+[`158`](../tactical/158-desktop-signed-packaging-and-updater.md) is **Now**.
 
 ## Scope And Release Definition
 
@@ -260,8 +261,10 @@ without corrupting or silently reinterpreting user state.
 - [ ] **DESK-006 — Fix fresh-default Windows listener startup.** The public
   `0.1.0` and `0.1.1` Windows builds select `127.0.0.1` from the multicast
   source-route probe, reject it for local-network listening, fall back to
-  `0.0.0.0`, and then fail application validation. Prove the repaired default
-  on a clean installed profile before calling the Windows lane runnable.
+  `0.0.0.0`, and then fail application validation. Tactical `160` repairs the
+  selector and wildcard fallback on `main`; prove the first signed package
+  carrying it on a clean installed profile before calling the Windows lane
+  runnable.
 
 ### Desktop updater contract
 
@@ -420,20 +423,21 @@ no single optional BEP is mandatory.
    native desktop, Android, iOS, deterministic E2E, and short locked
    loopback-interoperability jobs pass; the repaired performance workflow also
    retains a successful manual smoke artifact.
-3. **In progress — Tactical `158`: desktop signed packaging and updater
+3. **Now — Tactical `158`: desktop signed packaging and updater
    adoption.**
    The product-owned `desktop-update-v1` client, signed package workflow,
    release validation, per-app key, public configuration, production route,
    five-platform hosted rehearsal, two tagged publications, one installed
    macOS arm64 launch smoke, and exact macOS arm64 and Linux arm64
    `0.1.0`-to-`0.1.1` production-route updates are complete. Windows x86_64
-   updater replacement also passes under an automatic-loopback profile. It is
-   blocked by Tactical `160`, then resumes for the fresh-default Windows and
-   Linux x86_64 gates; Intel macOS installed testing is deliberately omitted.
-4. **Now — Tactical `160`: Windows local-network address selection.** Preserve
-   wildcard binding, report only a concrete eligible address, add the bounded
-   Windows best-route fallback and native CI regression, and prove a clean
-   fresh-profile package launch without publishing another release.
+   updater replacement also passes under an automatic-loopback profile.
+   Completed Tactical `160` repairs fresh-default address selection on `main`;
+   publish a newer signed package, repeat clean Windows from the default, and
+   run Linux x86_64. Intel macOS installed testing is deliberately omitted.
+4. **Complete — Tactical `160`: Windows local-network address selection.**
+   Wildcard binding remains, only a concrete eligible address is reported,
+   the bounded Windows best-route fallback and native CI regression pass, and
+   signed installed proof returns to Tactical `158`.
 5. **Next — application identity and upgrade baseline.** Freeze package IDs,
    persistence compatibility, changelog, privacy/support, diagnostics export,
    and a repeatable cohort before any public installer.

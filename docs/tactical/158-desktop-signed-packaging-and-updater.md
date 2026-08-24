@@ -1,7 +1,6 @@
 # Tactical 158: Desktop Signed Packaging And Updater
 
-Status: **Implementation in progress; blocked by Windows listener repair
-Tactical `160` (2026-08-24).**
+Status: **Implementation in progress and selected as Now (2026-08-24).**
 Maintainer direction selected RSTorrent as the foreseeable public product name
 and froze `com.jstorrent.rstorrent` as the desktop beta identifier on
 2026-08-23. Cross-platform presubmit Tactical `159` is complete. The distinct
@@ -15,8 +14,11 @@ release workflow. Exact installed macOS arm64 and Linux arm64
 `0.1.0`-to-`0.1.1` production updates pass. Windows x86_64 NSIS replacement,
 relaunch, signing, current-version checking, and private installation-ID
 continuity pass under the supported automatic-loopback profile, but a fresh
-default profile exposes a local-network listener-selection startup blocker.
-Linux x86_64 remains open. Maintainer direction deliberately omits installed
+default profile exposed a local-network listener-selection startup blocker.
+Completed Tactical `160` repairs that defect on `main` and adds a passing
+native Windows x86_64 regression, but no public signed package contains the
+repair yet. A newer signed package plus clean default-profile update proof and
+Linux x86_64 remain open. Maintainer direction deliberately omits installed
 Intel macOS testing while retaining its automated signed package and route.
 
 Topics: `beta-release-readiness`, `client-surfaces`,

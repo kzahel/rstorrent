@@ -1,8 +1,9 @@
 # Tactical 160: Windows Local-Network Address Selection
 
-Status: **Decision-complete and selected as Now (2026-08-24).** This bounded
-repair blocks completion of desktop release/updater Tactical `158` because a
-fresh Windows profile cannot currently reach the product surface.
+Status: **Complete (2026-08-24).** The source defect and native presubmit gap
+are closed. Desktop release/updater Tactical `158` again owns the remaining
+signed installed-package and cross-version proof because the public `0.1.0`
+and `0.1.1` packages necessarily predate this repair.
 
 Topics: `beta-release-readiness`, `capability-readiness`,
 `incoming-reachability-and-seeding`
@@ -64,15 +65,17 @@ This tactical owns:
   than publishing an invalid listener record;
 - deterministic eligibility, probe-order, and error-path coverage;
 - one native Windows engine regression in ordinary desktop presubmit CI;
-- native Windows VM proof that a fresh application service starts with a
-  concrete eligible IPv4 listener; and
-- a clean installed Windows package smoke before Tactical `158` resumes its
-  cross-version update gate.
+- native Windows VM proof that the fallback selects the active eligible IPv4
+  adapter and matches Windows' best route; and
+- hosted Windows proof that fresh default desktop application services open,
+  the production selector returns an eligible address, and the unsigned
+  package still builds.
 
 The tactical stops when local Rust validation, the Windows-native selector
-test, a clean Windows application-service/package launch, and hosted Windows
-presubmit all pass, and the owning topics record the exact evidence. It does
-not publish another release.
+test, fresh-default desktop application-service tests, hosted Windows package
+build, and the owning documentation pass. A clean installed smoke cannot use
+a repaired package until Tactical `158` publishes one, so it remains that
+release tactical's gate rather than forcing publication into this repair.
 
 ## Contracts And Invariants
 
@@ -149,7 +152,7 @@ the only lifetime owner.
 | Windows native | current SSDP result is ineligible while the fallback matches an active adapter and Windows' best route; production selector returns a concrete eligible address |
 | Application | fresh default `ApplicationService` opens and its listener status passes the generated/web contract semantics |
 | Presubmit | the Windows desktop job runs the focused native engine selector test before native desktop tests and package build |
-| Installed | clean current Windows package reaches the product surface with a fresh profile, then shuts down without residue |
+| Installed | transferred to Tactical `158`: publish a repaired signed package, then prove fresh-profile launch and the exact older-to-newer update |
 
 Run the repository Rust baseline after focused tests. The contract does not
 change, so regeneration is not expected; run the web typecheck/tests only if
@@ -171,8 +174,8 @@ implementation touches its boundary.
 
 ## Escalation And Next Boundary
 
-Implementation, focused CI coverage, disposable Windows toolchain setup,
-clean package smoke, and documentation reconciliation are authorized. Stop for
+Implementation, focused CI coverage, disposable Windows toolchain setup, and
+documentation reconciliation are authorized. Stop for
 direction if the documentation-unicast probe does not match Windows' best
 route on a representative configuration, if correct behavior requires a new
 dependency or unsafe native API, if the fix changes multi-interface/VPN
@@ -181,3 +184,58 @@ product policy, or before publishing another release.
 After this tactical completes, return Tactical `158` to **Now**, repeat the
 clean installed Windows `0.1.0`-to-newer update using the repaired package,
 and finish its separate Linux x86_64 gate.
+
+## Implementation And Evidence
+
+Commit `1f408d3` keeps the SSDP probe primary, adds the Windows-only TEST-NET-1
+fallback on a fresh UDP socket, factors the task-free probe and eligibility
+check, and turns an unsuccessful selection into the existing typed socket
+error. `SessionSocketSet` no longer substitutes `0.0.0.0` as a successful peer
+address. The React validator and generated contract are unchanged.
+
+The same commit adds an ineligible-override regression and one
+Windows-native selector test. The Windows desktop CI leg runs that engine test
+in addition to its eight desktop tests; the latter include two fresh-default
+`ApplicationService` opens. Hosted Windows x86_64 run
+[`32701109115`](https://github.com/kzahel/rstorrent/actions/runs/32701109115)
+passed the selector, desktop tests, and unsigned NSIS build. That run's Linux
+Rust job independently exposed a scheduler-dependent storage-pool test;
+commit `7be2397` replaces its assumed overlap with the existing controlled
+platform broker and passes 25 consecutive focused runs locally. Follow-up
+`main` run
+[`32703372543`](https://github.com/kzahel/rstorrent/actions/runs/32703372543)
+passes all seven jobs, including the repaired storage test and the same native
+Windows selector, fresh-default desktop, and package evidence. Its first iOS
+attempt hit a hosted-runner application-launch timeout; one failed-job rerun
+passed the unchanged simulator tests and unsigned archive. No product check
+was skipped or weakened.
+
+Target-native Windows comparison observed one eligible active IPv4 address.
+The current SSDP connect selected loopback and matched neither that adapter nor
+Windows' best route. Both the TEST-NET-1 fallback and a public-unicast control
+selected the eligible active adapter; the fallback exactly matched
+`Find-NetRoute`. No concrete appliance address, user, or identifier is
+retained.
+
+An additional ARM64 appliance source build was attempted only as
+corroboration. Rust and the ARM64 MSVC workload were already installed, but
+OpenSSH required explicit developer-environment initialization. The clean
+native dependency build exceeded its bounded validation interval and is not
+claimed as a pass. Its exact build processes and temporary clone were removed;
+the isolated workspace was cleanly stopped and discarded without force. This
+does not weaken the passing hosted Windows x86_64 production-selector and
+application-service evidence.
+
+Local validation passes:
+
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace -- -D warnings`;
+- `cargo test --workspace` before and after the deterministic CI-test repair;
+- focused local-network/session-socket tests;
+- 25 consecutive controlled storage singleflight tests; and
+- `actionlint` `v1.7.9` against every workflow.
+
+No dependency, unsafe code, persistence value, generated contract, background
+task, or non-Windows route choice changed. Tactical `158` is again **Now** and
+owns the first signed repaired package, clean fresh-profile launch, exact
+Windows updater repetition, and the separate Linux x86_64 update gate.

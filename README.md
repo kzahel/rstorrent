@@ -1,7 +1,8 @@
 # RSTorrent
 
 RSTorrent is a functional alpha BitTorrent client built around a first-party
-Rust engine. It is not released, has no users, and is not yet feature-complete.
+Rust engine. Public signed desktop incubation builds exist, but the product is
+not yet a supported beta and is not feature-complete.
 
 The current product can perform real v1 downloads from magnet intake through
 verified publication, with tracker and DHT discovery, multiple peers, durable
@@ -16,8 +17,13 @@ and [protocol support matrix](docs/topics/protocol-support.md).
   important capabilities and product behavior remain unfinished. The
   [capability readiness record](docs/topics/capability-readiness.md) is the
   authoritative checklist and work queue.
-- **No public release.** There are no supported installers, upgrade promises,
-  or production users yet.
+- **Public incubation releases, not a supported beta.** Signed desktop `0.1.0`
+  and updater-validation `0.1.1` packages are public. Installed macOS arm64,
+  Linux arm64, and bounded Windows updater mechanics have passed, but
+  cross-platform clean-machine gates remain. The Windows fresh-profile defect
+  in those two packages is repaired on `main`; the first signed package
+  carrying the repair and its installed proof remain open. See the
+  [beta release ledger](docs/topics/beta-release-readiness.md).
 - **Platforms are at different readiness levels.** Desktop/web is the leading
   product and inspection surface. Android is functional with native engine and
   durable storage integration but still has product gaps. ChromeOS deployment

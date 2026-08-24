@@ -32,6 +32,9 @@ update presentation, fail-closed release validation, and installed
 older-to-newer evidence. Completed Tactical `159` supplies credential-free
 Rust/web, deterministic browser E2E, native desktop package, Android dual-ABI,
 iOS simulator/archive, and short loopback-interoperability presubmit signal.
+Completed Tactical `160` repairs Windows fresh-profile local-network address
+selection and adds a native Windows regression; Tactical `158` owns the first
+signed package carrying it and the installed update repetition.
 Completed Tactical `157` established the release ledger, graduated the Android
 client to `clients/android`, and added provisional packaging artwork. The
 durable release backlog and platform gates live in

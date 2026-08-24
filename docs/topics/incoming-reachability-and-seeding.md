@@ -234,11 +234,12 @@ incoming peers locally or through one proven UPnP-mapped public TCP endpoint:
   returns loopback, the engine rejects it and falls back to `0.0.0.0`, and
   application validation rejects the wildcard. Target-native comparison
   proves a zero-byte documentation-unicast probe selects the active eligible
-  adapter and exactly matches Windows' best route. Tactical
-  [`160`](../tactical/160-windows-local-network-address-selection.md) owns the
-  dependency-free fallback, removal of wildcard publication, native CI
-  regression, and clean installed proof required before the Windows beta lane
-  is runnable;
+  adapter and exactly matches Windows' best route. Completed Tactical
+  [`160`](../tactical/160-windows-local-network-address-selection.md) lands
+  that dependency-free fallback on `main`, removes wildcard publication, and
+  adds passing native Windows selector and fresh-default application-service
+  coverage. Tactical `158` still must publish and prove a signed repaired
+  package before the Windows beta lane is runnable;
 - one joined session listener uses a five-entry backlog, bounds eight
   pre-handshake tasks, and routes version-tagged 20-byte v1 or v2 swarm keys
   through up to 1,024 generation-fenced registrations. It admits peers under
