@@ -410,6 +410,15 @@ fresh profile, and temporary installation were removed; prior JSTorrent
 `.torrent` and RSTorrent `magnet:` handler choices were unchanged. This is
 partial launch evidence, not installed macOS acceptance.
 
+A fresh machine-control attempt later on 2026-08-24 acquired the available,
+initially-off macOS claim and powered the Tart target on. After a normal boot
+interval, administration, a logged-in Aqua session, resident control,
+accessibility semantics, capture, and input all remained unavailable, so the
+installed Add flow could not be inspected or operated. Graceful shutdown then
+failed through the same unavailable guest route. Per the testbed safety policy,
+the target was left running rather than silently force-stopped; both claims
+were released. No RSTorrent package or profile was installed on that target.
+
 The Linux arm64 installed AppImage campaign passed on the disposable desktop:
 
 - package `0.1.1`, arm64, 89,762,312 bytes, SHA-256
