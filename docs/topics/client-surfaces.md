@@ -453,7 +453,12 @@ new patches. Visibility and online events may accelerate this path but do not
 own correctness.
 
 - Tauri owns the application service independently of its webview window and
-  may remain alive in the tray.
+  may remain alive in the tray. Completed Tactical `162` registers the
+  single-instance owner before service startup, defaults close to hidden
+  background operation, persists that shell policy independently from the
+  profile, restores the existing window from the tray or a second launch, and
+  joins service/media shutdown before close, tray Quit, or updater restart can
+  terminate the process.
 - Android's foreground service owns the application service independently of
   activities.
 - A remote WebSocket connection owns only its authenticated commands and
@@ -607,9 +612,13 @@ remote exposure, and Android streaming remain independent product decisions.
   selection, default persistence, unavailable-root repair, and controlled
   process restart. The next signed update, installed Linux x86_64 picker/update
   evidence, and Windows firewall-consent characterization remain open;
-  installed Intel macOS testing is deliberately omitted. File associations,
-  production tray policy, and complete cross-platform window/platform-
-  capability evidence also remain open. The release gates live in
+  installed Intel macOS testing is deliberately omitted. Completed Tactical
+  `162` adds the selected production tray policy, one desktop instance,
+  default-on persisted background operation, visible tray update checking,
+  joined shutdown/restart, native Linux arm64 packaging, and installed Windows
+  x86_64/Linux arm64 lifecycle/icon evidence. File associations and complete
+  cross-platform window/platform-capability evidence remain open. The release
+  gates live in
   [`beta-release-readiness.md`](beta-release-readiness.md).
 - The maintained Android product module now lives at `clients/android`; the
   unreleased `org.rstorrent.bootstrap` identity and retained diagnostic service

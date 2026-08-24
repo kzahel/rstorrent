@@ -4,9 +4,9 @@ Topic: `beta-release-readiness`
 
 Status: **Active as of 2026-08-24.** RSTorrent desktop `0.1.0` is the first
 public signed incubation release and `0.1.1` is its first updater-validation
-release; Android and iOS remain unreleased alpha lanes. Credential-free cross-
-platform presubmit CI, a credentialed five-target signed desktop rehearsal,
-two tagged publications, production updater metadata, one installed macOS
+release; Android and iOS remain unreleased alpha lanes. Credential-free
+eight-job cross-platform presubmit CI, a credentialed five-target signed
+desktop rehearsal, two tagged publications, production updater metadata, one installed macOS
 arm64 launch smoke, and exact macOS arm64 and Linux arm64
 `0.1.0`-to-`0.1.1` update passes. Windows x86_64 replacement/relaunch also
 passes under an automatic-loopback profile, but fresh default startup is
@@ -18,9 +18,11 @@ passes an installed unsigned Windows fresh-profile choose/cancel/repair/
 restart campaign. A newer signed package, its clean installed update, and
 Linux x86_64 installed evidence remain open. First launch of the unsigned
 Windows listener also exposed a Windows Security consent prompt that the next
-signed candidate must characterize and document. Tactical `162` is **Now**
-for the bounded desktop single-instance/tray lifecycle gate; `158` resumes
-after it.
+signed candidate must characterize and document. Completed Tactical `162`
+adds single-instance, default-on close-to-tray, persisted background policy,
+visible manual updating, joined Quit/restart, native Linux arm64 packaging,
+and installed Windows x86_64/Linux arm64 lifecycle evidence. Tactical `158`
+has resumed as **Now** for the next signed package and update repetition.
 Installed Intel macOS testing is deliberately omitted. The public product
 name is RSTorrent for the foreseeable release line. A later production
 graduation is expected to retain JSTorrent's existing name, application
@@ -36,7 +38,8 @@ complete. Packaged desktop picker Tactical
 [`161`](../tactical/161-packaged-desktop-folder-picker.md) is complete;
 desktop lifecycle Tactical
 [`162`](../tactical/162-desktop-single-instance-and-tray-lifecycle.md) is
-**Now**.
+complete; signed release Tactical
+[`158`](../tactical/158-desktop-signed-packaging-and-updater.md) is **Now**.
 
 ## Scope And Release Definition
 
@@ -69,8 +72,8 @@ Store review, and mobile beta is not implied by a desktop tag:
 | Lane | Intended beta channel | Current release state |
 | --- | --- | --- |
 | macOS desktop | signed/notarized DMG plus in-app updates | public Developer ID-signed, notarized, and stapled app/DMG packages pass for arm64 and x86_64; an installed arm64 launch smoke and exact `0.1.0`-to-`0.1.1` replacement/relaunch pass; Intel installed testing is deliberately omitted |
-| Windows desktop | signed per-user NSIS plus in-app updates | public NSIS and MSI packages have valid expected-publisher Authenticode signatures; public per-user NSIS replacement/relaunch passes under an automatic-loopback profile; an unsigned package from `main` passes fresh-default startup and native root setup after Tacticals `160` and `161`, while a newer signed clean-profile update remains open |
-| Linux desktop | AppImage plus in-app updates; DEB/RPM remain package-manager channels | public AppImage, DEB, and RPM packages plus updater artifacts pass for x86_64 and arm64; exact arm64 AppImage replacement/relaunch passes, while x86_64 installed evidence remains absent |
+| Windows desktop | signed per-user NSIS plus in-app updates | public NSIS and MSI packages have valid expected-publisher Authenticode signatures; public per-user NSIS replacement/relaunch passes under an automatic-loopback profile; unsigned packages from `main` pass fresh-default startup, native root setup, and the selected single-instance/tray lifecycle after Tacticals `160`--`162`, while a newer signed clean-profile update remains open |
+| Linux desktop | AppImage plus in-app updates; DEB/RPM remain package-manager channels | public AppImage, DEB, and RPM packages plus updater artifacts pass for x86_64 and arm64; exact arm64 AppImage replacement/relaunch and the current unsigned installed lifecycle/icon campaign pass, while x86_64 installed evidence remains absent |
 | Android/ChromeOS | signed Android App Bundle through a closed testing channel | maintained Compose/in-process Rust/SAF app and hosted dual-ABI debug/test APK gates pass; release identity, signed AAB, emulator/store, and upgrade evidence absent |
 | iOS/iPadOS | signed TestFlight build | maintained SwiftUI app plus hosted simulator tests and unsigned device archive pass; distribution identity, signing, TestFlight, and upgrade evidence absent |
 
@@ -265,13 +268,14 @@ without corrupting or silently reinterpreting user state.
   DMG-installed self-contained app on macOS, per-user NSIS on Windows, and a
   user-writable AppImage on Linux. MSI/DEB/RPM installs stay with their package
   managers and show a manual-update path.
-- [ ] **DESK-004 — Finish lifecycle integration.** Decide single-instance,
-  open-file/magnet handoff, platform close/quit/reopen behavior, crash restart,
-  and whether tray/background operation is part of beta. Tactical `162`
-  selects single-instance, default-on tray/background operation, persisted
-  close policy, and joined Quit for the beta; installed Windows/Linux evidence
-  is in progress. File/magnet handoff, autostart, and crash restart remain
-  later explicit decisions.
+- [x] **DESK-004 — Finish beta lifecycle integration.** Tactical `162`
+  implements one desktop owner, second-launch restoration, default-on
+  tray/background operation, persisted close policy, visible manual updating,
+  and joined close/Quit/restart shutdown. The credential-free eight-job matrix
+  and installed Windows x86_64/Linux arm64 campaigns pass, including branded
+  shell icons and zero-process Quit. File/magnet handoff, autostart, crash
+  restart, and identity migration are deliberate post-beta decisions rather
+  than unfinished parts of the selected beta lifecycle.
 - [ ] **DESK-005 — Qualify native root pickers.** Tactical `161` is complete.
   Its parented native Tauri picker passes installed Windows choose, cancel,
   first-default, unavailable-root repair, and controlled process-restart
@@ -450,13 +454,13 @@ no single optional BEP is mandatory.
    native desktop, Android, iOS, deterministic E2E, and short locked
    loopback-interoperability jobs pass; the repaired performance workflow also
    retains a successful manual smoke artifact.
-3. **Now — Tactical `162`: desktop single-instance and tray lifecycle.**
-   Implement one application owner, default-on persisted background policy,
-   close-to-tray, visible manual updater action, joined Quit, and installed
-   Windows/Linux proof. File/magnet handoff and autostart stay outside this
-   bounded slice.
-4. **Next — Tactical `158`: desktop signed packaging and updater
-   adoption resumes.**
+3. **Complete — Tactical `162`: desktop single-instance and tray lifecycle.**
+   One application owner, default-on persisted background policy,
+   close-to-tray, visible manual updater action, joined Quit/restart, native
+   Linux arm64 packaging, release-only Windows GUI launch, and installed
+   Windows x86_64/Linux arm64 proof pass. File/magnet handoff and autostart
+   stay outside this bounded slice.
+4. **Now — Tactical `158`: desktop signed packaging and updater adoption.**
    The product-owned `desktop-update-v1` client, signed package workflow,
    release validation, per-app key, public configuration, production route,
    five-platform hosted rehearsal, two tagged publications, one installed

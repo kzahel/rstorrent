@@ -17,6 +17,15 @@ Completed Tactical `161` changes no schema or locator representation. Its
 focused test and installed Windows campaign prove that native selection reaches
 this existing registry, unavailable-root repair preserves one entry, and the
 same default root restores after process restart.
+
+Completed Tactical `162` likewise changes no profile schema. It adds one
+shell-owned application-config `desktop-shell.json` with closed version `1`,
+a 4 KiB input bound, atomic replacement, conservative reset, and one
+`run_in_background` boolean that defaults to true. This close policy applies
+before and across profile services; it is not torrent state, a storage
+locator, client settings, updater identity, or future installation-wide
+`product.db` state.
+
 Tactical `063` now makes the existing sparse file-selection rows a live
 transactional control and separates paused start-content intent from metadata
 acquisition without adding a second pending-torrent authority. Tactical `067`

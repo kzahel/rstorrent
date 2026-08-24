@@ -1,9 +1,8 @@
 # Tactical 162: Desktop Single-Instance And Tray Lifecycle
 
-Status: **Implementation in progress and selected as Now (2026-08-24).**
-Desktop release/updater Tactical
-[`158`](158-desktop-signed-packaging-and-updater.md) is paused behind this
-bounded installed-lifecycle gate and resumes when this tactical completes.
+Status: **Complete (2026-08-24).** Desktop release/updater Tactical
+[`158`](158-desktop-signed-packaging-and-updater.md) has resumed as the sole
+**Now**.
 
 Topics: `beta-release-readiness`, `client-surfaces`,
 `product-state-and-feedback`, `client-persistence`
@@ -235,6 +234,67 @@ No reference source, fixture, artwork, or persisted format is imported.
    inspect icons, and remove exact test installs/profiles/artifacts.
 8. Reconcile exact evidence and remaining deferrals, complete this tactical,
    return `158` to **Now**, commit, push, and require hosted CI green.
+
+## Result And Evidence
+
+Commits `3d2d7fa`, `8d19d42`, `8fd4842`, `7fd1aa0`, `6ffd440`, and
+`1e32aee` implement the planned shell lifetime and the two defects discovered
+by installed acceptance. The first Windows launch showed that the release
+binary still used the console subsystem; `1e32aee` adds the release-only GUI
+subsystem attribute and makes the release validator reject regressions. The
+available Linux testbed is arm64, so `6ffd440` adds a native
+`ubuntu-24.04-arm` desktop package leg while retaining Linux x86_64 as a
+separate native package gate.
+
+Local validation passed:
+
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace -- -D warnings`;
+- `cargo test --workspace`;
+- `npm run typecheck --prefix clients/web`;
+- `npm run test --prefix clients/web`;
+- the release validator and its focused Node tests; and
+- `actionlint` `1.7.9` plus `git diff --check`.
+
+Exact-head workflow-dispatch run
+[`32725354704`](https://github.com/kzahel/rstorrent/actions/runs/32725354704)
+passed all eight jobs: Rust/loopback interoperability, web type/unit/build/
+deterministic browser E2E, Android dual ABI/lint/tests, iOS simulator tests and
+unsigned archive, macOS arm64, Windows x86_64, Linux x86_64, and Linux arm64.
+Its retained Windows NSIS was 10,277,872 bytes with SHA-256
+`fd8575d4b556ce5488b81e0a72cf4594ae382b2917afdf23ee877e2dd21b3ddf`.
+Its retained Linux arm64 AppImage was 88,615,432 bytes with SHA-256
+`67908c024e2c9487d3dbe073170adc4748b407255088c271edada0182e7c57ab`.
+
+An isolated installed Windows x86_64 campaign proved branded window,
+taskbar, and tray artwork; no accompanying terminal on the corrected build;
+default-on close-to-background with one retained process; tray and ordinary
+second-launch restoration; one original process after second launch; visible
+**About & updates** and **RSTorrent is up to date** state from the tray update
+action; atomic version-1 `run_in_background` persistence in both directions;
+joined close-to-quit when disabled; persistence across relaunch; and joined
+tray Quit to zero processes. The exact test install, generated profile, and
+staging files were removed, and the pre-existing WebView cache was restored.
+
+An isolated Linux arm64 campaign verified the exact AppImage checksum before
+launch. It integrated the AppImage's packaged `RSTorrent.desktop` entry and
+bundled icons into the temporary user application database, adjusted only the
+installed entry's `Exec` path as normal portable integration requires, and
+launched it through that desktop entry. GNOME then showed the branded dock and
+tray icons; direct unintegrated execution had correctly been treated as a
+staging probe rather than installed icon evidence. The campaign proved
+default-on close-to-background with the same process, tray-menu Show, one
+original process after a second launch, visible manual up-to-date state,
+atomic version-1 setting persistence, joined close-to-quit when disabled,
+persistence across relaunch, and joined tray Quit to zero application roots
+and an inactive launch unit. Integration files, icons, profiles, AppImages,
+captures, and staging state were removed; the VM was returned to its original
+powered-off state.
+
+Installed Linux x86_64 and Intel macOS remain deliberately outside this
+tactical. File/magnet handoff, autostart, crash restart, and identity migration
+remain the explicit deferrals below. The first signed package and installed
+update carrying this lifecycle return to Tactical `158`.
 
 ## Deliberate Deferrals
 

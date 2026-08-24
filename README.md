@@ -21,8 +21,11 @@ and [protocol support matrix](docs/topics/protocol-support.md).
   and updater-validation `0.1.1` packages are public. Installed macOS arm64,
   Linux arm64, and bounded Windows updater mechanics have passed, but
   cross-platform clean-machine gates remain. The Windows fresh-profile defect
-  in those two packages is repaired on `main`; the first signed package
-  carrying the repair and its installed proof remain open. See the
+  in those two packages is repaired on `main`; current unsigned Windows
+  x86_64 and Linux arm64 packages also pass the selected single-instance,
+  tray/background, updater-action, and joined-Quit lifecycle. The first signed
+  package carrying those repairs and its installed update proof remain open.
+  See the
   [beta release ledger](docs/topics/beta-release-readiness.md).
 - **Platforms are at different readiness levels.** Desktop/web is the leading
   product and inspection surface. Android is functional with native engine and
@@ -84,21 +87,17 @@ recorded in the
 [product deployment and graduation plan](docs/topics/product-surfaces-and-migration.md)
 and [long-term product vision](docs/vision.md).
 
-## Unreleased Development Policy
+## Incubation Compatibility Policy
 
-RSTorrent is unreleased and currently has no users. Until the first release,
-RSTorrent-owned application protocols, APIs, database schemas, persisted-state
-formats, and other internal contracts may change incompatibly without
-migrations or compatibility shims. Development profiles and state may be
-discarded and recreated; do not preserve provisional contracts solely for
-hypothetical users.
-
-Once a release creates real installations and persisted user state, this
-policy ends. Changes must then account for supported upgrade paths, including
-database and state migrations, protocol and API versioning, coexistence or
-rollback where appropriate, and safe handling of older installations. This
-pre-release freedom does not relax RSTorrent's interoperability obligations to
-external BitTorrent peers and protocols.
+Public desktop `0.1.0` and `0.1.1` releases now create real installations and
+persisted user state, so the former unreleased freedom to discard provisional
+contracts has ended for that release line. Changes must account for supported
+upgrade paths, including database and state migrations, protocol and API
+versioning, coexistence or rollback where appropriate, and safe handling of
+older installations. Development-only Android/iOS identities and explicitly
+ephemeral test profiles may still be recreated within their documented
+boundaries. This compatibility requirement does not relax RSTorrent's
+interoperability obligations to external BitTorrent peers and protocols.
 
 ## Engineering Character
 

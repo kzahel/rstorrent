@@ -1,7 +1,6 @@
 # Tactical 158: Desktop Signed Packaging And Updater
 
-Status: **Implementation in progress; paused behind selected Tactical `162`
-(2026-08-24).**
+Status: **Implementation in progress and selected as Now (2026-08-24).**
 Maintainer direction selected RSTorrent as the foreseeable public product name
 and froze `com.jstorrent.rstorrent` as the desktop beta identifier on
 2026-08-23. Cross-platform presubmit Tactical `159` is complete. The distinct
@@ -28,9 +27,10 @@ direction deliberately omits installed Intel macOS testing while retaining
 its automated signed package and route. That unsigned Windows campaign also
 exposed Windows Security listener consent; the next signed candidate must
 characterize and document it without automatically granting a firewall rule.
-Bounded Tactical `162` first closes single-instance, tray/background, joined
-Quit, and installed Windows/Linux lifecycle behavior so the next signed
-candidate carries a reachable and cleanly terminating desktop shell.
+Completed Tactical `162` closes single-instance, tray/background, joined
+Quit, release-only Windows GUI launch, and installed Windows x86_64/Linux
+arm64 lifecycle behavior. The next signed candidate therefore carries a
+reachable and cleanly terminating desktop shell.
 
 Topics: `beta-release-readiness`, `client-surfaces`,
 `product-state-and-feedback`, `product-surfaces-and-migration`,
@@ -416,8 +416,11 @@ cancel/select/default, controlled restart, unavailable-root repair under the
 same stable ID, and repaired restart pass. First launch displayed Windows
 Security listener consent; selecting Cancel left the app and picker usable but
 proved no incoming reachability. The first signed package carrying Tacticals
-`160` and `161`, its exact clean-profile update, firewall-consent guidance, and
-installed Linux x86_64 campaign remain this tactical's next boundary.
+`160`, `161`, and `162`, its exact clean-profile update, firewall-consent
+guidance, and installed Linux x86_64 campaign remain this tactical's next
+boundary. Tactical `162` adds the selected single-instance/tray lifecycle,
+joined shutdown/restart, corrected Windows GUI launch, native Linux arm64
+package gate, and installed Windows x86_64/Linux arm64 evidence.
 
 ## Escalation Contract
 

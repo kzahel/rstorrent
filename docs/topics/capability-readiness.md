@@ -3,16 +3,19 @@
 Topic: `capability-readiness`
 
 Status: Authoritative cross-cutting feature-readiness scoreboard and current
-work queue for the functional, unreleased alpha. Maintainer direction on
-2026-08-22 completed beta-release foundation Tactical `157` and
+work queue for the functional public-incubation release line. Maintainer
+direction on 2026-08-22 completed beta-release foundation Tactical `157` and
 cross-platform presubmit Tactical `159`, then selected desktop release/updater
 Tactical `158`. Native Windows evidence exposed its release-blocking default
 listener defect; bounded Tactical `160` now repairs it and adds native Windows
 presubmit coverage. Completed Tactical `161` adds the parented native packaged
 picker, passes installed unsigned Windows setup/repair/restart, and removes the
-packaged Linux helper dependency. Tactical `162` is the single **Now** and
-pauses `158` long enough to close single-instance, tray, and joined desktop
-lifecycle behavior with installed Windows/Linux evidence.
+packaged Linux helper dependency. Completed Tactical `162` closes
+single-instance, tray, joined desktop lifecycle, release-only Windows GUI
+launch, and native Linux arm64 package coverage with installed Windows
+x86_64/Linux arm64 evidence. Tactical `158` has resumed as the single
+**Now**.
+
 The updater tactical's client,
 production route, five-target signed hosted rehearsal, public `0.1.0` release,
 public `0.1.1` updater-validation release, installed macOS arm64 launch smoke,
@@ -22,8 +25,7 @@ profile. The fresh-default defect is repaired on `main`, but no signed public
 package contains either Windows repair yet. Clean repaired Windows and Linux
 x86_64 updates, installed Linux picker evidence, and signed Windows firewall-
 consent characterization remain open; installed Intel macOS testing is
-deliberately omitted. These gaps
-keep the tactical active. The tables below
+deliberately omitted. These gaps keep the tactical active. The tables below
 record current support, evidence, and highest-risk gaps; implementation
 history remains in the linked tacticals and focused topics.
 
@@ -501,18 +503,15 @@ exactly.
 
 ### Now
 
-- **Complete desktop single-instance and tray lifecycle Tactical
-  [`162`](../tactical/162-desktop-single-instance-and-tray-lifecycle.md).** Add
-  one application owner, default-on close-to-tray policy, persisted background
-  intent, visible tray update checking, joined Quit, and installed Windows and
-  Linux lifecycle evidence. Then resume signed release Tactical `158` without
-  adding file/magnet handoff or autostart to this slice.
+- **Resume desktop signed packaging and updater Tactical
+  [`158`](../tactical/158-desktop-signed-packaging-and-updater.md).** Produce
+  the first signed package carrying completed Windows startup, picker,
+  console, and lifecycle repairs; repeat clean-profile Windows update and
+  Linux x86_64 installed evidence; and characterize Windows firewall consent.
+  Installed Intel macOS remains deliberately omitted.
 
 ### Next
 
-- Resume Tactical `158`: produce the first signed package carrying completed
-  Windows startup, picker, and lifecycle repairs; repeat clean-profile Windows
-  update and Linux x86_64 installed evidence.
 - Freeze the application identities, first supported persistence baseline,
   changelog, privacy/support presentation, and repeatable beta torrent cohort
   around the first release candidate.

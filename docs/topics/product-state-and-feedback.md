@@ -12,7 +12,9 @@ create/repair, sends it only as the `desktop-update-v1` `X-CFU-Id` header, and
 discloses that use in About & updates. It is resettable installation counting,
 not analytics identity or authorization. The eventual installation-wide
 `product.db` must adopt or explicitly migrate this value rather than creating
-a second identity.
+a second identity. Tactical `162`'s versioned `desktop-shell.json` is a
+separate shell policy containing only **Run in Background**; it does not widen
+the updater identifier or preempt the accepted product-state database.
 
 ## Scope
 

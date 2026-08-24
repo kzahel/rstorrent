@@ -26,10 +26,13 @@ under `docs/topics/`.
 ## Current Tactical State
 
 The authoritative **Now** is
-[`162-desktop-single-instance-and-tray-lifecycle.md`](docs/tactical/162-desktop-single-instance-and-tray-lifecycle.md).
-It owns one packaged desktop instance, close-to-tray policy, persisted
-background intent, joined Quit, and installed Windows/Linux evidence before
-signed release Tactical `158` resumes. Completed Tactical `159` supplies
+[`158-desktop-signed-packaging-and-updater.md`](docs/tactical/158-desktop-signed-packaging-and-updater.md).
+Completed Tactical `162` supplies one packaged desktop instance,
+close-to-tray policy, persisted background intent, joined Quit, release-only
+Windows GUI subsystem validation, a native Linux arm64 package gate, and
+installed Windows x86_64/Linux arm64 lifecycle evidence. Tactical `158` now
+owns the next signed package and installed update repetition. Completed
+Tactical `159` supplies
 credential-free Rust/web, deterministic browser E2E, native desktop package,
 Android dual-ABI, iOS simulator/archive, and short loopback-interoperability
 presubmit signal.
