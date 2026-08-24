@@ -759,10 +759,11 @@ that scope and its cleanup or compatibility rules explicitly.
   Quit/restart shutdown, native Linux arm64 packaging, release-only Windows
   GUI launch, and installed Windows x86_64/Linux arm64 lifecycle evidence.
 - [`163-desktop-external-torrent-intake.md`](163-desktop-external-torrent-intake.md):
-  planned as Next behind Tactical `158`; registers the installed desktop app
-  for `magnet:` and local `.torrent` activation, routes cold and warm input
-  through the existing single owner and Add-options flow, and requires bounded
-  installed macOS arm64, Windows x86_64, and Linux arm64 evidence.
+  implemented with installed Linux arm64 and Windows x86_64-application
+  acceptance; registers `magnet:` and local `.torrent` activation, routes cold
+  and warm input through the existing single owner and Add-options flow, and
+  retains installed macOS arm64 plus hosted-run closure as Next behind
+  Tactical `158`.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

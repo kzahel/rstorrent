@@ -44,7 +44,9 @@ Maintainer direction on 2026-08-24 promotes OS-level `magnet:` and local
 `.torrent` activation from a post-beta deferral to a beta usability gap;
 implemented Tactical
 [`163`](../tactical/163-desktop-external-torrent-intake.md) is the first
-**Next** slice while installed Windows/macOS acceptance remains open.
+**Next** slice while installed macOS acceptance and its exact hosted run remain
+open. Installed Linux arm64 and Windows x86_64-application acceptance pass;
+the Windows package ran under Windows 11 arm64 x64 emulation.
 
 ## Scope And Release Definition
 
@@ -77,7 +79,7 @@ Store review, and mobile beta is not implied by a desktop tag:
 | Lane | Intended beta channel | Current release state |
 | --- | --- | --- |
 | macOS desktop | signed/notarized DMG plus in-app updates | public Developer ID-signed, notarized, and stapled app/DMG packages pass for arm64 and x86_64; an installed arm64 launch smoke and exact `0.1.0`-to-`0.1.1` replacement/relaunch pass; Intel installed testing is deliberately omitted |
-| Windows desktop | signed per-user NSIS plus in-app updates | public NSIS and MSI packages have valid expected-publisher Authenticode signatures; public per-user NSIS replacement/relaunch passes under an automatic-loopback profile; unsigned packages from `main` pass fresh-default startup, native root setup, and the selected single-instance/tray lifecycle after Tacticals `160`--`162`, while a newer signed clean-profile update remains open |
+| Windows desktop | signed per-user NSIS plus in-app updates | public NSIS and MSI packages have valid expected-publisher Authenticode signatures; public per-user NSIS replacement/relaunch passes under an automatic-loopback profile; unsigned packages from `main` pass fresh-default startup, native root setup, selected single-instance/tray lifecycle, and installed x86_64 external magnet/file activation under Windows 11 arm64 x64 emulation, while a newer signed clean-profile update remains open |
 | Linux desktop | AppImage plus in-app updates; DEB/RPM remain package-manager channels | public AppImage, DEB, and RPM packages plus updater artifacts pass for x86_64 and arm64; exact arm64 AppImage replacement/relaunch and the current unsigned installed lifecycle/icon campaign pass, while x86_64 installed evidence remains absent |
 | Android/ChromeOS | signed Android App Bundle through a closed testing channel | maintained Compose/in-process Rust/SAF app and hosted dual-ABI debug/test APK gates pass; release identity, signed AAB, emulator/store, and upgrade evidence absent |
 | iOS/iPadOS | signed TestFlight build | maintained SwiftUI app plus hosted simulator tests and unsigned device archive pass; distribution identity, signing, TestFlight, and upgrade evidence absent |
@@ -231,7 +233,11 @@ without corrupting or silently reinterpreting user state.
   profile fails startup. An unsigned package from `main` now passes fresh-
   profile startup, native picker setup/repair, and controlled process restart;
   this is not signed older-to-newer update evidence. Linux x86_64, the common
-  cohort, reboot/relaunch, and full uninstall policy remain open.
+  cohort, reboot/relaunch, and full uninstall policy remain open. A separate
+  unsigned x86_64 NSIS campaign under Windows 11 arm64 x64 emulation now passes
+  installed cold/visible/hidden magnet and file activation, cancellation,
+  bounded failures, duplicate handling, tray Quit, uninstall, and exact
+  inherited-state restoration.
 - [ ] **QA-004 — Establish a crash/support loop.** Users need an accessible
   version/build identity, copyable bounded diagnostics, known-issues link, and
   a report path. Automatic crash or analytics upload is not required for beta.
@@ -306,9 +312,12 @@ without corrupting or silently reinterpreting user state.
   local `.torrent` activation, forwards cold and warm input through the
   existing single desktop owner, reuses root/start options, and requires
   installed macOS arm64, Windows x86_64, and Linux arm64 proof. Deterministic
-  and package gates plus the installed Linux arm64 campaign pass; Windows and
-  macOS installed Add-flow acceptance remain open. It does not adopt JSTorrent
-  identity, extension routing, or remote `.torrent` URLs.
+  and package gates plus installed Linux arm64 and Windows x86_64-application
+  campaigns pass. The Windows campaign exercised the real x86_64 NSIS/PE under
+  Windows 11 arm64 x64 emulation and covered cold, visible, hidden, cancel,
+  bounded failure, duplicate, Quit, and state restoration. macOS installed
+  Add-flow acceptance and the exact hosted run remain open. It does not adopt
+  JSTorrent identity, extension routing, or remote `.torrent` URLs.
 
 ### Desktop updater contract
 
@@ -488,9 +497,9 @@ no single optional BEP is mandatory.
    installed testing is deliberately omitted.
 5. **Next — Tactical `163`: finish desktop external torrent intake
    acceptance.** The bounded shell/UI implementation, package gates, and
-   installed Linux arm64 cold/visible/tray-hidden/cancel/failure/duplicate/
-   Quit campaign pass. Finish installed Windows x86_64 and macOS arm64 Add-flow
-   proof, then require the exact hosted package run.
+   installed Linux arm64 and Windows x86_64-application cold/visible/tray-
+   hidden/cancel/failure/duplicate/Quit campaigns pass. Finish installed macOS
+   arm64 Add-flow proof, then require the exact hosted package run.
 6. **Complete — Tactical `160`: Windows local-network address selection.**
    Wildcard binding remains, only a concrete eligible address is reported,
    the bounded Windows best-route fallback and native CI regression pass, and

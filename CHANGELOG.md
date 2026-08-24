@@ -9,6 +9,8 @@ three-component versions, and desktop release tags use `desktop-v<version>`.
   `.torrent` activation, restore the existing window, and reuse the ordinary
   download-root and Add-options workflow without exposing source paths to the
   webview contract.
+- Reject non-regular external `.torrent` paths before opening them and retain
+  platform-native file URL handling across Windows, macOS, and Linux.
 - Enforce one desktop product lifetime with default-on close-to-tray,
   persisted **Run in Background**, visible manual update checks, and joined
   close/Quit/restart shutdown.

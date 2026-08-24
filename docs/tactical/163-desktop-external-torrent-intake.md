@@ -361,7 +361,8 @@ Completion updates:
 
 ## Completion Record
 
-Implementation landed in four reviewable commits:
+Implementation and the first native portability repair landed in five
+reviewable commits:
 
 - `fa8eada` records this bounded plan and its release-readiness ownership;
 - `8bda4e1` adds the pure, bounded activation parser/queue, deep-link and
@@ -371,7 +372,11 @@ Implementation landed in four reviewable commits:
   opaque item at a time through the existing React Add/root/options workflow;
   and
 - `aa396ae` adds reviewed macOS/Windows/Linux association metadata, actual
-  package validators, and CI/release package gates.
+  package validators, and CI/release package gates; and
+- `b921ed8` makes the bounded file-source check explicitly reject non-regular
+  paths before opening them and constructs the file-URL test with platform-
+  native APIs. The repair was driven by the first native Windows test run
+  rather than weakening either input bound.
 
 The landed shell accepts only bounded `magnet:` or local `.torrent` input,
 keeps paths and complete magnets out of the frontend contract and diagnostics,
@@ -391,6 +396,10 @@ Local validation passed on 2026-08-24:
 - Playwright: 33 passed, 12 opt-in cases skipped;
 - package/release validator tests: 17 passed; and
 - `actionlint` 1.7.9 over the hosted workflows.
+
+After the native Windows portability repair, `cargo fmt --all -- --check`,
+workspace clippy with warnings denied, and the complete workspace test suite
+were repeated on the development host and passed.
 
 An unsigned macOS arm64 `0.1.1` application bundle was built locally and its
 generated `Info.plist` passed the checked-in package validator. A local
@@ -420,8 +429,37 @@ The Linux arm64 installed AppImage campaign passed on the disposable desktop:
   fixture state, powered the caller-started-off VM down, and released its
   exclusive claim.
 
-Completion still requires installed Windows x86_64 acceptance, installed
-macOS arm64 Add-flow acceptance on an operational test route, the exact hosted
-package run after an authorized push, final topic reconciliation, and a green
-hosted run. Windows remained under another valid exclusive claim at this
-checkpoint; it was not stolen.
+The installed Windows x86_64 application campaign also passed. The available
+Windows 11 testbed is arm64, so it exercised the actual x86_64 package and PE
+binary under Windows x64 emulation rather than claiming native x86_64
+hardware:
+
+- native `x86_64-pc-windows-msvc` desktop tests first exposed two Windows-only
+  portability assumptions; after `b921ed8`, all 18 tests and zero doc tests
+  passed;
+- the unsigned NSIS `0.1.1` installer was 10,267,809 bytes with SHA-256
+  `3E0FE777BCD195FF81753E5CB759075DCCA9FC3E2D623DDF42BC08C2826634F9`;
+  the installed executable reported PE machine `0x8664`, and the checked-in
+  registry validator passed its private class and quoted torrent/magnet
+  commands;
+- ShellExecute cold magnet activation launched PID 2728 and the privacy-
+  preserving Add dialog. Native root selection installed the controlled
+  download root and advanced the catalog to one;
+- visible magnet and `.torrent` activations, followed by a tray-hidden magnet
+  activation, retained PID 2728 and the same window owner while advancing the
+  catalog to four;
+- cancellation retained four rows and the following controlled `.torrent`
+  advanced the queue to five. Empty, malformed, oversized, and directory
+  sources left five rows and one process; the repeated valid file remained
+  five rows and reported **Already in your session**;
+- close-to-tray retained PID 2728, while the exact **Quit RSTorrent** tray item
+  left zero RSTorrent processes; and
+- cleanup uninstalled the application, removed the 5.1-GiB build/fixture
+  campaign, restored the inherited 303-file WebView profile with zero
+  per-file manifest differences, restored JSTorrent's exact magnet command
+  and the prior empty `.torrent` class, left inherited JSTorrent PID 8004
+  untouched, kept the inherited-running VM running, and released the claim.
+
+Completion still requires installed macOS arm64 Add-flow acceptance on an
+operational test route and the exact hosted package run after an authorized
+push. Installed Intel macOS remains deliberately omitted.

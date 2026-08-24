@@ -620,11 +620,12 @@ remote exposure, and Android streaming remain independent product decisions.
   [`163`](../tactical/163-desktop-external-torrent-intake.md) adds bounded
   installed `magnet:` and local `.torrent` association/handoff through that
   same owner and the existing Add flow. Deterministic Rust/React and package
-  gates pass, as does installed Linux arm64 cold/visible/hidden/cancel/failure/
-  duplicate/Quit behavior. Installed Windows x86_64 and macOS arm64 Add-flow
-  acceptance remain open. Complete cross-platform
-  window/platform-capability evidence remains open. The release gates live in
-  [`beta-release-readiness.md`](beta-release-readiness.md).
+  gates pass, as do installed Linux arm64 and Windows x86_64-application
+  cold/visible/hidden/cancel/failure/duplicate/Quit campaigns. The Windows
+  package was a real x86_64 PE exercised under Windows 11 arm64 x64 emulation.
+  Installed macOS arm64 Add-flow acceptance remains open. Complete cross-
+  platform window/platform-capability evidence remains open. The release gates
+  live in [`beta-release-readiness.md`](beta-release-readiness.md).
 - The maintained Android product module now lives at `clients/android`; the
   unreleased `org.rstorrent.bootstrap` identity and retained diagnostic service
   remain explicit release-cleanup decisions rather than evidence that the
