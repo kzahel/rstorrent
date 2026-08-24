@@ -234,6 +234,15 @@ jobs:
               ;;
           esac
 
+      - name: Retain Windows package for installed smoke
+        if: github.event_name == 'workflow_dispatch' && runner.os == 'Windows'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: desktop-windows-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+          path: target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          retention-days: 3
+
   android:
     name: Android dual ABI, lint, and tests
     runs-on: ubuntu-24.04
