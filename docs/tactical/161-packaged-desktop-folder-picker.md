@@ -1,9 +1,10 @@
 # Tactical 161: Packaged Desktop Folder Picker
 
-Status: **Decision-complete and selected as Now (2026-08-24).** Desktop
-release/updater Tactical
-[`158`](158-desktop-signed-packaging-and-updater.md) is paused at its next
-publication boundary while this fresh-profile product blocker is closed.
+Status: **Complete (2026-08-24).** The parented native picker, focused
+selection/persistence tests, hosted Windows/Linux packages, and installed
+Windows choose/cancel/repair/restart campaign pass. Desktop release/updater
+Tactical [`158`](158-desktop-signed-packaging-and-updater.md) resumes as
+**Now** and owns the first signed package containing this work.
 
 Topics: `beta-release-readiness`, `client-surfaces`, `download-roots`,
 `client-persistence`
@@ -65,8 +66,9 @@ slice, but it is not substituted for the required Windows evidence.
 
 ## Product Contracts And Invariants
 
-- The generated application command contract and portable React adapter never
-  gain an absolute-path input or output.
+- The generated application command contract and portable React adapter gain
+  no path-authority input or new path output. The existing root snapshot may
+  still carry its display-only normalized path.
 - The Tauri command returns `None` on user cancellation and performs no root,
   default, preference, or torrent mutation.
 - A selected path is registered or repaired only through
@@ -177,6 +179,84 @@ does not change protocol, engine, hashing, scheduling, or payload-I/O state.
 7. Reconcile the tactical and topics with exact evidence, return Tactical
    `158` to **Now**, and leave ordinary close/reopen/tray policy in `DESK-004`.
 
+## Result And Evidence
+
+Commits `5273bd4`, `75a05d1`, and `d071a1a` record the decision, native
+implementation, and opt-in package handoff respectively.
+
+The packaged Tauri shell now uses exact `tauri-plugin-dialog` `2.7.2` from
+Rust. The invoking `WebviewWindow` parents the panel; Tauri's platform path
+resolver supplies a valid Windows home directory; the plugin callback crosses
+one oneshot; and only the resulting native `PathBuf` reaches
+`ApplicationService`. The old `rstorrent-platform` dependency remains in the
+local WebUI gateway but is no longer part of the packaged desktop shell. No
+dialog permission is granted to JavaScript and no generated application
+contract changed.
+
+Focused desktop evidence passes ten tests, including callback-channel failure,
+cancel with no root mutation, first-root defaulting, unavailable-root repair
+under the same opaque ID, and durable reopen after repair. The complete local
+floor passed:
+
+```text
+cargo fmt --all -- --check
+cargo clippy --workspace -- -D warnings
+cargo test --workspace
+npm run typecheck --prefix clients/web
+npm run test --prefix clients/web
+```
+
+The web run passed 262 tests with two deliberate skips. Local `actionlint`
+also accepted the opt-in artifact step.
+
+Credential-free CI run
+[`32713131288`](https://github.com/kzahel/rstorrent/actions/runs/32713131288)
+passed all seven jobs: Rust plus loopback interoperability; web type/unit/build
+plus deterministic Playwright E2E; Windows x86_64, Linux x86_64, and macOS
+arm64 desktop tests/packages; Android dual-ABI lint/tests; and iOS simulator
+tests plus unsigned archive. The Windows leg also repeated the native
+local-address regression and retained one three-day NSIS smoke artifact only
+because the run was explicitly dispatched. Its exact installer was 10,091,782
+bytes with SHA-256
+`160eb97ecf554112f42768b4d83583e52e53938bb91e656cb96fbe60a7680675`.
+
+An exclusive machine-control campaign then installed that x86_64 NSIS package
+on the accepted Windows 11 appliance with no pre-existing RSTorrent install or
+profile. UI Automation observed the native **Choose a download folder** dialog
+owned by the RSTorrent window. The campaign proved:
+
+- cancel returned **Folder selection canceled** while **No download folder has
+  been chosen yet** remained and no root appeared;
+- choosing one prepared directory produced one root and **Default download
+  folder**;
+- target-native process termination and a new launch restored that same root
+  as default;
+- removing only the empty prepared directory made the root **Unavailable —
+  repair required**;
+- **Repair...** opened the same native panel, selected a second prepared
+  directory, retained one default root, and reported the repair; and
+- a second process termination/new launch restored the repaired root as
+  available and default.
+
+First launch of the unsigned listener build also displayed the Windows
+Security allow/cancel panel. The campaign selected Cancel, granted no broader
+firewall access, and the app plus picker remained usable. This is package and
+incoming-listener consent evidence, not a picker failure; Tactical `158` must
+characterize the signed candidate and preserve explicit guidance.
+
+Cleanup stopped and uninstalled RSTorrent, removed its seven-file isolated
+test profile, the two exact prepared directories, the transferred installer,
+and the local temporary artifact. The exclusive claim was released. Existing
+JSTorrent state and unrelated applications were not modified. One dialog,
+oneshot, selected path, and application-service mutation were live per
+operation; no new background task or durable owner was introduced.
+
+Installed Linux picker interaction remains unclaimed. The hosted Linux
+x86_64 AppImage test/package proves dependency and compilation coverage, not
+portal/desktop behavior. Ordinary close/quit/reopen, tray, and single-instance
+policy remain `DESK-004` rather than being inferred from the controlled
+process-restart evidence above.
+
 ## Validation Matrix
 
 | Layer | Required evidence |
@@ -186,7 +266,7 @@ does not change protocol, engine, hashing, scheduling, or payload-I/O state.
 | Shared UI | Typecheck and unit/component suite; no generated or ambient-path contract drift |
 | Local package | Tauri desktop build or package on the host where supported |
 | Hosted package | Credential-free Windows x86_64 and Linux x86_64 package legs pass; existing macOS legs remain green |
-| Installed Windows | Real parented picker choose/cancel, first default, close/process restart, persisted root restoration, cleanup |
+| Installed Windows | Real parented picker choose/cancel, first default, controlled process restart, persisted root restoration, cleanup |
 | Installed Linux | Optional supplemental evidence; absence remains explicit rather than inferred from Windows |
 
 The proportional local floor is:

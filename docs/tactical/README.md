@@ -80,9 +80,9 @@ that scope and its cleanup or compatibility rules explicitly.
 ## Current Tacticals
 
 - [`161-packaged-desktop-folder-picker.md`](161-packaged-desktop-folder-picker.md):
-  selected **Now** to provide a parented native Tauri picker on Windows and
-  packaged Linux, preserve the path-private root registry boundary, and prove
-  first-root persistence in an installed Windows package.
+  completed parented native Tauri picker for Windows and packaged Linux,
+  preserving the path-authority boundary and proving installed Windows
+  cancel/select/repair/restart behavior.
 - [`160-windows-local-network-address-selection.md`](160-windows-local-network-address-selection.md):
   completed dependency-free repair for concrete Windows local-network
   listener selection and its native presubmit regression.
@@ -743,9 +743,11 @@ that scope and its cleanup or compatibility rules explicitly.
   `desktop-v0.1.1` finalization, one installed macOS arm64 launch smoke, and
   exact macOS arm64 plus Linux arm64 `0.1.0`-to-`0.1.1`
   replacement/relaunch passes. Windows x86_64 replacement also passes under
-  an automatic-loopback profile, but fresh-default listener selection blocks
-  startup. Linux x86_64 remains open; installed Intel macOS testing is a
-  deliberate omission.
+  an automatic-loopback profile. Completed Tacticals `160` and `161` repair
+  fresh-default startup/root setup and pass an unsigned installed Windows
+  campaign. A signed update containing them, Windows firewall-consent
+  characterization, and Linux x86_64 remain open; installed Intel macOS
+  testing is a deliberate omission.
 - [`159-cross-platform-presubmit-ci.md`](159-cross-platform-presubmit-ci.md):
   complete; installs credential-free Rust, web, deterministic browser E2E,
   native desktop, Android, iOS, and short controlled-interoperability checks

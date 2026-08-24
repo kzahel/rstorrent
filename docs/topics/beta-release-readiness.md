@@ -12,12 +12,14 @@ arm64 launch smoke, and exact macOS arm64 and Linux arm64
 passes under an automatic-loopback profile, but fresh default startup is
 blocked in the public `0.1.0` and `0.1.1` builds by local-network address
 selection. Completed Tactical `160` repairs that defect on `main` and adds a
-passing native Windows regression; a newer signed package and exact installed
-proof remain open. The current public packages and `main` also lack a native
-Windows download-root picker; Tactical `161` is **Now** to close that blocker
-and make the packaged Linux picker self-contained before publication resumes.
-Linux x86_64 remains open and
-installed Intel macOS testing is deliberately omitted. The public product
+passing native Windows regression. Completed Tactical `161` adds the native
+parented picker on `main`, makes the packaged Linux picker self-contained, and
+passes an installed unsigned Windows fresh-profile choose/cancel/repair/
+restart campaign. A newer signed package, its clean installed update, and
+Linux x86_64 installed evidence remain open. First launch of the unsigned
+Windows listener also exposed a Windows Security consent prompt that the next
+signed candidate must characterize and document. Tactical `158` is **Now**.
+Installed Intel macOS testing is deliberately omitted. The public product
 name is RSTorrent for the foreseeable release line. A later production
 graduation is expected to retain JSTorrent's existing name, application
 identity, and updater trust root, with best-effort legacy-state migration
@@ -29,10 +31,9 @@ slice, cross-platform presubmit Tactical
 bounded Windows listener repair Tactical
 [`160`](../tactical/160-windows-local-network-address-selection.md) is
 complete. Packaged desktop picker Tactical
-[`161`](../tactical/161-packaged-desktop-folder-picker.md) is **Now**;
+[`161`](../tactical/161-packaged-desktop-folder-picker.md) is complete;
 desktop release/updater Tactical
-[`158`](../tactical/158-desktop-signed-packaging-and-updater.md) is paused at
-its next publication boundary.
+[`158`](../tactical/158-desktop-signed-packaging-and-updater.md) is **Now**.
 
 ## Scope And Release Definition
 
@@ -65,7 +66,7 @@ Store review, and mobile beta is not implied by a desktop tag:
 | Lane | Intended beta channel | Current release state |
 | --- | --- | --- |
 | macOS desktop | signed/notarized DMG plus in-app updates | public Developer ID-signed, notarized, and stapled app/DMG packages pass for arm64 and x86_64; an installed arm64 launch smoke and exact `0.1.0`-to-`0.1.1` replacement/relaunch pass; Intel installed testing is deliberately omitted |
-| Windows desktop | signed per-user NSIS plus in-app updates | public NSIS and MSI packages have valid expected-publisher Authenticode signatures; per-user NSIS replacement/relaunch passes under an automatic-loopback profile, but a fresh default profile cannot start because local-network address selection falls back to an invalid wildcard |
+| Windows desktop | signed per-user NSIS plus in-app updates | public NSIS and MSI packages have valid expected-publisher Authenticode signatures; public per-user NSIS replacement/relaunch passes under an automatic-loopback profile; an unsigned package from `main` passes fresh-default startup and native root setup after Tacticals `160` and `161`, while a newer signed clean-profile update remains open |
 | Linux desktop | AppImage plus in-app updates; DEB/RPM remain package-manager channels | public AppImage, DEB, and RPM packages plus updater artifacts pass for x86_64 and arm64; exact arm64 AppImage replacement/relaunch passes, while x86_64 installed evidence remains absent |
 | Android/ChromeOS | signed Android App Bundle through a closed testing channel | maintained Compose/in-process Rust/SAF app and hosted dual-ABI debug/test APK gates pass; release identity, signed AAB, emulator/store, and upgrade evidence absent |
 | iOS/iPadOS | signed TestFlight build | maintained SwiftUI app plus hosted simulator tests and unsigned device archive pass; distribution identity, signing, TestFlight, and upgrade evidence absent |
@@ -216,8 +217,10 @@ without corrupting or silently reinterpreting user state.
   Linux arm64 now passes the same exact public AppImage replacement/relaunch
   and updater-ID continuity check. Windows x86_64 passes replacement/relaunch
   only after selecting automatic-loopback because its fresh default listener
-  profile fails startup. Linux x86_64, the common cohort, reboot/relaunch, and
-  full uninstall policy remain open.
+  profile fails startup. An unsigned package from `main` now passes fresh-
+  profile startup, native picker setup/repair, and controlled process restart;
+  this is not signed older-to-newer update evidence. Linux x86_64, the common
+  cohort, reboot/relaunch, and full uninstall policy remain open.
 - [ ] **QA-004 — Establish a crash/support loop.** Users need an accessible
   version/build identity, copyable bounded diagnostics, known-issues link, and
   a report path. Automatic crash or analytics upload is not required for beta.
@@ -238,9 +241,11 @@ without corrupting or silently reinterpreting user state.
   The public arm64 DMG also passed one installed macOS launch and graceful quit,
   followed by exact `0.1.0`-to-`0.1.1` replacement/relaunch in isolated macOS
   and Linux arm64 appliances. Windows x86_64 replacement/relaunch also passes
-  under an automatic-loopback profile, but fresh-default startup does not.
-  Linux x86_64, uninstall, retained-state, and broader clean-machine evidence
-  remain required; Intel Mac installed testing is deliberately omitted.
+  under an automatic-loopback profile. An unsigned package from `main` now
+  passes fresh-default startup plus native root setup/repair on Windows, but a
+  signed update containing those repairs does not yet. Linux x86_64,
+  uninstall, retained-state, and broader clean-machine evidence remain
+  required; Intel Mac installed testing is deliberately omitted.
 - [x] **DESK-002 — Sign and notarize tagged builds.** Use the existing shared
   publisher Developer ID/notarization and Windows Azure signing setup. Missing
   credentials must fail a tagged build before publication; untagged CI must
@@ -261,11 +266,12 @@ without corrupting or silently reinterpreting user state.
   open-file/magnet handoff, platform close/quit/reopen behavior, crash restart,
   and whether tray/background operation is part of beta. File associations and
   tray are not automatically blockers if the limitation is explicit.
-- [ ] **DESK-005 — Qualify native root pickers.** Tactical `161` is **Now**.
-  It provides parented native Tauri behavior for Windows and packaged Linux,
-  retains macOS native behavior, and must prove Windows choose, cancel,
-  first-default, restart, and repair semantics. Installed Linux behavior
-  remains separately explicit if only its hosted package gate is available.
+- [ ] **DESK-005 — Qualify native root pickers.** Tactical `161` is complete.
+  Its parented native Tauri picker passes installed Windows choose, cancel,
+  first-default, unavailable-root repair, and controlled process-restart
+  semantics; hosted Linux x86_64 AppImage testing proves the packaged picker
+  dependency and build. Installed Linux desktop/portal behavior remains open,
+  so the cross-platform gate is deliberately not checked.
 - [ ] **DESK-006 — Fix fresh-default Windows listener startup.** The public
   `0.1.0` and `0.1.1` Windows builds select `127.0.0.1` from the multicast
   source-route probe, reject it for local-network listening, fall back to
@@ -273,6 +279,13 @@ without corrupting or silently reinterpreting user state.
   selector and wildcard fallback on `main`; prove the first signed package
   carrying it on a clean installed profile before calling the Windows lane
   runnable.
+- [ ] **DESK-007 — Qualify Windows firewall consent.** First launch of the
+  unsigned fresh-profile listener build displayed Windows Security Allow/
+  Cancel consent. Choosing Cancel granted no broader firewall access and left
+  the app plus root picker usable. The signed candidate must record whether
+  the prompt appears, define the supported private/public-network choice, and
+  document incoming-reachability consequences. Automation must not silently
+  grant a firewall rule.
 
 ### Desktop updater contract
 
@@ -431,7 +444,7 @@ no single optional BEP is mandatory.
    native desktop, Android, iOS, deterministic E2E, and short locked
    loopback-interoperability jobs pass; the repaired performance workflow also
    retains a successful manual smoke artifact.
-3. **Paused — Tactical `158`: desktop signed packaging and updater
+3. **Now — Tactical `158`: desktop signed packaging and updater
    adoption.**
    The product-owned `desktop-update-v1` client, signed package workflow,
    release validation, per-app key, public configuration, production route,
@@ -440,16 +453,17 @@ no single optional BEP is mandatory.
    `0.1.0`-to-`0.1.1` production-route updates are complete. Windows x86_64
    updater replacement also passes under an automatic-loopback profile.
    Completed Tactical `160` repairs fresh-default address selection on `main`;
-   publish a newer signed package, repeat clean Windows from the default, and
-   run Linux x86_64 after Tactical `161` closes first-root setup. Intel macOS
+   Completed Tactical `161` now proves unsigned installed Windows first-root
+   setup. Publish a newer signed package, repeat clean Windows from the
+   default, characterize firewall consent, and run Linux x86_64. Intel macOS
    installed testing is deliberately omitted.
 4. **Complete — Tactical `160`: Windows local-network address selection.**
    Wildcard binding remains, only a concrete eligible address is reported,
    the bounded Windows best-route fallback and native CI regression pass, and
    signed installed proof returns to Tactical `158`.
-5. **Now — Tactical `161`: packaged desktop folder picker.** Add the native
-   parented Windows picker, make packaged Linux self-contained, preserve the
-   stable root boundary, and prove installed Windows selection and restart.
+5. **Complete — Tactical `161`: packaged desktop folder picker.** The native
+   parented Windows picker, self-contained packaged Linux picker, stable root
+   boundary, and installed Windows cancel/select/repair/restart evidence pass.
 6. **Next — application identity and upgrade baseline.** Freeze package IDs,
    persistence compatibility, changelog, privacy/support, diagnostics export,
    and a repeatable cohort before any public installer.

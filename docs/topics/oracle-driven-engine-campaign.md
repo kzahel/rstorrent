@@ -130,11 +130,11 @@ completed the strict hybrid dual-swarm consumption/seeding vertical.
 Measurement-only Tactical
 [`153`](../tactical/153-wired-lan-utp-data-plane-scalability.md) remains ready,
 but completed release-blocking Windows listener repair Tactical
-[`160`](../tactical/160-windows-local-network-address-selection.md) is followed
-by packaged desktop folder-picker Tactical
-[`161`](../tactical/161-packaged-desktop-folder-picker.md) as the authoritative
-product **Now**. Release/updater Tactical `158` resumes after that bounded
-fresh-profile blocker closes.
+[`160`](../tactical/160-windows-local-network-address-selection.md) and
+packaged desktop folder-picker Tactical
+[`161`](../tactical/161-packaged-desktop-folder-picker.md) are complete. The
+authoritative product **Now** returns to release/updater Tactical
+[`158`](../tactical/158-desktop-signed-packaging-and-updater.md).
 The completed
 maximum-throughput storage campaign
 remains recorded in
@@ -507,9 +507,10 @@ Measurement-only wired-LAN Tactical
 [`153`](../tactical/153-wired-lan-utp-data-plane-scalability.md) remains ready;
 Windows listener repair Tactical
 [`160`](../tactical/160-windows-local-network-address-selection.md) is
-complete, and the product queue selects packaged desktop folder-picker
-Tactical [`161`](../tactical/161-packaged-desktop-folder-picker.md) before
-resuming release/updater Tactical `158`.**
+complete, packaged desktop folder-picker Tactical
+[`161`](../tactical/161-packaged-desktop-folder-picker.md) is also complete,
+and the product queue resumes release/updater Tactical
+[`158`](../tactical/158-desktop-signed-packaging-and-updater.md).**
 Tacticals `142`, `145`, and `150` complete the uTP performance campaign at the
 maintainer-selected evidence stop. Completed Tactical `143` installs the
 v1-preserving opaque torrent owner, typed protocol aliases, schema-19 fresh

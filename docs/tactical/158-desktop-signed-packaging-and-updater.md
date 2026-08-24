@@ -1,7 +1,6 @@
 # Tactical 158: Desktop Signed Packaging And Updater
 
-Status: **Implementation in progress; paused behind selected Tactical `161`
-(2026-08-24).**
+Status: **Implementation in progress and selected as Now (2026-08-24).**
 Maintainer direction selected RSTorrent as the foreseeable public product name
 and froze `com.jstorrent.rstorrent` as the desktop beta identifier on
 2026-08-23. Cross-platform presubmit Tactical `159` is complete. The distinct
@@ -19,10 +18,15 @@ default profile exposed a local-network listener-selection startup blocker.
 Completed Tactical `160` repairs that defect on `main` and adds a passing
 native Windows x86_64 regression, but no public signed package contains the
 repair yet. A newer signed package plus clean default-profile update proof and
-Linux x86_64 remain open. Tactical `161` first closes the native Windows and
-packaged Linux folder-picker gate so the next signed candidate can complete a
-fresh-profile download setup. Maintainer direction deliberately omits installed
-Intel macOS testing while retaining its automated signed package and route.
+Linux x86_64 remain open. Completed Tactical `161` closes the native Windows
+folder-picker blocker, makes the packaged Linux picker self-contained, passes
+the hosted desktop matrix, and proves installed Windows
+choose/cancel/repair/restart behavior in an unsigned package. The next signed
+candidate can now exercise a complete fresh-profile setup. Maintainer
+direction deliberately omits installed Intel macOS testing while retaining
+its automated signed package and route. That unsigned Windows campaign also
+exposed Windows Security listener consent; the next signed candidate must
+characterize and document it without automatically granting a firewall rule.
 
 Topics: `beta-release-readiness`, `client-surfaces`,
 `product-state-and-feedback`, `product-surfaces-and-migration`,
@@ -239,8 +243,10 @@ must not leave an updater task or partial product-state write owner alive.
 - updater checks never block application-service startup or torrent work;
 - automatic error presentation is non-modal and rate-bounded by the schedule;
 - secrets enter CI only through environment/secret mechanisms and are removed
-  with temporary keychains/files; and
-- draft release failure cannot fall through into publication.
+  with temporary keychains/files;
+- draft release failure cannot fall through into publication; and
+- a clean Windows campaign never grants a firewall exception implicitly;
+  record the signed candidate's prompt and supported network-scope guidance.
 
 ## Implementation Order And Gates
 
@@ -399,6 +405,15 @@ relaunch against the exact public AppImages. Windows x86_64 proves the NSIS
 updater under an automatic-loopback profile but exposes a fresh-default
 listener-selection startup blocker. Linux x86_64 remains an external gate;
 installed macOS x86_64 testing is deliberately omitted.
+
+Completed Tactical `161` subsequently passes the complete credential-free
+matrix and an unsigned installed Windows fresh-profile campaign. Native picker
+cancel/select/default, controlled restart, unavailable-root repair under the
+same stable ID, and repaired restart pass. First launch displayed Windows
+Security listener consent; selecting Cancel left the app and picker usable but
+proved no incoming reachability. The first signed package carrying Tacticals
+`160` and `161`, its exact clean-profile update, firewall-consent guidance, and
+installed Linux x86_64 campaign remain this tactical's next boundary.
 
 ## Escalation Contract
 

@@ -16,20 +16,22 @@ preference, add, repair, and bounded removal controls. Store, adapter, React,
 and headless-browser evidence passes. Linux Zenity WebUI evidence covers
 choose/cancel, first default, exact per-torrent roots, restart, repair cancel,
 and unavailable paths; the same command/persistence behaviors pass through
-Tauri, but its current WebKitGTK production bundle fails before rendering the
-live React surface. Tactical `063` adds the checked-by-default start-content
-option, metadata-only intake with no payload artifact, and live path-backed
-file selection in the Files tab. A manual macOS chooser/restart smoke also
+the local WebUI gateway. Completed Tactical
+[`161`](../tactical/161-packaged-desktop-folder-picker.md) gives packaged Tauri
+a parented native picker without a Zenity/KDialog runtime dependency. Its
+focused tests and installed Windows campaign pass cancel, first default,
+restart, unavailable-root repair under the same stable ID, and repaired
+restart. Hosted Linux x86_64 AppImage testing passes, but installed Linux
+desktop/portal interaction remains unclaimed. Tactical `063` adds the
+checked-by-default start-content option, metadata-only intake with no payload
+artifact, and live path-backed file selection in the Files tab. A manual
+macOS chooser/restart smoke also
 remains required because Computer Use cannot attach to the transient system
 folder panel. Tactical `076` lets a headless private host install one explicit
 configured payload root while making the native picker unavailable; it does
 not add ambient remote path authority or change durable root identity.
-Selected Tactical
-[`161`](../tactical/161-packaged-desktop-folder-picker.md) now owns the missing
-native Windows picker, packaged Linux self-contained picker, and installed
-Windows persistence evidence. Until it lands, Windows remains unimplemented.
-Android already proves one user-selected
-persisted SAF root but not general multi-root management. The maintained iOS
+Android already proves one user-selected persisted SAF root but not general
+multi-root management. The maintained iOS
 product now supports app Documents plus distinct qualified selected roots.
 Tactical
 [`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md)
@@ -268,18 +270,14 @@ path may be sufficient for the initial unsandboxed desktop build, but the root
 model must permit a future platform-specific persistent capability without
 changing portable commands or torrent records.
 
-The initial Linux adapter invokes Zenity, then KDialog when Zenity is absent,
-behind the same `rstorrent-platform` operation used by Tauri and the local
-WebUI gateway. It does not add a GUI toolkit, portal, or dialog dependency. If
-neither helper exists, the operation returns an actionable unavailable error
-and performs no root or torrent mutation. The shared UI currently learns that
-capability only when a choose attempt fails. A packaged fallback or proactive
-capability advertisement remains follow-up work; it must not turn into a path
-field in React or an implicit app-data root.
-
-Windows should use its native folder picker and path capability while
-preserving the same first-root, default, repair, and per-torrent binding
-semantics.
+The local WebUI gateway's Linux adapter invokes Zenity, then KDialog when
+Zenity is absent, behind its `rstorrent-platform` operation. Packaged Tauri
+instead uses `tauri-plugin-dialog` from Rust, with the invoking webview window
+as parent. The selected native `PathBuf` goes directly to the application
+service; JavaScript receives no dialog permission or path authority. Installed
+Windows evidence proves the common first-root, default, repair, and restart
+semantics. Installed Linux picker interaction remains a release gate rather
+than being inferred from its hosted package build.
 
 ### Android and ChromeOS Android
 

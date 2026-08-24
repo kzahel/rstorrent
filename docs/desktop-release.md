@@ -97,6 +97,20 @@ for all five default updater targets after publication. The installed macOS
 arm64 client then completed the real replacement/relaunch and reported the
 new exact version/build; the other four installed targets remain open.
 
+## Windows First-Launch Consent
+
+The first launch of an unsigned fresh-profile Windows package from `main`
+displayed Windows Security Allow/Cancel consent for the incoming listener.
+Choosing Cancel granted no broader firewall access and left the application
+and native download-folder picker usable; it did not prove incoming
+reachability.
+
+For each signed Windows release candidate, record whether this prompt appears
+on a clean profile and describe the supported private/public-network choice in
+the release evidence and user-facing known limitations. Test automation must
+not select Allow or create a firewall rule implicitly. Keep firewall consent
+distinct from application startup, root-picker, and updater success.
+
 After publishing, verify at least one exact current-version key and all five
 older-version keys. Do not treat metadata checks as installed-update evidence:
 the beta gate also requires an older installed signed build to download,

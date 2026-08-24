@@ -601,12 +601,15 @@ remote exposure, and Android streaming remain independent product decisions.
   exact macOS arm64 and Linux arm64 replacement/relaunch campaigns with
   updater-ID continuity pass. Windows x86_64 replacement/relaunch passes under
   an automatic-loopback profile, but fresh-default local-network listener
-  selection prevents startup. Linux x86_64 remains unproven and installed
-  Intel macOS testing is deliberately omitted. File associations, production
-  tray policy, and complete cross-platform window/platform-capability evidence
-  also remain open. Selected Tactical `161` owns the missing native Windows
-  root picker, packaged Linux picker dependency, and installed Windows root
-  persistence evidence. The release gates live in
+  selection prevents startup in those public builds. Completed Tacticals `160`
+  and `161` repair that startup path and add the parented native picker on
+  `main`; an unsigned installed Windows campaign passes fresh-profile cancel,
+  selection, default persistence, unavailable-root repair, and controlled
+  process restart. The next signed update, installed Linux x86_64 picker/update
+  evidence, and Windows firewall-consent characterization remain open;
+  installed Intel macOS testing is deliberately omitted. File associations,
+  production tray policy, and complete cross-platform window/platform-
+  capability evidence also remain open. The release gates live in
   [`beta-release-readiness.md`](beta-release-readiness.md).
 - The maintained Android product module now lives at `clients/android`; the
   unreleased `org.rstorrent.bootstrap` identity and retained diagnostic service

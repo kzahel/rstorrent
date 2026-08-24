@@ -26,17 +26,19 @@ under `docs/topics/`.
 ## Current Tactical State
 
 The authoritative **Now** is
-[`161-packaged-desktop-folder-picker.md`](docs/tactical/161-packaged-desktop-folder-picker.md).
-It owns the native parented Tauri folder picker, Windows first-root setup,
-packaged Linux picker dependency, and installed Windows persistence evidence.
-Desktop release/updater Tactical `158` is paused at its next publication
-boundary and resumes when `161` completes. Completed Tactical `159` supplies
+[`158-desktop-signed-packaging-and-updater.md`](docs/tactical/158-desktop-signed-packaging-and-updater.md).
+It owns the first signed desktop package containing completed Windows startup
+repair `160` and native folder-picker `161`, followed by clean installed
+update evidence. Completed Tactical `159` supplies
 credential-free Rust/web, deterministic browser E2E, native desktop package,
 Android dual-ABI, iOS simulator/archive, and short loopback-interoperability
 presubmit signal.
 Completed Tactical `160` repairs Windows fresh-profile local-network address
 selection and adds a native Windows regression; Tactical `158` owns the first
 signed package carrying both repairs and the installed update repetition.
+Completed Tactical `161` adds the parented native Tauri picker, hosted
+Windows/Linux package gates, and installed Windows cancel/select/repair/restart
+evidence.
 Completed Tactical `157` established the release ledger, graduated the Android
 client to `clients/android`, and added provisional packaging artwork. The
 durable release backlog and platform gates live in
