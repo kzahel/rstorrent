@@ -69,6 +69,15 @@ test("rejects updater restart that bypasses joined native shutdown", () => {
   );
 });
 
+test("rejects a release desktop binary with a Windows console", () => {
+  const fixture = repositoryFixture();
+  fixture.desktopMain = "fn main() {}";
+  assert.throws(
+    () => validateDesktopReleaseConfiguration(fixture),
+    /release desktop binary must use the Windows GUI subsystem/,
+  );
+});
+
 function repositoryFixture() {
   return {
     packageJson: readJson("clients/web/package.json"),
@@ -76,6 +85,10 @@ function repositoryFixture() {
     developmentTauri: readJson("clients/desktop/src-tauri/tauri.dev.conf.json"),
     cargo: fs.readFileSync(path.join(root, "clients/desktop/src-tauri/Cargo.toml"), "utf8"),
     capability: readJson("clients/desktop/src-tauri/capabilities/default.json"),
+    desktopMain: fs.readFileSync(
+      path.join(root, "clients/desktop/src-tauri/src/main.rs"),
+      "utf8",
+    ),
     desktopSource: fs.readFileSync(
       path.join(root, "clients/desktop/src-tauri/src/lib.rs"),
       "utf8",

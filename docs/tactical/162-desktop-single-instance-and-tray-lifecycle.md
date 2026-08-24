@@ -114,6 +114,8 @@ required.
 - The tray and taskbar/window icon use committed package artwork. Absence or a
   generic platform icon is a release defect; this slice adds the narrowest
   safe platform fix supported by installed evidence.
+- Release Windows packages use the GUI subsystem and must not create a console
+  or terminal window as a side effect of ordinary launch.
 - No updater key/route, package identifier, profile schema, torrent record,
   storage locator, engine behavior, or generated application contract changes.
 
@@ -201,6 +203,8 @@ No reference source, fixture, artwork, or persisted format is imported.
   and directory-at-file-path inputs recover conservatively without panic.
 - Tray construction failure fails startup visibly rather than silently
   allowing a background policy with no way to restore or Quit.
+- An installed Windows launch exposes exactly the product window and native
+  shell surfaces; an accompanying console or terminal is a release defect.
 - A manual update request before the React listener is attached is retained as
   one bounded pending request or prevented by initialization ordering.
 - Updater unavailable/error/up-to-date/available outcomes remain visible in
