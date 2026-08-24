@@ -42,9 +42,9 @@ complete; signed release Tactical
 [`158`](../tactical/158-desktop-signed-packaging-and-updater.md) is **Now**.
 Maintainer direction on 2026-08-24 promotes OS-level `magnet:` and local
 `.torrent` activation from a post-beta deferral to a beta usability gap;
-planned Tactical
+implemented Tactical
 [`163`](../tactical/163-desktop-external-torrent-intake.md) is the first
-**Next** slice.
+**Next** slice while installed Windows/macOS acceptance remains open.
 
 ## Scope And Release Definition
 
@@ -301,12 +301,14 @@ without corrupting or silently reinterpreting user state.
   the prompt appears, define the supported private/public-network choice, and
   document incoming-reachability consequences. Automation must not silently
   grant a firewall rule.
-- [ ] **DESK-008 — Handle external magnets and torrent files.** Planned
-  Tactical `163` registers the current RSTorrent packages for `magnet:` and
+- [ ] **DESK-008 — Handle external magnets and torrent files.** Tactical
+  `163` now registers the current RSTorrent packages for `magnet:` and
   local `.torrent` activation, forwards cold and warm input through the
   existing single desktop owner, reuses root/start options, and requires
-  installed macOS arm64, Windows x86_64, and Linux arm64 proof. It does not
-  adopt JSTorrent identity, extension routing, or remote `.torrent` URLs.
+  installed macOS arm64, Windows x86_64, and Linux arm64 proof. Deterministic
+  and package gates plus the installed Linux arm64 campaign pass; Windows and
+  macOS installed Add-flow acceptance remain open. It does not adopt JSTorrent
+  identity, extension routing, or remote `.torrent` URLs.
 
 ### Desktop updater contract
 
@@ -484,11 +486,11 @@ no single optional BEP is mandatory.
    setup. Publish a newer signed package, repeat clean Windows from the
    default, characterize firewall consent, and run Linux x86_64. Intel macOS
    installed testing is deliberately omitted.
-5. **Next — Tactical `163`: desktop external torrent intake.** Register
-   RSTorrent for `magnet:` and local `.torrent` OS activation, retain one
-   process across cold/visible/tray-hidden delivery, reuse the existing Add
-   flow, and prove installed macOS arm64, Windows x86_64, and Linux arm64
-   behavior with hostile-input bounds.
+5. **Next — Tactical `163`: finish desktop external torrent intake
+   acceptance.** The bounded shell/UI implementation, package gates, and
+   installed Linux arm64 cold/visible/tray-hidden/cancel/failure/duplicate/
+   Quit campaign pass. Finish installed Windows x86_64 and macOS arm64 Add-flow
+   proof, then require the exact hosted package run.
 6. **Complete — Tactical `160`: Windows local-network address selection.**
    Wildcard binding remains, only a concrete eligible address is reported,
    the bounded Windows best-route fallback and native CI regression pass, and

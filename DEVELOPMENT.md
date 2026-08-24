@@ -42,6 +42,11 @@ signed package carrying both repairs and the installed update repetition.
 Completed Tactical `161` adds the parented native Tauri picker, hosted
 Windows/Linux package gates, and installed Windows cancel/select/repair/restart
 evidence.
+Implemented Tactical `163` adds bounded installed `magnet:` and local
+`.torrent` activation, one opaque FIFO intake owner, the existing Add workflow,
+and actual macOS/Windows/Linux package assertions. Deterministic and Linux
+arm64 installed evidence pass; Windows x86_64 and macOS arm64 installed
+Add-flow acceptance remain open.
 Completed Tactical `157` established the release ledger, graduated the Android
 client to `clients/android`, and added provisional packaging artwork. The
 durable release backlog and platform gates live in
@@ -234,6 +239,28 @@ so `Ctrl+C` stops it.
 Signed packaging, updater rehearsals, version bumps, and tagged publication
 use the exact commands and validation gates in
 [`docs/desktop-release.md`](docs/desktop-release.md).
+
+Validate desktop activation wiring and generated package metadata with:
+
+```bash
+node scripts/validate-desktop-release.mjs
+node --test scripts/validate-desktop-release.test.mjs \
+  scripts/validate-desktop-package.test.mjs
+node scripts/validate-desktop-package.mjs --mac-app PATH/TO/RSTorrent.app
+node scripts/validate-desktop-package.mjs \
+  --linux-desktop PATH/TO/com.jstorrent.rstorrent.desktop
+node scripts/validate-desktop-package.mjs \
+  --windows-registry-json PATH/TO/installed-associations.json
+```
+
+The Windows JSON is produced only after a silent per-user NSIS install and
+must contain the installed executable, private torrent ProgID and command,
+and magnet protocol marker/command. Installed acceptance invokes the OS
+handler rather than launching the executable with a test-only shortcut, uses
+controlled non-public magnets and tiny independently generated torrent files,
+records process/catalog identity before and after warm activation, and restores
+the inherited OS defaults and machine state afterward. Never print or persist
+the complete magnet or source path in product logs.
 
 ## Launching The Live Web UI
 

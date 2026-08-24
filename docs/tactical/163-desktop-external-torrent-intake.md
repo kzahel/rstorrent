@@ -1,6 +1,7 @@
 # Tactical 163: Desktop External Torrent Intake
 
-Status: **Planned — Next (2026-08-24).** Desktop release/updater Tactical
+Status: **Implemented — installed acceptance in progress (2026-08-24).**
+Desktop release/updater Tactical
 [`158`](158-desktop-signed-packaging-and-updater.md) remains the sole **Now**.
 
 Topics: `beta-release-readiness`, `client-surfaces`,
@@ -360,4 +361,67 @@ Completion updates:
 
 ## Completion Record
 
-Not started.
+Implementation landed in four reviewable commits:
+
+- `fa8eada` records this bounded plan and its release-readiness ownership;
+- `8bda4e1` adds the pure, bounded activation parser/queue, deep-link and
+  single-instance adapters, shared byte-add owner, and deterministic Rust
+  coverage;
+- `0770433` subscribes before pulling pending activation state and routes one
+  opaque item at a time through the existing React Add/root/options workflow;
+  and
+- `aa396ae` adds reviewed macOS/Windows/Linux association metadata, actual
+  package validators, and CI/release package gates.
+
+The landed shell accepts only bounded `magnet:` or local `.torrent` input,
+keeps paths and complete magnets out of the frontend contract and diagnostics,
+restores the existing window, and retains FIFO retry/cancel semantics in one
+eight-item owner. macOS uses its URL/open event lanes, Windows uses correctly
+quoted private NSIS protocol/file classes, and Linux packages forward `%U`
+through the reviewed desktop template. Browser behavior remains unchanged.
+
+Local validation passed on 2026-08-24:
+
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace -- -D warnings`;
+- `cargo test --workspace`;
+- generated TypeScript regeneration with a clean diff;
+- web typecheck and unit tests: 273 passed, 2 deliberately skipped;
+- production web build and CSP inspection: seven JavaScript bundles;
+- Playwright: 33 passed, 12 opt-in cases skipped;
+- package/release validator tests: 17 passed; and
+- `actionlint` 1.7.9 over the hosted workflows.
+
+An unsigned macOS arm64 `0.1.1` application bundle was built locally and its
+generated `Info.plist` passed the checked-in package validator. A local
+LaunchServices cold activation started that installed bundle as one process,
+but the dedicated macOS testbed had no guest-administration or logged-in Aqua
+route and Computer Use refused before inspecting the Add dialog. The app,
+fresh profile, and temporary installation were removed; prior JSTorrent
+`.torrent` and RSTorrent `magnet:` handler choices were unchanged. This is
+partial launch evidence, not installed macOS acceptance.
+
+The Linux arm64 installed AppImage campaign passed on the disposable desktop:
+
+- package `0.1.1`, arm64, 89,762,312 bytes, SHA-256
+  `a235abe335e9648c2129b6d3455a593d8b9dee550a2a92e591d96c96f37a903b`;
+- extracted desktop metadata contained both required MIME handlers and one
+  `%U` forwarding lane;
+- cold, visible, and tray-hidden `xdg-open` activations retained PID 16323,
+  restored the same window, and produced exactly one catalog owner each;
+- cancellation left four rows and the following controlled `.torrent`
+  advanced the queue to five;
+- inaccessible, oversized, and malformed files left the five-row catalog and
+  application owner stable; a repeated valid source remained five rows;
+- semantic window close left the process alive, while tray **Quit RSTorrent**
+  removed the accessible application and PID; and
+- the campaign restored inherited `jstorrent.desktop` and
+  `jstorrent-desktop-handler.desktop` defaults, removed only its app/profile/
+  fixture state, powered the caller-started-off VM down, and released its
+  exclusive claim.
+
+Completion still requires installed Windows x86_64 acceptance, installed
+macOS arm64 Add-flow acceptance on an operational test route, the exact hosted
+package run after an authorized push, final topic reconciliation, and a green
+hosted run. Windows remained under another valid exclusive claim at this
+checkpoint; it was not stolen.

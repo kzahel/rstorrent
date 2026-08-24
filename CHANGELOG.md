@@ -5,6 +5,10 @@ three-component versions, and desktop release tags use `desktop-v<version>`.
 
 ## [Unreleased]
 
+- Register installed desktop packages for bounded `magnet:` and local
+  `.torrent` activation, restore the existing window, and reuse the ordinary
+  download-root and Add-options workflow without exposing source paths to the
+  webview contract.
 - Enforce one desktop product lifetime with default-on close-to-tray,
   persisted **Run in Background**, visible manual update checks, and joined
   close/Quit/restart shutdown.

@@ -616,10 +616,13 @@ remote exposure, and Android streaming remain independent product decisions.
   `162` adds the selected production tray policy, one desktop instance,
   default-on persisted background operation, visible tray update checking,
   joined shutdown/restart, native Linux arm64 packaging, and installed Windows
-  x86_64/Linux arm64 lifecycle/icon evidence. Planned Tactical
-  [`163`](../tactical/163-desktop-external-torrent-intake.md) now owns bounded
+  x86_64/Linux arm64 lifecycle/icon evidence. Implemented Tactical
+  [`163`](../tactical/163-desktop-external-torrent-intake.md) adds bounded
   installed `magnet:` and local `.torrent` association/handoff through that
-  same owner and the existing Add flow. Complete cross-platform
+  same owner and the existing Add flow. Deterministic Rust/React and package
+  gates pass, as does installed Linux arm64 cold/visible/hidden/cancel/failure/
+  duplicate/Quit behavior. Installed Windows x86_64 and macOS arm64 Add-flow
+  acceptance remain open. Complete cross-platform
   window/platform-capability evidence remains open. The release gates live in
   [`beta-release-readiness.md`](beta-release-readiness.md).
 - The maintained Android product module now lives at `clients/android`; the

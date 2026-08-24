@@ -15,9 +15,10 @@ single-instance, tray, joined desktop lifecycle, release-only Windows GUI
 launch, and native Linux arm64 package coverage with installed Windows
 x86_64/Linux arm64 evidence. Tactical `158` has resumed as the single
 **Now**. Maintainer direction on 2026-08-24 makes installed `magnet:` and local
-`.torrent` activation a beta usability requirement; planned Tactical `163` is
-the first **Next** slice and retains Tactical `158` as the current release
-owner.
+`.torrent` activation a beta usability requirement. Tactical `163` now has its
+bounded implementation, deterministic/package gates, and installed Linux
+arm64 campaign; Windows x86_64 and macOS arm64 Add-flow acceptance remain the
+first **Next** work. Tactical `158` remains the current release owner.
 
 The updater tactical's client,
 production route, five-target signed hosted rehearsal, public `0.1.0` release,
@@ -515,12 +516,11 @@ exactly.
 
 ### Next
 
-- Implement desktop external torrent intake Tactical
-  [`163`](../tactical/163-desktop-external-torrent-intake.md). Register the
-  installed macOS, Windows, and Linux packages for `magnet:` and local
-  `.torrent` activation; route cold, visible, and tray-hidden input through the
-  existing single owner and Add-options flow; and prove bounded installed
-  behavior without adopting JSTorrent identity or extension routing.
+- Finish desktop external torrent intake Tactical
+  [`163`](../tactical/163-desktop-external-torrent-intake.md). The bounded
+  implementation, package gates, and installed Linux arm64 campaign pass.
+  Complete Windows x86_64 and macOS arm64 Add-flow acceptance and the exact
+  hosted run without adopting JSTorrent identity or extension routing.
 
 - Freeze the application identities, first supported persistence baseline,
   changelog, privacy/support presentation, and repeatable beta torrent cohort
