@@ -133,8 +133,9 @@ but completed release-blocking Windows listener repair Tactical
 [`160`](../tactical/160-windows-local-network-address-selection.md) and
 packaged desktop folder-picker Tactical
 [`161`](../tactical/161-packaged-desktop-folder-picker.md) are complete. The
-authoritative product **Now** returns to release/updater Tactical
-[`158`](../tactical/158-desktop-signed-packaging-and-updater.md).
+authoritative product **Now** is bounded desktop lifecycle Tactical
+[`162`](../tactical/162-desktop-single-instance-and-tray-lifecycle.md), with
+release/updater Tactical `158` next.
 The completed
 maximum-throughput storage campaign
 remains recorded in
@@ -509,8 +510,9 @@ Windows listener repair Tactical
 [`160`](../tactical/160-windows-local-network-address-selection.md) is
 complete, packaged desktop folder-picker Tactical
 [`161`](../tactical/161-packaged-desktop-folder-picker.md) is also complete,
-and the product queue resumes release/updater Tactical
-[`158`](../tactical/158-desktop-signed-packaging-and-updater.md).**
+and the product queue selects desktop lifecycle Tactical
+[`162`](../tactical/162-desktop-single-instance-and-tray-lifecycle.md), with
+release/updater Tactical `158` next.**
 Tacticals `142`, `145`, and `150` complete the uTP performance campaign at the
 maintainer-selected evidence stop. Completed Tactical `143` installs the
 v1-preserving opaque torrent owner, typed protocol aliases, schema-19 fresh

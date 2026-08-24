@@ -737,7 +737,8 @@ that scope and its cleanup or compatibility rules explicitly.
   art/metadata, and reconciles status before signed updater and cross-platform
   CI slices.
 - [`158-desktop-signed-packaging-and-updater.md`](158-desktop-signed-packaging-and-updater.md):
-  implementation in progress and selected as Now; its Tauri-only
+  implementation in progress and paused behind selected lifecycle Tactical
+  `162`; its Tauri-only
   `desktop-update-v1` UI/state boundary, per-app identity/key/route, hosted
   signed five-target package rehearsal, public `desktop-v0.1.0` and
   `desktop-v0.1.1` finalization, one installed macOS arm64 launch smoke, and
@@ -752,6 +753,11 @@ that scope and its cleanup or compatibility rules explicitly.
   complete; installs credential-free Rust, web, deterministic browser E2E,
   native desktop, Android, iOS, and short controlled-interoperability checks
   proven across the hosted matrix.
+- [`162-desktop-single-instance-and-tray-lifecycle.md`](162-desktop-single-instance-and-tray-lifecycle.md):
+  implementation in progress and selected as Now; adds one packaged desktop
+  lifetime, default-on close-to-tray behavior, persisted background policy,
+  visible tray updater action, joined Quit, and installed Windows/Linux
+  lifecycle evidence before signed release work resumes.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

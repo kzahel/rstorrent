@@ -1,6 +1,7 @@
 # Tactical 158: Desktop Signed Packaging And Updater
 
-Status: **Implementation in progress and selected as Now (2026-08-24).**
+Status: **Implementation in progress; paused behind selected Tactical `162`
+(2026-08-24).**
 Maintainer direction selected RSTorrent as the foreseeable public product name
 and froze `com.jstorrent.rstorrent` as the desktop beta identifier on
 2026-08-23. Cross-platform presubmit Tactical `159` is complete. The distinct
@@ -27,6 +28,9 @@ direction deliberately omits installed Intel macOS testing while retaining
 its automated signed package and route. That unsigned Windows campaign also
 exposed Windows Security listener consent; the next signed candidate must
 characterize and document it without automatically granting a firewall rule.
+Bounded Tactical `162` first closes single-instance, tray/background, joined
+Quit, and installed Windows/Linux lifecycle behavior so the next signed
+candidate carries a reachable and cleanly terminating desktop shell.
 
 Topics: `beta-release-readiness`, `client-surfaces`,
 `product-state-and-feedback`, `product-surfaces-and-migration`,

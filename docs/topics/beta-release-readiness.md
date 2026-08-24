@@ -18,7 +18,9 @@ passes an installed unsigned Windows fresh-profile choose/cancel/repair/
 restart campaign. A newer signed package, its clean installed update, and
 Linux x86_64 installed evidence remain open. First launch of the unsigned
 Windows listener also exposed a Windows Security consent prompt that the next
-signed candidate must characterize and document. Tactical `158` is **Now**.
+signed candidate must characterize and document. Tactical `162` is **Now**
+for the bounded desktop single-instance/tray lifecycle gate; `158` resumes
+after it.
 Installed Intel macOS testing is deliberately omitted. The public product
 name is RSTorrent for the foreseeable release line. A later production
 graduation is expected to retain JSTorrent's existing name, application
@@ -32,8 +34,9 @@ bounded Windows listener repair Tactical
 [`160`](../tactical/160-windows-local-network-address-selection.md) is
 complete. Packaged desktop picker Tactical
 [`161`](../tactical/161-packaged-desktop-folder-picker.md) is complete;
-desktop release/updater Tactical
-[`158`](../tactical/158-desktop-signed-packaging-and-updater.md) is **Now**.
+desktop lifecycle Tactical
+[`162`](../tactical/162-desktop-single-instance-and-tray-lifecycle.md) is
+**Now**.
 
 ## Scope And Release Definition
 
@@ -264,8 +267,11 @@ without corrupting or silently reinterpreting user state.
   managers and show a manual-update path.
 - [ ] **DESK-004 — Finish lifecycle integration.** Decide single-instance,
   open-file/magnet handoff, platform close/quit/reopen behavior, crash restart,
-  and whether tray/background operation is part of beta. File associations and
-  tray are not automatically blockers if the limitation is explicit.
+  and whether tray/background operation is part of beta. Tactical `162`
+  selects single-instance, default-on tray/background operation, persisted
+  close policy, and joined Quit for the beta; installed Windows/Linux evidence
+  is in progress. File/magnet handoff, autostart, and crash restart remain
+  later explicit decisions.
 - [ ] **DESK-005 — Qualify native root pickers.** Tactical `161` is complete.
   Its parented native Tauri picker passes installed Windows choose, cancel,
   first-default, unavailable-root repair, and controlled process-restart
@@ -444,8 +450,13 @@ no single optional BEP is mandatory.
    native desktop, Android, iOS, deterministic E2E, and short locked
    loopback-interoperability jobs pass; the repaired performance workflow also
    retains a successful manual smoke artifact.
-3. **Now — Tactical `158`: desktop signed packaging and updater
-   adoption.**
+3. **Now — Tactical `162`: desktop single-instance and tray lifecycle.**
+   Implement one application owner, default-on persisted background policy,
+   close-to-tray, visible manual updater action, joined Quit, and installed
+   Windows/Linux proof. File/magnet handoff and autostart stay outside this
+   bounded slice.
+4. **Next — Tactical `158`: desktop signed packaging and updater
+   adoption resumes.**
    The product-owned `desktop-update-v1` client, signed package workflow,
    release validation, per-app key, public configuration, production route,
    five-platform hosted rehearsal, two tagged publications, one installed
@@ -457,20 +468,20 @@ no single optional BEP is mandatory.
    setup. Publish a newer signed package, repeat clean Windows from the
    default, characterize firewall consent, and run Linux x86_64. Intel macOS
    installed testing is deliberately omitted.
-4. **Complete — Tactical `160`: Windows local-network address selection.**
+5. **Complete — Tactical `160`: Windows local-network address selection.**
    Wildcard binding remains, only a concrete eligible address is reported,
    the bounded Windows best-route fallback and native CI regression pass, and
    signed installed proof returns to Tactical `158`.
-5. **Complete — Tactical `161`: packaged desktop folder picker.** The native
+6. **Complete — Tactical `161`: packaged desktop folder picker.** The native
    parented Windows picker, self-contained packaged Linux picker, stable root
    boundary, and installed Windows cancel/select/repair/restart evidence pass.
-6. **Next — application identity and upgrade baseline.** Freeze package IDs,
+7. **Next — application identity and upgrade baseline.** Freeze package IDs,
    persistence compatibility, changelog, privacy/support, diagnostics export,
    and a repeatable cohort before any public installer.
-7. **Later — platform release campaigns.** Close desktop, Android closed-
+8. **Later — platform release campaigns.** Close desktop, Android closed-
    testing, and iOS TestFlight gates independently with real older-to-newer
    installed evidence.
-8. **Later — Tactical `153`.** Wired-LAN uTP scalability remains valuable
+9. **Later — Tactical `153`.** Wired-LAN uTP scalability remains valuable
    engine evidence but no longer displaces the explicit beta-readiness
    campaign.
 

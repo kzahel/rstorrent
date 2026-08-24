@@ -26,10 +26,10 @@ under `docs/topics/`.
 ## Current Tactical State
 
 The authoritative **Now** is
-[`158-desktop-signed-packaging-and-updater.md`](docs/tactical/158-desktop-signed-packaging-and-updater.md).
-It owns the first signed desktop package containing completed Windows startup
-repair `160` and native folder-picker `161`, followed by clean installed
-update evidence. Completed Tactical `159` supplies
+[`162-desktop-single-instance-and-tray-lifecycle.md`](docs/tactical/162-desktop-single-instance-and-tray-lifecycle.md).
+It owns one packaged desktop instance, close-to-tray policy, persisted
+background intent, joined Quit, and installed Windows/Linux evidence before
+signed release Tactical `158` resumes. Completed Tactical `159` supplies
 credential-free Rust/web, deterministic browser E2E, native desktop package,
 Android dual-ABI, iOS simulator/archive, and short loopback-interoperability
 presubmit signal.
