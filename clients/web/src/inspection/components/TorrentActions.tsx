@@ -1,15 +1,18 @@
 import {
+  useEffect,
   useId,
   useRef,
   useState,
   type FormEvent,
 } from "react";
 
+import type { DesktopExternalActivation } from "../../desktop-external-intake";
 import {
   useInspectionCommand,
   useInspectionDispatch,
   useInspectionStore,
 } from "../context";
+import { useDesktopExternalIntake } from "../desktop-external-intake-context";
 import type { DownloadRoot } from "../model";
 import type { TestTorrentShortcut } from "../testTorrents";
 import {
@@ -34,7 +37,12 @@ interface PendingTorrentFileAdd {
   readonly file: File;
 }
 
-type PendingAdd = PendingMagnetAdd | PendingTorrentFileAdd;
+interface PendingExternalAdd {
+  readonly type: "external";
+  readonly activation: DesktopExternalActivation;
+}
+
+type PendingAdd = PendingMagnetAdd | PendingTorrentFileAdd | PendingExternalAdd;
 
 export function TorrentActions() {
   const demo = useInspectionStore((state) => state.demo);
@@ -42,6 +50,8 @@ export function TorrentActions() {
   const dispatch = useInspectionDispatch();
   const execute = useInspectionCommand();
   const revealTorrent = useInspectionStore((state) => state.revealTorrent);
+  const { intake: externalIntake, snapshot: externalSnapshot } =
+    useDesktopExternalIntake();
   const {
     status,
     pendingAction,
@@ -136,6 +146,18 @@ export function TorrentActions() {
         startContent,
       });
     }
+    if (source.type === "external") {
+      try {
+        return await execute({
+          type: "add_external_torrent",
+          activationId: source.activation.id,
+          storageRoot,
+          startContent,
+        });
+      } finally {
+        await externalIntake?.synchronize();
+      }
+    }
     const bytes = await readTorrentFile(source.file);
     return execute({
       type: "add_torrent_bytes",
@@ -223,11 +245,96 @@ export function TorrentActions() {
       }
       setPendingAdd(null);
       setStatus(message);
+    } catch (error) {
+      if (pendingAdd.type === "external") {
+        setStatus(error instanceof Error ? error.message : String(error));
+      }
+      throw error;
     } finally {
       addingRef.current = false;
       setAdding(false);
     }
   };
+
+  const cancelPendingAdd = () => {
+    const source = pendingAdd;
+    if (source === null) return;
+    if (source.type !== "external" || externalIntake === null) {
+      setPendingAdd(null);
+      return;
+    }
+    if (addingRef.current) return;
+    addingRef.current = true;
+    setAdding(true);
+    void externalIntake
+      .cancel(source.activation.id)
+      .then(() => setPendingAdd(null))
+      .catch((error: unknown) => {
+        setStatus(error instanceof Error ? error.message : String(error));
+        if (
+          !externalIntake
+            .getSnapshot()
+            .pending.some(({ id }) => id === source.activation.id)
+        ) {
+          setPendingAdd(null);
+        }
+      })
+      .finally(() => {
+        addingRef.current = false;
+        setAdding(false);
+      });
+  };
+
+  useEffect(() => {
+    if (externalIntake === null) return;
+    const rejected = externalSnapshot.rejectedCount;
+    const overflow = externalSnapshot.overflowCount;
+    if (rejected === 0 && overflow === 0) return;
+    setStatus(externalIntakeNotice(rejected, overflow));
+    externalIntake.consumeNotices();
+  }, [externalIntake, externalSnapshot, setStatus]);
+
+  useEffect(() => {
+    if (externalIntake === null || demo !== null) return;
+    if (pendingAdd?.type === "external") {
+      const stillPending = externalSnapshot.pending.some(
+        ({ id }) => id === pendingAdd.activation.id,
+      );
+      if (!stillPending && !addingRef.current) setPendingAdd(null);
+      return;
+    }
+    if (pendingAdd !== null || addingRef.current) return;
+    const activation = externalSnapshot.pending[0];
+    if (activation === undefined) return;
+    const source: PendingExternalAdd = { type: "external", activation };
+    const defaultRoot = storage.roots.find(
+      (root) =>
+        root.id === storage.defaultRoot && root.availability === "available",
+    );
+    if (storage.showAddOptions || defaultRoot === undefined) {
+      setPendingAdd(source);
+      return;
+    }
+    void addToRoot(source, defaultRoot.id).then((accepted) => {
+      if (
+        !accepted &&
+        externalIntake
+          .getSnapshot()
+          .pending.some(({ id }) => id === activation.id)
+      ) {
+        setPendingAdd(source);
+      }
+    });
+  }, [
+    adding,
+    demo,
+    externalIntake,
+    externalSnapshot,
+    pendingAdd,
+    storage.defaultRoot,
+    storage.roots,
+    storage.showAddOptions,
+  ]);
 
   return (
     <>
@@ -342,11 +449,35 @@ export function TorrentActions() {
           roots={storage.roots}
           defaultRoot={storage.defaultRoot}
           returnFocus={addInputRef}
+          externalKind={
+            pendingAdd.type === "external"
+              ? pendingAdd.activation.kind
+              : undefined
+          }
           onChooseFolder={chooseFolder}
-          onCancel={() => setPendingAdd(null)}
+          onCancel={cancelPendingAdd}
           onConfirm={confirmAdd}
         />
       )}
     </>
   );
+}
+
+function externalIntakeNotice(rejected: number, overflow: number): string {
+  const messages: string[] = [];
+  if (rejected > 0) {
+    messages.push(
+      `${rejected.toLocaleString()} external torrent ${
+        rejected === 1 ? "request was" : "requests were"
+      } rejected by safety limits`,
+    );
+  }
+  if (overflow > 0) {
+    messages.push(
+      `${overflow.toLocaleString()} external torrent ${
+        overflow === 1 ? "request was" : "requests were"
+      } dropped because the intake queue was full`,
+    );
+  }
+  return messages.join("; ");
 }

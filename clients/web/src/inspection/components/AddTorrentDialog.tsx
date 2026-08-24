@@ -15,6 +15,7 @@ export interface AddTorrentDialogProps {
   readonly roots: readonly DownloadRoot[];
   readonly defaultRoot: string | null;
   readonly returnFocus: RefObject<HTMLInputElement | null>;
+  readonly externalKind?: "magnet" | "torrent_file" | undefined;
   readonly onChooseFolder: (repairRoot?: string) => Promise<DownloadRoot | null>;
   readonly onCancel: () => void;
   readonly onConfirm: (
@@ -28,6 +29,7 @@ export function AddTorrentDialog({
   roots,
   defaultRoot,
   returnFocus,
+  externalKind,
   onChooseFolder,
   onCancel,
   onConfirm,
@@ -129,8 +131,13 @@ export function AddTorrentDialog({
           <h2 id="add-torrent-title">Choose download options</h2>
         </header>
         <p id="add-torrent-description" className={styles.description}>
-          Choose where this torrent will download. This location applies only
-          to this torrent unless you change the default in Settings.
+          {externalKind === "magnet"
+            ? "An external magnet link requested this add. "
+            : externalKind === "torrent_file"
+              ? "An external .torrent file requested this add. "
+              : null}
+          Choose where this torrent will download. This location applies only to
+          this torrent unless you change the default in Settings.
         </p>
 
         <fieldset className={styles.locations} disabled={busy}>

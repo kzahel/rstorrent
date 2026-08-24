@@ -170,6 +170,52 @@ describe("Tauri leased view-set adapter", () => {
     await client.close();
   });
 
+  it("adds an external source by opaque ID without a path or magnet", async () => {
+    const bridge = new FakeBridge();
+    bridge.handler = (command) => {
+      if (command !== "application_add_external_torrent") {
+        throw new Error(`unexpected command ${command}`);
+      }
+      return {
+        version: 1,
+        request_id: "desktop-request",
+        revision: "1",
+        status: "success",
+        snapshot: {
+          profile_id: "test",
+          revision: "1",
+          storage: { roots: [], show_add_options: true },
+          client_settings: clientSettingsFixture(),
+          torrents: [],
+        },
+      };
+    };
+    const client = new TauriApplicationViewClient(bridge);
+
+    await expect(
+      client.addExternalTorrent({
+        activation_id: "00010203-0405-4607-8809-0a0b0c0d0e0f",
+        request_id: "desktop-request",
+        storage_root: "root-a",
+        start_content: false,
+      }),
+    ).resolves.toMatchObject({ request_id: "desktop-request" });
+    expect(bridge.calls).toEqual([
+      {
+        command: "application_add_external_torrent",
+        arguments_: {
+          activationId: "00010203-0405-4607-8809-0a0b0c0d0e0f",
+          requestId: "desktop-request",
+          storageRoot: "root-a",
+          startContent: false,
+        },
+      },
+    ]);
+    expect(JSON.stringify(bridge.calls)).not.toContain("torrent_file");
+    expect(JSON.stringify(bridge.calls)).not.toContain("magnet:?");
+    await client.close();
+  });
+
   it("invokes the native folder picker with only an optional repair ID", async () => {
     const bridge = new FakeBridge();
     bridge.handler = (command) => {

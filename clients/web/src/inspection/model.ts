@@ -569,6 +569,12 @@ export type InspectionCommand =
       readonly startContent: boolean;
     }
   | {
+      readonly type: "add_external_torrent";
+      readonly activationId: string;
+      readonly storageRoot: string;
+      readonly startContent: boolean;
+    }
+  | {
       readonly type: "set_file_priority";
       readonly torrentId: string;
       readonly fileIndices: readonly number[];

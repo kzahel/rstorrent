@@ -10,6 +10,7 @@ import type {
   ApiHello,
   ChooseDownloadRootRequest,
   CreateMediaUrlRequest,
+  ExternalTorrentAddRequest,
   MediaUrlResponse,
   OpenViewSetRequest,
   OpenViewSetResponse,
@@ -121,6 +122,22 @@ export class TauriApplicationViewClient implements ApplicationViewClient {
       ),
       decodeResponseEnvelope,
       "Tauri torrent intake response",
+    );
+  }
+
+  public async addExternalTorrent(
+    request: ExternalTorrentAddRequest,
+  ): Promise<ResponseEnvelope> {
+    this.ensureOpen();
+    return decodeStructured(
+      await this.invoke<unknown>("application_add_external_torrent", {
+        activationId: request.activation_id,
+        requestId: request.request_id,
+        storageRoot: request.storage_root,
+        startContent: request.start_content,
+      }),
+      decodeResponseEnvelope,
+      "Tauri external torrent intake response",
     );
   }
 

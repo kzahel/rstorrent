@@ -36,6 +36,10 @@ export interface ApplicationViewClient {
     source: ArrayBuffer,
     signal?: AbortSignal,
   ): Promise<ResponseEnvelope>;
+  addExternalTorrent?(
+    request: ExternalTorrentAddRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope>;
   chooseDownloadRoot(
     request: ChooseDownloadRootRequest,
     signal?: AbortSignal,
@@ -67,6 +71,13 @@ export interface ApplicationViewClient {
   ): Promise<ApplicationUpdateStream>;
   closeViewSet(viewSetId: string, signal?: AbortSignal): Promise<void>;
   close(): Promise<void>;
+}
+
+export interface ExternalTorrentAddRequest {
+  readonly activation_id: string;
+  readonly request_id: string;
+  readonly storage_root: string;
+  readonly start_content: boolean;
 }
 
 export interface MediaOpenTarget {

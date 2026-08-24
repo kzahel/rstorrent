@@ -35,6 +35,8 @@ import { TorrentTable } from "./TorrentTable";
 import { TransfersView } from "./TransfersView";
 import styles from "./App.module.css";
 import type { WebAuthClient } from "../../web-auth-client";
+import type { DesktopExternalIntake } from "../../desktop-external-intake";
+import { DesktopExternalIntakeProvider } from "../desktop-external-intake-context";
 
 const DESTINATIONS: readonly {
   readonly id: ApplicationDestination;
@@ -49,13 +51,16 @@ const DESTINATIONS: readonly {
 export interface AppProps {
   readonly webAuth?: WebAuthClient | undefined;
   readonly updater?: DesktopUpdater | undefined;
+  readonly externalIntake?: DesktopExternalIntake | undefined;
 }
 
-export function App({ webAuth, updater }: AppProps) {
+export function App({ webAuth, updater, externalIntake }: AppProps) {
   return (
-    <TorrentActionProvider>
-      <AppContent webAuth={webAuth} updater={updater} />
-    </TorrentActionProvider>
+    <DesktopExternalIntakeProvider intake={externalIntake}>
+      <TorrentActionProvider>
+        <AppContent webAuth={webAuth} updater={updater} />
+      </TorrentActionProvider>
+    </DesktopExternalIntakeProvider>
   );
 }
 

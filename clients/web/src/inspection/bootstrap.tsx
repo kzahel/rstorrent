@@ -9,6 +9,7 @@ import { isDemoScenarioId } from "./demo/catalog";
 import { LiveApplication } from "./live/LiveApplication";
 import type { DemoScenarioId } from "./model";
 import type { DesktopUpdater } from "./updater/types";
+import type { DesktopExternalIntake } from "../desktop-external-intake";
 import { HttpApplicationClient } from "../api/client";
 import { TauriApplicationViewClient } from "../tauri-view-client";
 import { WebSocketApplicationViewClient } from "../websocket-view-client";
@@ -90,7 +91,7 @@ async function openLiveInspection(
 }
 
 export async function startTauriInspection(): Promise<void> {
-  const [updater, application] = await Promise.all([
+  const [updater, application, externalIntake] = await Promise.all([
     import("../tauri-updater")
       .then(({ createTauriDesktopUpdater }) => createTauriDesktopUpdater())
       .catch((error: unknown) => {
@@ -98,9 +99,18 @@ export async function startTauriInspection(): Promise<void> {
         return undefined;
       }),
     LiveApplication.open(new TauriApplicationViewClient()),
+    import("../desktop-external-intake").then(({ TauriDesktopExternalIntake }) =>
+      TauriDesktopExternalIntake.open(),
+    ),
   ]);
   application.installBrowserWakeHints(window, document);
-  renderInspection(new InspectionController(application), undefined, undefined, updater);
+  renderInspection(
+    new InspectionController(application),
+    undefined,
+    undefined,
+    updater,
+    externalIntake,
+  );
 }
 
 function renderInspection(
@@ -108,11 +118,16 @@ function renderInspection(
   root: Root = createRoot(applicationRoot()),
   webAuth?: WebAuthClient,
   updater?: DesktopUpdater,
+  externalIntake?: DesktopExternalIntake,
 ): void {
   controller.start();
   root.render(
     <InspectionProvider controller={controller}>
-      <App webAuth={webAuth} updater={updater} />
+      <App
+        webAuth={webAuth}
+        updater={updater}
+        externalIntake={externalIntake}
+      />
     </InspectionProvider>,
   );
 }

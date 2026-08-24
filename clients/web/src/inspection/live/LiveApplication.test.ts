@@ -5,6 +5,7 @@ import type {
   ApiHello,
   CreateMediaUrlRequest,
   DhtInspectionView,
+  ExternalTorrentAddRequest,
   OpenViewSetRequest,
   OpenViewSetResponse,
   PeerView,
@@ -38,6 +39,7 @@ class FakeLiveClient implements ApplicationViewClient {
     readonly request: AddTorrentBytesRequest;
     readonly source: ArrayBuffer;
   }[] = [];
+  readonly externalAdds: ExternalTorrentAddRequest[] = [];
   readonly mediaRequests: CreateMediaUrlRequest[] = [];
   readonly openedMediaUrls: string[] = [];
   openCount = 0;
@@ -120,6 +122,33 @@ class FakeLiveClient implements ApplicationViewClient {
     source: ArrayBuffer,
   ): Promise<ResponseEnvelope> {
     this.uploads.push({ request, source });
+    return {
+      version: 1,
+      request_id: request.request_id,
+      revision: "4",
+      result: {
+        type: "add_torrent",
+        result: {
+          torrent_id: TORRENT_ID,
+          disposition: { type: "already_present" },
+          resulting_revision: "4",
+        },
+      },
+      status: "success",
+      snapshot: {
+        profile_id: "live",
+        revision: "4",
+        storage: { roots: [], show_add_options: true },
+        client_settings: clientSettingsFixture(),
+        torrents: [],
+      },
+    };
+  }
+
+  async addExternalTorrent(
+    request: ExternalTorrentAddRequest,
+  ): Promise<ResponseEnvelope> {
+    this.externalAdds.push(request);
     return {
       version: 1,
       request_id: request.request_id,
@@ -470,6 +499,36 @@ describe("LiveApplication", () => {
       },
       source,
     });
+    await application.close();
+  });
+
+  it("maps opaque desktop activation IDs through the native-only add lane", async () => {
+    const client = new FakeLiveClient();
+    const application = await LiveApplication.open(client);
+    const activationId = "00010203-0405-4607-8809-0a0b0c0d0e0f";
+
+    await expect(
+      application.dispatch({
+        type: "add_external_torrent",
+        activationId,
+        storageRoot: "root_a",
+        startContent: false,
+      }),
+    ).resolves.toEqual({
+      accepted: true,
+      message: "Already in your session",
+      torrentId: TORRENT_ID,
+      addDisposition: { type: "already_present" },
+    });
+    expect(client.externalAdds).toHaveLength(1);
+    expect(client.externalAdds[0]).toMatchObject({
+      activation_id: activationId,
+      storage_root: "root_a",
+      start_content: false,
+    });
+    expect(JSON.stringify(client.externalAdds)).not.toContain("magnet:?");
+    expect(JSON.stringify(client.externalAdds)).not.toContain(".torrent");
+
     await application.close();
   });
 

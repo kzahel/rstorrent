@@ -15,6 +15,11 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createRef } from "react";
 
 import type { ClientSettingsRuntimeView } from "../../api";
+import type {
+  DesktopExternalActivation,
+  DesktopExternalIntake,
+  DesktopExternalIntakeSnapshot,
+} from "../../desktop-external-intake";
 import { clientSettingsRuntimeFixture } from "../../test-support/client-settings";
 import { APPEARANCE_STORAGE_KEY, type AppearanceStorage } from "../appearance";
 import type { InspectionApplication } from "../application";
@@ -1768,6 +1773,124 @@ describe("inspection application", () => {
     });
   });
 
+  it("processes external magnet and torrent-file activations in FIFO order", async () => {
+    const user = userEvent.setup();
+    const application = new RecordingLiveApplication();
+    const external = new RecordingExternalIntake([
+      externalActivation("00010203-0405-4607-8809-0a0b0c0d0e0f", "magnet"),
+      externalActivation(
+        "11110203-0405-4607-8809-0a0b0c0d0e0f",
+        "torrent_file",
+      ),
+    ]);
+    renderApplication(application, undefined, undefined, external);
+
+    let dialog = await screen.findByRole("dialog", {
+      name: "Choose download options",
+    });
+    expect(
+      within(dialog).getByText(/external magnet link requested this add/i),
+    ).toBeVisible();
+    await user.click(
+      within(dialog).getByRole("button", { name: "Choose folder…" }),
+    );
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("radio", { name: /Selected Downloads/ }),
+      ).toBeChecked(),
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Add torrent" }),
+    );
+
+    await waitFor(() =>
+      expect(application.commands).toContainEqual({
+        type: "add_external_torrent",
+        activationId: "00010203-0405-4607-8809-0a0b0c0d0e0f",
+        storageRoot: "root_1",
+        startContent: true,
+      }),
+    );
+    dialog = await screen.findByRole("dialog", {
+      name: "Choose download options",
+    });
+    expect(
+      within(dialog).getByText(/external \.torrent file requested this add/i),
+    ).toBeVisible();
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(external.getSnapshot().pending).toEqual([]));
+    expect(
+      application.commands.filter(
+        (command) => command.type === "add_external_torrent",
+      ),
+    ).toHaveLength(1);
+    expect(JSON.stringify(application.commands)).not.toContain("magnet:?");
+    expect(JSON.stringify(application.commands)).not.toContain(".torrent");
+  });
+
+  it("uses the default root for external intake and advances after a terminal failure", async () => {
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot: liveSnapshot({
+        roots: [downloadRoot("root_a", "Downloads")],
+        defaultRoot: "root_a",
+        showAddOptions: false,
+      }),
+    });
+    application.rejectNextExternal = true;
+    const external = new RecordingExternalIntake([
+      externalActivation("00010203-0405-4607-8809-0a0b0c0d0e0f", "torrent_file"),
+      externalActivation("11110203-0405-4607-8809-0a0b0c0d0e0f", "magnet"),
+    ]);
+    renderApplication(application, undefined, undefined, external);
+
+    await waitFor(() =>
+      expect(
+        application.commands.filter(
+          (command) => command.type === "add_external_torrent",
+        ),
+      ).toHaveLength(2),
+    );
+    expect(application.commands).toContainEqual({
+      type: "add_external_torrent",
+      activationId: "11110203-0405-4607-8809-0a0b0c0d0e0f",
+      storageRoot: "root_a",
+      startContent: true,
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Torrent added");
+    expect(external.getSnapshot().pending).toEqual([]);
+  });
+
+  it("keeps a retryable external activation available and reports queue notices", async () => {
+    const user = userEvent.setup();
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot: liveSnapshot({
+        roots: [downloadRoot("root_a", "Downloads")],
+        defaultRoot: "root_a",
+        showAddOptions: false,
+      }),
+    });
+    application.rejectNextExternal = true;
+    const external = new RecordingExternalIntake(
+      [externalActivation("00010203-0405-4607-8809-0a0b0c0d0e0f", "magnet")],
+      { consumeOnSynchronize: false, rejectedCount: 1, overflowCount: 2 },
+    );
+    renderApplication(application, undefined, undefined, external);
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Choose download options",
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("external add rejected");
+    expect(external.getSnapshot()).toMatchObject({
+      rejectedCount: 0,
+      overflowCount: 0,
+    });
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(external.getSnapshot().pending).toEqual([]));
+  });
+
   it("manages download roots and the add-options preference in Settings", async () => {
     const user = userEvent.setup();
     const application = new RecordingLiveApplication({
@@ -2423,13 +2546,14 @@ function renderApplication(
   application: InspectionApplication,
   appearanceStorage?: AppearanceStorage | null,
   updater?: DesktopUpdater,
+  externalIntake?: DesktopExternalIntake,
 ) {
   const controller = new InspectionController(application, appearanceStorage);
   controllers.push(controller);
   controller.start();
   return render(
     <InspectionProvider controller={controller}>
-      <App updater={updater} />
+      <App updater={updater} externalIntake={externalIntake} />
     </InspectionProvider>,
   );
 }
@@ -2462,6 +2586,7 @@ class RecordingLiveApplication implements InspectionApplication {
   readonly views: DesiredInspectionViews[] = [];
   readonly magnetExports = new Map<string, MagnetExport>();
   rejectNextClientSettings = false;
+  rejectNextExternal = false;
   rejectNextTorrentId: string | undefined;
   private listener: ((update: InspectionUpdate) => void) | null = null;
   private storage: DownloadStorageSettings;
@@ -2510,6 +2635,10 @@ class RecordingLiveApplication implements InspectionApplication {
 
   async dispatch(command: InspectionCommand): Promise<CommandResult> {
     this.commands.push(command);
+    if (command.type === "add_external_torrent" && this.rejectNextExternal) {
+      this.rejectNextExternal = false;
+      return { accepted: false, message: "external add rejected" };
+    }
     if (
       "torrentId" in command &&
       command.torrentId === this.rejectNextTorrentId
@@ -2622,6 +2751,85 @@ class RecordingLiveApplication implements InspectionApplication {
   }
 
   async close(): Promise<void> {}
+}
+
+class RecordingExternalIntake implements DesktopExternalIntake {
+  private readonly listeners = new Set<() => void>();
+  private generation = 1;
+  private pending: DesktopExternalActivation[];
+  private rejectedCount: number;
+  private overflowCount: number;
+  private snapshot: DesktopExternalIntakeSnapshot;
+  private readonly consumeOnSynchronize: boolean;
+  readonly close = vi.fn();
+
+  constructor(
+    pending: readonly DesktopExternalActivation[],
+    options: {
+      readonly consumeOnSynchronize?: boolean;
+      readonly rejectedCount?: number;
+      readonly overflowCount?: number;
+    } = {},
+  ) {
+    this.pending = [...pending];
+    this.consumeOnSynchronize = options.consumeOnSynchronize ?? true;
+    this.rejectedCount = options.rejectedCount ?? 0;
+    this.overflowCount = options.overflowCount ?? 0;
+    this.snapshot = this.buildSnapshot();
+  }
+
+  getSnapshot = (): DesktopExternalIntakeSnapshot => this.snapshot;
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  };
+
+  async synchronize(): Promise<void> {
+    if (this.consumeOnSynchronize && this.pending.length > 0) {
+      this.pending = this.pending.slice(1);
+      this.generation += 1;
+      this.snapshot = this.buildSnapshot();
+      this.emit();
+    }
+  }
+
+  async cancel(activationId: string): Promise<void> {
+    if (this.pending[0]?.id !== activationId) {
+      throw new Error("activation is no longer pending");
+    }
+    this.pending = this.pending.slice(1);
+    this.generation += 1;
+    this.snapshot = this.buildSnapshot();
+    this.emit();
+  }
+
+  consumeNotices(): void {
+    this.rejectedCount = 0;
+    this.overflowCount = 0;
+    this.snapshot = this.buildSnapshot();
+    this.emit();
+  }
+
+  private buildSnapshot(): DesktopExternalIntakeSnapshot {
+    return {
+      generation: String(this.generation),
+      pending: this.pending,
+      rejectedCount: this.rejectedCount,
+      overflowCount: this.overflowCount,
+    };
+  }
+
+  private emit(): void {
+    for (const listener of this.listeners) listener();
+  }
+}
+
+function externalActivation(
+  id: string,
+  kind: DesktopExternalActivation["kind"],
+): DesktopExternalActivation {
+  return { id, kind };
 }
 
 function downloadRoot(

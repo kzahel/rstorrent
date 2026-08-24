@@ -169,6 +169,8 @@ export class DemoApplication implements InspectionApplication {
         return rejected("Live magnet add is unavailable in demo scenarios");
       case "add_torrent_bytes":
         return rejected("Torrent file upload is unavailable in demo scenarios");
+      case "add_external_torrent":
+        return rejected("External torrent intake is unavailable in demo scenarios");
       case "export_magnet": {
         const torrent = this.snapshot.torrents[command.torrentId];
         if (torrent === undefined) return rejected("Torrent is not present");

@@ -254,6 +254,33 @@ export class LiveApplication implements InspectionApplication {
       this.emit({ type: "snapshot", snapshot: this.snapshot });
       return addCommandResult(response);
     }
+    if (command.type === "add_external_torrent") {
+      if (this.client.addExternalTorrent === undefined) {
+        return {
+          accepted: false,
+          message: "External torrent intake is unavailable on this connection",
+        };
+      }
+      const response = await this.client.addExternalTorrent(
+        {
+          activation_id: command.activationId,
+          request_id: `desktop-${this.requestInstanceId}-${this.requestSequence++}`,
+          storage_root: command.storageRoot,
+          start_content: command.startContent,
+        },
+        this.lifetime.signal,
+      );
+      this.controller?.requestImmediatePoll();
+      if (response.status === "error") {
+        return { accepted: false, message: response.error.message };
+      }
+      this.snapshot = {
+        ...this.snapshot,
+        storage: mapStorage(response.snapshot.storage),
+      };
+      this.emit({ type: "snapshot", snapshot: this.snapshot });
+      return addCommandResult(response);
+    }
     if (
       command.type !== "add_magnet" &&
       command.type !== "set_file_priority" &&
