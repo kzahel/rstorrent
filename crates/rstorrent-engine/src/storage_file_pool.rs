@@ -1458,6 +1458,8 @@ mod tests {
     use std::io::Write;
     use std::path::PathBuf;
     use std::sync::Arc;
+    use std::time::Duration;
+    use tokio::time::timeout;
 
     fn temp_root(name: &str) -> PathBuf {
         let mut random = [0_u8; 8];
@@ -1518,24 +1520,67 @@ mod tests {
 
     #[tokio::test]
     async fn compatible_concurrent_opens_singleflight_and_hit() {
-        let root = temp_root("singleflight");
-        let pool = StorageFilePool::new(2, None).expect("pool");
-        let reference = reference(pool.clone(), &root, 0);
-        let (first, second) = tokio::join!(
-            reference.open(StorageFileAccess::ReadWriteCreate),
-            reference.open(StorageFileAccess::ReadWriteCreate),
+        let (client, broker) = platform_storage_channel();
+        let pool = StorageFilePool::new(2, Some(client)).expect("pool");
+        let reference = StorageFileReference::new(
+            pool.clone(),
+            StorageFileKey {
+                storage_id: "singleflight".to_owned(),
+                namespace_generation: 0,
+                role: StorageFileRole::Payload(0),
+            },
+            StorageFileLocator::Platform(super::PlatformStorageTarget {
+                root_id: "root".to_owned(),
+                storage_id: "singleflight".to_owned(),
+                namespace_generation: 0,
+                role: StorageFileRole::Payload(0),
+                path: vec!["0.bin".to_owned()],
+            }),
         );
-        let first = first.expect("first");
-        let second = second.expect("second");
+        let first_reference = reference.clone();
+        let first = tokio::spawn(async move {
+            first_reference
+                .open(StorageFileAccess::ReadWriteCreate)
+                .await
+        });
+        let request = broker.next_request().await.expect("first open request");
+        let second =
+            tokio::spawn(async move { reference.open(StorageFileAccess::ReadWriteCreate).await });
+        timeout(Duration::from_secs(1), async {
+            while pool.snapshot().singleflight_waits != 1 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("second open waits on the first");
+        assert!(
+            timeout(Duration::from_millis(10), broker.next_request())
+                .await
+                .is_err(),
+            "singleflight issued a duplicate provider open"
+        );
+
+        let path = temp_root("singleflight");
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .expect("platform file");
+        assert!(broker.complete_file(request.request_id, file));
+        let first = first.await.expect("first task").expect("first open");
+        let second = second.await.expect("second task").expect("second open");
         assert!(Arc::ptr_eq(&first, &second));
         let snapshot = pool.snapshot();
         assert_eq!(snapshot.current_owned, 1);
         assert_eq!(snapshot.misses, 2);
-        assert!(snapshot.hits >= 1);
+        assert_eq!(snapshot.hits, 1);
+        assert_eq!(snapshot.singleflight_waits, 1);
         drop(first);
         drop(second);
         pool.shutdown().await.expect("shutdown");
-        std::fs::remove_dir_all(root).expect("cleanup");
+        broker.cancel_all();
+        std::fs::remove_file(path).expect("cleanup");
     }
 
     #[tokio::test]
