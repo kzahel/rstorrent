@@ -58,9 +58,11 @@ This tactical owns:
    React, browser E2E, and hosted platform package floors;
 9. opt-in retained Windows NSIS and Linux AppImage packages for installed
    machine-control campaigns; and
-10. installed Windows x86_64 and Linux x86_64 evidence for close, tray,
+10. installed Windows x86_64 and Linux arm64 evidence for close, tray,
     restore, second launch, setting persistence, update check, joined Quit,
-    and visible application/taskbar icon behavior.
+    and visible application/taskbar icon behavior. Linux x86_64 remains a
+    native compile/package gate because the available Linux installed testbed
+    is arm64.
 
 The tactical stops when local and hosted gates pass and both installed
 campaigns prove that close-to-background remains reachable, a second launch
@@ -220,10 +222,11 @@ No reference source, fixture, artwork, or persisted format is imported.
 4. Connect tray **Check for Updates** to the existing Tauri updater controller
    and visible About & updates state with listener cleanup and browser/demo
    isolation.
-5. Add opt-in Windows and Linux package retention and deterministic assertions
-   where platform behavior can be checked without a headed session.
+5. Add opt-in Windows x86_64 plus Linux x86_64/arm64 package retention and
+   deterministic assertions where platform behavior can be checked without a
+   headed session.
 6. Run the complete local Rust/web floor and hosted credential-free matrix.
-7. Install the retained Windows and Linux packages in isolated
+7. Install the retained Windows x86_64 and Linux arm64 packages in isolated
    machine-control campaigns; exercise the full stopping-condition matrix,
    inspect icons, and remove exact test installs/profiles/artifacts.
 8. Reconcile exact evidence and remaining deferrals, complete this tactical,
