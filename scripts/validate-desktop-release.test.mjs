@@ -50,6 +50,25 @@ test("rejects updater route and public-key drift", () => {
   );
 });
 
+test("rejects updater restart that bypasses joined native shutdown", () => {
+  const permissionFixture = repositoryFixture();
+  permissionFixture.capability.permissions.push("process:default");
+  assert.throws(
+    () => validateDesktopReleaseConfiguration(permissionFixture),
+    /raw process restart permission must stay disabled/,
+  );
+
+  const webFixture = repositoryFixture();
+  webFixture.tauriUpdater = webFixture.tauriUpdater.replace(
+    'relaunch: () => invoke("application_restart")',
+    "relaunch: rawProcessRestart",
+  );
+  assert.throws(
+    () => validateDesktopReleaseConfiguration(webFixture),
+    /web updater does not use joined native restart/,
+  );
+});
+
 function repositoryFixture() {
   return {
     packageJson: readJson("clients/web/package.json"),
@@ -57,6 +76,14 @@ function repositoryFixture() {
     developmentTauri: readJson("clients/desktop/src-tauri/tauri.dev.conf.json"),
     cargo: fs.readFileSync(path.join(root, "clients/desktop/src-tauri/Cargo.toml"), "utf8"),
     capability: readJson("clients/desktop/src-tauri/capabilities/default.json"),
+    desktopSource: fs.readFileSync(
+      path.join(root, "clients/desktop/src-tauri/src/lib.rs"),
+      "utf8",
+    ),
+    tauriUpdater: fs.readFileSync(
+      path.join(root, "clients/web/src/tauri-updater.ts"),
+      "utf8",
+    ),
     product: readJson("update-server/rstorrent.json"),
     changelog: fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8"),
     tag: undefined,

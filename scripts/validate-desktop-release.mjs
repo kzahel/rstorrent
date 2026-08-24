@@ -28,6 +28,8 @@ export function validateDesktopReleaseConfiguration({
   developmentTauri,
   cargo,
   capability,
+  desktopSource,
+  tauriUpdater,
   product,
   changelog,
   tag,
@@ -84,14 +86,33 @@ export function validateDesktopReleaseConfiguration({
     fail("RSTorrent updater public key is malformed");
   }
   const permissions = new Set(capability.permissions ?? []);
-  for (const permission of ["process:default", "updater:default"]) {
-    if (!permissions.has(permission)) fail(`missing desktop permission ${permission}`);
+  if (!permissions.has("updater:default")) {
+    fail("missing desktop permission updater:default");
   }
-  for (const dependency of ["tauri-plugin-process", "tauri-plugin-updater"]) {
-    if (!cargo.includes(`${dependency} =`)) fail(`missing Rust dependency ${dependency}`);
-    if (packageJson.dependencies?.[`@tauri-apps/plugin-${dependency.split("-").at(-1)}`] === undefined) {
-      fail(`missing web dependency for ${dependency}`);
-    }
+  if (permissions.has("process:default")) {
+    fail("raw process restart permission must stay disabled");
+  }
+  if (!cargo.includes("tauri-plugin-updater =")) {
+    fail("missing Rust dependency tauri-plugin-updater");
+  }
+  if (packageJson.dependencies?.["@tauri-apps/plugin-updater"] === undefined) {
+    fail("missing web dependency for tauri-plugin-updater");
+  }
+  if (
+    cargo.includes("tauri-plugin-process =") ||
+    packageJson.dependencies?.["@tauri-apps/plugin-process"] !== undefined
+  ) {
+    fail("updater restart must not bypass joined native shutdown");
+  }
+  if (
+    !desktopSource.includes("async fn application_restart(") ||
+    !desktopSource.includes("application_restart,") ||
+    !desktopSource.includes("app.request_restart();")
+  ) {
+    fail("desktop joined restart command is missing");
+  }
+  if (!tauriUpdater.includes('relaunch: () => invoke("application_restart")')) {
+    fail("web updater does not use joined native restart");
   }
 
   const expectedProduct = {
@@ -135,6 +156,14 @@ export function validateDesktopReleaseRepository(root, tag) {
         "capabilities",
         "default.json",
       ),
+    ),
+    desktopSource: fs.readFileSync(
+      path.join(root, "clients", "desktop", "src-tauri", "src", "lib.rs"),
+      "utf8",
+    ),
+    tauriUpdater: fs.readFileSync(
+      path.join(root, "clients", "web", "src", "tauri-updater.ts"),
+      "utf8",
     ),
     product: readJson(path.join(root, "update-server", "rstorrent.json")),
     changelog: fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8"),
