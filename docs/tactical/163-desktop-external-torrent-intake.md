@@ -1,7 +1,6 @@
 # Tactical 163: Desktop External Torrent Intake
 
-Status: **Implemented — installed acceptance complete; hosted closure pending
-(2026-08-24).**
+Status: **Complete (2026-08-24).**
 Desktop release/updater Tactical
 [`158`](158-desktop-signed-packaging-and-updater.md) remains the sole **Now**.
 
@@ -500,5 +499,13 @@ hardware:
   and the prior empty `.torrent` class, left inherited JSTorrent PID 8004
   untouched, kept the inherited-running VM running, and released the claim.
 
-Completion now requires only the exact hosted package run after the authorized
-push. Installed Intel macOS remains deliberately omitted.
+Commit `8ffeb24` was pushed to `main`, and exact hosted run
+[`32775002484`](https://github.com/kzahel/rstorrent/actions/runs/32775002484)
+passed all eight jobs: workspace Rust and locked loopback interoperability,
+web type/unit/build and deterministic Playwright E2E, desktop packages on
+macOS arm64, Windows x86_64, Linux x86_64, and native Linux arm64, Android
+dual-ABI/lint/tests, and iOS simulator tests plus an unsigned device archive.
+
+The tactical reached its stopping condition with deterministic, package,
+hosted, and installed evidence on every required lane. Installed Intel macOS
+remains deliberately omitted.

@@ -42,12 +42,12 @@ complete; signed release Tactical
 [`158`](../tactical/158-desktop-signed-packaging-and-updater.md) is **Now**.
 Maintainer direction on 2026-08-24 promotes OS-level `magnet:` and local
 `.torrent` activation from a post-beta deferral to a beta usability gap;
-implemented Tactical
-[`163`](../tactical/163-desktop-external-torrent-intake.md) is the first
-**Next** slice while its exact hosted run remains open. Installed Linux arm64,
-Windows x86_64-application, and macOS arm64 acceptance pass; the Windows
-package ran under Windows 11 arm64 x64 emulation, and the macOS campaign
-preserved JSTorrent's inherited default handler.
+completed Tactical
+[`163`](../tactical/163-desktop-external-torrent-intake.md) closes that gap.
+Installed Linux arm64, Windows x86_64-application, macOS arm64, and exact
+hosted eight-job acceptance pass; the Windows package ran under Windows 11
+arm64 x64 emulation, and the macOS campaign preserved JSTorrent's inherited
+default handler.
 
 ## Scope And Release Definition
 
@@ -308,7 +308,7 @@ without corrupting or silently reinterpreting user state.
   the prompt appears, define the supported private/public-network choice, and
   document incoming-reachability consequences. Automation must not silently
   grant a firewall rule.
-- [ ] **DESK-008 — Handle external magnets and torrent files.** Tactical
+- [x] **DESK-008 — Handle external magnets and torrent files.** Tactical
   `163` now registers the current RSTorrent packages for `magnet:` and
   local `.torrent` activation, forwards cold and warm input through the
   existing single desktop owner, reuses root/start options, and requires
@@ -317,8 +317,10 @@ without corrupting or silently reinterpreting user state.
   the real x86_64 NSIS/PE under Windows 11 arm64 x64 emulation. macOS proved
   targeted LaunchServices cold/visible/hidden delivery, cancellation, bounded
   failures, duplicate handling, tray Quit, cleanup, and retention of JSTorrent
-  as the inherited default. The exact hosted run remains open. This work does
-  not adopt JSTorrent identity, extension routing, or remote `.torrent` URLs.
+  as the inherited default. Exact hosted run
+  [`32775002484`](https://github.com/kzahel/rstorrent/actions/runs/32775002484)
+  passed all eight platform jobs. This work does not adopt JSTorrent identity,
+  extension routing, or remote `.torrent` URLs.
 
 ### Desktop updater contract
 
@@ -496,11 +498,11 @@ no single optional BEP is mandatory.
    setup. Publish a newer signed package, repeat clean Windows from the
    default, characterize firewall consent, and run Linux x86_64. Intel macOS
    installed testing is deliberately omitted.
-5. **Next — Tactical `163`: close desktop external torrent intake.** The
+5. **Complete — Tactical `163`: desktop external torrent intake.** The
    bounded shell/UI implementation, package gates, and installed Linux arm64,
    Windows x86_64-application, and macOS arm64 cold/visible/tray-hidden/
-   cancel/failure/duplicate/Quit campaigns pass. Require the exact hosted
-   package run.
+   cancel/failure/duplicate/Quit campaigns pass. Exact hosted run
+   `32775002484` passed all eight platform jobs.
 6. **Complete — Tactical `160`: Windows local-network address selection.**
    Wildcard binding remains, only a concrete eligible address is reported,
    the bounded Windows best-route fallback and native CI regression pass, and

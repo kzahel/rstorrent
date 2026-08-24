@@ -15,15 +15,15 @@ single-instance, tray, joined desktop lifecycle, release-only Windows GUI
 launch, and native Linux arm64 package coverage with installed Windows
 x86_64/Linux arm64 evidence. Tactical `158` has resumed as the single
 **Now**. Maintainer direction on 2026-08-24 makes installed `magnet:` and local
-`.torrent` activation a beta usability requirement. Tactical `163` now has its
-bounded implementation, deterministic/package gates, and installed Linux
-arm64, Windows x86_64-application, and macOS arm64 campaigns. The Windows
+`.torrent` activation a beta usability requirement. Completed Tactical `163`
+has its bounded implementation, deterministic/package gates, and installed
+Linux arm64, Windows x86_64-application, and macOS arm64 campaigns. The Windows
 package ran as a real x86_64 PE under Windows 11 arm64 x64 emulation. The
 macOS campaign preserved JSTorrent's inherited default handler while proving
 targeted RSTorrent LaunchServices delivery, cold/visible/hidden Add flow,
-bounded failures, duplicates, tray Quit, and exact cleanup. Only Tactical
-`163`'s hosted package run remains **Next**; Tactical `158` remains the current
-release owner.
+bounded failures, duplicates, tray Quit, and exact cleanup. Exact hosted run
+`32775002484` passed all eight platform jobs. Tactical `158` remains the
+current release owner.
 
 The updater tactical's client,
 production route, five-target signed hosted rehearsal, public `0.1.0` release,
@@ -520,12 +520,6 @@ exactly.
   Installed Intel macOS remains deliberately omitted.
 
 ### Next
-
-- Finish desktop external torrent intake Tactical
-  [`163`](../tactical/163-desktop-external-torrent-intake.md). The bounded
-  implementation, package gates, and installed Linux arm64, Windows
-  x86_64-application, and macOS arm64 campaigns pass. Require the exact hosted
-  run without adopting JSTorrent identity or extension routing.
 
 - Freeze the application identities, first supported persistence baseline,
   changelog, privacy/support presentation, and repeatable beta torrent cohort

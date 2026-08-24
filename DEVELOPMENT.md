@@ -59,14 +59,14 @@ signed package carrying both repairs and the installed update repetition.
 Completed Tactical `161` adds the parented native Tauri picker, hosted
 Windows/Linux package gates, and installed Windows cancel/select/repair/restart
 evidence.
-Implemented Tactical `163` adds bounded installed `magnet:` and local
+Completed Tactical `163` adds bounded installed `magnet:` and local
 `.torrent` activation, one opaque FIFO intake owner, the existing Add workflow,
 and actual macOS/Windows/Linux package assertions. Deterministic and Linux
-arm64, Windows x86_64-application, and macOS arm64 installed evidence pass;
-only its exact hosted package run remains open. The Windows campaign ran the
-actual x86_64 NSIS/PE under Windows 11 arm64 x64 emulation, while the macOS
-campaign preserved JSTorrent as the inherited default handler and targeted
-the incubation bundle through LaunchServices.
+arm64, Windows x86_64-application, macOS arm64 installed, and exact hosted
+eight-job evidence pass. The Windows campaign ran the actual x86_64 NSIS/PE
+under Windows 11 arm64 x64 emulation, while the macOS campaign preserved
+JSTorrent as the inherited default handler and targeted the incubation bundle
+through LaunchServices.
 Completed Tactical `157` established the release ledger, graduated the Android
 client to `clients/android`, and added provisional packaging artwork. The
 durable release backlog and platform gates live in

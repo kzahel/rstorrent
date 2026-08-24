@@ -176,15 +176,15 @@ The desktop handoff must eventually define and prove:
 
 The current in-process Tauri product remains the implementation and validation
 path until an extension-control tactical accepts a different lifecycle and
-security boundary. Implemented Tactical
+security boundary. Completed Tactical
 [`163`](../tactical/163-desktop-external-torrent-intake.md) adds RSTorrent-owned
 `magnet:` and local `.torrent` activation to that current product only. It does
 not implement extension routing, reuse JSTorrent identity, or decide the later
 successor handoff topology. Installed Linux arm64 and Windows
 x86_64-application plus macOS arm64 acceptance pass. The macOS campaign
 preserved JSTorrent as the inherited default handler and targeted RSTorrent by
-its current incubation bundle identifier; the exact hosted run is still
-required.
+its current incubation bundle identifier. Exact hosted run `32775002484`
+passed all eight platform jobs.
 
 ## ChromeOS Backends
 
