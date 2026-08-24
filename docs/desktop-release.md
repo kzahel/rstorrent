@@ -74,6 +74,15 @@ passed every source/build/finalizer job. Its independent checksum, route, and
 installed macOS smoke evidence is recorded in
 [`desktop-v0.1.0`](evidence/desktop-v0.1.0.md).
 
+The first updater-validation release is
+[`desktop-v0.1.1`](https://github.com/kzahel/rstorrent/releases/tag/desktop-v0.1.1).
+Tagged workflow
+[`32661616090`](https://github.com/kzahel/rstorrent/actions/runs/32661616090)
+passed its source gate, five signed target jobs, and finalizer. Independent
+checksums, route probes, and the exact installed macOS arm64
+`0.1.0`-to-`0.1.1` update are recorded in
+[`desktop-v0.1.0-to-v0.1.1`](evidence/desktop-v0.1.0-to-v0.1.1.md).
+
 ## Update Service
 
 The application checks
@@ -81,10 +90,12 @@ The application checks
 [`update-server/rstorrent.json`](../update-server/rstorrent.json) is the
 product-owned configuration consumed by the shared update service. The
 production `/rstorrent` route and product registration were deployed and the
-service health check passed on 2026-08-23. Public `desktop-v0.1.0` now resolves:
-a current version returns HTTP 204 and an older version returns signed Tauri
-metadata referencing that immutable GitHub Release. Both results passed for
-all five default updater targets after publication.
+service health check passed on 2026-08-23. Public `desktop-v0.1.1` now resolves:
+a current `0.1.1` version returns HTTP 204 and installed `0.1.0` returns signed
+Tauri metadata referencing that immutable GitHub Release. Both results passed
+for all five default updater targets after publication. The installed macOS
+arm64 client then completed the real replacement/relaunch and reported the
+new exact version/build; the other four installed targets remain open.
 
 After publishing, verify at least one exact current-version key and all five
 older-version keys. Do not treat metadata checks as installed-update evidence:

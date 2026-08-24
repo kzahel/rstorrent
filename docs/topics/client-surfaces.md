@@ -597,8 +597,9 @@ remote exposure, and Android streaming remain independent product decisions.
   assets, ordinary local bundle configuration, implemented updater UI/
   lifecycle behavior, and hosted signed package evidence across macOS arm64/
   x86_64, Windows x86_64, and Linux arm64/x86_64. Public `desktop-v0.1.0` and
-  one installed macOS arm64 launch/updater-init smoke pass. Windows/Linux
-  installed behavior and an exact older-to-newer update remain unproven. File
+  `desktop-v0.1.1`, one installed macOS arm64 launch/updater-init smoke, and an
+  exact arm64 replacement/relaunch with updater-ID continuity pass. macOS
+  x86_64 and Windows/Linux installed-update behavior remain unproven. File
   associations, production tray policy, and complete cross-platform window/
   platform-capability evidence also remain open. The release gates live in
   [`beta-release-readiness.md`](beta-release-readiness.md).

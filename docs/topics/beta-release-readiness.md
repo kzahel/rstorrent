@@ -2,13 +2,14 @@
 
 Topic: `beta-release-readiness`
 
-Status: **Active as of 2026-08-23.** RSTorrent desktop `0.1.0` is the first
-public signed incubation release; Android and iOS remain unreleased alpha
-lanes. Exact installed cross-version upgrade evidence is still absent.
-Credential-free cross-platform presubmit CI, a credentialed five-target signed
-desktop rehearsal, tagged publication, production updater metadata, and one
-installed macOS arm64 launch smoke are proven. The public product name is
-RSTorrent for the foreseeable release line. A later production
+Status: **Active as of 2026-08-24.** RSTorrent desktop `0.1.0` is the first
+public signed incubation release and `0.1.1` is its first updater-validation
+release; Android and iOS remain unreleased alpha lanes. Credential-free cross-
+platform presubmit CI, a credentialed five-target signed desktop rehearsal,
+two tagged publications, production updater metadata, one installed macOS
+arm64 launch smoke, and one exact macOS arm64 `0.1.0`-to-`0.1.1` update pass.
+The other four installed updater targets remain open. The public product name
+is RSTorrent for the foreseeable release line. A later production
 graduation is expected to retain JSTorrent's existing name, application
 identity, and updater trust root, with best-effort legacy-state migration
 scoped separately. It is not a beta requirement. This topic is the
@@ -49,7 +50,7 @@ Store review, and mobile beta is not implied by a desktop tag:
 
 | Lane | Intended beta channel | Current release state |
 | --- | --- | --- |
-| macOS desktop | signed/notarized DMG plus in-app updates | public Developer ID-signed, notarized, and stapled app/DMG packages pass for arm64 and x86_64; an installed arm64 launch/updater-init smoke passes; clean-machine breadth and a real update remain absent |
+| macOS desktop | signed/notarized DMG plus in-app updates | public Developer ID-signed, notarized, and stapled app/DMG packages pass for arm64 and x86_64; an installed arm64 launch smoke and exact `0.1.0`-to-`0.1.1` replacement/relaunch pass; clean-machine breadth and the x86_64 installed update remain absent |
 | Windows desktop | signed per-user NSIS plus in-app updates | public NSIS and MSI packages have valid expected-publisher Authenticode signatures; clean install and real update remain absent |
 | Linux desktop | AppImage plus in-app updates; DEB/RPM remain package-manager channels | public AppImage, DEB, and RPM packages plus updater artifacts pass for x86_64 and arm64; installed and real update evidence remain absent |
 | Android/ChromeOS | signed Android App Bundle through a closed testing channel | maintained Compose/in-process Rust/SAF app and hosted dual-ABI debug/test APK gates pass; release identity, signed AAB, emulator/store, and upgrade evidence absent |
@@ -103,7 +104,7 @@ without corrupting or silently reinterpreting user state.
   JSTorrent application/store identity; the shared gate remains open for those
   mobile lanes.
 - [ ] **REL-003 — Establish one release version source and bump procedure.**
-  Desktop web, Cargo, and Tauri metadata currently agree at `0.1.0`; Android
+  Desktop web, Cargo, and Tauri metadata currently agree at `0.1.1`; Android
   and iOS use independent provisional values. Release validation must reject
   drift for the lane being shipped.
 - [x] **REL-004 — Add a changelog and release-note policy.** `CHANGELOG.md` and
@@ -195,8 +196,11 @@ without corrupting or silently reinterpreting user state.
   complete the common cohort, survive relaunch/reboot where applicable, and
   uninstall with documented retained/removed state. The public `0.1.0` arm64
   DMG passed a bounded `/Applications` install, notarized launch, updater-ID
-  initialization, and graceful-quit smoke; Windows/Linux installation, the
-  common cohort, reboot/relaunch, and full uninstall policy remain open.
+  initialization, and graceful-quit smoke. An isolated macOS arm64 appliance
+  also installed that exact public build and updated through production to
+  `0.1.1` with replacement, relaunch, and retained private updater identity.
+  Windows/Linux installation, the common cohort, reboot/relaunch, and full
+  uninstall policy remain open.
 - [ ] **QA-004 — Establish a crash/support loop.** Users need an accessible
   version/build identity, copyable bounded diagnostics, known-issues link, and
   a report path. Automatic crash or analytics upload is not required for beta.
@@ -214,9 +218,10 @@ without corrupting or silently reinterpreting user state.
 - [ ] **DESK-001 — Make the Tauri bundle real.** Tactical `157` supplies
   provisional icon assets and local bundle configuration. Hosted native DMG,
   NSIS, MSI, AppImage, DEB, and RPM builds now pass across the intended matrix.
-  The public arm64 DMG also passed one installed macOS launch and graceful quit.
-  Clean-machine breadth, Windows/Linux launch, uninstall, and retained-state
-  evidence remain required.
+  The public arm64 DMG also passed one installed macOS launch and graceful quit,
+  followed by an exact `0.1.0`-to-`0.1.1` replacement/relaunch in an isolated
+  macOS arm64 appliance. Clean-machine breadth, Intel Mac and Windows/Linux
+  launch/update, uninstall, and retained-state evidence remain required.
 - [x] **DESK-002 — Sign and notarize tagged builds.** Use the existing shared
   publisher Developer ID/notarization and Windows Azure signing setup. Missing
   credentials must fail a tagged build before publication; untagged CI must
@@ -226,7 +231,9 @@ without corrupting or silently reinterpreting user state.
   publisher Authenticode signing. Tagged run
   [`32656926123`](https://github.com/kzahel/rstorrent/actions/runs/32656926123)
   repeated those checks and published only after every leg and the sole
-  finalizer passed.
+  finalizer passed. Tagged `0.1.1` run
+  [`32661616090`](https://github.com/kzahel/rstorrent/actions/runs/32661616090)
+  repeated the complete matrix and finalizer successfully.
 - [ ] **DESK-003 — Set least-privileged package ownership.** The default is a
   DMG-installed self-contained app on macOS, per-user NSIS on Windows, and a
   user-writable AppImage on Linux. MSI/DEB/RPM installs stay with their package
@@ -280,11 +287,19 @@ is still pending and is not the compatibility oracle.
   `latest.json` entries, immutable GitHub release URLs, `SHA256SUMS`,
   complete-draft validation, and publication finalization. Independent public
   downloads and all five production routes passed after publication; see
-  [`desktop-v0.1.0`](../evidence/desktop-v0.1.0.md).
+  [`desktop-v0.1.0`](../evidence/desktop-v0.1.0.md). Tagged `0.1.1` run
+  [`32661616090`](https://github.com/kzahel/rstorrent/actions/runs/32661616090)
+  repeated the complete release matrix; all public checksums, the 15-key
+  manifest, and current/older production-route probes passed. See
+  [`desktop-v0.1.0-to-v0.1.1`](../evidence/desktop-v0.1.0-to-v0.1.1.md).
 - [ ] **UPD-005 — Prove a real cross-version update.** On each supported
   desktop testbed, install an exact older public signed build, check through
   the production route, download/install/relaunch, and verify new application
-  version/build identity. Source and metadata tests alone do not close this.
+  version/build identity. macOS arm64 now passes from exact public `0.1.0` to
+  `0.1.1`, including explicit approval, replacement, relaunch, signing,
+  current-version check, and private installation-ID continuity. macOS x86_64,
+  Windows x86_64 NSIS, and Linux x86_64/arm64 AppImage remain open; source and
+  metadata tests alone do not close this.
 - [ ] **UPD-006 — Document update privacy and recovery.** Explain the random
   resettable installation ID, private server logging, automatic schedule,
   manual retry/download path, rollback expectations, and behavior when an
@@ -388,10 +403,11 @@ no single optional BEP is mandatory.
 3. **Now — Tactical `158`: desktop signed packaging and updater adoption.**
    The product-owned `desktop-update-v1` client, signed package workflow,
    release validation, per-app key, public configuration, production route,
-   five-platform hosted rehearsal, first tagged publication, and one installed
-   macOS arm64 launch smoke are complete. Next prove an exact installed
-   `0.1.0`-to-newer production-route update on every supported updater target
-   before closing the tactical.
+   five-platform hosted rehearsal, two tagged publications, one installed
+   macOS arm64 launch smoke, and the exact macOS arm64 `0.1.0`-to-`0.1.1`
+   production-route update are complete. Next repeat the installed update on
+   macOS x86_64, Windows x86_64 NSIS, and Linux x86_64/arm64 AppImage before
+   closing the tactical.
 4. **Next — application identity and upgrade baseline.** Freeze package IDs,
    persistence compatibility, changelog, privacy/support, diagnostics export,
    and a repeatable cohort before any public installer.

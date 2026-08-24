@@ -1,6 +1,6 @@
 # Tactical 158: Desktop Signed Packaging And Updater
 
-Status: **Implementation in progress and selected as Now (2026-08-22).**
+Status: **Implementation in progress and selected as Now (2026-08-24).**
 Maintainer direction selected RSTorrent as the foreseeable public product name
 and froze `com.jstorrent.rstorrent` as the desktop beta identifier on
 2026-08-23. Cross-platform presubmit Tactical `159` is complete. The distinct
@@ -9,9 +9,11 @@ and React updater behavior, public configuration, release validators, and the
 five-leg signed workflow pass their local and hosted gates. The production
 route is deployed and a credentialed rehearsal produced all five signed
 package sets. Tagged `desktop-v0.1.0` then passed draft finalization and became
-the first public release; one installed macOS arm64 launch/updater-init smoke
-also passes. Exact installed cross-version and Windows/Linux testbed evidence
-remain open.
+the first public release. Tagged `desktop-v0.1.1` passed the same complete
+release workflow, and an exact installed macOS arm64 `0.1.0`-to-`0.1.1`
+production update, replacement, relaunch, build identity, signing, current-
+version check, and private installation-ID continuity campaign passes. macOS
+x86_64, Windows x86_64, and Linux x86_64/arm64 installed updates remain open.
 
 Topics: `beta-release-readiness`, `client-surfaces`,
 `product-state-and-feedback`, `product-surfaces-and-migration`,
@@ -263,8 +265,9 @@ Planning inspected the accepted canary's exact:
 - `.github/workflows/desktop.yml` for credential-free source checks, five build
   legs, draft-only assembly, platform signature validation, exact finalization,
   checksums, and publication ownership; and
-- `docs/evidence/desktop-v0.1.0-to-v0.1.1.md` for the completed macOS, Windows,
-  and Linux installed update campaign and its explicit untested boundaries.
+- the canary's `docs/evidence/desktop-v0.1.0-to-v0.1.1.md` for its completed
+  macOS, Windows, and Linux installed update campaign and explicit untested
+  boundaries.
 
 RSTorrent adopts contract behavior, not the canary's UI, sidecar, product ID,
 key, endpoint, or release artifacts. AtPiano remains an updater-pending
@@ -354,10 +357,32 @@ checkout: checksum, Developer ID/Gatekeeper/notarization/stapling, exact bundle
 identity/version, `/Applications` launch, 12-second healthy lifetime including
 updater initialization, private UUIDv4 creation, and graceful quit. Smoke-only
 app/state were moved to Trash. Exact evidence and deliberate limits are in
-[`desktop-v0.1.0`](../evidence/desktop-v0.1.0.md). Publisher signatures,
-package breadth, tagged finalization, public lookup, and one installed launch
-are therefore proven; installed Windows/Linux behavior and an exact
-old-to-new cross-version update remain external gates.
+[`desktop-v0.1.0`](../evidence/desktop-v0.1.0.md).
+
+Credential-free run
+[`32660657596`](https://github.com/kzahel/rstorrent/actions/runs/32660657596)
+then passed all seven presubmit jobs for the `0.1.1` release commit. Tagged run
+[`32661616090`](https://github.com/kzahel/rstorrent/actions/runs/32661616090)
+passed the source gate, all five signed legs, and finalizer before publishing
+`desktop-v0.1.1` at exact commit
+`2a9ab871847893ed809bf042406ab95487b9d645`. All 13 files named by public
+`SHA256SUMS`, the 15-key updater manifest, and current/older route probes for
+all five default targets passed independently.
+
+An isolated Machine Control/Tart macOS arm64 guest then installed the exact
+public `0.1.0` DMG outside the checkout. Its automatic check offered `0.1.1`,
+the explicit install action replaced and relaunched the app, and About &
+updates reported version `0.1.1` and the exact new commit. Developer ID,
+Gatekeeper, stapled notarization, one running relaunched process, a manual
+newest-compatible-release check, and byte-equal private mode-`0600`
+installation-ID continuity passed. The app quit normally and the receipt-
+bound isolated workspace was discarded. Exact evidence and remaining target
+gaps are in
+[`desktop-v0.1.0-to-v0.1.1`](../evidence/desktop-v0.1.0-to-v0.1.1.md).
+Publisher signatures, package breadth, tagged finalization, public lookup, one
+installed launch, and the macOS arm64 cross-version update are therefore
+proven; macOS x86_64, Windows x86_64, and Linux x86_64/arm64 installed updates
+remain external gates.
 
 ## Escalation Contract
 
