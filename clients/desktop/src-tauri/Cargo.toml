@@ -16,11 +16,11 @@ tauri-build = { version = "2.6.3", features = [] }
 [dependencies]
 rstorrent-session = { path = "../../../crates/rstorrent-session" }
 rstorrent-media = { path = "../../../crates/rstorrent-media" }
-rstorrent-platform = { path = "../../../crates/rstorrent-platform" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 tauri = { version = "2.11.5", features = [] }
+tauri-plugin-dialog = "=2.7.2"
 tauri-plugin-process = "=2.3.1"
 tauri-plugin-updater = { version = "=2.10.1", default-features = false, features = ["native-tls", "zip"] }
 tokio = { workspace = true, features = ["net", "rt", "sync"] }

@@ -1,13 +1,13 @@
 #![forbid(unsafe_code)]
 
 use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use rstorrent_media::LoopbackMediaServer;
-use rstorrent_platform::{DownloadDirectoryPicker, NativeDownloadDirectoryPicker, PickerError};
 use rstorrent_session::{
     AddTorrentBytesRequest, ApplicationConfig, ApplicationService, CONTROL_VERSION, FileIndexRange,
     FileSelectionIntent, MediaUrlResponse, NetworkConfig, NetworkPolicy, RequestEnvelope,
@@ -18,6 +18,7 @@ use rstorrent_session::{
 use tauri::WebviewWindowBuilder;
 use tauri::ipc::{Channel, InvokeBody, Request as IpcRequest};
 use tauri::{AppHandle, Manager, RunEvent, State, WebviewWindow, WindowEvent};
+use tauri_plugin_dialog::DialogExt;
 use tokio::sync::{Mutex, Semaphore};
 use tokio_util::sync::CancellationToken;
 
@@ -292,6 +293,7 @@ fn parse_ipc_u32(value: &str) -> Result<u32, String> {
 
 #[tauri::command]
 async fn choose_download_root(
+    window: WebviewWindow,
     state: State<'_, DesktopState>,
     repair_root: Option<String>,
 ) -> Result<Option<StorageRootSnapshot>, String> {
@@ -301,23 +303,59 @@ async fn choose_download_root(
         .await
         .suggested_storage_root_path(repair_root.as_deref())
         .map_err(|error| error.to_string())?;
-    let starting_directory = suggested
-        .or_else(home_directory)
-        .ok_or_else(|| "no usable folder-picker starting directory is available".to_owned())?;
-    let selected = NativeDownloadDirectoryPicker
-        .choose(&starting_directory)
+    let starting_directory = match suggested {
+        Some(path) => path,
+        None => window
+            .app_handle()
+            .path()
+            .home_dir()
+            .map_err(|error| format!("resolve folder-picker home directory: {error}"))?,
+    };
+    let selected = pick_download_directory(&window, &starting_directory).await?;
+    let mut service = state.service.lock().await;
+    register_download_root_selection(&mut service, repair_root.as_deref(), selected)
+}
+
+async fn pick_download_directory(
+    window: &WebviewWindow,
+    starting_directory: &Path,
+) -> Result<Option<PathBuf>, String> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    window
+        .dialog()
+        .file()
+        .set_parent(window)
+        .set_title("Choose a download folder")
+        .set_directory(starting_directory)
+        .pick_folder(move |selection| {
+            let _ = sender.send(selection);
+        });
+    resolve_download_directory_selection(receiver).await
+}
+
+async fn resolve_download_directory_selection(
+    receiver: tokio::sync::oneshot::Receiver<Option<tauri_plugin_dialog::FilePath>>,
+) -> Result<Option<PathBuf>, String> {
+    let selection = receiver
         .await
-        .map_err(|error| match error {
-            PickerError::Unsupported => {
-                "download folder picker is not implemented on this platform".to_owned()
-            }
-            error => error.to_string(),
-        })?;
+        .map_err(|_| "download folder picker closed without a result".to_owned())?;
+    selection
+        .map(|path| {
+            path.into_path()
+                .map_err(|error| format!("resolve selected download folder: {error}"))
+        })
+        .transpose()
+}
+
+fn register_download_root_selection(
+    service: &mut ApplicationService,
+    repair_root: Option<&str>,
+    selected: Option<PathBuf>,
+) -> Result<Option<StorageRootSnapshot>, String> {
     let Some(selected) = selected else {
         return Ok(None);
     };
-    let mut service = state.service.lock().await;
-    if let Some(root_id) = repair_root.as_deref() {
+    if let Some(root_id) = repair_root {
         service
             .repair_path_storage_root(root_id, &selected)
             .map(Some)
@@ -328,12 +366,6 @@ async fn choose_download_root(
             .map(Some)
             .map_err(|error| error.to_string())
     }
-}
-
-fn home_directory() -> Option<std::path::PathBuf> {
-    std::env::var_os("HOME")
-        .map(std::path::PathBuf::from)
-        .filter(|path| path.is_dir())
 }
 
 #[tauri::command]
@@ -546,6 +578,7 @@ fn restore_main_window(app: &AppHandle) -> Result<(), String> {
 
 pub fn run() {
     let application = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
             let config_dir = app
@@ -643,13 +676,15 @@ fn desktop_application_config(app_data: &std::path::Path) -> ApplicationConfig {
 mod tests {
     use rstorrent_session::{
         ClientSettings, DownloadResourceLimits, ListenerPolicy, PeerTransportPolicy,
-        PortMappingPolicy,
+        PortMappingPolicy, StorageRootAvailability,
     };
     use tauri::ipc::InvokeBody;
 
     use super::{
-        HEADER_REQUEST_ID, HEADER_START_CONTENT, HEADER_STORAGE_ROOT, NetworkPolicy,
-        decode_torrent_ipc, desktop_application_config, validate_local_media_url,
+        ApplicationConfig, HEADER_REQUEST_ID, HEADER_START_CONTENT, HEADER_STORAGE_ROOT,
+        NetworkConfig, NetworkPolicy, decode_torrent_ipc, desktop_application_config,
+        register_download_root_selection, resolve_download_directory_selection,
+        validate_local_media_url,
     };
 
     #[test]
@@ -673,6 +708,120 @@ mod tests {
         assert_eq!(
             config.download_resource_limits,
             DownloadResourceLimits::DESKTOP
+        );
+    }
+
+    #[tokio::test]
+    async fn native_picker_selection_installs_repairs_and_restores_root() {
+        let temporary = tempfile::tempdir().expect("temporary picker profile");
+        let selected = temporary.path().join("selected");
+        std::fs::create_dir(&selected).expect("create selected directory");
+        let configuration = ApplicationConfig::new(
+            temporary.path().join("profile"),
+            "picker-test".to_owned(),
+            Vec::new(),
+            NetworkConfig::new(
+                NetworkPolicy::LoopbackOnly,
+                std::time::Duration::from_secs(5),
+                std::time::Duration::from_secs(5),
+            ),
+        )
+        .with_fresh_profile_defaults();
+        let mut service = rstorrent_session::ApplicationService::open(configuration.clone())
+            .await
+            .expect("open fresh picker profile");
+
+        assert_eq!(
+            register_download_root_selection(&mut service, None, None).expect("cancel selection"),
+            None
+        );
+        assert_eq!(
+            service
+                .storage_snapshot()
+                .expect("storage after cancel")
+                .roots,
+            Vec::new()
+        );
+
+        let installed =
+            register_download_root_selection(&mut service, None, Some(selected.clone()))
+                .expect("install selection")
+                .expect("installed root");
+        let root_id = installed.root_id.clone();
+        let snapshot = service.storage_snapshot().expect("installed storage");
+        assert_eq!(snapshot.default_root.as_deref(), Some(root_id.as_str()));
+        assert_eq!(snapshot.roots, vec![installed]);
+
+        service.shutdown().await.expect("shutdown selected profile");
+        drop(service);
+        std::fs::remove_dir(&selected).expect("make selected root unavailable");
+
+        let mut reopened = rstorrent_session::ApplicationService::open(configuration.clone())
+            .await
+            .expect("reopen unavailable picker profile");
+        let unavailable = reopened.storage_snapshot().expect("unavailable storage");
+        assert_eq!(unavailable.default_root.as_deref(), Some(root_id.as_str()));
+        assert_eq!(unavailable.roots[0].root_id, root_id);
+        assert_eq!(
+            unavailable.roots[0].availability,
+            StorageRootAvailability::Unavailable
+        );
+
+        let repaired_directory = temporary.path().join("repaired");
+        std::fs::create_dir(&repaired_directory).expect("create repair directory");
+        let repaired = register_download_root_selection(
+            &mut reopened,
+            Some(&root_id),
+            Some(repaired_directory),
+        )
+        .expect("repair selection")
+        .expect("repaired root");
+        assert_eq!(repaired.root_id, root_id);
+        assert_eq!(repaired.availability, StorageRootAvailability::Available);
+        reopened
+            .shutdown()
+            .await
+            .expect("shutdown repaired profile");
+        drop(reopened);
+
+        let mut restored = rstorrent_session::ApplicationService::open(configuration)
+            .await
+            .expect("restore repaired picker profile");
+        let restored_snapshot = restored.storage_snapshot().expect("restored storage");
+        assert_eq!(
+            restored_snapshot.default_root.as_deref(),
+            Some(root_id.as_str())
+        );
+        assert_eq!(restored_snapshot.roots.len(), 1);
+        assert_eq!(restored_snapshot.roots[0].root_id, root_id);
+        assert_eq!(
+            restored_snapshot.roots[0].availability,
+            StorageRootAvailability::Available
+        );
+        restored
+            .shutdown()
+            .await
+            .expect("shutdown restored profile");
+    }
+
+    #[tokio::test]
+    async fn native_picker_callback_channel_fails_closed() {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        drop(sender);
+        assert_eq!(
+            resolve_download_directory_selection(receiver)
+                .await
+                .expect_err("closed picker callback must fail"),
+            "download folder picker closed without a result"
+        );
+
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        sender.send(None).expect("send picker cancellation");
+        assert_eq!(
+            resolve_download_directory_selection(receiver)
+                .await
+                .expect("resolve picker cancellation"),
+            None
         );
     }
 
