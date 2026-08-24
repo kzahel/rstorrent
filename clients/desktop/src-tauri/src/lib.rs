@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::Command as ProcessCommand;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -10,27 +10,33 @@ use std::time::Duration;
 
 use rstorrent_media::LoopbackMediaServer;
 use rstorrent_session::{
-    AddTorrentBytesRequest, ApplicationConfig, ApplicationService, CONTROL_VERSION, FileIndexRange,
-    FileSelectionIntent, MediaUrlResponse, NetworkConfig, NetworkPolicy, RequestEnvelope,
-    ResponseEnvelope, StorageRootSnapshot, SubscriptionSpec, ViewSubscription, ViewUpdate,
-    application_error_response,
+    AddTorrentBytesRequest, ApplicationConfig, ApplicationService, CONTROL_VERSION, Command,
+    ErrorCode, FileIndexRange, FileSelectionIntent, MediaUrlResponse, NetworkConfig, NetworkPolicy,
+    RequestEnvelope, ResponseEnvelope, ResponseOutcome, StorageRootSnapshot, SubscriptionSpec,
+    ViewSubscription, ViewUpdate, application_error_response,
 };
 use tauri::WebviewWindowBuilder;
 use tauri::ipc::{Channel, InvokeBody, Request as IpcRequest};
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WebviewWindow, WindowEvent};
+use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 use tokio::sync::{Mutex, Semaphore, watch};
 use tokio_util::sync::CancellationToken;
 
 mod desktop_lifecycle;
+mod external_intake;
 mod updater;
 mod view_delivery;
 
 use desktop_lifecycle::{
     CloseAction, DesktopShellSettings, ShutdownGate, ShutdownPhase, close_action,
     load_desktop_shell_settings, persist_run_in_background,
+};
+use external_intake::{
+    DesktopActivationState, ExternalActivationSnapshot, ExternalActivationSource,
+    read_torrent_source,
 };
 use updater::{desktop_release_info, get_or_create_installation_id};
 use view_delivery::{
@@ -46,9 +52,10 @@ const TRAY_UPDATE_ID: &str = "rstorrent-tray-update";
 const TRAY_BACKGROUND_ID: &str = "rstorrent-tray-background";
 const TRAY_QUIT_ID: &str = "rstorrent-tray-quit";
 const UPDATE_CHECK_EVENT: &str = "rstorrent://check-for-updates";
+const EXTERNAL_INTAKE_EVENT: &str = "rstorrent://external-torrent-intake";
 const PEER_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const PEER_IO_TIMEOUT: Duration = Duration::from_secs(60);
-const MAX_TORRENT_SOURCE_BYTES: usize = 64 * 1024 * 1024;
+const MAX_TORRENT_SOURCE_BYTES: usize = external_intake::MAX_TORRENT_SOURCE_BYTES;
 
 const HEADER_REQUEST_ID: &str = "x-rstorrent-request-id";
 const HEADER_EXPECTED_REVISION: &str = "x-rstorrent-expected-revision";
@@ -72,6 +79,7 @@ struct DesktopState {
     shutdown_error: StdMutex<Option<String>>,
     restart_after_shutdown: AtomicBool,
     update_check_generation: AtomicU64,
+    external_activations: StdMutex<DesktopActivationState>,
 }
 
 struct DesktopSubscription {
@@ -86,14 +94,21 @@ async fn application_dispatch(
     state: State<'_, DesktopState>,
     request: RequestEnvelope,
 ) -> Result<ResponseEnvelope, String> {
+    Ok(dispatch_application_request(&state, request).await)
+}
+
+async fn dispatch_application_request(
+    state: &DesktopState,
+    request: RequestEnvelope,
+) -> ResponseEnvelope {
     let request_id = request.request_id.clone();
     let mut service = state.service.lock().await;
-    Ok(match service.dispatch(request).await {
+    match service.dispatch(request).await {
         Ok(response) => response,
         Err(error) => {
             application_error_response(request_id, service.revision().unwrap_or(0), &error)
         }
-    })
+    }
 }
 
 #[tauri::command]
@@ -155,19 +170,19 @@ fn validate_local_media_url(
 fn open_with_system(url: &str) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     let mut command = {
-        let mut command = Command::new("open");
+        let mut command = ProcessCommand::new("open");
         command.arg(url);
         command
     };
     #[cfg(target_os = "windows")]
     let mut command = {
-        let mut command = Command::new("cmd");
+        let mut command = ProcessCommand::new("cmd");
         command.args(["/C", "start", "", url]);
         command
     };
     #[cfg(all(unix, not(target_os = "macos")))]
     let mut command = {
-        let mut command = Command::new("xdg-open");
+        let mut command = ProcessCommand::new("xdg-open");
         command.arg(url);
         command
     };
@@ -186,6 +201,14 @@ async fn application_add_torrent_bytes(
     ipc: IpcRequest<'_>,
 ) -> Result<ResponseEnvelope, String> {
     let (request, source) = decode_torrent_ipc(ipc.body(), ipc.headers())?;
+    add_torrent_bytes(&state, request, source).await
+}
+
+async fn add_torrent_bytes(
+    state: &DesktopState,
+    request: AddTorrentBytesRequest,
+    source: Vec<u8>,
+) -> Result<ResponseEnvelope, String> {
     let request_id = request.request_id.clone();
     let permit = state
         .torrent_uploads
@@ -201,6 +224,160 @@ async fn application_add_torrent_bytes(
     };
     drop(permit);
     Ok(response)
+}
+
+#[tauri::command]
+fn desktop_external_intake_pull(state: State<'_, DesktopState>) -> ExternalActivationSnapshot {
+    state
+        .external_activations
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .pull_snapshot()
+}
+
+#[tauri::command]
+fn desktop_external_intake_cancel(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    activation_id: String,
+) -> Result<(), String> {
+    validate_activation_id(&activation_id)?;
+    let generation = {
+        let mut activations = state
+            .external_activations
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        activations.cancel(&activation_id)?;
+        activations.generation()
+    };
+    emit_external_intake_signal(&app, generation);
+    Ok(())
+}
+
+#[tauri::command]
+async fn application_add_external_torrent(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    activation_id: String,
+    request_id: String,
+    storage_root: String,
+    start_content: bool,
+) -> Result<ResponseEnvelope, String> {
+    validate_activation_id(&activation_id)?;
+    let source = state
+        .external_activations
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .begin(&activation_id)?;
+    let response = match source {
+        ExternalActivationSource::Magnet(magnet) => {
+            dispatch_application_request(
+                &state,
+                RequestEnvelope {
+                    version: CONTROL_VERSION,
+                    request_id,
+                    expected_revision: None,
+                    command: Command::AddMagnet {
+                        magnet,
+                        storage_root,
+                        start_content,
+                        skip_files: Vec::new(),
+                    },
+                },
+            )
+            .await
+        }
+        ExternalActivationSource::TorrentFile(path) => {
+            let read = tokio::task::spawn_blocking(move || read_torrent_source(&path)).await;
+            let source = match read {
+                Ok(Ok(source)) => source,
+                Ok(Err(failure)) => {
+                    let response =
+                        external_source_error_response(&state, request_id, failure.message()).await;
+                    finish_external_activation(&app, &state, &activation_id, true)?;
+                    return Ok(response);
+                }
+                Err(_) => {
+                    finish_external_activation(&app, &state, &activation_id, false)?;
+                    return Err("External torrent file could not be read".to_owned());
+                }
+            };
+            let request = AddTorrentBytesRequest {
+                version: CONTROL_VERSION,
+                request_id,
+                expected_revision: None,
+                storage_root,
+                start_content,
+                selection: FileSelectionIntent::All,
+                source_length: source.len() as u32,
+            };
+            match add_torrent_bytes(&state, request, source).await {
+                Ok(response) => response,
+                Err(error) => {
+                    finish_external_activation(&app, &state, &activation_id, false)?;
+                    return Err(error);
+                }
+            }
+        }
+    };
+    let terminal = external_response_is_terminal(&response);
+    finish_external_activation(&app, &state, &activation_id, terminal)?;
+    Ok(response)
+}
+
+async fn external_source_error_response(
+    state: &DesktopState,
+    request_id: String,
+    message: &'static str,
+) -> ResponseEnvelope {
+    let service = state.service.lock().await;
+    ResponseEnvelope::error(
+        request_id,
+        service.revision().unwrap_or_default(),
+        ErrorCode::InvalidRequest,
+        message,
+    )
+}
+
+fn external_response_is_terminal(response: &ResponseEnvelope) -> bool {
+    match &response.outcome {
+        ResponseOutcome::Success { .. } => true,
+        ResponseOutcome::Error { error } => {
+            matches!(
+                error.code,
+                ErrorCode::InvalidVersion | ErrorCode::InvalidRequest
+            )
+        }
+    }
+}
+
+fn finish_external_activation(
+    app: &AppHandle,
+    state: &DesktopState,
+    activation_id: &str,
+    terminal: bool,
+) -> Result<(), String> {
+    let generation = {
+        let mut activations = state
+            .external_activations
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let changed = activations.finish(activation_id, terminal)?;
+        changed.then(|| activations.generation())
+    };
+    if let Some(generation) = generation {
+        emit_external_intake_signal(app, generation);
+    }
+    Ok(())
+}
+
+fn validate_activation_id(activation_id: &str) -> Result<(), String> {
+    let parsed = uuid::Uuid::parse_str(activation_id)
+        .map_err(|_| "external torrent activation ID is invalid".to_owned())?;
+    if parsed.hyphenated().to_string() != activation_id {
+        return Err("external torrent activation ID is invalid".to_owned());
+    }
+    Ok(())
 }
 
 fn decode_torrent_ipc(
@@ -889,15 +1066,60 @@ fn desktop_update_check_generation(state: State<'_, DesktopState>) -> u64 {
     state.update_check_generation.load(Ordering::Acquire)
 }
 
+fn handle_external_activation_values<I, S>(app: &AppHandle, values: I)
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let Some(state) = app.try_state::<DesktopState>() else {
+        return;
+    };
+    let (admission, generation) = {
+        let mut activations = state
+            .external_activations
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let admission = activations.admit_strings(values);
+        (admission, activations.generation())
+    };
+    if admission.recognized
+        && let Err(error) = restore_main_window(app)
+    {
+        eprintln!("failed to restore desktop window for external torrent intake: {error}");
+    }
+    if admission.changed {
+        emit_external_intake_signal(app, generation);
+    }
+}
+
+fn emit_external_intake_signal(app: &AppHandle, generation: u64) {
+    if let Err(error) = app.emit(EXTERNAL_INTAKE_EVENT, generation) {
+        eprintln!("failed to signal external torrent intake: {error}");
+    }
+}
+
+fn is_magnet_argument(value: &str) -> bool {
+    value
+        .get(.."magnet:".len())
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("magnet:"))
+}
+
 pub fn run() {
     let application = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(
-            |app, _arguments, _cwd| {
+            |app, arguments, _cwd| {
+                handle_external_activation_values(
+                    app,
+                    arguments
+                        .iter()
+                        .filter(|argument| !is_magnet_argument(argument)),
+                );
                 if let Err(error) = restore_main_window(app) {
                     eprintln!("failed to restore desktop window for second launch: {error}");
                 }
             },
         ))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let config_dir = app
@@ -928,6 +1150,19 @@ pub fn run() {
             let media_server =
                 tauri::async_runtime::block_on(LoopbackMediaServer::bind(service.clone()))
                     .map_err(|error| error.to_string())?;
+            let mut external_activations = DesktopActivationState::default();
+            let mut startup_activations = std::env::args_os()
+                .skip(1)
+                .filter_map(|argument| argument.into_string().ok())
+                .collect::<Vec<_>>();
+            match app.deep_link().get_current() {
+                Ok(Some(urls)) => {
+                    startup_activations.extend(urls.into_iter().map(|url| url.as_str().to_owned()))
+                }
+                Ok(None) => {}
+                Err(_) => eprintln!("desktop startup deep-link state could not be read"),
+            }
+            external_activations.admit_strings(&startup_activations);
             let state = DesktopState {
                 service,
                 subscriptions: Arc::new(Mutex::new(BTreeMap::new())),
@@ -943,6 +1178,7 @@ pub fn run() {
                 shutdown_error: StdMutex::new(None),
                 restart_after_shutdown: AtomicBool::new(false),
                 update_check_generation: AtomicU64::new(0),
+                external_activations: StdMutex::new(external_activations),
             };
             let service = state.service.clone();
             let subscriptions = state.subscriptions.clone();
@@ -953,6 +1189,20 @@ pub fn run() {
             apply_platform_window_icon(&window)?;
             observe_window_destruction(&window, service, subscriptions, view_resources, 1);
             app.manage(state);
+            let external_handle = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                let urls = event.urls();
+                handle_external_activation_values(
+                    &external_handle,
+                    urls.iter().map(url::Url::as_str),
+                );
+            });
+            #[cfg(target_os = "linux")]
+            if app.env().appimage.is_some() {
+                app.deep_link()
+                    .register_all()
+                    .map_err(|_| "register AppImage magnet handler".to_owned())?;
+            }
             install_desktop_tray(app, &tray_menu)?;
             Ok(())
         })
@@ -961,6 +1211,9 @@ pub fn run() {
             application_create_media_url,
             application_open_media_url,
             application_add_torrent_bytes,
+            application_add_external_torrent,
+            desktop_external_intake_pull,
+            desktop_external_intake_cancel,
             choose_download_root,
             application_view_hello,
             application_view_open,

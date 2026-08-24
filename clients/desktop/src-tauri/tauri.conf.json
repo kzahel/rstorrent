@@ -33,6 +33,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "fileAssociations": [
+      {
+        "ext": ["torrent"],
+        "mimeType": "application/x-bittorrent",
+        "description": "BitTorrent metainfo file"
+      }
+    ],
     "category": "Utility",
     "shortDescription": "First-party BitTorrent client powered by Rust",
     "longDescription": "RSTorrent is an unreleased first-party BitTorrent client with an in-process Rust engine.",
@@ -49,6 +56,11 @@
     }
   },
   "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["magnet"]
+      }
+    },
     "updater": {
       "endpoints": [
         "https://updates.graehlarts.com/rstorrent/tauri/{{target}}/{{arch}}/{{current_version}}"
