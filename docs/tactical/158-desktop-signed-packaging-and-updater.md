@@ -10,10 +10,13 @@ five-leg signed workflow pass their local and hosted gates. The production
 route is deployed and a credentialed rehearsal produced all five signed
 package sets. Tagged `desktop-v0.1.0` then passed draft finalization and became
 the first public release. Tagged `desktop-v0.1.1` passed the same complete
-release workflow, and an exact installed macOS arm64 `0.1.0`-to-`0.1.1`
-production update, replacement, relaunch, build identity, signing, current-
-version check, and private installation-ID continuity campaign passes. macOS
-x86_64, Windows x86_64, and Linux x86_64/arm64 installed updates remain open.
+release workflow. Exact installed macOS arm64 and Linux arm64
+`0.1.0`-to-`0.1.1` production updates pass. Windows x86_64 NSIS replacement,
+relaunch, signing, current-version checking, and private installation-ID
+continuity pass under the supported automatic-loopback profile, but a fresh
+default profile exposes a local-network listener-selection startup blocker.
+Linux x86_64 remains open. Maintainer direction deliberately omits installed
+Intel macOS testing while retaining its automated signed package and route.
 
 Topics: `beta-release-readiness`, `client-surfaces`,
 `product-state-and-feedback`, `product-surfaces-and-migration`,
@@ -149,8 +152,10 @@ This tactical owns:
    service and a production-route preflight that does not change route meaning
    for any existing client;
 7. least-privileged install/uninstall and package-channel behavior; and
-8. exact older-to-newer installed testbed evidence on all five updater target
-   keys, with version/build/relaunch and cleanup recorded.
+8. exact older-to-newer installed testbed evidence on macOS arm64, Windows
+   x86_64, and Linux x86_64/arm64, with version/build/relaunch and cleanup
+   recorded; macOS x86_64 remains an explicit maintained package/route whose
+   installed test is deliberately omitted by maintainer direction.
 
 The tactical stops only when:
 
@@ -167,9 +172,10 @@ The tactical stops only when:
 - browser/demo builds contain no updater behavior, while the Tauri product
   passes the full visible state, schedule, timeout, deduplication, package
   policy, error, progress, install, and relaunch tests;
-- an older public signed installer on each supported testbed checks through
-  the production route, installs, relaunches, and reports the exact new version
-  and frontend/native build identity; and
+- an older public signed installer on each planned installed-testbed target
+  checks through the production route, installs, relaunches, and reports the
+  exact new version and frontend/native build identity, with the deliberate
+  macOS x86_64 omission recorded; and
 - privacy/support docs, release checklist, focused topics, and a versioned
   acceptance record contain the actual evidence and known limits.
 
@@ -246,8 +252,9 @@ must not leave an updater task or partial product-state write owner alive.
    boundaries, draft artifact matrix, signing, notarization, checksums, and
    fail-closed finalizer.
 6. **Installed evidence.** Run exact old-to-new production-route campaigns on
-   macOS arm64/x86_64, Windows x86_64, and Linux x86_64/arm64 and record the
-   results before any beta readiness claim.
+   macOS arm64, Windows x86_64, and Linux x86_64/arm64 and record the results
+   before any beta readiness claim. Retain macOS x86_64 package/route checks
+   while recording its installed campaign as deliberately omitted.
 
 ## Reference Record
 
@@ -285,7 +292,7 @@ consumer and is not used as compatibility evidence.
 - config/latest.json/signature/checksum/release-asset validators;
 - native package install/uninstall and manual-channel behavior; and
 - exact public signed older-to-newer production-route testbed campaigns for
-  all five updater keys.
+  the four planned installed targets plus the explicit macOS x86_64 omission.
 
 Record exact commands, workflow runs, artifact hashes, package types, target
 architectures, signing subjects, notarization/stapling outcomes, update route,
@@ -381,8 +388,11 @@ gaps are in
 [`desktop-v0.1.0-to-v0.1.1`](../evidence/desktop-v0.1.0-to-v0.1.1.md).
 Publisher signatures, package breadth, tagged finalization, public lookup, one
 installed launch, and the macOS arm64 cross-version update are therefore
-proven; macOS x86_64, Windows x86_64, and Linux x86_64/arm64 installed updates
-remain external gates.
+proven. A later isolated campaign also proves Linux arm64 replacement and
+relaunch against the exact public AppImages. Windows x86_64 proves the NSIS
+updater under an automatic-loopback profile but exposes a fresh-default
+listener-selection startup blocker. Linux x86_64 remains an external gate;
+installed macOS x86_64 testing is deliberately omitted.
 
 ## Escalation Contract
 

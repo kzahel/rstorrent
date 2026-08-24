@@ -229,6 +229,12 @@ incoming peers locally or through one proven UPnP-mapped public TCP endpoint:
   policies for controlled use plus ordinary automatic/fixed IPv4 policies;
   ordinary modes bind `0.0.0.0`, retain a best-effort concrete routed address
   for reachability bookkeeping, and report fixed bind failure as typed state;
+- clean installed Windows x86_64 `0.1.0` and `0.1.1` do not currently start
+  under that fresh ordinary default: the multicast source-selection probe
+  returns `127.0.0.1`, the engine rejects loopback and falls back to
+  `0.0.0.0`, and application validation rejects the wildcard. The supported
+  loopback profile starts, but the default needs a Windows-native repair and
+  clean installed evidence before the Windows beta lane is runnable;
 - one joined session listener uses a five-entry backlog, bounds eight
   pre-handshake tasks, and routes version-tagged 20-byte v1 or v2 swarm keys
   through up to 1,024 generation-fenced registrations. It admits peers under

@@ -732,9 +732,12 @@ that scope and its cleanup or compatibility rules explicitly.
   implementation in progress and selected as Now; its Tauri-only
   `desktop-update-v1` UI/state boundary, per-app identity/key/route, hosted
   signed five-target package rehearsal, public `desktop-v0.1.0` and
-  `desktop-v0.1.1` finalization, one installed macOS arm64 launch smoke, and an
-  exact arm64 `0.1.0`-to-`0.1.1` replacement/relaunch pass. The other four
-  installed updater targets remain open behind the publication gate.
+  `desktop-v0.1.1` finalization, one installed macOS arm64 launch smoke, and
+  exact macOS arm64 plus Linux arm64 `0.1.0`-to-`0.1.1`
+  replacement/relaunch passes. Windows x86_64 replacement also passes under
+  an automatic-loopback profile, but fresh-default listener selection blocks
+  startup. Linux x86_64 remains open; installed Intel macOS testing is a
+  deliberate omission.
 - [`159-cross-platform-presubmit-ci.md`](159-cross-platform-presubmit-ci.md):
   complete; installs credential-free Rust, web, deterministic browser E2E,
   native desktop, Android, iOS, and short controlled-interoperability checks

@@ -7,9 +7,12 @@ public signed incubation release and `0.1.1` is its first updater-validation
 release; Android and iOS remain unreleased alpha lanes. Credential-free cross-
 platform presubmit CI, a credentialed five-target signed desktop rehearsal,
 two tagged publications, production updater metadata, one installed macOS
-arm64 launch smoke, and one exact macOS arm64 `0.1.0`-to-`0.1.1` update pass.
-The other four installed updater targets remain open. The public product name
-is RSTorrent for the foreseeable release line. A later production
+arm64 launch smoke, and exact macOS arm64 and Linux arm64
+`0.1.0`-to-`0.1.1` update passes. Windows x86_64 replacement/relaunch also
+passes under an automatic-loopback profile, but fresh default startup is
+blocked by local-network address selection. Linux x86_64 remains open and
+installed Intel macOS testing is deliberately omitted. The public product
+name is RSTorrent for the foreseeable release line. A later production
 graduation is expected to retain JSTorrent's existing name, application
 identity, and updater trust root, with best-effort legacy-state migration
 scoped separately. It is not a beta requirement. This topic is the
@@ -50,9 +53,9 @@ Store review, and mobile beta is not implied by a desktop tag:
 
 | Lane | Intended beta channel | Current release state |
 | --- | --- | --- |
-| macOS desktop | signed/notarized DMG plus in-app updates | public Developer ID-signed, notarized, and stapled app/DMG packages pass for arm64 and x86_64; an installed arm64 launch smoke and exact `0.1.0`-to-`0.1.1` replacement/relaunch pass; clean-machine breadth and the x86_64 installed update remain absent |
-| Windows desktop | signed per-user NSIS plus in-app updates | public NSIS and MSI packages have valid expected-publisher Authenticode signatures; clean install and real update remain absent |
-| Linux desktop | AppImage plus in-app updates; DEB/RPM remain package-manager channels | public AppImage, DEB, and RPM packages plus updater artifacts pass for x86_64 and arm64; installed and real update evidence remain absent |
+| macOS desktop | signed/notarized DMG plus in-app updates | public Developer ID-signed, notarized, and stapled app/DMG packages pass for arm64 and x86_64; an installed arm64 launch smoke and exact `0.1.0`-to-`0.1.1` replacement/relaunch pass; Intel installed testing is deliberately omitted |
+| Windows desktop | signed per-user NSIS plus in-app updates | public NSIS and MSI packages have valid expected-publisher Authenticode signatures; per-user NSIS replacement/relaunch passes under an automatic-loopback profile, but a fresh default profile cannot start because local-network address selection falls back to an invalid wildcard |
+| Linux desktop | AppImage plus in-app updates; DEB/RPM remain package-manager channels | public AppImage, DEB, and RPM packages plus updater artifacts pass for x86_64 and arm64; exact arm64 AppImage replacement/relaunch passes, while x86_64 installed evidence remains absent |
 | Android/ChromeOS | signed Android App Bundle through a closed testing channel | maintained Compose/in-process Rust/SAF app and hosted dual-ABI debug/test APK gates pass; release identity, signed AAB, emulator/store, and upgrade evidence absent |
 | iOS/iPadOS | signed TestFlight build | maintained SwiftUI app plus hosted simulator tests and unsigned device archive pass; distribution identity, signing, TestFlight, and upgrade evidence absent |
 
@@ -199,8 +202,11 @@ without corrupting or silently reinterpreting user state.
   initialization, and graceful-quit smoke. An isolated macOS arm64 appliance
   also installed that exact public build and updated through production to
   `0.1.1` with replacement, relaunch, and retained private updater identity.
-  Windows/Linux installation, the common cohort, reboot/relaunch, and full
-  uninstall policy remain open.
+  Linux arm64 now passes the same exact public AppImage replacement/relaunch
+  and updater-ID continuity check. Windows x86_64 passes replacement/relaunch
+  only after selecting automatic-loopback because its fresh default listener
+  profile fails startup. Linux x86_64, the common cohort, reboot/relaunch, and
+  full uninstall policy remain open.
 - [ ] **QA-004 — Establish a crash/support loop.** Users need an accessible
   version/build identity, copyable bounded diagnostics, known-issues link, and
   a report path. Automatic crash or analytics upload is not required for beta.
@@ -219,9 +225,11 @@ without corrupting or silently reinterpreting user state.
   provisional icon assets and local bundle configuration. Hosted native DMG,
   NSIS, MSI, AppImage, DEB, and RPM builds now pass across the intended matrix.
   The public arm64 DMG also passed one installed macOS launch and graceful quit,
-  followed by an exact `0.1.0`-to-`0.1.1` replacement/relaunch in an isolated
-  macOS arm64 appliance. Clean-machine breadth, Intel Mac and Windows/Linux
-  launch/update, uninstall, and retained-state evidence remain required.
+  followed by exact `0.1.0`-to-`0.1.1` replacement/relaunch in isolated macOS
+  and Linux arm64 appliances. Windows x86_64 replacement/relaunch also passes
+  under an automatic-loopback profile, but fresh-default startup does not.
+  Linux x86_64, uninstall, retained-state, and broader clean-machine evidence
+  remain required; Intel Mac installed testing is deliberately omitted.
 - [x] **DESK-002 — Sign and notarize tagged builds.** Use the existing shared
   publisher Developer ID/notarization and Windows Azure signing setup. Missing
   credentials must fail a tagged build before publication; untagged CI must
@@ -245,6 +253,11 @@ without corrupting or silently reinterpreting user state.
 - [ ] **DESK-005 — Qualify native root pickers.** macOS works. Windows and
   Linux picker behavior, permissions, unavailable roots, restart, and repair
   remain open platform gates.
+- [ ] **DESK-006 — Fix fresh-default Windows listener startup.** The public
+  `0.1.0` and `0.1.1` Windows builds select `127.0.0.1` from the multicast
+  source-route probe, reject it for local-network listening, fall back to
+  `0.0.0.0`, and then fail application validation. Prove the repaired default
+  on a clean installed profile before calling the Windows lane runnable.
 
 ### Desktop updater contract
 
@@ -295,11 +308,14 @@ is still pending and is not the compatibility oracle.
 - [ ] **UPD-005 — Prove a real cross-version update.** On each supported
   desktop testbed, install an exact older public signed build, check through
   the production route, download/install/relaunch, and verify new application
-  version/build identity. macOS arm64 now passes from exact public `0.1.0` to
-  `0.1.1`, including explicit approval, replacement, relaunch, signing,
-  current-version check, and private installation-ID continuity. macOS x86_64,
-  Windows x86_64 NSIS, and Linux x86_64/arm64 AppImage remain open; source and
-  metadata tests alone do not close this.
+  version/build identity. macOS arm64 and Linux arm64 now pass from exact
+  public `0.1.0` to `0.1.1`, including explicit approval, replacement,
+  relaunch, current-version checking, and private installation-ID continuity.
+  Windows x86_64 proves the same updater mechanics and Authenticode continuity
+  under an automatic-loopback profile, but must repeat from a fresh default
+  profile after `DESK-006`. Linux x86_64 remains open. Intel macOS installed
+  testing is deliberately omitted by maintainer direction; source and metadata
+  tests alone are the only x86_64 macOS claim.
 - [ ] **UPD-006 — Document update privacy and recovery.** Explain the random
   resettable installation ID, private server logging, automatic schedule,
   manual retry/download path, rollback expectations, and behavior when an
@@ -404,10 +420,11 @@ no single optional BEP is mandatory.
    The product-owned `desktop-update-v1` client, signed package workflow,
    release validation, per-app key, public configuration, production route,
    five-platform hosted rehearsal, two tagged publications, one installed
-   macOS arm64 launch smoke, and the exact macOS arm64 `0.1.0`-to-`0.1.1`
-   production-route update are complete. Next repeat the installed update on
-   macOS x86_64, Windows x86_64 NSIS, and Linux x86_64/arm64 AppImage before
-   closing the tactical.
+   macOS arm64 launch smoke, and exact macOS arm64 and Linux arm64
+   `0.1.0`-to-`0.1.1` production-route updates are complete. Windows x86_64
+   updater replacement also passes under an automatic-loopback profile. Next
+   fix and repeat Windows from a fresh default profile and run Linux x86_64;
+   Intel macOS installed testing is deliberately omitted.
 4. **Next — application identity and upgrade baseline.** Freeze package IDs,
    persistence compatibility, changelog, privacy/support, diagnostics export,
    and a repeatable cohort before any public installer.

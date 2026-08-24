@@ -9,10 +9,13 @@ cross-platform presubmit Tactical `159`, then selected decision-complete
 desktop release/updater Tactical `158` as the single **Now**. Its client,
 production route, five-target signed hosted rehearsal, public `0.1.0` release,
 public `0.1.1` updater-validation release, installed macOS arm64 launch smoke,
-and exact macOS arm64 `0.1.0`-to-`0.1.1` update now pass; the other four
-installed updater targets keep it active. The tables below record current
-support, evidence, and highest-risk gaps; implementation history remains in
-the linked tacticals and focused topics.
+and exact macOS arm64 and Linux arm64 `0.1.0`-to-`0.1.1` updates now pass.
+Windows x86_64 updater replacement/relaunch passes under an automatic-loopback
+profile but a fresh default profile exposes a listener-selection startup
+blocker. Linux x86_64 remains open, and installed Intel macOS testing is
+deliberately omitted. These gaps keep the tactical active. The tables below
+record current support, evidence, and highest-risk gaps; implementation
+history remains in the linked tacticals and focused topics.
 
 ## Purpose And Ownership
 
@@ -493,11 +496,12 @@ exactly.
   shared `desktop-update-v1` client, application identity, per-app key,
   production route, package matrix, and credentialed five-target rehearsal
   now pass. Tagged draft/finalizers published `desktop-v0.1.0` and
-  `desktop-v0.1.1`; a public arm64 DMG installed-launch smoke and an exact
-  macOS arm64 replacement/relaunch pass. Repeat the installed
-  `0.1.0`-to-`0.1.1` production-route update on macOS x86_64, Windows x86_64
-  NSIS, and Linux x86_64/arm64 AppImage without weakening the explicit
-  publication boundary.
+  `desktop-v0.1.1`; a public arm64 DMG installed-launch smoke and exact macOS
+  arm64 and Linux arm64 replacement/relaunch pass. Windows x86_64 NSIS
+  replacement also passes under an automatic-loopback profile, but a fresh
+  default profile does not start. Fix and repeat Windows from clean state and
+  run Linux x86_64 without weakening the explicit publication boundary;
+  retain installed Intel macOS as a deliberate omission.
 
 ### Next
 
@@ -513,9 +517,11 @@ Rust/web, deterministic browser E2E, native desktop package, Android dual-ABI,
 iOS simulator/archive, and short loopback-interoperability signal on every
 `main` update and pull request. Signed package and updater artifacts plus
 native desktop architecture breadth now pass the public `desktop-v0.1.0` and
-`desktop-v0.1.1` releases; one installed macOS arm64 launch and exact
-cross-version update also pass. Remaining cross-platform clean-machine
-installation and installed updater evidence, mobile
+`desktop-v0.1.1` releases; one installed macOS arm64 launch plus exact macOS
+arm64 and Linux arm64 cross-version updates pass. Windows x86_64 updater
+replacement is proven under the stated profile limitation. Remaining
+cross-platform clean-machine installation and installed updater evidence,
+mobile
 emulator/device release runs, and broad interoperability remain separate gates.
 
 Decision-complete measurement Tactical

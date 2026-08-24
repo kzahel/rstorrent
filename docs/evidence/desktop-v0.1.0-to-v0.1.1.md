@@ -2,9 +2,13 @@
 
 Date: 2026-08-24
 
-Status: the exact public macOS arm64 installed-update path passes. macOS
-x86_64, Windows x86_64 NSIS, Linux x86_64 AppImage, and Linux arm64 AppImage
-remain open and this record does not close Tactical `158` or `UPD-005`.
+Status: the exact public macOS arm64 and Linux arm64 installed-update paths
+pass. The Windows x86_64 NSIS updater also replaces and relaunches correctly
+after selecting the supported automatic-loopback listener profile, but a fresh
+default-profile installation cannot start because local-network address
+selection falls back to `0.0.0.0` and the product rejects it. Linux x86_64
+remains open. Maintainer direction deliberately omits an installed Intel macOS
+campaign. This record does not close Tactical `158` or `UPD-005`.
 
 ## Release Identity
 
@@ -46,7 +50,8 @@ Production checks used a syntactically valid disposable UUID and
 
 Each HTTP 200 body had version `0.1.1`, a nonempty updater signature, and an
 immutable exact-release URL. These route checks establish server coverage;
-only the macOS arm64 row has installed replacement evidence below.
+macOS arm64, Windows x86_64 with the stated profile boundary, and Linux arm64
+have installed replacement evidence below.
 
 ## Installed macOS Arm64 Update
 
@@ -92,11 +97,99 @@ power, administration, Aqua, resident, semantic, capture, and input readiness.
 This is a Machine Control launch-path issue to diagnose separately; it did not
 alter the app, release assets, updater route, or installed-update result.
 
+## Installed Windows X86_64 Update
+
+The test ran in a claimed, isolated Machine Control Windows workspace. The
+source appliance remained stopped, the disposable overlay was receipt-bound,
+and PowerShell, WinApp/semantic inspection, resident capture, and resident
+input were used without host-window input.
+
+1. The exact public `RSTorrent_0.1.0_x64-setup.exe` was downloaded in the
+   guest. It was 10,065,472 bytes with SHA-256
+   `e038f1662bedc496156ce8008b2b7f5eacc728ea5c6b06aae0695aaa046622a8`,
+   and Authenticode validation reported the expected publisher.
+2. The NSIS UI installed the per-user application into the standard local
+   application-data location and launched it. A fresh default profile then
+   failed before presentation with `Unable to start RSTorrent: local-network
+   listener address is invalid`.
+3. The appliance had a non-loopback IPv4 address. A direct OS probe showed
+   that connecting an unbound UDP socket to `239.255.255.250:1900` selected
+   `127.0.0.1`; `select_local_network_ipv4` rejects loopback, listener setup
+   falls back to `0.0.0.0`, and the application validator rejects that address.
+   This is a real default Windows startup blocker in both public versions, not
+   an updater failure.
+4. After preserving that result, the disposable profile's supported listener
+   setting alone was changed to `automatic_loopback`. RSTorrent started,
+   connected, retained its original private updater ID, and automatically
+   displayed `RSTorrent 0.1.1 is available`.
+5. About & updates showed version `0.1.0`, build
+   `768d7de3f5fabcdea4bc1619b127247d61df9ef9`, target
+   `x86_64-pc-windows-msvc`, package `Windows NSIS`, the public release notes,
+   and **Install and restart**.
+6. The explicit install action terminated the old process, completed without
+   a lingering installer, and relaunched one process. The installed executable
+   and per-user uninstall record both reported `0.1.1`; Authenticode remained
+   valid with the expected publisher.
+7. The relaunched UI reported build
+   `2a9ab871847893ed809bf042406ab95487b9d645`, the same target/package, and
+   automatic updates enabled. A manual follow-up check reported
+   `Version 0.1.1 is the newest compatible release.`
+8. The post-relaunch private `cfu-id` remained a valid UUIDv4 and was
+   byte-for-byte equal to its baseline. Its value was never printed or
+   retained as evidence.
+9. The app was terminated and the exact isolated workspace was discarded.
+   Machine Control reported zero temporary workspaces, an available claim,
+   and the source appliance powered off.
+
+This proves signed NSIS update replacement and relaunch under an existing
+supported loopback-listener configuration. It does not qualify a clean default
+Windows installation until the listener-selection defect is fixed and the
+same campaign passes without altering application state.
+
+## Installed Linux Arm64 Update
+
+The test ran in a claimed, isolated Machine Control Ubuntu GNOME workspace.
+The source appliance remained stopped, the disposable overlay was
+receipt-bound, and guest commands, AT-SPI inspection, resident capture, and
+resident input were used. Outer virtualization-window input was prohibited.
+
+1. The exact public `RSTorrent_0.1.0_aarch64.AppImage` was downloaded into a
+   stable user-writable Applications directory. It was 90,159,624 bytes with
+   SHA-256
+   `e039b0eb9ac3916dcca376c7623bbf7fcbc25fe8be883454bfd71de1639f5651`
+   and executable mode `0755`.
+2. The AppImage launched, reached its in-process service, created a valid
+   private UUIDv4 `cfu-id` with mode `0600`, and automatically displayed
+   `RSTorrent 0.1.1 is available`.
+3. About & updates showed version `0.1.0`, build
+   `768d7de3f5fabcdea4bc1619b127247d61df9ef9`, target
+   `aarch64-unknown-linux-gnu`, package `Linux AppImage`, the public release
+   notes, and **Install and restart**.
+4. The explicit install action terminated the old process, replaced the
+   AppImage, and relaunched exactly one new process. The installed file became
+   the exact public `0.1.1` asset: 90,151,432 bytes, executable mode `0755`,
+   and SHA-256
+   `6e6ea5ec648a9a9c5de19c38c2ddb379bb75658c80798caf4dead68fe85c06c8`.
+5. The relaunched UI reported version `0.1.1`, build
+   `2a9ab871847893ed809bf042406ab95487b9d645`, the same target/package, and
+   automatic updates enabled. A manual follow-up check reported
+   `Version 0.1.1 is the newest compatible release.`
+6. The post-relaunch `cfu-id` was byte-for-byte equal to the private baseline
+   and remained a valid mode-`0600` UUIDv4. Its value was never printed or
+   retained as evidence.
+7. The app was terminated and the exact isolated workspace was discarded.
+   Machine Control reported zero temporary workspaces, an available claim,
+   and the source appliance powered off.
+
 ## Remaining Boundaries
 
-- No installed macOS x86_64 update has run on an Intel testbed.
-- No installed Windows x86_64 per-user NSIS update has run.
-- No installed Linux x86_64 or arm64 AppImage update has run.
+- Intel macOS installed-update testing is deliberately omitted by maintainer
+  direction. Its signed/notarized package and production route remain
+  automated, but installed behavior is not a beta-readiness claim.
+- Windows x86_64 must fix the fresh default local-network listener startup
+  failure and repeat the installed campaign without changing profile state.
+- No installed Linux x86_64 AppImage update has run because the available
+  isolated Linux testbed is arm64.
 - MSI, DEB, and RPM are deliberately manual/package-manager channels and are
   not self-replacement targets.
 - The test proves application identity and updater-ID continuity. It does not
