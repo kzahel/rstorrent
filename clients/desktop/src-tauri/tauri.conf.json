@@ -36,19 +36,33 @@
     "fileAssociations": [
       {
         "ext": ["torrent"],
+        "name": "com.jstorrent.rstorrent.torrent",
         "mimeType": "application/x-bittorrent",
+        "exportedType": {
+          "identifier": "com.jstorrent.rstorrent.torrent",
+          "conformsTo": ["public.data"]
+        },
         "description": "BitTorrent metainfo file"
       }
     ],
     "category": "Utility",
     "shortDescription": "First-party BitTorrent client powered by Rust",
     "longDescription": "RSTorrent is an unreleased first-party BitTorrent client with an in-process Rust engine.",
+    "linux": {
+      "deb": {
+        "desktopTemplate": "./linux/rstorrent.desktop"
+      },
+      "rpm": {
+        "desktopTemplate": "./linux/rstorrent.desktop"
+      }
+    },
     "macOS": {
       "minimumSystemVersion": "13.0"
     },
     "windows": {
       "nsis": {
-        "installMode": "currentUser"
+        "installMode": "currentUser",
+        "installerHooks": "./nsis/hooks.nsh"
       },
       "webviewInstallMode": {
         "type": "embedBootstrapper"

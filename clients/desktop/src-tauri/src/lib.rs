@@ -1194,7 +1194,9 @@ pub fn run() {
                 let urls = event.urls();
                 handle_external_activation_values(
                     &external_handle,
-                    urls.iter().map(url::Url::as_str),
+                    urls.iter()
+                        .filter(|url| url.scheme().eq_ignore_ascii_case("magnet"))
+                        .map(url::Url::as_str),
                 );
             });
             #[cfg(target_os = "linux")]
@@ -1245,6 +1247,15 @@ pub fn run() {
             if let Err(error) = restore_main_window(handle) {
                 eprintln!("failed to restore desktop window: {error}");
             }
+        }
+        #[cfg(target_os = "macos")]
+        RunEvent::Opened { urls } => {
+            handle_external_activation_values(
+                handle,
+                urls.iter()
+                    .filter(|url| url.scheme().eq_ignore_ascii_case("file"))
+                    .map(url::Url::as_str),
+            );
         }
         _ => {}
     });

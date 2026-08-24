@@ -107,6 +107,7 @@ jobs:
         run: |
           node scripts/validate-desktop-release.mjs
           node --test \
+            scripts/validate-desktop-package.test.mjs \
             scripts/validate-desktop-release.test.mjs \
             .github/scripts/validate-desktop-release.test.mjs \
             .github/scripts/write-release-checksums.test.mjs
@@ -240,6 +241,70 @@ jobs:
               test "$(find target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage' | wc -l)" -eq 1
               ;;
           esac
+
+      - name: Verify macOS activation metadata
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          APP_PATH=$(find target/release/bundle/macos -maxdepth 1 -type d -name '*.app' -print -quit)
+          test -n "$APP_PATH"
+          node scripts/validate-desktop-package.mjs --mac-app "$APP_PATH"
+
+      - name: Verify installed Windows activation registry
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = @(Get-ChildItem 'target/release/bundle/nsis' -Filter '*-setup.exe' -File)
+          if ($installer.Count -ne 1) {
+            throw "Expected one NSIS installer; found $($installer.Count)"
+          }
+          $installDirectory = Join-Path $env:LOCALAPPDATA 'RSTorrent'
+          $executable = Join-Path $installDirectory 'rstorrent-desktop.exe'
+          try {
+            $install = Start-Process -FilePath $installer[0].FullName -ArgumentList '/S' -Wait -PassThru
+            if ($install.ExitCode -ne 0) {
+              throw "Silent NSIS install failed with exit code $($install.ExitCode)"
+            }
+            if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
+              throw "Installed RSTorrent executable is missing"
+            }
+            $torrentExtension = Get-Item 'Registry::HKEY_CURRENT_USER\Software\Classes\.torrent'
+            $torrentCommand = Get-Item 'Registry::HKEY_CURRENT_USER\Software\Classes\com.jstorrent.rstorrent.torrent\shell\open\command'
+            $magnet = Get-Item 'Registry::HKEY_CURRENT_USER\Software\Classes\magnet'
+            $magnetCommand = Get-Item 'Registry::HKEY_CURRENT_USER\Software\Classes\magnet\shell\open\command'
+            @{
+              executable = $executable
+              torrentProgId = $torrentExtension.GetValue('')
+              torrentCommand = $torrentCommand.GetValue('')
+              magnetUrlProtocol = $magnet.GetValue('URL Protocol')
+              magnetCommand = $magnetCommand.GetValue('')
+            } | ConvertTo-Json | Set-Content -LiteralPath "$env:RUNNER_TEMP\rstorrent-registry.json"
+            node scripts/validate-desktop-package.mjs --windows-registry-json "$env:RUNNER_TEMP\rstorrent-registry.json"
+            if ($LASTEXITCODE -ne 0) {
+              throw "Installed Windows activation registry validation failed"
+            }
+          } finally {
+            $uninstaller = Join-Path $installDirectory 'uninstall.exe'
+            if (Test-Path -LiteralPath $uninstaller -PathType Leaf) {
+              Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait | Out-Null
+            }
+          }
+
+      - name: Verify Linux activation metadata
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          APPIMAGE=$(find target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage' -print -quit)
+          test -n "$APPIMAGE"
+          EXTRACT_DIR="$RUNNER_TEMP/rstorrent-appimage"
+          mkdir -p "$EXTRACT_DIR"
+          APPIMAGE=$(realpath "$APPIMAGE")
+          (cd "$EXTRACT_DIR" && "$APPIMAGE" --appimage-extract >/dev/null)
+          DESKTOP_FILE=$(find "$EXTRACT_DIR/squashfs-root" -type f -name '*.desktop' -print -quit)
+          test -n "$DESKTOP_FILE"
+          desktop-file-validate "$DESKTOP_FILE"
+          node scripts/validate-desktop-package.mjs --linux-desktop "$DESKTOP_FILE"
 
       - name: Retain Windows package for installed smoke
         if: github.event_name == 'workflow_dispatch' && runner.os == 'Windows'

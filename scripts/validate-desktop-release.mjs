@@ -10,6 +10,7 @@ const EXPECTED_ENDPOINT =
   "https://updates.graehlarts.com/rstorrent/tauri/{{target}}/{{arch}}/{{current_version}}";
 const EXPECTED_PUBLIC_KEY =
   "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc4OEE3ODUxMzEzNjcwOTYKUldTV2NEWXhVWGlLZUpKK0trSG5XZ09qQ1ZPVFo2ZGV0MC9Cc001UWlGSCtvaE1iNDY0RmNRZkwK";
+const EXPECTED_TORRENT_FILE_CLASS = "com.jstorrent.rstorrent.torrent";
 
 function fail(message) {
   throw new Error(message);
@@ -30,6 +31,8 @@ export function validateDesktopReleaseConfiguration({
   capability,
   desktopMain,
   desktopSource,
+  nsisHooks,
+  linuxDesktop,
   tauriUpdater,
   product,
   changelog,
@@ -68,6 +71,56 @@ export function validateDesktopReleaseConfiguration({
   if (tauri.bundle?.windows?.nsis?.installMode !== "currentUser") {
     fail("Windows NSIS must use currentUser installation");
   }
+  if (tauri.bundle?.windows?.nsis?.installerHooks !== "./nsis/hooks.nsh") {
+    fail("Windows NSIS must use the reviewed association installer hook");
+  }
+  for (const packageType of ["deb", "rpm"]) {
+    if (
+      tauri.bundle?.linux?.[packageType]?.desktopTemplate !==
+      "./linux/rstorrent.desktop"
+    ) {
+      fail(`Linux ${packageType} must use the reviewed activation desktop template`);
+    }
+  }
+  if (
+    !linuxDesktop.includes("Exec={{exec}} %U") ||
+    !linuxDesktop.includes("MimeType={{mime_type}};") ||
+    !linuxDesktop.includes("Terminal=false")
+  ) {
+    fail("Linux desktop handler must forward URLs/files and remain a GUI application");
+  }
+  const expectedFileAssociations = [
+    {
+      ext: ["torrent"],
+      name: EXPECTED_TORRENT_FILE_CLASS,
+      mimeType: "application/x-bittorrent",
+      exportedType: {
+        identifier: EXPECTED_TORRENT_FILE_CLASS,
+        conformsTo: ["public.data"],
+      },
+      description: "BitTorrent metainfo file",
+    },
+  ];
+  if (
+    JSON.stringify(tauri.bundle?.fileAssociations) !==
+    JSON.stringify(expectedFileAssociations)
+  ) {
+    fail(`unexpected desktop torrent file association: ${JSON.stringify(tauri.bundle?.fileAssociations)}`);
+  }
+  const schemes = tauri.plugins?.["deep-link"]?.desktop?.schemes;
+  if (JSON.stringify(schemes) !== JSON.stringify(["magnet"])) {
+    fail(`unexpected desktop deep-link schemes: ${JSON.stringify(schemes)}`);
+  }
+  const quotedTorrentCommand =
+    '$\\"$INSTDIR\\${MAINBINARYNAME}.exe$\\" $\\"%1$\\"';
+  if (
+    !nsisHooks.includes(
+      `Software\\Classes\\${EXPECTED_TORRENT_FILE_CLASS}\\shell\\open\\command`,
+    ) ||
+    !nsisHooks.includes(quotedTorrentCommand)
+  ) {
+    fail("Windows torrent file command must quote the executable and input path");
+  }
   const endpoints = tauri.plugins?.updater?.endpoints;
   if (
     !Array.isArray(endpoints) ||
@@ -96,6 +149,16 @@ export function validateDesktopReleaseConfiguration({
   if (!cargo.includes("tauri-plugin-updater =")) {
     fail("missing Rust dependency tauri-plugin-updater");
   }
+  if (!cargo.includes('tauri-plugin-deep-link = "=2.4.9"')) {
+    fail("missing pinned Rust dependency tauri-plugin-deep-link 2.4.9");
+  }
+  if (
+    !cargo.includes(
+      'tauri-plugin-single-instance = { version = "=2.4.3", features = ["deep-link"] }',
+    )
+  ) {
+    fail("single-instance dependency must use its compatible deep-link integration");
+  }
   if (packageJson.dependencies?.["@tauri-apps/plugin-updater"] === undefined) {
     fail("missing web dependency for tauri-plugin-updater");
   }
@@ -121,6 +184,31 @@ export function validateDesktopReleaseConfiguration({
     )
   ) {
     fail("release desktop binary must use the Windows GUI subsystem");
+  }
+  const singleInstancePlugin = desktopSource.indexOf(
+    ".plugin(tauri_plugin_single_instance::init(",
+  );
+  const deepLinkPlugin = desktopSource.indexOf(
+    ".plugin(tauri_plugin_deep_link::init())",
+  );
+  if (
+    singleInstancePlugin < 0 ||
+    deepLinkPlugin < 0 ||
+    singleInstancePlugin > deepLinkPlugin
+  ) {
+    fail("single-instance must be registered before the deep-link plugin");
+  }
+  for (const requiredSource of [
+    ".deep_link().get_current()",
+    ".deep_link().on_open_url(",
+    ".deep_link()\n                    .register_all()",
+    "RunEvent::Opened { urls }",
+    'url.scheme().eq_ignore_ascii_case("magnet")',
+    'url.scheme().eq_ignore_ascii_case("file")',
+  ]) {
+    if (!desktopSource.includes(requiredSource)) {
+      fail(`desktop external activation integration is missing ${requiredSource}`);
+    }
   }
 
   const expectedProduct = {
@@ -171,6 +259,21 @@ export function validateDesktopReleaseRepository(root, tag) {
     ),
     desktopSource: fs.readFileSync(
       path.join(root, "clients", "desktop", "src-tauri", "src", "lib.rs"),
+      "utf8",
+    ),
+    nsisHooks: fs.readFileSync(
+      path.join(root, "clients", "desktop", "src-tauri", "nsis", "hooks.nsh"),
+      "utf8",
+    ),
+    linuxDesktop: fs.readFileSync(
+      path.join(
+        root,
+        "clients",
+        "desktop",
+        "src-tauri",
+        "linux",
+        "rstorrent.desktop",
+      ),
       "utf8",
     ),
     tauriUpdater: fs.readFileSync(

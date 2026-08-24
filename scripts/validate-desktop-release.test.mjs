@@ -78,6 +78,58 @@ test("rejects a release desktop binary with a Windows console", () => {
   );
 });
 
+test("rejects desktop association and command-quoting drift", () => {
+  const associationFixture = repositoryFixture();
+  associationFixture.tauri.bundle.fileAssociations[0].name = "torrent";
+  assert.throws(
+    () => validateDesktopReleaseConfiguration(associationFixture),
+    /unexpected desktop torrent file association/,
+  );
+
+  const schemeFixture = repositoryFixture();
+  schemeFixture.tauri.plugins["deep-link"].desktop.schemes.push("jstorrent");
+  assert.throws(
+    () => validateDesktopReleaseConfiguration(schemeFixture),
+    /unexpected desktop deep-link schemes/,
+  );
+
+  const quotingFixture = repositoryFixture();
+  quotingFixture.nsisHooks = quotingFixture.nsisHooks.replace(
+    '$\\"$INSTDIR\\${MAINBINARYNAME}.exe$\\"',
+    "$INSTDIR\\${MAINBINARYNAME}.exe",
+  );
+  assert.throws(
+    () => validateDesktopReleaseConfiguration(quotingFixture),
+    /must quote the executable and input path/,
+  );
+
+  const linuxFixture = repositoryFixture();
+  linuxFixture.linuxDesktop = linuxFixture.linuxDesktop.replace(" %U", "");
+  assert.throws(
+    () => validateDesktopReleaseConfiguration(linuxFixture),
+    /Linux desktop handler must forward URLs\/files/,
+  );
+});
+
+test("rejects incompatible plugin registration", () => {
+  const cargoFixture = repositoryFixture();
+  cargoFixture.cargo = cargoFixture.cargo.replace(', features = ["deep-link"]', "");
+  assert.throws(
+    () => validateDesktopReleaseConfiguration(cargoFixture),
+    /single-instance dependency must use its compatible deep-link integration/,
+  );
+
+  const orderFixture = repositoryFixture();
+  orderFixture.desktopSource = orderFixture.desktopSource.replace(
+    ".plugin(tauri_plugin_single_instance::init(",
+    ".plugin(tauri_plugin_deep_link::init())\n        .plugin(tauri_plugin_single_instance::init(",
+  );
+  assert.throws(
+    () => validateDesktopReleaseConfiguration(orderFixture),
+    /single-instance must be registered before the deep-link plugin/,
+  );
+});
+
 function repositoryFixture() {
   return {
     packageJson: readJson("clients/web/package.json"),
@@ -91,6 +143,14 @@ function repositoryFixture() {
     ),
     desktopSource: fs.readFileSync(
       path.join(root, "clients/desktop/src-tauri/src/lib.rs"),
+      "utf8",
+    ),
+    nsisHooks: fs.readFileSync(
+      path.join(root, "clients/desktop/src-tauri/nsis/hooks.nsh"),
+      "utf8",
+    ),
+    linuxDesktop: fs.readFileSync(
+      path.join(root, "clients/desktop/src-tauri/linux/rstorrent.desktop"),
       "utf8",
     ),
     tauriUpdater: fs.readFileSync(
