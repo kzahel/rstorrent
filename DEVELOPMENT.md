@@ -23,6 +23,23 @@ Read these in order:
 Before changing an established continuing concern, look for and read its topic
 under `docs/topics/`.
 
+## Cross-Platform Test Machines
+
+Use the sibling `machine-control` checkout at `~/code/machine-control` for any
+Windows, Linux, or macOS VM/appliance testing.
+Start with its common `bin/machine-control` CLI and the applicable platform
+guide; use the project-specific testbed passthrough only for a capability that
+the common interface does not expose. Acquire and release the target claim,
+preserve inherited machine state, and follow the controller's lifecycle and
+recovery policy. Private target selection may come from the maintainer's
+dotfiles inventory, but target identities and credentials must not be copied
+into this repository.
+
+Do not substitute direct hypervisor commands or legacy platform-specific
+testbed repositories for ordinary cross-platform acceptance. Direct provider
+access is reserved for a recovery procedure explicitly documented by
+machine-control.
+
 ## Current Tactical State
 
 The authoritative **Now** is
