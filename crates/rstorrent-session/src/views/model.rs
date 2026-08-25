@@ -225,10 +225,10 @@ pub(crate) fn operational_state(
     if inputs.stopping {
         return TorrentOperationalState::Stopping;
     }
-    if snapshot.state == TorrentState::Checking {
+    if snapshot.desired_running && snapshot.state == TorrentState::Checking {
         return TorrentOperationalState::Checking;
     }
-    if inputs.task_active {
+    if snapshot.desired_running && inputs.task_active {
         return match snapshot.state {
             TorrentState::AwaitingMetadata | TorrentState::AwaitingStorage => {
                 TorrentOperationalState::Starting

@@ -211,27 +211,124 @@ fn acquire_platform_inhibitor() -> Result<keepawake::KeepAwake, String> {
 }
 
 #[cfg(target_os = "linux")]
-struct LinuxPortalInhibitor {
-    connection: zbus::blocking::Connection,
-    handle: zbus::zvariant::OwnedObjectPath,
+enum LinuxInhibitor {
+    Gnome {
+        connection: zbus::blocking::Connection,
+        cookie: u32,
+    },
+    Portal {
+        connection: zbus::blocking::Connection,
+        handle: zbus::zvariant::OwnedObjectPath,
+    },
 }
 
 #[cfg(target_os = "linux")]
-fn acquire_platform_inhibitor() -> Result<LinuxPortalInhibitor, String> {
-    use std::collections::HashMap;
+fn acquire_platform_inhibitor() -> Result<LinuxInhibitor, String> {
+    use std::time::Duration;
 
-    use zbus::blocking::Proxy;
-    use zbus::zvariant::{OwnedObjectPath, Value};
+    use zbus::blocking::connection;
+
+    const PORTAL_TIMEOUT: Duration = Duration::from_secs(5);
+
+    let connection = connection::Builder::session()
+        .map_err(|error| error.to_string())?
+        .method_timeout(PORTAL_TIMEOUT)
+        .build()
+        .map_err(|error| error.to_string())?;
+    if gnome_session_manager_available(&connection)? {
+        acquire_gnome_inhibitor(connection)
+    } else {
+        acquire_linux_portal_inhibitor(connection, PORTAL_TIMEOUT)
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn gnome_session_manager_available(
+    connection: &zbus::blocking::Connection,
+) -> Result<bool, String> {
+    const SERVICE: &str = "org.freedesktop.DBus";
+    const PATH: &str = "/org/freedesktop/DBus";
+    const INTERFACE: &str = "org.freedesktop.DBus";
+    const GNOME_SESSION: &str = "org.gnome.SessionManager";
+
+    let proxy = zbus::blocking::Proxy::new(connection, SERVICE, PATH, INTERFACE)
+        .map_err(|error| error.to_string())?;
+    proxy
+        .call("NameHasOwner", &(GNOME_SESSION,))
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(target_os = "linux")]
+fn acquire_gnome_inhibitor(
+    connection: zbus::blocking::Connection,
+) -> Result<LinuxInhibitor, String> {
+    const SERVICE: &str = "org.gnome.SessionManager";
+    const PATH: &str = "/org/gnome/SessionManager";
+    const INTERFACE: &str = "org.gnome.SessionManager";
+    const SUSPEND: u32 = 4;
+
+    let proxy = zbus::blocking::Proxy::new(&connection, SERVICE, PATH, INTERFACE)
+        .map_err(|error| error.to_string())?;
+    let cookie = proxy
+        .call(
+            "Inhibit",
+            &(
+                "com.jstorrent.rstorrent",
+                0_u32,
+                "RSTorrent is downloading or checking content",
+                SUSPEND,
+            ),
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(LinuxInhibitor::Gnome { connection, cookie })
+}
+
+#[cfg(target_os = "linux")]
+fn acquire_linux_portal_inhibitor(
+    connection: zbus::blocking::Connection,
+    portal_timeout: std::time::Duration,
+) -> Result<LinuxInhibitor, String> {
+    use std::collections::HashMap;
+    use std::time::{Duration, Instant};
+
+    use futures_util::{FutureExt, StreamExt};
+    use zbus::MatchRule;
+    use zbus::blocking::{MessageIterator, Proxy};
+    use zbus::message::Type;
+    use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 
     const SERVICE: &str = "org.freedesktop.portal.Desktop";
     const PATH: &str = "/org/freedesktop/portal/desktop";
     const INTERFACE: &str = "org.freedesktop.portal.Inhibit";
+    const REQUEST_INTERFACE: &str = "org.freedesktop.portal.Request";
     const SUSPEND: u32 = 4;
 
-    let connection = zbus::blocking::Connection::session().map_err(|error| error.to_string())?;
+    let sender = connection
+        .unique_name()
+        .ok_or_else(|| "session bus did not assign a unique name".to_owned())?
+        .as_str()
+        .trim_start_matches(':')
+        .replace('.', "_");
+    let token = format!("rstorrent_{}", uuid::Uuid::new_v4().simple());
+    let expected_handle = OwnedObjectPath::try_from(format!(
+        "/org/freedesktop/portal/desktop/request/{sender}/{token}"
+    ))
+    .map_err(|error| error.to_string())?;
+    let response_rule = MatchRule::builder()
+        .msg_type(Type::Signal)
+        .interface(REQUEST_INTERFACE)
+        .map_err(|error| error.to_string())?
+        .member("Response")
+        .map_err(|error| error.to_string())?
+        .path(expected_handle.as_str())
+        .map_err(|error| error.to_string())?
+        .build();
+    let responses = MessageIterator::for_match_rule(response_rule, &connection, Some(1))
+        .map_err(|error| error.to_string())?;
     let proxy =
         Proxy::new(&connection, SERVICE, PATH, INTERFACE).map_err(|error| error.to_string())?;
     let mut options = HashMap::new();
+    options.insert("handle_token", Value::from(token.as_str()));
     options.insert(
         "reason",
         Value::from("RSTorrent is downloading or checking content"),
@@ -239,17 +336,71 @@ fn acquire_platform_inhibitor() -> Result<LinuxPortalInhibitor, String> {
     let handle: OwnedObjectPath = proxy
         .call("Inhibit", &("", SUSPEND, options))
         .map_err(|error| error.to_string())?;
-    Ok(LinuxPortalInhibitor { connection, handle })
+    if handle != expected_handle {
+        let _ = close_linux_portal_request(&connection, &handle);
+        return Err(format!(
+            "portal returned unexpected request handle {handle}"
+        ));
+    }
+
+    let response_result = (|| -> Result<(), String> {
+        let mut responses = responses.into_inner();
+        let deadline = Instant::now() + portal_timeout;
+        let response = loop {
+            if let Some(message) = responses.next().now_or_never() {
+                break message
+                    .ok_or_else(|| "portal response stream closed".to_owned())?
+                    .map_err(|error| error.to_string())?;
+            }
+            if Instant::now() >= deadline {
+                return Err("portal inhibition response timed out".to_owned());
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        let (response, _results): (u32, HashMap<String, OwnedValue>) = response
+            .body()
+            .deserialize()
+            .map_err(|error| error.to_string())?;
+        if response != 0 {
+            return Err(format!(
+                "portal inhibition request was rejected with response {response}"
+            ));
+        }
+        Ok(())
+    })();
+    if let Err(error) = response_result {
+        let _ = close_linux_portal_request(&connection, &handle);
+        return Err(error);
+    }
+    Ok(LinuxInhibitor::Portal { connection, handle })
 }
 
 #[cfg(target_os = "linux")]
-impl Drop for LinuxPortalInhibitor {
+fn close_linux_portal_request(
+    connection: &zbus::blocking::Connection,
+    handle: &zbus::zvariant::OwnedObjectPath,
+) -> zbus::Result<()> {
+    const SERVICE: &str = "org.freedesktop.portal.Desktop";
+    const INTERFACE: &str = "org.freedesktop.portal.Request";
+    zbus::blocking::Proxy::new(connection, SERVICE, handle.as_str(), INTERFACE)?
+        .call::<_, _, ()>("Close", &())
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for LinuxInhibitor {
     fn drop(&mut self) {
-        const SERVICE: &str = "org.freedesktop.portal.Desktop";
-        const INTERFACE: &str = "org.freedesktop.portal.Request";
-        let result =
-            zbus::blocking::Proxy::new(&self.connection, SERVICE, self.handle.as_str(), INTERFACE)
-                .and_then(|proxy| proxy.call::<_, _, ()>("Close", &()));
+        let result = match self {
+            LinuxInhibitor::Gnome { connection, cookie } => {
+                const SERVICE: &str = "org.gnome.SessionManager";
+                const PATH: &str = "/org/gnome/SessionManager";
+                const INTERFACE: &str = "org.gnome.SessionManager";
+                zbus::blocking::Proxy::new(connection, SERVICE, PATH, INTERFACE)
+                    .and_then(|proxy| proxy.call::<_, _, ()>("Uninhibit", &(*cookie,)))
+            }
+            LinuxInhibitor::Portal { connection, handle } => {
+                close_linux_portal_request(connection, handle)
+            }
+        };
         if let Err(error) = result {
             eprintln!(
                 "desktop automatic-sleep inhibitor release failed: {}",

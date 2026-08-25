@@ -126,6 +126,21 @@ fn metadata_discovery_retry_remains_starting_while_retaining_queue_position() {
     );
     assert_eq!(torrent.download_queue_position, Some(1));
 
+    service.revision = "1".to_owned();
+    service.torrents[0].desired_running = false;
+    hub.replace_durable(&service, &BTreeMap::new())
+        .expect("pause torrent");
+    hub.set_discovery_activity(TORRENT_ID, true, false)
+        .expect("receive late discovery activity");
+    assert_eq!(
+        current_torrent(&hub).operational_state,
+        crate::TorrentOperationalState::Paused
+    );
+
+    service.revision = "2".to_owned();
+    service.torrents[0].desired_running = true;
+    hub.replace_durable(&service, &BTreeMap::new())
+        .expect("resume torrent");
     hub.set_progress_inputs(
         TORRENT_ID,
         ProgressInputs {
