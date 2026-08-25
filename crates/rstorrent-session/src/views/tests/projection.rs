@@ -101,6 +101,46 @@ fn operational_state_and_queue_position_are_authoritative() {
 }
 
 #[test]
+fn metadata_discovery_retry_remains_starting_while_retaining_queue_position() {
+    let mut service = snapshot(0, 0);
+    service.torrents[0].state = TorrentState::AwaitingMetadata;
+    service.torrents[0].metadata_available = false;
+    service.torrents[0].download_queue_position = Some(1);
+    let hub = ViewHub::new(&service).expect("hub");
+
+    hub.set_progress_inputs(
+        TORRENT_ID,
+        ProgressInputs {
+            task_active: true,
+            ..ProgressInputs::default()
+        },
+    )
+    .expect("start metadata task");
+    hub.set_discovery_activity(TORRENT_ID, false, true)
+        .expect("schedule discovery retry");
+
+    let torrent = current_torrent(&hub);
+    assert_eq!(
+        torrent.operational_state,
+        crate::TorrentOperationalState::Starting
+    );
+    assert_eq!(torrent.download_queue_position, Some(1));
+
+    hub.set_progress_inputs(
+        TORRENT_ID,
+        ProgressInputs {
+            discovery_exhausted: true,
+            ..ProgressInputs::default()
+        },
+    )
+    .expect("exhaust discovery");
+    assert_eq!(
+        current_torrent(&hub).operational_state,
+        crate::TorrentOperationalState::Queued
+    );
+}
+
+#[test]
 fn checker_progress_projects_exactly_and_rejects_stale_completion() {
     let hub = ViewHub::new(&snapshot(0, 4)).expect("hub");
     hub.record_checker_progress(

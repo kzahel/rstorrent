@@ -237,6 +237,13 @@ pub(crate) fn operational_state(
             _ => TorrentOperationalState::Downloading,
         };
     }
+    if snapshot.desired_running
+        && snapshot.state == TorrentState::AwaitingMetadata
+        && !inputs.network_disabled
+        && (inputs.discovery_retry_scheduled || (inputs.dht_enabled && !inputs.discovery_exhausted))
+    {
+        return TorrentOperationalState::Starting;
+    }
     if matches!(
         snapshot.state,
         TorrentState::NeedsRepair | TorrentState::Error
