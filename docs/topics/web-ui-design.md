@@ -170,6 +170,14 @@ typed shell preferences; native Rust derives and submits notification content.
 Browser, demo, remote web, Android, and iOS surfaces omit the category rather
 than rendering unsupported controls.
 
+Completed sleep-inhibition Tactical
+[`165`](../tactical/165-cross-platform-active-download-sleep-inhibition.md)
+adds a separate Tauri-only **Power** category through the same capability
+model. Its one accessible default-on switch saves immediately, rolls back with
+visible status on failure, and explains that display blanking remains normal.
+Browser and demo routes omit the category; Android presents its native setting
+in Compose and iOS deliberately presents no equivalent control.
+
 Completed Tactical
 [`134`](../tactical/134-hierarchical-transfer-rate-enforcement.md) adds All
 torrents peer upload/download controls to Connection & seeding and an atomic

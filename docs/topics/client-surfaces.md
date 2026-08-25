@@ -469,8 +469,20 @@ own correctness.
   owns macOS/Windows; Linux retains the underlying native handle directly for
   GNOME display and bounded click activation. Android and iOS keep their own
   platform notification owners.
+- Completed Tactical
+  [`165`](../tactical/165-cross-platform-active-download-sleep-inhibition.md)
+  adds a separate Tauri-only default-on Power preference and a native Rust
+  level owner over authoritative torrent-list state. macOS/Windows use exact
+  `keepawake` 0.6.1, GNOME uses its suspend inhibitor, and other Linux sessions
+  use a bounded XDG portal fallback. `Starting`, `Downloading`, and `Checking`
+  hold one system-idle/suspend request; pause, queue, completion, seeding,
+  failure, disablement, and joined shutdown release it without suppressing
+  display blanking.
 - Android's foreground service owns the application service independently of
-  activities.
+  activities. Tactical `165` also gives that service one default-on native
+  preference and exactly one partial CPU wake lock for the same active state
+  set while removing its Wi-Fi lock. iOS retains finite background work and
+  exposes no misleading general keep-awake control.
 - A remote WebSocket connection owns only its authenticated commands and
   subscriptions.
 
@@ -637,8 +649,11 @@ remote exposure, and Android streaming remain independent product decisions.
   targeting the registered incubation bundle through LaunchServices. The exact
   hosted eight-job run also passes. Completed Tactical `164` closes the
   bounded native desktop-notification gap with deterministic/package gates and
-  installed macOS arm64, Windows x86_64, and Linux arm64 evidence. Tactical
-  `158` resumes for the next signed candidate. Broader cross-platform
+  installed macOS arm64, Windows x86_64, and Linux arm64 evidence. Completed
+  Tactical `165` closes active-work sleep inhibition with installed macOS
+  arm64, Windows arm64, Linux arm64, physical Android API 37, and physical iOS
+  evidence through guest/device-native machine-control routes. Tactical `158`
+  resumes for the next signed candidate. Broader cross-platform
   window/platform-capability evidence remains open. The release gates live in
   [`beta-release-readiness.md`](beta-release-readiness.md).
 - The maintained Android product module now lives at `clients/android`; the

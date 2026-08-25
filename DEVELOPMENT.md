@@ -67,6 +67,12 @@ eight-job evidence pass. The Windows campaign ran the actual x86_64 NSIS/PE
 under Windows 11 arm64 x64 emulation, while the macOS campaign preserved
 JSTorrent as the inherited default handler and targeted the incubation bundle
 through LaunchServices.
+Completed Tactical `164` adds native desktop completion and fatal/repair
+notifications. Completed Tactical `165` adds default-on desktop/Android
+active-work sleep inhibition, removes Android's Wi-Fi lock, records the iOS
+inapplicability boundary, and passes guest-native desktop plus attached-device
+evidence. Tactical `158` owns their first signed candidate and the Windows
+x86_64 behavior repeat.
 Completed Tactical `157` established the release ledger, graduated the Android
 client to `clients/android`, and added provisional packaging artwork. The
 durable release backlog and platform gates live in

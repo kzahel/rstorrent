@@ -23,9 +23,12 @@ adds single-instance, default-on close-to-tray, persisted background policy,
 visible manual updating, joined Quit/restart, native Linux arm64 packaging,
 and installed Windows x86_64/Linux arm64 lifecycle evidence. Completed
 Tactical `164` adds desktop completion and attention notifications with
-installed macOS arm64, Windows x86_64, and Linux arm64 evidence. Tactical
-`165` is the sole **Now** for cross-platform active-download sleep inhibition;
-Tactical `158` is paused until it completes.
+installed macOS arm64, Windows x86_64, and Linux arm64 evidence. Completed
+Tactical `165` adds default-on desktop/Android active-work sleep inhibition,
+removes Android's Wi-Fi lock, preserves truthful iOS finite-background policy,
+and passes guest-native installed macOS arm64, Windows arm64, Linux arm64,
+physical Android API 37, and physical iOS evidence. Tactical `158` is again
+the sole **Now**.
 Installed Intel macOS testing is deliberately omitted. The public product
 name is RSTorrent for the foreseeable release line. A later production
 graduation is expected to retain JSTorrent's existing name, application
@@ -41,11 +44,10 @@ complete. Packaged desktop picker Tactical
 [`161`](../tactical/161-packaged-desktop-folder-picker.md) is complete;
 desktop lifecycle Tactical
 [`162`](../tactical/162-desktop-single-instance-and-tray-lifecycle.md) is
-complete; signed release Tactical
-[`158`](../tactical/158-desktop-signed-packaging-and-updater.md) is paused while
-Tactical
-[`165`](../tactical/165-cross-platform-active-download-sleep-inhibition.md) is
-**Now**.
+complete; completed sleep-inhibition Tactical
+[`165`](../tactical/165-cross-platform-active-download-sleep-inhibition.md)
+returns signed release Tactical
+[`158`](../tactical/158-desktop-signed-packaging-and-updater.md) to **Now**.
 Maintainer direction on 2026-08-24 promotes OS-level `magnet:` and local
 `.torrent` activation from a post-beta deferral to a beta usability gap;
 completed Tactical
@@ -60,7 +62,7 @@ completed Tactical
 closes that gap. Explicit maintainer direction on the same date makes active-
 download sleep inhibition the next beta usability slice; Tactical `165` owns
 desktop and Android settings/behavior plus iOS inapplicability before
-returning signed-package ownership to Tactical `158`.
+returning signed-package ownership to Tactical `158`. That slice is complete.
 
 ## Scope And Release Definition
 
@@ -347,12 +349,15 @@ without corrupting or silently reinterpreting user state.
   Linux click restoration passes; macOS/Windows retain the tray fallback after
   measured standard-package click limits. Progress, aggregation, and mobile
   notification work remain outside the slice.
-- [ ] **DESK-010 — Prevent idle sleep during active downloads.** Tactical
-  `165` owns one default-on Tauri-only preference, authoritative active-work
-  policy, system-idle inhibition without display inhibition, joined cleanup,
-  and installed macOS/Windows/Linux evidence. It does not override explicit
-  sleep, lid close, shutdown, or low-power policy, and seeding alone remains
-  eligible for normal sleep.
+- [x] **DESK-010 — Prevent idle sleep during active downloads.** Completed
+  Tactical `165` adds one default-on Tauri-only preference, authoritative
+  `Starting`/`Downloading`/`Checking` policy, system-idle inhibition without
+  display inhibition, and joined cleanup. Exact installed macOS arm64,
+  Windows arm64, and Linux arm64 tests cover stalled work, minimized windows,
+  preference changes, Pause, restart, Start, Quit, and cleanup. Windows x86_64
+  retains hosted build/package coverage and must repeat native behavior in the
+  next signed-candidate campaign. Explicit sleep, lid close, shutdown,
+  low-power policy, and seeding remain under ordinary OS policy.
 
 ### Desktop updater contract
 
@@ -445,14 +450,15 @@ is still pending and is not the compatibility oracle.
   content rating, listing text/screenshots, and support link must match actual
   behavior.
 - [ ] **AND-006 — Retire Android platform deprecations.** The current build
-  still warns on the legacy activity-result path plus Wi-Fi, notification, and
+  still warns on the legacy activity-result path plus notification and
   system-bar APIs. Migrate or deliberately bound each before a target-SDK or
   toolchain update turns warning debt into a release failure.
-- [ ] **AND-007 — Make active-download wake ownership explicit.** Tactical
-  `165` turns the existing unconditional CPU/Wi-Fi lock path into a durable
-  default-on user preference over authoritative active operational states,
-  retains only the Android partial CPU wake lock, and requires physical-device
-  acquisition/release and restart evidence.
+- [x] **AND-007 — Make active-download wake ownership explicit.** Completed
+  Tactical `165` turns the former unconditional CPU/Wi-Fi lock path into a
+  durable default-on preference over authoritative active operational states
+  and retains only one service-owned partial CPU wake lock. A physical API 37
+  device proves persistence, acquisition through screen-off Dozing, absence of
+  a Wi-Fi lock, service-stop release, and exact data/root cleanup.
 
 ## iOS/iPadOS Beta Checklist
 
@@ -478,10 +484,11 @@ is still pending and is not the compatibility oracle.
   `PlatformStorageBridge` become errors in Swift 6 language mode. Replace them
   with an async-safe ownership design before enabling that mode or requiring a
   toolchain that does so.
-- [ ] **IOS-007 — Keep power behavior truthful.** Tactical `165` must prove
-  that iOS exposes no general keep-awake setting or display-idle assertion and
-  retains Tactical `149`'s finite background, expiration, checkpoint, and
-  resume semantics on physical hardware.
+- [x] **IOS-007 — Keep power behavior truthful.** Completed Tactical `165`
+  adds no idle-timer assertion or general keep-awake setting. A current signed
+  physical-device archive exposes the existing finite-background explanation
+  across both Settings pages and resumes cleanly after Home/background, while
+  Tactical `149` remains the lifecycle authority.
 
 ## Beta Feature Boundary
 
@@ -533,7 +540,7 @@ no single optional BEP is mandatory.
    Windows x86_64/Linux arm64 proof pass. File/magnet handoff remains outside
    that completed slice and is now owned by Tactical `163`; autostart stays
    deferred.
-4. **Paused — Tactical `158`: desktop signed packaging and updater adoption.**
+4. **Now — Tactical `158`: desktop signed packaging and updater adoption.**
    The product-owned `desktop-update-v1` client, signed package workflow,
    release validation, per-app key, public configuration, production route,
    five-platform hosted rehearsal, two tagged publications, one installed
@@ -542,9 +549,11 @@ no single optional BEP is mandatory.
    updater replacement also passes under an automatic-loopback profile.
    Completed Tactical `160` repairs fresh-default address selection on `main`;
    Completed Tactical `161` now proves unsigned installed Windows first-root
-   setup. Publish a newer signed package, repeat clean Windows from the
-   default, characterize firewall consent, and run Linux x86_64. Intel macOS
-   installed testing is deliberately omitted.
+   setup; completed Tacticals `163`--`165` add external intake, notifications,
+   and active-work sleep inhibition. Publish a newer signed package, repeat
+   clean Windows from the default with the strengthened `UPD-005` state,
+   characterize firewall consent, and run Linux x86_64. Intel macOS installed
+   testing is deliberately omitted.
 5. **Complete — Tactical `163`: desktop external torrent intake.** The
    bounded shell/UI implementation, package gates, and installed Linux arm64,
    Windows x86_64-application, and macOS arm64 cold/visible/tray-hidden/
@@ -554,11 +563,11 @@ no single optional BEP is mandatory.
    notifications.** One Rust-owned, edge-triggered, non-replaying owner,
    versioned typed desktop preferences, deterministic/package gates, and
    installed macOS arm64, Windows x86_64, and Linux arm64 evidence pass.
-7. **Now — Tactical `165`: cross-platform active-download sleep inhibition.**
-   Add one default-on desktop/Android platform preference and level-triggered
-   system-idle ownership, keep displays and explicit sleep under ordinary OS
-   policy, record iOS inapplicability, and prove real cleanup through
-   machine-control on every available desktop/mobile target.
+7. **Complete — Tactical `165`: cross-platform active-download sleep
+   inhibition.** One default-on desktop/Android preference, level-triggered
+   system-idle ownership, iOS inapplicability, and real cleanup pass through
+   machine-control on every available desktop/mobile target. Tactical `158`
+   resumes as **Now**.
 8. **Complete — Tactical `160`: Windows local-network address selection.**
    Wildcard binding remains, only a concrete eligible address is reported,
    the bounded Windows best-route fallback and native CI regression pass, and

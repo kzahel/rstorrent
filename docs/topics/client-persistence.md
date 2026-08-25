@@ -19,11 +19,13 @@ this existing registry, unavailable-root repair preserves one entry, and the
 same default root restores after process restart.
 
 Completed Tactical `162` likewise changes no profile schema. It adds one
-shell-owned application-config `desktop-shell.json` with closed version `1`,
-a 4 KiB input bound, atomic replacement, conservative reset, and one
-`run_in_background` boolean that defaults to true. This close policy applies
-before and across profile services; it is not torrent state, a storage
-locator, client settings, updater identity, or future installation-wide
+shell-owned application-config `desktop-shell.json` with a 4 KiB input bound,
+atomic replacement, conservative reset, and default-on background policy.
+Completed Tacticals `164` and `165` advance its closed schema through versions
+2 and 3 with default-on desktop notification and active-work sleep-inhibition
+preferences while preserving exact older values. These shell policies apply
+before and across profile services; they are not torrent state, storage
+locators, client settings, updater identity, or future installation-wide
 `product.db` state.
 
 Tactical `063` now makes the existing sparse file-selection rows a live
@@ -275,6 +277,12 @@ adapter consumes authoritative in-process torrent-list state and owns native
 display, while its three installation-wide preferences migrate only the
 bounded desktop shell settings file. Notification edges, delivery history,
 and raw error text do not enter `session.db`, `product.db`, or torrent rows.
+Completed sleep-inhibition Tactical
+[`165`](../tactical/165-cross-platform-active-download-sleep-inhibition.md)
+uses the same boundary for one version-3 power preference. The native
+desktop/Android owners derive current level from authoritative operational
+state; inhibitor handles, acquisition failures, and runtime lock state are
+never durable profile or product facts. iOS adds no persisted power setting.
 
 ## Reference Direction
 

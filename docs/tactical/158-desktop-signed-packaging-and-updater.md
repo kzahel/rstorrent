@@ -1,9 +1,10 @@
 # Tactical 158: Desktop Signed Packaging And Updater
 
-Status: **Implementation in progress, paused on 2026-08-25 while Tactical
-[`165`](165-cross-platform-active-download-sleep-inhibition.md) is the sole
-Now.** Desktop-notification Tactical
-[`164`](164-desktop-completion-and-attention-notifications.md) is complete.
+Status: **Implementation in progress and again the sole Now on 2026-08-25.**
+Cross-platform sleep-inhibition Tactical
+[`165`](165-cross-platform-active-download-sleep-inhibition.md) is complete,
+as is desktop-notification Tactical
+[`164`](164-desktop-completion-and-attention-notifications.md).
 Maintainer direction selected RSTorrent as the foreseeable public product name
 and froze `com.jstorrent.rstorrent` as the desktop beta identifier on
 2026-08-23. Cross-platform presubmit Tactical `159` is complete. The distinct
@@ -36,7 +37,10 @@ arm64 lifecycle behavior. The next signed candidate therefore carries a
 reachable and cleanly terminating desktop shell. Completed Tactical `163`
 also adds installed external magnet and local `.torrent` activation. Completed
 Tactical `164` adds native completion/attention notifications before this
-tactical produces the next signed candidate.
+tactical produces the next signed candidate. Completed Tactical `165` also
+adds desktop active-work sleep inhibition; its available Windows behavior run
+was arm64, so the next signed x86_64 candidate repeats the native assertion
+matrix while exercising the strengthened real-torrent update state.
 
 Topics: `beta-release-readiness`, `client-surfaces`,
 `product-state-and-feedback`, `product-surfaces-and-migration`,

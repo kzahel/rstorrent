@@ -180,6 +180,35 @@ license/source-availability obligations. Repeat the audit whenever dependency
 graphs change and generate notices from each release's exact resolved Android,
 desktop, web, Rust, and Python dependency sets.
 
+## Platform Power References
+
+Tactical
+[`165`](tactical/165-cross-platform-active-download-sleep-inhibition.md) uses
+platform contracts rather than a torrent-engine reference:
+
+- exact MIT-licensed [`keepawake` 0.6.1 source](https://docs.rs/crate/keepawake/0.6.1/source/)
+  is the macOS and Windows dependency and was inspected through its platform
+  modules and owned-guard drop path;
+- the [XDG Desktop Portal Inhibit interface](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.Inhibit.html)
+  defines the Linux fallback request handle, Suspend flag, response, and Close
+  lifecycle; GNOME SessionManager's installed interface and runtime are the
+  direct GNOME-session authority;
+- Android's
+  [`PowerManager.WakeLock`](https://developer.android.com/reference/android/os/PowerManager.WakeLock)
+  and [wake-lock guidance](https://developer.android.com/develop/background-work/background-tasks/awake/wakelock)
+  define the partial CPU lock, ownership, permission, and prompt-release
+  contract; and
+- Apple's
+  [`isIdleTimerDisabled`](https://developer.apple.com/documentation/uikit/uiapplication/isidletimerdisabled)
+  and [background-execution guidance](https://developer.apple.com/documentation/uikit/extending-your-app-s-background-execution-time)
+  distinguish a foreground display assertion from finite background work and
+  support the explicit iOS inapplicability decision.
+
+No source, fixture, sample, or test data was copied from these references.
+The maintained JSTorrent power-management source named in Tactical `165` was
+read as product/platform history at its recorded revision; RSTorrent retains
+its own state, ownership, and implementation.
+
 ## JSTorrent
 
 Repository: [kzahel/jstorrent](https://github.com/kzahel/jstorrent)

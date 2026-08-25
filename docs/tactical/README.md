@@ -737,16 +737,17 @@ that scope and its cleanup or compatibility rules explicitly.
   art/metadata, and reconciles status before signed updater and cross-platform
   CI slices.
 - [`158-desktop-signed-packaging-and-updater.md`](158-desktop-signed-packaging-and-updater.md):
-  implementation in progress and selected as Now; its Tauri-only
+  implementation in progress and again selected as Now; its Tauri-only
   `desktop-update-v1` UI/state boundary, per-app identity/key/route, hosted
   signed five-target package rehearsal, public `desktop-v0.1.0` and
   `desktop-v0.1.1` finalization, one installed macOS arm64 launch smoke, and
   exact macOS arm64 plus Linux arm64 `0.1.0`-to-`0.1.1`
   replacement/relaunch passes. Windows x86_64 replacement also passes under
-  an automatic-loopback profile. Completed Tacticals `160`, `161`, and `162`
-  repair fresh-default startup/root setup, add the selected tray lifecycle,
-  and pass unsigned installed Windows/Linux campaigns. A signed update
-  containing them, Windows firewall-consent
+  an automatic-loopback profile. Completed Tacticals `160`--`165` repair
+  fresh-default startup/root setup, add tray lifecycle, external intake,
+  notifications, and active-work sleep inhibition, and pass proportional
+  unsigned installed/device campaigns. A signed update containing them,
+  Windows firewall-consent
   characterization, and Linux x86_64 remain open; installed Intel macOS
   testing is a deliberate omission.
 - [`159-cross-platform-presubmit-ci.md`](159-cross-platform-presubmit-ci.md):
@@ -763,6 +764,15 @@ that scope and its cleanup or compatibility rules explicitly.
   and warm input through the existing single owner and Add-options flow, and
   passes installed Linux arm64, Windows x86_64-application, macOS arm64, and
   exact hosted eight-job acceptance.
+- [`164-desktop-completion-and-attention-notifications.md`](164-desktop-completion-and-attention-notifications.md):
+  complete; adds edge-triggered, non-replaying native desktop completion and
+  fatal/repair notifications, typed Tauri-only preferences, Linux click
+  restoration, joined cleanup, and installed macOS/Windows/Linux evidence.
+- [`165-cross-platform-active-download-sleep-inhibition.md`](165-cross-platform-active-download-sleep-inhibition.md):
+  complete; adds default-on desktop/Android active-work sleep inhibition,
+  removes Android's Wi-Fi lock, records iOS inapplicability, and passes
+  guest-native macOS/Windows/Linux plus physical Android/iOS evidence with
+  exact inhibitor and artifact cleanup.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

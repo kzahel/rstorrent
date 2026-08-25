@@ -1,10 +1,8 @@
 # Tactical 165: Cross-Platform Active-Download Sleep Inhibition
 
-Status: **Accepted and in progress (2026-08-25)** by explicit maintainer
-direction. Desktop signed packaging/updater Tactical
-[`158`](158-desktop-signed-packaging-and-updater.md) is paused without changing
-its release outcome while this bounded cross-platform release slice is the
-sole **Now**.
+Status: **Complete (2026-08-25).** Desktop signed packaging/updater Tactical
+[`158`](158-desktop-signed-packaging-and-updater.md) resumes as the sole
+**Now** with its release outcome unchanged.
 
 Topics: `beta-release-readiness`, `client-surfaces`, `client-persistence`,
 `product-state-and-feedback`, `application-view-api`, `web-ui-design`
@@ -43,12 +41,14 @@ inhibitor immediately; unlike Tactical `164` notifications, this policy is not
 edge output and therefore must restore active protection after relaunch.
 
 Desktop uses exact `keepawake` `0.6.1` on macOS and Windows with `idle=true`,
-`display=false`, and `sleep=false`. Linux uses the standard XDG Desktop Portal
-`org.freedesktop.portal.Inhibit` suspend flag instead: the crate's Linux
-`idle` implementation is a systemd-logind idle inhibitor, while GNOME's
-automatic suspend is session policy and does not consume that lock. Using the
-crate's display inhibitor would also suppress normal display blanking, and its
-explicit-sleep inhibitor would be broader than the product promise.
+`display=false`, and `sleep=false`. Linux uses the GNOME SessionManager
+suspend inhibitor when that session owner is present and the standard XDG
+Desktop Portal `org.freedesktop.portal.Inhibit` suspend flag elsewhere. The
+crate's Linux `idle` implementation is a systemd-logind idle inhibitor, while
+GNOME's automatic suspend is session policy and does not consume that lock.
+Using the crate's display inhibitor would also suppress normal display
+blanking, and its explicit-sleep inhibitor would be broader than the product
+promise.
 
 Android retains its foreground service and uses one non-reference-counted
 `PowerManager.PARTIAL_WAKE_LOCK`, now gated by the same authoritative
@@ -73,8 +73,9 @@ This tactical owns:
 
 1. exact `keepawake = 0.6.1` dependency selection and license review,
    restricted to macOS and Windows;
-2. one Linux XDG portal suspend-inhibition adapter over the selected D-Bus
-   stack, with explicit close and connection-drop cleanup;
+2. one Linux session suspend-inhibition adapter over the selected D-Bus stack,
+   using GNOME SessionManager when available and a race-safe XDG portal
+   request elsewhere, with explicit release and connection-drop cleanup;
 3. a pure desktop reducer over authoritative TorrentList snapshots, patches,
    removals, and reset boundaries;
 4. one joined desktop owner for its application subscription, setting changes,
@@ -156,9 +157,16 @@ private interface used by the portal.
 
 Installed Ubuntu 24.04/GNOME 46 source and runtime inspection found automatic
 suspend governed by the GNOME session inhibitor bitmask, not the keepawake
-crate's logind `idle` file descriptor. The Linux adapter therefore calls the
-portable public portal rather than a GNOME-private API. Missing portal or
-request failure is nonfatal and observable; it never changes torrent intent.
+crate's logind `idle` file descriptor. The first installed probe also found
+that the GNOME portal backend rejects an unsigned development bundle whose
+desktop application identity is not installed in the backend's native app
+registry. The final adapter therefore calls the exact GNOME SessionManager
+interface when its session-bus owner exists and otherwise uses the portable
+portal. The portal path subscribes to the exact request response before the
+call, supplies a unique handle token, requires the expected returned handle
+and success code within five seconds, and closes the request on failure or
+drop. Missing services or request failure remain nonfatal and observable; they
+never change torrent intent.
 
 ### Android and maintained JSTorrent
 
@@ -211,7 +219,7 @@ ApplicationService authoritative TorrentList subscription
   -> coalesced desired bool
   -> one dedicated platform inhibitor thread
        macOS/Windows: keepawake owned guard
-       Linux: XDG portal Request handle
+       Linux: GNOME SessionManager cookie or XDG portal Request handle
 
 Tauri Settings capability
   -> constrained read/replace desktop-power commands
@@ -251,8 +259,8 @@ lost.
 Native acquisition failure is bounded, nonfatal, and observable without raw
 torrent data. It does not pause a torrent, change the saved preference, claim
 success, retry in a tight loop, or keep an unjoined task. A later false-to-true
-transition may retry. Linux close and Android release failures are logged and
-all owned references are still discarded during teardown.
+transition may retry. Linux uninhibit/close and Android release failures are
+logged and all owned references are still discarded during teardown.
 
 Desktop v3 reads exact v2 notification/background settings and adds the power
 default. It also reads exact v1 background state and supplies both notification
@@ -316,4 +324,114 @@ write failures preserve the existing repair/rollback policy.
 | Android | Pure predicate; service/UI toggle; screen-off active transfer; pause/queue/complete/disable release; restart and shutdown; no Wi-Fi lock |
 | iOS | No keep-awake control or idle-timer assertion; foreground transfer plus existing finite background/expiration/resume sanity |
 | Package | Exact dependency/license; no arbitrary webview power authority; macOS/Windows/Linux builds; Android manifest/build; iOS archive metadata |
-| Installed | macOS arm64, Windows x86_64, Linux arm64 real inhibitor state; attached Android real WakeLock state; attached iOS lifecycle sanity; cleanup |
+| Installed | macOS arm64, Windows arm64, Linux arm64 real inhibitor state; Windows x86_64 hosted build/package coverage; attached Android real WakeLock state; attached iOS lifecycle sanity; cleanup |
+
+## Completed Implementation
+
+Commits `035b185`, `0b4ed3a`, and `a71125a` implement the accepted slice:
+
+- desktop shell schema version 3 preserves version-1 background and version-2
+  notification preferences while adding one default-on power preference;
+- one Tauri-owned subscription reduces authoritative torrent-list
+  snapshot/patch/remove/reset state and drives one joined same-thread native
+  worker. `Starting`, `Downloading`, and `Checking` acquire; every other state,
+  preference disablement, reset, pause, and shutdown release;
+- macOS and Windows use exact `keepawake` `0.6.1`; Linux uses one GNOME
+  SessionManager suspend cookie or the bounded XDG portal request described
+  above. No desktop path requests display or explicit-system-sleep ownership;
+- the Tauri-only Power Settings category persists immediately and rolls back
+  visibly on failure; browser/demo surfaces receive no power capability;
+- Android persists the default-on setting, derives eligibility from the same
+  typed operational-state set, owns one non-reference-counted partial wake
+  lock in the foreground service, and removes the Wi-Fi lock and permission;
+  and
+- iOS exposes no keep-awake setting or idle-timer assertion and retains the
+  truthful finite-background presentation owned by Tactical `149`.
+
+The campaign also repaired two same-boundary state defects exposed by live
+testing. Metadata discovery retries now remain `Starting` instead of briefly
+projecting `Queued`, and a late active/checking runtime update can no longer
+override persisted `desired_running = false` after Pause. These are operational
+projection fixes, not new scheduler or persistence policy.
+
+## Validation Evidence
+
+Deterministic and build evidence passed for the Rust workspace, desktop shell,
+React product, Android dual-ABI product, iOS simulator/archive, and desktop
+release validator:
+
+```text
+cargo fmt --all -- --check
+cargo clippy --workspace -- -D warnings
+cargo test --workspace
+npm run typecheck --prefix clients/web
+npm run test --prefix clients/web
+node scripts/validate-desktop-release.mjs
+node --test scripts/validate-desktop-release.test.mjs \
+  scripts/validate-desktop-update.test.mjs
+clients/android/build.sh
+cd clients/android && ./gradlew lintDebug assembleDebugAndroidTest
+clients/ios/scripts/test.sh ABSOLUTE_OUTPUT.xcresult
+```
+
+The web run passed 279 active tests with two skipped. The desktop release
+validator passed all nine regression cases, including sleep-authority drift.
+The final Android lint/test-package build passed; the current dual-ABI build
+and physical APK came from the same implementation commits. The iOS simulator
+run passed 25 unit tests and two UI tests. It retains the already-tracked Swift
+6 concurrency warnings owned by `IOS-006`; those warnings do not concern or
+weaken this power-policy slice.
+
+`~/code/machine-control/bin/machine-control` supplied every native platform
+route. No Tart command, host-surface pointer/keyboard route, host-focus change,
+private inventory value, or device identifier is part of the evidence.
+
+- **macOS arm64:** an ad-hoc signed exact-source app acquired one
+  `PreventUserIdleSystemSleep` IOKit assertion and zero display/system-sleep
+  assertions for a controlled stalled metadata torrent. It remained held for
+  more than 30 seconds and while minimized. The default-on setting, immediate
+  off/on release and reacquisition, Pause, paused restart, Start, and process
+  termination all produced the exact expected assertion state.
+- **Windows 11 arm64:** the exact-source native app produced one SYSTEM
+  `powercfg /requests` entry and no DISPLAY request. It remained held for more
+  than 35 seconds and while minimized. Default, off/on persistence, Pause,
+  paused restart, Start, and termination passed. A Windows Firewall consent
+  surface was handled through the guest-native controller; the host desktop
+  remained untouched. Hosted Windows x86_64 builds cover the release target's
+  compilation and package shape.
+- **Ubuntu 24.04 GNOME 46 arm64:** one SessionManager suspend inhibitor was
+  observable as `IsInhibited(4) = true` and `IsInhibited(8) = false`, with the
+  exact RSTorrent identity and reason. It remained held for more than 30
+  seconds and while minimized. Default, off/on persistence, Pause, paused
+  restart, Start, termination, and the post-fix absence of a late discovery
+  reacquisition passed.
+- **Physical Android API 37:** the exact current dual-ABI debug APK displayed
+  the Power Management setting, preserved an off/on preference across
+  force-stop/relaunch, and held exactly one
+  `org.rstorrent.bootstrap:download` partial wake lock through more than 59
+  seconds and screen-off Dozing state. No Wi-Fi lock was present. The explicit
+  service stop released the lock, after which app data and the controlled
+  download root were cleared.
+- **Physical iOS:** a signed current archive installed and launched through
+  the common CoreDevice/XCTest adapter. Both Settings pages showed the existing
+  finite-background explanation and no general prevent-sleep control; Home,
+  background, relaunch, and clean termination remained healthy.
+
+Every controlled process, inhibitor, guest artifact, device artifact, and
+machine-control claim was cleaned. The three desktop VMs were returned to
+their inherited stopped state; Android application data was reset; the iOS app
+installation and its preexisting data were not destructively removed.
+
+## Deliberate Limits And Next Step
+
+The available Windows testbed is arm64, so native behavior evidence is arm64;
+the supported x86_64 package retains hosted build/package coverage and should
+repeat this assertion matrix as part of the next signed-candidate campaign.
+The GNOME route is installed evidence while the non-GNOME portal route has
+deterministic request construction, race, timeout, response, and cleanup
+coverage but no second live desktop environment. Neither limitation changes
+the platform contract or keeps Tactical `165` open.
+
+Tactical [`158`](158-desktop-signed-packaging-and-updater.md) resumes as the
+sole **Now** and must put this implementation, along with completed Tacticals
+`160`--`164`, into the next signed cross-platform candidate.

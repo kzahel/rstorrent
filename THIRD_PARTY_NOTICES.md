@@ -48,6 +48,9 @@ Notable distribution considerations in the current dependency graph include:
 
 - `dontfrag` 1.0.1 is used only on macOS under its dual MIT OR Apache-2.0
   license to access the IPv4 don't-fragment socket policy through a safe API.
+- `keepawake` 0.6.1 is used only on macOS and Windows under its MIT license to
+  hold and release the native user-idle/system execution assertion while
+  download or verification work is active.
 - `net.java.dev.jna:jna:5.17.0` is used under its Apache-2.0 option.
 - Some Rust and npm packages are MPL-2.0 licensed.
 - Linux desktop packages may use WebKitGTK and GTK system libraries under

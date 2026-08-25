@@ -19,7 +19,11 @@ Completed desktop-notification Tactical
 an explicit version-2 migration that preserves that value while adding only
 installation-wide desktop completion, attention, and focused-window
 preferences. Those shell preferences do not widen the updater identifier or
-preempt the accepted product-state database.
+preempt the accepted product-state database. Completed Tactical
+[`165`](../tactical/165-cross-platform-active-download-sleep-inhibition.md)
+advances the closed shell record to version 3 with one default-on desktop
+power preference. The setting is installation-wide policy; live inhibitor
+state remains derived and is never retained as product history.
 
 ## Scope
 
