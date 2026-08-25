@@ -2,7 +2,8 @@
 
 Status: **Complete (2026-08-22).** Cheap deterministic build and test coverage
 now passes on hosted runners across every maintained product platform.
-Tactical `158` is the single current implementation priority.
+Release/updater Tactical `158` retains the remaining signed-package work and
+is again **Now** after desktop-notification Tactical `164` completed.
 
 Topics: `beta-release-readiness`, `capability-readiness`, `client-surfaces`,
 `product-direction`, `product-surfaces-and-migration`

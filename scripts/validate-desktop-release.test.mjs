@@ -130,6 +130,45 @@ test("rejects incompatible plugin registration", () => {
   );
 });
 
+test("rejects notification authority or dependency drift", () => {
+  const dependencyFixture = repositoryFixture();
+  dependencyFixture.cargo = dependencyFixture.cargo.replace(
+    'tauri-plugin-notification = "=2.3.3"',
+    'tauri-plugin-notification = "2"',
+  );
+  assert.throws(
+    () => validateDesktopReleaseConfiguration(dependencyFixture),
+    /notification dependency must stay pinned/,
+  );
+
+  const linuxDependencyFixture = repositoryFixture();
+  linuxDependencyFixture.cargo = linuxDependencyFixture.cargo.replace(
+    'notify-rust = "=4.18.0"',
+    'notify-rust = "4"',
+  );
+  assert.throws(
+    () => validateDesktopReleaseConfiguration(linuxDependencyFixture),
+    /Linux notification dependency must stay pinned/,
+  );
+
+  const permissionFixture = repositoryFixture();
+  permissionFixture.capability.permissions.push("notification:default");
+  assert.throws(
+    () => validateDesktopReleaseConfiguration(permissionFixture),
+    /webview notification permissions must stay disabled/,
+  );
+
+  const ownerFixture = repositoryFixture();
+  ownerFixture.desktopSource = ownerFixture.desktopSource.replace(
+    "async fn run_notification_owner(",
+    "async fn missing_notification_owner(",
+  );
+  assert.throws(
+    () => validateDesktopReleaseConfiguration(ownerFixture),
+    /Rust-owned desktop notification integration is incomplete/,
+  );
+});
+
 function repositoryFixture() {
   return {
     packageJson: readJson("clients/web/package.json"),

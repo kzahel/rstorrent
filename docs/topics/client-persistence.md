@@ -268,6 +268,14 @@ responsibilities:
 The application service is native Rust product code. Placing SQLite there does
 not move persistence into Kotlin, a desktop UI runtime, or an external daemon.
 
+Completed desktop-notification Tactical
+[`164`](../tactical/164-desktop-completion-and-attention-notifications.md)
+applies that boundary without changing profile persistence: the Tauri Rust
+adapter consumes authoritative in-process torrent-list state and owns native
+display, while its three installation-wide preferences migrate only the
+bounded desktop shell settings file. Notification edges, delivery history,
+and raw error text do not enter `session.db`, `product.db`, or torrent rows.
+
 ## Reference Direction
 
 [Rasterbar libtorrent](https://libtorrent.org/manual-ref.html#fast-resume)

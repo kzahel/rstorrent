@@ -15,6 +15,7 @@ import { AboutUpdatesSettingsSection } from "./AboutUpdatesSettingsSection";
 import { ConnectionSeedingSettingsSection } from "./ConnectionSeedingSettingsSection";
 import { DownloadSettingsSection } from "./DownloadSettingsSection";
 import { Icon } from "./Icon";
+import { NotificationsSettingsSection } from "./NotificationsSettingsSection";
 import { WebAccessSettingsSection } from "./WebAccessSettingsSection";
 import styles from "./SettingsDialog.module.css";
 import type { WebAuthClient } from "../../web-auth-client";
@@ -22,11 +23,13 @@ import type {
   DesktopUpdater,
   DesktopUpdaterSnapshot,
 } from "../updater/types";
+import type { DesktopNotifications } from "../desktop-notifications/types";
 
 export type SettingsCategory =
   | "appearance"
   | "downloads"
   | "connection"
+  | "notifications"
   | "web-access"
   | "updates";
 
@@ -38,6 +41,7 @@ export interface SettingsDialogProps {
   readonly clientSettings: ClientSettingsRuntimeView;
   readonly downloadsManageable: boolean;
   readonly clientSettingsManageable: boolean;
+  readonly notifications?: DesktopNotifications | undefined;
   readonly webAuth?: WebAuthClient | undefined;
   readonly updater?: DesktopUpdater | undefined;
   readonly updaterSnapshot?: DesktopUpdaterSnapshot | undefined;
@@ -65,6 +69,7 @@ export function SettingsDialog({
   clientSettings,
   downloadsManageable,
   clientSettingsManageable,
+  notifications,
   webAuth,
   updater,
   updaterSnapshot,
@@ -88,6 +93,9 @@ export function SettingsDialog({
     { id: "appearance", label: "Appearance" },
     { id: "downloads", label: "Downloads" },
     { id: "connection", label: "Connection & seeding" },
+    ...(notifications === undefined
+      ? []
+      : [{ id: "notifications" as const, label: "Notifications" }]),
     ...(webAuth === undefined
       ? []
       : [{ id: "web-access" as const, label: "Web access" }]),
@@ -240,6 +248,16 @@ export function SettingsDialog({
                 onSave={onClientSettingsSave}
               />
             </div>
+            {notifications === undefined ? null : (
+              <div
+                id="settings-panel-notifications"
+                role="tabpanel"
+                aria-labelledby="settings-tab-notifications"
+                hidden={category !== "notifications"}
+              >
+                <NotificationsSettingsSection notifications={notifications} />
+              </div>
+            )}
             {webAuth === undefined ? null : (
               <div
                 id="settings-panel-web-access"

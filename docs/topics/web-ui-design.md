@@ -162,6 +162,14 @@ access owns immediate browser approval, session listing and revocation,
 sign-out, and restart-pairing recovery. Tauri, demo, Basic-only, and bearer
 surfaces do not show an inert cookie-session category.
 
+Completed desktop-notification Tactical
+[`164`](../tactical/164-desktop-completion-and-attention-notifications.md)
+reuses that capability-gated category model for a Tauri-only
+**Notifications** section. React receives only a narrow controller for three
+typed shell preferences; native Rust derives and submits notification content.
+Browser, demo, remote web, Android, and iOS surfaces omit the category rather
+than rendering unsupported controls.
+
 Completed Tactical
 [`134`](../tactical/134-hierarchical-transfer-rate-enforcement.md) adds All
 torrents peer upload/download controls to Connection & seeding and an atomic

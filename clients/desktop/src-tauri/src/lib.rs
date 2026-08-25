@@ -11,9 +11,10 @@ use std::time::Duration;
 use rstorrent_media::LoopbackMediaServer;
 use rstorrent_session::{
     AddTorrentBytesRequest, ApplicationConfig, ApplicationService, CONTROL_VERSION, Command,
-    ErrorCode, FileIndexRange, FileSelectionIntent, MediaUrlResponse, NetworkConfig, NetworkPolicy,
-    RequestEnvelope, ResponseEnvelope, ResponseOutcome, StorageRootSnapshot, SubscriptionSpec,
-    ViewSubscription, ViewUpdate, application_error_response,
+    DeliveryPolicy, ErrorCode, FileIndexRange, FileSelectionIntent, MediaUrlResponse,
+    NetworkConfig, NetworkPolicy, RequestEnvelope, ResponseEnvelope, ResponseOutcome,
+    StorageRootSnapshot, SubscriptionSpec, ViewPatch, ViewProjection, ViewSelector, ViewSnapshot,
+    ViewSubscription, ViewUpdate, ViewUpdatePayload, application_error_response,
 };
 use tauri::WebviewWindowBuilder;
 use tauri::ipc::{Channel, InvokeBody, Request as IpcRequest};
@@ -22,17 +23,26 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WebviewWindow, WindowEvent};
 use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+#[cfg(not(target_os = "linux"))]
+use tauri_plugin_notification::NotificationExt;
 use tokio::sync::{Mutex, Semaphore, watch};
+#[cfg(target_os = "linux")]
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
 mod desktop_lifecycle;
+mod desktop_notifications;
 mod external_intake;
 mod updater;
 mod view_delivery;
 
 use desktop_lifecycle::{
-    CloseAction, DesktopShellSettings, ShutdownGate, ShutdownPhase, close_action,
-    load_desktop_shell_settings, persist_run_in_background,
+    CloseAction, DesktopNotificationSettings, DesktopShellSettings, ShutdownGate, ShutdownPhase,
+    close_action, load_desktop_shell_settings, persist_notification_settings,
+    persist_run_in_background,
+};
+use desktop_notifications::{
+    DesktopNotification, DesktopNotificationKind, DesktopNotificationPolicy,
 };
 use external_intake::{
     DesktopActivationState, ExternalActivationSnapshot, ExternalActivationSource,
@@ -55,6 +65,8 @@ const UPDATE_CHECK_EVENT: &str = "rstorrent://check-for-updates";
 const EXTERNAL_INTAKE_EVENT: &str = "rstorrent://external-torrent-intake";
 const PEER_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const PEER_IO_TIMEOUT: Duration = Duration::from_secs(60);
+#[cfg(target_os = "linux")]
+const MAX_ACTIVE_NOTIFICATION_ACTIVATIONS: usize = 64;
 const MAX_TORRENT_SOURCE_BYTES: usize = external_intake::MAX_TORRENT_SOURCE_BYTES;
 
 const HEADER_REQUEST_ID: &str = "x-rstorrent-request-id";
@@ -73,6 +85,7 @@ struct DesktopState {
     window_generation: AtomicU64,
     shell_settings_path: PathBuf,
     shell_settings: StdMutex<DesktopShellSettings>,
+    notification_owner: Mutex<Option<DesktopNotificationOwner>>,
     background_menu_item: CheckMenuItem<tauri::Wry>,
     shutdown: ShutdownGate,
     shutdown_status: watch::Sender<ShutdownPhase>,
@@ -80,6 +93,11 @@ struct DesktopState {
     restart_after_shutdown: AtomicBool,
     update_check_generation: AtomicU64,
     external_activations: StdMutex<DesktopActivationState>,
+}
+
+struct DesktopNotificationOwner {
+    cancellation: CancellationToken,
+    task: tauri::async_runtime::JoinHandle<()>,
 }
 
 struct DesktopSubscription {
@@ -233,6 +251,30 @@ fn desktop_external_intake_pull(state: State<'_, DesktopState>) -> ExternalActiv
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .pull_snapshot()
+}
+
+#[tauri::command]
+fn desktop_notification_settings(state: State<'_, DesktopState>) -> DesktopNotificationSettings {
+    state
+        .shell_settings
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .notifications
+}
+
+#[tauri::command]
+fn desktop_set_notification_settings(
+    state: State<'_, DesktopState>,
+    settings: DesktopNotificationSettings,
+) -> Result<DesktopNotificationSettings, String> {
+    let mut shell_settings = state
+        .shell_settings
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let next =
+        persist_notification_settings(&state.shell_settings_path, *shell_settings, settings)?;
+    *shell_settings = next;
+    Ok(next.notifications)
 }
 
 #[tauri::command]
@@ -646,6 +688,251 @@ async fn application_unsubscribe(
     Ok(())
 }
 
+fn notification_subscription_spec() -> SubscriptionSpec {
+    SubscriptionSpec {
+        selector: ViewSelector::TorrentList,
+        projection: ViewProjection::Summary,
+        delivery: DeliveryPolicy {
+            min_interval_millis: 100,
+            max_queue_bytes: 4 * 1024 * 1024,
+        },
+        diagnostics: None,
+        catalog_page: None,
+    }
+}
+
+fn start_notification_owner(
+    app: AppHandle,
+    subscription: ViewSubscription,
+) -> DesktopNotificationOwner {
+    let cancellation = CancellationToken::new();
+    let task_cancellation = cancellation.clone();
+    let task = tauri::async_runtime::spawn(async move {
+        run_notification_owner(app, subscription, task_cancellation).await;
+    });
+    DesktopNotificationOwner { cancellation, task }
+}
+
+async fn run_notification_owner(
+    app: AppHandle,
+    subscription: ViewSubscription,
+    cancellation: CancellationToken,
+) {
+    let mut policy = DesktopNotificationPolicy::default();
+    #[cfg(target_os = "linux")]
+    let mut activation_tasks = JoinSet::new();
+    #[cfg(target_os = "linux")]
+    let activation_cancellation = CancellationToken::new();
+    loop {
+        let update = tokio::select! {
+            () = cancellation.cancelled() => break,
+            update = subscription.next_update() => update,
+        };
+        let Some(update) = update else {
+            if !cancellation.is_cancelled() {
+                eprintln!("desktop notification subscription closed unexpectedly");
+            }
+            break;
+        };
+        let notifications = match update.payload {
+            ViewUpdatePayload::Snapshot {
+                snapshot: ViewSnapshot::TorrentList { torrents, .. },
+            } => {
+                policy.establish(&torrents);
+                Vec::new()
+            }
+            ViewUpdatePayload::Patch {
+                patch:
+                    ViewPatch::TorrentList {
+                        upsert, removed, ..
+                    },
+            } => policy.apply_patch(&upsert, &removed),
+            ViewUpdatePayload::ResetRequired { .. } => {
+                policy.reset();
+                if let Err(error) = subscription.resync() {
+                    eprintln!(
+                        "desktop notification subscription could not resync: {}",
+                        bounded_diagnostic(error.to_string())
+                    );
+                    break;
+                }
+                Vec::new()
+            }
+            ViewUpdatePayload::Snapshot { .. } | ViewUpdatePayload::Patch { .. } => {
+                policy.reset();
+                eprintln!("desktop notification subscription received an unexpected projection");
+                break;
+            }
+        };
+        for notification in notifications {
+            #[cfg(target_os = "linux")]
+            deliver_desktop_notification(
+                &app,
+                notification,
+                &mut activation_tasks,
+                activation_cancellation.clone(),
+            )
+            .await;
+            #[cfg(not(target_os = "linux"))]
+            deliver_desktop_notification(&app, notification);
+        }
+    }
+    subscription.close();
+    #[cfg(target_os = "linux")]
+    {
+        activation_cancellation.cancel();
+        while let Some(result) = activation_tasks.join_next().await {
+            if let Err(error) = result {
+                eprintln!(
+                    "desktop notification activation task failed: {}",
+                    bounded_diagnostic(error.to_string())
+                );
+            }
+        }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn deliver_desktop_notification(app: &AppHandle, notification: DesktopNotification) {
+    let settings = app
+        .state::<DesktopState>()
+        .shell_settings
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .notifications;
+    let focused = app
+        .get_webview_window(MAIN_WINDOW_LABEL)
+        .and_then(|window| window.is_focused().ok())
+        .unwrap_or(false);
+    if !notification_enabled(settings, notification.kind, focused) {
+        return;
+    }
+    let category = notification_category(notification.kind);
+    match app
+        .notification()
+        .builder()
+        .title(notification.title)
+        .body(notification.body)
+        .show()
+    {
+        Ok(()) => eprintln!("desktop notification queued for {category}"),
+        Err(error) => eprintln!(
+            "desktop notification submission failed for {category}: {}",
+            bounded_diagnostic(error.to_string())
+        ),
+    }
+}
+
+#[cfg(target_os = "linux")]
+async fn deliver_desktop_notification(
+    app: &AppHandle,
+    notification: DesktopNotification,
+    activation_tasks: &mut JoinSet<()>,
+    cancellation: CancellationToken,
+) {
+    while let Some(result) = activation_tasks.try_join_next() {
+        if let Err(error) = result {
+            eprintln!(
+                "desktop notification activation task failed: {}",
+                bounded_diagnostic(error.to_string())
+            );
+        }
+    }
+
+    let settings = app
+        .state::<DesktopState>()
+        .shell_settings
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .notifications;
+    let focused = app
+        .get_webview_window(MAIN_WINDOW_LABEL)
+        .and_then(|window| window.is_focused().ok())
+        .unwrap_or(false);
+    if !notification_enabled(settings, notification.kind, focused) {
+        return;
+    }
+
+    let category = notification_category(notification.kind);
+    if activation_tasks.len() >= MAX_ACTIVE_NOTIFICATION_ACTIVATIONS {
+        eprintln!("desktop notification activation capacity reached for {category}");
+        return;
+    }
+    let mut native = notify_rust::Notification::new();
+    native
+        .appname("RSTorrent")
+        .summary(notification.title)
+        .body(&notification.body)
+        .icon("rstorrent-desktop")
+        .timeout(notify_rust::Timeout::Never)
+        .action("default", "Open RSTorrent");
+    let handle = match native.show_async().await {
+        Ok(handle) => {
+            eprintln!("desktop notification displayed for {category}");
+            handle
+        }
+        Err(error) => {
+            eprintln!(
+                "desktop notification submission failed for {category}: {}",
+                bounded_diagnostic(error.to_string())
+            );
+            return;
+        }
+    };
+
+    let app = app.clone();
+    activation_tasks.spawn(async move {
+        let activated = Arc::new(AtomicBool::new(false));
+        let activated_by_response = activated.clone();
+        tokio::select! {
+            () = cancellation.cancelled() => handle.close_async().await,
+            () = handle.wait_for_action_async(move |response| {
+                let should_restore = match response {
+                    notify_rust::NotificationResponse::Default => true,
+                    notify_rust::NotificationResponse::Action(action) => action == "default",
+                    notify_rust::NotificationResponse::Closed(_)
+                    | notify_rust::NotificationResponse::Reply(_) => false,
+                };
+                if should_restore {
+                    activated_by_response.store(true, Ordering::Release);
+                }
+            }) => {}
+        }
+        if activated.load(Ordering::Acquire)
+            && let Err(error) = restore_main_window(&app)
+        {
+            eprintln!(
+                "desktop notification activation could not restore the main window: {}",
+                bounded_diagnostic(error)
+            );
+        }
+    });
+}
+
+fn notification_enabled(
+    settings: DesktopNotificationSettings,
+    kind: DesktopNotificationKind,
+    main_window_focused: bool,
+) -> bool {
+    let category_enabled = match kind {
+        DesktopNotificationKind::DownloadComplete => settings.notify_download_complete,
+        DesktopNotificationKind::NeedsAttention => settings.notify_needs_attention,
+    };
+    category_enabled && (settings.notify_while_focused || !main_window_focused)
+}
+
+fn notification_category(kind: DesktopNotificationKind) -> &'static str {
+    match kind {
+        DesktopNotificationKind::DownloadComplete => "download-complete",
+        DesktopNotificationKind::NeedsAttention => "needs-attention",
+    }
+}
+
+async fn stop_notification_owner(owner: DesktopNotificationOwner) {
+    owner.cancellation.cancel();
+    let _ = owner.task.await;
+}
+
 #[tauri::command]
 async fn application_shutdown(
     app: AppHandle,
@@ -709,6 +996,9 @@ async fn wait_for_application_shutdown(state: &DesktopState) -> Result<(), Strin
 
 async fn perform_application_shutdown(app: AppHandle) {
     let state = app.state::<DesktopState>();
+    if let Some(owner) = state.notification_owner.lock().await.take() {
+        stop_notification_owner(owner).await;
+    }
     let subscriptions = {
         let mut subscriptions = state.subscriptions.lock().await;
         std::mem::take(&mut *subscriptions)
@@ -1121,6 +1411,7 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let config_dir = app
                 .path()
@@ -1147,6 +1438,13 @@ pub fn run() {
             .map_err(|error| error.to_string())?;
             let service = Arc::new(Mutex::new(service));
             tauri::async_runtime::block_on(ApplicationService::ensure_maintenance_owner(&service));
+            let notification_subscription = tauri::async_runtime::block_on(async {
+                service
+                    .lock()
+                    .await
+                    .subscribe(notification_subscription_spec())
+            })
+            .map_err(|error| format!("subscribe desktop notifications: {error}"))?;
             let media_server =
                 tauri::async_runtime::block_on(LoopbackMediaServer::bind(service.clone()))
                     .map_err(|error| error.to_string())?;
@@ -1172,6 +1470,7 @@ pub fn run() {
                 window_generation: AtomicU64::new(1),
                 shell_settings_path: shell_settings.path,
                 shell_settings: StdMutex::new(shell_settings.settings),
+                notification_owner: Mutex::new(None),
                 background_menu_item,
                 shutdown: ShutdownGate::new(),
                 shutdown_status: watch::channel(ShutdownPhase::Running).0,
@@ -1206,6 +1505,14 @@ pub fn run() {
                     .map_err(|_| "register AppImage magnet handler".to_owned())?;
             }
             install_desktop_tray(app, &tray_menu)?;
+            notification_subscription
+                .resync()
+                .map_err(|error| format!("baseline desktop notifications: {error}"))?;
+            let notification_owner =
+                start_notification_owner(app.handle().clone(), notification_subscription);
+            *tauri::async_runtime::block_on(
+                app.state::<DesktopState>().notification_owner.lock(),
+            ) = Some(notification_owner);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1216,6 +1523,8 @@ pub fn run() {
             application_add_external_torrent,
             desktop_external_intake_pull,
             desktop_external_intake_cancel,
+            desktop_notification_settings,
+            desktop_set_notification_settings,
             choose_download_root,
             application_view_hello,
             application_view_open,
@@ -1280,8 +1589,9 @@ mod tests {
     use tauri::ipc::InvokeBody;
 
     use super::{
-        ApplicationConfig, HEADER_REQUEST_ID, HEADER_START_CONTENT, HEADER_STORAGE_ROOT,
-        NetworkConfig, NetworkPolicy, decode_torrent_ipc, desktop_application_config,
+        ApplicationConfig, DesktopNotificationKind, DesktopNotificationSettings, HEADER_REQUEST_ID,
+        HEADER_START_CONTENT, HEADER_STORAGE_ROOT, NetworkConfig, NetworkPolicy,
+        decode_torrent_ipc, desktop_application_config, notification_enabled,
         register_download_root_selection, resolve_download_directory_selection,
         validate_local_media_url,
     };
@@ -1308,6 +1618,44 @@ mod tests {
             config.download_resource_limits,
             DownloadResourceLimits::DESKTOP
         );
+    }
+
+    #[test]
+    fn desktop_notification_preferences_filter_after_edge_detection() {
+        let defaults = DesktopNotificationSettings {
+            notify_download_complete: true,
+            notify_needs_attention: true,
+            notify_while_focused: true,
+        };
+        assert!(notification_enabled(
+            defaults,
+            DesktopNotificationKind::DownloadComplete,
+            true
+        ));
+        assert!(notification_enabled(
+            DesktopNotificationSettings {
+                notify_while_focused: false,
+                ..defaults
+            },
+            DesktopNotificationKind::NeedsAttention,
+            false
+        ));
+        assert!(!notification_enabled(
+            DesktopNotificationSettings {
+                notify_while_focused: false,
+                ..defaults
+            },
+            DesktopNotificationKind::NeedsAttention,
+            true
+        ));
+        assert!(!notification_enabled(
+            DesktopNotificationSettings {
+                notify_download_complete: false,
+                ..defaults
+            },
+            DesktopNotificationKind::DownloadComplete,
+            false
+        ));
     }
 
     #[tokio::test]

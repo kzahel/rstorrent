@@ -43,6 +43,10 @@ import type {
   DesktopUpdater,
   DesktopUpdaterSnapshot,
 } from "../updater/types";
+import type {
+  DesktopNotifications,
+  DesktopNotificationSettings,
+} from "../desktop-notifications/types";
 import { App } from "./App";
 import { RemoveTorrentDialog } from "./RemoveTorrentDialog";
 
@@ -541,6 +545,29 @@ describe("inspection application", () => {
       within(dialog).getByRole("tab", { name: "About & updates" }),
     ).toHaveAttribute("aria-selected", "true");
     expect(within(dialog).getByText("Checking for updates")).toBeVisible();
+  });
+
+  it("shows notification settings only when the desktop capability is injected", async () => {
+    const user = userEvent.setup();
+    const first = renderScenario("empty-library", 0);
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    expect(
+      screen.queryByRole("tab", { name: "Notifications" }),
+    ).not.toBeInTheDocument();
+    first.unmount();
+
+    renderScenario(
+      "empty-library",
+      0,
+      null,
+      undefined,
+      notificationSettingsController(),
+    );
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    await user.click(screen.getByRole("tab", { name: "Notifications" }));
+    expect(
+      screen.getByRole("checkbox", { name: /Download complete/ }),
+    ).toBeChecked();
   });
 
   it("switches named scenarios and advances the frozen clock", async () => {
@@ -2534,11 +2561,14 @@ function renderScenario(
   elapsedMs: number,
   appearanceStorage?: AppearanceStorage | null,
   updater?: DesktopUpdater,
+  notifications?: DesktopNotifications,
 ) {
   return renderApplication(
     new DemoApplication({ scenarioId, elapsedMs, running: false }),
     appearanceStorage,
     updater,
+    undefined,
+    notifications,
   );
 }
 
@@ -2547,15 +2577,35 @@ function renderApplication(
   appearanceStorage?: AppearanceStorage | null,
   updater?: DesktopUpdater,
   externalIntake?: DesktopExternalIntake,
+  notifications?: DesktopNotifications,
 ) {
   const controller = new InspectionController(application, appearanceStorage);
   controllers.push(controller);
   controller.start();
   return render(
     <InspectionProvider controller={controller}>
-      <App updater={updater} externalIntake={externalIntake} />
+      <App
+        updater={updater}
+        externalIntake={externalIntake}
+        notifications={notifications}
+      />
     </InspectionProvider>,
   );
+}
+
+function notificationSettingsController(): DesktopNotifications {
+  let settings: DesktopNotificationSettings = {
+    notify_download_complete: true,
+    notify_needs_attention: true,
+    notify_while_focused: true,
+  };
+  return {
+    getSnapshot: () => settings,
+    save: vi.fn(async (next) => {
+      settings = next;
+      return settings;
+    }),
+  };
 }
 
 function updaterWithSnapshot(

@@ -3,8 +3,9 @@
 Status: **Complete (2026-08-24).** The parented native picker, focused
 selection/persistence tests, hosted Windows/Linux packages, and installed
 Windows choose/cancel/repair/restart campaign pass. Desktop release/updater
-Tactical [`158`](158-desktop-signed-packaging-and-updater.md) resumes as
-**Now** and owns the first signed package containing this work.
+Tactical [`158`](158-desktop-signed-packaging-and-updater.md) owns the first
+signed package containing this work and resumes now that desktop-notification
+Tactical `164` is complete.
 
 Topics: `beta-release-readiness`, `client-surfaces`, `download-roots`,
 `client-persistence`

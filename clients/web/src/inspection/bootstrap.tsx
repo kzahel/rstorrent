@@ -10,6 +10,7 @@ import { LiveApplication } from "./live/LiveApplication";
 import type { DemoScenarioId } from "./model";
 import type { DesktopUpdater } from "./updater/types";
 import type { DesktopExternalIntake } from "../desktop-external-intake";
+import type { DesktopNotifications } from "./desktop-notifications/types";
 import { HttpApplicationClient } from "../api/client";
 import { TauriApplicationViewClient } from "../tauri-view-client";
 import { WebSocketApplicationViewClient } from "../websocket-view-client";
@@ -91,11 +92,19 @@ async function openLiveInspection(
 }
 
 export async function startTauriInspection(): Promise<void> {
-  const [updater, application, externalIntake] = await Promise.all([
+  const [updater, notifications, application, externalIntake] = await Promise.all([
     import("../tauri-updater")
       .then(({ createTauriDesktopUpdater }) => createTauriDesktopUpdater())
       .catch((error: unknown) => {
         console.error("Desktop updater initialization failed:", error);
+        return undefined;
+      }),
+    import("../tauri-desktop-notifications")
+      .then(({ createTauriDesktopNotifications }) =>
+        createTauriDesktopNotifications(),
+      )
+      .catch((error: unknown) => {
+        console.error("Desktop notification settings initialization failed:", error);
         return undefined;
       }),
     LiveApplication.open(new TauriApplicationViewClient()),
@@ -110,6 +119,7 @@ export async function startTauriInspection(): Promise<void> {
     undefined,
     updater,
     externalIntake,
+    notifications,
   );
 }
 
@@ -119,6 +129,7 @@ function renderInspection(
   webAuth?: WebAuthClient,
   updater?: DesktopUpdater,
   externalIntake?: DesktopExternalIntake,
+  notifications?: DesktopNotifications,
 ): void {
   controller.start();
   root.render(
@@ -127,6 +138,7 @@ function renderInspection(
         webAuth={webAuth}
         updater={updater}
         externalIntake={externalIntake}
+        notifications={notifications}
       />
     </InspectionProvider>,
   );

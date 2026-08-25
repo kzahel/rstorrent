@@ -13,17 +13,21 @@ picker, passes installed unsigned Windows setup/repair/restart, and removes the
 packaged Linux helper dependency. Completed Tactical `162` closes
 single-instance, tray, joined desktop lifecycle, release-only Windows GUI
 launch, and native Linux arm64 package coverage with installed Windows
-x86_64/Linux arm64 evidence. Tactical `158` has resumed as the single
-**Now**. Maintainer direction on 2026-08-24 makes installed `magnet:` and local
-`.torrent` activation a beta usability requirement. Completed Tactical `163`
+x86_64/Linux arm64 evidence. Maintainer direction on 2026-08-24 makes
+installed `magnet:` and local `.torrent` activation a beta usability
+requirement. Completed Tactical `163`
 has its bounded implementation, deterministic/package gates, and installed
 Linux arm64, Windows x86_64-application, and macOS arm64 campaigns. The Windows
 package ran as a real x86_64 PE under Windows 11 arm64 x64 emulation. The
 macOS campaign preserved JSTorrent's inherited default handler while proving
 targeted RSTorrent LaunchServices delivery, cold/visible/hidden Add flow,
 bounded failures, duplicates, tray Quit, and exact cleanup. Exact hosted run
-`32775002484` passed all eight platform jobs. Tactical `158` remains the
-current release owner.
+`32775002484` passed all eight platform jobs. Maintainer direction on
+2026-08-25 selected desktop completion and fatal/repair notification Tactical
+[`164`](../tactical/164-desktop-completion-and-attention-notifications.md)
+before the next signed candidate. It is complete with deterministic/package
+gates and installed macOS arm64, Windows x86_64, and Linux arm64 evidence.
+Release/updater Tactical `158` resumes as the single **Now**.
 
 The updater tactical's client,
 production route, five-target signed hosted rehearsal, public `0.1.0` release,
@@ -512,12 +516,13 @@ exactly.
 
 ### Now
 
-- **Resume desktop signed packaging and updater Tactical
+- **Resume desktop signed packaging/updater Tactical
   [`158`](../tactical/158-desktop-signed-packaging-and-updater.md).** Produce
   the first signed package carrying completed Windows startup, picker,
-  console, and lifecycle repairs; repeat clean-profile Windows update and
-  Linux x86_64 installed evidence; and characterize Windows firewall consent.
-  Installed Intel macOS remains deliberately omitted.
+  console, lifecycle, external-intake, and notification work; repeat
+  clean-profile Windows and Linux x86_64 installed updates; and characterize
+  Windows firewall consent. Installed Intel macOS remains deliberately
+  omitted.
 
 ### Next
 
@@ -692,6 +697,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Ephemeral application state | Implemented | deterministic, runtime | Private bounded session and metrics SQLite stores preserve receipts, exact source, metadata, settings, views, DHT and speed state for one joined service lifetime, then disappear without profile files. One maximum source plus info fits the 256-MiB session cap and a second maximum import rolls back with a typed resource limit; payload storage remains external. | [`client-persistence`](client-persistence.md), [`application-control`](application-control.md) |
 | Leased application view sets and delivery clients | Implemented | deterministic, runtime, interop, web, Tauri | Named summary, generation-scoped checker progress, piece, structured diagnostic, active-peer, registry-backed Swarm, paged file and tracker, global Disk, range-selected session Speed, and latest-value session DHT views have bounded replay/reset, independent lease expiry, fresh-snapshot recovery, diagnostic HTTP polling, acknowledged browser WebSocket streaming, and acknowledged in-process Tauri streaming. The retained observer matrices still expose Summary reset storms and trace/all-view serialization pressure; stable public compatibility remains unimplemented. | [`application-view-api`](application-view-api.md), [`application-connection-architecture`](application-connection-architecture.md) |
 | Shared web and Tauri desktop UI | Partial | runtime, interop, web, desktop | The responsive surface now has Library, Transfers, and Workbench destinations, truthful bounded torrent-backed cards, accessible determinate/indeterminate checker progress with exact selected-summary counters, shared multi-selection, magnet and local `.torrent` add, source-preserving or name/tracker-rich bounded magnet copy, metadata-only add, live Normal/Skip file actions plus atomic `Download now` for skipped targets, verified and active-streamable file `Open` through an ephemeral HTTP capability, archives, guarded removal, live peer/swarm/file/tracker inspection, global Disk pressure, bounded Canvas Pieces, a smooth exact session Speed history, a one-second download/upload tab title, and the exact routing-space DHT observatory. Embedded playback and a media catalog remain incomplete. | [`client-surfaces`](client-surfaces.md), [`application-interface-direction`](application-interface-direction.md) |
+| Desktop native notifications | Implemented | deterministic, web, desktop | Completed Tactical `164` adds one Rust-owned authoritative torrent-list edge reducer, versioned Tauri-only settings, and native completion plus fatal/repair attention. Initial/reset/settings/restart terminal state does not replay, focused-window display is default-on, and hidden-to-tray delivery passes installed macOS arm64, Windows x86_64, and Linux arm64. The exact standard Tauri package owns macOS/Windows; a bounded direct adapter retains the same underlying Linux notification handle because the package wrapper dropped it. Linux click restores the existing window; macOS/Windows retain tray restoration after measured package click limits. Progress, aggregation, and mobile work remain excluded. | [`client-surfaces`](client-surfaces.md), [`beta-release-readiness`](beta-release-readiness.md) |
 | Authenticated private web host | Implemented | deterministic, runtime, web, live | One explicitly configured maintainer host serves the production React bundle and multiplexed application WebSocket behind bounded Basic authentication and exact HTTPS Origin checks. Exact-push isolated build, candidate smoke, supervised restart, authenticated private-listener/public verification, and rollback-on-failure pass; this is not a relay, account, pairing, encryption, or stable public compatibility claim. | [`application-connection-architecture`](application-connection-architecture.md), [`client-surfaces`](client-surfaces.md) |
 | Local headless web authentication | Implemented | deterministic, runtime, web | Fresh loopback profiles have a communicated ten-minute setup choice between local-open and at most 32 rolling remembered-browser sessions. Four-digit one-use approval, five-attempt exhaustion, HttpOnly Strict cookies, exact Host/Origin checks, Settings revocation, typed live-socket termination, restart persistence, and explicit one-browser recovery pass. This is not password, LAN, relay, device-identity, or E2E remote authentication. | [`application-connection-architecture`](application-connection-architecture.md), [`web-ui-design`](web-ui-design.md), [`remote-access-authentication`](remote-access-authentication.md) |
 | Android Compose foreground client | Implemented | deterministic, runtime, AVD, physical | The maintained Material 3 product provides the JSTorrent-shaped Library, six-tab torrent detail, Speed, dual-family DHT, structured Logs, and Settings hierarchy with RSTorrent branding. One service-scoped owner consumes every Android-relevant bounded projection; magnet and `.torrent` intake, SAF setup/repair, file selection/open, torrent and queue actions, backed settings including session/per-torrent transfer limits, activity/process recovery, and controlled concurrent downloads pass. Search/plugins, playback, richer file priority, tracker mutation, and dynamic network/power controls remain explicitly unavailable; Tactical `117` makes no new physical-device UI claim. | [`client-surfaces`](client-surfaces.md) |

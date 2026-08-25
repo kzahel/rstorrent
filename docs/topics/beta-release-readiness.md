@@ -2,12 +2,12 @@
 
 Topic: `beta-release-readiness`
 
-Status: **Active as of 2026-08-24.** RSTorrent desktop `0.1.0` is the first
+Status: **Active as of 2026-08-25.** RSTorrent desktop `0.1.0` is the first
 public signed incubation release and `0.1.1` is its first updater-validation
 release; Android and iOS remain unreleased alpha lanes. Credential-free
 eight-job cross-platform presubmit CI, a credentialed five-target signed
-desktop rehearsal, two tagged publications, production updater metadata, one installed macOS
-arm64 launch smoke, and exact macOS arm64 and Linux arm64
+desktop rehearsal, two tagged publications, production updater metadata, one
+installed macOS arm64 launch smoke, and exact macOS arm64 and Linux arm64
 `0.1.0`-to-`0.1.1` update passes. Windows x86_64 replacement/relaunch also
 passes under an automatic-loopback profile, but fresh default startup is
 blocked in the public `0.1.0` and `0.1.1` builds by local-network address
@@ -21,8 +21,10 @@ Windows listener also exposed a Windows Security consent prompt that the next
 signed candidate must characterize and document. Completed Tactical `162`
 adds single-instance, default-on close-to-tray, persisted background policy,
 visible manual updating, joined Quit/restart, native Linux arm64 packaging,
-and installed Windows x86_64/Linux arm64 lifecycle evidence. Tactical `158`
-has resumed as **Now** for the next signed package and update repetition.
+and installed Windows x86_64/Linux arm64 lifecycle evidence. Completed
+Tactical `164` adds desktop completion and attention notifications with
+installed macOS arm64, Windows x86_64, and Linux arm64 evidence. Tactical
+`158` resumes as the sole **Now** for the next signed package.
 Installed Intel macOS testing is deliberately omitted. The public product
 name is RSTorrent for the foreseeable release line. A later production
 graduation is expected to retain JSTorrent's existing name, application
@@ -47,7 +49,11 @@ completed Tactical
 Installed Linux arm64, Windows x86_64-application, macOS arm64, and exact
 hosted eight-job acceptance pass; the Windows package ran under Windows 11
 arm64 x64 emulation, and the macOS campaign preserved JSTorrent's inherited
-default handler.
+default handler. Maintainer direction on 2026-08-25 makes basic native desktop
+completion and fatal/repair notifications a beta usability requirement;
+completed Tactical
+[`164`](../tactical/164-desktop-completion-and-attention-notifications.md)
+closes that gap and returns signed-package ownership to Tactical `158`.
 
 ## Scope And Release Definition
 
@@ -321,6 +327,19 @@ without corrupting or silently reinterpreting user state.
   [`32775002484`](https://github.com/kzahel/rstorrent/actions/runs/32775002484)
   passed all eight platform jobs. This work does not adopt JSTorrent identity,
   extension routing, or remote `.torrent` URLs.
+- [x] **DESK-009 — Notify on completion and fatal/repair state.** Completed
+  Tactical `164` adds one native Rust notification owner. The exact standard
+  Tauri package owns macOS/Windows delivery; Linux retains the same underlying
+  exact native handle directly because the wrapper dropped it before GNOME
+  could display or activate it. Completion and attention are edge-triggered
+  and non-replaying; fresh settings enable both and allow users to suppress
+  notifications only while RSTorrent is focused. The webview receives typed
+  settings but no arbitrary OS-notification authority. Installed macOS arm64,
+  Windows x86_64, and Linux arm64 evidence covers focused policy, hidden
+  delivery, restart, settings, click behavior, joined Quit, and cleanup.
+  Linux click restoration passes; macOS/Windows retain the tray fallback after
+  measured standard-package click limits. Progress, aggregation, and mobile
+  notification work remain outside the slice.
 
 ### Desktop updater contract
 
@@ -503,20 +522,24 @@ no single optional BEP is mandatory.
    Windows x86_64-application, and macOS arm64 cold/visible/tray-hidden/
    cancel/failure/duplicate/Quit campaigns pass. Exact hosted run
    `32775002484` passed all eight platform jobs.
-6. **Complete — Tactical `160`: Windows local-network address selection.**
+6. **Complete — Tactical `164`: desktop completion and attention
+   notifications.** One Rust-owned, edge-triggered, non-replaying owner,
+   versioned typed desktop preferences, deterministic/package gates, and
+   installed macOS arm64, Windows x86_64, and Linux arm64 evidence pass.
+7. **Complete — Tactical `160`: Windows local-network address selection.**
    Wildcard binding remains, only a concrete eligible address is reported,
    the bounded Windows best-route fallback and native CI regression pass, and
    signed installed proof returns to Tactical `158`.
-7. **Complete — Tactical `161`: packaged desktop folder picker.** The native
+8. **Complete — Tactical `161`: packaged desktop folder picker.** The native
    parented Windows picker, self-contained packaged Linux picker, stable root
    boundary, and installed Windows cancel/select/repair/restart evidence pass.
-8. **Next — application identity and upgrade baseline.** Freeze package IDs,
+9. **Next — application identity and upgrade baseline.** Freeze package IDs,
    persistence compatibility, changelog, privacy/support, diagnostics export,
    and a repeatable cohort before any public installer.
-9. **Later — platform release campaigns.** Close desktop, Android closed-
+10. **Later — platform release campaigns.** Close desktop, Android closed-
    testing, and iOS TestFlight gates independently with real older-to-newer
    installed evidence.
-10. **Later — Tactical `153`.** Wired-LAN uTP scalability remains valuable
+11. **Later — Tactical `153`.** Wired-LAN uTP scalability remains valuable
    engine evidence but no longer displaces the explicit beta-readiness
    campaign.
 

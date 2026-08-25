@@ -146,11 +146,20 @@ export function validateDesktopReleaseConfiguration({
   if (permissions.has("process:default")) {
     fail("raw process restart permission must stay disabled");
   }
+  if ([...permissions].some((permission) => permission.startsWith("notification:"))) {
+    fail("webview notification permissions must stay disabled");
+  }
   if (!cargo.includes("tauri-plugin-updater =")) {
     fail("missing Rust dependency tauri-plugin-updater");
   }
   if (!cargo.includes('tauri-plugin-deep-link = "=2.4.9"')) {
     fail("missing pinned Rust dependency tauri-plugin-deep-link 2.4.9");
+  }
+  if (!cargo.includes('tauri-plugin-notification = "=2.3.3"')) {
+    fail("notification dependency must stay pinned to 2.3.3");
+  }
+  if (!cargo.includes('notify-rust = "=4.18.0"')) {
+    fail("Linux notification dependency must stay pinned to 4.18.0");
   }
   if (
     !cargo.includes(
@@ -161,6 +170,9 @@ export function validateDesktopReleaseConfiguration({
   }
   if (packageJson.dependencies?.["@tauri-apps/plugin-updater"] === undefined) {
     fail("missing web dependency for tauri-plugin-updater");
+  }
+  if (packageJson.dependencies?.["@tauri-apps/plugin-notification"] !== undefined) {
+    fail("webview notification package must stay absent");
   }
   if (
     cargo.includes("tauri-plugin-process =") ||
@@ -191,6 +203,16 @@ export function validateDesktopReleaseConfiguration({
   const deepLinkPlugin = desktopSource.indexOf(
     ".plugin(tauri_plugin_deep_link::init())",
   );
+  if (
+    !desktopSource.includes(".plugin(tauri_plugin_notification::init())") ||
+    !desktopSource.includes("fn desktop_notification_settings(") ||
+    !desktopSource.includes("fn desktop_set_notification_settings(") ||
+    !desktopSource.includes("async fn run_notification_owner(") ||
+    !desktopSource.includes("notify_rust::Notification::new()") ||
+    !desktopSource.includes("MAX_ACTIVE_NOTIFICATION_ACTIVATIONS")
+  ) {
+    fail("Rust-owned desktop notification integration is incomplete");
+  }
   if (
     singleInstancePlugin < 0 ||
     deepLinkPlugin < 0 ||

@@ -26,6 +26,12 @@ view protocol-version or hybrid-only DTO change. The bounded leased view-set,
 authenticated JSON polling adapter, pure reducer, and lifecycle controller are
 implemented by
 [`033-headless-view-set-foundation.md`](../tactical/033-headless-view-set-foundation.md).
+Completed desktop-notification Tactical
+[`164`](../tactical/164-desktop-completion-and-attention-notifications.md)
+consumes the existing in-process torrent-list subscription in a native Rust
+edge reducer. It adds no view kind, field, generated contract, browser event,
+or mobile obligation; initial and reset snapshots establish a non-replaying
+baseline while ordinary patches remain authoritative input.
 Tactical `034` implements the per-application Zustand store and React
 inspection model against a deterministic adapter. Tactical `035` adds stable
 Rust torrent and active-peer projections, semantic responsive view selection,

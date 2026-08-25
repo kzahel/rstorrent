@@ -3,7 +3,8 @@
 Status: **Complete (2026-08-24).** The source defect and native presubmit gap
 are closed. Desktop release/updater Tactical `158` again owns the remaining
 signed installed-package and cross-version proof because the public `0.1.0`
-and `0.1.1` packages necessarily predate this repair.
+and `0.1.1` packages necessarily predate this repair. It resumes now that
+desktop-notification Tactical `164` is complete.
 
 Topics: `beta-release-readiness`, `capability-readiness`,
 `incoming-reachability-and-seeding`

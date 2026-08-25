@@ -459,6 +459,16 @@ own correctness.
   profile, restores the existing window from the tray or a second launch, and
   joins service/media shutdown before close, tray Quit, or updater restart can
   terminate the process.
+- Completed Tactical
+  [`164`](../tactical/164-desktop-completion-and-attention-notifications.md)
+  adds a Tauri-only native Rust owner for edge-triggered completion and
+  fatal/repair notifications. It consumes the existing authoritative
+  in-process torrent-list view independently from React, does not replay
+  initial/reset terminal state, and exposes only typed shell preferences to a
+  capability-gated desktop Settings category. The standard Tauri Rust backend
+  owns macOS/Windows; Linux retains the underlying native handle directly for
+  GNOME display and bounded click activation. Android and iOS keep their own
+  platform notification owners.
 - Android's foreground service owns the application service independently of
   activities.
 - A remote WebSocket connection owns only its authenticated commands and
@@ -625,8 +635,11 @@ remote exposure, and Android streaming remain independent product decisions.
   Windows package was a real x86_64 PE exercised under Windows 11 arm64 x64
   emulation. The macOS campaign preserved JSTorrent's inherited default while
   targeting the registered incubation bundle through LaunchServices. The exact
-  hosted eight-job run also passes. Broader cross-platform window/platform-
-  capability evidence remains open. The release gates live in
+  hosted eight-job run also passes. Completed Tactical `164` closes the
+  bounded native desktop-notification gap with deterministic/package gates and
+  installed macOS arm64, Windows x86_64, and Linux arm64 evidence. Tactical
+  `158` resumes for the next signed candidate. Broader cross-platform
+  window/platform-capability evidence remains open. The release gates live in
   [`beta-release-readiness.md`](beta-release-readiness.md).
 - The maintained Android product module now lives at `clients/android`; the
   unreleased `org.rstorrent.bootstrap` identity and retained diagnostic service

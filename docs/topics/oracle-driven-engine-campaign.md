@@ -135,8 +135,11 @@ packaged desktop folder-picker Tactical
 [`161`](../tactical/161-packaged-desktop-folder-picker.md) are complete. The
 bounded desktop lifecycle Tactical
 [`162`](../tactical/162-desktop-single-instance-and-tray-lifecycle.md) is
-complete, and release/updater Tactical `158` is the authoritative product
-**Now**.
+complete, as is external-intake Tactical
+[`163`](../tactical/163-desktop-external-torrent-intake.md). Completed desktop
+notification Tactical
+[`164`](../tactical/164-desktop-completion-and-attention-notifications.md)
+returns the authoritative product **Now** to release/updater Tactical `158`.
 
 The completed
 maximum-throughput storage campaign
@@ -514,8 +517,11 @@ complete, packaged desktop folder-picker Tactical
 [`161`](../tactical/161-packaged-desktop-folder-picker.md) is also complete,
 desktop lifecycle Tactical
 [`162`](../tactical/162-desktop-single-instance-and-tray-lifecycle.md) is
-complete, and the product queue selects release/updater Tactical `158` as
-**Now**.**
+complete, and external-intake Tactical
+[`163`](../tactical/163-desktop-external-torrent-intake.md) is complete, as is
+desktop notification Tactical
+[`164`](../tactical/164-desktop-completion-and-attention-notifications.md).
+Release/updater Tactical `158` is the product **Now**.
 Tacticals `142`, `145`, and `150` complete the uTP performance campaign at the
 maintainer-selected evidence stop. Completed Tactical `143` installs the
 v1-preserving opaque torrent owner, typed protocol aliases, schema-19 fresh

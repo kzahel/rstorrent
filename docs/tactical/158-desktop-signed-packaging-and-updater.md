@@ -1,6 +1,8 @@
 # Tactical 158: Desktop Signed Packaging And Updater
 
-Status: **Implementation in progress and selected as Now (2026-08-24).**
+Status: **Implementation in progress and resumed as the sole Now on
+2026-08-25.** Desktop-notification Tactical
+[`164`](164-desktop-completion-and-attention-notifications.md) is complete.
 Maintainer direction selected RSTorrent as the foreseeable public product name
 and froze `com.jstorrent.rstorrent` as the desktop beta identifier on
 2026-08-23. Cross-platform presubmit Tactical `159` is complete. The distinct
@@ -30,7 +32,10 @@ characterize and document it without automatically granting a firewall rule.
 Completed Tactical `162` closes single-instance, tray/background, joined
 Quit, release-only Windows GUI launch, and installed Windows x86_64/Linux
 arm64 lifecycle behavior. The next signed candidate therefore carries a
-reachable and cleanly terminating desktop shell.
+reachable and cleanly terminating desktop shell. Completed Tactical `163`
+also adds installed external magnet and local `.torrent` activation. Completed
+Tactical `164` adds native completion/attention notifications before this
+tactical produces the next signed candidate.
 
 Topics: `beta-release-readiness`, `client-surfaces`,
 `product-state-and-feedback`, `product-surfaces-and-migration`,

@@ -1,8 +1,9 @@
 # Tactical 162: Desktop Single-Instance And Tray Lifecycle
 
 Status: **Complete (2026-08-24).** Desktop release/updater Tactical
-[`158`](158-desktop-signed-packaging-and-updater.md) has resumed as the sole
-**Now**.
+[`158`](158-desktop-signed-packaging-and-updater.md) retains the next signed
+package and resumes as the sole **Now** after desktop-notification Tactical
+`164` completed.
 
 Topics: `beta-release-readiness`, `client-surfaces`,
 `product-state-and-feedback`, `client-persistence`

@@ -37,6 +37,7 @@ import styles from "./App.module.css";
 import type { WebAuthClient } from "../../web-auth-client";
 import type { DesktopExternalIntake } from "../../desktop-external-intake";
 import { DesktopExternalIntakeProvider } from "../desktop-external-intake-context";
+import type { DesktopNotifications } from "../desktop-notifications/types";
 
 const DESTINATIONS: readonly {
   readonly id: ApplicationDestination;
@@ -52,19 +53,24 @@ export interface AppProps {
   readonly webAuth?: WebAuthClient | undefined;
   readonly updater?: DesktopUpdater | undefined;
   readonly externalIntake?: DesktopExternalIntake | undefined;
+  readonly notifications?: DesktopNotifications | undefined;
 }
 
-export function App({ webAuth, updater, externalIntake }: AppProps) {
+export function App({ webAuth, updater, externalIntake, notifications }: AppProps) {
   return (
     <DesktopExternalIntakeProvider intake={externalIntake}>
       <TorrentActionProvider>
-        <AppContent webAuth={webAuth} updater={updater} />
+        <AppContent
+          webAuth={webAuth}
+          updater={updater}
+          notifications={notifications}
+        />
       </TorrentActionProvider>
     </DesktopExternalIntakeProvider>
   );
 }
 
-function AppContent({ webAuth, updater }: AppProps) {
+function AppContent({ webAuth, updater, notifications }: AppProps) {
   const session = useInspectionStore((state) => state.session);
   const demo = useInspectionStore((state) => state.demo);
   const storage = useInspectionStore((state) => state.storage);
@@ -392,6 +398,7 @@ function AppContent({ webAuth, updater }: AppProps) {
           clientSettings={clientSettings}
           downloadsManageable={demo === null}
           clientSettingsManageable={demo === null}
+          notifications={notifications}
           webAuth={webAuth}
           updater={updater}
           updaterSnapshot={updaterSnapshot}
