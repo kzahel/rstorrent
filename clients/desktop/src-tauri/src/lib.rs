@@ -32,18 +32,20 @@ use tokio_util::sync::CancellationToken;
 
 mod desktop_lifecycle;
 mod desktop_notifications;
+mod desktop_power;
 mod external_intake;
 mod updater;
 mod view_delivery;
 
 use desktop_lifecycle::{
-    CloseAction, DesktopNotificationSettings, DesktopShellSettings, ShutdownGate, ShutdownPhase,
-    close_action, load_desktop_shell_settings, persist_notification_settings,
-    persist_run_in_background,
+    CloseAction, DesktopNotificationSettings, DesktopPowerSettings, DesktopShellSettings,
+    ShutdownGate, ShutdownPhase, close_action, load_desktop_shell_settings,
+    persist_notification_settings, persist_power_settings, persist_run_in_background,
 };
 use desktop_notifications::{
     DesktopNotification, DesktopNotificationKind, DesktopNotificationPolicy,
 };
+use desktop_power::{DesktopPowerPolicy, DesktopPowerWorker};
 use external_intake::{
     DesktopActivationState, ExternalActivationSnapshot, ExternalActivationSource,
     read_torrent_source,
@@ -86,6 +88,8 @@ struct DesktopState {
     shell_settings_path: PathBuf,
     shell_settings: StdMutex<DesktopShellSettings>,
     notification_owner: Mutex<Option<DesktopNotificationOwner>>,
+    power_owner: Mutex<Option<DesktopPowerOwner>>,
+    power_preference: watch::Sender<bool>,
     background_menu_item: CheckMenuItem<tauri::Wry>,
     shutdown: ShutdownGate,
     shutdown_status: watch::Sender<ShutdownPhase>,
@@ -96,6 +100,11 @@ struct DesktopState {
 }
 
 struct DesktopNotificationOwner {
+    cancellation: CancellationToken,
+    task: tauri::async_runtime::JoinHandle<()>,
+}
+
+struct DesktopPowerOwner {
     cancellation: CancellationToken,
     task: tauri::async_runtime::JoinHandle<()>,
 }
@@ -275,6 +284,32 @@ fn desktop_set_notification_settings(
         persist_notification_settings(&state.shell_settings_path, *shell_settings, settings)?;
     *shell_settings = next;
     Ok(next.notifications)
+}
+
+#[tauri::command]
+fn desktop_power_settings(state: State<'_, DesktopState>) -> DesktopPowerSettings {
+    state
+        .shell_settings
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .power
+}
+
+#[tauri::command]
+fn desktop_set_power_settings(
+    state: State<'_, DesktopState>,
+    settings: DesktopPowerSettings,
+) -> Result<DesktopPowerSettings, String> {
+    let mut shell_settings = state
+        .shell_settings
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let next = persist_power_settings(&state.shell_settings_path, *shell_settings, settings)?;
+    *shell_settings = next;
+    state
+        .power_preference
+        .send_replace(settings.prevent_sleep_during_active_downloads);
+    Ok(next.power)
 }
 
 #[tauri::command]
@@ -713,6 +748,98 @@ fn start_notification_owner(
     DesktopNotificationOwner { cancellation, task }
 }
 
+fn start_power_owner(
+    subscription: ViewSubscription,
+    preference: watch::Receiver<bool>,
+) -> DesktopPowerOwner {
+    let cancellation = CancellationToken::new();
+    let task_cancellation = cancellation.clone();
+    let task = tauri::async_runtime::spawn(async move {
+        run_power_owner(subscription, preference, task_cancellation).await;
+    });
+    DesktopPowerOwner { cancellation, task }
+}
+
+async fn run_power_owner(
+    subscription: ViewSubscription,
+    mut preference: watch::Receiver<bool>,
+    cancellation: CancellationToken,
+) {
+    let worker = match DesktopPowerWorker::spawn() {
+        Ok(worker) => Some(worker),
+        Err(error) => {
+            eprintln!(
+                "desktop automatic-sleep inhibitor owner could not start: {}",
+                bounded_diagnostic(error)
+            );
+            None
+        }
+    };
+    let mut policy = DesktopPowerPolicy::default();
+    let mut required = false;
+    loop {
+        enum Input {
+            Cancel,
+            Preference,
+            Update(Box<Option<ViewUpdate>>),
+        }
+        let input = tokio::select! {
+            () = cancellation.cancelled() => Input::Cancel,
+            changed = preference.changed() => {
+                if changed.is_err() { Input::Cancel } else { Input::Preference }
+            }
+            update = subscription.next_update() => Input::Update(Box::new(update)),
+        };
+        match input {
+            Input::Cancel => break,
+            Input::Preference => {}
+            Input::Update(update) if update.is_none() => {
+                if !cancellation.is_cancelled() {
+                    eprintln!("desktop power subscription closed unexpectedly");
+                }
+                break;
+            }
+            Input::Update(update) => {
+                let update = (*update).expect("power update presence checked");
+                required = match update.payload {
+                    ViewUpdatePayload::Snapshot {
+                        snapshot: ViewSnapshot::TorrentList { torrents, .. },
+                    } => policy.establish(&torrents),
+                    ViewUpdatePayload::Patch {
+                        patch:
+                            ViewPatch::TorrentList {
+                                upsert, removed, ..
+                            },
+                    } => policy.apply_patch(&upsert, &removed),
+                    ViewUpdatePayload::ResetRequired { .. } => {
+                        let required = policy.reset();
+                        if let Err(error) = subscription.resync() {
+                            eprintln!(
+                                "desktop power subscription could not resync: {}",
+                                bounded_diagnostic(error.to_string())
+                            );
+                            break;
+                        }
+                        required
+                    }
+                    ViewUpdatePayload::Snapshot { .. } | ViewUpdatePayload::Patch { .. } => {
+                        policy.reset();
+                        eprintln!("desktop power subscription received an unexpected projection");
+                        break;
+                    }
+                };
+            }
+        }
+        if let Some(worker) = &worker {
+            worker.set_required(required && *preference.borrow());
+        }
+    }
+    subscription.close();
+    if let Some(worker) = worker {
+        let _ = tauri::async_runtime::spawn_blocking(move || worker.shutdown()).await;
+    }
+}
+
 async fn run_notification_owner(
     app: AppHandle,
     subscription: ViewSubscription,
@@ -933,6 +1060,11 @@ async fn stop_notification_owner(owner: DesktopNotificationOwner) {
     let _ = owner.task.await;
 }
 
+async fn stop_power_owner(owner: DesktopPowerOwner) {
+    owner.cancellation.cancel();
+    let _ = owner.task.await;
+}
+
 #[tauri::command]
 async fn application_shutdown(
     app: AppHandle,
@@ -996,6 +1128,9 @@ async fn wait_for_application_shutdown(state: &DesktopState) -> Result<(), Strin
 
 async fn perform_application_shutdown(app: AppHandle) {
     let state = app.state::<DesktopState>();
+    if let Some(owner) = state.power_owner.lock().await.take() {
+        stop_power_owner(owner).await;
+    }
     if let Some(owner) = state.notification_owner.lock().await.take() {
         stop_notification_owner(owner).await;
     }
@@ -1445,6 +1580,13 @@ pub fn run() {
                     .subscribe(notification_subscription_spec())
             })
             .map_err(|error| format!("subscribe desktop notifications: {error}"))?;
+            let power_subscription = tauri::async_runtime::block_on(async {
+                service
+                    .lock()
+                    .await
+                    .subscribe(notification_subscription_spec())
+            })
+            .map_err(|error| format!("subscribe desktop power policy: {error}"))?;
             let media_server =
                 tauri::async_runtime::block_on(LoopbackMediaServer::bind(service.clone()))
                     .map_err(|error| error.to_string())?;
@@ -1461,6 +1603,12 @@ pub fn run() {
                 Err(_) => eprintln!("desktop startup deep-link state could not be read"),
             }
             external_activations.admit_strings(&startup_activations);
+            let (power_preference, power_preference_rx) = watch::channel(
+                shell_settings
+                    .settings
+                    .power
+                    .prevent_sleep_during_active_downloads,
+            );
             let state = DesktopState {
                 service,
                 subscriptions: Arc::new(Mutex::new(BTreeMap::new())),
@@ -1471,6 +1619,8 @@ pub fn run() {
                 shell_settings_path: shell_settings.path,
                 shell_settings: StdMutex::new(shell_settings.settings),
                 notification_owner: Mutex::new(None),
+                power_owner: Mutex::new(None),
+                power_preference,
                 background_menu_item,
                 shutdown: ShutdownGate::new(),
                 shutdown_status: watch::channel(ShutdownPhase::Running).0,
@@ -1508,11 +1658,17 @@ pub fn run() {
             notification_subscription
                 .resync()
                 .map_err(|error| format!("baseline desktop notifications: {error}"))?;
+            power_subscription
+                .resync()
+                .map_err(|error| format!("baseline desktop power policy: {error}"))?;
             let notification_owner =
                 start_notification_owner(app.handle().clone(), notification_subscription);
             *tauri::async_runtime::block_on(
                 app.state::<DesktopState>().notification_owner.lock(),
             ) = Some(notification_owner);
+            let power_owner = start_power_owner(power_subscription, power_preference_rx);
+            *tauri::async_runtime::block_on(app.state::<DesktopState>().power_owner.lock()) =
+                Some(power_owner);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1525,6 +1681,8 @@ pub fn run() {
             desktop_external_intake_cancel,
             desktop_notification_settings,
             desktop_set_notification_settings,
+            desktop_power_settings,
+            desktop_set_power_settings,
             choose_download_root,
             application_view_hello,
             application_view_open,

@@ -11,6 +11,7 @@ import type { DemoScenarioId } from "./model";
 import type { DesktopUpdater } from "./updater/types";
 import type { DesktopExternalIntake } from "../desktop-external-intake";
 import type { DesktopNotifications } from "./desktop-notifications/types";
+import type { DesktopPower } from "./desktop-power/types";
 import { HttpApplicationClient } from "../api/client";
 import { TauriApplicationViewClient } from "../tauri-view-client";
 import { WebSocketApplicationViewClient } from "../websocket-view-client";
@@ -59,13 +60,27 @@ export async function startLiveInspection(
         client={webAuth}
         initialStatus={authStatus}
         onAuthorized={() =>
-          openLiveInspection(root, baseUrl, token, transport, waitMillis, webAuth)
+          openLiveInspection(
+            root,
+            baseUrl,
+            token,
+            transport,
+            waitMillis,
+            webAuth,
+          )
         }
       />,
     );
     return;
   }
-  await openLiveInspection(root, baseUrl, token, transport, waitMillis, webAuth);
+  await openLiveInspection(
+    root,
+    baseUrl,
+    token,
+    transport,
+    waitMillis,
+    webAuth,
+  );
 }
 
 async function openLiveInspection(
@@ -78,11 +93,7 @@ async function openLiveInspection(
 ): Promise<void> {
   const client =
     transport === "http"
-      ? new HttpApplicationClient(
-          baseUrl.href,
-          token,
-          window.location.origin,
-        )
+      ? new HttpApplicationClient(baseUrl.href, token, window.location.origin)
       : new WebSocketApplicationViewClient(baseUrl.href, token);
   const application = await LiveApplication.open(client, {
     ...(waitMillis === undefined ? {} : { waitMillis }),
@@ -92,26 +103,36 @@ async function openLiveInspection(
 }
 
 export async function startTauriInspection(): Promise<void> {
-  const [updater, notifications, application, externalIntake] = await Promise.all([
-    import("../tauri-updater")
-      .then(({ createTauriDesktopUpdater }) => createTauriDesktopUpdater())
-      .catch((error: unknown) => {
-        console.error("Desktop updater initialization failed:", error);
-        return undefined;
-      }),
-    import("../tauri-desktop-notifications")
-      .then(({ createTauriDesktopNotifications }) =>
-        createTauriDesktopNotifications(),
-      )
-      .catch((error: unknown) => {
-        console.error("Desktop notification settings initialization failed:", error);
-        return undefined;
-      }),
-    LiveApplication.open(new TauriApplicationViewClient()),
-    import("../desktop-external-intake").then(({ TauriDesktopExternalIntake }) =>
-      TauriDesktopExternalIntake.open(),
-    ),
-  ]);
+  const [updater, notifications, power, application, externalIntake] =
+    await Promise.all([
+      import("../tauri-updater")
+        .then(({ createTauriDesktopUpdater }) => createTauriDesktopUpdater())
+        .catch((error: unknown) => {
+          console.error("Desktop updater initialization failed:", error);
+          return undefined;
+        }),
+      import("../tauri-desktop-notifications")
+        .then(({ createTauriDesktopNotifications }) =>
+          createTauriDesktopNotifications(),
+        )
+        .catch((error: unknown) => {
+          console.error(
+            "Desktop notification settings initialization failed:",
+            error,
+          );
+          return undefined;
+        }),
+      import("../tauri-desktop-power")
+        .then(({ createTauriDesktopPower }) => createTauriDesktopPower())
+        .catch((error: unknown) => {
+          console.error("Desktop power settings initialization failed:", error);
+          return undefined;
+        }),
+      LiveApplication.open(new TauriApplicationViewClient()),
+      import("../desktop-external-intake").then(
+        ({ TauriDesktopExternalIntake }) => TauriDesktopExternalIntake.open(),
+      ),
+    ]);
   application.installBrowserWakeHints(window, document);
   renderInspection(
     new InspectionController(application),
@@ -120,6 +141,7 @@ export async function startTauriInspection(): Promise<void> {
     updater,
     externalIntake,
     notifications,
+    power,
   );
 }
 
@@ -130,6 +152,7 @@ function renderInspection(
   updater?: DesktopUpdater,
   externalIntake?: DesktopExternalIntake,
   notifications?: DesktopNotifications,
+  power?: DesktopPower,
 ): void {
   controller.start();
   root.render(
@@ -139,6 +162,7 @@ function renderInspection(
         updater={updater}
         externalIntake={externalIntake}
         notifications={notifications}
+        power={power}
       />
     </InspectionProvider>,
   );

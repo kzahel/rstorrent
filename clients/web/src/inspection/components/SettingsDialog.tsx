@@ -16,20 +16,20 @@ import { ConnectionSeedingSettingsSection } from "./ConnectionSeedingSettingsSec
 import { DownloadSettingsSection } from "./DownloadSettingsSection";
 import { Icon } from "./Icon";
 import { NotificationsSettingsSection } from "./NotificationsSettingsSection";
+import { PowerSettingsSection } from "./PowerSettingsSection";
 import { WebAccessSettingsSection } from "./WebAccessSettingsSection";
 import styles from "./SettingsDialog.module.css";
 import type { WebAuthClient } from "../../web-auth-client";
-import type {
-  DesktopUpdater,
-  DesktopUpdaterSnapshot,
-} from "../updater/types";
+import type { DesktopUpdater, DesktopUpdaterSnapshot } from "../updater/types";
 import type { DesktopNotifications } from "../desktop-notifications/types";
+import type { DesktopPower } from "../desktop-power/types";
 
 export type SettingsCategory =
   | "appearance"
   | "downloads"
   | "connection"
   | "notifications"
+  | "power"
   | "web-access"
   | "updates";
 
@@ -42,6 +42,7 @@ export interface SettingsDialogProps {
   readonly downloadsManageable: boolean;
   readonly clientSettingsManageable: boolean;
   readonly notifications?: DesktopNotifications | undefined;
+  readonly power?: DesktopPower | undefined;
   readonly webAuth?: WebAuthClient | undefined;
   readonly updater?: DesktopUpdater | undefined;
   readonly updaterSnapshot?: DesktopUpdaterSnapshot | undefined;
@@ -70,6 +71,7 @@ export function SettingsDialog({
   downloadsManageable,
   clientSettingsManageable,
   notifications,
+  power,
   webAuth,
   updater,
   updaterSnapshot,
@@ -89,13 +91,17 @@ export function SettingsDialog({
   const dialogRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const [category, setCategory] = useState<SettingsCategory>(initialCategory);
-  const categories: readonly { readonly id: SettingsCategory; readonly label: string }[] = [
+  const categories: readonly {
+    readonly id: SettingsCategory;
+    readonly label: string;
+  }[] = [
     { id: "appearance", label: "Appearance" },
     { id: "downloads", label: "Downloads" },
     { id: "connection", label: "Connection & seeding" },
     ...(notifications === undefined
       ? []
       : [{ id: "notifications" as const, label: "Notifications" }]),
+    ...(power === undefined ? [] : [{ id: "power" as const, label: "Power" }]),
     ...(webAuth === undefined
       ? []
       : [{ id: "web-access" as const, label: "Web access" }]),
@@ -139,10 +145,14 @@ export function SettingsDialog({
     event: KeyboardEvent<HTMLButtonElement>,
     active: SettingsCategory,
   ) => {
-    const current = categories.findIndex((candidate) => candidate.id === active);
+    const current = categories.findIndex(
+      (candidate) => candidate.id === active,
+    );
     let next = current;
-    if (event.key === "ArrowDown" || event.key === "ArrowRight") next = current + 1;
-    else if (event.key === "ArrowUp" || event.key === "ArrowLeft") next = current - 1;
+    if (event.key === "ArrowDown" || event.key === "ArrowRight")
+      next = current + 1;
+    else if (event.key === "ArrowUp" || event.key === "ArrowLeft")
+      next = current - 1;
     else if (event.key === "Home") next = 0;
     else if (event.key === "End") next = categories.length - 1;
     else return;
@@ -256,6 +266,16 @@ export function SettingsDialog({
                 hidden={category !== "notifications"}
               >
                 <NotificationsSettingsSection notifications={notifications} />
+              </div>
+            )}
+            {power === undefined ? null : (
+              <div
+                id="settings-panel-power"
+                role="tabpanel"
+                aria-labelledby="settings-tab-power"
+                hidden={category !== "power"}
+              >
+                <PowerSettingsSection power={power} />
               </div>
             )}
             {webAuth === undefined ? null : (

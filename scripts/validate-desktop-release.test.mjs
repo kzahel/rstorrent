@@ -169,6 +169,48 @@ test("rejects notification authority or dependency drift", () => {
   );
 });
 
+test("rejects automatic-sleep inhibition dependency or authority drift", () => {
+  const keepawakeFixture = repositoryFixture();
+  keepawakeFixture.cargo = keepawakeFixture.cargo.replace(
+    'keepawake = "=0.6.1"',
+    'keepawake = "0.6"',
+  );
+  assert.throws(
+    () => validateDesktopReleaseConfiguration(keepawakeFixture),
+    /keepawake dependency must stay pinned/,
+  );
+
+  const portalFixture = repositoryFixture();
+  portalFixture.cargo = portalFixture.cargo.replace(
+    'zbus = "=5.19.0"',
+    'zbus = "5"',
+  );
+  assert.throws(
+    () => validateDesktopReleaseConfiguration(portalFixture),
+    /Linux portal dependency must stay pinned/,
+  );
+
+  const ownerFixture = repositoryFixture();
+  ownerFixture.desktopSource = ownerFixture.desktopSource.replace(
+    "async fn run_power_owner(",
+    "async fn missing_power_owner(",
+  );
+  assert.throws(
+    () => validateDesktopReleaseConfiguration(ownerFixture),
+    /Rust-owned desktop automatic-sleep inhibition is incomplete/,
+  );
+
+  const policyFixture = repositoryFixture();
+  policyFixture.desktopPower = policyFixture.desktopPower.replaceAll(
+    "TorrentOperationalState::Checking",
+    "TorrentOperationalState::Seeding",
+  );
+  assert.throws(
+    () => validateDesktopReleaseConfiguration(policyFixture),
+    /Rust-owned desktop automatic-sleep inhibition is incomplete/,
+  );
+});
+
 function repositoryFixture() {
   return {
     packageJson: readJson("clients/web/package.json"),
@@ -182,6 +224,10 @@ function repositoryFixture() {
     ),
     desktopSource: fs.readFileSync(
       path.join(root, "clients/desktop/src-tauri/src/lib.rs"),
+      "utf8",
+    ),
+    desktopPower: fs.readFileSync(
+      path.join(root, "clients/desktop/src-tauri/src/desktop_power.rs"),
       "utf8",
     ),
     nsisHooks: fs.readFileSync(

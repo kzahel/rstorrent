@@ -10,7 +10,6 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
-import android.net.wifi.WifiManager
 import android.os.Binder
 import android.os.Build
 import android.os.CancellationSignal
@@ -107,7 +106,6 @@ class ProductEngineService : Service() {
     private val safWork = ConcurrentHashMap.newKeySet<String>()
     private val crashAfterSafRename = AtomicBoolean(false)
     private var powerLock: PowerManager.WakeLock? = null
-    private var wifiLock: WifiManager.WifiLock? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -118,6 +116,7 @@ class ProductEngineService : Service() {
             it.copy(
                 storageRootReady = false,
                 storageRootLabel = safTreeUri?.lastPathSegment,
+                preventSleepDuringActiveDownloads = ProductPowerPreference.read(this),
             )
         }
         scope.launch {
@@ -1013,6 +1012,20 @@ class ProductEngineService : Service() {
         dispatch(Command.SetClientSettings(transform(configured)))
     }
 
+    fun setPreventSleepDuringActiveDownloads(enabled: Boolean) {
+        if (!ProductPowerPreference.persist(this, enabled)) {
+            mutableState.update { it.copy(error = "Power setting could not be saved") }
+            return
+        }
+        mutableState.update {
+            it.copy(
+                preventSleepDuringActiveDownloads = enabled,
+                error = null,
+            )
+        }
+        Log.i(TAG, "prevent_sleep_setting enabled=$enabled")
+    }
+
     fun setTorrentTransferLimits(
         torrentId: String,
         limits: TorrentTransferLimits,
@@ -1519,12 +1532,9 @@ class ProductEngineService : Service() {
         scope.launch {
             state.collect { product ->
                 val active =
-                    product.torrents.values.any {
-                        it.state == TorrentState.AWAITING_METADATA ||
-                            it.state == TorrentState.CHECKING ||
-                            it.state == TorrentState.DOWNLOADING
-                    }
-                updatePowerLocks(active)
+                    product.preventSleepDuringActiveDownloads &&
+                        requiresSleepInhibition(product.torrents.values)
+                updatePowerLock(active)
                 val downloading =
                     product.torrents.values.count { it.state == TorrentState.DOWNLOADING }
                 val detail =
@@ -1539,7 +1549,7 @@ class ProductEngineService : Service() {
         }
     }
 
-    private fun updatePowerLocks(active: Boolean) {
+    private fun updatePowerLock(active: Boolean) {
         if (active) {
             if (powerLock == null) {
                 val power = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -1550,28 +1560,21 @@ class ProductEngineService : Service() {
                             setReferenceCounted(false)
                             acquire()
                         }
-            }
-            if (wifiLock == null) {
-                val wifi =
-                    applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-                wifiLock =
-                    wifi
-                        .createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "$packageName:download")
-                        .apply {
-                            setReferenceCounted(false)
-                            acquire()
-                        }
+                Log.i(TAG, "partial_wake_lock acquired=true")
             }
         } else {
-            releasePowerLocks()
+            releasePowerLock()
         }
     }
 
-    private fun releasePowerLocks() {
-        powerLock?.let { if (it.isHeld) it.release() }
-        wifiLock?.let { if (it.isHeld) it.release() }
+    private fun releasePowerLock() {
+        powerLock?.let {
+            if (it.isHeld) {
+                it.release()
+                Log.i(TAG, "partial_wake_lock acquired=false")
+            }
+        }
         powerLock = null
-        wifiLock = null
     }
 
     private suspend fun shutdown() {
@@ -1590,7 +1593,7 @@ class ProductEngineService : Service() {
                 client.close()
             }
         }
-        releasePowerLocks()
+        releasePowerLock()
         Log.i(TAG, "product_shutdown_complete")
     }
 

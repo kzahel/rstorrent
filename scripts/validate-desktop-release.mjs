@@ -31,6 +31,7 @@ export function validateDesktopReleaseConfiguration({
   capability,
   desktopMain,
   desktopSource,
+  desktopPower,
   nsisHooks,
   linuxDesktop,
   tauriUpdater,
@@ -161,6 +162,12 @@ export function validateDesktopReleaseConfiguration({
   if (!cargo.includes('notify-rust = "=4.18.0"')) {
     fail("Linux notification dependency must stay pinned to 4.18.0");
   }
+  if (!cargo.includes('keepawake = "=0.6.1"')) {
+    fail("macOS and Windows keepawake dependency must stay pinned to 0.6.1");
+  }
+  if (!cargo.includes('zbus = "=5.19.0"')) {
+    fail("Linux portal dependency must stay pinned to 5.19.0");
+  }
   if (
     !cargo.includes(
       'tauri-plugin-single-instance = { version = "=2.4.3", features = ["deep-link"] }',
@@ -212,6 +219,21 @@ export function validateDesktopReleaseConfiguration({
     !desktopSource.includes("MAX_ACTIVE_NOTIFICATION_ACTIVATIONS")
   ) {
     fail("Rust-owned desktop notification integration is incomplete");
+  }
+  if (
+    !desktopSource.includes("fn desktop_power_settings(") ||
+    !desktopSource.includes("fn desktop_set_power_settings(") ||
+    !desktopSource.includes("async fn run_power_owner(") ||
+    !desktopSource.includes("DesktopPowerWorker::spawn()") ||
+    !desktopPower.includes("TorrentOperationalState::Starting") ||
+    !desktopPower.includes("TorrentOperationalState::Downloading") ||
+    !desktopPower.includes("TorrentOperationalState::Checking") ||
+    !desktopPower.includes("keepawake::Builder::default()") ||
+    !desktopPower.includes('const SUSPEND: u32 = 4;') ||
+    !desktopPower.includes('.call("Inhibit", &(') ||
+    !desktopPower.includes('.call::<_, _, ()>("Close", &())')
+  ) {
+    fail("Rust-owned desktop automatic-sleep inhibition is incomplete");
   }
   if (
     singleInstancePlugin < 0 ||
@@ -281,6 +303,10 @@ export function validateDesktopReleaseRepository(root, tag) {
     ),
     desktopSource: fs.readFileSync(
       path.join(root, "clients", "desktop", "src-tauri", "src", "lib.rs"),
+      "utf8",
+    ),
+    desktopPower: fs.readFileSync(
+      path.join(root, "clients", "desktop", "src-tauri", "src", "desktop_power.rs"),
       "utf8",
     ),
     nsisHooks: fs.readFileSync(

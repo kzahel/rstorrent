@@ -25,6 +25,7 @@ final class ProductSurfaceUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Choose folder"].exists)
         XCTAssertTrue(app.staticTexts["RSTorrent Documents"].exists)
+        XCTAssertFalse(app.switches["Prevent sleep while downloading"].exists)
     }
 
     func testDarkAccessibilityTextAndLandscapeRemainNavigable() {

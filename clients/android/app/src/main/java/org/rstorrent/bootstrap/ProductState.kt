@@ -62,6 +62,7 @@ data class ProductState(
     val error: String? = null,
     val storageRootReady: Boolean = false,
     val storageRootLabel: String? = null,
+    val preventSleepDuringActiveDownloads: Boolean = true,
     val selectedTorrent: String? = null,
     val torrents: Map<String, TorrentView> = emptyMap(),
     val storage: StorageSettingsSnapshot? = null,

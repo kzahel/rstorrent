@@ -39,14 +39,15 @@ import type {
   MagnetExport,
 } from "../model";
 import { WEBTORRENT_TEST_TORRENTS } from "../testTorrents";
-import type {
-  DesktopUpdater,
-  DesktopUpdaterSnapshot,
-} from "../updater/types";
+import type { DesktopUpdater, DesktopUpdaterSnapshot } from "../updater/types";
 import type {
   DesktopNotifications,
   DesktopNotificationSettings,
 } from "../desktop-notifications/types";
+import type {
+  DesktopPower,
+  DesktopPowerSettings,
+} from "../desktop-power/types";
 import { App } from "./App";
 import { RemoveTorrentDialog } from "./RemoveTorrentDialog";
 
@@ -123,9 +124,9 @@ describe("inspection application", () => {
   it("gives a stalled ETA an infinite glyph and accessible explanation", () => {
     renderScenario("swarm-lifecycle", 11_000);
     const transfers = screen.getByRole("grid", { name: "Transfer queue" });
-    expect(within(transfers).getByLabelText("Transfer stalled")).toHaveTextContent(
-      "∞",
-    );
+    expect(
+      within(transfers).getByLabelText("Transfer stalled"),
+    ).toHaveTextContent("∞");
   });
 
   it("shows determinate checker progress across transfers library and details", async () => {
@@ -172,7 +173,9 @@ describe("inspection application", () => {
     );
 
     const transfers = screen.getByRole("grid", { name: "Transfer queue" });
-    expect(within(transfers).getByText("Updating file selection")).toBeVisible();
+    expect(
+      within(transfers).getByText("Updating file selection"),
+    ).toBeVisible();
     const progress = within(transfers).getByRole("progressbar", {
       name: /checking progress: Updating file selection/,
     });
@@ -186,7 +189,10 @@ describe("inspection application", () => {
       ...buildScenarioSnapshot("healthy-download", 42_000, false, 1),
       demo: null,
     };
-    const application = new RecordingLiveApplication({ type: "snapshot", snapshot });
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot,
+    });
     renderApplication(application);
     await user.click(screen.getByRole("button", { name: "Workbench" }));
     await user.click(screen.getByRole("tab", { name: "General" }));
@@ -273,7 +279,9 @@ describe("inspection application", () => {
     expect(
       within(peerGrid).getByRole("columnheader", { name: "Last payload" }),
     ).toBeVisible();
-    await user.click(screen.getAllByRole("button", { name: "Columns" }).at(-1)!);
+    await user.click(
+      screen.getAllByRole("button", { name: "Columns" }).at(-1)!,
+    );
     const peerColumns = screen.getByRole("dialog", {
       name: "Table column settings",
     });
@@ -570,6 +578,32 @@ describe("inspection application", () => {
     ).toBeChecked();
   });
 
+  it("shows power settings only when the desktop capability is injected", async () => {
+    const user = userEvent.setup();
+    const first = renderScenario("empty-library", 0);
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    expect(
+      screen.queryByRole("tab", { name: "Power" }),
+    ).not.toBeInTheDocument();
+    first.unmount();
+
+    renderScenario(
+      "empty-library",
+      0,
+      null,
+      undefined,
+      undefined,
+      powerSettingsController(),
+    );
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    await user.click(screen.getByRole("tab", { name: "Power" }));
+    expect(
+      screen.getByRole("checkbox", {
+        name: /Prevent sleep during active downloads and checks/,
+      }),
+    ).toBeChecked();
+  });
+
   it("switches named scenarios and advances the frozen clock", async () => {
     const user = userEvent.setup();
     renderScenario("tracker-recovery", 0);
@@ -646,9 +680,7 @@ describe("inspection application", () => {
       within(fileActions).getByRole("menuitem", { name: "Skip" }),
     ).toHaveAttribute("aria-disabled", "true");
     expect(
-      screen.getByText(
-        "File actions are unavailable in demo scenarios.",
-      ),
+      screen.getByText("File actions are unavailable in demo scenarios."),
     ).toBeVisible();
     await user.keyboard("{Escape}");
 
@@ -790,9 +822,7 @@ describe("inspection application", () => {
     const files = screen.getByRole("grid", { name: "Torrent files" });
     await user.click(within(files).getByText(skippedFile.name));
     await user.click(screen.getByRole("button", { name: "More file actions" }));
-    expect(
-      screen.getByRole("group", { name: "Download" }),
-    ).toBeVisible();
+    expect(screen.getByRole("group", { name: "Download" })).toBeVisible();
     await user.click(screen.getByRole("menuitem", { name: "Download now" }));
 
     await waitFor(() =>
@@ -1866,7 +1896,10 @@ describe("inspection application", () => {
     });
     application.rejectNextExternal = true;
     const external = new RecordingExternalIntake([
-      externalActivation("00010203-0405-4607-8809-0a0b0c0d0e0f", "torrent_file"),
+      externalActivation(
+        "00010203-0405-4607-8809-0a0b0c0d0e0f",
+        "torrent_file",
+      ),
       externalActivation("11110203-0405-4607-8809-0a0b0c0d0e0f", "magnet"),
     ]);
     renderApplication(application, undefined, undefined, external);
@@ -1909,7 +1942,9 @@ describe("inspection application", () => {
     const dialog = await screen.findByRole("dialog", {
       name: "Choose download options",
     });
-    expect(screen.getByRole("status")).toHaveTextContent("external add rejected");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "external add rejected",
+    );
     expect(external.getSnapshot()).toMatchObject({
       rejectedCount: 0,
       overflowCount: 0,
@@ -1987,14 +2022,20 @@ describe("inspection application", () => {
     await user.click(screen.getByRole("button", { name: "Settings" }));
     const dialog = screen.getByRole("dialog", { name: "Settings" });
 
-    expect(within(dialog).getByRole("tab", { name: "Appearance" })).toBeVisible();
-    expect(within(dialog).getByRole("tab", { name: "Downloads" })).toBeVisible();
+    expect(
+      within(dialog).getByRole("tab", { name: "Appearance" }),
+    ).toBeVisible();
+    expect(
+      within(dialog).getByRole("tab", { name: "Downloads" }),
+    ).toBeVisible();
     const connectionTab = within(dialog).getByRole("tab", {
       name: "Connection & seeding",
     });
     expect(connectionTab).toBeVisible();
     await user.click(connectionTab);
-    expect(within(dialog).getByText(/use IPv4 and, when available, IPv6/i)).toBeVisible();
+    expect(
+      within(dialog).getByText(/use IPv4 and, when available, IPv6/i),
+    ).toBeVisible();
     expect(
       within(dialog).getByRole("radio", { name: /^Automatic port/ }),
     ).toBeChecked();
@@ -2076,9 +2117,7 @@ describe("inspection application", () => {
     ).toBeVisible();
     expect(save).toBeEnabled();
 
-    await user.click(
-      within(dialog).getByRole("radio", { name: /^Prefer/ }),
-    );
+    await user.click(within(dialog).getByRole("radio", { name: /^Prefer/ }));
 
     await user.click(save);
     await waitFor(() =>
@@ -2388,9 +2427,7 @@ describe("inspection application", () => {
     expect(copy).not.toHaveAttribute("aria-disabled");
     await user.click(copy);
 
-    await waitFor(() =>
-      expect(writeText).toHaveBeenCalledWith(exactMagnet),
-    );
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(exactMagnet));
     expect(
       screen.getByText("Magnet link copied", { exact: true }),
     ).toBeVisible();
@@ -2405,9 +2442,12 @@ describe("inspection application", () => {
       screen.getByRole("menuitem", { name: "Copy magnet link" }),
     );
     expect(
-      await screen.findByText("Could not copy magnet links: rejected for test", {
-        exact: true,
-      }),
+      await screen.findByText(
+        "Could not copy magnet links: rejected for test",
+        {
+          exact: true,
+        },
+      ),
     ).toBeVisible();
     expect(writeText).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(more).toHaveFocus());
@@ -2562,6 +2602,7 @@ function renderScenario(
   appearanceStorage?: AppearanceStorage | null,
   updater?: DesktopUpdater,
   notifications?: DesktopNotifications,
+  power?: DesktopPower,
 ) {
   return renderApplication(
     new DemoApplication({ scenarioId, elapsedMs, running: false }),
@@ -2569,6 +2610,7 @@ function renderScenario(
     updater,
     undefined,
     notifications,
+    power,
   );
 }
 
@@ -2578,6 +2620,7 @@ function renderApplication(
   updater?: DesktopUpdater,
   externalIntake?: DesktopExternalIntake,
   notifications?: DesktopNotifications,
+  power?: DesktopPower,
 ) {
   const controller = new InspectionController(application, appearanceStorage);
   controllers.push(controller);
@@ -2588,6 +2631,7 @@ function renderApplication(
         updater={updater}
         externalIntake={externalIntake}
         notifications={notifications}
+        power={power}
       />
     </InspectionProvider>,
   );
@@ -2608,9 +2652,20 @@ function notificationSettingsController(): DesktopNotifications {
   };
 }
 
-function updaterWithSnapshot(
-  snapshot: DesktopUpdaterSnapshot,
-): DesktopUpdater {
+function powerSettingsController(): DesktopPower {
+  let settings: DesktopPowerSettings = {
+    prevent_sleep_during_active_downloads: true,
+  };
+  return {
+    getSnapshot: () => settings,
+    save: vi.fn(async (next) => {
+      settings = next;
+      return settings;
+    }),
+  };
+}
+
+function updaterWithSnapshot(snapshot: DesktopUpdaterSnapshot): DesktopUpdater {
   return {
     getSnapshot: () => snapshot,
     subscribe: () => () => undefined,
@@ -2730,7 +2785,8 @@ class RecordingLiveApplication implements InspectionApplication {
           magnetExport: configured,
         };
       }
-      const torrent = this.initialSnapshot?.snapshot.torrents[command.torrentId];
+      const torrent =
+        this.initialSnapshot?.snapshot.torrents[command.torrentId];
       if (torrent === undefined) {
         return { accepted: false, message: "Torrent is not present" };
       }
@@ -2903,9 +2959,7 @@ function liveSnapshot(storage: DownloadStorageSettings) {
   };
 }
 
-function checkingSnapshot(
-  phase: "hashing" | "reconciling_storage",
-) {
+function checkingSnapshot(phase: "hashing" | "reconciling_storage") {
   const snapshot = buildScenarioSnapshot("healthy-download", 42_000, false, 1);
   const torrent = snapshot.torrents[DEMO_PRIMARY_TORRENT_ID]!;
   return {

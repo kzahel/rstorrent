@@ -24,10 +24,7 @@ import { DetailPane } from "./DetailPane";
 import { Icon, type IconName } from "./Icon";
 import { LibraryView } from "./LibraryView";
 import { ScenarioBar } from "./ScenarioBar";
-import {
-  SettingsDialog,
-  type SettingsCategory,
-} from "./SettingsDialog";
+import { SettingsDialog, type SettingsCategory } from "./SettingsDialog";
 import { Sidebar } from "./Sidebar";
 import { TorrentActions } from "./TorrentActions";
 import { TorrentActionProvider } from "./TorrentActionContext";
@@ -38,6 +35,7 @@ import type { WebAuthClient } from "../../web-auth-client";
 import type { DesktopExternalIntake } from "../../desktop-external-intake";
 import { DesktopExternalIntakeProvider } from "../desktop-external-intake-context";
 import type { DesktopNotifications } from "../desktop-notifications/types";
+import type { DesktopPower } from "../desktop-power/types";
 
 const DESTINATIONS: readonly {
   readonly id: ApplicationDestination;
@@ -54,9 +52,16 @@ export interface AppProps {
   readonly updater?: DesktopUpdater | undefined;
   readonly externalIntake?: DesktopExternalIntake | undefined;
   readonly notifications?: DesktopNotifications | undefined;
+  readonly power?: DesktopPower | undefined;
 }
 
-export function App({ webAuth, updater, externalIntake, notifications }: AppProps) {
+export function App({
+  webAuth,
+  updater,
+  externalIntake,
+  notifications,
+  power,
+}: AppProps) {
   return (
     <DesktopExternalIntakeProvider intake={externalIntake}>
       <TorrentActionProvider>
@@ -64,13 +69,14 @@ export function App({ webAuth, updater, externalIntake, notifications }: AppProp
           webAuth={webAuth}
           updater={updater}
           notifications={notifications}
+          power={power}
         />
       </TorrentActionProvider>
     </DesktopExternalIntakeProvider>
   );
 }
 
-function AppContent({ webAuth, updater, notifications }: AppProps) {
+function AppContent({ webAuth, updater, notifications, power }: AppProps) {
   const session = useInspectionStore((state) => state.session);
   const demo = useInspectionStore((state) => state.demo);
   const storage = useInspectionStore((state) => state.storage);
@@ -139,12 +145,9 @@ function AppContent({ webAuth, updater, notifications }: AppProps) {
   useEffect(() => {
     const throttle =
       titleThrottleRef.current ??
-      new DocumentTitleThrottle(
-        (title) => {
-          document.title = title;
-        },
-        document.title,
-      );
+      new DocumentTitleThrottle((title) => {
+        document.title = title;
+      }, document.title);
     titleThrottleRef.current = throttle;
     throttle.update(desiredDocumentTitle);
   }, [desiredDocumentTitle]);
@@ -364,11 +367,12 @@ function AppContent({ webAuth, updater, notifications }: AppProps) {
           )}
         </main>
       </div>
-      {updater !== undefined &&
-      updaterSnapshot?.state.phase === "available" ? (
+      {updater !== undefined && updaterSnapshot?.state.phase === "available" ? (
         <aside className={styles.updateNotice} role="status">
           <div>
-            <strong>RSTorrent {updaterSnapshot.state.version} is available</strong>
+            <strong>
+              RSTorrent {updaterSnapshot.state.version} is available
+            </strong>
             <span>Review the update when you are ready.</span>
           </div>
           <button
@@ -399,6 +403,7 @@ function AppContent({ webAuth, updater, notifications }: AppProps) {
           downloadsManageable={demo === null}
           clientSettingsManageable={demo === null}
           notifications={notifications}
+          power={power}
           webAuth={webAuth}
           updater={updater}
           updaterSnapshot={updaterSnapshot}

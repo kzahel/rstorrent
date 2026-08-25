@@ -342,9 +342,25 @@ private fun ProductNavHost(
         }
         composable(ProductRoutes.SETTINGS_POWER) {
             SettingsPage("Power Management", navController::popBackStack) {
-                ReadOnlySetting(
-                    "Foreground operation",
-                    "RSTorrent holds Android power and Wi-Fi locks only while transfer work is active.",
+                ListItem(
+                    headlineContent = {
+                        Text("Prevent sleep during active downloads and checks")
+                    },
+                    supportingContent = {
+                        Text(
+                            "Keeps the CPU active while starting, downloading, or checking. " +
+                                "The display may turn off normally.",
+                        )
+                    },
+                    trailingContent = {
+                        Switch(
+                            checked = state.preventSleepDuringActiveDownloads,
+                            onCheckedChange = {
+                                service?.setPreventSleepDuringActiveDownloads(it)
+                            },
+                            enabled = service != null,
+                        )
+                    },
                 )
                 UnavailableSetting("Battery policy")
             }
