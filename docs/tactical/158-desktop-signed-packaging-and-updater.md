@@ -1,7 +1,8 @@
 # Tactical 158: Desktop Signed Packaging And Updater
 
-Status: **Implementation in progress and resumed as the sole Now on
-2026-08-25.** Desktop-notification Tactical
+Status: **Implementation in progress, paused on 2026-08-25 while Tactical
+[`165`](165-cross-platform-active-download-sleep-inhibition.md) is the sole
+Now.** Desktop-notification Tactical
 [`164`](164-desktop-completion-and-attention-notifications.md) is complete.
 Maintainer direction selected RSTorrent as the foreseeable public product name
 and froze `com.jstorrent.rstorrent` as the desktop beta identifier on
@@ -172,9 +173,14 @@ This tactical owns:
    for any existing client;
 7. least-privileged install/uninstall and package-channel behavior; and
 8. exact older-to-newer installed testbed evidence on macOS arm64, Windows
-   x86_64, and Linux x86_64/arm64, with version/build/relaunch and cleanup
-   recorded; macOS x86_64 remains an explicit maintained package/route whose
-   installed test is deliberately omitted by maintainer direction.
+   x86_64, and Linux x86_64/arm64. Before update, each campaign must retain an
+   incomplete torrent with a configured download root, nontrivial file
+   selection, queue order/state, and tray background preference. After
+   replacement/relaunch it must verify exact version/build identity, the exact
+   retained configuration and state, resumed transfer, independently exact
+   published content, and cleanup. macOS x86_64 remains an explicit maintained
+   package/route whose installed test is deliberately omitted by maintainer
+   direction.
 
 The tactical stops only when:
 
@@ -192,9 +198,11 @@ The tactical stops only when:
   passes the full visible state, schedule, timeout, deduplication, package
   policy, error, progress, install, and relaunch tests;
 - an older public signed installer on each planned installed-testbed target
-  checks through the production route, installs, relaunches, and reports the
-  exact new version and frontend/native build identity, with the deliberate
-  macOS x86_64 omission recorded; and
+  checks through the production route while the exact configured root,
+  selection, incomplete payload, queue state, and tray preference exist,
+  installs, relaunches, reports the exact new version and frontend/native build
+  identity, preserves those facts, resumes, and publishes independently exact
+  content, with the deliberate macOS x86_64 omission recorded; and
 - privacy/support docs, release checklist, focused topics, and a versioned
   acceptance record contain the actual evidence and known limits.
 
@@ -273,9 +281,12 @@ must not leave an updater task or partial product-state write owner alive.
    boundaries, draft artifact matrix, signing, notarization, checksums, and
    fail-closed finalizer.
 6. **Installed evidence.** Run exact old-to-new production-route campaigns on
-   macOS arm64, Windows x86_64, and Linux x86_64/arm64 and record the results
-   before any beta readiness claim. Retain macOS x86_64 package/route checks
-   while recording its installed campaign as deliberately omitted.
+   macOS arm64, Windows x86_64, and Linux x86_64/arm64 with an incomplete
+   selected-file download, configured root, queue state, and tray preference
+   already present. Verify exact state retention, resumed transfer, and exact
+   content after replacement/relaunch before any beta readiness claim. Retain
+   macOS x86_64 package/route checks while recording its installed campaign as
+   deliberately omitted.
 
 ## Reference Record
 

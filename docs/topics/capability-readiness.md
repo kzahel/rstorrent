@@ -27,7 +27,10 @@ bounded failures, duplicates, tray Quit, and exact cleanup. Exact hosted run
 [`164`](../tactical/164-desktop-completion-and-attention-notifications.md)
 before the next signed candidate. It is complete with deterministic/package
 gates and installed macOS arm64, Windows x86_64, and Linux arm64 evidence.
-Release/updater Tactical `158` resumes as the single **Now**.
+Explicit maintainer direction then selected cross-platform active-download
+sleep-inhibition Tactical
+[`165`](../tactical/165-cross-platform-active-download-sleep-inhibition.md) as
+the single **Now**; release/updater Tactical `158` is paused until it completes.
 
 The updater tactical's client,
 production route, five-target signed hosted rehearsal, public `0.1.0` release,
@@ -516,16 +519,21 @@ exactly.
 
 ### Now
 
-- **Resume desktop signed packaging/updater Tactical
-  [`158`](../tactical/158-desktop-signed-packaging-and-updater.md).** Produce
-  the first signed package carrying completed Windows startup, picker,
-  console, lifecycle, external-intake, and notification work; repeat
-  clean-profile Windows and Linux x86_64 installed updates; and characterize
-  Windows firewall consent. Installed Intel macOS remains deliberately
-  omitted.
+- **Tactical
+  [`165`](../tactical/165-cross-platform-active-download-sleep-inhibition.md):
+  cross-platform active-download sleep inhibition.** Add one default-on
+  desktop/Android platform preference and authoritative level-triggered
+  system-idle ownership, leave display and explicit sleep under ordinary OS
+  policy, retain iOS's truthful finite lifecycle without a false keep-awake
+  control, and prove cleanup on every available machine-control
+  desktop/mobile target. Tactical `158` is paused without changing its signed-
+  release outcome.
 
 ### Next
 
+- Resume desktop signed packaging/updater Tactical `158`: publish a signed
+  candidate containing completed Tacticals `160`--`165`, repeat Windows from a
+  fresh default profile, characterize firewall consent, and run Linux x86_64.
 - Freeze the application identities, first supported persistence baseline,
   changelog, privacy/support presentation, and repeatable beta torrent cohort
   around the first release candidate.
