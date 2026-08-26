@@ -12,7 +12,7 @@
 }
 
 body {
-  width: 340px;
+  width: 360px;
   margin: 0;
   background:
     radial-gradient(circle at top right, rgb(42 113 211 / 24%), transparent 44%),
@@ -67,7 +67,7 @@ h2 {
   background: rgb(18 27 39 / 88%);
 }
 
-.linux-card {
+.choice-card {
   padding: 14px;
   border: 1px solid #29384a;
   border-radius: 12px;
@@ -75,6 +75,36 @@ h2 {
   color: #cbd5e1;
   font-size: 12px;
   line-height: 1.5;
+}
+
+.choice-card + .choice-card {
+  margin-top: 10px;
+}
+
+.choice-card h3 {
+  margin: 2px 0 7px;
+  color: #f8fafc;
+  font-size: 15px;
+}
+
+.choice-label {
+  color: #7dd3fc;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.surface-intro {
+  margin: -1px 0 10px;
+  color: #aeb9c8;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.android-card {
+  border-color: #28503e;
+  background: rgb(18 39 31 / 88%);
 }
 
 .status-dot {
@@ -112,7 +142,9 @@ h2 {
   line-height: 1.45;
 }
 
-button {
+button,
+.button-link {
+  display: block;
   width: 100%;
   margin-top: 14px;
   padding: 10px 14px;
@@ -124,13 +156,17 @@ button {
   font-size: 13px;
   font-weight: 650;
   cursor: pointer;
+  text-align: center;
+  text-decoration: none;
 }
 
-button:hover:not(:disabled) {
+button:hover:not(:disabled),
+.button-link:hover {
   background: #408cef;
 }
 
-button:focus-visible {
+button:focus-visible,
+.button-link:focus-visible {
   outline: 2px solid #8ec2ff;
   outline-offset: 2px;
 }
@@ -149,6 +185,10 @@ button.secondary {
 
 button.secondary:hover:not(:disabled) {
   background: #1e293b;
+}
+
+section[hidden] {
+  display: none;
 }
 
 .footnote {

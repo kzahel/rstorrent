@@ -16,35 +16,61 @@
         </div>
       </div>
 
-      <h2>Desktop app</h2>
-      <section class="status-card" aria-live="polite">
-        <span id="status-dot" class="status-dot checking"></span>
-        <div>
-          <p id="status-title" class="status-title">Checking desktop setup…</p>
-          <p id="status-detail" class="status-detail">
-            Looking for the RSTorrent native host.
-          </p>
+      <section id="desktop-surface" hidden>
+        <h2>Desktop app</h2>
+        <div class="status-card" aria-live="polite">
+          <span id="status-dot" class="status-dot checking"></span>
+          <div>
+            <p id="status-title" class="status-title">Checking desktop setup…</p>
+            <p id="status-detail" class="status-detail">
+              Looking for the RSTorrent native host.
+            </p>
+          </div>
         </div>
+
+        <button id="launch" type="button" disabled>Open RSTorrent Desktop</button>
       </section>
 
-      <button id="launch" type="button" disabled>Open RSTorrent Desktop</button>
-
-      <h2>ChromeOS Linux</h2>
-      <section class="linux-card">
-        <p>
-          If Linux is already running, open or focus its RSTorrent tab here.
-          To wake stopped Linux, use <strong>RSTorrent for ChromeOS Linux</strong>
-          from the Chromebook Launcher.
+      <section id="chromeos-surface" hidden>
+        <h2>Choose your Chromebook app</h2>
+        <p class="surface-intro">
+          Both choices download torrents directly on your Chromebook.
         </p>
-        <button id="launch-linux" type="button">Open ChromeOS Linux UI</button>
-        <button id="linux-help" class="secondary" type="button">Setup and recovery</button>
-        <p id="linux-status" class="status-detail" role="status"></p>
+
+        <article class="choice-card android-card">
+          <p class="choice-label">Android</p>
+          <h3>JSTorrent</h3>
+          <p>
+            Use the published Android app for a native Chromebook experience.
+          </p>
+          <a
+            id="android-link"
+            class="button-link"
+            href="https://play.google.com/store/apps/details?id=com.jstorrent.app"
+            target="_blank"
+            rel="noopener noreferrer"
+          >Open on Google Play</a>
+        </article>
+
+        <article class="choice-card linux-card">
+          <p class="choice-label">ChromeOS Linux</p>
+          <h3>RSTorrent preview</h3>
+          <p>
+            Run the new Rust engine and complete RSTorrent interface in Linux.
+            If Linux is stopped, start <strong>RSTorrent for ChromeOS Linux</strong>
+            from the Chromebook Launcher first.
+          </p>
+          <button id="launch-linux" type="button">Open ChromeOS Linux UI</button>
+          <button id="linux-help" class="secondary" type="button">Setup and recovery</button>
+          <p id="linux-status" class="status-detail" role="status"></p>
+        </article>
+
+        <p class="footnote">
+          Android and ChromeOS Linux keep separate torrent libraries, settings,
+          and download locations.
+        </p>
       </section>
-      <p class="footnote">
-        ChromeOS Linux serves the complete RSTorrent UI from its local Rust
-        backend. The extension only performs launch and focus handoff.
-      </p>
     </main>
-    <script src="popup.js"></script>
+    <script type="module" src="popup.js"></script>
   </body>
 </html>

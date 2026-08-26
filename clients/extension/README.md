@@ -10,6 +10,12 @@ reuse its tab for the backend-served React UI. The extension does not control
 torrents, move payload data, run remote code, or replace the current JSTorrent
 extension.
 
+The popup is platform-aware. Desktop Chrome shows only the RSTorrent native
+bootstrap. ChromeOS shows the exact published JSTorrent Android listing and
+the ChromeOS Linux controls, with explicit separate-library guidance. Unknown
+platforms show both surfaces as a recovery fallback. The listing link does not
+claim that Google Play is enabled or that the Android app is installed.
+
 ## Validate And Package
 
 ```bash

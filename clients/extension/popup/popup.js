@@ -1,3 +1,7 @@
+import { applyPresentation, presentationForPlatform } from "./platform.js";
+
+const desktopSurface = document.querySelector("#desktop-surface");
+const chromeosSurface = document.querySelector("#chromeos-surface");
 const statusDot = document.querySelector("#status-dot");
 const statusTitle = document.querySelector("#status-title");
 const statusDetail = document.querySelector("#status-detail");
@@ -64,8 +68,6 @@ launchButton.addEventListener("click", async () => {
   }
 });
 
-checkDesktop();
-
 linuxButton.addEventListener("click", async () => {
   linuxButton.disabled = true;
   linuxStatus.textContent = "Opening the ChromeOS Linux UI…";
@@ -93,3 +95,23 @@ linuxHelpButton.addEventListener("click", () => {
 function requestCrostini() {
   return chrome.runtime.sendMessage({ type: "crostiniBootstrap", op: "open" });
 }
+
+async function initializePresentation() {
+  let presentation;
+  try {
+    const platform = await chrome.runtime.getPlatformInfo();
+    presentation = presentationForPlatform(platform?.os);
+  } catch {
+    presentation = presentationForPlatform(undefined);
+  }
+
+  applyPresentation(presentation, {
+    desktop: desktopSurface,
+    chromeos: chromeosSurface,
+  });
+  if (presentation.desktop) {
+    await checkDesktop();
+  }
+}
+
+initializePresentation();

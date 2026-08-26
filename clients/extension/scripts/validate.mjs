@@ -14,6 +14,7 @@ export const packagedFiles = Object.freeze([
   "popup/popup.html",
   "popup/popup.css",
   "popup/popup.js",
+  "popup/platform.js",
   "crostini/setup.html",
   "crostini/setup.css",
   "src/service-worker.js",
@@ -82,7 +83,7 @@ export function validateSource() {
     }
     const urls = source.match(/https?:\/\/[^"'`\s)]+/gu) ?? [];
     if (urls.some((url) => url !== "http://penguin.linux.test:3030")) {
-      fail(`${relativePath} contains a non-Crostini remote URL`);
+      fail(`${relativePath} contains an unexpected remote URL`);
     }
     execFileSync(process.execPath, ["--check", absolutePath], { stdio: "pipe" });
   }
@@ -91,8 +92,16 @@ export function validateSource() {
   if (/<script(?![^>]*\bsrc=)/iu.test(popup) || /\son[a-z]+\s*=/iu.test(popup)) {
     fail("popup contains inline executable markup");
   }
-  if (!popup.includes('<script src="popup.js"></script>')) {
-    fail("popup script must remain a local external file");
+  if (!popup.includes('<script type="module" src="popup.js"></script>')) {
+    fail("popup script must remain a local external module");
+  }
+  const playStoreUrl = "https://play.google.com/store/apps/details?id=com.jstorrent.app";
+  const popupUrls = popup.match(/https?:\/\/[^"'\s<]+/gu) ?? [];
+  if (JSON.stringify(popupUrls) !== JSON.stringify([playStoreUrl])) {
+    fail("popup must link only to the exact published JSTorrent Android listing");
+  }
+  if (!popup.includes('id="desktop-surface" hidden') || !popup.includes('id="chromeos-surface" hidden')) {
+    fail("popup surfaces must start hidden until the platform decision completes");
   }
   const setup = readFileSync(path.join(extensionRoot, "crostini/setup.html"), "utf8");
   if (/<script/iu.test(setup) || /\son[a-z]+\s*=/iu.test(setup)) {
