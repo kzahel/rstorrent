@@ -1,10 +1,9 @@
 # Tactical 168: Platform-Aware Extension Launcher
 
-Status: **Accepted and Now as of 2026-08-26.** Explicit maintainer direction
-temporarily yields signed-release Tactical
-[`158`](158-desktop-signed-packaging-and-updater.md) to this bounded extension
-polish. Tactical `158` resumes as the sole **Now** after this stopping
-condition passes.
+Status: **Complete as of 2026-08-26.** The deterministic package and physical
+ChromeOS presentation/link/handoff checks pass. Signed-release Tactical
+[`158`](158-desktop-signed-packaging-and-updater.md) resumes as the sole
+**Now**.
 
 Topics: `client-surfaces`, `product-surfaces-and-migration`,
 `beta-release-readiness`
@@ -107,6 +106,43 @@ The physical Chromebook check uses the authoritative `chromeos-testbed` and
 `machine-control` path. It records semantic popup state, exact Play tab URL,
 and successful warm Crostini UI focus/open without modifying or installing the
 published Android application.
+
+## Completion Record
+
+Planning landed in `826a1ee`; implementation landed in `82f54f8`. Extension
+version `0.3.0` packages as `jstorrent-beta-0.3.0.zip` with SHA-256
+`96af7af3a64f4dfefeb73216d11f95d0f5742ddd7508f27842d4d1f3bce9ac28`.
+Two package runs were byte-identical.
+
+Fourteen extension tests and source/archive validation pass. They cover the
+ChromeOS-only chooser, macOS/Windows/Linux/OpenBSD desktop-only presentation,
+unknown/error recovery fallback, application of hidden state, the one exact
+Play URL, the existing native host messages, and the exact Crostini handoff.
+The reviewed ZIP adds only the local platform helper and unchanged packaged
+asset families; manifest permissions remain exactly `nativeMessaging` and
+`storage`.
+
+The physical check used the same ChromeOS `16700.60.0` milestone 150 x86_64
+Chromebook as Tactical `167`. The exact unpacked extension reloaded as version
+`0.3.0`. Its semantic tree contained **Choose your Chromebook app**,
+**JSTorrent**, **Open on Google Play**, **RSTorrent preview**, **Open ChromeOS
+Linux UI**, and **Setup and recovery**, with no desktop section or native-host
+error. The rendered 360-pixel surface showed both choice cards and the
+separate-library note without clipping.
+
+Selecting the Android action opened exactly
+`https://play.google.com/store/apps/details?id=com.jstorrent.app`; the live page
+identified **JSTorrent** by Graehl Arts and exposed Chromebook install UI. No
+Android application was installed or inspected. After the registered Linux
+Launcher warmed the existing clean Crostini package, closing its RSTorrent tab
+and selecting **Open ChromeOS Linux UI** reopened the backend-served React
+application at `http://penguin.linux.test:3030/` with the expected empty
+library. The testbed doctor passed all ten required checks before and after.
+
+Final cleanup closed every test tab, stopped `termina`, removed local staging
+and screenshot evidence, and retained the reviewed extension deployment plus
+the clean RSTorrent Crostini installation. No store upload, application
+installation, tag, push, or release occurred.
 
 ## Non-Goals
 

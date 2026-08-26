@@ -66,8 +66,8 @@ Explicit maintainer direction temporarily yields Tactical `158` once more to
 bounded platform-aware extension popup Tactical
 [`168`](../tactical/168-platform-aware-extension-launcher.md). This polish adds
 no release lane, permission, Android detection, or application-control scope;
-Tactical `158` resumes after its deterministic package and physical ChromeOS
-spot check.
+its deterministic package and physical ChromeOS chooser/link/handoff spot
+check pass. Tactical `158` has resumed as the sole **Now**.
 Maintainer direction on 2026-08-24 promotes OS-level `magnet:` and local
 `.torrent` activation from a post-beta deferral to a beta usability gap;
 completed Tactical
@@ -590,7 +590,7 @@ no single optional BEP is mandatory.
    Windows x86_64/Linux arm64 proof pass. File/magnet handoff remains outside
    that completed slice and is now owned by Tactical `163`; autostart stays
    deferred.
-4. **Paused — Tactical `158`: desktop signed packaging and updater adoption.**
+4. **Now — Tactical `158`: desktop signed packaging and updater adoption.**
    The product-owned `desktop-update-v1` client, signed package workflow,
    release validation, per-app key, public configuration, production route,
    five-platform hosted rehearsal, three tagged publications, one installed
@@ -604,8 +604,8 @@ no single optional BEP is mandatory.
    and its signed package matrix plus bounded macOS arm64 launch/native-host
    spot check pass. Repeat clean Windows from the default with the strengthened
    `UPD-005` state, characterize firewall consent, and run Linux x86_64. Intel
-   macOS installed testing is deliberately omitted. Explicit maintainer
-   direction temporarily yields this item to Tactical `168`.
+   macOS installed testing is deliberately omitted. Completed Tactical `168`
+   has returned this item to **Now**.
 5. **Complete — Tactical `163`: desktop external torrent intake.** The
    bounded shell/UI implementation, package gates, and installed Linux arm64,
    Windows x86_64-application, and macOS arm64 cold/visible/tray-hidden/
@@ -643,10 +643,12 @@ no single optional BEP is mandatory.
     purge matrix on the physical Chromebook. The conditional full reboot was
     unavailable because no approved profile-login credential exists; signed
     public packages remain later breadth. Tactical `158` resumes as **Now**.
-14. **Now — Tactical `168`: platform-aware extension launcher.** Hide the
-    irrelevant desktop-native flow on ChromeOS, present the exact published
-    JSTorrent Android listing beside ChromeOS Linux, retain desktop behavior on
-    desktop platforms, and prove the reviewed package in real ChromeOS.
+14. **Complete — Tactical `168`: platform-aware extension launcher.** ChromeOS
+    omits the irrelevant desktop-native flow and presents the exact published
+    JSTorrent Android listing beside ChromeOS Linux; desktop platforms retain
+    only desktop behavior. The deterministic reviewed `0.3.0` package and
+    physical ChromeOS chooser, exact Play destination, and warm Crostini
+    handoff pass without new permissions or availability claims.
 
 Each implementation item requires its own bounded tactical. This ordering is
 not authorization to tag, publish, alter production routing, create store

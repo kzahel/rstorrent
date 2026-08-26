@@ -276,6 +276,15 @@ Chromebook. Full reboot remains a conditional gap because the testbed exposes
 no approved ChromeOS profile-login credential; signed/public packages,
 updating, and broader lifecycle claims remain separate work.
 
+Completed Tactical
+[`168`](../tactical/168-platform-aware-extension-launcher.md) makes the small
+beta extension launcher platform-relevant. Desktop Chrome sees only the native
+desktop bootstrap. ChromeOS sees the exact published JSTorrent Android listing
+and the ChromeOS Linux open/recovery controls, plus explicit separate-library
+copy; it does not claim Play or app availability. The deterministic `0.3.0`
+package and physical ChromeOS chooser, Play destination, and warm Crostini
+handoff pass without new permissions.
+
 Tactical
 [`166`](../tactical/166-desktop-native-bootstrap-and-extension-scaffold.md)
 implements only the bounded predecessor seam: a self-contained Manifest V3

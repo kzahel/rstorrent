@@ -737,8 +737,7 @@ that scope and its cleanup or compatibility rules explicitly.
   art/metadata, and reconciles status before signed updater and cross-platform
   CI slices.
 - [`158-desktop-signed-packaging-and-updater.md`](158-desktop-signed-packaging-and-updater.md):
-  implementation in progress and temporarily paused behind Tactical `168`;
-  its Tauri-only
+  implementation in progress and Now; its Tauri-only
   `desktop-update-v1` UI/state boundary, per-app identity/key/route, hosted
   signed five-target package rehearsal, public `desktop-v0.1.0` through
   `desktop-v0.1.2` finalization, one installed macOS arm64 launch smoke, and
@@ -787,9 +786,10 @@ that scope and its cleanup or compatibility rules explicitly.
   Full reboot remains conditional because the testbed has no approved profile
   login credential.
 - [`168-platform-aware-extension-launcher.md`](168-platform-aware-extension-launcher.md):
-  accepted and Now; makes the beta popup platform-relevant, with desktop native
+  complete; makes the beta popup platform-relevant, with desktop native
   bootstrap only on desktop and the exact published JSTorrent Android listing
-  plus ChromeOS Linux controls on ChromeOS, without claiming Play or app
+  plus ChromeOS Linux controls on ChromeOS. The reviewed `0.3.0` package and
+  physical chooser/link/handoff spot check pass without claiming Play or app
   availability.
 
 Tactical `015` completed the oracle campaign's headless measurement

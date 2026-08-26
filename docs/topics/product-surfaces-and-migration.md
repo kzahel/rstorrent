@@ -44,6 +44,13 @@ first ChromeOS Linux path. That bounded slice is complete after source gates
 and the available physical Chromebook warm, twice-stopped-VM,
 detachable-transfer, preservation, and purge matrix. Full reboot remains a
 conditional gap because the testbed has no approved profile-login credential.
+Completed platform-polish Tactical
+[`168`](../tactical/168-platform-aware-extension-launcher.md) then makes the
+extension choose platform-relevant launch surfaces. ChromeOS explicitly offers
+the currently published JSTorrent Android app and the RSTorrent ChromeOS Linux
+preview as separate data authorities; desktop systems retain only their native
+bootstrap. The extension does not infer Play enablement or Android-app
+installation.
 
 ## Scope
 
