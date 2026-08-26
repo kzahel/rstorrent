@@ -1,0 +1,284 @@
+name: Crostini Release
+
+on:
+  push:
+    tags:
+      - "crostini-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  source-checks:
+    name: Crostini release source checks
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Install Node.js 22
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            clients/web/package-lock.json
+            website/package-lock.json
+
+      - name: Install Rust 1.97.0
+        uses: dtolnay/rust-toolchain@889fac408b4da0905346410f253f0c55fbcb6613 # 1.97.0
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache Rust builds
+        uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7 # v2.9.2
+        with:
+          shared-key: crostini-release-source-ubuntu-22.04
+
+      - name: Install locked JavaScript dependencies
+        run: |
+          npm ci --prefix clients/web
+          npm ci --prefix website
+
+      - name: Validate tag, source version, and changelog
+        if: startsWith(github.ref, 'refs/tags/crostini-v')
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#crostini-v}"
+          SOURCE_VERSION=$(sed -n '/^\[package\]/,/^\[/s/^version = "\([^"]*\)"/\1/p' crates/rstorrent-crostini/Cargo.toml)
+          test "$GITHUB_REF_NAME" = "crostini-v$SOURCE_VERSION"
+          test "$VERSION" = "$SOURCE_VERSION"
+          grep -Fqx "## [$VERSION]" crates/rstorrent-crostini/CHANGELOG.md
+
+      - name: Validate bootstrap and manifest tools
+        run: |
+          bash scripts/test-crostini-installer.sh
+          node --test .github/scripts/write-crostini-release-manifest.test.mjs
+
+      - name: Check Rust formatting
+        run: cargo fmt --all -- --check
+
+      - name: Lint Crostini packages
+        run: cargo clippy -p rstorrent-crostini -p rstorrent-gateway -- -D warnings
+
+      - name: Test Crostini packages
+        run: cargo test -p rstorrent-crostini -p rstorrent-gateway
+
+      - name: Typecheck and test the shared web application
+        run: |
+          npm run typecheck --prefix clients/web
+          npm run test --prefix clients/web
+
+      - name: Check and build the website
+        run: |
+          npm run check --prefix website
+          npm run build --prefix website
+
+  build-package:
+    name: Native ${{ matrix.arch }} Crostini package
+    needs: source-checks
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-22.04
+          - arch: aarch64
+            runner: ubuntu-22.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Install Node.js 22
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: clients/web/package-lock.json
+
+      - name: Install Rust 1.97.0
+        uses: dtolnay/rust-toolchain@889fac408b4da0905346410f253f0c55fbcb6613 # 1.97.0
+
+      - name: Cache Crostini builds
+        uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7 # v2.9.2
+        with:
+          shared-key: crostini-release-${{ matrix.runner }}
+
+      - name: Install locked web dependencies
+        run: npm ci --prefix clients/web
+
+      - name: Build and validate the native package
+        shell: bash
+        run: |
+          ./scripts/build-crostini-package.sh
+          VERSION=$(sed -n '/^\[package\]/,/^\[/s/^version = "\([^"]*\)"/\1/p' crates/rstorrent-crostini/Cargo.toml)
+          ASSET="target/crostini/rstorrent-crostini-${VERSION}-${{ matrix.arch }}.tar.gz"
+          test -f "$ASSET"
+          SCRATCH=$(mktemp -d)
+          trap 'rm -rf -- "$SCRATCH"' EXIT
+          tar -xzf "$ASSET" -C "$SCRATCH"
+          test "$("$SCRATCH/bin/rstorrent-crostini" --version)" = "rstorrent-crostini $VERSION"
+
+      - name: Retain native package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rstorrent-crostini-${{ matrix.arch }}
+          path: target/crostini/rstorrent-crostini-*-${{ matrix.arch }}.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Validate and publish tagged Crostini release
+    if: startsWith(github.ref, 'refs/tags/crostini-v')
+    needs: [source-checks, build-package]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Download native packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: rstorrent-crostini-*
+          path: release
+          merge-multiple: true
+
+      - name: Install Node.js 22
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: clients/web/package-lock.json
+
+      - name: Install locked signing CLI
+        run: npm ci --prefix clients/web
+
+      - name: Generate and sign the canonical release manifest
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          test -n "$TAURI_SIGNING_PRIVATE_KEY"
+          test -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+          VERSION="${GITHUB_REF_NAME#crostini-v}"
+          MANIFEST="$GITHUB_WORKSPACE/release/rstorrent-crostini-release.manifest"
+          SIGNING_INPUT="$RUNNER_TEMP/rstorrent-crostini-release.manifest"
+          node .github/scripts/write-crostini-release-manifest.mjs \
+            "$VERSION" "$GITHUB_SHA" \
+            "release/rstorrent-crostini-${VERSION}-x86_64.tar.gz" \
+            "release/rstorrent-crostini-${VERSION}-aarch64.tar.gz" \
+            "$MANIFEST"
+          cp "$MANIFEST" "$SIGNING_INPUT"
+          npm exec --prefix clients/web -- tauri signer sign "$SIGNING_INPUT"
+          base64 --decode "$SIGNING_INPUT.sig" \
+            > release/rstorrent-crostini-release.manifest.minisig
+
+      - name: Verify signature, packages, versions, and exact asset set
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#crostini-v}"
+          MANIFEST="$GITHUB_WORKSPACE/release/rstorrent-crostini-release.manifest"
+          SIGNATURE="$GITHUB_WORKSPACE/release/rstorrent-crostini-release.manifest.minisig"
+          SCRATCH=$(mktemp -d)
+          trap 'rm -rf -- "$SCRATCH"' EXIT
+          export RSTORRENT_CROSTINI_INSTALLER_LIB_ONLY=1
+          source website/public/install-crostini.sh
+          unset RSTORRENT_CROSTINI_INSTALLER_LIB_ONLY
+          verify_minisign "$MANIFEST" "$SIGNATURE" "$MINISIGN_PUBLIC_KEY" "$SCRATCH"
+          for ARCH in x86_64 aarch64; do
+            parse_manifest "$MANIFEST" "$ARCH"
+            ASSET="$GITHUB_WORKSPACE/release/$RELEASE_ASSET"
+            verify_release_asset "$ASSET" "$RELEASE_SIZE" "$RELEASE_SHA256"
+            validate_archive_listing "$ASSET" "$SCRATCH/$ARCH.list"
+            mkdir "$SCRATCH/$ARCH"
+            tar -xzf "$ASSET" -C "$SCRATCH/$ARCH"
+            validate_extracted_bundle_shape "$SCRATCH/$ARCH" "$VERSION"
+          done
+          validate_extracted_bundle "$SCRATCH/x86_64" "$VERSION"
+          find release -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort > "$SCRATCH/assets.actual"
+          cat > "$SCRATCH/assets.expected" <<EOF
+          rstorrent-crostini-${VERSION}-aarch64.tar.gz
+          rstorrent-crostini-${VERSION}-x86_64.tar.gz
+          rstorrent-crostini-release.manifest
+          rstorrent-crostini-release.manifest.minisig
+          EOF
+          diff -u "$SCRATCH/assets.expected" "$SCRATCH/assets.actual"
+          (
+            cd release
+            sha256sum \
+              "rstorrent-crostini-${VERSION}-aarch64.tar.gz" \
+              "rstorrent-crostini-${VERSION}-x86_64.tar.gz" \
+              rstorrent-crostini-release.manifest \
+              rstorrent-crostini-release.manifest.minisig \
+              > SHA256SUMS
+          )
+
+      - name: Create fail-closed draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#crostini-v}"
+          awk "/^## \[$VERSION\]/{found=1; next} /^## \[/{found=0} found" \
+            crates/rstorrent-crostini/CHANGELOG.md > "$RUNNER_TEMP/crostini-notes.md"
+          {
+            cat "$RUNNER_TEMP/crostini-notes.md"
+            echo
+            echo '## ChromeOS Linux installation'
+            echo
+            echo '```sh'
+            echo 'curl -fsSL https://rstorrent.com/install-crostini.sh | bash'
+            echo '```'
+            echo
+            echo 'The installer verifies the signed manifest and selected package before changing the per-user installation.'
+            echo
+            echo '## Automated release evidence'
+            echo
+            echo "- Workflow: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo '- Native x86_64 and ARM64 package builds and version checks passed.'
+            echo '- Exact package/manifest/signature hashes are attached as `SHA256SUMS`.'
+            echo '- Physical Chromebook acceptance is recorded separately and is not implied by CI.'
+          } > "$RUNNER_TEMP/crostini-release-body.md"
+          gh release create "$GITHUB_REF_NAME" \
+            --draft \
+            --verify-tag \
+            --latest=false \
+            --title "RSTorrent for ChromeOS Linux v$VERSION" \
+            --notes-file "$RUNNER_TEMP/crostini-release-body.md" \
+            "release/rstorrent-crostini-${VERSION}-aarch64.tar.gz" \
+            "release/rstorrent-crostini-${VERSION}-x86_64.tar.gz" \
+            release/rstorrent-crostini-release.manifest \
+            release/rstorrent-crostini-release.manifest.minisig \
+            release/SHA256SUMS
+
+      - name: Verify and publish the complete release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#crostini-v}"
+          test "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" = true
+          gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name' \
+            | LC_ALL=C sort > "$RUNNER_TEMP/assets.actual"
+          cat > "$RUNNER_TEMP/assets.expected" <<EOF
+          SHA256SUMS
+          rstorrent-crostini-${VERSION}-aarch64.tar.gz
+          rstorrent-crostini-${VERSION}-x86_64.tar.gz
+          rstorrent-crostini-release.manifest
+          rstorrent-crostini-release.manifest.minisig
+          EOF
+          diff -u "$RUNNER_TEMP/assets.expected" "$RUNNER_TEMP/assets.actual"
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest=false

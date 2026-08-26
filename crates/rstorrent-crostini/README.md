@@ -22,3 +22,8 @@ requires no sudo, does not enable the service, and does not change user
 lingering. `rstorrent-crostini uninstall` preserves the profile and downloads;
 `rstorrent-crostini uninstall --purge` additionally removes only the Crostini
 profile.
+
+The release-ready website bootstrap and two-architecture signed-manifest
+contract are documented in [`docs/crostini-release.md`](../../docs/crostini-release.md).
+There is no public Crostini release yet, so the one-command path is not a
+current availability claim.

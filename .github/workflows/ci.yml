@@ -112,6 +112,11 @@ jobs:
             .github/scripts/validate-desktop-release.test.mjs \
             .github/scripts/write-release-checksums.test.mjs
 
+      - name: Validate Crostini bootstrap release tools
+        run: |
+          bash scripts/test-crostini-installer.sh
+          node --test .github/scripts/write-crostini-release-manifest.test.mjs
+
       - name: Validate and package the JSTorrent Beta extension seed
         run: |
           npm test --prefix clients/extension

@@ -52,6 +52,13 @@ preview as separate data authorities; desktop systems retain only their native
 bootstrap. The extension does not infer Play enablement or Android-app
 installation.
 
+Accepted Tactical
+[`169`](../tactical/169-hosted-crostini-bootstrap-and-release.md) now owns the
+bounded next distribution step: a website-hosted bootstrap, signed canonical
+manifest, and native x86_64/ARM64 `crostini-v*` release workflow using the
+existing RSTorrent beta trust root. This source plumbing does not itself make
+a public Crostini release or support claim.
+
 ## Scope
 
 This topic owns the product shape that separates a native engine host from the
@@ -464,9 +471,10 @@ fixture, or wire contract from either sibling project.
   and protocol-compatibility policy for every extension transport.
 - The exact Android remote-control endpoint and its foreground-service,
   permission, ChromeOS networking, and cold-start recovery behavior.
-- Signed Crostini x86_64/ARM64 distribution, update/rollback, suspend/reboot,
-  shared-storage, and broader network contracts beyond the completed local
-  source-package slice.
+- Exact public Crostini x86_64/ARM64 release acceptance, update/rollback,
+  suspend/reboot, shared-storage, and broader network contracts beyond the
+  completed local source-package slice and current non-publishing release
+  plumbing.
 - The bounded best-effort set of legacy state worth migrating at graduation
   time.
 - Physical desktop extension-control evidence and ChromeOS recovery from stale
