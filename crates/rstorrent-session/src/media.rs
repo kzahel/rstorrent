@@ -726,11 +726,25 @@ impl MediaCapabilities {
 
     pub(crate) fn set_origin(&mut self, origin: &str) -> Result<(), MediaOriginError> {
         let origin = validated_origin(origin)?;
+        self.replace_origin(origin);
+        Ok(())
+    }
+
+    pub(crate) fn set_origin_for_local_http_host(
+        &mut self,
+        origin: &str,
+        exact_host: &str,
+    ) -> Result<(), MediaOriginError> {
+        let origin = validated_local_http_origin(origin, exact_host)?;
+        self.replace_origin(origin);
+        Ok(())
+    }
+
+    fn replace_origin(&mut self, origin: String) {
         if self.origin.as_deref() != Some(origin.as_str()) {
             self.revoke_all();
             self.origin = Some(origin);
         }
-        Ok(())
     }
 
     pub(crate) fn create(
@@ -957,6 +971,34 @@ fn map_admission_error(error: TryAcquireError) -> MediaResolveError {
 }
 
 fn validated_origin(origin: &str) -> Result<String, MediaOriginError> {
+    let parsed = parsed_origin(origin)?;
+    if parsed.scheme() == "http" && !is_loopback_host(parsed.host()) {
+        return Err(MediaOriginError::InsecureNonLoopback);
+    }
+    Ok(origin.to_owned())
+}
+
+fn validated_local_http_origin(origin: &str, exact_host: &str) -> Result<String, MediaOriginError> {
+    if exact_host.is_empty()
+        || exact_host.len() > 253
+        || !exact_host
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-'))
+    {
+        return Err(MediaOriginError::Invalid);
+    }
+    let parsed = parsed_origin(origin)?;
+    if parsed.scheme() != "http"
+        || parsed
+            .host_str()
+            .is_none_or(|host| !host.eq_ignore_ascii_case(exact_host))
+    {
+        return Err(MediaOriginError::InsecureNonLoopback);
+    }
+    Ok(origin.to_owned())
+}
+
+fn parsed_origin(origin: &str) -> Result<Url, MediaOriginError> {
     if origin.is_empty() || origin.len() > 512 || origin.ends_with('/') {
         return Err(MediaOriginError::Invalid);
     }
@@ -974,10 +1016,7 @@ fn validated_origin(origin: &str) -> Result<String, MediaOriginError> {
     if parsed.scheme() != "http" && parsed.scheme() != "https" {
         return Err(MediaOriginError::Invalid);
     }
-    if parsed.scheme() == "http" && !is_loopback_host(parsed.host()) {
-        return Err(MediaOriginError::InsecureNonLoopback);
-    }
-    Ok(origin.to_owned())
+    Ok(parsed)
 }
 
 fn is_loopback_host(host: Option<Host<&str>>) -> bool {
@@ -991,7 +1030,9 @@ fn is_loopback_host(host: Option<Host<&str>>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{MediaOriginError, valid_capability, validated_origin};
+    use super::{
+        MediaOriginError, valid_capability, validated_local_http_origin, validated_origin,
+    };
 
     #[test]
     fn accepts_only_bounded_secure_or_loopback_origins() {
@@ -1015,6 +1056,26 @@ mod tests {
             "https://example.test?query",
         ] {
             assert!(validated_origin(invalid).is_err(), "accepted {invalid}");
+        }
+    }
+
+    #[test]
+    fn local_http_origin_requires_the_separately_exact_host() {
+        assert_eq!(
+            validated_local_http_origin("http://penguin.linux.test:3030", "penguin.linux.test")
+                .expect("exact local host"),
+            "http://penguin.linux.test:3030"
+        );
+        for (origin, host) in [
+            ("http://penguin.linux.test.evil:3030", "penguin.linux.test"),
+            ("https://penguin.linux.test:3030", "penguin.linux.test"),
+            ("http://penguin.linux.test:3030/", "penguin.linux.test"),
+            ("http://penguin.linux.test:3030", ""),
+        ] {
+            assert!(
+                validated_local_http_origin(origin, host).is_err(),
+                "accepted {origin} for {host}"
+            );
         }
     }
 

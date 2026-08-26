@@ -6,8 +6,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use rstorrent_gateway::{
-    GatewayAuthentication, GatewayConfig, HostedAssets, MAX_BASIC_PASSWORD_BYTES, WebAccessPolicy,
-    WebAuthenticationConfig, bind, bind_hosted, bind_local_hosted,
+    CROSTINI_HOST, GatewayAuthentication, GatewayConfig, HostedAssets, JSTORRENT_BETA_EXTENSION_ID,
+    MAX_BASIC_PASSWORD_BYTES, WebAccessPolicy, WebAuthenticationConfig, bind, bind_crostini_hosted,
+    bind_hosted, bind_local_hosted,
 };
 use rstorrent_session::{
     ApplicationConfig, ApplicationService, ConfiguredStorageRoot, DownloadResourceLimits,
@@ -44,10 +45,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .listen
         .clone()
         .or_else(|| env::var("RSTORRENT_GATEWAY_BIND").ok());
+    let product_default_bind = if cli.chromeos_crostini {
+        "0.0.0.0:3030"
+    } else {
+        "127.0.0.1:3030"
+    };
     let (bind_addr, authentication) = match authentication_name.as_str() {
         "bearer" => (
             configured_bind
-                .unwrap_or_else(|| "127.0.0.1:3030".to_owned())
+                .unwrap_or_else(|| product_default_bind.to_owned())
                 .parse::<SocketAddr>()?,
             GatewayAuthentication::Bearer {
                 token: match cli.bearer_token_file.as_ref() {
@@ -81,7 +87,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         ),
         "auto" | "local-open" | "paired" => {
             let bind = configured_bind
-                .unwrap_or_else(|| "127.0.0.1:3030".to_owned())
+                .unwrap_or_else(|| product_default_bind.to_owned())
                 .parse::<SocketAddr>()?;
             let policy_override = match authentication_name.as_str() {
                 "local-open" => Some(WebAccessPolicy::LocalOpen),
@@ -109,7 +115,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
     let origin = cli.origin.clone().unwrap_or_else(|| {
         env::var("RSTORRENT_GATEWAY_ORIGIN").unwrap_or_else(|_| {
-            if matches!(authentication, GatewayAuthentication::Web(_)) {
+            if cli.chromeos_crostini {
+                format!("http://{CROSTINI_HOST}:{}", bind_addr.port())
+            } else if matches!(authentication, GatewayAuthentication::Web(_)) {
                 format!("http://{bind_addr}")
             } else {
                 "http://127.0.0.1:5173".to_owned()
@@ -184,7 +192,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .clone()
         .or_else(|| env::var("RSTORRENT_BUILD_ID").ok());
     let hosted_assets = match (web_root, build_id) {
-        (Some(web_root), Some(build_id)) => Some(HostedAssets::new(web_root, build_id)?),
+        (Some(web_root), Some(build_id)) => {
+            let assets = HostedAssets::new(web_root, build_id)?;
+            Some(if cli.chromeos_crostini {
+                assets.with_chromeos_handoff(JSTORRENT_BETA_EXTENSION_ID.to_owned())?
+            } else {
+                assets
+            })
+        }
         (None, None) => None,
         _ => {
             return Err(
@@ -230,7 +245,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let config = GatewayConfig {
         bind: bind_addr,
         authentication,
-        allowed_origin: origin,
+        allowed_origin: origin.clone(),
         max_connections: rstorrent_gateway::MAX_CONNECTIONS,
     };
     let local_hosted = matches!(
@@ -239,13 +254,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
     );
     let hosts_web = hosted_assets.is_some();
     let server = match hosted_assets {
+        Some(assets) if cli.chromeos_crostini => {
+            bind_crostini_hosted(config, application.clone(), assets).await?
+        }
         Some(assets) if local_hosted => {
             bind_local_hosted(config, application.clone(), assets).await?
         }
         Some(assets) => bind_hosted(config, application.clone(), assets).await?,
         None => bind(config, application.clone()).await?,
     };
-    let browser_url = browser_application_url(server.local_addr());
+    let browser_url = if cli.chromeos_crostini {
+        format!("{}/", origin.trim_end_matches('/'))
+    } else {
+        browser_application_url(server.local_addr())
+    };
     eprintln!("gateway listening on {}", server.local_addr());
     if hosts_web {
         eprintln!("web UI: {browser_url}");
@@ -344,6 +366,7 @@ struct CliOptions {
     build_id: Option<String>,
     pairing_window: bool,
     open_browser: bool,
+    chromeos_crostini: bool,
 }
 
 impl CliOptions {
@@ -381,6 +404,7 @@ impl CliOptions {
                 "--web-root" => options.web_root = Some(PathBuf::from(value(&mut arguments)?)),
                 "--build-id" => options.build_id = Some(value(&mut arguments)?),
                 "--pairing-window" => options.pairing_window = true,
+                "--chromeos-crostini" => options.chromeos_crostini = true,
                 "--open" => options.open_browser = true,
                 "--no-open" => options.open_browser = false,
                 value => return Err(format!("unknown gateway argument {value:?}").into()),
@@ -405,6 +429,7 @@ fn print_help() {
            --bearer-token-file PATH    Bearer automation token file\n\
            --web-root PATH             Production web bundle directory\n\
            --build-id ID               Hosted build identity\n\
+           --chromeos-crostini         Exact penguin.linux.test product mode\n\
            --open | --no-open          Open or do not open the browser\n\
            -h, --help                  Show this help\n\n\
          Secret values are accepted from files, not literal command arguments."

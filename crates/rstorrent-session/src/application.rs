@@ -753,6 +753,15 @@ impl ApplicationService {
         self.media.set_origin(origin)
     }
 
+    pub fn configure_media_origin_for_local_http_host(
+        &mut self,
+        origin: &str,
+        exact_host: &str,
+    ) -> Result<(), MediaOriginError> {
+        self.media
+            .set_origin_for_local_http_host(origin, exact_host)
+    }
+
     pub fn resolve_media_capability(
         &mut self,
         capability: &str,

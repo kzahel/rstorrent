@@ -29,7 +29,7 @@ use axum::extract::rejection::{JsonRejection, QueryRejection};
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri, header};
 use axum::middleware::{self, Next};
-use axum::response::{IntoResponse, Response};
+use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use base64::Engine;
@@ -60,6 +60,10 @@ pub const MAX_BASIC_PASSWORD_BYTES: usize = 128;
 pub const MAX_BASIC_AUTHORIZATION_BYTES: usize = 512;
 pub const MAX_BUILD_ID_BYTES: usize = 128;
 pub const HTTP_OWNER_HEX_BYTES: usize = 32;
+pub const CROSTINI_HOST: &str = "penguin.linux.test";
+pub const CROSTINI_PRODUCT: &str = "rstorrent-crostini";
+pub const CROSTINI_LAUNCH_PROTOCOL_VERSION: u16 = 1;
+pub const JSTORRENT_BETA_EXTENSION_ID: &str = "gcgoepclopkgijmclmlheafaglmbjlcc";
 
 static NEXT_HTTP_OWNER: AtomicU64 = AtomicU64::new(1);
 
@@ -230,12 +234,43 @@ impl GatewayConfig {
         }
         Ok(())
     }
+
+    fn validate_crostini(&self) -> Result<(), GatewayError> {
+        if !matches!(self.authentication, GatewayAuthentication::Web(_)) {
+            return Err(GatewayError::Configuration(
+                "ChromeOS Linux hosting requires browser-session authentication".to_owned(),
+            ));
+        }
+        if !self.bind.is_ipv4() || !self.bind.ip().is_unspecified() || self.bind.port() == 0 {
+            return Err(GatewayError::Configuration(
+                "ChromeOS Linux hosting requires one fixed IPv4 wildcard listener".to_owned(),
+            ));
+        }
+        let expected_origin = format!("http://{CROSTINI_HOST}:{}", self.bind.port());
+        if self.allowed_origin != expected_origin {
+            return Err(GatewayError::Configuration(format!(
+                "ChromeOS Linux origin must be exactly {expected_origin}"
+            )));
+        }
+        if self.max_connections == 0 || self.max_connections > MAX_CONNECTIONS {
+            return Err(GatewayError::Configuration(format!(
+                "connection limit must be 1..={MAX_CONNECTIONS}"
+            )));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct HostedAssets {
     root: PathBuf,
     build_id: String,
+    chromeos_handoff: Option<ChromeOsHandoff>,
+}
+
+#[derive(Clone, Debug)]
+struct ChromeOsHandoff {
+    extension_id: String,
 }
 
 impl HostedAssets {
@@ -253,7 +288,22 @@ impl HostedAssets {
                 "hosted build ID must be 1..={MAX_BUILD_ID_BYTES} printable ASCII bytes"
             )));
         }
-        Ok(Self { root, build_id })
+        Ok(Self {
+            root,
+            build_id,
+            chromeos_handoff: None,
+        })
+    }
+
+    pub fn with_chromeos_handoff(mut self, extension_id: String) -> Result<Self, GatewayError> {
+        if extension_id.len() != 32 || !extension_id.bytes().all(|byte| matches!(byte, b'a'..=b'p'))
+        {
+            return Err(GatewayError::Configuration(
+                "ChromeOS extension ID must contain exactly 32 lowercase a-p characters".to_owned(),
+            ));
+        }
+        self.chromeos_handoff = Some(ChromeOsHandoff { extension_id });
+        Ok(self)
     }
 }
 
@@ -366,6 +416,7 @@ pub async fn bind(
         service,
         Arc::new(NativeDownloadDirectoryPicker),
         None,
+        GatewayValidation::Standard,
     )
     .await
 }
@@ -388,6 +439,7 @@ pub async fn bind_hosted(
         service,
         Arc::new(UnavailableDownloadDirectoryPicker),
         Some(assets),
+        GatewayValidation::Standard,
     )
     .await
 }
@@ -410,8 +462,36 @@ pub async fn bind_local_hosted(
         service,
         Arc::new(NativeDownloadDirectoryPicker),
         Some(assets),
+        GatewayValidation::Standard,
     )
     .await
+}
+
+pub async fn bind_crostini_hosted(
+    config: GatewayConfig,
+    service: Arc<Mutex<ApplicationService>>,
+    assets: HostedAssets,
+) -> Result<GatewayServer, GatewayError> {
+    if assets.chromeos_handoff.is_none() {
+        return Err(GatewayError::Configuration(
+            "ChromeOS Linux hosting requires an exact extension handoff".to_owned(),
+        ));
+    }
+    config.validate_crostini()?;
+    bind_with_picker_and_assets(
+        config,
+        service,
+        Arc::new(NativeDownloadDirectoryPicker),
+        Some(assets),
+        GatewayValidation::CrostiniValidated,
+    )
+    .await
+}
+
+#[derive(Clone, Copy)]
+enum GatewayValidation {
+    Standard,
+    CrostiniValidated,
 }
 
 struct UnavailableDownloadDirectoryPicker;
@@ -431,7 +511,14 @@ async fn bind_with_picker(
     service: Arc<Mutex<ApplicationService>>,
     download_directory_picker: Arc<dyn DownloadDirectoryPicker>,
 ) -> Result<GatewayServer, GatewayError> {
-    bind_with_picker_and_assets(config, service, download_directory_picker, None).await
+    bind_with_picker_and_assets(
+        config,
+        service,
+        download_directory_picker,
+        None,
+        GatewayValidation::Standard,
+    )
+    .await
 }
 
 async fn bind_with_picker_and_assets(
@@ -439,8 +526,11 @@ async fn bind_with_picker_and_assets(
     service: Arc<Mutex<ApplicationService>>,
     download_directory_picker: Arc<dyn DownloadDirectoryPicker>,
     hosted_assets: Option<HostedAssets>,
+    validation: GatewayValidation,
 ) -> Result<GatewayServer, GatewayError> {
-    config.validate()?;
+    if matches!(validation, GatewayValidation::Standard) {
+        config.validate()?;
+    }
     ApplicationService::ensure_maintenance_owner(&service).await;
     let listener = TcpListener::bind(config.bind)
         .await
@@ -460,11 +550,15 @@ async fn bind_with_picker_and_assets(
         .ok()
         .and_then(|uri| uri.authority().map(ToString::to_string))
         .ok_or_else(|| GatewayError::Configuration("media origin has no authority".to_owned()))?;
-    service
-        .lock()
-        .await
-        .configure_media_origin(&media_origin)
-        .map_err(|error| GatewayError::Configuration(error.to_string()))?;
+    let media_configuration = if matches!(validation, GatewayValidation::CrostiniValidated) {
+        service
+            .lock()
+            .await
+            .configure_media_origin_for_local_http_host(&media_origin, CROSTINI_HOST)
+    } else {
+        service.lock().await.configure_media_origin(&media_origin)
+    };
+    media_configuration.map_err(|error| GatewayError::Configuration(error.to_string()))?;
     let web_auth = match &config.authentication {
         GatewayAuthentication::Web(config) => Some(Arc::new(std::sync::Mutex::new(
             web_auth_http::WebAuthRuntime::open(config)?,
@@ -596,6 +690,14 @@ impl GatewayServer {
             self.state.media_host.clone(),
         ));
         if let Some(assets) = &self.state.hosted_assets {
+            if assets.chromeos_handoff.is_some() {
+                router = router.merge(
+                    Router::new()
+                        .route("/launch-chromeos", get(chromeos_launch_page))
+                        .route("/launch-chromeos.js", get(chromeos_launch_script))
+                        .with_state(self.state.clone()),
+                );
+            }
             router = router.fallback_service(ServeDir::new(&assets.root));
         }
         router = router.layer(middleware::from_fn_with_state(
@@ -689,6 +791,10 @@ fn basic_auth_rejection() -> Response {
 struct HealthResponse<'a> {
     status: &'static str,
     build_id: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    product: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    launch_protocol: Option<u16>,
 }
 
 async fn healthz(State(state): State<GatewayState>) -> Response {
@@ -700,8 +806,84 @@ async fn healthz(State(state): State<GatewayState>) -> Response {
         &HealthResponse {
             status: "ok",
             build_id: &assets.build_id,
+            product: assets.chromeos_handoff.as_ref().map(|_| CROSTINI_PRODUCT),
+            launch_protocol: assets
+                .chromeos_handoff
+                .as_ref()
+                .map(|_| CROSTINI_LAUNCH_PROTOCOL_VERSION),
         },
     )
+}
+
+async fn chromeos_launch_page(State(state): State<GatewayState>) -> Response {
+    let Some(handoff) = state
+        .hosted_assets
+        .as_ref()
+        .and_then(|assets| assets.chromeos_handoff.as_ref())
+    else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let document = format!(
+        "<!doctype html>\n\
+         <html lang=\"en\"><head><meta charset=\"utf-8\">\
+         <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
+         <title>Opening RSTorrent</title></head>\
+         <body data-extension-id=\"{}\" data-protocol-version=\"{}\">\
+         <main><h1>Opening RSTorrent…</h1>\
+         <p id=\"status\" role=\"status\">Connecting to JSTorrent Beta.</p>\
+         <p>If this page stays open, install or enable JSTorrent Beta, then choose \
+         RSTorrent for ChromeOS Linux from the Launcher again.</p></main>\
+         <script src=\"/launch-chromeos.js\"></script></body></html>",
+        handoff.extension_id, CROSTINI_LAUNCH_PROTOCOL_VERSION
+    );
+    let mut response = Html(document).into_response();
+    response.headers_mut().insert(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static(
+            "default-src 'none'; script-src 'self'; style-src 'none'; img-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'",
+        ),
+    );
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+}
+
+async fn chromeos_launch_script() -> Response {
+    const SCRIPT: &str = r##"(() => {
+  const body = document.body;
+  const status = document.querySelector("#status");
+  const extensionId = body?.dataset.extensionId;
+  const protocolVersion = Number(body?.dataset.protocolVersion);
+  const fail = () => {
+    if (status) status.textContent = "JSTorrent Beta is unavailable. Enable it and launch RSTorrent for ChromeOS Linux again.";
+  };
+  if (!extensionId || protocolVersion !== 1 || !globalThis.chrome?.runtime?.sendMessage) {
+    fail();
+    return;
+  }
+  chrome.runtime.sendMessage(
+    extensionId,
+    { type: "openCrostiniUi", protocolVersion },
+    (response) => {
+      if (chrome.runtime.lastError || response?.ok !== true) {
+        fail();
+      } else if (status) {
+        status.textContent = "RSTorrent is opening.";
+      }
+    },
+  );
+})();
+"##;
+    let mut response = (
+        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+        SCRIPT,
+    )
+        .into_response();
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
 }
 
 fn is_loopback_http_origin(origin: &str) -> bool {
@@ -1264,9 +1446,11 @@ mod tests {
 
     use super::{
         ApplicationClientFrame, ApplicationConnectionErrorCode, ApplicationServerFrame,
-        ChooseDownloadRootResponse, GatewayAuthentication, GatewayConfig, HostedAssets,
-        MAX_TORRENT_SOURCE_BYTES, WebAuthenticationConfig, bind, bind_hosted, bind_local_hosted,
-        bind_with_picker, constant_time_equal,
+        CROSTINI_LAUNCH_PROTOCOL_VERSION, CROSTINI_PRODUCT, ChooseDownloadRootResponse,
+        GatewayAuthentication, GatewayConfig, HostedAssets, JSTORRENT_BETA_EXTENSION_ID,
+        MAX_TORRENT_SOURCE_BYTES, WebAccessPolicy, WebAuthenticationConfig, bind,
+        bind_crostini_hosted, bind_hosted, bind_local_hosted, bind_with_picker,
+        constant_time_equal,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -1538,6 +1722,44 @@ mod tests {
                 .and_then(|status| status.parse().ok())
                 .expect("HTTP response status");
             (status, headers.to_owned(), response[(split + 4)..].to_vec())
+        })
+        .await
+        .expect("HTTP request task")
+    }
+
+    async fn raw_get_with_host(
+        address: SocketAddr,
+        host: &str,
+        path: &str,
+    ) -> (u16, String, Vec<u8>) {
+        let host = host.to_owned();
+        let path = path.to_owned();
+        tokio::task::spawn_blocking(move || {
+            let request =
+                format!("GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n");
+            let mut stream = TcpStream::connect(address).expect("connect HTTP gateway");
+            stream
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .expect("set HTTP timeout");
+            stream
+                .write_all(request.as_bytes())
+                .expect("write HTTP request");
+            let mut response = Vec::new();
+            stream
+                .read_to_end(&mut response)
+                .expect("read HTTP response");
+            let split = response
+                .windows(4)
+                .position(|window| window == b"\r\n\r\n")
+                .expect("HTTP response headers");
+            let headers = String::from_utf8(response[..split].to_vec()).expect("HTTP headers");
+            let status = headers
+                .lines()
+                .next()
+                .and_then(|line| line.split_ascii_whitespace().nth(1))
+                .and_then(|value| value.parse::<u16>().ok())
+                .expect("HTTP response status");
+            (status, headers, response[split + 4..].to_vec())
         })
         .await
         .expect("HTTP request task")
@@ -3110,6 +3332,117 @@ mod tests {
         service.lock().await.shutdown().await.expect("shutdown");
         drop(service);
         std::fs::remove_dir_all(root).expect("remove root");
+    }
+
+    #[tokio::test]
+    async fn crostini_hosting_is_explicit_exact_and_serves_the_extension_handoff() {
+        let root = test_root("crostini-hosted");
+        let web_root = root.join("web");
+        std::fs::create_dir_all(&web_root).expect("create web root");
+        std::fs::write(web_root.join("index.html"), b"crostini-index").expect("write index");
+        let service = test_service(&root).await;
+        let reservation = std::net::TcpListener::bind("127.0.0.1:0").expect("reserve port");
+        let port = reservation.local_addr().expect("reserved address").port();
+        drop(reservation);
+        let origin = format!("http://penguin.linux.test:{port}");
+        let config = GatewayConfig {
+            bind: format!("0.0.0.0:{port}").parse().expect("address"),
+            authentication: GatewayAuthentication::Web(WebAuthenticationConfig {
+                database: root.join("profile/web-auth.sqlite3"),
+                pairing_window: false,
+                policy_override: Some(WebAccessPolicy::LocalOpen),
+            }),
+            allowed_origin: origin.clone(),
+            max_connections: 2,
+        };
+        let assets = HostedAssets::new(web_root, "crostini-test".to_owned())
+            .expect("hosted assets")
+            .with_chromeos_handoff(JSTORRENT_BETA_EXTENSION_ID.to_owned())
+            .expect("handoff identity");
+        let server = bind_crostini_hosted(config, service.clone(), assets)
+            .await
+            .expect("bind Crostini gateway");
+        let address = SocketAddr::from(([127, 0, 0, 1], server.local_addr().port()));
+        let host = format!("penguin.linux.test:{}", address.port());
+        let shutdown = CancellationToken::new();
+        let task = tokio::spawn(server.serve(shutdown.clone()));
+
+        assert_eq!(
+            raw_get_with_host(address, "attacker.example", "/").await.0,
+            403
+        );
+        let (status, _, body) = raw_get_with_host(address, &host, "/healthz").await;
+        assert_eq!(status, 200);
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&body).expect("health JSON"),
+            serde_json::json!({
+                "status": "ok",
+                "build_id": "crostini-test",
+                "product": CROSTINI_PRODUCT,
+                "launch_protocol": CROSTINI_LAUNCH_PROTOCOL_VERSION,
+            })
+        );
+        let (status, headers, body) = raw_get_with_host(address, &host, "/launch-chromeos").await;
+        assert_eq!(status, 200);
+        assert!(headers.contains("content-security-policy: default-src 'none'"));
+        let body = String::from_utf8(body).expect("handoff HTML");
+        assert!(body.contains(JSTORRENT_BETA_EXTENSION_ID));
+        assert!(body.contains("data-protocol-version=\"1\""));
+        assert!(!body.contains("chrome-extension://"));
+        let (status, _, script) = raw_get_with_host(address, &host, "/launch-chromeos.js").await;
+        assert_eq!(status, 200);
+        let script = String::from_utf8(script).expect("handoff script");
+        assert!(script.contains("openCrostiniUi"));
+        assert!(!script.contains("fetch("));
+        assert_eq!(
+            raw_get_with_host(address, &host, "/").await.2,
+            b"crostini-index"
+        );
+
+        shutdown.cancel();
+        task.await
+            .expect("server join")
+            .expect("server termination");
+        service.lock().await.shutdown().await.expect("shutdown");
+        drop(service);
+        std::fs::remove_dir_all(root).expect("remove root");
+    }
+
+    #[test]
+    fn crostini_configuration_rejects_implicit_or_broader_networks() {
+        let root = test_root("crostini-config");
+        let valid = || GatewayConfig {
+            bind: "0.0.0.0:3030".parse().expect("address"),
+            authentication: GatewayAuthentication::Web(WebAuthenticationConfig {
+                database: root.join("web-auth.sqlite3"),
+                pairing_window: false,
+                policy_override: Some(WebAccessPolicy::LocalOpen),
+            }),
+            allowed_origin: "http://penguin.linux.test:3030".to_owned(),
+            max_connections: 2,
+        };
+        assert!(valid().validate_crostini().is_ok());
+
+        let mut wrong_host = valid();
+        wrong_host.allowed_origin = "http://100.115.92.2:3030".to_owned();
+        assert!(wrong_host.validate_crostini().is_err());
+        let mut wrong_port = valid();
+        wrong_port.allowed_origin = "http://penguin.linux.test:4040".to_owned();
+        assert!(wrong_port.validate_crostini().is_err());
+        let mut loopback = valid();
+        loopback.bind = "127.0.0.1:3030".parse().expect("address");
+        assert!(loopback.validate_crostini().is_err());
+        let mut bearer = valid();
+        bearer.authentication = GatewayAuthentication::Bearer {
+            token: "secret".to_owned(),
+        };
+        assert!(bearer.validate_crostini().is_err());
+        assert!(
+            HostedAssets::new(root, "build".to_owned())
+                .expect_err("missing index is rejected")
+                .to_string()
+                .contains("index.html")
+        );
     }
 
     #[tokio::test]
