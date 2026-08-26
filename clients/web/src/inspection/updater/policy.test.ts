@@ -16,4 +16,12 @@ describe("desktop update package policy", () => {
       expect(installPolicy(bundleType).canInstallInApp).toBe(false);
     },
   );
+
+  it("checks headless releases without permitting browser replacement", () => {
+    expect(installPolicy("headless")).toEqual({
+      canCheck: true,
+      canInstallInApp: false,
+      packageLabel: "Linux headless service",
+    });
+  });
 });

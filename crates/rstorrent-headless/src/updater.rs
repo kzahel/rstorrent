@@ -8,6 +8,9 @@ use flate2::read::GzDecoder;
 use futures_util::StreamExt;
 use minisign_verify::{PublicKey, Signature};
 use reqwest::redirect::Policy;
+use rstorrent_gateway::{
+    HostedUpdateCandidate, HostedUpdateCheckFuture, HostedUpdateInfo, HostedUpdateProvider,
+};
 use sha2::{Digest, Sha256};
 
 use crate::installer::{self, BundleLayout, InstallOutcome};
@@ -26,6 +29,7 @@ pub const MAX_METADATA_BYTES: usize = 64 * 1024;
 pub const MAX_ASSET_BYTES: usize = 128 * 1024 * 1024;
 pub const MAX_EXPANDED_BYTES: u64 = 256 * 1024 * 1024;
 pub const MAX_ARCHIVE_ENTRIES: usize = 4096;
+pub const APPLY_COMMAND: &str = "$HOME/.local/bin/rstorrent-headless update --apply";
 
 const METADATA_TIMEOUT: Duration = Duration::from_secs(30);
 const ASSET_TIMEOUT: Duration = Duration::from_secs(180);
@@ -212,6 +216,53 @@ pub struct UpdateClient {
     manifest_url: String,
     signature_url: String,
     public_key: PublicKey,
+}
+
+pub struct HeadlessUpdateProvider {
+    client: UpdateClient,
+    current_version: String,
+    check_gate: tokio::sync::Mutex<()>,
+}
+
+impl HeadlessUpdateProvider {
+    pub fn production(current_version: String) -> Result<Self, UpdateError> {
+        ReleaseVersion::parse(&current_version)?;
+        Ok(Self {
+            client: UpdateClient::production()?,
+            current_version,
+            check_gate: tokio::sync::Mutex::new(()),
+        })
+    }
+}
+
+impl HostedUpdateProvider for HeadlessUpdateProvider {
+    fn info(&self) -> HostedUpdateInfo {
+        HostedUpdateInfo {
+            version: self.current_version.clone(),
+            build_id: self.current_version.clone(),
+            target: "linux-gnu".to_owned(),
+            arch: std::env::consts::ARCH.to_owned(),
+            package: "headless".to_owned(),
+            check_privacy: "anonymous".to_owned(),
+        }
+    }
+
+    fn check(&self) -> HostedUpdateCheckFuture<'_> {
+        Box::pin(async move {
+            let _check = self.check_gate.lock().await;
+            self.client
+                .check(&self.current_version)
+                .await
+                .map(|candidate| {
+                    candidate.map(|candidate| HostedUpdateCandidate {
+                        version: candidate.version(),
+                        release_url: candidate.release_url(),
+                        apply_command: APPLY_COMMAND.to_owned(),
+                    })
+                })
+                .map_err(|error| error.to_string())
+        })
+    }
 }
 
 impl UpdateClient {

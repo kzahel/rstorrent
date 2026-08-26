@@ -2,7 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -52,6 +52,54 @@ describe("About and updates settings", () => {
     expect(
       screen.getByRole("link", { name: "Open release downloads" }),
     ).toHaveAttribute("href", "https://github.com/kzahel/rstorrent/releases/latest");
+  });
+
+  it("shows the headless apply command without a browser install action", () => {
+    const updater = fakeUpdater();
+    const view = render(
+      <AboutUpdatesSettingsSection
+        updater={updater}
+        snapshot={{
+          info: {
+            version: "0.1.0",
+            buildId: "0.1.0",
+            target: "linux-gnu",
+            arch: "x86_64",
+            bundleType: "headless",
+            checkPrivacy: "anonymous",
+          },
+          state: {
+            phase: "available",
+            version: "0.1.1",
+            reason: "startup",
+            manualApply: {
+              command: "$HOME/.local/bin/rstorrent-headless update --apply",
+              releaseUrl:
+                "https://github.com/kzahel/rstorrent/releases/tag/headless-v0.1.1",
+            },
+          },
+        }}
+      />,
+    );
+    expect(
+      within(view.container).getByText(
+        "$HOME/.local/bin/rstorrent-headless update --apply",
+      ),
+    ).toBeVisible();
+    expect(
+      within(view.container).getByText(/no installation identifier/i),
+    ).toBeVisible();
+    expect(
+      within(view.container).queryByRole("button", {
+        name: "Install and restart",
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(view.container).getByRole("link", { name: "Review signed release" }),
+    ).toHaveAttribute(
+      "href",
+      "https://github.com/kzahel/rstorrent/releases/tag/headless-v0.1.1",
+    );
   });
 });
 

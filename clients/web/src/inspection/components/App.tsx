@@ -36,6 +36,7 @@ import type { DesktopExternalIntake } from "../../desktop-external-intake";
 import { DesktopExternalIntakeProvider } from "../desktop-external-intake-context";
 import type { DesktopNotifications } from "../desktop-notifications/types";
 import type { DesktopPower } from "../desktop-power/types";
+import type { HostedAccessMode } from "../../headless-updater";
 
 const DESTINATIONS: readonly {
   readonly id: ApplicationDestination;
@@ -53,6 +54,7 @@ export interface AppProps {
   readonly externalIntake?: DesktopExternalIntake | undefined;
   readonly notifications?: DesktopNotifications | undefined;
   readonly power?: DesktopPower | undefined;
+  readonly accessMode?: HostedAccessMode | undefined;
 }
 
 export function App({
@@ -61,6 +63,7 @@ export function App({
   externalIntake,
   notifications,
   power,
+  accessMode,
 }: AppProps) {
   return (
     <DesktopExternalIntakeProvider intake={externalIntake}>
@@ -70,13 +73,14 @@ export function App({
           updater={updater}
           notifications={notifications}
           power={power}
+          accessMode={accessMode}
         />
       </TorrentActionProvider>
     </DesktopExternalIntakeProvider>
   );
 }
 
-function AppContent({ webAuth, updater, notifications, power }: AppProps) {
+function AppContent({ webAuth, updater, notifications, power, accessMode }: AppProps) {
   const session = useInspectionStore((state) => state.session);
   const demo = useInspectionStore((state) => state.demo);
   const storage = useInspectionStore((state) => state.storage);
@@ -302,7 +306,18 @@ function AppContent({ webAuth, updater, notifications, power }: AppProps) {
           <Icon name="settings" />
         </button>
       </header>
-      <ScenarioBar />
+      {accessMode === "lan_none" ? (
+        <div className={styles.topNotices}>
+          <aside className={styles.lanWarning} aria-label="LAN security warning">
+            <strong>Authentication is off.</strong>
+            {" "}
+            <span>Every device on this LAN has full owner control.</span>
+          </aside>
+          <ScenarioBar />
+        </div>
+      ) : (
+        <ScenarioBar />
+      )}
       <div className={styles.workspace}>
         <div className={styles.sidebarWrap}>
           <Sidebar />

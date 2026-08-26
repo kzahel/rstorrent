@@ -7,6 +7,7 @@ export type DesktopBundleType =
   | "msi"
   | "deb"
   | "rpm"
+  | "headless"
   | "unknown";
 
 export interface DesktopReleaseInfo {
@@ -15,6 +16,12 @@ export interface DesktopReleaseInfo {
   readonly target: string;
   readonly arch: string;
   readonly bundleType: DesktopBundleType;
+  readonly checkPrivacy?: "installation-id" | "anonymous";
+}
+
+export interface ManualUpdateAction {
+  readonly command: string;
+  readonly releaseUrl: string;
 }
 
 export type UpdaterState =
@@ -26,6 +33,7 @@ export type UpdaterState =
       readonly version: string;
       readonly notes?: string;
       readonly reason: CheckReason;
+      readonly manualApply?: ManualUpdateAction;
     }
   | { readonly phase: "manual-install"; readonly packageLabel: string }
   | {
@@ -64,6 +72,7 @@ export type UpdateDownloadEvent =
 export interface UpdateCandidate {
   readonly version: string;
   readonly notes?: string;
+  readonly manualApply?: ManualUpdateAction;
   downloadAndInstall(
     onEvent: (event: UpdateDownloadEvent) => void,
   ): Promise<void>;

@@ -186,6 +186,30 @@
   outline-offset: 1px;
 }
 
+.topNotices {
+  display: grid;
+  min-width: 0;
+}
+
+.lanWarning {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ui-space-xs);
+  border-bottom: 1px solid #b46a00;
+  padding: 0.42rem var(--ui-space-md);
+  color: #321d00;
+  background: #ffd98a;
+  font-size: var(--ui-font-small);
+  line-height: 1.35;
+  text-align: center;
+}
+
+.lanWarning span {
+  overflow-wrap: anywhere;
+}
+
 .updateNotice {
   position: fixed;
   z-index: 120;
@@ -436,6 +460,11 @@
 }
 
 @media (max-width: 430px) {
+  .lanWarning {
+    display: grid;
+    justify-items: center;
+  }
+
   .primaryNavigation button span {
     position: absolute;
     width: 1px;

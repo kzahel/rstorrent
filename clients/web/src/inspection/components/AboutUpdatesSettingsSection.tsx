@@ -63,6 +63,15 @@ export function AboutUpdatesSettingsSection({
             <p>{state.notes}</p>
           </div>
         ) : null}
+        {state.phase === "available" && state.manualApply !== undefined ? (
+          <div className={styles.manualUpdate}>
+            <strong>Apply from a shell on this server</strong>
+            <code>{state.manualApply.command}</code>
+            <a href={state.manualApply.releaseUrl} rel="noreferrer" target="_blank">
+              Review signed release
+            </a>
+          </div>
+        ) : null}
         <div className={styles.updateActions}>
           <button
             type="button"
@@ -71,7 +80,7 @@ export function AboutUpdatesSettingsSection({
           >
             {state.phase === "checking" ? "Checking…" : "Check for updates"}
           </button>
-          {state.phase === "available" ||
+          {(state.phase === "available" && state.manualApply === undefined) ||
           (state.phase === "error" && state.operation === "install") ? (
             <button
               type="button"
@@ -90,8 +99,9 @@ export function AboutUpdatesSettingsSection({
         </div>
         <p className={styles.updatePrivacy}>
           RSTorrent checks automatically after startup and about once per day.
-          Checks include a random resettable installation identifier used only
-          to estimate active installations.
+          {info.checkPrivacy === "anonymous"
+            ? " Headless checks include no installation identifier."
+            : " Checks include a random resettable installation identifier used only to estimate active installations."}
         </p>
       </fieldset>
     </div>
@@ -130,7 +140,9 @@ function statusDetail(state: UpdaterState, currentVersion: string): string {
     case "up-to-date":
       return `Version ${currentVersion} is the newest compatible release.`;
     case "available":
-      return "Installation happens only after you approve it.";
+      return state.manualApply === undefined
+        ? "Installation happens only after you approve it."
+        : "The browser checks the signed channel but cannot replace the running service.";
     case "manual-install":
       return `This ${state.packageLabel} stays with its package channel.`;
     case "downloading": {
@@ -168,6 +180,8 @@ function packageLabel(bundleType: DesktopUpdaterSnapshot["info"]["bundleType"]):
       return "Linux DEB";
     case "rpm":
       return "Linux RPM";
+    case "headless":
+      return "Linux headless service";
     case "unknown":
       return "Development build";
   }

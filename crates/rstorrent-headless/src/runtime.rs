@@ -20,7 +20,7 @@ use crate::config::{
     AuthenticationConfig, ConfigError, HeadlessConfig, load, load_basic_credentials,
     validate_runtime_paths,
 };
-use crate::updater::UpdateError;
+use crate::updater::{HeadlessUpdateProvider, UpdateError};
 use crate::{PACKAGE_ID, PRODUCT_ID};
 
 pub const MAX_WEB_FILES: usize = 4096;
@@ -225,7 +225,12 @@ pub async fn run_installed_service(
         allowed_origin: config.public_origin.clone(),
         max_connections: rstorrent_gateway::MAX_CONNECTIONS,
     };
-    let assets = layout.hosted_assets()?.with_access_mode(access_mode);
+    let update_provider = Arc::new(HeadlessUpdateProvider::production(layout.version.clone())?);
+    let assets = layout
+        .hosted_assets()?
+        .with_access_mode(access_mode)
+        .with_update_provider(update_provider)
+        .map_err(configuration_gateway_error)?;
     let prepared = prepare_hosted(gateway_config, assets)
         .await
         .map_err(configuration_gateway_error)?;

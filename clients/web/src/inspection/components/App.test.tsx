@@ -15,6 +15,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createRef } from "react";
 
 import type { ClientSettingsRuntimeView } from "../../api";
+import type { HostedAccessMode } from "../../headless-updater";
 import type {
   DesktopExternalActivation,
   DesktopExternalIntake,
@@ -553,6 +554,27 @@ describe("inspection application", () => {
       within(dialog).getByRole("tab", { name: "About & updates" }),
     ).toHaveAttribute("aria-selected", "true");
     expect(within(dialog).getByText("Checking for updates")).toBeVisible();
+  });
+
+  it("keeps the credential-free LAN owner warning visible", () => {
+    renderApplication(
+      new DemoApplication({
+        scenarioId: "empty-library",
+        elapsedMs: 0,
+        running: false,
+      }),
+      null,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "lan_none",
+    );
+    expect(
+      screen.getByRole("complementary", { name: "LAN security warning" }),
+    ).toHaveTextContent(
+      "Authentication is off. Every device on this LAN has full owner control.",
+    );
   });
 
   it("shows notification settings only when the desktop capability is injected", async () => {
@@ -2621,6 +2643,7 @@ function renderApplication(
   externalIntake?: DesktopExternalIntake,
   notifications?: DesktopNotifications,
   power?: DesktopPower,
+  accessMode?: HostedAccessMode,
 ) {
   const controller = new InspectionController(application, appearanceStorage);
   controllers.push(controller);
@@ -2632,6 +2655,7 @@ function renderApplication(
         externalIntake={externalIntake}
         notifications={notifications}
         power={power}
+        accessMode={accessMode}
       />
     </InspectionProvider>,
   );

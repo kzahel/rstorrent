@@ -36,6 +36,7 @@ export async function createTauriDesktopUpdater(): Promise<DesktopUpdater> {
   const info: DesktopReleaseInfo = {
     ...nativeInfo,
     bundleType: normalizeBundleType(bundleType),
+    checkPrivacy: "installation-id",
   };
   const backend: DesktopUpdateBackend = {
     async check(reason, timeoutMs) {

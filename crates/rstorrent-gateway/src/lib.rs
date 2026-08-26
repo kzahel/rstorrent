@@ -18,8 +18,10 @@ pub use web_auth::{
 
 use std::error::Error;
 use std::fmt;
+use std::future::Future;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -60,6 +62,7 @@ pub const MAX_BASIC_PASSWORD_BYTES: usize = 128;
 pub const MAX_BASIC_AUTHORIZATION_BYTES: usize = 512;
 pub const MAX_BUILD_ID_BYTES: usize = 128;
 pub const MAX_PRODUCT_ID_BYTES: usize = 128;
+pub const MAX_UPDATE_FIELD_BYTES: usize = 1024;
 pub const HTTP_OWNER_HEX_BYTES: usize = 32;
 pub const CROSTINI_HOST: &str = "penguin.linux.test";
 pub const CROSTINI_PRODUCT: &str = "rstorrent-crostini";
@@ -285,13 +288,28 @@ impl GatewayConfig {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct HostedAssets {
     root: PathBuf,
     build_id: String,
     product: Option<String>,
     chromeos_handoff: Option<ChromeOsHandoff>,
     access_mode: Option<HostedAccessMode>,
+    update_provider: Option<Arc<dyn HostedUpdateProvider>>,
+}
+
+impl fmt::Debug for HostedAssets {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("HostedAssets")
+            .field("root", &self.root)
+            .field("build_id", &self.build_id)
+            .field("product", &self.product)
+            .field("chromeos_handoff", &self.chromeos_handoff)
+            .field("access_mode", &self.access_mode)
+            .field("update_provider", &self.update_provider.is_some())
+            .finish()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -309,6 +327,31 @@ impl HostedAccessMode {
             Self::LanNone => "lan_none",
         }
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct HostedUpdateInfo {
+    pub version: String,
+    pub build_id: String,
+    pub target: String,
+    pub arch: String,
+    pub package: String,
+    pub check_privacy: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct HostedUpdateCandidate {
+    pub version: String,
+    pub release_url: String,
+    pub apply_command: String,
+}
+
+pub type HostedUpdateCheckFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Option<HostedUpdateCandidate>, String>> + Send + 'a>>;
+
+pub trait HostedUpdateProvider: Send + Sync {
+    fn info(&self) -> HostedUpdateInfo;
+    fn check(&self) -> HostedUpdateCheckFuture<'_>;
 }
 
 #[derive(Clone, Debug)]
@@ -337,6 +380,7 @@ impl HostedAssets {
             product: None,
             chromeos_handoff: None,
             access_mode: None,
+            update_provider: None,
         })
     }
 
@@ -377,6 +421,15 @@ impl HostedAssets {
     pub fn with_access_mode(mut self, access_mode: HostedAccessMode) -> Self {
         self.access_mode = Some(access_mode);
         self
+    }
+
+    pub fn with_update_provider(
+        mut self,
+        provider: Arc<dyn HostedUpdateProvider>,
+    ) -> Result<Self, GatewayError> {
+        validate_update_info(&provider.info())?;
+        self.update_provider = Some(provider);
+        Ok(self)
     }
 }
 
@@ -838,6 +891,7 @@ impl GatewayServer {
                 header::AUTHORIZATION,
                 header::CONTENT_TYPE,
                 HeaderName::from_static("x-rstorrent-owner"),
+                HeaderName::from_static("x-check-reason"),
             ]);
         let torrent_upload = post(api_torrent_upload)
             .layer(axum::extract::DefaultBodyLimit::max(
@@ -907,6 +961,16 @@ impl GatewayServer {
                     Router::new()
                         .route("/launch-chromeos", get(chromeos_launch_page))
                         .route("/launch-chromeos.js", get(chromeos_launch_script))
+                        .with_state(self.state.clone()),
+                );
+            }
+            if assets.update_provider.is_some() {
+                router = router.merge(
+                    Router::new()
+                        .route(
+                            "/api/v1/product-update",
+                            get(product_update_info).post(product_update_check),
+                        )
                         .with_state(self.state.clone()),
                 );
             }
@@ -1041,6 +1105,57 @@ async fn healthz(State(state): State<GatewayState>) -> Response {
     )
 }
 
+async fn product_update_info(State(state): State<GatewayState>) -> Response {
+    let Some(provider) = state
+        .hosted_assets
+        .as_ref()
+        .and_then(|assets| assets.update_provider.as_ref())
+    else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    json_response(StatusCode::OK, &provider.info())
+}
+
+async fn product_update_check(State(state): State<GatewayState>, headers: HeaderMap) -> Response {
+    if headers
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        != Some(state.allowed_origin.as_ref())
+    {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    if matches!(state.authentication.as_ref(), GatewayAuthentication::Web(_))
+        && web_auth_http::authenticate_application_request(&state, &headers).is_err()
+    {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    if !matches!(
+        headers
+            .get("x-check-reason")
+            .and_then(|value| value.to_str().ok()),
+        Some("startup" | "periodic" | "manual")
+    ) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let Some(provider) = state
+        .hosted_assets
+        .as_ref()
+        .and_then(|assets| assets.update_provider.as_ref())
+    else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    match provider.check().await {
+        Ok(candidate) if candidate.as_ref().is_none_or(valid_update_candidate) => {
+            json_response(StatusCode::OK, &candidate)
+        }
+        Ok(_) | Err(_) => api_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            ApiErrorCode::Internal,
+            "signed update check is unavailable",
+        ),
+    }
+}
+
 async fn chromeos_launch_page(State(state): State<GatewayState>) -> Response {
     let Some(handoff) = state
         .hosted_assets
@@ -1145,6 +1260,53 @@ fn is_https_origin(origin: &str) -> bool {
     }
     uri.path_and_query()
         .is_none_or(|path| path.as_str().is_empty() || path.as_str() == "/")
+}
+
+fn validate_update_info(info: &HostedUpdateInfo) -> Result<(), GatewayError> {
+    let fields = [
+        info.version.as_str(),
+        info.build_id.as_str(),
+        info.target.as_str(),
+        info.arch.as_str(),
+        info.package.as_str(),
+        info.check_privacy.as_str(),
+    ];
+    if fields.iter().any(|value| {
+        value.is_empty()
+            || value.len() > MAX_UPDATE_FIELD_BYTES
+            || !value.bytes().all(|byte| byte.is_ascii_graphic())
+    }) || !valid_final_release_version(&info.version)
+        || info.target != "linux-gnu"
+        || !matches!(info.arch.as_str(), "x86_64" | "aarch64")
+        || info.package != "headless"
+        || info.check_privacy != "anonymous"
+    {
+        return Err(GatewayError::Configuration(
+            "hosted update identity is invalid".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn valid_update_candidate(candidate: &HostedUpdateCandidate) -> bool {
+    valid_final_release_version(&candidate.version)
+        && candidate.release_url
+            == format!(
+                "https://github.com/kzahel/rstorrent/releases/tag/headless-v{}",
+                candidate.version
+            )
+        && candidate.apply_command == "$HOME/.local/bin/rstorrent-headless update --apply"
+}
+
+fn valid_final_release_version(value: &str) -> bool {
+    let parts = value.split('.').collect::<Vec<_>>();
+    parts.len() == 3
+        && parts.iter().all(|part| {
+            !part.is_empty()
+                && part.len() <= 20
+                && (part.len() == 1 || !part.starts_with('0'))
+                && part.bytes().all(|byte| byte.is_ascii_digit())
+        })
 }
 
 #[derive(Debug, Deserialize)]
@@ -1674,6 +1836,7 @@ mod tests {
         ApplicationClientFrame, ApplicationConnectionErrorCode, ApplicationServerFrame,
         CROSTINI_LAUNCH_PROTOCOL_VERSION, CROSTINI_PRODUCT, ChooseDownloadRootResponse,
         GatewayAuthentication, GatewayConfig, GatewayValidation, HostedAccessMode, HostedAssets,
+        HostedUpdateCandidate, HostedUpdateCheckFuture, HostedUpdateInfo, HostedUpdateProvider,
         JSTORRENT_BETA_EXTENSION_ID, MAX_TORRENT_SOURCE_BYTES, UnavailableDownloadDirectoryPicker,
         WebAccessPolicy, WebAuthenticationConfig, bind, bind_crostini_hosted, bind_hosted,
         bind_local_hosted, bind_with_picker, constant_time_equal, prepare_with_picker_and_assets,
@@ -1684,6 +1847,32 @@ mod tests {
     struct FixedDirectoryPicker {
         selected: Option<PathBuf>,
         calls: AtomicU64,
+    }
+
+    struct FixedUpdateProvider;
+
+    impl HostedUpdateProvider for FixedUpdateProvider {
+        fn info(&self) -> HostedUpdateInfo {
+            HostedUpdateInfo {
+                version: "0.1.0".to_owned(),
+                build_id: "lan-test".to_owned(),
+                target: "linux-gnu".to_owned(),
+                arch: "x86_64".to_owned(),
+                package: "headless".to_owned(),
+                check_privacy: "anonymous".to_owned(),
+            }
+        }
+
+        fn check(&self) -> HostedUpdateCheckFuture<'_> {
+            Box::pin(async {
+                Ok(Some(HostedUpdateCandidate {
+                    version: "0.1.1".to_owned(),
+                    release_url: "https://github.com/kzahel/rstorrent/releases/tag/headless-v0.1.1"
+                        .to_owned(),
+                    apply_command: "$HOME/.local/bin/rstorrent-headless update --apply".to_owned(),
+                }))
+            })
+        }
     }
 
     impl DownloadDirectoryPicker for FixedDirectoryPicker {
@@ -2016,6 +2205,45 @@ mod tests {
         })
         .await
         .expect("HTTP request task")
+    }
+
+    async fn raw_product_update_check(
+        address: SocketAddr,
+        host: &str,
+        origin: &str,
+        reason: &str,
+    ) -> (u16, Vec<u8>) {
+        let host = host.to_owned();
+        let origin = origin.to_owned();
+        let reason = reason.to_owned();
+        tokio::task::spawn_blocking(move || {
+            let request = format!(
+                "POST /api/v1/product-update HTTP/1.1\r\nHost: {host}\r\nOrigin: {origin}\r\nX-Check-Reason: {reason}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            );
+            let mut stream = TcpStream::connect(address).expect("connect update route");
+            stream
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .expect("set update timeout");
+            stream
+                .write_all(request.as_bytes())
+                .expect("write update request");
+            let mut response = Vec::new();
+            stream.read_to_end(&mut response).expect("read update response");
+            let split = response
+                .windows(4)
+                .position(|window| window == b"\r\n\r\n")
+                .expect("update response headers");
+            let status = std::str::from_utf8(&response[..split])
+                .expect("update response headers")
+                .lines()
+                .next()
+                .and_then(|line| line.split_ascii_whitespace().nth(1))
+                .and_then(|value| value.parse::<u16>().ok())
+                .expect("update response status");
+            (status, response[split + 4..].to_vec())
+        })
+        .await
+        .expect("update request task")
     }
 
     async fn web_auth_request(
@@ -4087,7 +4315,9 @@ mod tests {
         let origin = format!("http://{address}");
         let assets = HostedAssets::new(web_root, "lan-test".to_owned())
             .expect("hosted assets")
-            .with_access_mode(HostedAccessMode::LanNone);
+            .with_access_mode(HostedAccessMode::LanNone)
+            .with_update_provider(Arc::new(FixedUpdateProvider))
+            .expect("update provider");
         let prepared = prepare_with_picker_and_assets(
             GatewayConfig {
                 bind: address,
@@ -4115,6 +4345,49 @@ mod tests {
         );
         assert_eq!(
             raw_get_with_host(address, "wrong.example", "/").await.0,
+            403
+        );
+        let (status, _, info) = raw_get_with_host(address, &host, "/api/v1/product-update").await;
+        assert_eq!(status, 200);
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&info).expect("update info JSON"),
+            serde_json::json!({
+                "version": "0.1.0",
+                "build_id": "lan-test",
+                "target": "linux-gnu",
+                "arch": "x86_64",
+                "package": "headless",
+                "check_privacy": "anonymous",
+            })
+        );
+        let (status, _, _) = raw_http_request_with_host(
+            address,
+            &host,
+            "POST",
+            "/api/v1/product-update",
+            None,
+            Some(&origin),
+            None,
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(status, 400, "a check reason is mandatory");
+
+        let candidate = raw_product_update_check(address, &host, &origin, "manual").await;
+        assert_eq!(candidate.0, 200);
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&candidate.1).expect("candidate JSON"),
+            serde_json::json!({
+                "version": "0.1.1",
+                "release_url": "https://github.com/kzahel/rstorrent/releases/tag/headless-v0.1.1",
+                "apply_command": "$HOME/.local/bin/rstorrent-headless update --apply",
+            })
+        );
+        assert_eq!(
+            raw_product_update_check(address, &host, "http://wrong.example", "manual")
+                .await
+                .0,
             403
         );
         let (status, _, health) = raw_get_with_host(address, &host, "/healthz").await;

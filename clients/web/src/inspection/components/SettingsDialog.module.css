@@ -187,6 +187,30 @@
   font-size: var(--ui-font-small);
 }
 
+.manualUpdate {
+  display: grid;
+  gap: var(--ui-space-xs);
+  margin-top: var(--ui-space-md);
+  border: 1px solid var(--border-soft);
+  border-radius: 0.5rem;
+  padding: var(--ui-space-sm);
+  background: var(--surface-secondary);
+  font-size: var(--ui-font-small);
+}
+
+.manualUpdate code {
+  overflow-x: auto;
+  border-radius: 0.35rem;
+  padding: var(--ui-space-xs);
+  background: var(--surface-tertiary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+}
+
+.manualUpdate a {
+  color: var(--accent);
+}
+
 .updateActions {
   display: flex;
   flex-wrap: wrap;

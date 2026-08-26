@@ -16,6 +16,10 @@ import { HttpApplicationClient } from "../api/client";
 import { TauriApplicationViewClient } from "../tauri-view-client";
 import { WebSocketApplicationViewClient } from "../websocket-view-client";
 import { WebAuthClient } from "../web-auth-client";
+import {
+  createHeadlessHostIntegration,
+  type HostedAccessMode,
+} from "../headless-updater";
 import "./global.css";
 
 export function startDemoInspection(parameters: URLSearchParams): void {
@@ -95,11 +99,26 @@ async function openLiveInspection(
     transport === "http"
       ? new HttpApplicationClient(baseUrl.href, token, window.location.origin)
       : new WebSocketApplicationViewClient(baseUrl.href, token);
-  const application = await LiveApplication.open(client, {
-    ...(waitMillis === undefined ? {} : { waitMillis }),
-  });
+  const [application, headless] = await Promise.all([
+    LiveApplication.open(client, {
+      ...(waitMillis === undefined ? {} : { waitMillis }),
+    }),
+    createHeadlessHostIntegration(baseUrl).catch((error: unknown) => {
+      console.error("Headless host integration initialization failed:", error);
+      return undefined;
+    }),
+  ]);
   application.installBrowserWakeHints(window, document);
-  renderInspection(new InspectionController(application), root, webAuth);
+  renderInspection(
+    new InspectionController(application),
+    root,
+    webAuth,
+    headless?.updater,
+    undefined,
+    undefined,
+    undefined,
+    headless?.accessMode,
+  );
 }
 
 export async function startTauriInspection(): Promise<void> {
@@ -153,6 +172,7 @@ function renderInspection(
   externalIntake?: DesktopExternalIntake,
   notifications?: DesktopNotifications,
   power?: DesktopPower,
+  accessMode?: HostedAccessMode,
 ): void {
   controller.start();
   root.render(
@@ -163,6 +183,7 @@ function renderInspection(
         externalIntake={externalIntake}
         notifications={notifications}
         power={power}
+        accessMode={accessMode}
       />
     </InspectionProvider>,
   );

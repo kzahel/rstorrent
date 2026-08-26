@@ -61,6 +61,7 @@ export class DesktopUpdaterController implements DesktopUpdater {
       await this.check("manual");
       return;
     }
+    if (candidate.manualApply !== undefined) return;
 
     const version = candidate.version;
     let downloadedBytes = 0;
@@ -117,7 +118,7 @@ export class DesktopUpdaterController implements DesktopUpdater {
 
   private async performCheck(reason: CheckReason): Promise<void> {
     const policy = installPolicy(this.snapshot.info.bundleType);
-    if (!policy.canInstallInApp) {
+    if (!policy.canCheck) {
       if (reason === "manual") {
         this.setState({
           phase: "manual-install",
@@ -154,6 +155,9 @@ export class DesktopUpdaterController implements DesktopUpdater {
         ...(candidate.notes === undefined
           ? {}
           : { notes: boundedReleaseNotes(candidate.notes) }),
+        ...(candidate.manualApply === undefined
+          ? {}
+          : { manualApply: candidate.manualApply }),
         reason,
       });
     } catch (error) {
