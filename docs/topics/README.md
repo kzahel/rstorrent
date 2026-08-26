@@ -43,6 +43,10 @@ Topics own the current truth for a continuing concern. Tactical docs under
   backend/presentation separation, desktop extension use, ChromeOS Android and
   Crostini choices, launch handoff, backend isolation, and later best-effort
   JSTorrent graduation.
+- [`runtime-configurations-and-headless-deployment.md`](runtime-configurations-and-headless-deployment.md):
+  visible, background, windowless, and headless runtime compositions; explicit
+  Linux service, listener, origin, authentication, and reverse-proxy policy;
+  and the separation of backend availability from UI and seeding lifetime.
 - [`product-state-and-feedback.md`](product-state-and-feedback.md):
   installation identity, local usage summaries, prompt campaign state,
   lifecycle/version facts, and explicit user-submitted diagnostic context.

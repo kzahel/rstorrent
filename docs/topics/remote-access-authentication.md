@@ -35,6 +35,11 @@ principal and encrypted record channel may eventually be established around
 those frames. [`application-control.md`](application-control.md) continues to
 own command meaning and the rule that authorization is verified transport
 context rather than a caller-provided field.
+[`runtime-configurations-and-headless-deployment.md`](runtime-configurations-and-headless-deployment.md)
+owns which desktop or headless process hosts the application service, how a
+Linux service starts, and how explicit bind addresses, public origins, Basic
+private-host mode, and TLS termination are configured. Those deployment tools
+do not substitute for the owner authentication defined here.
 
 Tactical
 [`076-authenticated-private-web-host.md`](../tactical/076-authenticated-private-web-host.md)

@@ -64,6 +64,14 @@ install, Launcher, and stop/relaunch path on the physical x86_64 Chromebook.
 The native ARM64 package passes hosted build and archive gates without a
 physical ARM64 runtime claim.
 
+Maintainer direction on 2026-08-26 additionally accepts first-class headless
+Linux as a product composition: one native service owns its profile and engine
+without Tauri or a graphical session, while the backend-served React UI and
+later authenticated remote clients attach as detachable presentations.
+[`runtime-configurations-and-headless-deployment.md`](runtime-configurations-and-headless-deployment.md)
+owns that runtime, service, listener, authentication, and reverse-proxy
+direction. It does not authorize owner remote cryptography or relay work.
+
 ## Scope
 
 This topic owns the product shape that separates a native engine host from the
@@ -84,12 +92,17 @@ It complements:
   [`application-view-api.md`](application-view-api.md), which own the semantic
   command and recoverable view contracts; and
 - [`client-persistence.md`](client-persistence.md), which owns the typed SQLite
-  authority and verified resume invariants.
+  authority and verified resume invariants; and
+- [`runtime-configurations-and-headless-deployment.md`](runtime-configurations-and-headless-deployment.md),
+  which owns visible, background, windowless, and headless runtime
+  compositions plus their deployment configuration.
 
 This topic does not select the final public name or domain, duplicate the
-platform release sequence now owned by `beta-release-readiness`, turn the
-native engine into a general-purpose daemon, or make product migration an
-implicit beta requirement.
+platform release sequence now owned by `beta-release-readiness`, expose the
+native engine as a general-purpose third-party daemon API, or make product
+migration an implicit beta requirement. The accepted first-party Linux
+headless service remains a product host around the same application service,
+not a peer, filesystem, or payload proxy.
 
 ## Product Model: Backend And Presentation Are Separate
 
@@ -131,6 +144,7 @@ The likely successor has these useful compositions:
 | --- | --- | --- | --- |
 | Desktop | Desktop Rust application service | Embedded Tauri webview | Owns the desktop profile |
 | Desktop | Same desktop Rust application service | Browser extension | Shares the desktop profile |
+| Linux server | Headless Rust application service | Backend-served React UI or authenticated remote client | Owns one explicit server profile and its configured roots |
 | ChromeOS | Rust application service in Crostini | Backend-served React UI, launched through the browser extension | Owns a Linux profile and roots |
 | ChromeOS | Rust application service in the Android app | Browser extension | Shares the Android profile |
 | ChromeOS or Android | Same Android application service | Android Compose | Shares the Android backend and profile |
