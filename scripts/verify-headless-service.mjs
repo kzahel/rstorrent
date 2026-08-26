@@ -11,7 +11,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const archive = parseArchive(process.argv.slice(2));
+const options = parseOptions(process.argv.slice(2));
 const repositoryRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
@@ -27,37 +27,38 @@ const temporaryRoot = await fsp.mkdtemp(
 let proxy;
 let service;
 try {
-  const extracted = path.join(temporaryRoot, "bundle");
-  await fsp.mkdir(extracted, { recursive: true, mode: 0o755 });
-  await run("tar", ["-xzf", archive, "-C", extracted]);
-  const version = (await fsp.readFile(path.join(extracted, "VERSION"), "utf8")).trim();
-  const applicationRoot = path.join(temporaryRoot, "application");
-  const release = path.join(applicationRoot, "versions", version);
-  await fsp.mkdir(path.dirname(release), { recursive: true, mode: 0o755 });
-  await fsp.cp(extracted, release, { recursive: true, force: false });
-  await normalizeDirectoryModes(release);
-  for (const directory of [applicationRoot, path.join(applicationRoot, "versions"), release]) {
-    await fsp.chmod(directory, 0o755);
-  }
-  await fsp.symlink(path.join("versions", version), path.join(applicationRoot, "current"));
+  if (options.mode === "archive") {
+    const extracted = path.join(temporaryRoot, "bundle");
+    await fsp.mkdir(extracted, { recursive: true, mode: 0o755 });
+    await run("tar", ["-xzf", options.archive, "-C", extracted]);
+    const version = (await fsp.readFile(path.join(extracted, "VERSION"), "utf8")).trim();
+    const applicationRoot = path.join(temporaryRoot, "application");
+    const release = path.join(applicationRoot, "versions", version);
+    await fsp.mkdir(path.dirname(release), { recursive: true, mode: 0o755 });
+    await fsp.cp(extracted, release, { recursive: true, force: false });
+    await normalizeDirectoryModes(release);
+    for (const directory of [applicationRoot, path.join(applicationRoot, "versions"), release]) {
+      await fsp.chmod(directory, 0o755);
+    }
+    await fsp.symlink(path.join("versions", version), path.join(applicationRoot, "current"));
 
-  const backendPort = await reservePort();
-  const proxyPort = await reservePort();
-  const publicOrigin = `https://127.0.0.1:${proxyPort}`;
-  const publicHost = `127.0.0.1:${proxyPort}`;
-  const username = "owner";
-  const password = crypto.randomBytes(24).toString("base64url");
-  const authorization = `Basic ${Buffer.from(`${username}:${password}`, "utf8").toString("base64")}`;
-  const configDirectory = path.join(temporaryRoot, "config");
-  const configPath = path.join(configDirectory, "headless.toml");
-  const passwordFile = path.join(configDirectory, "basic-password");
-  const profileRoot = path.join(temporaryRoot, "state", "profile");
-  const missingPayload = path.join(temporaryRoot, "missing-payload");
-  await fsp.mkdir(configDirectory, { recursive: true, mode: 0o700 });
-  await fsp.writeFile(passwordFile, `${password}\n`, { mode: 0o600 });
-  await fsp.writeFile(
-    configPath,
-    `version = 1
+    const backendPort = await reservePort();
+    const proxyPort = await reservePort();
+    const publicOrigin = `https://127.0.0.1:${proxyPort}`;
+    const publicHost = `127.0.0.1:${proxyPort}`;
+    const username = "owner";
+    const password = crypto.randomBytes(24).toString("base64url");
+    const authorization = basicAuthorization(username, password);
+    const configDirectory = path.join(temporaryRoot, "config");
+    const configPath = path.join(configDirectory, "headless.toml");
+    const passwordFile = path.join(configDirectory, "basic-password");
+    const profileRoot = path.join(temporaryRoot, "state", "profile");
+    const missingPayload = path.join(temporaryRoot, "missing-payload");
+    await fsp.mkdir(configDirectory, { recursive: true, mode: 0o700 });
+    await fsp.writeFile(passwordFile, `${password}\n`, { mode: 0o600 });
+    await fsp.writeFile(
+      configPath,
+      `version = 1
 profile_root = ${JSON.stringify(profileRoot)}
 listen = "127.0.0.1:${backendPort}"
 public_origin = ${JSON.stringify(publicOrigin)}
@@ -72,45 +73,63 @@ mode = "basic"
 username = ${JSON.stringify(username)}
 password_file = ${JSON.stringify(passwordFile)}
 `,
-    { mode: 0o600 },
-  );
+      { mode: 0o600 },
+    );
 
-  const certificate = await createCertificate(temporaryRoot);
-  proxy = await startProxy(certificate, backendPort, proxyPort);
-  const executable = path.join(release, "bin", "rstorrent-headless");
-  const context = {
-    executable,
-    configPath,
-    publicOrigin,
-    publicHost,
-    proxyPort,
-    authorization,
-    password,
-    version,
-  };
+    const certificate = await createCertificate(temporaryRoot);
+    proxy = await startProxy(
+      certificate,
+      { hostname: "127.0.0.1", port: backendPort },
+      { hostname: "127.0.0.1", port: proxyPort },
+    );
+    const executable = path.join(release, "bin", "rstorrent-headless");
+    const context = {
+      publicOrigin,
+      publicHost,
+      proxyHostname: "127.0.0.1",
+      proxyPort,
+      authorization,
+      version,
+    };
 
-  service = startService(executable, configPath);
-  await verifyGeneration(service, context);
-  await stopService(service, password);
-  service = undefined;
-  if (!(await isFile(path.join(profileRoot, "session.db")))) {
-    throw new Error("headless generation did not persist its profile database");
+    service = startService(executable, configPath);
+    await verifyGeneration(service, context);
+    await stopService(service, password);
+    service = undefined;
+    if (!(await isFile(path.join(profileRoot, "session.db")))) {
+      throw new Error("headless generation did not persist its profile database");
+    }
+    if (await exists(missingPayload)) {
+      throw new Error("headless generation recreated the missing payload root");
+    }
+
+    service = startService(executable, configPath);
+    await verifyGeneration(service, context);
+    await stopService(service, password);
+    service = undefined;
+    if (await exists(missingPayload)) {
+      throw new Error("headless restart recreated the missing payload root");
+    }
+
+    process.stdout.write(
+      `verified headless ${version} HTTPS static, health, HTTP, WSS, exact auth/Host/Origin, zero-child lifetime, and joined restart\n`,
+    );
+  } else {
+    const password = await readPassword(options.passwordFile);
+    const certificate = await createCertificate(temporaryRoot);
+    proxy = await startProxy(certificate, options.upstream, options.proxy);
+    await verifyGeneration(undefined, {
+      publicOrigin: options.publicOrigin,
+      publicHost: options.publicHost,
+      proxyHostname: options.proxy.hostname,
+      proxyPort: options.proxy.port,
+      authorization: basicAuthorization(options.username, password),
+      version: options.version,
+    });
+    process.stdout.write(
+      `verified running headless ${options.version} through HTTPS static, health, HTTP, WSS, and exact auth/Host/Origin\n`,
+    );
   }
-  if (await exists(missingPayload)) {
-    throw new Error("headless generation recreated the missing payload root");
-  }
-
-  service = startService(executable, configPath);
-  await verifyGeneration(service, context);
-  await stopService(service, password);
-  service = undefined;
-  if (await exists(missingPayload)) {
-    throw new Error("headless restart recreated the missing payload root");
-  }
-
-  process.stdout.write(
-    `verified headless ${version} HTTPS static, health, HTTP, WSS, exact auth/Host/Origin, zero-child lifetime, and joined restart\n`,
-  );
 } finally {
   if (service && service.exitCode === null) {
     service.kill("SIGTERM");
@@ -128,7 +147,7 @@ process.exit(0);
 
 async function verifyGeneration(child, context) {
   const healthy = await retry(async () => {
-    if (child.exitCode !== null) {
+    if (child && child.exitCode !== null) {
       const output = child.output();
       throw new Error(
         `headless exited before health code=${child.exitCode}: ${output.stderr}`,
@@ -216,18 +235,20 @@ async function verifyGeneration(child, context) {
   }
   await connectedWebSocket(context);
 
-  const childrenPath = `/proc/${child.pid}/task/${child.pid}/children`;
-  const children = (await fsp.readFile(childrenPath, "utf8")).trim();
-  if (children !== "") {
-    throw new Error(`headless service retained child processes: ${children}`);
-  }
-  if (child.exitCode !== null) {
-    throw new Error(`headless service exited unexpectedly with ${child.exitCode}`);
+  if (child) {
+    const childrenPath = `/proc/${child.pid}/task/${child.pid}/children`;
+    const children = (await fsp.readFile(childrenPath, "utf8")).trim();
+    if (children !== "") {
+      throw new Error(`headless service retained child processes: ${children}`);
+    }
+    if (child.exitCode !== null) {
+      throw new Error(`headless service exited unexpectedly with ${child.exitCode}`);
+    }
   }
 }
 
 async function connectedWebSocket(context) {
-  const socket = new WebSocket(`wss://127.0.0.1:${context.proxyPort}/api/v1/connect`, {
+  const socket = new WebSocket(`${context.publicOrigin.replace("https:", "wss:")}/api/v1/connect`, {
     rejectUnauthorized: false,
     headers: {
       Authorization: context.authorization,
@@ -274,7 +295,7 @@ async function rejectedWebSocketStatus(context, overrides) {
     Origin: overrides.origin ?? context.publicOrigin,
   };
   if (overrides.host) headers.Host = overrides.host;
-  const socket = new WebSocket(`wss://127.0.0.1:${context.proxyPort}/api/v1/connect`, {
+  const socket = new WebSocket(`${context.publicOrigin.replace("https:", "wss:")}/api/v1/connect`, {
     rejectUnauthorized: false,
     headers,
   });
@@ -352,7 +373,7 @@ async function tlsRequest(context, requestPath, options) {
     if (options.owner) headers["X-RSTorrent-Owner"] = options.owner;
     const request = https.request(
       {
-        hostname: "127.0.0.1",
+        hostname: context.proxyHostname,
         port: context.proxyPort,
         path: requestPath,
         method: "GET",
@@ -385,17 +406,17 @@ async function tlsRequest(context, requestPath, options) {
   });
 }
 
-async function startProxy(certificate, backendPort, proxyPort) {
+async function startProxy(certificate, upstream, listener) {
   const server = https.createServer(
     {
       key: await fsp.readFile(certificate.key),
       cert: await fsp.readFile(certificate.cert),
     },
     (request, response) => {
-      const upstream = http.request(
+      const upstreamRequest = http.request(
         {
-          host: "127.0.0.1",
-          port: backendPort,
+          host: upstream.hostname,
+          port: upstream.port,
           method: request.method,
           path: request.url,
           headers: request.headers,
@@ -405,11 +426,11 @@ async function startProxy(certificate, backendPort, proxyPort) {
           upstreamResponse.pipe(response);
         },
       );
-      upstream.once("error", () => {
+      upstreamRequest.once("error", () => {
         if (!response.headersSent) response.writeHead(502);
         response.end();
       });
-      request.pipe(upstream);
+      request.pipe(upstreamRequest);
     },
   );
   server.fixtureSockets = new Set();
@@ -418,23 +439,23 @@ async function startProxy(certificate, backendPort, proxyPort) {
     socket.once("close", () => server.fixtureSockets.delete(socket));
   });
   server.on("upgrade", (request, socket, head) => {
-    const upstream = net.connect(backendPort, "127.0.0.1", () => {
-      upstream.write(`${request.method} ${request.url} HTTP/${request.httpVersion}\r\n`);
+    const upstreamSocket = net.connect(upstream.port, upstream.hostname, () => {
+      upstreamSocket.write(`${request.method} ${request.url} HTTP/${request.httpVersion}\r\n`);
       for (let index = 0; index < request.rawHeaders.length; index += 2) {
-        upstream.write(`${request.rawHeaders[index]}: ${request.rawHeaders[index + 1]}\r\n`);
+        upstreamSocket.write(`${request.rawHeaders[index]}: ${request.rawHeaders[index + 1]}\r\n`);
       }
-      upstream.write("\r\n");
-      if (head.length > 0) upstream.write(head);
-      upstream.pipe(socket);
-      socket.pipe(upstream);
+      upstreamSocket.write("\r\n");
+      if (head.length > 0) upstreamSocket.write(head);
+      upstreamSocket.pipe(socket);
+      socket.pipe(upstreamSocket);
     });
-    server.fixtureSockets.add(upstream);
-    upstream.once("close", () => server.fixtureSockets.delete(upstream));
-    upstream.once("error", () => socket.destroy());
+    server.fixtureSockets.add(upstreamSocket);
+    upstreamSocket.once("close", () => server.fixtureSockets.delete(upstreamSocket));
+    upstreamSocket.once("error", () => socket.destroy());
   });
   await new Promise((resolve, reject) => {
     server.once("error", reject);
-    server.listen(proxyPort, "127.0.0.1", resolve);
+    server.listen(listener.port, listener.hostname, resolve);
   });
   return server;
 }
@@ -508,16 +529,107 @@ async function run(command, arguments_) {
   });
 }
 
-function parseArchive(arguments_) {
-  if (
-    arguments_.length !== 2 ||
-    arguments_[0] !== "--archive" ||
-    !path.isAbsolute(arguments_[1]) ||
-    !fs.statSync(arguments_[1]).isFile()
-  ) {
-    throw new Error("usage: verify-headless-service.mjs --archive ABSOLUTE_TAR_GZ");
+function parseOptions(arguments_) {
+  if (arguments_.length === 2 && arguments_[0] === "--archive") {
+    if (!path.isAbsolute(arguments_[1]) || !fs.statSync(arguments_[1]).isFile()) {
+      throw new Error("--archive requires an absolute regular file");
+    }
+    return { mode: "archive", archive: arguments_[1] };
   }
-  return arguments_[1];
+  const values = new Map();
+  for (let index = 0; index < arguments_.length; index += 2) {
+    const key = arguments_[index];
+    const value = arguments_[index + 1];
+    if (!key?.startsWith("--") || value === undefined || values.has(key)) {
+      throw new Error(usage());
+    }
+    values.set(key, value);
+  }
+  const expected = [
+    "--upstream",
+    "--public-origin",
+    "--username",
+    "--password-file",
+    "--expected-version",
+  ];
+  if (values.size !== expected.length || expected.some((key) => !values.has(key))) {
+    throw new Error(usage());
+  }
+  const upstreamUrl = new URL(values.get("--upstream"));
+  const publicUrl = new URL(values.get("--public-origin"));
+  if (
+    upstreamUrl.protocol !== "http:" ||
+    upstreamUrl.username ||
+    upstreamUrl.password ||
+    upstreamUrl.pathname !== "/" ||
+    upstreamUrl.search ||
+    upstreamUrl.hash ||
+    !isPrivateOrLoopback(upstreamUrl.hostname) ||
+    !upstreamUrl.port
+  ) {
+    throw new Error("--upstream must be one private numeric http://HOST:PORT origin");
+  }
+  if (
+    publicUrl.protocol !== "https:" ||
+    publicUrl.hostname !== "127.0.0.1" ||
+    publicUrl.pathname !== "/" ||
+    publicUrl.search ||
+    publicUrl.hash ||
+    !publicUrl.port
+  ) {
+    throw new Error("--public-origin must be an exact https://127.0.0.1:PORT origin");
+  }
+  const passwordFile = values.get("--password-file");
+  if (!path.isAbsolute(passwordFile) || !fs.statSync(passwordFile).isFile()) {
+    throw new Error("--password-file requires an absolute regular file");
+  }
+  const username = values.get("--username");
+  const version = values.get("--expected-version");
+  if (!username || username.length > 128 || !version || version.length > 128) {
+    throw new Error("username and expected version must be 1..128 characters");
+  }
+  return {
+    mode: "upstream",
+    upstream: { hostname: upstreamUrl.hostname, port: Number(upstreamUrl.port) },
+    proxy: { hostname: publicUrl.hostname, port: Number(publicUrl.port) },
+    publicOrigin: publicUrl.origin,
+    publicHost: publicUrl.host,
+    username,
+    passwordFile,
+    version,
+  };
+}
+
+function usage() {
+  return "usage: verify-headless-service.mjs --archive ABSOLUTE_TAR_GZ | --upstream http://PRIVATE_IP:PORT --public-origin https://127.0.0.1:PORT --username USER --password-file ABSOLUTE_PATH --expected-version VERSION";
+}
+
+function isPrivateOrLoopback(hostname) {
+  if (net.isIPv4(hostname) === 0) return false;
+  const bytes = hostname.split(".").map(Number);
+  return (
+    bytes[0] === 127 ||
+    bytes[0] === 10 ||
+    (bytes[0] === 172 && bytes[1] >= 16 && bytes[1] <= 31) ||
+    (bytes[0] === 192 && bytes[1] === 168)
+  );
+}
+
+async function readPassword(passwordFile) {
+  const stat = await fsp.stat(passwordFile);
+  if ((stat.mode & 0o077) !== 0 || stat.size < 1 || stat.size > 1025) {
+    throw new Error("password file must be protected and contain 1..1024 bytes");
+  }
+  const value = await fsp.readFile(passwordFile, "utf8");
+  const password = value.endsWith("\n") ? value.slice(0, -1) : value;
+  if (!password || password.includes("\n") || password.includes("\r")) {
+    throw new Error("password file must contain one nonempty line");
+  }
+  return password;
+}
+
+function basicAuthorization(username, password) {
+  return `Basic ${Buffer.from(`${username}:${password}`, "utf8").toString("base64")}`;
 }
 
 async function exists(target) {
