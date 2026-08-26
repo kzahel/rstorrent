@@ -264,6 +264,14 @@ does not make a production extension transport part of the currently
 implemented client surface.
 
 Tactical
+[`167`](../tactical/167-chromeos-crostini-bundled-web-launcher.md) makes one
+bounded refinement for the first ChromeOS Linux product: its package serves
+this same mature React application and same-origin gateway directly, while the
+beta extension launches, focuses, and explains that backend. This does not
+foreclose an extension-hosted presentation later and does not change the
+separate Android or desktop profile owners.
+
+Tactical
 [`166`](../tactical/166-desktop-native-bootstrap-and-extension-scaffold.md)
 implements only the bounded predecessor seam: a self-contained Manifest V3
 JSTorrent Beta popup/service worker and the distinct

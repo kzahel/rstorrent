@@ -33,7 +33,12 @@ physical Android API 37, and physical iOS evidence. Explicit maintainer
 direction temporarily yielded Tactical `158` to bounded desktop-bootstrap
 Tactical `166`. That slice is complete after its exact-ID installed Chrome
 `hello` and cold-launch smoke, and Tactical `158` has resumed as the sole
-**Now**.
+**Now**. Explicit maintainer direction later on 2026-08-26 temporarily yields
+that work to bounded ChromeOS Linux Tactical
+[`167`](../tactical/167-chromeos-crostini-bundled-web-launcher.md). This is a
+source-package and physical-device incubation slice, not a new public beta
+lane or signed release. Tactical `158` resumes when its stopping condition
+passes.
 Installed Intel macOS testing is deliberately omitted. The public product
 name is RSTorrent for the foreseeable release line. A later production
 graduation is expected to retain JSTorrent's existing name, application
@@ -52,8 +57,8 @@ desktop lifecycle Tactical
 complete; desktop-bootstrap Tactical
 [`166`](../tactical/166-desktop-native-bootstrap-and-extension-scaffold.md) is
 complete; signed release Tactical
-[`158`](../tactical/158-desktop-signed-packaging-and-updater.md) again owns
-**Now**.
+[`158`](../tactical/158-desktop-signed-packaging-and-updater.md) is temporarily
+yielded while Crostini Tactical `167` owns **Now**.
 Maintainer direction on 2026-08-24 promotes OS-level `magnet:` and local
 `.torrent` activation from a post-beta deferral to a beta usability gap;
 completed Tactical
@@ -576,7 +581,7 @@ no single optional BEP is mandatory.
    Windows x86_64/Linux arm64 proof pass. File/magnet handoff remains outside
    that completed slice and is now owned by Tactical `163`; autostart stays
    deferred.
-4. **Now — Tactical `158`: desktop signed packaging and updater adoption.**
+4. **Paused — Tactical `158`: desktop signed packaging and updater adoption.**
    The product-owned `desktop-update-v1` client, signed package workflow,
    release validation, per-app key, public configuration, production route,
    five-platform hosted rehearsal, three tagged publications, one installed
@@ -590,7 +595,8 @@ no single optional BEP is mandatory.
    and its signed package matrix plus bounded macOS arm64 launch/native-host
    spot check pass. Repeat clean Windows from the default with the strengthened
    `UPD-005` state, characterize firewall consent, and run Linux x86_64. Intel
-   macOS installed testing is deliberately omitted.
+   macOS installed testing is deliberately omitted. Explicit maintainer
+   direction temporarily yields this item to Tactical `167`.
 5. **Complete — Tactical `163`: desktop external torrent intake.** The
    bounded shell/UI implementation, package gates, and installed Linux arm64,
    Windows x86_64-application, and macOS arm64 cold/visible/tray-hidden/
@@ -621,6 +627,11 @@ no single optional BEP is mandatory.
 12. **Later — Tactical `153`.** Wired-LAN uTP scalability remains valuable
    engine evidence but no longer displaces the explicit beta-readiness
    campaign.
+13. **Now — Tactical `167`: ChromeOS Crostini bundled web launcher.** Package
+    the Rust backend and mature React UI together, add the static user service,
+    registered Linux Launcher, and exact beta-extension handoff, then prove
+    warm, stopped-VM, repeated, and reboot launch on the physical Chromebook.
+    Return **Now** to Tactical `158` after this bounded source-package slice.
 
 Each implementation item requires its own bounded tactical. This ordering is
 not authorization to tag, publish, alter production routing, create store

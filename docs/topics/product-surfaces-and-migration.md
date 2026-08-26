@@ -33,6 +33,15 @@ after exact-ID installed Chrome `hello` and cold-launch evidence. It does not
 choose the later headless service, full extension control, or Crostini
 topology.
 
+Subsequent maintainer direction on 2026-08-26 selects the first Crostini
+product slice in Tactical
+[`167`](../tactical/167-chromeos-crostini-bundled-web-launcher.md). The
+Crostini package serves the mature React application with its Rust backend;
+the extension owns cold handoff, warm open/focus, setup, and later browser
+integration rather than carrying the initial full UI bundle. A future
+extension-hosted presentation remains possible but is not required for the
+first ChromeOS Linux path.
+
 ## Scope
 
 This topic owns the product shape that separates a native engine host from the
@@ -100,7 +109,7 @@ The likely successor has these useful compositions:
 | --- | --- | --- | --- |
 | Desktop | Desktop Rust application service | Embedded Tauri webview | Owns the desktop profile |
 | Desktop | Same desktop Rust application service | Browser extension | Shares the desktop profile |
-| ChromeOS | Rust application service in Crostini | Browser extension | Owns a Linux profile and roots |
+| ChromeOS | Rust application service in Crostini | Backend-served React UI, launched through the browser extension | Owns a Linux profile and roots |
 | ChromeOS | Rust application service in the Android app | Browser extension | Shares the Android profile |
 | ChromeOS or Android | Same Android application service | Android Compose | Shares the Android backend and profile |
 | iOS/iPadOS | Rust application service in the native app | First-party JSTorrent SwiftUI presentation adapted to typed RSTorrent models | Owns an iOS profile, app Documents, and qualified selected on-device roots |
@@ -212,9 +221,12 @@ does not make that extension compatible while it still addresses legacy host
 ### Crostini plus extension
 
 Crostini should be developed as a first-class ChromeOS backend rather than
-only an emergency fallback. The extension remains the full JavaScript/React
-control surface while one native Linux process owns the Rust application
-service, database, networking, hashing, and filesystem I/O.
+only an emergency fallback. The first package bundles and serves the mature
+JavaScript/React control surface beside one native Linux process that owns the
+Rust application service, database, networking, hashing, and filesystem I/O.
+The extension is the Chrome-resident launch, focus, setup, and future
+integration surface. It may later host the same detachable React presentation,
+but the initial product does not duplicate those assets inside the extension.
 
 The proven `web-server-chrome` Crostini pattern is the starting product
 reference:
@@ -225,10 +237,10 @@ reference:
 - a small launch helper that can wake a stopped Crostini VM and hand off to a
   dormant extension worker;
 - a stable local controller endpoint with capability and version negotiation;
-- contextual host permission, one-time claim, and persistent authentication;
+- exact local-host admission and persistent browser-session authentication;
 - bundled setup, recovery, update, rollback, and uninstall guidance; and
-- a normal extension tab for setup or recovery with a focused extension
-  window for routine control.
+- a normal backend-served tab for routine control with extension setup and
+  recovery pages.
 
 RSTorrent must adapt that pattern rather than copy its web-server-specific
 policy. In particular, torrent lifecycle across Crostini stop, suspend, and

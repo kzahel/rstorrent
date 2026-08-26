@@ -737,7 +737,8 @@ that scope and its cleanup or compatibility rules explicitly.
   art/metadata, and reconciles status before signed updater and cross-platform
   CI slices.
 - [`158-desktop-signed-packaging-and-updater.md`](158-desktop-signed-packaging-and-updater.md):
-  implementation in progress and Now; its Tauri-only
+  implementation in progress and temporarily paused behind Tactical `167`;
+  its Tauri-only
   `desktop-update-v1` UI/state boundary, per-app identity/key/route, hosted
   signed five-target package rehearsal, public `desktop-v0.1.0` through
   `desktop-v0.1.2` finalization, one installed macOS arm64 launch smoke, and
@@ -778,6 +779,11 @@ that scope and its cleanup or compatibility rules explicitly.
   draft identity, public key, and exact origin are pinned; real Chrome 151 on
   an installed unsigned macOS arm64 app proves native `hello` from a stopped
   state and cold desktop launch.
+- [`167-chromeos-crostini-bundled-web-launcher.md`](167-chromeos-crostini-bundled-web-launcher.md):
+  implementation in progress and Now; packages the Rust gateway and mature
+  React UI together in ChromeOS Linux, adds one static on-demand user service
+  and mapped Launcher handoff through the exact beta extension, and requires
+  warm, stopped-VM, repeated, and reboot evidence on the physical Chromebook.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
