@@ -5,6 +5,10 @@ three-component versions, and desktop release tags use `desktop-v<version>`.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-08-26
+
+- Repair fresh-profile Windows listener selection and add the packaged native
+  download-root picker.
 - Register installed desktop packages for bounded `magnet:` and local
   `.torrent` activation, restore the existing window, and reuse the ordinary
   download-root and Add-options workflow without exposing source paths to the
@@ -16,6 +20,11 @@ three-component versions, and desktop release tags use `desktop-v<version>`.
   close/Quit/restart shutdown.
 - Add branded desktop tray/window integration and suppress the unwanted
   console window from release Windows launches.
+- Add native completion and repair-attention notifications plus default-on
+  active-download sleep inhibition with joined cleanup.
+- Package the bounded RSTorrent native-messaging bootstrap, authorize the
+  production JSTorrent and provisional JSTorrent Beta extension origins, and
+  repair per-user Chrome registration on desktop launch.
 - Extend credential-free desktop presubmit packaging to native Linux arm64
   while retaining the Linux x86_64 package gate.
 
