@@ -29,7 +29,9 @@ async-compression = { version = "0.4", default-features = false, features = ["gz
 base64 = "0.22.1"
 crypto-bigint = { version = "=0.7.5", default-features = false }
 futures-util = "0.3.31"
+flate2 = "1.1.9"
 getrandom = "0.3.4"
+minisign-verify = "0.2.5"
 quick-xml = "0.41.0"
 reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "stream"] }
 rustls = { version = "0.23.43", default-features = false }
@@ -41,6 +43,8 @@ schemars = "1.2.2"
 tokio = "1.47.1"
 tokio-util = "0.7.16"
 toml = { version = "=1.1.4", default-features = false, features = ["std", "serde", "parse"] }
+tar = "0.4.46"
+tempfile = "3.27.0"
 tower-http = "0.6.11"
 ts-rs = { version = "12.0.1", features = ["serde-compat", "no-serde-warnings"] }
 url = "2.5.8"

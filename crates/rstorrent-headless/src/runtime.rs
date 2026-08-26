@@ -20,6 +20,7 @@ use crate::config::{
     AuthenticationConfig, ConfigError, HeadlessConfig, load, load_basic_credentials,
     validate_runtime_paths,
 };
+use crate::updater::UpdateError;
 use crate::{PACKAGE_ID, PRODUCT_ID};
 
 pub const MAX_WEB_FILES: usize = 4096;
@@ -69,6 +70,12 @@ impl std::error::Error for HeadlessError {}
 impl From<ConfigError> for HeadlessError {
     fn from(error: ConfigError) -> Self {
         Self::configuration(error.to_string())
+    }
+}
+
+impl From<UpdateError> for HeadlessError {
+    fn from(error: UpdateError) -> Self {
+        Self::runtime(error.to_string())
     }
 }
 

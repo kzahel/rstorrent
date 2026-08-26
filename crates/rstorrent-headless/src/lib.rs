@@ -5,6 +5,7 @@
 pub mod config;
 pub mod installer;
 pub mod runtime;
+pub mod updater;
 
 pub const PACKAGE_ID: &str = "com.jstorrent.rstorrent.headless";
 pub const PRODUCT_ID: &str = "rstorrent-headless";

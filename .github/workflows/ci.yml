@@ -117,6 +117,11 @@ jobs:
           bash scripts/test-crostini-installer.sh
           node --test .github/scripts/write-crostini-release-manifest.test.mjs
 
+      - name: Validate headless bootstrap release tools
+        run: |
+          bash scripts/test-headless-installer.sh
+          node --test .github/scripts/write-headless-release-manifest.test.mjs
+
       - name: Validate and package the JSTorrent Beta extension seed
         run: |
           npm test --prefix clients/extension

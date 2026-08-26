@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use rstorrent_headless::runtime::{ErrorClass, InstalledLayout, run_installed_service};
+use rstorrent_headless::updater::UpdateClient;
 use rstorrent_headless::{SERVICE_NAME, installer};
 use tokio_util::sync::CancellationToken;
 
@@ -43,6 +44,12 @@ async fn execute() -> Result<(), rstorrent_headless::runtime::HeadlessError> {
             return Ok(());
         }
         [command] if command == "status" => return print_status(),
+        [command, flag] if command == "update" && flag == "--check" => {
+            return update(false).await;
+        }
+        [command, flag] if command == "update" && flag == "--apply" => {
+            return update(true).await;
+        }
         [command] if command == "uninstall" => return uninstall(),
         _ => {}
     }
@@ -60,6 +67,35 @@ async fn execute() -> Result<(), rstorrent_headless::runtime::HeadlessError> {
         report.version,
         report.listen,
         report.shutdown_elapsed.as_millis()
+    );
+    Ok(())
+}
+
+async fn update(apply: bool) -> Result<(), rstorrent_headless::runtime::HeadlessError> {
+    let layout = InstalledLayout::discover()?;
+    let client = UpdateClient::production()?;
+    let Some(candidate) = client.check(&layout.version).await? else {
+        println!("RSTorrent Headless {} is up to date.", layout.version);
+        return Ok(());
+    };
+    if !apply {
+        println!(
+            "RSTorrent Headless {} is available (current {}).",
+            candidate.version(),
+            layout.version
+        );
+        println!("Release: {}", candidate.release_url());
+        println!("Apply: $HOME/.local/bin/rstorrent-headless update --apply");
+        return Ok(());
+    }
+    println!(
+        "Downloading and verifying RSTorrent Headless {}...",
+        candidate.version()
+    );
+    let outcome = client.apply(&candidate).await?;
+    println!(
+        "Installed RSTorrent Headless {} with health-checked service recovery.",
+        outcome.version
     );
     Ok(())
 }
@@ -129,7 +165,7 @@ fn parse_config_path(
     };
     if argument != "--config" {
         return Err(configuration_error(
-            "usage: rstorrent-headless [--config ABSOLUTE_PATH]",
+            "usage: rstorrent-headless [--config ABSOLUTE_PATH] | status | update --check | update --apply | uninstall",
         ));
     }
     let path = arguments
