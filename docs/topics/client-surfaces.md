@@ -292,7 +292,13 @@ workflow around that same bundled backend/frontend package. Its physical
 x86_64 local signed fixture repairs the real installation, preserves profile
 bytes, launches the same UI, and rejects tampered or incompatible inputs before
 installation mutation. No exact public package, website deployment, or ARM64
-runtime claim follows from that source plumbing.
+runtime claim followed from the bounded source plumbing itself. Subsequent
+explicit release authorization published non-latest `crostini-v0.1.0`,
+deployed the pinned website bootstrap, independently verified both public
+archives and the signed manifest, and passed the exact public install,
+Launcher, connected React surface, and stop/relaunch path on the physical
+x86_64 Chromebook. ARM64 retains native hosted build/archive evidence without
+a physical runtime claim.
 
 Tactical
 [`166`](../tactical/166-desktop-native-bootstrap-and-extension-scaffold.md)

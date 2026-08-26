@@ -2,8 +2,11 @@
 
 Status: **Complete as of 2026-08-26.** The signed bootstrap source, strict
 manifest, native two-architecture workflow, release runbook, deterministic
-failure corpus, and physical x86_64 package fixture pass without a tag, push,
-release, or deployment. Signed-desktop Tactical
+failure corpus, and physical x86_64 package fixture passed the bounded source
+slice. Subsequent explicit release authorization published
+`crostini-v0.1.0`, deployed the website bootstrap, independently verified the
+public artifacts, and passed the exact website install/Launcher/relaunch path
+on the physical x86_64 Chromebook. Signed-desktop Tactical
 [`158`](158-desktop-signed-packaging-and-updater.md) has resumed as the sole
 **Now**.
 
@@ -206,15 +209,67 @@ Final device evidence was one active static service and one UI target with
 `rstorrent-crostini`, build `0.1.0`, and launch protocol `1`; the CLI reported
 the same identity. Cleanup closed the tab, stopped the service, removed the
 exact fixture tree, retained the installed package/profile, and stopped the
-Crostini VM. The unit remained `static` and `inactive`. ARM64 build/runtime
-evidence, the production-key tag workflow, public artifacts, and the website
-deployment remain deliberately unclaimed release acceptance.
+Crostini VM. The unit remained `static` and `inactive`. At source-tactical
+close, ARM64 build/runtime evidence, the production-key tag workflow, public
+artifacts, and the website deployment were deliberately unclaimed. A later
+explicitly authorized release operation supplied the evidence below.
+
+## Post-Completion Public Release Acceptance
+
+Annotated tag `crostini-v0.1.0` resolves to source commit
+`4abf165f07a94d86a88f443bd9f879c2079d227c`. GitHub Actions run
+[`32986250710`](https://github.com/kzahel/rstorrent/actions/runs/32986250710)
+passed the complete source gate, native Ubuntu 22.04 x86_64 and ARM64 package
+jobs, production-key manifest signing, strict package/signature/asset-set
+verification, fail-closed draft creation, and final non-latest publication.
+The resulting public release is
+[`crostini-v0.1.0`](https://github.com/kzahel/rstorrent/releases/tag/crostini-v0.1.0).
+
+Independent public download and verification recorded these SHA-256 values:
+
+- website bootstrap:
+  `188064c7c983d44230785639d3e2d0c1d8963a507b709059b101af876785bed0`;
+- x86_64 package:
+  `1d0ec34e55e7fc58742cb59ae8e40100e3b8a429f4d908440a1e26ecc8189979`;
+- ARM64 package:
+  `67a3922170b970e7b11ef7a4a628a546922b0a486f15e42311f0988df4843919`;
+- manifest:
+  `881881456a4653a9d3df7fb09b41941d73a689db367dd4eb7ec79374f886bf44`;
+- manifest signature:
+  `1a3e1469caac6b349c0e4d10d1efa2c906cdf3f0da16df75c4a8975f3110ba07`;
+  and
+- `SHA256SUMS`:
+  `f6a573a3ac8e162a2343a5f9ef8dd7dd13b6195df2b958669e097ee2e643e07d`.
+
+Every checksum row and the production-key manifest signature passed, the
+signed manifest named the exact tag/source/protocol/extension/runtime, and
+both public archives passed the package validator independently in Debian
+12.12. The ARM64 package therefore has native hosted build and archive
+evidence, but no physical ARM64 runtime claim.
+
+On the physical x86_64 Chromebook, the exact public command
+`curl -fsSL https://rstorrent.com/install-crostini.sh | bash` verified and
+installed the public package as the ordinary Crostini user. The same-version
+repair preserved `metrics.db`, `session.db`, and `web-auth.sqlite3`
+byte-for-byte. Installed launcher and gateway hashes were
+`24788ce9280609485b19963eb5d10d5b3b80e8b006342346f138fe3f04a12d10`
+and
+`77289ce2834a4250917fd7754a63b4d12712f0529f04b3c0a60e473e74d5ed6c`.
+
+The registered ChromeOS Launcher item produced exactly one static service,
+one port-3030 listener, and one RSTorrent tab. Exact-authority `/healthz`
+reported product `rstorrent-crostini`, build `0.1.0`, and launch protocol `1`;
+the React accessibility surface reported `connected`. Closing the tab,
+stopping the service, and launching again restored the same singleton and UI
+identity. Full ChromeOS reboot, physical native ARM64 execution, updating,
+rollback, suspend, and performance remain unclaimed.
 
 ## Non-Goals
 
-- Creating, pushing, or publishing the first `crostini-v0.1.0` tag/release;
-  deploying the website; changing DNS/update services; or exposing the command
-  in the extension before the exact public release passes.
+- During the bounded source slice, creating, pushing, or publishing the first
+  `crostini-v0.1.0` tag/release; deploying the website; changing DNS/update
+  services; or exposing the command in the extension before exact public
+  acceptance. The later authorized release operation is recorded above.
 - A Crostini in-app updater, automatic update polling, rollback UI/store,
   service enablement, linger, login start, or background update daemon.
 - Supporting distributions older than the chosen GNU/Linux baseline,

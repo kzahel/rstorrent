@@ -794,9 +794,10 @@ that scope and its cleanup or compatibility rules explicitly.
   availability.
 - [`169-hosted-crostini-bootstrap-and-release.md`](169-hosted-crostini-bootstrap-and-release.md):
   complete; adds a pinned-key signed-manifest one-command Crostini installer,
-  separate native x86_64/ARM64 release workflow, and physical non-public
-  real-package/failure evidence without tagging, pushing, deploying, or
-  publishing.
+  separate native x86_64/ARM64 release workflow, and physical signed-fixture
+  evidence. A later explicitly authorized operation published non-latest
+  `crostini-v0.1.0`, deployed the website bootstrap, and passed exact public
+  x86_64 install/Launcher/relaunch acceptance.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

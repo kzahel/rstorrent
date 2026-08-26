@@ -57,8 +57,12 @@ Completed Tactical
 bounded next distribution step: a website-hosted bootstrap, signed canonical
 manifest, and native x86_64/ARM64 `crostini-v*` release workflow using the
 existing RSTorrent beta trust root. Its physical x86_64 signed-fixture package
-repair and fail-closed matrix pass. This source plumbing does not itself make
-a public Crostini release or support claim.
+repair and fail-closed matrix pass. Subsequent explicit release authorization
+published non-latest `crostini-v0.1.0`, deployed the pinned website bootstrap,
+and passed independent public-asset verification plus the exact website
+install, Launcher, and stop/relaunch path on the physical x86_64 Chromebook.
+The native ARM64 package passes hosted build and archive gates without a
+physical ARM64 runtime claim.
 
 ## Scope
 
@@ -472,10 +476,9 @@ fixture, or wire contract from either sibling project.
   and protocol-compatibility policy for every extension transport.
 - The exact Android remote-control endpoint and its foreground-service,
   permission, ChromeOS networking, and cold-start recovery behavior.
-- Exact public Crostini x86_64/ARM64 release acceptance, update/rollback,
-  suspend/reboot, shared-storage, and broader network contracts beyond the
-  completed local source-package slice and current non-publishing release
-  plumbing.
+- Crostini update/rollback, suspend/reboot, shared-storage, physical native
+  ARM64 runtime, and broader network contracts beyond the accepted public
+  `crostini-v0.1.0` x86_64 installation and hosted two-architecture packages.
 - The bounded best-effort set of legacy state worth migrating at graduation
   time.
 - Physical desktop extension-control evidence and ChromeOS recovery from stale
@@ -493,9 +496,10 @@ Completed Tactical `166` supplies the exact store identity and installed
 desktop bootstrap evidence; resume the beta-readiness campaign's signed
 RSTorrent package and updater gates. Completed Tactical `167` supplies the
 bounded ChromeOS Linux source package and physical handoff evidence. Completed
-Tactical `169` supplies non-publishing signed-distribution source plumbing and
-physical fixture evidence; do not treat it as exact public artifact
-acceptance, full extension control, or legacy migration.
+Tactical `169` plus its separately authorized release operation supply signed
+public `crostini-v0.1.0` artifacts and exact x86_64 website-install acceptance;
+do not treat that as full extension control, physical ARM64 runtime,
+update/rollback, or legacy migration.
 When JSTorrent graduation is separately authorized, create one bounded
 tactical that fixes the production handoff and the intentionally best-effort
 legacy-state scope from then-current evidence.
