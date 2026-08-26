@@ -1,10 +1,11 @@
 # Tactical 169: Hosted Crostini Bootstrap And Release
 
-Status: **Accepted and Now as of 2026-08-26.** Explicit maintainer direction
-temporarily yields signed-desktop Tactical
-[`158`](158-desktop-signed-packaging-and-updater.md) to this bounded ChromeOS
-Linux distribution slice. Tactical `158` resumes as the sole **Now** after the
-source plumbing and local/physical failure matrix pass.
+Status: **Complete as of 2026-08-26.** The signed bootstrap source, strict
+manifest, native two-architecture workflow, release runbook, deterministic
+failure corpus, and physical x86_64 package fixture pass without a tag, push,
+release, or deployment. Signed-desktop Tactical
+[`158`](158-desktop-signed-packaging-and-updater.md) has resumed as the sole
+**Now**.
 
 Topics: `product-surfaces-and-migration`, `beta-release-readiness`,
 `client-surfaces`
@@ -144,6 +145,70 @@ preservation, tampered-manifest/signature/package and wrong-architecture
 failures before installation mutation, and cleanup. It may use a loopback
 fixture transport in source-only test mode; that is not public-release
 evidence.
+
+## Completion Evidence
+
+Implementation commit `1b676f7` adds the website bootstrap, canonical manifest
+writer, ordinary-CI checks, separate native release workflow, changelog,
+runbook, deterministic integrity corpus, and real-package loopback harness.
+The bootstrap embeds the exact updater public key and the manifest writer
+independently derives the pinned extension ID from the checked-in extension
+key. No release secret is used outside a tagged workflow's final release job.
+
+The following source checks pass:
+
+- Bash syntax for all three bootstrap/fixture scripts and the complete Linux
+  integrity script on Debian 12.12;
+- three Node manifest/trust-identity tests;
+- website check/build plus a byte comparison proving the public script is
+  emitted unchanged at `/install-crostini.sh`;
+- `actionlint` 1.7.9 for ordinary CI and the new release workflow;
+- Rust formatting, warning-denied clippy, and 46 Crostini/gateway unit tests;
+  and
+- shared-web typecheck plus 279 passing and two skipped unit tests.
+
+The physical campaign used ChromeOS `16700.60.0` M150, x86_64 Debian 12.12
+`penguin`, OpenSSL 3.0.18, and the exact non-public package from Tactical 167.
+Relevant SHA-256 values were:
+
+- bootstrap: `188064c7c983d44230785639d3e2d0c1d8963a507b709059b101af876785bed0`;
+- manifest writer: `b8b130101ce41cc925e571b17ac0357c79bc8bbddff7b03381ff6b23348f2956`;
+- canonical local fixture manifest:
+  `0464a9869641ad4a6a2ba89410c2f1e2c4ea4453c836462f2aa3dc6ab4043eb8`;
+- x86_64 package:
+  `8db3c4cfae0fccac014e8e68538013c7420d850089cf44ff8ff7a489fa95fd88`;
+- installed launcher:
+  `8a9d0b62b589bcd89ca34ebe58bdcdfc5792efbe9b648c38415107449a386861`;
+  and
+- installed gateway:
+  `42d9f72709368274e7103156430debe470bb6d32e531c4383f728f52ba5fa61a`.
+
+Two deterministic repacks of the exact extracted bundle matched each other
+and the original package byte-for-byte at the package hash above. The locally
+served signed fixture then repaired the real installation. Before and after
+that repair, `metrics.db`, `session.db`, and `web-auth.sqlite3` retained exact
+hashes `10ab53f2…`, `9c0d34a1…`, and `3fe7d314…`; the installed binaries also
+matched the values above.
+
+The final physical failure matrix ran against the real installed home. A
+tampered manifest, tampered signature bytes, oversized/tampered package,
+signed incompatible launch protocol, and signed wrong-architecture asset all
+failed before installation mutation; the harness compared every owned
+version, link, command, desktop file, icon, service file, and ownership record
+before and after each case. An early isolated-positive fixture revealed that
+the live user service manager may retain an XDG-selected unit path outside the
+real home. The harness consequently refuses positive installation into a
+synthetic home; the real-home repair restored coherent service ownership, and
+a subsequent ChromeOS Launcher cold start passed.
+
+Final device evidence was one active static service and one UI target with
+`RSTorrent` accessibility identity. `/healthz` reported product
+`rstorrent-crostini`, build `0.1.0`, and launch protocol `1`; the CLI reported
+the same identity. Cleanup closed the tab, stopped the service, removed the
+exact fixture tree, retained the installed package/profile, and stopped the
+Crostini VM. The unit remained `static` and `inactive`. ARM64 build/runtime
+evidence, the production-key tag workflow, public artifacts, and the website
+deployment remain deliberately unclaimed release acceptance.
 
 ## Non-Goals
 

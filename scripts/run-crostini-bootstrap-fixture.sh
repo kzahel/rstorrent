@@ -8,18 +8,23 @@ MANIFEST_WRITER="$REPO_ROOT/.github/scripts/write-crostini-release-manifest.mjs"
 ARCHIVE="${1:-}"
 INSTALL_HOME="${2:-}"
 MODE="${3:-install}"
+SESSION_HOME="${HOME:-}"
 
 if [ "$(uname -s)" != Linux ] ||
    [ -z "$ARCHIVE" ] || [ ! -f "$ARCHIVE" ] ||
    [ -z "$INSTALL_HOME" ] || [[ "$INSTALL_HOME" != /* ]] ||
    [ "$INSTALL_HOME" = / ]; then
-    echo "Usage: $0 <native-package.tar.gz> <absolute-install-home> [install|tampered-signature|tampered-package|incompatible-protocol|wrong-architecture]" >&2
+    echo "Usage: $0 <native-package.tar.gz> <absolute-install-home> [install|tampered-manifest|tampered-signature|tampered-package|incompatible-protocol|wrong-architecture]" >&2
     exit 1
 fi
 case "$MODE" in
-    install|tampered-signature|tampered-package|incompatible-protocol|wrong-architecture) ;;
+    install|tampered-manifest|tampered-signature|tampered-package|incompatible-protocol|wrong-architecture) ;;
     *) echo "Unknown fixture mode: $MODE" >&2; exit 1 ;;
 esac
+if [ "$MODE" = install ] && [ "$INSTALL_HOME" != "$SESSION_HOME" ]; then
+    echo "The positive fixture must repair the current user's real home so systemd ownership remains coherent." >&2
+    exit 1
+fi
 for command_name in curl node openssl python3; do
     if ! command -v "$command_name" >/dev/null 2>&1; then
         echo "$command_name is required by the Crostini package fixture." >&2
@@ -101,8 +106,11 @@ cat "$FIXTURE_DIR/manifest.signature" >> "$FIXTURE_DIR/signature.packet"
     echo
 } > "$SERVE_DIR/$SIGNATURE_NAME"
 case "$MODE" in
-    tampered-signature)
+    tampered-manifest)
         printf 'unsigned manifest mutation\n' >> "$SERVE_DIR/$MANIFEST_NAME"
+        ;;
+    tampered-signature)
+        sed -i '2s/^./A/' "$SERVE_DIR/$SIGNATURE_NAME"
         ;;
     tampered-package)
         printf 'unsigned package mutation\n' >> "$SERVE_DIR/$EXPECTED_NAME"

@@ -52,11 +52,12 @@ preview as separate data authorities; desktop systems retain only their native
 bootstrap. The extension does not infer Play enablement or Android-app
 installation.
 
-Accepted Tactical
-[`169`](../tactical/169-hosted-crostini-bootstrap-and-release.md) now owns the
+Completed Tactical
+[`169`](../tactical/169-hosted-crostini-bootstrap-and-release.md) adds the
 bounded next distribution step: a website-hosted bootstrap, signed canonical
 manifest, and native x86_64/ARM64 `crostini-v*` release workflow using the
-existing RSTorrent beta trust root. This source plumbing does not itself make
+existing RSTorrent beta trust root. Its physical x86_64 signed-fixture package
+repair and fail-closed matrix pass. This source plumbing does not itself make
 a public Crostini release or support claim.
 
 ## Scope
@@ -491,9 +492,10 @@ fixture, or wire contract from either sibling project.
 Completed Tactical `166` supplies the exact store identity and installed
 desktop bootstrap evidence; resume the beta-readiness campaign's signed
 RSTorrent package and updater gates. Completed Tactical `167` supplies the
-bounded ChromeOS Linux source package and physical handoff evidence; do not
-expand it into signed distribution, full extension control, or legacy
-migration without another tactical.
+bounded ChromeOS Linux source package and physical handoff evidence. Completed
+Tactical `169` supplies non-publishing signed-distribution source plumbing and
+physical fixture evidence; do not treat it as exact public artifact
+acceptance, full extension control, or legacy migration.
 When JSTorrent graduation is separately authorized, create one bounded
 tactical that fixes the production handoff and the intentionally best-effort
 legacy-state scope from then-current evidence.

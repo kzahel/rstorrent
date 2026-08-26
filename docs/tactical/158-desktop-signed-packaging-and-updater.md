@@ -1,6 +1,7 @@
 # Tactical 158: Desktop Signed Packaging And Updater
 
-Status: **Implementation in progress and temporarily paused behind Tactical
+Status: **Implementation in progress and resumed as the sole Now after
+completed Tactical
 [`169`](169-hosted-crostini-bootstrap-and-release.md) on 2026-08-26.** Tagged
 `desktop-v0.1.2` now publicly carries the completed desktop repairs and native
 bootstrap at exact commit `788e953d1ed578c238beccbbc224907b0d9dc95c`.

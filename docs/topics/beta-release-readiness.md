@@ -72,8 +72,9 @@ Explicit maintainer direction temporarily yields Tactical `158` to hosted
 Crostini bootstrap/release Tactical
 [`169`](../tactical/169-hosted-crostini-bootstrap-and-release.md). This is
 non-publishing source plumbing and physical fixture validation; it does not
-create a public ChromeOS Linux release or expand the beta lane. Tactical `158`
-resumes after the bounded stopping condition passes.
+create a public ChromeOS Linux release or expand the beta lane. That slice is
+complete after its deterministic and physical signed-fixture real-package
+matrix; Tactical `158` has resumed as the sole **Now**.
 Maintainer direction on 2026-08-24 promotes OS-level `magnet:` and local
 `.torrent` activation from a post-beta deferral to a beta usability gap;
 completed Tactical
@@ -123,7 +124,8 @@ Store review, and mobile beta is not implied by a desktop tag:
 | macOS desktop | signed/notarized DMG plus in-app updates | public `0.1.2` Developer ID-signed, notarized, and stapled app/DMG packages pass for arm64 and x86_64; its exact public arm64 DMG launches and repairs native-host registration in a bounded spot check; an exact `0.1.0`-to-`0.1.1` replacement/relaunch also passes; Intel installed testing is deliberately omitted |
 | Windows desktop | signed per-user NSIS plus in-app updates | public `0.1.2` NSIS and MSI packages contain the completed desktop repairs and have valid expected-publisher Authenticode signatures plus installed activation-registry validation; public per-user NSIS replacement/relaunch passes only for `0.1.0`-to-`0.1.1` under an automatic-loopback profile, while the repaired clean-profile update remains open |
 | Linux desktop | AppImage plus in-app updates; DEB/RPM remain package-manager channels | public `0.1.2` AppImage, DEB, and RPM packages plus updater artifacts pass for x86_64 and arm64, including extracted activation metadata; exact arm64 AppImage `0.1.0`-to-`0.1.1` replacement/relaunch and the current installed lifecycle/icon campaign pass, while x86_64 installed evidence remains absent |
-| Android/ChromeOS | signed Android App Bundle through a closed testing channel | maintained Compose/in-process Rust/SAF app and hosted dual-ABI debug/test APK gates pass; release identity, signed AAB, emulator/store, and upgrade evidence absent |
+| Android, including ChromeOS | signed Android App Bundle through a closed testing channel | maintained Compose/in-process Rust/SAF app and hosted dual-ABI debug/test APK gates pass; release identity, signed AAB, emulator/store, and upgrade evidence absent |
+| ChromeOS Linux | signed non-latest `crostini-v*` GitHub Release selected by the pinned website bootstrap | local x86_64 bundled package, signed-manifest release source, and physical signed-fixture repair/failure evidence pass; no tag, public artifact, website deployment, native ARM64 run, or installed update evidence exists |
 | iOS/iPadOS | signed TestFlight build | maintained SwiftUI app plus hosted simulator tests and unsigned device archive pass; distribution identity, signing, TestFlight, and upgrade evidence absent |
 
 The first external lane may ship when its own blockers and the shared product
@@ -611,7 +613,8 @@ no single optional BEP is mandatory.
    spot check pass. Repeat clean Windows from the default with the strengthened
    `UPD-005` state, characterize firewall consent, and run Linux x86_64. Intel
    macOS installed testing is deliberately omitted. Explicit maintainer
-   direction temporarily yields this item to Tactical `169`.
+   direction temporarily yielded this item to now-complete Tactical `169`;
+   this desktop work has resumed as **Now**.
 5. **Complete — Tactical `163`: desktop external torrent intake.** The
    bounded shell/UI implementation, package gates, and installed Linux arm64,
    Windows x86_64-application, and macOS arm64 cold/visible/tray-hidden/
@@ -655,11 +658,12 @@ no single optional BEP is mandatory.
     only desktop behavior. The deterministic reviewed `0.3.0` package and
     physical ChromeOS chooser, exact Play destination, and warm Crostini
     handoff pass without new permissions or availability claims.
-15. **Now — Tactical `169`: hosted Crostini bootstrap and release.** Add the
-    pinned-key signed-manifest one-command installer, native x86_64/ARM64
-    `crostini-v*` release workflow, and release runbook, then prove source-only
-    fixtures and the exact non-public x86_64 package on the Chromebook. A tag,
-    push, website deployment, and public support claim remain unauthorized.
+15. **Complete — Tactical `169`: hosted Crostini bootstrap and release.** The
+    pinned updater-key one-command installer, strict signed manifest, native
+    x86_64/ARM64 `crostini-v*` workflow, release runbook, deterministic failure
+    corpus, and exact non-public x86_64 physical package repair/failure matrix
+    pass. No tag, push, website deployment, public artifact, or support claim
+    was made; those remain explicit later release acceptance.
 
 Each implementation item requires its own bounded tactical. This ordering is
 not authorization to tag, publish, alter production routing, create store

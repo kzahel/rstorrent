@@ -75,6 +75,14 @@ if verify_minisign \
     echo "FAIL: installer accepted a tampered signed message" >&2
     exit 1
 fi
+cp "$TEST_DIR/prehashed.minisig" "$TEST_DIR/tampered-signature.minisig"
+sed -i.bak '2s/^./A/' "$TEST_DIR/tampered-signature.minisig"
+if verify_minisign \
+    "$TEST_DIR/data" "$TEST_DIR/tampered-signature.minisig" \
+    "$TEST_PUBLIC_KEY" "$TEST_DIR" 2>/dev/null; then
+    echo "FAIL: installer accepted tampered signature bytes" >&2
+    exit 1
+fi
 
 BUNDLE="$TEST_DIR/bundle"
 mkdir -p "$BUNDLE/bin" "$BUNDLE/icons" "$BUNDLE/web"

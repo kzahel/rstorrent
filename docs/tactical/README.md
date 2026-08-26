@@ -737,8 +737,8 @@ that scope and its cleanup or compatibility rules explicitly.
   art/metadata, and reconciles status before signed updater and cross-platform
   CI slices.
 - [`158-desktop-signed-packaging-and-updater.md`](158-desktop-signed-packaging-and-updater.md):
-  implementation in progress and temporarily paused behind Tactical `169`;
-  its Tauri-only
+  implementation in progress and resumed as the sole Now after completed
+  Tactical `169`; its Tauri-only
   `desktop-update-v1` UI/state boundary, per-app identity/key/route, hosted
   signed five-target package rehearsal, public `desktop-v0.1.0` through
   `desktop-v0.1.2` finalization, one installed macOS arm64 launch smoke, and
@@ -793,9 +793,9 @@ that scope and its cleanup or compatibility rules explicitly.
   physical chooser/link/handoff spot check pass without claiming Play or app
   availability.
 - [`169-hosted-crostini-bootstrap-and-release.md`](169-hosted-crostini-bootstrap-and-release.md):
-  accepted and Now; adds a pinned-key signed-manifest one-command Crostini
-  installer, separate native x86_64/ARM64 release workflow, and physical
-  non-public fixture evidence without tagging, pushing, deploying, or
+  complete; adds a pinned-key signed-manifest one-command Crostini installer,
+  separate native x86_64/ARM64 release workflow, and physical non-public
+  real-package/failure evidence without tagging, pushing, deploying, or
   publishing.
 
 Tactical `015` completed the oracle campaign's headless measurement

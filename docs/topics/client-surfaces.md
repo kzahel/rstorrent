@@ -285,6 +285,15 @@ copy; it does not claim Play or app availability. The deterministic `0.3.0`
 package and physical ChromeOS chooser, Play destination, and warm Crostini
 handoff pass without new permissions.
 
+Completed Tactical
+[`169`](../tactical/169-hosted-crostini-bootstrap-and-release.md) adds the
+release-ready website bootstrap and strict two-architecture signed-manifest
+workflow around that same bundled backend/frontend package. Its physical
+x86_64 local signed fixture repairs the real installation, preserves profile
+bytes, launches the same UI, and rejects tampered or incompatible inputs before
+installation mutation. No exact public package, website deployment, or ARM64
+runtime claim follows from that source plumbing.
+
 Tactical
 [`166`](../tactical/166-desktop-native-bootstrap-and-extension-scaffold.md)
 implements only the bounded predecessor seam: a self-contained Manifest V3
