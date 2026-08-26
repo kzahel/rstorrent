@@ -89,15 +89,15 @@ evidence, and a real x86_64 Linux service/transfer/preservation campaign. It
 creates no public release lane and does not absorb the owner remote-
 authentication or relay campaign. Tactical `158` has resumed as **Now** with
 its remaining signed Windows and Linux x86_64 acceptance gates unchanged.
-Explicit maintainer direction later on 2026-08-26 temporarily yields Tactical
+Explicit maintainer direction later on 2026-08-26 temporarily yielded Tactical
 `158` to signed headless release and trusted-LAN service Tactical
 [`171`](../tactical/171-signed-headless-release-and-lan-service.md). It owns
-source-only signed distribution/update plumbing, one exact RFC 1918
+the completed source-only signed distribution/update plumbing, one exact RFC 1918
 unauthenticated full-owner mode, truthful browser presentation, and an
-installed current-host service campaign. Public release/channel deployment,
-unattended updating, system-wide ownership, firewall changes, and Raspberry Pi
-mutation remain outside the slice. Tactical `171` is **Now** while Tactical
-`158` retains its open gates.
+enabled healthy current-host service campaign. Public release/channel
+deployment, unattended updating, system-wide ownership, firewall changes, and
+Raspberry Pi mutation remain outside the slice. Tactical `158` resumes as the
+sole **Now** with its open gates unchanged.
 Maintainer direction on 2026-08-24 promotes OS-level `magnet:` and local
 `.torrent` activation from a post-beta deferral to a beta usability gap;
 completed Tactical
@@ -147,6 +147,7 @@ Store review, and mobile beta is not implied by a desktop tag:
 | macOS desktop | signed/notarized DMG plus in-app updates | public `0.1.2` Developer ID-signed, notarized, and stapled app/DMG packages pass for arm64 and x86_64; its exact public arm64 DMG launches and repairs native-host registration in a bounded spot check; an exact `0.1.0`-to-`0.1.1` replacement/relaunch also passes; Intel installed testing is deliberately omitted |
 | Windows desktop | signed per-user NSIS plus in-app updates | public `0.1.2` NSIS and MSI packages contain the completed desktop repairs and have valid expected-publisher Authenticode signatures plus installed activation-registry validation; public per-user NSIS replacement/relaunch passes only for `0.1.0`-to-`0.1.1` under an automatic-loopback profile, while the repaired clean-profile update remains open |
 | Linux desktop | AppImage plus in-app updates; DEB/RPM remain package-manager channels | public `0.1.2` AppImage, DEB, and RPM packages plus updater artifacts pass for x86_64 and arm64, including extracted activation metadata; exact arm64 AppImage `0.1.0`-to-`0.1.1` replacement/relaunch and the current installed lifecycle/icon campaign pass, while x86_64 installed evidence remains absent |
+| Linux headless | signed non-latest `headless-v*` GitHub Release plus pinned website bootstrap and explicit CLI apply | strict native x86_64/ARM64 workflow, signed manifest/bootstrap/check/apply source gates, and an exact enabled x86_64 trusted-LAN install pass; no public candidate or stable manifest is promoted, and native ARM64 install/update evidence is absent |
 | Android, including ChromeOS | signed Android App Bundle through a closed testing channel | maintained Compose/in-process Rust/SAF app and hosted dual-ABI debug/test APK gates pass; release identity, signed AAB, emulator/store, and upgrade evidence absent |
 | ChromeOS Linux | signed non-latest `crostini-v*` GitHub Release selected by the pinned website bootstrap | public `crostini-v0.1.0`, the deployed pinned bootstrap, production-key manifest, native x86_64/ARM64 packages, independent exact-asset validation, and physical x86_64 website install/Launcher/relaunch pass; physical native ARM64, full reboot, suspend, and installed update/rollback evidence remain absent |
 | iOS/iPadOS | signed TestFlight build | maintained SwiftUI app plus hosted simulator tests and unsigned device archive pass; distribution identity, signing, TestFlight, and upgrade evidence absent |
@@ -621,7 +622,7 @@ no single optional BEP is mandatory.
    Windows x86_64/Linux arm64 proof pass. File/magnet handoff remains outside
    that completed slice and is now owned by Tactical `163`; autostart stays
    deferred.
-4. **Paused — Tactical `158`: desktop signed packaging and updater adoption.**
+4. **Now — Tactical `158`: desktop signed packaging and updater adoption.**
    The product-owned `desktop-update-v1` client, signed package workflow,
    release validation, per-app key, public configuration, production route,
    five-platform hosted rehearsal, three tagged publications, one installed
@@ -636,9 +637,8 @@ no single optional BEP is mandatory.
    spot check pass. Repeat clean Windows from the default with the strengthened
    `UPD-005` state, characterize firewall consent, and run Linux x86_64. Intel
    macOS installed testing is deliberately omitted. Explicit maintainer
-    direction temporarily yielded this item to now-complete Tacticals `169` and
-    `170`, and now yields it to active Tactical `171`. Its open gates remain
-    unchanged and resume when Tactical `171` closes.
+    direction temporarily yielded this item to now-complete Tacticals `169`,
+    `170`, and `171`. Its open gates remain unchanged and have resumed.
 5. **Complete — Tactical `163`: desktop external torrent intake.** The
    bounded shell/UI implementation, package gates, and installed Linux arm64,
    Windows x86_64-application, and macOS arm64 cold/visible/tray-hidden/
@@ -699,13 +699,13 @@ no single optional BEP is mandatory.
     reachability, joined restart, rollback-safe repair, uninstall preservation,
     and exact cleanup pass. x86_64/ARM64 packages construct byte-identically;
     native ARM64 systemd and public distribution remain unclaimed.
-17. **Now — Tactical `171`: signed headless release and trusted-LAN service.**
-    Add a strict signed two-architecture `headless-v*` lane, verified
+17. **Complete — Tactical `171`: signed headless release and trusted-LAN
+    service.** A strict signed two-architecture `headless-v*` lane, verified
     bootstrap, operator-approved CLI/browser update discovery and apply,
     exact RFC 1918 `lan-none` admission with truthful full-control UI, and an
-    installed current-host x86_64 service campaign. No public publication,
-    unattended update, system-wide service, firewall change, or Raspberry Pi
-    mutation is authorized.
+    enabled healthy current-host x86_64 service campaign pass. No public
+    publication, unattended update, system-wide service, firewall change, or
+    Raspberry Pi mutation occurred. Tactical `158` resumes as **Now**.
 
 Each implementation item requires its own bounded tactical. This ordering is
 not authorization to tag, publish, alter production routing, create store

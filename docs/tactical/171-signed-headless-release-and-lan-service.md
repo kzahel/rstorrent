@@ -1,9 +1,11 @@
 # Tactical 171: Signed Headless Release And LAN Service
 
-Status: **Accepted and in progress on 2026-08-26.** Explicit maintainer
-direction temporarily yields desktop release Tactical
-[`158`](158-desktop-signed-packaging-and-updater.md) to this bounded headless
-distribution, operator-approved update, and trusted-LAN deployment slice.
+Status: **Complete on 2026-08-26.** The bounded signed headless source lane,
+operator-approved updater, exact trusted-LAN mode, truthful React
+presentation, and current-host installation pass. Desktop release Tactical
+[`158`](158-desktop-signed-packaging-and-updater.md) resumes as the sole
+**Now** with its existing gates unchanged. No tag, release, website/channel
+deployment, firewall change, or Raspberry Pi mutation was performed.
 
 Topics: `runtime-configurations-and-headless-deployment`,
 `application-connection-architecture`, `remote-access-authentication`,
@@ -63,7 +65,7 @@ route, or system-wide service is changed implicitly.
    `rstorrent-headless update --apply` verifies and safely extracts the
    selected package, rejects wrong architecture/version/identity and unsafe
    archive entries, then invokes the existing installer. Running/enabled
-   intent is restored only after authenticated health; failure leaves the
+   intent is restored only after the configured health identity check; failure leaves the
    previous version selected and healthy.
 5. **HLU-005 trusted LAN admission.** `lan-none` accepts only an exact
    non-loopback RFC 1918 IPv4 socket and exactly
@@ -80,10 +82,12 @@ route, or system-wide service is changed implicitly.
    root, binds the chosen LAN address, survives user-service restart, and is
    reachable through its exact LAN URL with no credential prompt. Existing
    unrelated user units and operator data remain untouched.
-8. **HLU-008 architecture honesty.** Both packages build and validate. Native
-   x86_64 service evidence is recorded here; ARM64 remains artifact evidence
-   until a physical Raspberry Pi or other native ARM64 service passes install,
-   reboot, update, storage, transfer, and cleanup.
+8. **HLU-008 architecture honesty.** Separate native x86_64 and ARM64 release
+   jobs build and validate their packages before finalization. Native x86_64
+   service evidence is recorded here; the current source was not cross-built
+   on this x86_64 host, and ARM64 remains workflow evidence until a physical
+   Raspberry Pi or other native ARM64 service passes install, reboot, update,
+   storage, transfer, and cleanup.
 
 ## Signed Channel Contract
 
@@ -227,10 +231,68 @@ No reference source, fixture, or test data is copied.
 | Pure | Manifest/version/LAN matrix, wrong product/tag/runtime/architecture, metadata/order/size/path/archive hostile cases, update UI state/policy tests |
 | Scripted runtime | Signed local metadata/package download, signature/package tamper, safe extraction, current/older/newer selection, successful update and rollback through a fake user manager |
 | Gateway/web | Exact LAN Host/Origin and no-credential success/rejection, truthful health/access warning, automatic/manual available/current/error update presentation |
-| Package | Two byte-identical x86_64 builds, ARM64 construction/ELF validation, exact release allowlist, no enable/linger/sudo drift |
+| Package | Two byte-identical x86_64 builds, separate native ARM64 workflow construction/ELF validation, exact release allowlist, no enable/linger/sudo drift |
 | Repository | Rust format, strict workspace Clippy, workspace tests, generated TypeScript drift, web typecheck/tests/build, shell syntax, Node manifest tests, `git diff --check` |
 | Installed host | Exact package/config/root ownership, enabled/active/healthy service, LAN URL static/health/application connection, restart, logs without secrets, retained linger policy |
 | Public/ARM64 | Explicitly deferred: no tag, push, release, website deployment, stable-channel promotion, Raspberry Pi mutation, or physical ARM64 support claim |
+
+## Implementation And Evidence
+
+The implementation landed as five reviewable commits:
+
+- `f5feb13` records this tactical and temporarily selects it as **Now**;
+- `0b15f02` adds the strict signed manifest, bounded verifier/downloader/safe
+  extractor, CLI check/apply path, website bootstrap, two-native-architecture
+  draft workflow, changelog, and adversarial Rust/Node/shell tests;
+- `81c26c2` adds exact RFC 1918 `lan-none` configuration and HTTP/WebSocket
+  Host/Origin enforcement with truthful status, logs, and health;
+- `9754101` injects the signed headless checker into the shared React updater,
+  keeps automatic failures quiet, exposes only the explicit installed apply
+  command, and presents the persistent full-owner LAN warning; and
+- `bea7477` creates and protects the non-browser profile root only after
+  listener admission.
+
+The final x86_64 package constructed twice byte-identically and validated as
+19 files with 69,245,972 uncompressed bytes. The installed archive is
+`rstorrent-headless-0.1.0-linux-x86_64.tar.gz`, SHA-256
+`e90b3eb49a426ea52ce749928659f72491a5f5393dfb7348cf421c24acc31a3b`.
+The workstation has no ARM64 Rust target or cross-linker, so no current-source
+local ARM64 artifact is claimed; `.github/workflows/headless-release.yml`
+owns a separate native ARM64 build and finalization requires both
+architectures.
+
+The ordinary-user installation is enabled and healthy at
+`http://192.168.1.129:3030/`, bound only to the selected physical Ethernet
+address. Configuration is mode `0600`; profile and payload roots are mode
+`0700`. Status reports product `rstorrent-headless`, version `0.1.0`, access
+mode `lan-none`, enabled, active, and healthy. Health reports the same product,
+build, and access mode. Exact Host and Origin admit static content, health,
+HTTP owner commands, and the application WebSocket without credentials;
+wrong Host or Origin returns `403`. Joined shutdown completed in 6 ms;
+same-version repair restored running intent after health, `NRestarts`
+remained zero, and the journal contained the exposure warning but no secret.
+The existing user lingering policy was retained; no firewall, unrelated user
+unit, router, DNS, TLS, or system-wide path changed.
+
+Final repository evidence:
+
+- `cargo fmt --all -- --check`, strict workspace Clippy, and
+  `cargo test --workspace` pass;
+- the signed-manifest Node and shell failure corpora pass, as do the focused
+  gateway/headless/session and updater/LAN React suites;
+- generated application artifacts have no drift; Node 20 web typecheck and
+  production build/CSP validation pass; and
+- the complete web suite finishes with 284 tests passed and two skipped. One unrelated
+  pre-existing keyboard-submenu focus-restoration assertion remains red
+  (`App.test.tsx`, 1 failure); the new headless updater and LAN-warning tests
+  pass and the non-LAN application DOM is unchanged.
+
+The signed source machinery is ready, but the stable manifest URL has not
+been promoted. Until a separately approved `headless-v*` publication and
+website deployment occur, manual update checks may report that no production
+channel is reachable. Published artifact acceptance and physical Raspberry Pi
+service/update evidence are the next release operations, not claims of this
+tactical.
 
 ## Non-Goals And Next Boundary
 

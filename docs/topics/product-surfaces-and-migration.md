@@ -74,7 +74,11 @@ direction. Configured Linux headless-service Tactical
 [`170`](../tactical/170-configured-linux-headless-service.md) completes the
 first implementation slice with one ordinary-user systemd service, detachable
 React presentations, strict hosted access, and data-preserving package
-lifecycle. It does not authorize owner remote cryptography or relay work.
+lifecycle. Completed signed headless release and trusted-LAN Tactical
+[`171`](../tactical/171-signed-headless-release-and-lan-service.md) adds strict
+signed source update machinery, one exact no-credential private-LAN mode, and
+an enabled healthy current-host x86_64 deployment. No public headless channel,
+physical ARM64 service, owner remote cryptography, or relay is claimed.
 
 ## Scope
 
@@ -502,9 +506,10 @@ fixture, or wire contract from either sibling project.
 - Crostini update/rollback, suspend/reboot, shared-storage, physical native
   ARM64 runtime, and broader network contracts beyond the accepted public
   `crostini-v0.1.0` x86_64 installation and hosted two-architecture packages.
-- Signed public Linux-headless distribution/update, native ARM64 systemd,
-  representative mount/reboot, and long-run unattended evidence beyond the
-  completed local x86_64 package/service campaign.
+- Promoted signed public Linux-headless artifacts/stable manifest, native
+  ARM64 systemd/update, representative mount/reboot, and long-run unattended
+  evidence beyond the completed local x86_64 package/service campaign and
+  signed source lane.
 - The bounded best-effort set of legacy state worth migrating at graduation
   time.
 - Physical desktop extension-control evidence and ChromeOS recovery from stale
@@ -526,11 +531,11 @@ Tactical `169` plus its separately authorized release operation supply signed
 public `crostini-v0.1.0` artifacts and exact x86_64 website-install acceptance;
 do not treat that as full extension control, physical ARM64 runtime,
 update/rollback, or legacy migration.
-Completed Tactical `170` supplies the first configured ordinary-user Linux
-headless backend and proves detached transfer/seeding plus preservation-safe
-service lifecycle. Treat signed distribution, system-wide ownership, native
-ARM64 service evidence, and owner remote authentication as separate future
-slices.
+Completed Tacticals `170` and `171` supply the first configured ordinary-user
+Linux headless backend, signed source update lane, exact trusted-LAN mode, and
+installed x86_64 evidence. Treat public candidate/channel promotion,
+system-wide ownership, native ARM64 service/update evidence, and owner remote
+authentication as separate future operations or slices.
 When JSTorrent graduation is separately authorized, create one bounded
 tactical that fixes the production handoff and the intentionally best-effort
 legacy-state scope from then-current evidence.

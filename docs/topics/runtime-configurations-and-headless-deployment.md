@@ -3,14 +3,15 @@
 Topic: `runtime-configurations-and-headless-deployment`
 
 Status: Configured Linux headless-service Tactical
-[`170`](../tactical/170-configured-linux-headless-service.md) completed on
-2026-08-26. The ordinary-user Linux package, strict versioned configuration,
-disabled-by-default systemd user unit, one-process application owner,
-data-preserving repair/removal, isolated HTTPS/WSS proxy matrix, and real
-x86_64 Linux lifecycle/transfer campaign pass. ARM64 package construction and
-binary identity pass without a native ARM64 systemd claim. Production
-owner-remote authentication, relay delivery, signed public distribution, and
-system-wide service ownership do not exist yet.
+[`170`](../tactical/170-configured-linux-headless-service.md) and signed
+headless release/trusted-LAN Tactical
+[`171`](../tactical/171-signed-headless-release-and-lan-service.md) completed
+on 2026-08-26. The ordinary-user package, strict configuration, systemd user
+unit, signed source release/update machinery, exact credential-free RFC 1918
+mode, and real x86_64 lifecycle/transfer and current-host LAN campaigns pass.
+The native ARM64 release job exists without a native ARM64 systemd claim.
+Production owner-remote authentication, relay delivery, promoted signed public
+headless artifacts, and system-wide service ownership do not exist yet.
 
 ## Purpose And Scope
 
@@ -227,6 +228,7 @@ combinations that look secure but are not.
 | --- | --- | --- | --- | --- |
 | Local browser | Exact loopback origin | Local-open or remembered browser sessions | Plain loopback HTTP/WS | Implemented |
 | Private reverse-proxy host | One explicit unicast backend address | Bounded Basic credential, with password from a secret file | Public HTTPS/WSS terminated by an operator-owned proxy | Implemented maintainer preview |
+| Trusted private LAN | One exact non-loopback RFC 1918 IPv4 authority | None; every reachable client has full owner control | Plain HTTP/WS with exact Host and Origin, no confidentiality | Implemented operator mode |
 | Trusted private overlay | Explicit VPN/tailnet address | Still requires an explicit accepted application-auth policy | Overlay encryption or HTTPS | Desired; not productized |
 | Owner remote access | Direct or relay-mediated host | Passphrase bootstrap plus eventual remembered-device identity | Authenticated end-to-end records; relay remains opaque | Direction recorded, not implemented |
 | Development-none | Ephemeral loopback only | None | Local test traffic only | Implemented development mode |
@@ -254,6 +256,19 @@ application frame. Reverse-proxy authentication may add defense in depth, but
 TLS termination or an upstream login does not automatically authorize a
 request to RSTorrent unless a later tactical defines an authenticated proxy
 identity contract.
+
+Tactical `171` deliberately adds one narrower convenience mode for a trusted
+home LAN. `lan-none` requires an exact non-loopback RFC 1918 IPv4 listener and
+the exactly matching plain HTTP origin; wildcard, loopback, public, multicast,
+IPv6, proxy-origin, and credential-bearing combinations fail configuration.
+Exact Host and HTTP/WebSocket Origin checks remain enforced, but they are
+request-routing defenses, not caller authentication. Every process and device
+that can reach the address has complete owner authority, traffic is readable
+on the LAN, and a malicious page may still attempt requests that the Origin
+gate must reject. Health, status, startup logs, and the persistent React
+warning identify this posture. It is suitable only when the operator accepts
+the whole selected LAN as trusted; it must never be port-forwarded or treated
+as Internet, guest-Wi-Fi, or untrusted-overlay security.
 
 RSTorrent does not currently terminate TLS itself. In-process TLS may be added
 later if it materially simplifies supported deployments, but it is not
@@ -290,15 +305,18 @@ growing parallel CLI, environment, and file vocabularies whose conflict rules
 cannot be explained. The current gateway CLI/environment behavior is
 substrate, not automatically the final stable operator contract.
 
-Tactical `170` implements that first contract as one strict
+Tacticals `170` and `171` implement that first contract as one strict
 `rstorrent-headless-v1` TOML file. It requires an explicit profile, one through
 32 named path roots, exact IP address and nonzero port, exact public origin,
-and either local-browser or Basic authentication. Basic secrets are read from
-a protected owner-only regular file. Unknown or duplicate keys, unsafe
-ownership or modes, overlapping protected paths, symlink roots, invalid
-listener/origin combinations, and incomplete package identity fail before the
-application opens. A missing configured payload mount remains absent and is
-reported unavailable rather than being recreated.
+and local-browser, Basic, or the exact `lan-none` matrix above. Basic secrets
+are read from a protected owner-only regular file; `lan-none` rejects every
+secret field. Unknown or duplicate keys, unsafe ownership or modes,
+overlapping protected paths, symlink roots, invalid listener/origin
+combinations, and incomplete package identity fail before the application
+opens. A missing configured payload mount remains absent and is reported
+unavailable rather than being recreated. Non-browser profile roots are
+created owner-only after successful listener admission, so bind failure does
+not manufacture a new profile authority.
 
 ## Presentation And Extension Routing
 
@@ -359,11 +377,24 @@ The repository now proves these parts of this direction:
   cleanup. x86_64 and ARM64 archives construct twice byte-identically; ARM64
   binaries report their identities under QEMU, without a native ARM64 service-
   lifecycle claim.
+- Tactical `171` adds strict bounded signed headless manifests, native x86_64
+  and ARM64 draft jobs, a pinned-key website bootstrap, and the installed
+  command's explicit `update --check` and `update --apply`. The shared React UI
+  uses the same backend verifier for quiet startup/daily or visible manual
+  checks and can only show the copyable shell apply command; it cannot replace
+  or restart the service.
+- The exact final x86_64 package is enabled and healthy on the current machine
+  at `http://192.168.1.129:3030/`. It binds only that selected Ethernet
+  address, serves HTTP and the application WebSocket with no credentials,
+  rejects wrong Host/Origin, survives joined restart and same-version repair,
+  and keeps configuration/profile/payload modes at `0600`/`0700`/`0700`.
+  Firewall, router, TLS, DNS, unrelated user units, and existing lingering
+  policy were untouched.
 
 The important remaining gaps are:
 
-- signed public headless artifacts, a hosted installer/update route, and
-  native ARM64 service-lifecycle evidence;
+- promoted signed public headless artifacts/stable manifest and native ARM64
+  service-lifecycle/update evidence;
 - representative removable/media-server mount, reboot, suspend, and long-run
   unattended evidence;
 - true desktop startup with no created webview and later on-demand recreation;
@@ -377,14 +408,17 @@ The important remaining gaps are:
 
 ## Recommended Next Work
 
-Completed Tactical
-[`170`](../tactical/170-configured-linux-headless-service.md) supplies the
-first bounded Linux headless deployment. A later headless tactical may add a
-signed public distribution/update lane or a system-wide dedicated-service-
-account mode after representative deployment evidence. It must retain the
-strict configuration, bind-before-application, one-process ownership,
-data-preserving removal, and explicit startup-policy boundaries established
-here.
+Completed Tacticals
+[`170`](../tactical/170-configured-linux-headless-service.md) and
+[`171`](../tactical/171-signed-headless-release-and-lan-service.md) supply the
+first bounded Linux headless deployment and its signed source update lane.
+The next headless release operation may publish/promote an exact reviewed
+`headless-v*` candidate; the next platform campaign should install it on a
+native Raspberry Pi or other ARM64 host and prove service, reboot/mount,
+update, storage, transfer, and cleanup. A separately authorized tactical may
+instead add a system-wide dedicated-service-account mode. Every later slice
+must retain strict configuration, bind-before-application, one-process
+ownership, data-preserving removal, and explicit startup policy.
 
 The desktop windowless/extension-attachment tactical can proceed independently
 because it uses the same application-service and presentation-lifecycle

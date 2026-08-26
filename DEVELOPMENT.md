@@ -49,8 +49,11 @@ Completed Tactical `170` supplies the configured ordinary-user Linux headless
 service: strict versioned root/listener/origin/auth configuration, one process
 and profile owner, a disabled-by-default systemd user unit, rollback-safe
 repair, preservation-safe uninstall, deterministic x86_64/ARM64 archives, and
-real x86_64 detached-transfer/re-seeding evidence. Signed public headless
-distribution and native ARM64 systemd evidence remain later work.
+real x86_64 detached-transfer/re-seeding evidence. Completed Tactical `171`
+adds strict signed source release/update machinery, explicit CLI/browser
+checks and CLI apply, exact credential-free RFC 1918 admission, and the enabled
+healthy current-host x86_64 LAN deployment. Public channel promotion and
+native ARM64 systemd/update evidence remain later work.
 Completed Tactical `166` supplies the typed desktop compatibility/launch host,
 per-user registration and sidecar packaging, and the self-contained Manifest
 V3 JSTorrent Beta seed. Chrome 151 on an installed unsigned macOS arm64 app
@@ -375,8 +378,47 @@ $HOME/.local/bin/rstorrent-headless status
 journalctl --user -u com.jstorrent.rstorrent.headless.service
 ```
 
+After an exact `headless-v*` candidate and website bootstrap are separately
+published, the intended first-install route is the pinned-key
+`website/public/install-headless.sh`. It selects x86_64 or ARM64, downloads
+bounded HTTPS metadata, verifies the signed manifest plus package size/hash/
+identity, and then invokes that same ordinary-user installer. The current
+source tree does not imply that a public headless channel has been promoted.
+
+Installed updates use the signed stable manifest rather than GitHub's
+repository-wide `latest` release. Checking is read-only; applying is an
+explicit operator action that delegates to the existing health-checked,
+rollback-safe installer:
+
+```bash
+$HOME/.local/bin/rstorrent-headless update --check
+$HOME/.local/bin/rstorrent-headless update --apply
+```
+
+The browser uses the same backend verifier for quiet startup/daily checks and
+visible manual results. It displays the exact shell command but cannot install
+a package or restart the service.
+
+For a deliberately credential-free trusted home LAN, configure one exact
+non-loopback RFC 1918 address and its matching plain HTTP origin:
+
+```toml
+listen = "192.168.1.129:3030"
+public_origin = "http://192.168.1.129:3030"
+
+[authentication]
+mode = "lan-none"
+```
+
+Do not use a wildcard, public address, port forward, guest network, or
+untrusted overlay. This mode has no authentication or encryption: every
+device that can reach the selected address has full owner control. Exact Host
+and HTTP/WebSocket Origin checks still apply, and status, health, logs, and the
+React UI report the effective exposure.
+
 Running a new package's `install.sh` performs a same/new-version repair and
-restores prior running/enabled intent only after authenticated readiness.
+restores prior running/enabled intent only after its configured identity and
+readiness check.
 Normal removal preserves the operator configuration, secret, profile, and all
 payload roots:
 
@@ -388,8 +430,12 @@ The package does not configure TLS, DNS, a firewall, or a reverse proxy. Basic
 hosted mode expects an operator-owned HTTPS/WSS terminator and enforces the
 configured external Host and Origin itself. See
 [`runtime-configurations-and-headless-deployment.md`](docs/topics/runtime-configurations-and-headless-deployment.md)
-and Tactical [`170`](docs/tactical/170-configured-linux-headless-service.md)
-for the fixed contract and evidence.
+and Tacticals [`170`](docs/tactical/170-configured-linux-headless-service.md)
+and [`171`](docs/tactical/171-signed-headless-release-and-lan-service.md) for
+the fixed contract and evidence. The current workstation deployment is an
+enabled healthy user service at `http://192.168.1.129:3030/`, bound only to
+that selected Ethernet address; no firewall or system-wide service change was
+made.
 
 ## Launching The Live Web UI
 

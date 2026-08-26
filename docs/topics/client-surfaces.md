@@ -549,7 +549,12 @@ own correctness.
   and engine independently from browser connections. Its systemd user unit
   forwards stop to the adapter, whose cancellation path joins gateway and
   application owners before exiting; no synthetic view is retained while
-  idle.
+  idle. Tactical
+  [`171`](../tactical/171-signed-headless-release-and-lan-service.md) adds one
+  serialized backend signed-release checker. Browser startup/daily checks are
+  quiet on current or network failure, manual results are visible, and apply
+  remains an explicit installed shell command; the browser never owns package
+  replacement or service restart.
 - A remote WebSocket connection owns only its authenticated commands and
   subscriptions.
 
@@ -696,6 +701,14 @@ remote exposure, and Android streaming remain independent product decisions.
   not a production owner-remote-access design. RSTorrent has no built-in TLS,
   passphrase/device principal model, relay, wake-up path, or public wire
   compatibility promise.
+- The configured Linux headless surface now also supports exact RFC 1918
+  `lan-none`, with a persistent warning that authentication is absent and
+  every LAN client has full owner control. Exact Host/Origin checks pass on the
+  installed current-host service, but this is neither encrypted nor
+  authenticated remote access. Strict two-architecture signed release,
+  bootstrap, and explicit check/apply source machinery exists; no public
+  `headless-v*` candidate or stable manifest has been promoted, and native
+  Raspberry Pi service/update evidence remains absent.
 - The Tauri shell has basic macOS close-and-reopen behavior, provisional icon
   assets, ordinary local bundle configuration, implemented updater UI/
   lifecycle behavior, and hosted signed package evidence across macOS arm64/

@@ -62,7 +62,15 @@ mode requires the configured external HTTPS authority in `Host` before static,
 health, HTTP, media, or WebSocket routing. Isolated TLS/WSS and real x86_64
 Linux evidence prove detachable views, fresh-view recovery, joined restart,
 and one service/application/profile owner; the inner protocol gains no stable
-public-compatibility promise.
+public-compatibility promise. Completed Tactical
+[`171`](../tactical/171-signed-headless-release-and-lan-service.md) adds one
+exact RFC 1918 `lan-none` admission matrix around the same adapter. Static,
+health, media, HTTP, and WebSocket routes require the configured Host; unsafe
+HTTP methods and WebSocket upgrade require the exactly matching Origin; no
+credential is issued or accepted. The installed current-host service proves
+exact HTTP/WebSocket success and wrong-Host/Origin `403` behavior. This is a
+truthfully warned trusted-LAN operator mode, not authenticated application
+authority or a stable remote protocol.
 
 ## Purpose And Scope
 

@@ -36,8 +36,9 @@ and [protocol support matrix](docs/topics/protocol-support.md).
   ChromeOS Linux preview and its website bootstrap are public with physical
   x86_64 acceptance; the JSTorrent Beta Manifest V3 seed remains only a launch
   surface, not torrent control. Configured Linux headless service packages now
-  pass x86_64 real-service and x86_64/ARM64 construction gates, but have no
-  signed public distribution. The
+  have strict signed source release/update plumbing, an installed exact-LAN
+  x86_64 service campaign, and native x86_64/ARM64 release jobs, but no public
+  headless candidate or promoted stable channel. The
   first-party in-process iOS campaign now has simulator, physical-device,
   public-swarm, system-preview, and unsigned/development archive evidence, but
   no TestFlight or App Store distribution. See
