@@ -737,8 +737,7 @@ that scope and its cleanup or compatibility rules explicitly.
   art/metadata, and reconciles status before signed updater and cross-platform
   CI slices.
 - [`158-desktop-signed-packaging-and-updater.md`](158-desktop-signed-packaging-and-updater.md):
-  implementation in progress and resumed as the sole Now after completed
-  Tactical `169`; its Tauri-only
+  implementation paused while Tactical `170` owns the sole Now; its Tauri-only
   `desktop-update-v1` UI/state boundary, per-app identity/key/route, hosted
   signed five-target package rehearsal, public `desktop-v0.1.0` through
   `desktop-v0.1.2` finalization, one installed macOS arm64 launch smoke, and
@@ -798,6 +797,13 @@ that scope and its cleanup or compatibility rules explicitly.
   evidence. A later explicitly authorized operation published non-latest
   `crostini-v0.1.0`, deployed the website bootstrap, and passed exact public
   x86_64 install/Launcher/relaunch acceptance.
+- [`170-configured-linux-headless-service.md`](170-configured-linux-headless-service.md):
+  accepted and sole Now; packages one ordinary-user Linux application owner
+  and exact React assets, adds strict durable root/listener/origin/Basic
+  secret-file configuration and explicit systemd user enablement, and proves
+  private HTTPS-proxy control plus zero-view transfer/seeding, restart,
+  update, uninstall preservation, and cleanup on a real Linux target without
+  claiming built-in TLS, relay, or a public release.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

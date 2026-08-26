@@ -2,13 +2,13 @@
 
 Topic: `runtime-configurations-and-headless-deployment`
 
-Status: Direction accepted from maintainer discussion on 2026-08-26. A
-first-class headless Linux installation is the leading concrete deployment
-case and an intended near-term maintainer deployment. Existing gateway,
-browser-authentication, private-host, desktop-background, and Crostini work
-provides substantial substrate, but no general Linux service package,
-production owner-remote authentication, or relay is authorized or implemented
-by this topic alone.
+Status: Direction accepted from maintainer discussion on 2026-08-26.
+Configured Linux headless-service Tactical
+[`170`](../tactical/170-configured-linux-headless-service.md) is accepted and
+selected as the sole **Now**. Existing gateway, browser-authentication,
+private-host, desktop-background, and Crostini work provides substantial
+substrate, but no general Linux service package, production owner-remote
+authentication, or relay is implemented yet.
 
 ## Purpose And Scope
 
@@ -350,8 +350,9 @@ The important remaining gaps are:
 
 ## Recommended Next Work
 
-When headless implementation is authorized, create one bounded Linux headless
-deployment tactical before changing packaging or listener policy. It should:
+Accepted Tactical
+[`170`](../tactical/170-configured-linux-headless-service.md) owns the first
+bounded Linux headless deployment implementation. It will:
 
 1. choose the initial service-account and service-manager ownership model for
    the actual target Linux installation;

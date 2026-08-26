@@ -70,7 +70,10 @@ without Tauri or a graphical session, while the backend-served React UI and
 later authenticated remote clients attach as detachable presentations.
 [`runtime-configurations-and-headless-deployment.md`](runtime-configurations-and-headless-deployment.md)
 owns that runtime, service, listener, authentication, and reverse-proxy
-direction. It does not authorize owner remote cryptography or relay work.
+direction. Configured Linux headless-service Tactical
+[`170`](../tactical/170-configured-linux-headless-service.md) is the accepted
+first implementation slice. It does not authorize owner remote cryptography or
+relay work.
 
 ## Scope
 

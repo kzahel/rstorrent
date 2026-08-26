@@ -71,6 +71,18 @@ public archives and the production-key manifest, and passed the exact website
 install/Launcher/relaunch path on the physical x86_64 Chromebook. Tactical
 `158` has resumed as the single **Now**.
 
+Maintainer direction on 2026-08-26 now temporarily yields Tactical `158` to
+configured Linux headless-service Tactical
+[`170`](../tactical/170-configured-linux-headless-service.md). That bounded
+slice packages the existing application owner and mature React surface for one
+ordinary Linux user, adds strict listener/origin/Basic secret-file
+configuration plus a disabled-by-default systemd user service, and proves the
+operator-owned HTTPS reverse-proxy topology on a real Linux target. It does
+not add built-in TLS, relay authentication, extension control, seeding goals,
+or a public release. Tactical `170` is the single **Now**; Tactical `158`
+retains its open signed Windows and Linux x86_64 evidence and resumes after the
+headless slice.
+
 The updater tactical's client, production route, five-target signed hosted
 rehearsal, public `0.1.0`, `0.1.1`, and `0.1.2` releases, installed macOS arm64
 launch smoke, and exact macOS arm64 and Linux arm64 `0.1.0`-to-`0.1.1` updates
@@ -559,13 +571,20 @@ exactly.
 ### Now
 
 - **Tactical
-  [`158`](../tactical/158-desktop-signed-packaging-and-updater.md): desktop
-  signed packaging and updater.** Close the clean Windows and Linux x86_64
-  update/install evidence and Windows firewall-consent characterization.
-  Installed Intel macOS remains deliberately omitted.
+  [`170`](../tactical/170-configured-linux-headless-service.md): configured
+  Linux headless service.** Package one ordinary-user Linux backend and
+  matching React UI, add strict durable listener/origin/auth/root
+  configuration, install an explicitly enabled systemd user service, and
+  prove authenticated HTTPS-proxy control plus zero-view transfer/seeding and
+  restart/preservation behavior on a real Linux target.
 
 ### Next
 
+- Resume Tactical
+  [`158`](../tactical/158-desktop-signed-packaging-and-updater.md) and close the
+  clean Windows and Linux x86_64 update/install evidence plus Windows
+  firewall-consent characterization. Installed Intel macOS remains
+  deliberately omitted.
 - Freeze the application identities, first supported persistence baseline,
   changelog, privacy/support presentation, and repeatable beta torrent cohort
   around the first release candidate.
