@@ -38,15 +38,17 @@ extension-scaffold Tactical
 [`166`](../tactical/166-desktop-native-bootstrap-and-extension-scaffold.md).
 That tactical is complete after its exact-ID installed Chrome `hello` and
 cold-launch smoke; Tactical `158` has resumed as the single **Now**. Later
-extension control and Crostini topology remain undecided.
+desktop extension control remains undecided.
 
 Explicit maintainer direction later on 2026-08-26 temporarily yields Tactical
 `158` to ChromeOS Linux Tactical
-[`167`](../tactical/167-chromeos-crostini-bundled-web-launcher.md), now the
-single **Now**. It packages the existing Rust gateway and mature React UI
-together, adds a static on-demand Crostini service and ChromeOS Launcher, and
-extends the beta extension only for exact local handoff, warm focus, and
-offline guidance. Tactical `158` resumes after physical Chromebook evidence.
+[`167`](../tactical/167-chromeos-crostini-bundled-web-launcher.md). It is
+complete: the bundled gateway/React package, static on-demand service,
+ChromeOS Launcher, and exact beta-extension handoff pass the available
+physical Chromebook lifecycle, detachable-transfer, preservation, and purge
+matrix. The conditional full reboot was unavailable because the testbed has no
+approved profile-login credential. Tactical `158` has resumed as the single
+**Now**.
 
 The updater tactical's client, production route, five-target signed hosted
 rehearsal, public `0.1.0`, `0.1.1`, and `0.1.2` releases, installed macOS arm64
@@ -536,19 +538,13 @@ exactly.
 ### Now
 
 - **Tactical
-  [`167`](../tactical/167-chromeos-crostini-bundled-web-launcher.md): ChromeOS
-  Crostini bundled web launcher.** Package the existing Rust gateway and mature
-  React UI together, add one static on-demand user service and registered Linux
-  Launcher, hand off through the exact beta extension, and prove warm,
-  stopped-VM, repeated, and reboot behavior on the physical Chromebook.
+  [`158`](../tactical/158-desktop-signed-packaging-and-updater.md): desktop
+  signed packaging and updater.** Close its clean Windows and Linux x86_64
+  update/install evidence and Windows firewall-consent characterization.
+  Installed Intel macOS remains deliberately omitted.
 
 ### Next
 
-- Resume Tactical
-  [`158`](../tactical/158-desktop-signed-packaging-and-updater.md) to close its
-  clean Windows and Linux x86_64 update/install evidence and Windows firewall-
-  consent characterization. Installed Intel macOS remains deliberately
-  omitted.
 - Freeze the application identities, first supported persistence baseline,
   changelog, privacy/support presentation, and repeatable beta torrent cohort
   around the first release candidate.
@@ -723,7 +719,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Leased application view sets and delivery clients | Implemented | deterministic, runtime, interop, web, Tauri | Named summary, generation-scoped checker progress, piece, structured diagnostic, active-peer, registry-backed Swarm, paged file and tracker, global Disk, range-selected session Speed, and latest-value session DHT views have bounded replay/reset, independent lease expiry, fresh-snapshot recovery, diagnostic HTTP polling, acknowledged browser WebSocket streaming, and acknowledged in-process Tauri streaming. The retained observer matrices still expose Summary reset storms and trace/all-view serialization pressure; stable public compatibility remains unimplemented. | [`application-view-api`](application-view-api.md), [`application-connection-architecture`](application-connection-architecture.md) |
 | Shared web and Tauri desktop UI | Partial | runtime, interop, web, desktop | The responsive surface now has Library, Transfers, and Workbench destinations, truthful bounded torrent-backed cards, accessible determinate/indeterminate checker progress with exact selected-summary counters, shared multi-selection, magnet and local `.torrent` add, source-preserving or name/tracker-rich bounded magnet copy, metadata-only add, live Normal/Skip file actions plus atomic `Download now` for skipped targets, verified and active-streamable file `Open` through an ephemeral HTTP capability, archives, guarded removal, live peer/swarm/file/tracker inspection, global Disk pressure, bounded Canvas Pieces, a smooth exact session Speed history, a one-second download/upload tab title, and the exact routing-space DHT observatory. Embedded playback and a media catalog remain incomplete. | [`client-surfaces`](client-surfaces.md), [`application-interface-direction`](application-interface-direction.md) |
 | Desktop extension bootstrap | Implemented | deterministic, desktop | Tactical `166` adds the distinct bounded `com.jstorrent.rstorrent.native` compatibility/launch host, exact production and beta-extension origins, per-user registration repair, content-versioned stable copying, AppImage-stable launch metadata, target-triple Tauri sidecar overlays, and a self-contained Manifest V3 JSTorrent Beta seed with only `nativeMessaging`. Host process/framing, extension allowlist, public-key-to-item-ID derivation, release drift, and deterministic `0.1.1` ZIP gates pass. Real Chrome 151 on an installed unsigned macOS arm64 app proves exact unpacked ID, native `hello` while the app is stopped, and cold desktop launch. Hosted Windows/Linux package evidence and every torrent-control transport remain open later breadth. | [`client-surfaces`](client-surfaces.md), [`product-surfaces-and-migration`](product-surfaces-and-migration.md), [`beta-release-readiness`](beta-release-readiness.md) |
-| ChromeOS Crostini bundled web launcher | In progress | planned deterministic, runtime, web, physical | Tactical `167` owns one package containing the Rust backend and mature React UI, an explicit exact-host Crostini gateway mode, a static on-demand user service, a mapped Linux Launcher, and exact beta-extension handoff. No support claim is made until warm, stopped-VM, repeated, reboot, and cleanup evidence passes on the physical Chromebook. Signed/public x86_64 and ARM64 releases remain later breadth. | [`client-surfaces`](client-surfaces.md), [`product-surfaces-and-migration`](product-surfaces-and-migration.md), [`beta-release-readiness`](beta-release-readiness.md) |
+| ChromeOS Crostini bundled web launcher | Implemented | deterministic, runtime, web, physical | Tactical `167` packages the Rust backend and mature React UI behind one exact-authority same-origin gateway, static on-demand user service, mapped Linux Launcher, and exact beta-extension handoff. On the physical x86_64 Chromebook, warm and twice-stopped-VM launch retain one service/listener/UI, an active controlled transfer survives UI detachment, and normal uninstall/reinstall plus explicit purge preserve and remove only the specified data. The conditional full-reboot path was unavailable because the testbed has no approved profile-login credential. Signed/public x86_64 and ARM64 releases, updater behavior, suspend guarantees, and performance claims remain later breadth. | [`client-surfaces`](client-surfaces.md), [`product-surfaces-and-migration`](product-surfaces-and-migration.md), [`beta-release-readiness`](beta-release-readiness.md) |
 | Desktop native notifications | Implemented | deterministic, web, desktop | Completed Tactical `164` adds one Rust-owned authoritative torrent-list edge reducer, versioned Tauri-only settings, and native completion plus fatal/repair attention. Initial/reset/settings/restart terminal state does not replay, focused-window display is default-on, and hidden-to-tray delivery passes installed macOS arm64, Windows x86_64, and Linux arm64. The exact standard Tauri package owns macOS/Windows; a bounded direct adapter retains the same underlying Linux notification handle because the package wrapper dropped it. Linux click restores the existing window; macOS/Windows retain tray restoration after measured package click limits. Progress, aggregation, and mobile work remain excluded. | [`client-surfaces`](client-surfaces.md), [`beta-release-readiness`](beta-release-readiness.md) |
 | Active-work sleep inhibition | Implemented | deterministic, web, desktop, Android build, physical | Completed Tactical `165` adds one default-on desktop/Android preference driven by authoritative `Starting`, `Downloading`, and `Checking` states. macOS/Windows use exact `keepawake` 0.6.1; GNOME uses its suspend inhibitor and other Linux sessions use a bounded XDG portal fallback. Android retains one partial CPU wake lock and removes its Wi-Fi lock. Installed macOS arm64, Windows arm64, Linux arm64, native Windows x86_64, and physical Android API 37 prove held, minimized/screen-off, preference, pause/restart, Start, and cleanup transitions without display inhibition. Physical iOS retains finite-background behavior and exposes no false keep-awake control. The unsigned native x86_64 preflight leaves package trust and the integrated signed update repeat to Tactical `158`. | [`client-surfaces`](client-surfaces.md), [`beta-release-readiness`](beta-release-readiness.md) |
 | Authenticated private web host | Implemented | deterministic, runtime, web, live | One explicitly configured maintainer host serves the production React bundle and multiplexed application WebSocket behind bounded Basic authentication and exact HTTPS Origin checks. Exact-push isolated build, candidate smoke, supervised restart, authenticated private-listener/public verification, and rollback-on-failure pass; this is not a relay, account, pairing, encryption, or stable public compatibility claim. | [`application-connection-architecture`](application-connection-architecture.md), [`client-surfaces`](client-surfaces.md) |

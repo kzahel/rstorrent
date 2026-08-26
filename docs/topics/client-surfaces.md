@@ -269,7 +269,12 @@ bounded refinement for the first ChromeOS Linux product: its package serves
 this same mature React application and same-origin gateway directly, while the
 beta extension launches, focuses, and explains that backend. This does not
 foreclose an extension-hosted presentation later and does not change the
-separate Android or desktop profile owners.
+separate Android or desktop profile owners. The exact local x86_64 package is
+implemented and passes warm, twice-stopped-VM, repeated-singleton,
+detachable-transfer, uninstall/reinstall, and purge evidence on the physical
+Chromebook. Full reboot remains a conditional gap because the testbed exposes
+no approved ChromeOS profile-login credential; signed/public packages,
+updating, and broader lifecycle claims remain separate work.
 
 Tactical
 [`166`](../tactical/166-desktop-native-bootstrap-and-extension-scaffold.md)

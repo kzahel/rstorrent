@@ -1,10 +1,12 @@
 # Tactical 167: ChromeOS Crostini Bundled Web Launcher
 
-Status: **Implementation in progress and Now as of 2026-08-26.** Explicit
-maintainer direction temporarily yields signed-release Tactical
-[`158`](158-desktop-signed-packaging-and-updater.md) to this bounded ChromeOS
-Linux slice. Tactical `158` resumes as the sole **Now** after this stopping
-condition passes unless later direction says otherwise.
+Status: **Complete as of 2026-08-26.** The exact local x86_64 package and beta
+extension passed deterministic gates and the available physical Chromebook
+matrix. The conditional full-reboot path was not exercised because the
+testbed exposes no approved ChromeOS profile-login credential; no credential
+was guessed or requested. Signed-release Tactical
+[`158`](158-desktop-signed-packaging-and-updater.md) resumes as the sole
+**Now**.
 
 Topics: `product-surfaces-and-migration`, `client-surfaces`,
 `application-connection-architecture`, `beta-release-readiness`
@@ -234,6 +236,71 @@ The physical matrix must additionally record exact installed hashes, one
 service process, one application listener, the backend-served React title and
 semantic tree, stopped `termina` before cold launch, post-reboot inactivity
 before Launcher selection, and preservation/removal of every owned path.
+
+## Completion Record
+
+Implementation landed in four bounded commits:
+
+- `4a0b04f` records the accepted package, trust, ownership, and lifecycle plan;
+- `d15faf7` adds the explicit exact-authority Crostini gateway and handoff;
+- `498297b` adds the launcher, static service, owned installer, and package;
+  and
+- `3cbaa5c` adds the exact-ID extension handoff, warm action, guidance, and
+  reviewed deterministic ZIP.
+
+The exact reviewed artifacts were:
+
+- `rstorrent-crostini-0.1.0-x86_64.tar.gz`, SHA-256
+  `8db3c4cfae0fccac014e8e68538013c7420d850089cf44ff8ff7a489fa95fd88`;
+  and
+- `jstorrent-beta-0.2.0.zip`, SHA-256
+  `0d09c55d015987cd96cd594f6b1ab1db20189a796636569de2753a5dc4ff1a8a`.
+
+The proportional source baseline passed: formatting; warning-denying clippy
+for `rstorrent-gateway` and `rstorrent-crostini`; both Rust test suites; web
+type checking and 279 passing web tests with two intentional skips; nine
+extension tests; and two byte-identical extension package runs. The Linux
+package was built and allowlist-validated inside the target container. Native
+Linux clippy and all ten launcher tests passed there, including the two
+Linux-only X11 lifecycle tests.
+
+Physical evidence used ChromeOS `16700.60.0` milestone 150 on the
+`nami-signed-mp-v13keys` x86_64 board and Debian 12.12 x86_64 in `penguin`.
+The testbed doctor passed all ten required checks before and after the run.
+The installed launcher and gateway SHA-256 values were respectively
+`8a9d0b62b589bcd89ca34ebe58bdcdfc5792efbe9b648c38415107449a386861`
+and
+`42d9f72709368274e7103156430debe470bb6d32e531c4383f728f52ba5fa61a`.
+
+The physical matrix established:
+
+- install left the unit static and inactive, with one registered ChromeOS
+  Linux Launcher item and the exact unpacked extension ID;
+- a warm Launcher selection opened the backend-served React application,
+  returned product `rstorrent-crostini` and launch protocol `1`, and repeated
+  selection retained one service process, one listener, and one root UI tab;
+- closing the tab left the backend running, and the extension's warm action
+  reopened the UI against that same process;
+- a controlled 16-MiB multi-file transfer continued from approximately
+  272 KiB to 1.3 MiB with no UI target, then reappeared at later progress when
+  the detachable UI was reopened;
+- twice stopping `termina` made the endpoint unreachable; each cached
+  ChromeOS Launcher selection woke Linux, produced exactly one UI target, and
+  restored the interrupted torrent from the persistent profile;
+- normal uninstall removed every owned application, command, desktop, icon,
+  and unit path while byte-identically preserving the profile and an unrelated
+  Downloads probe; reinstall restored the two torrent rows; and
+- explicit purge removed only the Crostini profile and application-owned
+  paths while byte-identically preserving the unrelated Downloads probe.
+
+The full ChromeOS reboot/login case remains an explicitly unavailable
+conditional, not inferred evidence: `machine-control` reports that this
+ChromeOS target has no host-managed credential, while the testbed contract
+forbids guessing or logging a PIN. All other required stopping evidence
+passed. Final cleanup removed source, build, controlled-transfer, payload,
+and probe artifacts. The device retains a clean package installation and the
+reviewed unpacked extension; its service is inactive with `termina` stopped,
+and no test torrent or payload remains.
 
 ## Non-Goals
 

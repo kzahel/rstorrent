@@ -4,10 +4,10 @@ Topic: `product-surfaces-and-migration`
 
 Status: The backend/presentation model, ChromeOS choices, and desktop extension
 direction were accepted in product discussion on 2026-08-02. This topic
-records graduation direction, not an authorization to implement the extension,
-Crostini packaging, production remote control, or migration in the current
-engine tactical. Exact transports and security boundaries remain to be
-designed and validated in bounded tacticals. Maintainer direction on
+records graduation direction, not standing authorization for production
+remote control, legacy migration, or extension-hosted control. Exact
+unimplemented transports and security boundaries remain to be designed and
+validated in bounded tacticals. Maintainer direction on
 2026-08-09 accepts iOS as an eventual first-party in-process backend; Tactical
 [`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md)
 front-loads the physical storage/network/lifecycle feasibility that shaped the
@@ -40,7 +40,10 @@ Crostini package serves the mature React application with its Rust backend;
 the extension owns cold handoff, warm open/focus, setup, and later browser
 integration rather than carrying the initial full UI bundle. A future
 extension-hosted presentation remains possible but is not required for the
-first ChromeOS Linux path.
+first ChromeOS Linux path. That bounded slice is complete after source gates
+and the available physical Chromebook warm, twice-stopped-VM,
+detachable-transfer, preservation, and purge matrix. Full reboot remains a
+conditional gap because the testbed has no approved profile-login credential.
 
 ## Scope
 
@@ -220,33 +223,34 @@ does not make that extension compatible while it still addresses legacy host
 
 ### Crostini plus extension
 
-Crostini should be developed as a first-class ChromeOS backend rather than
-only an emergency fallback. The first package bundles and serves the mature
+Crostini is implemented as a first-class ChromeOS backend rather than only an
+emergency fallback. The first local x86_64 package bundles and serves the mature
 JavaScript/React control surface beside one native Linux process that owns the
 Rust application service, database, networking, hashing, and filesystem I/O.
 The extension is the Chrome-resident launch, focus, setup, and future
 integration surface. It may later host the same detachable React presentation,
 but the initial product does not duplicate those assets inside the extension.
 
-The proven `web-server-chrome` Crostini pattern is the starting product
-reference:
+The implementation adapts the proven `web-server-chrome` Crostini pattern:
 
-- a signed per-user x86_64 or ARM64 native component;
+- an owned, versioned, per-user x86_64 native package;
 - an on-demand user service and registered non-terminal ChromeOS Launcher
   entry;
 - a small launch helper that can wake a stopped Crostini VM and hand off to a
   dormant extension worker;
 - a stable local controller endpoint with capability and version negotiation;
 - exact local-host admission and persistent browser-session authentication;
-- bundled setup, recovery, update, rollback, and uninstall guidance; and
+- bundled setup, recovery, and uninstall guidance; and
 - a normal backend-served tab for routine control with extension setup and
   recovery pages.
 
-RSTorrent must adapt that pattern rather than copy its web-server-specific
-policy. In particular, torrent lifecycle across Crostini stop, suspend, and
-reboot; Linux and ChromeOS-shared storage performance; incoming TCP; UDP
-tracker and DHT behavior; uTP; and ChromeOS forwarding constraints require
-physical evidence before this path is called complete.
+RSTorrent adapts that pattern without copying web-server-specific policy. The
+physical x86_64 campaign proves warm and twice-stopped-VM launch, singleton
+service/listener/UI behavior, continued controlled transfer with no browser
+view, persistent-profile recovery, and exact normal-uninstall and purge
+ownership. It does not prove full reboot, suspend, signed update/rollback,
+ARM64, ChromeOS-shared storage performance, incoming TCP, UDP tracker/DHT,
+uTP, or forwarding behavior.
 
 The efficiency advantage is architectural: the control boundary carries UI
 state, while all frequent peer and file operations remain in one Rust process.
@@ -453,12 +457,13 @@ fixture, or wire contract from either sibling project.
   and protocol-compatibility policy for every extension transport.
 - The exact Android remote-control endpoint and its foreground-service,
   permission, ChromeOS networking, and cold-start recovery behavior.
-- The exact Crostini package, service, local endpoint, storage, networking,
-  update, rollback, and uninstall contracts.
+- Signed Crostini x86_64/ARM64 distribution, update/rollback, suspend/reboot,
+  shared-storage, and broader network contracts beyond the completed local
+  source-package slice.
 - The bounded best-effort set of legacy state worth migrating at graduation
   time.
-- Physical desktop and ChromeOS handoff evidence, including repeated stopped
-  backend launches and recovery from stale or incompatible installations.
+- Physical desktop extension-control evidence and ChromeOS recovery from stale
+  or incompatible signed installations.
 - Physical ChromeOS TCP and UDP torrent behavior and representative Android
   versus Crostini resource and throughput measurements.
 - iOS migration source and public distribution/release policy. Tacticals
@@ -470,9 +475,10 @@ fixture, or wire contract from either sibling project.
 
 Completed Tactical `166` supplies the exact store identity and installed
 desktop bootstrap evidence; resume the beta-readiness campaign's signed
-RSTorrent package and updater gates. Do not use this foundation to pull the
-later headless service, full extension control, Crostini, or legacy migration
-into that completed slice.
+RSTorrent package and updater gates. Completed Tactical `167` supplies the
+bounded ChromeOS Linux source package and physical handoff evidence; do not
+expand it into signed distribution, full extension control, or legacy
+migration without another tactical.
 When JSTorrent graduation is separately authorized, create one bounded
 tactical that fixes the production handoff and the intentionally best-effort
 legacy-state scope from then-current evidence.

@@ -44,7 +44,15 @@ Completed Tactical
 transport split for active files. Only the semantic capability call crosses
 the application connection; progressive verified bytes, range waits, body
 cancellation, and the active-to-published handoff remain entirely on the
-separate capability-authorized media route.
+separate capability-authorized media route. Completed Tactical
+[`167`](../tactical/167-chromeos-crostini-bundled-web-launcher.md) adds one
+explicit ChromeOS Linux local mode without broadening the other adapters: the
+gateway binds the fixed package port, admits only exact
+`http://penguin.linux.test:3030` Host and Origin values, retains same-origin
+session authentication, and exposes a bounded protocol-1 handoff only to the
+pinned beta extension. The physical x86_64 Chromebook proves the same semantic
+WebSocket application remains usable across detachable browser views and
+stopped-VM relaunch.
 
 ## Purpose And Scope
 
