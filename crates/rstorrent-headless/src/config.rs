@@ -29,6 +29,7 @@ pub struct HeadlessConfig {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AuthenticationConfig {
     LocalBrowser,
+    LanNone,
     Basic {
         username: String,
         password_file: PathBuf,
@@ -39,6 +40,7 @@ impl AuthenticationConfig {
     pub fn mode_name(&self) -> &'static str {
         match self {
             Self::LocalBrowser => "local-browser",
+            Self::LanNone => "lan-none",
             Self::Basic { .. } => "basic",
         }
     }
@@ -275,7 +277,7 @@ pub fn load_basic_credentials(config: &HeadlessConfig) -> Result<BasicCredential
     } = &config.authentication
     else {
         return Err(invalid(
-            "Basic credentials requested for local-browser authentication",
+            "Basic credentials requested for non-Basic authentication",
         ));
     };
     let mut file = open_checked(password_file, CheckedFileKind::Secret)?;
@@ -368,8 +370,32 @@ fn validate_authentication(
                 password_file,
             })
         }
+        "lan-none" => {
+            if raw.username.is_some() || raw.password_file.is_some() {
+                return Err(invalid(
+                    "lan-none authentication does not accept username or password_file",
+                ));
+            }
+            let IpAddr::V4(address) = listen.ip() else {
+                return Err(invalid(
+                    "lan-none requires one exact non-loopback RFC 1918 IPv4 listener",
+                ));
+            };
+            if address.is_loopback() || !address.is_private() {
+                return Err(invalid(
+                    "lan-none requires one exact non-loopback RFC 1918 IPv4 listener",
+                ));
+            }
+            let expected = format!("http://{listen}");
+            if public_origin != expected {
+                return Err(invalid(format!(
+                    "lan-none public_origin must be exactly {expected}"
+                )));
+            }
+            Ok(AuthenticationConfig::LanNone)
+        }
         _ => Err(invalid(
-            "authentication mode must be local-browser or basic",
+            "authentication mode must be local-browser, lan-none, or basic",
         )),
     }
 }
@@ -624,8 +650,21 @@ password_file = "/var/lib/rstorrent/password"
             )
     }
 
+    fn lan_none_config() -> String {
+        basic_config()
+            .replace("127.0.0.1:3030", "192.168.1.20:3030")
+            .replace(
+                "https://torrent.example.test",
+                "http://192.168.1.20:3030",
+            )
+            .replace(
+                "mode = \"basic\"\nusername = \"owner\"\npassword_file = \"/var/lib/rstorrent/password\"",
+                "mode = \"lan-none\"",
+            )
+    }
+
     #[test]
-    fn parses_valid_basic_and_local_browser_configurations() {
+    fn parses_valid_authentication_configurations() {
         let basic = parse(basic_config().as_bytes()).expect("valid Basic configuration");
         assert!(matches!(
             basic.authentication,
@@ -633,6 +672,8 @@ password_file = "/var/lib/rstorrent/password"
         ));
         let local = parse(local_config().as_bytes()).expect("valid local configuration");
         assert_eq!(local.authentication, AuthenticationConfig::LocalBrowser);
+        let lan = parse(lan_none_config().as_bytes()).expect("valid private LAN configuration");
+        assert_eq!(lan.authentication, AuthenticationConfig::LanNone);
     }
 
     #[test]
@@ -658,6 +699,18 @@ password_file = "/var/lib/rstorrent/password"
             ),
             local_config().replace("127.0.0.1:3030", "192.168.1.2:3030"),
             local_config().replace("http://127.0.0.1:3030", "http://127.0.0.1:3031"),
+        ] {
+            assert!(parse(invalid.as_bytes()).is_err(), "accepted:\n{invalid}");
+        }
+        for invalid in [
+            lan_none_config().replace("192.168.1.20:3030", "127.0.0.1:3030"),
+            lan_none_config().replace("192.168.1.20:3030", "8.8.8.8:3030"),
+            lan_none_config().replace("192.168.1.20:3030", "[fd00::20]:3030"),
+            lan_none_config().replace("http://", "https://"),
+            lan_none_config().replace(
+                "mode = \"lan-none\"",
+                "mode = \"lan-none\"\nusername = \"owner\"",
+            ),
         ] {
             assert!(parse(invalid.as_bytes()).is_err(), "accepted:\n{invalid}");
         }

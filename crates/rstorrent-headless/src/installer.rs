@@ -412,6 +412,7 @@ pub fn install_bundle_at(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StatusReport {
     pub version: String,
+    pub access_mode: String,
     pub enabled: bool,
     pub active: bool,
     pub healthy: bool,
@@ -432,6 +433,11 @@ pub fn status_at(
         HeadlessError::configuration(format!("resolve installed command: {error}"))
     })?;
     let layout = InstalledLayout::discover_from_executable(&executable)?;
+    let access_mode = if paths.config.is_file() {
+        load(&paths.config)?.authentication.mode_name().to_owned()
+    } else {
+        "unconfigured".to_owned()
+    };
     let enabled = manager.is_enabled(SERVICE_NAME)?;
     let active = manager.is_active(SERVICE_NAME)?;
     let healthy = if active {
@@ -442,6 +448,7 @@ pub fn status_at(
     };
     Ok(StatusReport {
         version: layout.version,
+        access_mode,
         enabled,
         active,
         healthy,
@@ -521,7 +528,7 @@ fn probe_health(config_path: &Path, version: &str) -> Result<HealthResponse, Hea
                 ))
             ))
         }
-        AuthenticationConfig::LocalBrowser => None,
+        AuthenticationConfig::LocalBrowser | AuthenticationConfig::LanNone => None,
     };
     let mut stream = TcpStream::connect_timeout(&config.listen, Duration::from_secs(2))
         .map_err(|error| HeadlessError::runtime(format!("connect service health: {error}")))?;

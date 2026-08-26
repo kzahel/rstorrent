@@ -137,8 +137,8 @@ fn install(bundle: &Path) -> Result<(), rstorrent_headless::runtime::HeadlessErr
 fn print_status() -> Result<(), rstorrent_headless::runtime::HeadlessError> {
     let report = installer::status()?;
     println!(
-        "product=rstorrent-headless version={} enabled={} active={} healthy={}",
-        report.version, report.enabled, report.active, report.healthy
+        "product=rstorrent-headless version={} access_mode={} enabled={} active={} healthy={}",
+        report.version, report.access_mode, report.enabled, report.active, report.healthy
     );
     Ok(())
 }

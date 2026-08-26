@@ -18,7 +18,7 @@ pub use web_auth::{
 
 use std::error::Error;
 use std::fmt;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -80,6 +80,7 @@ pub struct GatewayConfig {
 pub enum GatewayAuthentication {
     Bearer { token: String },
     Basic(BasicCredentials),
+    PrivateLanNone,
     Web(WebAuthenticationConfig),
     UnauthenticatedLoopbackDevelopment,
 }
@@ -127,6 +128,7 @@ impl fmt::Debug for GatewayAuthentication {
         match self {
             Self::Bearer { .. } => formatter.write_str("Bearer { token: [redacted] }"),
             Self::Basic(_) => formatter.write_str("Basic { credential: [redacted] }"),
+            Self::PrivateLanNone => formatter.write_str("PrivateLanNone"),
             Self::Web(config) => formatter.debug_tuple("Web").field(config).finish(),
             Self::UnauthenticatedLoopbackDevelopment => {
                 formatter.write_str("UnauthenticatedLoopbackDevelopment")
@@ -169,7 +171,9 @@ impl GatewayConfig {
     pub fn validate(&self) -> Result<(), GatewayError> {
         if !matches!(
             self.authentication,
-            GatewayAuthentication::Basic(_) | GatewayAuthentication::Web(_)
+            GatewayAuthentication::Basic(_)
+                | GatewayAuthentication::PrivateLanNone
+                | GatewayAuthentication::Web(_)
         ) && !self.bind.ip().is_loopback()
         {
             return Err(GatewayError::Configuration(
@@ -182,6 +186,25 @@ impl GatewayConfig {
             return Err(GatewayError::Configuration(
                 "the authenticated host requires one explicit unicast bind address".to_owned(),
             ));
+        }
+        if matches!(self.authentication, GatewayAuthentication::PrivateLanNone) {
+            let IpAddr::V4(address) = self.bind.ip() else {
+                return Err(GatewayError::Configuration(
+                    "credential-free LAN hosting requires one RFC 1918 IPv4 address".to_owned(),
+                ));
+            };
+            if self.bind.port() == 0 || address.is_loopback() || !address.is_private() {
+                return Err(GatewayError::Configuration(
+                    "credential-free LAN hosting requires one exact non-loopback RFC 1918 IPv4 socket"
+                        .to_owned(),
+                ));
+            }
+            let expected_origin = format!("http://{}", self.bind);
+            if self.allowed_origin != expected_origin {
+                return Err(GatewayError::Configuration(format!(
+                    "credential-free LAN origin must be exactly {expected_origin}"
+                )));
+            }
         }
         if matches!(self.authentication, GatewayAuthentication::Web(_))
             && !self.bind.ip().is_loopback()
@@ -268,6 +291,24 @@ pub struct HostedAssets {
     build_id: String,
     product: Option<String>,
     chromeos_handoff: Option<ChromeOsHandoff>,
+    access_mode: Option<HostedAccessMode>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HostedAccessMode {
+    Basic,
+    BrowserSession,
+    LanNone,
+}
+
+impl HostedAccessMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Basic => "basic",
+            Self::BrowserSession => "browser_session",
+            Self::LanNone => "lan_none",
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -295,6 +336,7 @@ impl HostedAssets {
             build_id,
             product: None,
             chromeos_handoff: None,
+            access_mode: None,
         })
     }
 
@@ -330,6 +372,11 @@ impl HostedAssets {
         self.product = Some(CROSTINI_PRODUCT.to_owned());
         self.chromeos_handoff = Some(ChromeOsHandoff { extension_id });
         Ok(self)
+    }
+
+    pub fn with_access_mode(mut self, access_mode: HostedAccessMode) -> Self {
+        self.access_mode = Some(access_mode);
+        self
     }
 }
 
@@ -465,10 +512,13 @@ pub async fn bind_hosted(
 ) -> Result<GatewayServer, GatewayError> {
     if !matches!(
         config.authentication,
-        GatewayAuthentication::Basic(_) | GatewayAuthentication::Web(_)
+        GatewayAuthentication::Basic(_)
+            | GatewayAuthentication::PrivateLanNone
+            | GatewayAuthentication::Web(_)
     ) {
         return Err(GatewayError::Configuration(
-            "hosted web assets require basic or browser-session authentication".to_owned(),
+            "hosted web assets require basic, credential-free private LAN, or browser-session authentication"
+                .to_owned(),
         ));
     }
     prepare_with_picker_and_assets(
@@ -488,10 +538,13 @@ pub async fn prepare_hosted(
 ) -> Result<PreparedGateway, GatewayError> {
     if !matches!(
         config.authentication,
-        GatewayAuthentication::Basic(_) | GatewayAuthentication::Web(_)
+        GatewayAuthentication::Basic(_)
+            | GatewayAuthentication::PrivateLanNone
+            | GatewayAuthentication::Web(_)
     ) {
         return Err(GatewayError::Configuration(
-            "hosted web assets require basic or browser-session authentication".to_owned(),
+            "hosted web assets require basic, credential-free private LAN, or browser-session authentication"
+                .to_owned(),
         ));
     }
     prepare_with_picker_and_assets(
@@ -593,6 +646,8 @@ pub async fn prepare_crostini_hosted(
 enum GatewayValidation {
     Standard,
     CrostiniValidated,
+    #[cfg(test)]
+    PrevalidatedForTest,
 }
 
 struct UnavailableDownloadDirectoryPicker;
@@ -643,9 +698,9 @@ async fn prepare_with_picker_and_assets(
         .map_err(GatewayError::Bind)?;
     let local_addr = listener.local_addr().map_err(GatewayError::Bind)?;
     let media_origin = match &config.authentication {
-        GatewayAuthentication::Basic(_) | GatewayAuthentication::Web(_) => {
-            config.allowed_origin.trim_end_matches('/').to_owned()
-        }
+        GatewayAuthentication::Basic(_)
+        | GatewayAuthentication::PrivateLanNone
+        | GatewayAuthentication::Web(_) => config.allowed_origin.trim_end_matches('/').to_owned(),
         GatewayAuthentication::Bearer { .. }
         | GatewayAuthentication::UnauthenticatedLoopbackDevelopment => {
             format!("http://{local_addr}")
@@ -691,8 +746,25 @@ impl PreparedGateway {
         service: Arc<Mutex<ApplicationService>>,
     ) -> Result<GatewayServer, GatewayError> {
         ApplicationService::ensure_maintenance_owner(&service).await;
-        let media_configuration = if matches!(self.validation, GatewayValidation::CrostiniValidated)
-        {
+        #[cfg(test)]
+        let prevalidated_for_test =
+            matches!(self.validation, GatewayValidation::PrevalidatedForTest);
+        #[cfg(not(test))]
+        let prevalidated_for_test = false;
+        let media_configuration = if prevalidated_for_test {
+            service
+                .lock()
+                .await
+                .configure_media_origin(&self.media_origin)
+        } else if matches!(
+            self.config.authentication,
+            GatewayAuthentication::PrivateLanNone
+        ) {
+            service
+                .lock()
+                .await
+                .configure_media_origin_for_private_lan_http(&self.media_origin, self.config.bind)
+        } else if matches!(self.validation, GatewayValidation::CrostiniValidated) {
             service
                 .lock()
                 .await
@@ -842,7 +914,7 @@ impl GatewayServer {
         }
         router = router.layer(middleware::from_fn_with_state(
             self.state.clone(),
-            require_basic_auth,
+            require_host_and_basic_auth,
         ));
         axum::serve(
             self.listener,
@@ -858,7 +930,7 @@ impl GatewayServer {
     }
 }
 
-async fn require_basic_auth(
+async fn require_host_and_basic_auth(
     State(state): State<GatewayState>,
     request: Request,
     next: Next,
@@ -868,10 +940,10 @@ async fn require_basic_auth(
     {
         return StatusCode::FORBIDDEN.into_response();
     }
-    let GatewayAuthentication::Basic(credentials) = state.authentication.as_ref() else {
-        return next.run(request).await;
-    };
-    if request
+    if matches!(
+        state.authentication.as_ref(),
+        GatewayAuthentication::Basic(_) | GatewayAuthentication::PrivateLanNone
+    ) && request
         .headers()
         .get(header::HOST)
         .and_then(|value| value.to_str().ok())
@@ -879,6 +951,9 @@ async fn require_basic_auth(
     {
         return StatusCode::FORBIDDEN.into_response();
     }
+    let GatewayAuthentication::Basic(credentials) = state.authentication.as_ref() else {
+        return next.run(request).await;
+    };
     let accepted = request
         .headers()
         .get(header::AUTHORIZATION)
@@ -943,6 +1018,8 @@ struct HealthResponse<'a> {
     product: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     launch_protocol: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    access_mode: Option<&'a str>,
 }
 
 async fn healthz(State(state): State<GatewayState>) -> Response {
@@ -959,6 +1036,7 @@ async fn healthz(State(state): State<GatewayState>) -> Response {
                 .chromeos_handoff
                 .as_ref()
                 .map(|_| CROSTINI_LAUNCH_PROTOCOL_VERSION),
+            access_mode: assets.access_mode.map(HostedAccessMode::as_str),
         },
     )
 }
@@ -1595,10 +1673,10 @@ mod tests {
     use super::{
         ApplicationClientFrame, ApplicationConnectionErrorCode, ApplicationServerFrame,
         CROSTINI_LAUNCH_PROTOCOL_VERSION, CROSTINI_PRODUCT, ChooseDownloadRootResponse,
-        GatewayAuthentication, GatewayConfig, HostedAssets, JSTORRENT_BETA_EXTENSION_ID,
-        MAX_TORRENT_SOURCE_BYTES, WebAccessPolicy, WebAuthenticationConfig, bind,
-        bind_crostini_hosted, bind_hosted, bind_local_hosted, bind_with_picker,
-        constant_time_equal,
+        GatewayAuthentication, GatewayConfig, GatewayValidation, HostedAccessMode, HostedAssets,
+        JSTORRENT_BETA_EXTENSION_ID, MAX_TORRENT_SOURCE_BYTES, UnavailableDownloadDirectoryPicker,
+        WebAccessPolicy, WebAuthenticationConfig, bind, bind_crostini_hosted, bind_hosted,
+        bind_local_hosted, bind_with_picker, constant_time_equal, prepare_with_picker_and_assets,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -3965,6 +4043,183 @@ mod tests {
             "https://example.invalid".to_owned(),
         );
         assert!(remote_origin.validate().is_err());
+    }
+
+    #[test]
+    fn private_lan_none_configuration_is_exact_and_rfc1918_only() {
+        let valid = |socket: &str| GatewayConfig {
+            bind: socket.parse().expect("private socket"),
+            authentication: GatewayAuthentication::PrivateLanNone,
+            allowed_origin: format!("http://{socket}"),
+            max_connections: 2,
+        };
+        for socket in ["10.20.30.40:3030", "172.16.2.3:3030", "192.168.1.20:3030"] {
+            valid(socket).validate().expect("RFC 1918 LAN mode");
+        }
+        for socket in [
+            "127.0.0.1:3030",
+            "0.0.0.0:3030",
+            "8.8.8.8:3030",
+            "[fd00::20]:3030",
+            "192.168.1.20:0",
+        ] {
+            assert!(valid(socket).validate().is_err(), "accepted {socket}");
+        }
+        let mut wrong_origin = valid("192.168.1.20:3030");
+        wrong_origin.allowed_origin = "http://192.168.1.21:3030".to_owned();
+        assert!(wrong_origin.validate().is_err());
+        let mut secure_proxy = valid("192.168.1.20:3030");
+        secure_proxy.allowed_origin = "https://192.168.1.20:3030".to_owned();
+        assert!(secure_proxy.validate().is_err());
+    }
+
+    #[tokio::test]
+    async fn private_lan_none_requires_exact_host_and_http_websocket_origin() {
+        let root = test_root("private-lan-none");
+        let web_root = root.join("web");
+        std::fs::create_dir_all(&web_root).expect("create web root");
+        std::fs::write(web_root.join("index.html"), b"private-lan-index").expect("write index");
+        let service = test_service(&root).await;
+        let reservation = std::net::TcpListener::bind("127.0.0.1:0").expect("reserve port");
+        let port = reservation.local_addr().expect("reserved address").port();
+        drop(reservation);
+        let address = SocketAddr::from(([127, 0, 0, 1], port));
+        let origin = format!("http://{address}");
+        let assets = HostedAssets::new(web_root, "lan-test".to_owned())
+            .expect("hosted assets")
+            .with_access_mode(HostedAccessMode::LanNone);
+        let prepared = prepare_with_picker_and_assets(
+            GatewayConfig {
+                bind: address,
+                authentication: GatewayAuthentication::PrivateLanNone,
+                allowed_origin: origin.clone(),
+                max_connections: 2,
+            },
+            Arc::new(UnavailableDownloadDirectoryPicker),
+            Some(assets),
+            GatewayValidation::PrevalidatedForTest,
+        )
+        .await
+        .expect("prepare test-private server");
+        let server = prepared
+            .attach(service.clone())
+            .await
+            .expect("attach server");
+        let shutdown = CancellationToken::new();
+        let task = tokio::spawn(server.serve(shutdown.clone()));
+        let host = address.to_string();
+
+        assert_eq!(
+            raw_get_with_host(address, &host, "/").await.2,
+            b"private-lan-index"
+        );
+        assert_eq!(
+            raw_get_with_host(address, "wrong.example", "/").await.0,
+            403
+        );
+        let (status, _, health) = raw_get_with_host(address, &host, "/healthz").await;
+        assert_eq!(status, 200);
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&health).expect("health JSON"),
+            serde_json::json!({
+                "status": "ok",
+                "build_id": "lan-test",
+                "access_mode": "lan_none",
+            })
+        );
+        assert_eq!(
+            raw_http_request_with_host(
+                address,
+                &host,
+                "GET",
+                "/api/v1/hello",
+                None,
+                Some(&origin),
+                Some("00000000000000000000000000000001"),
+                None,
+                None,
+            )
+            .await
+            .0,
+            200
+        );
+        assert_eq!(
+            raw_http_request_with_host(
+                address,
+                &host,
+                "GET",
+                "/api/v1/hello",
+                None,
+                Some("http://wrong.example"),
+                Some("00000000000000000000000000000001"),
+                None,
+                None,
+            )
+            .await
+            .0,
+            403
+        );
+
+        let websocket_url = format!("ws://{address}/api/v1/connect");
+        let mut request = websocket_url
+            .clone()
+            .into_client_request()
+            .expect("request");
+        request
+            .headers_mut()
+            .insert("Origin", origin.parse().expect("origin"));
+        request
+            .headers_mut()
+            .insert("Host", host.parse().expect("host"));
+        let (mut socket, _) = connect_async(request)
+            .await
+            .expect("connect without credential");
+        send_application_message(
+            &mut socket,
+            &ApplicationClientFrame::Connect {
+                api_version: rstorrent_session::API_VERSION,
+                encoding: rstorrent_session::ApiEncoding::Json,
+                client_instance_id: "00000000000000000000000000000001".to_owned(),
+                token: None,
+            },
+        )
+        .await;
+        assert!(matches!(
+            read_application_message(&mut socket).await,
+            ApplicationServerFrame::Connected { .. }
+        ));
+        socket.close(None).await.expect("close socket");
+
+        for (header, value) in [
+            ("Origin", "http://wrong.example"),
+            ("Host", "wrong.example"),
+        ] {
+            let mut request = websocket_url
+                .clone()
+                .into_client_request()
+                .expect("request");
+            request
+                .headers_mut()
+                .insert("Origin", origin.parse().expect("origin"));
+            request
+                .headers_mut()
+                .insert("Host", host.parse().expect("host"));
+            request
+                .headers_mut()
+                .insert(header, value.parse().expect("header value"));
+            assert!(
+                connect_async(request).await.is_err(),
+                "accepted wrong {header}"
+            );
+        }
+
+        shutdown.cancel();
+        task.await
+            .expect("server join")
+            .expect("server termination");
+        service.lock().await.shutdown().await.expect("shutdown");
+        drop(service);
+        std::fs::remove_dir_all(root).expect("remove root");
     }
 
     #[tokio::test]

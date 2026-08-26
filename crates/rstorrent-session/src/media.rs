@@ -740,6 +740,16 @@ impl MediaCapabilities {
         Ok(())
     }
 
+    pub(crate) fn set_origin_for_private_lan_http(
+        &mut self,
+        origin: &str,
+        exact_socket: std::net::SocketAddr,
+    ) -> Result<(), MediaOriginError> {
+        let origin = validated_private_lan_http_origin(origin, exact_socket)?;
+        self.replace_origin(origin);
+        Ok(())
+    }
+
     fn replace_origin(&mut self, origin: String) {
         if self.origin.as_deref() != Some(origin.as_str()) {
             self.revoke_all();
@@ -998,6 +1008,23 @@ fn validated_local_http_origin(origin: &str, exact_host: &str) -> Result<String,
     Ok(origin.to_owned())
 }
 
+fn validated_private_lan_http_origin(
+    origin: &str,
+    exact_socket: std::net::SocketAddr,
+) -> Result<String, MediaOriginError> {
+    let std::net::SocketAddr::V4(socket) = exact_socket else {
+        return Err(MediaOriginError::InsecureNonLoopback);
+    };
+    if socket.port() == 0 || socket.ip().is_loopback() || !socket.ip().is_private() {
+        return Err(MediaOriginError::InsecureNonLoopback);
+    }
+    parsed_origin(origin)?;
+    if origin != format!("http://{exact_socket}") {
+        return Err(MediaOriginError::InsecureNonLoopback);
+    }
+    Ok(origin.to_owned())
+}
+
 fn parsed_origin(origin: &str) -> Result<Url, MediaOriginError> {
     if origin.is_empty() || origin.len() > 512 || origin.ends_with('/') {
         return Err(MediaOriginError::Invalid);
@@ -1032,6 +1059,7 @@ fn is_loopback_host(host: Option<Host<&str>>) -> bool {
 mod tests {
     use super::{
         MediaOriginError, valid_capability, validated_local_http_origin, validated_origin,
+        validated_private_lan_http_origin,
     };
 
     #[test]
@@ -1075,6 +1103,28 @@ mod tests {
             assert!(
                 validated_local_http_origin(origin, host).is_err(),
                 "accepted {origin} for {host}"
+            );
+        }
+    }
+
+    #[test]
+    fn private_lan_http_origin_requires_one_exact_rfc1918_socket() {
+        let socket = "192.168.1.20:3030".parse().expect("private socket");
+        assert_eq!(
+            validated_private_lan_http_origin("http://192.168.1.20:3030", socket)
+                .expect("exact private LAN origin"),
+            "http://192.168.1.20:3030"
+        );
+        for (origin, socket) in [
+            ("http://192.168.1.21:3030", "192.168.1.20:3030"),
+            ("https://192.168.1.20:3030", "192.168.1.20:3030"),
+            ("http://127.0.0.1:3030", "127.0.0.1:3030"),
+            ("http://8.8.8.8:3030", "8.8.8.8:3030"),
+            ("http://[fd00::20]:3030", "[fd00::20]:3030"),
+        ] {
+            assert!(
+                validated_private_lan_http_origin(origin, socket.parse().expect("socket")).is_err(),
+                "accepted {origin} for {socket}"
             );
         }
     }

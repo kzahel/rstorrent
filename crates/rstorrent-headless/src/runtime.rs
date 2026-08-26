@@ -6,8 +6,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use rstorrent_gateway::{
-    GatewayAuthentication, GatewayConfig, GatewayError, HostedAssets, WebAuthenticationConfig,
-    prepare_hosted,
+    GatewayAuthentication, GatewayConfig, GatewayError, HostedAccessMode, HostedAssets,
+    WebAuthenticationConfig, prepare_hosted,
 };
 use rstorrent_session::{
     ApplicationConfig, ApplicationError, ApplicationService, NetworkConfig, NetworkPolicy,
@@ -214,6 +214,7 @@ pub async fn run_installed_service(
         config_path,
         &[&layout.application_root, &layout.release_root],
     )?;
+    let access_mode = hosted_access_mode(&config.authentication);
     let authentication = gateway_authentication(&config)?;
     if matches!(authentication, GatewayAuthentication::Web(_)) {
         create_profile_root(&config.profile_root)?;
@@ -224,7 +225,8 @@ pub async fn run_installed_service(
         allowed_origin: config.public_origin.clone(),
         max_connections: rstorrent_gateway::MAX_CONNECTIONS,
     };
-    let prepared = prepare_hosted(gateway_config, layout.hosted_assets()?)
+    let assets = layout.hosted_assets()?.with_access_mode(access_mode);
+    let prepared = prepare_hosted(gateway_config, assets)
         .await
         .map_err(configuration_gateway_error)?;
     let listen = prepared.local_addr();
@@ -256,6 +258,11 @@ pub async fn run_installed_service(
         "headless product={} version={} listening={listen}",
         PRODUCT_ID, layout.version
     );
+    if matches!(config.authentication, AuthenticationConfig::LanNone) {
+        eprintln!(
+            "headless warning=authentication-disabled every-client-on-this-LAN-has-full-owner-control"
+        );
+    }
 
     let serve_result = server.serve(shutdown).await;
     let shutdown_started = Instant::now();
@@ -286,6 +293,15 @@ fn gateway_authentication(config: &HeadlessConfig) -> Result<GatewayAuthenticati
             GatewayAuthentication::basic(credentials.username(), credentials.password())
                 .map_err(configuration_gateway_error)
         }
+        AuthenticationConfig::LanNone => Ok(GatewayAuthentication::PrivateLanNone),
+    }
+}
+
+fn hosted_access_mode(authentication: &AuthenticationConfig) -> HostedAccessMode {
+    match authentication {
+        AuthenticationConfig::LocalBrowser => HostedAccessMode::BrowserSession,
+        AuthenticationConfig::Basic { .. } => HostedAccessMode::Basic,
+        AuthenticationConfig::LanNone => HostedAccessMode::LanNone,
     }
 }
 
@@ -662,6 +678,7 @@ mod tests {
         let health = health.expect("headless health became reachable");
         assert!(health.contains("\"product\":\"rstorrent-headless\""));
         assert!(health.contains("\"build_id\":\"1.2.3\""));
+        assert!(health.contains("\"access_mode\":\"basic\""));
         assert!(profile.is_dir());
         assert!(!payload.exists());
 

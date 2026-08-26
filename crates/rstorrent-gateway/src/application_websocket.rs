@@ -1784,6 +1784,7 @@ fn connection_token_matches(
                 && constant_time_equal(candidate.as_bytes(), token.as_bytes())
         }),
         GatewayAuthentication::Basic(_)
+        | GatewayAuthentication::PrivateLanNone
         | GatewayAuthentication::Web(_)
         | GatewayAuthentication::UnauthenticatedLoopbackDevelopment => candidate.is_none(),
     }
