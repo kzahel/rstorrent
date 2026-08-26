@@ -83,6 +83,17 @@ checksums, route probes, and the exact installed macOS arm64
 `0.1.0`-to-`0.1.1` update are recorded in
 [`desktop-v0.1.0-to-v0.1.1`](evidence/desktop-v0.1.0-to-v0.1.1.md).
 
+The current repair-bearing release is
+[`desktop-v0.1.2`](https://github.com/kzahel/rstorrent/releases/tag/desktop-v0.1.2).
+Tagged workflow
+[`32959820514`](https://github.com/kzahel/rstorrent/actions/runs/32959820514)
+passed its source gate, five signed package jobs, and publication finalizer at
+exact commit `788e953d1ed578c238beccbbc224907b0d9dc95c`. Its complete package
+matrix and bounded exact-public-DMG macOS arm64 launch/native-host spot check
+are recorded in [`desktop-v0.1.2`](evidence/desktop-v0.1.2.md). This release
+record does not claim the still-open installed `0.1.1`-to-`0.1.2` update
+campaign.
+
 ## Update Service
 
 The application checks

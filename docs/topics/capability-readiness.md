@@ -40,18 +40,18 @@ That tactical is complete after its exact-ID installed Chrome `hello` and
 cold-launch smoke; Tactical `158` has resumed as the single **Now**. Later
 extension control and Crostini topology remain undecided.
 
-The updater tactical's client,
-production route, five-target signed hosted rehearsal, public `0.1.0` release,
-public `0.1.1` updater-validation release, installed macOS arm64 launch smoke,
-and exact macOS arm64 and Linux arm64 `0.1.0`-to-`0.1.1` updates now pass.
-Windows x86_64 updater replacement/relaunch passes under an automatic-loopback
-profile. The fresh-default defect is repaired on `main`, but no signed public
-package contains either Windows repair yet. Clean repaired Windows and Linux
-x86_64 updates, installed Linux picker evidence, and signed Windows firewall-
-consent characterization remain open; installed Intel macOS testing is
-deliberately omitted. These gaps keep the tactical active. The tables below
-record current support, evidence, and highest-risk gaps; implementation
-history remains in the linked tacticals and focused topics.
+The updater tactical's client, production route, five-target signed hosted
+rehearsal, public `0.1.0`, `0.1.1`, and `0.1.2` releases, installed macOS arm64
+launch smoke, and exact macOS arm64 and Linux arm64 `0.1.0`-to-`0.1.1` updates
+now pass. Public `0.1.2` contains the completed Windows and desktop-integration
+repairs; its complete signed matrix and a bounded exact-public-DMG macOS arm64
+launch/native-host check pass. Windows x86_64 updater replacement/relaunch is
+still proven only under the older automatic-loopback profile. Clean repaired
+Windows and Linux x86_64 updates plus signed Windows firewall-consent
+characterization remain open; installed Intel macOS testing is deliberately
+omitted. These gaps keep the tactical active. The tables below record current
+support, evidence, and highest-risk gaps; implementation history remains in
+the linked tacticals and focused topics.
 
 ## Purpose And Ownership
 
@@ -529,11 +529,11 @@ exactly.
 
 - **Tactical
   [`158`](../tactical/158-desktop-signed-packaging-and-updater.md): desktop
-  signed packaging and updater.** Produce the next signed candidate carrying
-  the completed desktop repairs and integrations, then close its clean
-  Windows and Linux x86_64 update/install evidence and Windows firewall-
-  consent characterization. Installed Intel macOS remains deliberately
-  omitted.
+  signed packaging and updater.** Public `desktop-v0.1.2` now carries the
+  completed desktop repairs and integrations and passes the full signed matrix
+  plus bounded macOS arm64 launch/native-host evidence. Close its clean Windows
+  and Linux x86_64 update/install evidence and Windows firewall-consent
+  characterization. Installed Intel macOS remains deliberately omitted.
 
 ### Next
 
@@ -549,10 +549,12 @@ Rust/web, deterministic browser E2E, native desktop package, Android dual-ABI,
 iOS simulator/archive, and short loopback-interoperability signal on every
 `main` update and pull request. Signed package and updater artifacts plus
 native desktop architecture breadth now pass the public `desktop-v0.1.0` and
-`desktop-v0.1.1` releases; one installed macOS arm64 launch plus exact macOS
-arm64 and Linux arm64 cross-version updates pass. Windows x86_64 updater
-replacement is proven under the stated profile limitation. Remaining
-cross-platform clean-machine installation and installed updater evidence,
+`desktop-v0.1.1` releases. Public `desktop-v0.1.2` now also passes the complete
+signed matrix and a bounded exact-DMG macOS arm64 launch/native-host check; one
+installed macOS arm64 launch plus exact macOS arm64 and Linux arm64 cross-
+version updates pass. Windows x86_64 updater replacement is proven under the
+stated older-profile limitation. Remaining cross-platform clean-machine
+installation and installed updater evidence,
 mobile
 emulator/device release runs, and broad interoperability remain separate gates.
 

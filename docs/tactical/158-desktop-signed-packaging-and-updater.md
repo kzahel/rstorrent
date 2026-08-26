@@ -1,11 +1,12 @@
 # Tactical 158: Desktop Signed Packaging And Updater
 
-Status: **Implementation in progress and resumed as the sole Now on
-2026-08-26.** Completed desktop native-bootstrap and extension-scaffold
-Tactical [`166`](166-desktop-native-bootstrap-and-extension-scaffold.md)
-passed its exact-ID installed Chrome `hello` and cold-launch boundary. This
-tactical again owns the next signed candidate; its release outcome and
-remaining gates are unchanged.
+Status: **Implementation in progress and the sole Now on 2026-08-26.** Tagged
+`desktop-v0.1.2` now publicly carries the completed desktop repairs and native
+bootstrap at exact commit `788e953d1ed578c238beccbbc224907b0d9dc95c`.
+Its source gate, five signed package jobs, and publication finalizer pass, and
+the exact public arm64 DMG passes a bounded macOS launch/native-host spot
+check. Clean strengthened Windows update evidence and installed Linux x86_64
+remain open, so this tactical is not complete.
 Cross-platform sleep-inhibition Tactical
 [`165`](165-cross-platform-active-download-sleep-inhibition.md) is complete,
 as is desktop-notification Tactical
@@ -25,27 +26,28 @@ relaunch, signing, current-version checking, and private installation-ID
 continuity pass under the supported automatic-loopback profile, but a fresh
 default profile exposed a local-network listener-selection startup blocker.
 Completed Tactical `160` repairs that defect on `main` and adds a passing
-native Windows x86_64 regression, but no public signed package contains the
-repair yet. A newer signed package plus clean default-profile update proof and
-Linux x86_64 remain open. Completed Tactical `161` closes the native Windows
+native Windows x86_64 regression; public `0.1.2` now contains that repair.
+Clean default-profile update proof and Linux x86_64 remain open. Completed
+Tactical `161` closes the native Windows
 folder-picker blocker, makes the packaged Linux picker self-contained, passes
 the hosted desktop matrix, and proves installed Windows
 choose/cancel/repair/restart behavior in an unsigned package. The next signed
 candidate can now exercise a complete fresh-profile setup. Maintainer
 direction deliberately omits installed Intel macOS testing while retaining
 its automated signed package and route. That unsigned Windows campaign also
-exposed Windows Security listener consent; the next signed candidate must
-characterize and document it without automatically granting a firewall rule.
+exposed Windows Security listener consent; the installed signed `0.1.2`
+campaign must characterize and document it without automatically granting a
+firewall rule.
 Completed Tactical `162` closes single-instance, tray/background, joined
 Quit, release-only Windows GUI launch, and installed Windows x86_64/Linux
-arm64 lifecycle behavior. The next signed candidate therefore carries a
-reachable and cleanly terminating desktop shell. Completed Tactical `163`
+arm64 lifecycle behavior. Public `0.1.2` therefore carries a reachable and
+cleanly terminating desktop shell. Completed Tactical `163`
 also adds installed external magnet and local `.torrent` activation. Completed
 Tactical `164` adds native completion/attention notifications before this
-tactical produces the next signed candidate. Completed Tactical `165` also
+tactical's `0.1.2` candidate. Completed Tactical `165` also
 adds desktop active-work sleep inhibition; its available Windows behavior run
-was arm64, so the next signed x86_64 candidate repeats the native assertion
-matrix while exercising the strengthened real-torrent update state. An
+was arm64, so the signed `0.1.2` x86_64 installed campaign must repeat the
+native assertion matrix while exercising the strengthened real-torrent update state. An
 exact-head unsigned preflight now passes native Windows x86_64 tests, package
 construction, clean installation, fresh-default startup, firewall-consent
 characterization, lifecycle/update presentation, and the native active-work
@@ -502,6 +504,29 @@ power requests. The host artifact and captures were removed, the disposable
 workspace was cleanly shut down and discarded, final temporary workspace
 inventory was empty, the protected source appliance remained off, and the
 target claim was available.
+
+Tagged release run
+[`32959820514`](https://github.com/kzahel/rstorrent/actions/runs/32959820514)
+then passed its source gate, both signed/notarized macOS package jobs, both
+native Linux AppImage/DEB/RPM jobs, signed Windows package and installed
+activation-registry checks, and the sole publication finalizer. It published
+`desktop-v0.1.2` from exact commit
+`788e953d1ed578c238beccbbc224907b0d9dc95c`. A verifier-only Debian extraction
+defect found by an earlier unpublished draft was corrected with `dpkg-deb -x`;
+the final run proves activation metadata in all three Linux formats on both
+architectures.
+
+The exact public Apple-silicon DMG then passed a bounded macOS 26.2 arm64
+Machine Control spot check: public/guest checksum equality, strict code-sign
+verification, Gatekeeper acceptance as `Notarized Developer ID`, stapler
+validation, exact `0.1.2` bundle identity, common-API launch, independent
+process and visible-window observation, and first-launch native-host
+registration for both the production JSTorrent and provisional beta extension
+IDs. Exact cleanup preserved the appliance's pre-existing RSTorrent profile
+and returned it to powered off. The versioned record and deliberate limits are
+in [`desktop-v0.1.2`](../evidence/desktop-v0.1.2.md). This proves the signed
+candidate exists and launches on macOS arm64; it does not replace the open
+clean Windows and installed Linux x86_64 update campaigns.
 
 ## Escalation Contract
 

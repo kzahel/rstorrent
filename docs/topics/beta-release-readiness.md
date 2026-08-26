@@ -2,27 +2,29 @@
 
 Topic: `beta-release-readiness`
 
-Status: **Active as of 2026-08-25.** RSTorrent desktop `0.1.0` is the first
+Status: **Active as of 2026-08-26.** RSTorrent desktop `0.1.0` is the first
 public signed incubation release and `0.1.1` is its first updater-validation
-release; Android and iOS remain unreleased alpha lanes. Credential-free
-eight-job cross-platform presubmit CI, a credentialed five-target signed
-desktop rehearsal, two tagged publications, production updater metadata, one
+release. Public `0.1.2` is the first signed candidate carrying the completed
+desktop repairs and native bootstrap; Android and iOS remain unreleased alpha
+lanes. Credential-free eight-job cross-platform presubmit CI, a credentialed
+five-target signed
+desktop rehearsal, three tagged publications, production updater metadata, one
 installed macOS arm64 launch smoke, and exact macOS arm64 and Linux arm64
-`0.1.0`-to-`0.1.1` update passes. Windows x86_64 replacement/relaunch also
-passes under an automatic-loopback profile, but fresh default startup is
-blocked in the public `0.1.0` and `0.1.1` builds by local-network address
-selection. Completed Tactical `160` repairs that defect on `main` and adds a
-passing native Windows regression. Completed Tactical `161` adds the native
-parented picker on `main`, makes the packaged Linux picker self-contained, and
+`0.1.0`-to-`0.1.1` updates pass. Windows x86_64 replacement/relaunch also
+passes under an automatic-loopback profile. Fresh default startup is blocked
+in public `0.1.0` and `0.1.1` by local-network address selection; completed
+Tactical `160` repairs that defect, and public `0.1.2` now contains the repair.
+Completed Tactical `161` adds the native parented picker, makes the packaged
+Linux picker self-contained, and
 passes an installed unsigned Windows fresh-profile choose/cancel/repair/
-restart campaign. A newer signed package, its clean installed update, and
-Linux x86_64 installed evidence remain open. First launch of the unsigned
-Windows listener also exposed a Windows Security consent prompt that the next
-signed candidate must characterize and document. Completed Tactical `162`
-adds single-instance, default-on close-to-tray, persisted background policy,
-visible manual updating, joined Quit/restart, native Linux arm64 packaging,
-and installed Windows x86_64/Linux arm64 lifecycle evidence. Completed
-Tactical `164` adds desktop completion and attention notifications with
+restart campaign. The clean installed `0.1.1`-to-`0.1.2` update and Linux
+x86_64 installed evidence remain open. First launch of the unsigned Windows
+listener also exposed a Windows Security consent prompt that the signed
+`0.1.2` installed campaign must characterize and document. Completed Tactical
+`162` adds single-instance, default-on close-to-tray, persisted background
+policy, visible manual updating, joined Quit/restart, native Linux arm64
+packaging, and installed Windows x86_64/Linux arm64 lifecycle evidence.
+Completed Tactical `164` adds desktop completion and attention notifications with
 installed macOS arm64, Windows x86_64, and Linux arm64 evidence. Completed
 Tactical `165` adds default-on desktop/Android active-work sleep inhibition,
 removes Android's Wi-Fi lock, preserves truthful iOS finite-background policy,
@@ -98,9 +100,9 @@ Store review, and mobile beta is not implied by a desktop tag:
 
 | Lane | Intended beta channel | Current release state |
 | --- | --- | --- |
-| macOS desktop | signed/notarized DMG plus in-app updates | public Developer ID-signed, notarized, and stapled app/DMG packages pass for arm64 and x86_64; an installed arm64 launch smoke and exact `0.1.0`-to-`0.1.1` replacement/relaunch pass; Intel installed testing is deliberately omitted |
-| Windows desktop | signed per-user NSIS plus in-app updates | public NSIS and MSI packages have valid expected-publisher Authenticode signatures; public per-user NSIS replacement/relaunch passes under an automatic-loopback profile; unsigned packages from `main` pass fresh-default startup, native root setup, selected single-instance/tray lifecycle, and installed x86_64 external magnet/file activation under Windows 11 arm64 x64 emulation, while a newer signed clean-profile update remains open |
-| Linux desktop | AppImage plus in-app updates; DEB/RPM remain package-manager channels | public AppImage, DEB, and RPM packages plus updater artifacts pass for x86_64 and arm64; exact arm64 AppImage replacement/relaunch and the current unsigned installed lifecycle/icon campaign pass, while x86_64 installed evidence remains absent |
+| macOS desktop | signed/notarized DMG plus in-app updates | public `0.1.2` Developer ID-signed, notarized, and stapled app/DMG packages pass for arm64 and x86_64; its exact public arm64 DMG launches and repairs native-host registration in a bounded spot check; an exact `0.1.0`-to-`0.1.1` replacement/relaunch also passes; Intel installed testing is deliberately omitted |
+| Windows desktop | signed per-user NSIS plus in-app updates | public `0.1.2` NSIS and MSI packages contain the completed desktop repairs and have valid expected-publisher Authenticode signatures plus installed activation-registry validation; public per-user NSIS replacement/relaunch passes only for `0.1.0`-to-`0.1.1` under an automatic-loopback profile, while the repaired clean-profile update remains open |
+| Linux desktop | AppImage plus in-app updates; DEB/RPM remain package-manager channels | public `0.1.2` AppImage, DEB, and RPM packages plus updater artifacts pass for x86_64 and arm64, including extracted activation metadata; exact arm64 AppImage `0.1.0`-to-`0.1.1` replacement/relaunch and the current installed lifecycle/icon campaign pass, while x86_64 installed evidence remains absent |
 | Android/ChromeOS | signed Android App Bundle through a closed testing channel | maintained Compose/in-process Rust/SAF app and hosted dual-ABI debug/test APK gates pass; release identity, signed AAB, emulator/store, and upgrade evidence absent |
 | iOS/iPadOS | signed TestFlight build | maintained SwiftUI app plus hosted simulator tests and unsigned device archive pass; distribution identity, signing, TestFlight, and upgrade evidence absent |
 
@@ -152,7 +154,7 @@ without corrupting or silently reinterpreting user state.
   JSTorrent application/store identity; the shared gate remains open for those
   mobile lanes.
 - [ ] **REL-003 — Establish one release version source and bump procedure.**
-  Desktop web, Cargo, and Tauri metadata currently agree at `0.1.1`; Android
+  Desktop web, Cargo, and Tauri metadata currently agree at `0.1.2`; Android
   and iOS use independent provisional values. Release validation must reject
   drift for the lane being shipped.
 - [x] **REL-004 — Add a changelog and release-note policy.** `CHANGELOG.md` and
@@ -250,10 +252,11 @@ without corrupting or silently reinterpreting user state.
   Linux arm64 now passes the same exact public AppImage replacement/relaunch
   and updater-ID continuity check. Windows x86_64 passes replacement/relaunch
   only after selecting automatic-loopback because its fresh default listener
-  profile fails startup. An unsigned package from `main` now passes fresh-
-  profile startup, native picker setup/repair, and controlled process restart;
-  this is not signed older-to-newer update evidence. Linux x86_64, the common
-  cohort, reboot/relaunch, and full uninstall policy remain open. A separate
+  profile fails startup in `0.1.0` and `0.1.1`. Public `0.1.2` now contains the
+  completed repair and passes a bounded exact-DMG macOS arm64 launch/native-
+  host spot check, but it has not run the signed Windows older-to-newer
+  campaign. Linux x86_64, the common cohort, reboot/relaunch, and full
+  uninstall policy remain open. A separate
   unsigned x86_64 NSIS campaign under Windows 11 arm64 x64 emulation now passes
   installed cold/visible/hidden magnet and file activation, cancellation,
   bounded failures, duplicate handling, tray Quit, uninstall, and exact
@@ -265,8 +268,10 @@ without corrupting or silently reinterpreting user state.
   license provenance, dependency advisories, archive contents, absence of
   secrets/development endpoints, and published checksums. All public `0.1.0`
   assets passed `SHA256SUMS`, manifest, target, signature, and immutable-URL
-  checks; dependency/notices review and reviewed archive-content policy remain
-  open.
+  checks. Public `0.1.2` passed the complete signed workflow and finalizer; its
+  exact arm64 DMG also independently matched `SHA256SUMS` before the installed
+  spot check. Dependency/notices review and reviewed archive-content policy
+  remain open.
 
 ## Desktop Beta Checklist
 
@@ -278,9 +283,9 @@ without corrupting or silently reinterpreting user state.
   The public arm64 DMG also passed one installed macOS launch and graceful quit,
   followed by exact `0.1.0`-to-`0.1.1` replacement/relaunch in isolated macOS
   and Linux arm64 appliances. Windows x86_64 replacement/relaunch also passes
-  under an automatic-loopback profile. An unsigned package from `main` now
-  passes fresh-default startup plus native root setup/repair on Windows, but a
-  signed update containing those repairs does not yet. Linux x86_64,
+  under an automatic-loopback profile. Public `0.1.2` now contains the
+  fresh-default and native root setup/repair changes and passes signed package
+  validation, but its clean Windows installed update does not yet. Linux x86_64,
   uninstall, retained-state, and broader clean-machine evidence remain
   required; Intel Mac installed testing is deliberately omitted.
 - [x] **DESK-002 — Sign and notarize tagged builds.** Use the existing shared
@@ -294,7 +299,10 @@ without corrupting or silently reinterpreting user state.
   repeated those checks and published only after every leg and the sole
   finalizer passed. Tagged `0.1.1` run
   [`32661616090`](https://github.com/kzahel/rstorrent/actions/runs/32661616090)
-  repeated the complete matrix and finalizer successfully.
+  repeated the complete matrix and finalizer successfully. Tagged `0.1.2` run
+  [`32959820514`](https://github.com/kzahel/rstorrent/actions/runs/32959820514)
+  passed the same five signed legs and finalizer, including extracted Linux
+  activation metadata and installed Windows activation-registry validation.
 - [ ] **DESK-003 — Set least-privileged package ownership.** The default is a
   DMG-installed self-contained app on macOS, per-user NSIS on Windows, and a
   user-writable AppImage on Linux. MSI/DEB/RPM installs stay with their package
@@ -317,16 +325,16 @@ without corrupting or silently reinterpreting user state.
   `0.1.0` and `0.1.1` Windows builds select `127.0.0.1` from the multicast
   source-route probe, reject it for local-network listening, fall back to
   `0.0.0.0`, and then fail application validation. Tactical `160` repairs the
-  selector and wildcard fallback on `main`; prove the first signed package
-  carrying it on a clean installed profile before calling the Windows lane
-  runnable.
+  selector and wildcard fallback; public `0.1.2` contains that repair. Prove
+  the signed package on a clean installed profile before calling the Windows
+  lane runnable.
 - [ ] **DESK-007 — Qualify Windows firewall consent.** First launch of the
   unsigned fresh-profile listener build displayed Windows Security Allow/
   Cancel consent. Choosing Cancel granted no broader firewall access and left
-  the app plus root picker usable. The signed candidate must record whether
-  the prompt appears, define the supported private/public-network choice, and
-  document incoming-reachability consequences. Automation must not silently
-  grant a firewall rule.
+  the app plus root picker usable. The signed `0.1.2` installed campaign must
+  record whether the prompt appears, define the supported private/public-
+  network choice, and document incoming-reachability consequences. Automation
+  must not silently grant a firewall rule.
 - [x] **DESK-008 — Handle external magnets and torrent files.** Tactical
   `163` now registers the current RSTorrent packages for `magnet:` and
   local `.torrent` activation, forwards cold and warm input through the
@@ -426,6 +434,13 @@ is still pending and is not the compatibility oracle.
   repeated the complete release matrix; all public checksums, the 15-key
   manifest, and current/older production-route probes passed. See
   [`desktop-v0.1.0-to-v0.1.1`](../evidence/desktop-v0.1.0-to-v0.1.1.md).
+  Tagged `0.1.2` run
+  [`32959820514`](https://github.com/kzahel/rstorrent/actions/runs/32959820514)
+  passed the complete signed matrix and finalizer at exact commit `788e953`;
+  its bounded public-DMG evidence is in
+  [`desktop-v0.1.2`](../evidence/desktop-v0.1.2.md). Production-route and
+  installed cross-version validation remain part of `UPD-005` rather than
+  being inferred from publication.
 - [ ] **UPD-005 — Prove a real cross-version update.** On each supported
   desktop testbed, install an exact older public signed build, check through
   the production route while an incomplete torrent, configured download root,
@@ -564,17 +579,18 @@ no single optional BEP is mandatory.
 4. **Now — Tactical `158`: desktop signed packaging and updater adoption.**
    The product-owned `desktop-update-v1` client, signed package workflow,
    release validation, per-app key, public configuration, production route,
-   five-platform hosted rehearsal, two tagged publications, one installed
+   five-platform hosted rehearsal, three tagged publications, one installed
    macOS arm64 launch smoke, and exact macOS arm64 and Linux arm64
    `0.1.0`-to-`0.1.1` production-route updates are complete. Windows x86_64
    updater replacement also passes under an automatic-loopback profile.
    Completed Tactical `160` repairs fresh-default address selection on `main`;
    Completed Tactical `161` now proves unsigned installed Windows first-root
    setup; completed Tacticals `163`--`165` add external intake, notifications,
-   and active-work sleep inhibition. Publish a newer signed package, repeat
-   clean Windows from the default with the strengthened `UPD-005` state,
-   characterize firewall consent, and run Linux x86_64. Intel macOS installed
-   testing is deliberately omitted.
+   and active-work sleep inhibition. Public `0.1.2` now carries those repairs,
+   and its signed package matrix plus bounded macOS arm64 launch/native-host
+   spot check pass. Repeat clean Windows from the default with the strengthened
+   `UPD-005` state, characterize firewall consent, and run Linux x86_64. Intel
+   macOS installed testing is deliberately omitted.
 5. **Complete — Tactical `163`: desktop external torrent intake.** The
    bounded shell/UI implementation, package gates, and installed Linux arm64,
    Windows x86_64-application, and macOS arm64 cold/visible/tray-hidden/

@@ -737,20 +737,17 @@ that scope and its cleanup or compatibility rules explicitly.
   art/metadata, and reconciles status before signed updater and cross-platform
   CI slices.
 - [`158-desktop-signed-packaging-and-updater.md`](158-desktop-signed-packaging-and-updater.md):
-  implementation in progress and resumed as Now after Tactical `166`; its
-  Tauri-only
+  implementation in progress and Now; its Tauri-only
   `desktop-update-v1` UI/state boundary, per-app identity/key/route, hosted
-  signed five-target package rehearsal, public `desktop-v0.1.0` and
-  `desktop-v0.1.1` finalization, one installed macOS arm64 launch smoke, and
-  exact macOS arm64 plus Linux arm64 `0.1.0`-to-`0.1.1`
-  replacement/relaunch passes. Windows x86_64 replacement also passes under
-  an automatic-loopback profile. Completed Tacticals `160`--`165` repair
-  fresh-default startup/root setup, add tray lifecycle, external intake,
-  notifications, and active-work sleep inhibition, and pass proportional
-  unsigned installed/device campaigns. A signed update containing them,
-  Windows firewall-consent
-  characterization, and Linux x86_64 remain open; installed Intel macOS
-  testing is a deliberate omission.
+  signed five-target package rehearsal, public `desktop-v0.1.0` through
+  `desktop-v0.1.2` finalization, one installed macOS arm64 launch smoke, and
+  exact macOS arm64 plus Linux arm64 `0.1.0`-to-`0.1.1` replacement/relaunch
+  pass. Windows x86_64 replacement also passes under an automatic-loopback
+  profile. Public `0.1.2` carries the completed Tacticals `160`--`166` repairs
+  and integrations; its full signed matrix and bounded macOS arm64
+  launch/native-host spot check pass. Clean Windows update/firewall-consent
+  characterization and Linux x86_64 remain open; installed Intel macOS testing
+  is a deliberate omission.
 - [`159-cross-platform-presubmit-ci.md`](159-cross-platform-presubmit-ci.md):
   complete; installs credential-free Rust, web, deterministic browser E2E,
   native desktop, Android, iOS, and short controlled-interoperability checks
