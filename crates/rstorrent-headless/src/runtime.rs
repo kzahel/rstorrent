@@ -216,7 +216,8 @@ pub async fn run_installed_service(
     )?;
     let access_mode = hosted_access_mode(&config.authentication);
     let authentication = gateway_authentication(&config)?;
-    if matches!(authentication, GatewayAuthentication::Web(_)) {
+    let browser_sessions = matches!(authentication, GatewayAuthentication::Web(_));
+    if browser_sessions {
         create_profile_root(&config.profile_root)?;
     }
     let gateway_config = GatewayConfig {
@@ -234,6 +235,9 @@ pub async fn run_installed_service(
     let prepared = prepare_hosted(gateway_config, assets)
         .await
         .map_err(configuration_gateway_error)?;
+    if !browser_sessions {
+        create_profile_root(&config.profile_root)?;
+    }
     let listen = prepared.local_addr();
     let application_config = ApplicationConfig::new(
         config.profile_root.clone(),
@@ -685,6 +689,18 @@ mod tests {
         assert!(health.contains("\"build_id\":\"1.2.3\""));
         assert!(health.contains("\"access_mode\":\"basic\""));
         assert!(profile.is_dir());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&profile)
+                    .expect("profile metadata")
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o700
+            );
+        }
         assert!(!payload.exists());
 
         shutdown.cancel();
