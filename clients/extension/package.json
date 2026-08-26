@@ -1,0 +1,11 @@
+{
+  "name": "jstorrent-beta-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "package": "node scripts/package.mjs",
+    "test": "node --test scripts/*.test.mjs && node scripts/validate.mjs",
+    "validate": "node scripts/validate.mjs"
+  }
+}

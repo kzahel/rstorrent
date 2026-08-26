@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "JSTorrent Beta",
+  "version": "0.1.0",
+  "description": "Check for and open the installed RSTorrent desktop app.",
+  "permissions": ["nativeMessaging"],
+  "background": {
+    "service_worker": "src/service-worker.js"
+  },
+  "action": {
+    "default_title": "JSTorrent Beta",
+    "default_popup": "popup/popup.html"
+  },
+  "icons": {
+    "32": "icons/icon-32.png",
+    "128": "icons/icon-128.png"
+  }
+}
