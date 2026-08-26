@@ -274,8 +274,10 @@ AppImage launch metadata points at the stable AppImage rather than its
 temporary mount. Chrome Web Store item `gcgoepclopkgijmclmlheafaglmbjlcc` and
 its public key are pinned, validation independently derives that identity, and
 the host manifest allows only its exact beta origin beside the production
-JSTorrent origin. The remaining installed Chrome `hello`/launch smoke is still
-required, and this seam does not claim an extension control surface.
+JSTorrent origin. The installed Chrome `hello`/launch smoke is complete:
+Chrome 151 on an installed unsigned macOS arm64 app reports the exact beta ID,
+completes native `hello` while the app is stopped, and cold-launches the
+desktop product. This seam does not claim an extension control surface.
 
 Android uses UniFFI-generated Kotlin records, enums, objects, and suspend
 functions. A small Kotlin adapter exposes subscription handles as lifecycle-

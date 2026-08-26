@@ -28,8 +28,10 @@ Explicit maintainer direction on 2026-08-26 authorizes only the bounded
 desktop-bootstrap foundation in Tactical
 [`166`](../tactical/166-desktop-native-bootstrap-and-extension-scaffold.md): a
 distinct typed compatibility/launch host, per-user registration and sidecar
-packaging, and a store-seed MV3 extension. It does not choose the later
-headless service, full extension control, or Crostini topology.
+packaging, and a store-seed MV3 extension. That bounded foundation is complete
+after exact-ID installed Chrome `hello` and cold-launch evidence. It does not
+choose the later headless service, full extension control, or Crostini
+topology.
 
 ## Scope
 
@@ -193,15 +195,17 @@ preserved JSTorrent as the inherited default handler and targeted RSTorrent by
 its current incubation bundle identifier. Exact hosted run `32775002484`
 passed all eight platform jobs.
 
-Tactical `166` now adds only the predecessor seam to that later control work.
+Tactical `166` adds only the predecessor seam to that later control work.
 Its distinct `com.jstorrent.rstorrent.native` host can identify compatibility
 and request launch of the existing desktop application; it owns no profile,
 torrent state, listener, or application service. The initial JSTorrent Beta
 ZIP established Chrome Web Store item `gcgoepclopkgijmclmlheafaglmbjlcc`; its
 public key and exact beta origin are now pinned. The installed Chrome
-`hello`/launch smoke remains open. Allow-listing the existing JSTorrent
-extension origin does not make that extension compatible while it still
-addresses legacy host `com.jstorrent.native`.
+`hello`/launch smoke passes with Chrome 151 and an installed unsigned macOS
+arm64 app: `hello` succeeds while the desktop is stopped, and explicit launch
+starts the cold app. Allow-listing the existing JSTorrent extension origin
+does not make that extension compatible while it still addresses legacy host
+`com.jstorrent.native`.
 
 ## ChromeOS Backends
 
@@ -452,11 +456,11 @@ fixture, or wire contract from either sibling project.
 
 ## Recommended Next Work
 
-Complete bounded Tactical `166` through its store-identity and installed
-desktop bootstrap evidence, then resume the beta-readiness campaign's signed
+Completed Tactical `166` supplies the exact store identity and installed
+desktop bootstrap evidence; resume the beta-readiness campaign's signed
 RSTorrent package and updater gates. Do not use this foundation to pull the
 later headless service, full extension control, Crostini, or legacy migration
-into the slice.
+into that completed slice.
 When JSTorrent graduation is separately authorized, create one bounded
 tactical that fixes the production handoff and the intentionally best-effort
 legacy-state scope from then-current evidence.

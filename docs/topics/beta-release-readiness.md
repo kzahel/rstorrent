@@ -28,8 +28,10 @@ Tactical `165` adds default-on desktop/Android active-work sleep inhibition,
 removes Android's Wi-Fi lock, preserves truthful iOS finite-background policy,
 and passes guest-native installed macOS arm64, Windows arm64, Linux arm64,
 physical Android API 37, and physical iOS evidence. Explicit maintainer
-direction temporarily yields Tactical `158` to bounded desktop-bootstrap
-Tactical `166`, which is the sole **Now**.
+direction temporarily yielded Tactical `158` to bounded desktop-bootstrap
+Tactical `166`. That slice is complete after its exact-ID installed Chrome
+`hello` and cold-launch smoke, and Tactical `158` has resumed as the sole
+**Now**.
 Installed Intel macOS testing is deliberately omitted. The public product
 name is RSTorrent for the foreseeable release line. A later production
 graduation is expected to retain JSTorrent's existing name, application
@@ -46,9 +48,10 @@ complete. Packaged desktop picker Tactical
 desktop lifecycle Tactical
 [`162`](../tactical/162-desktop-single-instance-and-tray-lifecycle.md) is
 complete; desktop-bootstrap Tactical
-[`166`](../tactical/166-desktop-native-bootstrap-and-extension-scaffold.md)
-temporarily owns **Now** before signed release Tactical
-[`158`](../tactical/158-desktop-signed-packaging-and-updater.md) resumes.
+[`166`](../tactical/166-desktop-native-bootstrap-and-extension-scaffold.md) is
+complete; signed release Tactical
+[`158`](../tactical/158-desktop-signed-packaging-and-updater.md) again owns
+**Now**.
 Maintainer direction on 2026-08-24 promotes OS-level `magnet:` and local
 `.torrent` activation from a post-beta deferral to a beta usability gap;
 completed Tactical
@@ -362,7 +365,7 @@ without corrupting or silently reinterpreting user state.
   final cleanup all pass. The next signed-candidate campaign still repeats the
   integrated package-trust/update case. Explicit sleep, lid close, shutdown,
   low-power policy, and seeding remain under ordinary OS policy.
-- [ ] **DESK-011 — Establish the beta extension bootstrap identity.** Tactical
+- [x] **DESK-011 — Establish the beta extension bootstrap identity.** Tactical
   `166` adds the distinct bounded native-messaging host, target-triple Tauri
   sidecar packaging, per-user first-launch registration repair, NSIS cleanup,
   and a self-contained Manifest V3 seed whose only permission is
@@ -370,10 +373,12 @@ without corrupting or silently reinterpreting user state.
   macOS app-bundle host `hello` pass. Chrome Web Store item
   `gcgoepclopkgijmclmlheafaglmbjlcc`, its public key, independently derived
   unpacked identity, and its exact native-host origin are pinned. The rebuilt
-  app repairs a manifest containing only the production and beta origins. An
-  installed Chrome `hello`/launch smoke remains before this row closes. Full
-  extension control, Crostini, and production JSTorrent migration are not part
-  of this beta-bootstrap gate.
+  app repairs a manifest containing only the production and beta origins.
+  Chrome 151 on the installed unsigned macOS arm64 app proves the exact
+  unpacked ID, native `hello` with the app stopped, and cold launch through
+  **Open RSTorrent**. Full extension control, Crostini, hosted Windows/Linux
+  package breadth, and production JSTorrent migration are not part of this
+  beta-bootstrap gate.
 
 ### Desktop updater contract
 

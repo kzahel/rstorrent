@@ -1,12 +1,11 @@
 # Tactical 158: Desktop Signed Packaging And Updater
 
-Status: **Implementation in progress and temporarily yielded on 2026-08-26.**
-Explicit maintainer direction selected bounded desktop native-bootstrap and
-extension-scaffold Tactical
-[`166`](166-desktop-native-bootstrap-and-extension-scaffold.md) as the sole
-**Now** before the next signed candidate. This tactical resumes when that
-foundation reaches its stopping boundary; its release outcome and remaining
-gates are unchanged.
+Status: **Implementation in progress and resumed as the sole Now on
+2026-08-26.** Completed desktop native-bootstrap and extension-scaffold
+Tactical [`166`](166-desktop-native-bootstrap-and-extension-scaffold.md)
+passed its exact-ID installed Chrome `hello` and cold-launch boundary. This
+tactical again owns the next signed candidate; its release outcome and
+remaining gates are unchanged.
 Cross-platform sleep-inhibition Tactical
 [`165`](165-cross-platform-active-download-sleep-inhibition.md) is complete,
 as is desktop-notification Tactical
@@ -160,9 +159,10 @@ plugins must not leak into demo or browser-hosted bundles.
 - Linux in-app updates apply only to an AppImage in a stable user-writable
   location. DEB and RPM stay with their package manager and present a manual
   path.
-- RSTorrent currently has no external helper/native host to justify an
-  integrated macOS PKG. Adding one would require a separate ownership and
-  compatibility decision.
+- Completed Tactical `166` packages the native bootstrap as an app-bundle
+  sidecar and repairs per-user registration on first launch. It neither needs
+  nor justifies an integrated macOS PKG; the signed/notarized DMG remains the
+  installation format.
 
 ## Scope And Stopping Condition
 

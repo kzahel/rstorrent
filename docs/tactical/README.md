@@ -737,7 +737,7 @@ that scope and its cleanup or compatibility rules explicitly.
   art/metadata, and reconciles status before signed updater and cross-platform
   CI slices.
 - [`158-desktop-signed-packaging-and-updater.md`](158-desktop-signed-packaging-and-updater.md):
-  implementation in progress and temporarily yielded to Tactical `166`; its
+  implementation in progress and resumed as Now after Tactical `166`; its
   Tauri-only
   `desktop-update-v1` UI/state boundary, per-app identity/key/route, hosted
   signed five-target package rehearsal, public `desktop-v0.1.0` and
@@ -775,11 +775,12 @@ that scope and its cleanup or compatibility rules explicitly.
   guest-native macOS/Windows/Linux plus physical Android/iOS evidence with
   exact inhibitor and artifact cleanup.
 - [`166-desktop-native-bootstrap-and-extension-scaffold.md`](166-desktop-native-bootstrap-and-extension-scaffold.md):
-  implementation in progress and selected as Now; owns the bounded RSTorrent
+  complete; adds the bounded RSTorrent
   desktop native compatibility/launch host, per-user registration and sidecar
   packaging, and a self-contained Manifest V3 JSTorrent Beta seed ZIP. Its
-  draft identity, public key, and exact origin are pinned; the installed Chrome
-  `hello`/launch smoke remains.
+  draft identity, public key, and exact origin are pinned; real Chrome 151 on
+  an installed unsigned macOS arm64 app proves native `hello` from a stopped
+  state and cold desktop launch.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

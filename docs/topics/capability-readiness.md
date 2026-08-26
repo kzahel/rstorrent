@@ -32,12 +32,12 @@ sleep-inhibition Tactical
 [`165`](../tactical/165-cross-platform-active-download-sleep-inhibition.md).
 It is complete with deterministic/build gates and guest-native installed
 macOS arm64, Windows arm64, Linux arm64, physical Android API 37, and physical
-iOS evidence. Explicit maintainer direction on 2026-08-26 temporarily yields
+iOS evidence. Explicit maintainer direction on 2026-08-26 temporarily yielded
 release/updater Tactical `158` to bounded desktop native-bootstrap and
 extension-scaffold Tactical
-[`166`](../tactical/166-desktop-native-bootstrap-and-extension-scaffold.md),
-which is the single **Now**. It establishes only a typed launch/bootstrap host,
-first-launch registration, and a store-identity-seed MV3 extension; later
+[`166`](../tactical/166-desktop-native-bootstrap-and-extension-scaffold.md).
+That tactical is complete after its exact-ID installed Chrome `hello` and
+cold-launch smoke; Tactical `158` has resumed as the single **Now**. Later
 extension control and Crostini topology remain undecided.
 
 The updater tactical's client,
@@ -528,19 +528,15 @@ exactly.
 ### Now
 
 - **Tactical
-  [`166`](../tactical/166-desktop-native-bootstrap-and-extension-scaffold.md):
-  desktop native bootstrap and extension scaffold.** Build the bounded
-  `com.jstorrent.rstorrent.native` compatibility/launch host, per-user desktop
-  registration and sidecar packaging, and a self-contained Manifest V3
-  JSTorrent Beta seed ZIP. Store item `gcgoepclopkgijmclmlheafaglmbjlcc`, its
-  public key, and the exact beta origin are pinned. Complete the installed
-  Chrome `hello`/launch smoke; no placeholder or wildcard origin is accepted.
+  [`158`](../tactical/158-desktop-signed-packaging-and-updater.md): desktop
+  signed packaging and updater.** Produce the next signed candidate carrying
+  the completed desktop repairs and integrations, then close its clean
+  Windows and Linux x86_64 update/install evidence and Windows firewall-
+  consent characterization. Installed Intel macOS remains deliberately
+  omitted.
 
 ### Next
 
-- Resume Tactical
-  [`158`](../tactical/158-desktop-signed-packaging-and-updater.md) with its
-  signed-candidate and installed-update gates unchanged.
 - Freeze the application identities, first supported persistence baseline,
   changelog, privacy/support presentation, and repeatable beta torrent cohort
   around the first release candidate.
@@ -712,7 +708,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Ephemeral application state | Implemented | deterministic, runtime | Private bounded session and metrics SQLite stores preserve receipts, exact source, metadata, settings, views, DHT and speed state for one joined service lifetime, then disappear without profile files. One maximum source plus info fits the 256-MiB session cap and a second maximum import rolls back with a typed resource limit; payload storage remains external. | [`client-persistence`](client-persistence.md), [`application-control`](application-control.md) |
 | Leased application view sets and delivery clients | Implemented | deterministic, runtime, interop, web, Tauri | Named summary, generation-scoped checker progress, piece, structured diagnostic, active-peer, registry-backed Swarm, paged file and tracker, global Disk, range-selected session Speed, and latest-value session DHT views have bounded replay/reset, independent lease expiry, fresh-snapshot recovery, diagnostic HTTP polling, acknowledged browser WebSocket streaming, and acknowledged in-process Tauri streaming. The retained observer matrices still expose Summary reset storms and trace/all-view serialization pressure; stable public compatibility remains unimplemented. | [`application-view-api`](application-view-api.md), [`application-connection-architecture`](application-connection-architecture.md) |
 | Shared web and Tauri desktop UI | Partial | runtime, interop, web, desktop | The responsive surface now has Library, Transfers, and Workbench destinations, truthful bounded torrent-backed cards, accessible determinate/indeterminate checker progress with exact selected-summary counters, shared multi-selection, magnet and local `.torrent` add, source-preserving or name/tracker-rich bounded magnet copy, metadata-only add, live Normal/Skip file actions plus atomic `Download now` for skipped targets, verified and active-streamable file `Open` through an ephemeral HTTP capability, archives, guarded removal, live peer/swarm/file/tracker inspection, global Disk pressure, bounded Canvas Pieces, a smooth exact session Speed history, a one-second download/upload tab title, and the exact routing-space DHT observatory. Embedded playback and a media catalog remain incomplete. | [`client-surfaces`](client-surfaces.md), [`application-interface-direction`](application-interface-direction.md) |
-| Desktop extension bootstrap | Partial | deterministic, desktop package | Tactical `166` adds the distinct bounded `com.jstorrent.rstorrent.native` compatibility/launch host, exact production and beta-extension origins, per-user registration repair, content-versioned stable copying, AppImage-stable launch metadata, target-triple Tauri sidecar overlays, and a self-contained Manifest V3 JSTorrent Beta seed with only `nativeMessaging`. Host process/framing, extension allowlist, public-key-to-item-ID derivation, release drift, deterministic `0.1.1` ZIP, and an actual unsigned macOS arm64 app-bundle `hello` pass. The rebuilt app repairs a manifest for exactly both origins. Installed Chrome `hello`/launch, hosted Windows/Linux package evidence, and every torrent-control transport remain open. | [`client-surfaces`](client-surfaces.md), [`product-surfaces-and-migration`](product-surfaces-and-migration.md), [`beta-release-readiness`](beta-release-readiness.md) |
+| Desktop extension bootstrap | Implemented | deterministic, desktop | Tactical `166` adds the distinct bounded `com.jstorrent.rstorrent.native` compatibility/launch host, exact production and beta-extension origins, per-user registration repair, content-versioned stable copying, AppImage-stable launch metadata, target-triple Tauri sidecar overlays, and a self-contained Manifest V3 JSTorrent Beta seed with only `nativeMessaging`. Host process/framing, extension allowlist, public-key-to-item-ID derivation, release drift, and deterministic `0.1.1` ZIP gates pass. Real Chrome 151 on an installed unsigned macOS arm64 app proves exact unpacked ID, native `hello` while the app is stopped, and cold desktop launch. Hosted Windows/Linux package evidence and every torrent-control transport remain open later breadth. | [`client-surfaces`](client-surfaces.md), [`product-surfaces-and-migration`](product-surfaces-and-migration.md), [`beta-release-readiness`](beta-release-readiness.md) |
 | Desktop native notifications | Implemented | deterministic, web, desktop | Completed Tactical `164` adds one Rust-owned authoritative torrent-list edge reducer, versioned Tauri-only settings, and native completion plus fatal/repair attention. Initial/reset/settings/restart terminal state does not replay, focused-window display is default-on, and hidden-to-tray delivery passes installed macOS arm64, Windows x86_64, and Linux arm64. The exact standard Tauri package owns macOS/Windows; a bounded direct adapter retains the same underlying Linux notification handle because the package wrapper dropped it. Linux click restores the existing window; macOS/Windows retain tray restoration after measured package click limits. Progress, aggregation, and mobile work remain excluded. | [`client-surfaces`](client-surfaces.md), [`beta-release-readiness`](beta-release-readiness.md) |
 | Active-work sleep inhibition | Implemented | deterministic, web, desktop, Android build, physical | Completed Tactical `165` adds one default-on desktop/Android preference driven by authoritative `Starting`, `Downloading`, and `Checking` states. macOS/Windows use exact `keepawake` 0.6.1; GNOME uses its suspend inhibitor and other Linux sessions use a bounded XDG portal fallback. Android retains one partial CPU wake lock and removes its Wi-Fi lock. Installed macOS arm64, Windows arm64, Linux arm64, native Windows x86_64, and physical Android API 37 prove held, minimized/screen-off, preference, pause/restart, Start, and cleanup transitions without display inhibition. Physical iOS retains finite-background behavior and exposes no false keep-awake control. The unsigned native x86_64 preflight leaves package trust and the integrated signed update repeat to Tactical `158`. | [`client-surfaces`](client-surfaces.md), [`beta-release-readiness`](beta-release-readiness.md) |
 | Authenticated private web host | Implemented | deterministic, runtime, web, live | One explicitly configured maintainer host serves the production React bundle and multiplexed application WebSocket behind bounded Basic authentication and exact HTTPS Origin checks. Exact-push isolated build, candidate smoke, supervised restart, authenticated private-listener/public verification, and rollback-on-failure pass; this is not a relay, account, pairing, encryption, or stable public compatibility claim. | [`application-connection-architecture`](application-connection-architecture.md), [`client-surfaces`](client-surfaces.md) |

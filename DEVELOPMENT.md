@@ -43,14 +43,14 @@ machine-control.
 ## Current Tactical State
 
 The authoritative **Now** is
-[`166-desktop-native-bootstrap-and-extension-scaffold.md`](docs/tactical/166-desktop-native-bootstrap-and-extension-scaffold.md).
-It owns only a typed desktop compatibility/launch host, per-user native-host
-registration and sidecar packaging, and the self-contained Manifest V3
-JSTorrent Beta seed ZIP. Store item `gcgoepclopkgijmclmlheafaglmbjlcc`, its
-public key, and its exact native-host origin are pinned; an installed Chrome
-`hello`/launch smoke remains before the tactical closes. Full extension control
-and Crostini topology are not decided here. Tactical `158` remains active and
-resumes afterward with its release gates unchanged.
+[`158-desktop-signed-packaging-and-updater.md`](docs/tactical/158-desktop-signed-packaging-and-updater.md).
+It has resumed with its signed-candidate and installed-update gates unchanged.
+Completed Tactical `166` supplies the typed desktop compatibility/launch host,
+per-user registration and sidecar packaging, and the self-contained Manifest
+V3 JSTorrent Beta seed. Chrome 151 on an installed unsigned macOS arm64 app
+proves its exact provisional store ID, native `hello` from a stopped state,
+and cold desktop launch. Full extension control and Crostini topology remain
+undecided.
 Completed Tactical `162` supplies one packaged desktop instance,
 close-to-tray policy, persisted background intent, joined Quit, release-only
 Windows GUI subsystem validation, a native Linux arm64 package gate, and

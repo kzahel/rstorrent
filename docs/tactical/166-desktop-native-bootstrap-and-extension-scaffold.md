@@ -1,10 +1,9 @@
 # Tactical 166: Desktop Native Bootstrap And Extension Scaffold
 
-Status: **Implementation in progress and the sole Now on 2026-08-26.**
-Maintainer direction temporarily yields signed-release Tactical
-[`158`](158-desktop-signed-packaging-and-updater.md) to this bounded
-foundation. Tactical `158` remains active and resumes after this slice; this
-does not publish or replace a signed desktop candidate.
+Status: **Complete as of 2026-08-26.** Signed-release Tactical
+[`158`](158-desktop-signed-packaging-and-updater.md) resumes as the sole
+**Now**. This completed foundation does not publish or replace a signed
+desktop candidate.
 
 Topics: `product-surfaces-and-migration`, `client-surfaces`,
 `beta-release-readiness`
@@ -221,9 +220,9 @@ source ~/.profile
 cargo fmt --all -- --check
 cargo clippy --workspace -- -D warnings
 cargo test --workspace
-npm run package:extension
-npm run validate:extension
-npm run validate:desktop-package -- --bundle <available-package>
+npm run package --prefix clients/extension
+npm run validate --prefix clients/extension
+node scripts/validate-desktop-package.mjs --mac-app <available-app>
 ```
 
 Platform-specific registry/package assertions run where applicable. Store
@@ -323,8 +322,37 @@ registrations to the stable content-versioned host; the Chrome manifest
 contains exactly the production and beta origins. No private key or dashboard
 credential entered the repository.
 
-The available automated Chrome surface does not expose
-`chrome://extensions`, so loading the unpacked seed remains a manual browser
-action. The tactical remains the sole **Now** only for the installed Chrome
-`hello` and `launch` smoke. Publication, full extension control, Crostini, and
-the later presentation topology remain outside this stopping boundary.
+The store identity checkpoint left only the installed Chrome `hello` and
+`launch` smoke. Publication, full extension control, Crostini, and the later
+presentation topology remained outside this stopping boundary.
+
+## Completion Evidence: Installed Chrome Bootstrap
+
+The stopping condition passed on 2026-08-26 through the shared
+`machine-control` macOS arm64 Tart appliance running macOS 26.2 and Chrome
+151.0.7922.174:
+
+- the exact unsigned `RSTorrent.app` was installed in the guest and launched
+  once, producing a native-host manifest with only the production JSTorrent
+  and provisional JSTorrent Beta origins;
+- after independent process termination, Chrome loaded the exact unpacked
+  `0.1.1` extension and reported ID
+  `gcgoepclopkgijmclmlheafaglmbjlcc`;
+- the extension page completed a real native-messaging `hello` while the
+  desktop process remained absent and presented **RSTorrent Desktop is
+  ready** with native bootstrap version `0.1.1`;
+- activating **Open RSTorrent** changed the extension result to **Launch
+  requested** and independently started the installed
+  `com.jstorrent.rstorrent` application from the cold state; and
+- the run used target-resident accessibility and input routes with no host
+  input. Cleanup stopped the app, removed only the unpacked extension and
+  task-owned registration/app/staging artifacts, restored Chrome developer
+  mode, closed the task tabs, shut the initially stopped VM down, and released
+  its claim.
+
+The draft upload therefore served one bounded purpose: it established the
+stable Web Store item ID and public key required to prove the exact extension
+origin authorized by the desktop package. The draft need not be published for
+this identity and unpacked integration test. Hosted Windows/Linux package
+breadth and all torrent-control transport remain later work, not blockers for
+this bootstrap tactical.
