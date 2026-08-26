@@ -3,7 +3,9 @@
 Topic: `client-surfaces`
 
 Status: Accepted and implemented across a browser-hosted web view, a Tauri
-desktop webview, Android Compose, and the maintained iOS SwiftUI client.
+desktop webview, Android Compose, and the maintained iOS SwiftUI client. The
+same mature browser presentation is also packaged by completed Tactical `170`
+for one configured Linux headless service.
 Completed
 Tactical
 [`143`](../tactical/143-dual-identity-and-persistence-foundation.md) makes
@@ -396,6 +398,13 @@ accounts, relay operation, wake-up delivery, device authorization, stable
 compatibility, and product remote-access policy require later threat models
 and tacticals.
 
+Completed Tactical
+[`170`](../tactical/170-configured-linux-headless-service.md) turns that shared
+browser surface into a first-party ordinary-user Linux service package. Its
+local-session and private-host Basic modes retain same-origin HTTP/WebSocket
+semantics, while the service owns the application/profile independently from
+every attached tab. It adds no extension transport or owner E2E remote claim.
+
 Tactical `035` also adds an explicit unauthenticated development mode for
 local UI bring-up and headless evidence. It binds only loopback, requires one
 exact configured loopback Origin, retains resource checks, and isolates opaque
@@ -536,6 +545,11 @@ own correctness.
   preference and exactly one partial CPU wake lock for the same active state
   set while removing its Wi-Fi lock. iOS retains finite background work and
   exposes no misleading general keep-awake control.
+- The Linux headless process owns one application service, profile, gateway,
+  and engine independently from browser connections. Its systemd user unit
+  forwards stop to the adapter, whose cancellation path joins gateway and
+  application owners before exiting; no synthetic view is retained while
+  idle.
 - A remote WebSocket connection owns only its authenticated commands and
   subscriptions.
 
@@ -566,6 +580,14 @@ or torrent networking. Headless Chrome now retains wide, compact, phone,
 accessibility, keyboard, command, and large-collection evidence against that
 adapter. Real adapter tests remain necessary when Rust projections connect;
 demo evidence does not claim engine behavior.
+
+Tactical `170` adds installed-service evidence beyond the temporary browser
+harness. On x86_64 Ubuntu, every presentation detached during an 8-MiB
+controlled transfer, a fresh presentation recovered complete durable state,
+RSTorrent then seeded the exact payload back to pinned libtorrent, and the
+service remained healthy while idle with zero gateway sessions. Joined
+restart, rollback-safe repair, preservation-safe uninstall, and exact cleanup
+also pass through the same production React/WebSocket surface.
 
 Tactical `035` supplies that real-adapter evidence. The production-built web
 surface connects to a temporary loopback application and controlled
@@ -670,9 +692,10 @@ remote exposure, and Android streaming remain independent product decisions.
 
 ## Current Gaps
 
-- The loopback WebSocket gateway is an authenticated proof, not a production
-  remote-access design. It has no pairing, principal/capability model, TLS,
-  relay, wake-up path, or public wire compatibility promise.
+- The loopback WebSocket gateway and configured private-host Basic service are
+  not a production owner-remote-access design. RSTorrent has no built-in TLS,
+  passphrase/device principal model, relay, wake-up path, or public wire
+  compatibility promise.
 - The Tauri shell has basic macOS close-and-reopen behavior, provisional icon
   assets, ordinary local bundle configuration, implemented updater UI/
   lifecycle behavior, and hosted signed package evidence across macOS arm64/

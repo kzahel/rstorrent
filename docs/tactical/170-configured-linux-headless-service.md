@@ -1,11 +1,11 @@
 # Tactical 170: Configured Linux Headless Service
 
-Status: **In progress and selected as the sole Now on 2026-08-26.** The strict
-configuration and missing-root safety gate is implemented. Desktop
+Status: **Complete on 2026-08-26.** The strict configuration, one-process
+runtime, owned package/service lifecycle, isolated TLS-proxy matrix, native
+x86_64 real-Linux campaign, and x86_64/ARM64 construction gates pass. Desktop
 signed-package Tactical
-[`158`](158-desktop-signed-packaging-and-updater.md) is paused with its open
-Windows and Linux x86_64 evidence preserved and resumes after this bounded
-slice.
+[`158`](158-desktop-signed-packaging-and-updater.md) resumes as the sole
+**Now** with its open Windows and Linux x86_64 evidence unchanged.
 
 Topics: `runtime-configurations-and-headless-deployment`,
 `product-surfaces-and-migration`, `application-connection-architecture`,
@@ -415,8 +415,7 @@ copied from a reference.
 - Focused runtime evidence covers an occupied exact listener failing before
   profile or payload creation, Basic-authenticated product/build health from a
   complete installed fixture, a missing payload root remaining absent, and a
-  cancellation-driven joined shutdown. The isolated proxy and real-systemd
-  gates remain open.
+  cancellation-driven joined shutdown.
 - The owned installer now resolves the fixed XDG/home paths, validates an
   architecture-matched package and exact embedded binary identities, stages a
   complete immutable release, advances relative `current` and the stable
@@ -427,15 +426,20 @@ copied from a reference.
   Uninstall requires the matching manifest, stops/disables the exact unit, and
   removes only owned application files while preserving config, example,
   profile, secret, and payload paths. Fake-manager tests cover fresh install,
-  same-version running repair, failed-update rollback, and preservation-safe
-  removal.
-- Native Linux x86_64 package `0.1.0` was built twice from the production
-  same-origin web bundle. Both archives were byte-identical at SHA-256
-  `a8e3092f9d299e33a5d77a00d02c6407231ad5dc8b3cfe580593d44f984918f8`.
-  The validator reports 19 files and 69,018,601 bytes and checks the archive
-  allowlist, paths/types/modes, x86_64 ELF identity, exact adapter/gateway
-  versions, fixed templates, web bounds, and no enable/linger command. Native
-  ARM64 package construction remains open for the real-target gate.
+  same-version running repair, successful newer-version update, failed-update
+  rollback, and preservation-safe removal.
+- Linux x86_64 package `0.1.0` was built twice from the production same-origin
+  web bundle. Both archives were byte-identical at SHA-256
+  `4e07c8855215ecdae08766cad753ed21b97cfabc68e6a1273cfa6519e840abe0`;
+  the validator reports 19 files and 69,010,313 bytes. The ARM64 package was
+  also constructed twice byte-identically from Rust 1.97.0 cross-built ELF
+  payloads at SHA-256
+  `52d5b4f4f32a0bb11c26510c0bf395ed4116c279819f5273bd21409924e066de`;
+  its validator reports 19 files and 63,560,002 bytes. Both validators check
+  the archive allowlist, paths/types/modes, ELF architecture, fixed templates,
+  web bounds, and absence of enable/linger commands. The ARM64 adapter and
+  gateway report exact `0.1.0` identities under QEMU user-mode execution;
+  native ARM64 systemd installation remains unclaimed.
 - The isolated proxy fixture extracts that package into an immutable
   versions/current layout, creates an ephemeral random password and protected
   secret/config files, generates a one-day self-signed IP certificate, and
@@ -448,6 +452,64 @@ copied from a reference.
   generations, and captured process output contains no password. All temporary
   certificates, secrets, profile, package extraction, sockets, and logs are
   removed by the fixture.
+
+### Execution Evidence (2026-08-26)
+
+- An expiring exclusive machine-control claim covered one x86_64 Ubuntu Linux
+  target whose initial state was a running graphical login screen, disabled
+  user lingering, and no active user manager. The task restored disabled
+  lingering, stopped its temporary user manager, removed only task-created
+  package/config/profile/payload/proxy state, and released the claim. It did
+  not retain a package or modify a system-wide service, firewall, proxy, or
+  boot policy.
+- HLS-001 installed the archive as an ordinary user and observed the unit
+  disabled/inactive with no generated profile or payload. HLS-002 rejected an
+  unavailable exact address with configuration exit 78 and no profile, then
+  bound the configured private address exactly. HLS-003 completed local
+  first-run pairing and retained the browser session over service restart.
+- HLS-004 passed production static, exact product/build health, HTTP hello,
+  and WebSocket application negotiation through an isolated host HTTPS/WSS
+  proxy. Missing or wrong Basic credentials and wrong Host or HTTP/WebSocket
+  Origin were rejected. The service retained one process and no child.
+- HLS-005 downloaded and SHA-1 verified an 8-MiB, 128-piece fixture from a
+  pinned libtorrent 2.0.13 seed over loopback with a 2-Mbit `tc` throttle.
+  Every presentation detached during observed progress; a fresh presentation
+  later saw complete state. The initial seed joined after uploading exactly
+  8,388,608 bytes, and a second pinned-libtorrent client downloaded all
+  8,388,608 bytes back from RSTorrent's completed seed registration with an
+  exact hash match. End-to-end elapsed time was 51.424 seconds.
+- HLS-006 retained authenticated health for a five-second idle/no-presentation
+  interval with zero children, zero established gateway sessions, and no seed
+  helper. HLS-007 observed joined restart in 354 ms, one replacement owner,
+  the unchanged payload hash, and durable 128/128 complete state. HLS-008 then
+  ran the real enabled service with its configured payload root absent: exact
+  product/build health and application API version 1 remained reachable, the
+  root stayed absent across restart, and the new generation retained one PID
+  with zero children. Deterministic installed-runtime evidence additionally
+  verifies that the corresponding application root is reported unavailable.
+- HLS-009 first exposed a post-restart health race. The installer rolled back
+  to the healthy old generation, then a bounded authenticated readiness poll
+  and transient-state regression repaired the defect. A same-version real
+  repair then retained configuration, secret, profile, payload, enablement,
+  running state, and durable completion. A deterministic newer-version update
+  advances `current`, restores running/enabled state after transient health,
+  and preserves operator config, profile, and payload; the failed-new-version
+  case restores the former identity and service. HLS-010 stopped/disabled the
+  unit and removed only the application versions, unit, command link, and
+  ownership record while preserving config, example, secret, profile database,
+  session state, and payload with unchanged hashes and modes.
+- The observed service high-water snapshot was 19.4 MiB memory and 6.174 CPU
+  seconds during the controlled campaign. The service owned one application,
+  profile, gateway listener, peer listener, and process; the external seed and
+  TLS proxy were isolated fixture owners rather than retained children.
+- Final source gates pass: `cargo fmt --all -- --check`,
+  `cargo clippy --workspace -- -D warnings`, `cargo test --workspace`, web
+  generation/typecheck, and the Node 20 LTS web suite (279 passed, 2 skipped).
+  Package validators, two-build hash comparisons, shell syntax, Python helper
+  compilation, and `git diff --check` also pass. Node 25.2.0's experimental
+  global `localStorage` makes the otherwise unchanged jsdom suite fail during
+  setup, so the recorded canonical web result uses the installed Node 20.20.2
+  LTS runtime.
 
 ## Staged Implementation
 

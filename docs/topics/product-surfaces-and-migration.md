@@ -71,9 +71,10 @@ later authenticated remote clients attach as detachable presentations.
 [`runtime-configurations-and-headless-deployment.md`](runtime-configurations-and-headless-deployment.md)
 owns that runtime, service, listener, authentication, and reverse-proxy
 direction. Configured Linux headless-service Tactical
-[`170`](../tactical/170-configured-linux-headless-service.md) is the accepted
-first implementation slice. It does not authorize owner remote cryptography or
-relay work.
+[`170`](../tactical/170-configured-linux-headless-service.md) completes the
+first implementation slice with one ordinary-user systemd service, detachable
+React presentations, strict hosted access, and data-preserving package
+lifecycle. It does not authorize owner remote cryptography or relay work.
 
 ## Scope
 
@@ -465,6 +466,11 @@ Current repository evidence already supplies useful parts of this direction:
 - The Tauri and browser adapters already share one React presentation through
   different transports, while Android consumes the same semantic model through
   UniFFI and Compose.
+- Tactical `170` proves the separate Linux-server composition on x86_64: one
+  service process retains its application/profile/transfer/seed authority when
+  every browser view detaches, then a fresh view recovers the same durable
+  state. Its x86_64/ARM64 package construction does not turn desktop or mobile
+  into clients of that service.
 - The current JSTorrent checkout at `~/code/jstorrent` documents the extension
   engine, native-host bootstrap, profile conflict/takeover, IO daemon, Android
   companion, and Tauri split in `desktop/README.md`, `extension/README.md`, and
@@ -496,6 +502,9 @@ fixture, or wire contract from either sibling project.
 - Crostini update/rollback, suspend/reboot, shared-storage, physical native
   ARM64 runtime, and broader network contracts beyond the accepted public
   `crostini-v0.1.0` x86_64 installation and hosted two-architecture packages.
+- Signed public Linux-headless distribution/update, native ARM64 systemd,
+  representative mount/reboot, and long-run unattended evidence beyond the
+  completed local x86_64 package/service campaign.
 - The bounded best-effort set of legacy state worth migrating at graduation
   time.
 - Physical desktop extension-control evidence and ChromeOS recovery from stale
@@ -517,6 +526,11 @@ Tactical `169` plus its separately authorized release operation supply signed
 public `crostini-v0.1.0` artifacts and exact x86_64 website-install acceptance;
 do not treat that as full extension control, physical ARM64 runtime,
 update/rollback, or legacy migration.
+Completed Tactical `170` supplies the first configured ordinary-user Linux
+headless backend and proves detached transfer/seeding plus preservation-safe
+service lifecycle. Treat signed distribution, system-wide ownership, native
+ARM64 service evidence, and owner remote authentication as separate future
+slices.
 When JSTorrent graduation is separately authorized, create one bounded
 tactical that fixes the production handoff and the intentionally best-effort
 legacy-state scope from then-current evidence.

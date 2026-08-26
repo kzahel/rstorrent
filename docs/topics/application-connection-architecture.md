@@ -53,6 +53,16 @@ session authentication, and exposes a bounded protocol-1 handoff only to the
 pinned beta extension. The physical x86_64 Chromebook proves the same semantic
 WebSocket application remains usable across detachable browser views and
 stopped-VM relaunch.
+Completed Tactical
+[`170`](../tactical/170-configured-linux-headless-service.md) reuses that same
+semantic WebSocket and HTTP adapter in one configured Linux service. A
+prepared-listener boundary now completes package/auth/origin validation and
+the exact socket bind before constructing the application owner. Hosted Basic
+mode requires the configured external HTTPS authority in `Host` before static,
+health, HTTP, media, or WebSocket routing. Isolated TLS/WSS and real x86_64
+Linux evidence prove detachable views, fresh-view recovery, joined restart,
+and one service/application/profile owner; the inner protocol gains no stable
+public-compatibility promise.
 
 ## Purpose And Scope
 

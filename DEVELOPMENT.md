@@ -45,6 +45,12 @@ machine-control.
 The authoritative **Now** is
 [`158-desktop-signed-packaging-and-updater.md`](docs/tactical/158-desktop-signed-packaging-and-updater.md).
 It has resumed with its signed-candidate and installed-update gates unchanged.
+Completed Tactical `170` supplies the configured ordinary-user Linux headless
+service: strict versioned root/listener/origin/auth configuration, one process
+and profile owner, a disabled-by-default systemd user unit, rollback-safe
+repair, preservation-safe uninstall, deterministic x86_64/ARM64 archives, and
+real x86_64 detached-transfer/re-seeding evidence. Signed public headless
+distribution and native ARM64 systemd evidence remain later work.
 Completed Tactical `166` supplies the typed desktop compatibility/launch host,
 per-user registration and sidecar packaging, and the self-contained Manifest
 V3 JSTorrent Beta seed. Chrome 151 on an installed unsigned macOS arm64 app
@@ -327,6 +333,63 @@ key for Chrome Web Store item `gcgoepclopkgijmclmlheafaglmbjlcc`; validation
 derives that same unpacked identity and the desktop host permits only its exact
 origin beside the existing production JSTorrent origin. Upload new packages to
 that same draft item. Never commit the private key or store credentials.
+
+## Packaging And Running The Linux Headless Service
+
+On native x86_64 Linux, build and validate the ordinary-user package with:
+
+```bash
+source ~/.profile
+scripts/build-headless-package.sh
+scripts/validate-headless-package.sh \
+  target/headless/rstorrent-headless-0.1.0-linux-x86_64.tar.gz
+```
+
+The same no-argument command on native ARM64 emits the `aarch64` archive. For
+an explicit cross construction, first produce target-appropriate
+`rstorrent-headless` and `rstorrent-gateway` ELF binaries, then run:
+
+```bash
+scripts/build-headless-package.sh \
+  --architecture aarch64 \
+  --binary-directory "$PWD/target/aarch64-unknown-linux-gnu/release"
+scripts/validate-headless-package.sh \
+  target/headless/rstorrent-headless-0.1.0-linux-aarch64.tar.gz
+```
+
+Cross-host validation checks the complete archive and ELF architecture but
+cannot execute target binaries; run the same validator natively or under a
+controlled emulator before making a runtime claim.
+
+Extract one package into an ordinary-user-owned directory and run its
+`install.sh`. Installation writes immutable versions, a stable command link,
+a protected configuration example, and
+`com.jstorrent.rstorrent.headless.service`; it does not start or enable the
+unit and never changes lingering. Follow the printed steps to copy/edit
+`~/.config/rstorrent/headless.toml`, protect it with mode `0600`, and then
+enable explicitly:
+
+```bash
+systemctl --user enable --now com.jstorrent.rstorrent.headless.service
+$HOME/.local/bin/rstorrent-headless status
+journalctl --user -u com.jstorrent.rstorrent.headless.service
+```
+
+Running a new package's `install.sh` performs a same/new-version repair and
+restores prior running/enabled intent only after authenticated readiness.
+Normal removal preserves the operator configuration, secret, profile, and all
+payload roots:
+
+```bash
+$HOME/.local/bin/rstorrent-headless uninstall
+```
+
+The package does not configure TLS, DNS, a firewall, or a reverse proxy. Basic
+hosted mode expects an operator-owned HTTPS/WSS terminator and enforces the
+configured external Host and Origin itself. See
+[`runtime-configurations-and-headless-deployment.md`](docs/topics/runtime-configurations-and-headless-deployment.md)
+and Tactical [`170`](docs/tactical/170-configured-linux-headless-service.md)
+for the fixed contract and evidence.
 
 ## Launching The Live Web UI
 

@@ -2,13 +2,15 @@
 
 Topic: `runtime-configurations-and-headless-deployment`
 
-Status: Direction accepted from maintainer discussion on 2026-08-26.
-Configured Linux headless-service Tactical
-[`170`](../tactical/170-configured-linux-headless-service.md) is accepted and
-selected as the sole **Now**. Existing gateway, browser-authentication,
-private-host, desktop-background, and Crostini work provides substantial
-substrate, but no general Linux service package, production owner-remote
-authentication, or relay is implemented yet.
+Status: Configured Linux headless-service Tactical
+[`170`](../tactical/170-configured-linux-headless-service.md) completed on
+2026-08-26. The ordinary-user Linux package, strict versioned configuration,
+disabled-by-default systemd user unit, one-process application owner,
+data-preserving repair/removal, isolated HTTPS/WSS proxy matrix, and real
+x86_64 Linux lifecycle/transfer campaign pass. ARM64 package construction and
+binary identity pass without a native ARM64 systemd claim. Production
+owner-remote authentication, relay delivery, signed public distribution, and
+system-wide service ownership do not exist yet.
 
 ## Purpose And Scope
 
@@ -288,6 +290,16 @@ growing parallel CLI, environment, and file vocabularies whose conflict rules
 cannot be explained. The current gateway CLI/environment behavior is
 substrate, not automatically the final stable operator contract.
 
+Tactical `170` implements that first contract as one strict
+`rstorrent-headless-v1` TOML file. It requires an explicit profile, one through
+32 named path roots, exact IP address and nonzero port, exact public origin,
+and either local-browser or Basic authentication. Basic secrets are read from
+a protected owner-only regular file. Unknown or duplicate keys, unsafe
+ownership or modes, overlapping protected paths, symlink roots, invalid
+listener/origin combinations, and incomplete package identity fail before the
+application opens. A missing configured payload mount remains absent and is
+reported unavailable rather than being recreated.
+
 ## Presentation And Extension Routing
 
 The simplest remote presentation remains a browser tab opened at the selected
@@ -317,7 +329,7 @@ connection rather than define its security model.
 
 ## Current Substrate And Gaps
 
-The repository already proves useful parts of this direction:
+The repository now proves these parts of this direction:
 
 - `rstorrent-gateway serve` runs the application service and production React
   UI without Tauri, accepts an exact socket address and browser origin, and can
@@ -333,12 +345,27 @@ The repository already proves useful parts of this direction:
   on-demand static systemd user service; and
 - desktop already defaults to one retained background process behind the tray
   when its visible window closes.
+- Tactical `170` packages `rstorrent-headless`, `rstorrent-gateway`, and the
+  exact production React assets for one ordinary user. Installation remains
+  disabled, never changes lingering, and exposes explicit enable/start/status/
+  restart/uninstall commands. Same-version repair preserves running/enabled
+  intent and rolls back on failed authenticated readiness; uninstall preserves
+  configuration, secrets, profile, and every payload root.
+- One x86_64 Ubuntu systemd-user campaign proves exact bind failure, local
+  pairing persistence, private HTTPS/WSS proxy control, an 8-MiB 128-piece
+  transfer with all views detached, completed re-seeding to pinned
+  libtorrent, idle reachability, missing-root reachability across restart,
+  joined restart, repair, preservation-safe uninstall, and exact target
+  cleanup. x86_64 and ARM64 archives construct twice byte-identically; ARM64
+  binaries report their identities under QEMU, without a native ARM64 service-
+  lifecycle claim.
 
 The important remaining gaps are:
 
-- a supported general-Linux package and installer/service lifecycle;
-- a stable operator configuration file or equally coherent deployment
-  contract;
+- signed public headless artifacts, a hosted installer/update route, and
+  native ARM64 service-lifecycle evidence;
+- representative removable/media-server mount, reboot, suspend, and long-run
+  unattended evidence;
 - true desktop startup with no created webview and later on-demand recreation;
 - persistent extension application control rather than one-shot launch;
 - productized private-overlay behavior;
@@ -350,24 +377,14 @@ The important remaining gaps are:
 
 ## Recommended Next Work
 
-Accepted Tactical
-[`170`](../tactical/170-configured-linux-headless-service.md) owns the first
-bounded Linux headless deployment implementation. It will:
-
-1. choose the initial service-account and service-manager ownership model for
-   the actual target Linux installation;
-2. package the release gateway and exactly matching React assets without GUI
-   dependencies;
-3. define one coherent durable configuration and secret-file contract;
-4. preserve loopback-safe defaults while proving exact explicit bind, external
-   HTTPS origin, Basic authentication, and reverse-proxy operation;
-5. define install, enable, disable, update, uninstall, data preservation,
-   signal shutdown, crash restart, and boot/mount failure behavior;
-6. test no-browser startup, remote magnet intake, UI detach/reattach, active
-   download, completed seeding, restart, version reporting, and cleanup on a
-   representative headless Linux machine; and
-7. update capability and beta-readiness records without claiming owner E2E
-   remote access or a stable public API.
+Completed Tactical
+[`170`](../tactical/170-configured-linux-headless-service.md) supplies the
+first bounded Linux headless deployment. A later headless tactical may add a
+signed public distribution/update lane or a system-wide dedicated-service-
+account mode after representative deployment evidence. It must retain the
+strict configuration, bind-before-application, one-process ownership,
+data-preserving removal, and explicit startup-policy boundaries established
+here.
 
 The desktop windowless/extension-attachment tactical can proceed independently
 because it uses the same application-service and presentation-lifecycle

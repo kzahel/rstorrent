@@ -32,11 +32,12 @@ and [protocol support matrix](docs/topics/protocol-support.md).
   [beta release ledger](docs/topics/beta-release-readiness.md).
 - **Platforms are at different readiness levels.** Desktop/web is the leading
   product and inspection surface. Android is functional with native engine and
-  durable storage integration but still has product gaps. ChromeOS deployment
-  remains planned rather than released. A minimal JSTorrent Beta Manifest V3
-  seed plus a bounded desktop compatibility/launch host now exists, but its
-  store identity and installed Chrome smoke are still pending and it is not a
-  torrent-control surface. The
+  durable storage integration but still has product gaps. A non-latest
+  ChromeOS Linux preview and its website bootstrap are public with physical
+  x86_64 acceptance; the JSTorrent Beta Manifest V3 seed remains only a launch
+  surface, not torrent control. Configured Linux headless service packages now
+  pass x86_64 real-service and x86_64/ARM64 construction gates, but have no
+  signed public distribution. The
   first-party in-process iOS campaign now has simulator, physical-device,
   public-swarm, system-preview, and unsigned/development archive evidence, but
   no TestFlight or App Store distribution. See
@@ -50,6 +51,7 @@ RSTorrent has one reusable Rust engine behind a typed application service:
 Desktop client ─┐
 Android client ─┼──> application service ──> Rust torrent engine
 iOS client ─────┤
+Linux service ──┤
 CLI and tests ──┘
 ```
 

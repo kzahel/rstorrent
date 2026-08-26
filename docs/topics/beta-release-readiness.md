@@ -64,8 +64,8 @@ complete; desktop-bootstrap Tactical
 [`166`](../tactical/166-desktop-native-bootstrap-and-extension-scaffold.md) is
 complete; signed release Tactical
 [`158`](../tactical/158-desktop-signed-packaging-and-updater.md) retains its
-open gates while Tactical `170` owns **Now**; Crostini Tactical `167` is
-complete.
+open gates and has resumed as the sole **Now**; Crostini Tactical `167` and
+configured Linux headless-service Tactical `170` are complete.
 Explicit maintainer direction temporarily yields Tactical `158` once more to
 bounded platform-aware extension popup Tactical
 [`168`](../tactical/168-platform-aware-extension-launcher.md). This polish adds
@@ -81,13 +81,14 @@ complete after its deterministic and physical signed-fixture real-package
 matrix. A subsequent explicitly authorized operation published non-latest
 `crostini-v0.1.0`, deployed the website bootstrap, and passed exact public
 x86_64 acceptance; Tactical `158` has resumed as the sole **Now**.
-Explicit maintainer direction on 2026-08-26 now temporarily yields Tactical
-`158` to configured Linux headless-service Tactical
+Explicit maintainer direction on 2026-08-26 temporarily yielded Tactical `158`
+to configured Linux headless-service Tactical
 [`170`](../tactical/170-configured-linux-headless-service.md). Tactical `170`
-owns one source/package/service and real-Linux deployment baseline; it creates
-no public release lane and does not absorb the owner remote-authentication or
-relay campaign. Tactical `158` retains its remaining signed Windows and Linux
-x86_64 acceptance gates and resumes as **Now** after Tactical `170` closes.
+is complete with deterministic source/package gates, isolated HTTPS/WSS proxy
+evidence, and a real x86_64 Linux service/transfer/preservation campaign. It
+creates no public release lane and does not absorb the owner remote-
+authentication or relay campaign. Tactical `158` has resumed as **Now** with
+its remaining signed Windows and Linux x86_64 acceptance gates unchanged.
 Maintainer direction on 2026-08-24 promotes OS-level `magnet:` and local
 `.torrent` activation from a post-beta deferral to a beta usability gap;
 completed Tactical
@@ -611,7 +612,7 @@ no single optional BEP is mandatory.
    Windows x86_64/Linux arm64 proof pass. File/magnet handoff remains outside
    that completed slice and is now owned by Tactical `163`; autostart stays
    deferred.
-4. **Paused — Tactical `158`: desktop signed packaging and updater adoption.**
+4. **Now — Tactical `158`: desktop signed packaging and updater adoption.**
    The product-owned `desktop-update-v1` client, signed package workflow,
    release validation, per-app key, public configuration, production route,
    five-platform hosted rehearsal, three tagged publications, one installed
@@ -626,9 +627,8 @@ no single optional BEP is mandatory.
    spot check pass. Repeat clean Windows from the default with the strengthened
    `UPD-005` state, characterize firewall consent, and run Linux x86_64. Intel
    macOS installed testing is deliberately omitted. Explicit maintainer
-   direction temporarily yielded this item to now-complete Tactical `169`, and
-   now yields it to configured Linux headless-service Tactical `170`. This
-   desktop work resumes as **Now** when Tactical `170` closes.
+   direction temporarily yielded this item to now-complete Tacticals `169` and
+   `170`. The desktop work has resumed as **Now**.
 5. **Complete — Tactical `163`: desktop external torrent intake.** The
    bounded shell/UI implementation, package gates, and installed Linux arm64,
    Windows x86_64-application, and macOS arm64 cold/visible/tray-hidden/
@@ -681,14 +681,14 @@ no single optional BEP is mandatory.
     every signed public artifact, and passed the exact website install,
     Launcher, and stop/relaunch flow on physical x86_64. Physical native
     ARM64, full reboot, suspend, and installed update/rollback remain open.
-16. **Now — Tactical `170`: configured Linux headless service.** Package the
-    existing Rust application owner and exact React assets for one ordinary
-    Linux user, add strict durable root/listener/origin/Basic secret-file
-    configuration plus explicit systemd user enablement, and prove HTTPS-proxy
-    control, zero-view transfer/seeding, idle reachability, joined restart,
-    update, uninstall preservation, and cleanup on a real Linux target. This
-    is not a public package, built-in TLS, relay, or owner E2E-authentication
-    slice.
+16. **Complete — Tactical `170`: configured Linux headless service.** One
+    ordinary-user Rust application owner, exact React assets, strict durable
+    root/listener/origin/Basic secret-file configuration, and a disabled-by-
+    default systemd user unit pass deterministic and real x86_64 Linux gates.
+    HTTPS/WSS proxy control, zero-view transfer, completed re-seeding, idle
+    reachability, joined restart, rollback-safe repair, uninstall preservation,
+    and exact cleanup pass. x86_64/ARM64 packages construct byte-identically;
+    native ARM64 systemd and public distribution remain unclaimed.
 
 Each implementation item requires its own bounded tactical. This ordering is
 not authorization to tag, publish, alter production routing, create store

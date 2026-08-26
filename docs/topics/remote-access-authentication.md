@@ -48,6 +48,15 @@ HTTP Basic authentication. Its credential is intentionally not owner E2E
 remote authentication, device identity, relay authentication or evidence that
 this topic has been implemented.
 
+Completed Tactical
+[`170-configured-linux-headless-service.md`](../tactical/170-configured-linux-headless-service.md)
+packages that explicit private-host posture for one ordinary Linux user. Its
+protected Basic secret file, exact HTTPS origin/Host checks, operator-owned TLS
+proxy, repair, and uninstall behavior pass isolated and real-Linux gates. This
+is still a full-owner Basic credential on an operator-secured private hop; it
+does not implement the passphrase, host/device identity, end-to-end records,
+relay blindness, or recovery model owned by this topic.
+
 Tactical
 [`101-first-run-web-authentication.md`](../tactical/101-first-run-web-authentication.md)
 is the separate ordinary loopback product boundary. Its HttpOnly browser
