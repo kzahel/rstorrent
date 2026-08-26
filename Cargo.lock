@@ -3912,6 +3912,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rstorrent-native-host"
+version = "0.1.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "rstorrent-platform"
 version = "0.1.0"
 dependencies = [

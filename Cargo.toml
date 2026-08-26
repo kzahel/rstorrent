@@ -6,6 +6,7 @@ members = [
     "crates/rstorrent-gateway",
     "crates/rstorrent-ios",
     "crates/rstorrent-media",
+    "crates/rstorrent-native-host",
     "crates/rstorrent-platform",
     "crates/rstorrent-protocol",
     "crates/rstorrent-session",
