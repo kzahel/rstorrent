@@ -32,7 +32,7 @@ mod views;
 
 pub use application::{
     ApplicationConfig, ApplicationError, ApplicationPersistence, ApplicationService,
-    PlatformPublicationPlan, PlatformPublishedFilePlan, PlatformRemovalPlan,
+    PathRootStartupPolicy, PlatformPublicationPlan, PlatformPublishedFilePlan, PlatformRemovalPlan,
     application_error_response,
 };
 pub use application_connection::{
@@ -42,9 +42,10 @@ pub use application_connection::{
 pub use control::{
     AddTorrentBytesRequest, AddTorrentDisposition, AddTorrentResult, CONTROL_VERSION, Command,
     CommandResult, ErrorCode, ErrorResponse, FileIndexRange, FilePriority, FileSelectionIntent,
-    MagnetExportResult, MagnetExportSource, RemovalDataPolicy, RemovalState, RequestEnvelope,
-    ResponseEnvelope, ResponseOutcome, ServiceSnapshot, StorageState, TorrentProtocolIdentities,
-    TorrentSnapshot, TorrentState, validate_add_torrent_bytes_request,
+    MAX_ROOT_ID_LENGTH, MAX_ROOT_LABEL_LENGTH, MagnetExportResult, MagnetExportSource,
+    RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseEnvelope, ResponseOutcome,
+    ServiceSnapshot, StorageState, TorrentProtocolIdentities, TorrentSnapshot, TorrentState,
+    validate_add_torrent_bytes_request,
 };
 pub use diagnostics::{
     DiagnosticCategory, DiagnosticEvent, DiagnosticField, DiagnosticFilter, DiagnosticProfile,
@@ -82,9 +83,9 @@ pub use speed::{
     SpeedPersistenceState, SpeedRange, SpeedSeriesView,
 };
 pub use store::{
-    ConfiguredStorageRoot, PreparedFileRecord, RemovalRecord, ResumeRecord, SessionStore,
-    StorageRootLocation, StoreError, StoredStorageRoot, StoredTracker, StoredTrackerSource,
-    StoredTrackerTransport,
+    ConfiguredStorageRoot, MAX_STORAGE_ROOT_LOCATOR_LENGTH, MAX_STORAGE_ROOTS, PreparedFileRecord,
+    RemovalRecord, ResumeRecord, SessionStore, StorageRootLocation, StoreError, StoredStorageRoot,
+    StoredTracker, StoredTrackerSource, StoredTrackerTransport,
 };
 pub use tracker_views::{
     TrackerAnnounceEventView, TrackerCatalogState, TrackerConnectionFamilyView,

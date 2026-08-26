@@ -5,6 +5,7 @@ members = [
     "crates/rstorrent-crostini",
     "crates/rstorrent-engine",
     "crates/rstorrent-gateway",
+    "crates/rstorrent-headless",
     "crates/rstorrent-ios",
     "crates/rstorrent-media",
     "crates/rstorrent-native-host",
@@ -39,6 +40,7 @@ sha2 = "0.10.9"
 schemars = "1.2.2"
 tokio = "1.47.1"
 tokio-util = "0.7.16"
+toml = { version = "=1.1.4", default-features = false, features = ["std", "serde", "parse"] }
 tower-http = "0.6.11"
 ts-rs = { version = "12.0.1", features = ["serde-compat", "no-serde-warnings"] }
 url = "2.5.8"

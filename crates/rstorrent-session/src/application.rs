@@ -270,6 +270,7 @@ pub struct ApplicationConfig {
     pub persistence: ApplicationPersistence,
     pub profile_id: String,
     pub storage_roots: Vec<ConfiguredStorageRoot>,
+    pub path_root_startup_policy: PathRootStartupPolicy,
     pub network: NetworkConfig,
     pub initial_client_settings: crate::ClientSettings,
     pub peer_transport_policy: PeerTransportPolicy,
@@ -317,6 +318,12 @@ pub struct ApplicationConfig {
 pub enum ApplicationPersistence {
     Durable { profile_root: PathBuf },
     Ephemeral,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PathRootStartupPolicy {
+    CreateMissing,
+    PreserveUnavailable,
 }
 
 impl ApplicationPersistence {
@@ -374,6 +381,7 @@ impl ApplicationConfig {
             persistence,
             profile_id,
             storage_roots,
+            path_root_startup_policy: PathRootStartupPolicy::CreateMissing,
             network,
             initial_client_settings: crate::ClientSettings::default(),
             peer_transport_policy: PeerTransportPolicy::PreferUtp,
@@ -417,6 +425,11 @@ impl ApplicationConfig {
             },
             NetworkPolicy::Offline => crate::ClientSettings::default(),
         };
+        self
+    }
+
+    pub fn with_path_root_startup_policy(mut self, policy: PathRootStartupPolicy) -> Self {
+        self.path_root_startup_policy = policy;
         self
     }
 }
@@ -545,7 +558,9 @@ impl ApplicationService {
                     root.id
                 )));
             }
-            if let StorageRootLocation::Path(path) = &root.location {
+            if config.path_root_startup_policy == PathRootStartupPolicy::CreateMissing
+                && let StorageRootLocation::Path(path) = &root.location
+            {
                 std::fs::create_dir_all(path).map_err(|source| ApplicationError::Io {
                     operation: "create configured storage root",
                     source,
@@ -5647,11 +5662,17 @@ fn available_storage_roots(
     roots
         .into_iter()
         .filter(|root| match &root.location {
-            StorageRootLocation::Path(path) => path.is_dir() && std::fs::read_dir(path).is_ok(),
+            StorageRootLocation::Path(path) => path_root_is_available(path),
             StorageRootLocation::PlatformCapability => healthy_platform_roots.contains(&root.id),
         })
         .map(|root| (root.id, root.location))
         .collect()
+}
+
+fn path_root_is_available(path: &Path) -> bool {
+    std::fs::symlink_metadata(path)
+        .is_ok_and(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
+        && std::fs::read_dir(path).is_ok()
 }
 
 fn apply_runtime_storage_availability(
@@ -6104,8 +6125,8 @@ mod tests {
     use tokio::net::{TcpListener, TcpStream, UdpSocket};
 
     use super::{
-        ApplicationConfig, ApplicationService, ManagedArtifactState, delete_path_artifacts,
-        handle_task_outcome, magnet_runtime_identity, runtime_identity,
+        ApplicationConfig, ApplicationService, ManagedArtifactState, PathRootStartupPolicy,
+        delete_path_artifacts, handle_task_outcome, magnet_runtime_identity, runtime_identity,
     };
     use crate::{
         AddTorrentBytesRequest, ApplicationCall, ApplicationCallResult, CONTROL_VERSION,
@@ -6184,6 +6205,35 @@ mod tests {
             offline.initial_client_settings.port_mapping,
             crate::PortMappingPolicy::Disabled
         );
+    }
+
+    #[tokio::test]
+    async fn preserve_unavailable_policy_does_not_create_a_missing_path_root() {
+        let root = test_root("preserve-missing-root");
+        let payload = root.join("payload");
+        let mut service = ApplicationService::open(
+            default_config(&root)
+                .with_path_root_startup_policy(PathRootStartupPolicy::PreserveUnavailable),
+        )
+        .await
+        .expect("open application with unavailable storage");
+
+        assert!(!payload.exists());
+        let snapshot = service
+            .store
+            .lock()
+            .expect("session store")
+            .snapshot()
+            .expect("service snapshot");
+        assert_eq!(snapshot.storage.roots.len(), 1);
+        assert_eq!(
+            snapshot.storage.roots[0].availability,
+            crate::StorageRootAvailability::Unavailable
+        );
+
+        service.shutdown().await.expect("shutdown application");
+        assert!(!payload.exists());
+        fs::remove_dir_all(root).expect("remove test root");
     }
 
     fn config(root: &Path) -> ApplicationConfig {

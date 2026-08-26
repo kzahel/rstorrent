@@ -3916,6 +3916,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rstorrent-headless"
+version = "0.1.0"
+dependencies = [
+ "rstorrent-session",
+ "rustix",
+ "serde",
+ "toml 1.1.4+spec-1.1.0",
+ "url",
+]
+
+[[package]]
 name = "rstorrent-ios"
 version = "0.1.0"
 dependencies = [

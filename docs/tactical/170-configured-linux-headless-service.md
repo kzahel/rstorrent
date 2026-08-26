@@ -1,7 +1,8 @@
 # Tactical 170: Configured Linux Headless Service
 
-Status: **Accepted and selected as the sole Now on 2026-08-26.** No
-implementation has landed yet. Desktop signed-package Tactical
+Status: **In progress and selected as the sole Now on 2026-08-26.** The strict
+configuration and missing-root safety gate is implemented. Desktop
+signed-package Tactical
 [`158`](158-desktop-signed-packaging-and-updater.md) is paused with its open
 Windows and Linux x86_64 evidence preserved and resumes after this bounded
 slice.
@@ -367,6 +368,32 @@ Before adding a direct TOML dependency, record its exact version, license,
 maintenance status, existing lockfile presence, and why using a standard parser
 is safer than handwritten configuration syntax. No source or fixture is
 copied from a reference.
+
+### Implementation Refresh (2026-08-26)
+
+- The selected parser is `toml 1.1.4+spec-1.1.0`, pinned directly as
+  `=1.1.4` with only `std`, `serde`, and `parse`. Its published metadata names
+  Rust 1.85, `MIT OR Apache-2.0`, and the active
+  `https://github.com/toml-rs/toml` repository. The repository has continuing
+  2026 releases and fixes, including parser hardening. This exact crate was
+  already present in `Cargo.lock` through the desktop Tauri build graph, so
+  making it a headless dependency introduces no second TOML implementation.
+- Serde's `deny_unknown_fields` plus the maintained TOML decoder rejects
+  unknown and duplicate keys while retaining correct quoted-string, array,
+  Unicode, number, and TOML 1.1 syntax behavior. A handwritten parser would
+  duplicate that hostile-input surface without product value.
+- The focused edge-case checklist is: 64-KiB pre-parse bound; UTF-8 and exact
+  version; missing, unknown, duplicate, and wrongly typed fields; one through
+  32 roots with bounded application IDs, labels, and locators; duplicate and
+  protected paths; wildcard, multicast, port-zero, hostname, and public-IP
+  listeners; canonical origin-only URLs; the local/Basic authentication
+  matrix; protected regular files with owner/mode/no-follow checks; bounded
+  one-line secrets; and summaries that cannot expose username, password-file,
+  or password bytes.
+- `ApplicationConfig` now has an explicit path-root startup policy. Existing
+  clients retain `CreateMissing`; headless selects `PreserveUnavailable`,
+  which leaves an absent mount absent and exposes it through the existing
+  unavailable-root state. Runtime root availability also refuses a symlink.
 
 ## Staged Implementation
 
