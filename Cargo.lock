@@ -3919,9 +3919,12 @@ dependencies = [
 name = "rstorrent-headless"
 version = "0.1.0"
 dependencies = [
+ "rstorrent-gateway",
  "rstorrent-session",
  "rustix",
  "serde",
+ "tokio",
+ "tokio-util",
  "toml 1.1.4+spec-1.1.0",
  "url",
 ]

@@ -404,6 +404,19 @@ copied from a reference.
   route. It does not accept the private bind address or forwarded headers as
   an alternative. Hosted health may carry an explicit bounded product
   identity; the existing Crostini identity and handoff fields are unchanged.
+- `rstorrent-headless` now validates that it is running from the selected
+  immutable relative-current release, including the exact package identity,
+  version, sibling gateway, regular-file/mode/owner rules, and a bounded
+  nonsymlink web tree. It then loads the protected configuration and secret,
+  binds the prepared gateway, opens one online application with unavailable
+  roots preserved, and joins gateway/application shutdown in the same process.
+  Immutable startup failures use configuration exit 78; post-start serving or
+  shutdown failures use runtime exit 1.
+- Focused runtime evidence covers an occupied exact listener failing before
+  profile or payload creation, Basic-authenticated product/build health from a
+  complete installed fixture, a missing payload root remaining absent, and a
+  cancellation-driven joined shutdown. The isolated proxy and real-systemd
+  gates remain open.
 
 ## Staged Implementation
 
