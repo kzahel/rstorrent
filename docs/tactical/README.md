@@ -805,6 +805,13 @@ that scope and its cleanup or compatibility rules explicitly.
   joined restart, rollback-safe repair, uninstall preservation, and exact real
   x86_64 Linux cleanup. x86_64/ARM64 construction passes without claiming
   native ARM64 systemd, built-in TLS, relay, or a public release.
+- [`171-signed-headless-release-and-lan-service.md`](171-signed-headless-release-and-lan-service.md):
+  active as the sole Now; adds a strict signed two-architecture headless
+  release/update lane, operator-approved CLI and browser update discovery,
+  one exact RFC 1918 unauthenticated full-owner mode with truthful UI, and an
+  installed current-host x86_64 service campaign without authorizing public
+  publication, unattended replacement, system-wide ownership, firewall
+  changes, or Raspberry Pi mutation.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

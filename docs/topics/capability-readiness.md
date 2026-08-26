@@ -82,6 +82,17 @@ adds no built-in TLS, relay authentication, extension control, seeding goals,
 or public release. Tactical `158` has resumed as the single **Now** with its
 open signed Windows and Linux x86_64 evidence unchanged.
 
+Explicit maintainer direction later on 2026-08-26 temporarily yields Tactical
+`158` to signed headless release and trusted-LAN service Tactical
+[`171`](../tactical/171-signed-headless-release-and-lan-service.md). This slice
+adds the strict two-architecture signed release/update lane, operator-approved
+CLI and browser checks, one exact RFC 1918 `lan-none` mode with truthful
+full-control presentation, and an installed deployment on the current x86_64
+Linux machine. It does not authorize a tag, public release, website/channel
+deployment, unattended update, system-wide service, firewall change, or
+Raspberry Pi mutation. Tactical `171` is the single **Now**; Tactical `158`
+retains its open signed Windows and Linux x86_64 gates unchanged.
+
 The updater tactical's client, production route, five-target signed hosted
 rehearsal, public `0.1.0`, `0.1.1`, and `0.1.2` releases, installed macOS arm64
 launch smoke, and exact macOS arm64 and Linux arm64 `0.1.0`-to-`0.1.1` updates

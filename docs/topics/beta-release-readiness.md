@@ -89,6 +89,15 @@ evidence, and a real x86_64 Linux service/transfer/preservation campaign. It
 creates no public release lane and does not absorb the owner remote-
 authentication or relay campaign. Tactical `158` has resumed as **Now** with
 its remaining signed Windows and Linux x86_64 acceptance gates unchanged.
+Explicit maintainer direction later on 2026-08-26 temporarily yields Tactical
+`158` to signed headless release and trusted-LAN service Tactical
+[`171`](../tactical/171-signed-headless-release-and-lan-service.md). It owns
+source-only signed distribution/update plumbing, one exact RFC 1918
+unauthenticated full-owner mode, truthful browser presentation, and an
+installed current-host service campaign. Public release/channel deployment,
+unattended updating, system-wide ownership, firewall changes, and Raspberry Pi
+mutation remain outside the slice. Tactical `171` is **Now** while Tactical
+`158` retains its open gates.
 Maintainer direction on 2026-08-24 promotes OS-level `magnet:` and local
 `.torrent` activation from a post-beta deferral to a beta usability gap;
 completed Tactical
@@ -612,7 +621,7 @@ no single optional BEP is mandatory.
    Windows x86_64/Linux arm64 proof pass. File/magnet handoff remains outside
    that completed slice and is now owned by Tactical `163`; autostart stays
    deferred.
-4. **Now — Tactical `158`: desktop signed packaging and updater adoption.**
+4. **Paused — Tactical `158`: desktop signed packaging and updater adoption.**
    The product-owned `desktop-update-v1` client, signed package workflow,
    release validation, per-app key, public configuration, production route,
    five-platform hosted rehearsal, three tagged publications, one installed
@@ -627,8 +636,9 @@ no single optional BEP is mandatory.
    spot check pass. Repeat clean Windows from the default with the strengthened
    `UPD-005` state, characterize firewall consent, and run Linux x86_64. Intel
    macOS installed testing is deliberately omitted. Explicit maintainer
-   direction temporarily yielded this item to now-complete Tacticals `169` and
-   `170`. The desktop work has resumed as **Now**.
+    direction temporarily yielded this item to now-complete Tacticals `169` and
+    `170`, and now yields it to active Tactical `171`. Its open gates remain
+    unchanged and resume when Tactical `171` closes.
 5. **Complete — Tactical `163`: desktop external torrent intake.** The
    bounded shell/UI implementation, package gates, and installed Linux arm64,
    Windows x86_64-application, and macOS arm64 cold/visible/tray-hidden/
@@ -689,6 +699,13 @@ no single optional BEP is mandatory.
     reachability, joined restart, rollback-safe repair, uninstall preservation,
     and exact cleanup pass. x86_64/ARM64 packages construct byte-identically;
     native ARM64 systemd and public distribution remain unclaimed.
+17. **Now — Tactical `171`: signed headless release and trusted-LAN service.**
+    Add a strict signed two-architecture `headless-v*` lane, verified
+    bootstrap, operator-approved CLI/browser update discovery and apply,
+    exact RFC 1918 `lan-none` admission with truthful full-control UI, and an
+    installed current-host x86_64 service campaign. No public publication,
+    unattended update, system-wide service, firewall change, or Raspberry Pi
+    mutation is authorized.
 
 Each implementation item requires its own bounded tactical. This ordering is
 not authorization to tag, publish, alter production routing, create store
