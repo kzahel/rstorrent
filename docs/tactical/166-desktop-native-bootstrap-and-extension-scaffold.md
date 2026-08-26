@@ -241,3 +241,61 @@ macOS PKG, legacy host takeover, production extension edit, store publication,
 signing/release activity, or any architecture decision listed as a non-goal.
 The expected beta item-ID/public-key wait is an external checkpoint, not
 authority to invent a placeholder identity.
+
+## Implementation Checkpoint: Store Identity Pending
+
+The first implementation checkpoint is complete on 2026-08-26:
+
+- commit `0f366a1` adds the independent Rust native host, 64 KiB framed
+  protocol, lazy bounded launch configuration, Windows binary stdio, pure
+  request/error tests, and real child-process EOF/stdout/stderr tests;
+- commit `542984b` adds the seven-file Manifest V3 seed, native-only popup and
+  worker, path-free setup guidance, permission/local-code/archive validators,
+  deterministic ZIP builder, and store-identity handoff documentation;
+- commit `5f25ffc` adds content-versioned first-launch registration, exact
+  production JSTorrent origin, Chrome/Chrome for Testing/Chromium default
+  locations, Windows HKCU registration and NSIS cleanup, stable AppImage launch
+  targeting, explicit target-triple Tauri package/release overlays, and hosted
+  package-placement gates; and
+- ordinary Cargo tests do not require a generated sidecar. The developer
+  launcher prepares a debug host, while only explicit Tauri package overlays
+  prepare and embed release hosts.
+
+The exact seed artifact is
+`target/extension/jstorrent-beta-0.1.0.zip`, SHA-256
+`2088a9ac45e1de8e507e6a34305d1a471d286c32ee40a208e5832e6150d248cb`.
+Its allowlist contains only `manifest.json`, two existing RSTorrent PNG icons,
+the popup HTML/CSS/JavaScript, and the service worker. It has no manifest
+`key`, beta origin, host permissions, content scripts, remote code, network
+request, dependency tree, documentation, build script, or secret.
+
+Recorded local evidence:
+
+- `cargo test -p rstorrent-native-host`: 9 tests pass, including two real
+  child-process cases;
+- `cargo test -p rstorrent-desktop`: 40 tests pass, including five registration
+  and stable-copy cases;
+- matching focused Clippy with `-D warnings` passes;
+- full `cargo fmt --all -- --check`, workspace Clippy with `-D warnings`, and
+  `cargo test --workspace` pass with only the repository's declared opt-in
+  ignored tests;
+- `npm test --prefix clients/extension`: three worker tests plus the source
+  validator pass;
+- two consecutive extension packages produced the same SHA-256 above;
+- the release validator and its 17 package/ownership drift tests pass;
+- shared-web typecheck, 279 unit tests with two declared skips, production
+  build, and CSP scan pass;
+- `actionlint` 1.7.9 accepts the changed CI and release workflows; and
+- an exact unsigned macOS arm64 `RSTorrent.app` built through
+  `tauri.package.conf.json`, contains executable arm64 desktop/host binaries,
+  passes activation/sidecar validation, and its packaged host completes a real
+  framed `hello` with no stderr or trailing stdout bytes.
+
+No visible application, real browser connection, Web Store action, signed
+package, Windows/Linux hosted package, publish, tag, release, or Crostini work
+was performed. The tactical remains the sole **Now**, waiting for the
+maintainer to upload the seed as a draft and return the dashboard item ID plus
+single-line public key. The next in-scope change pins that public `key`, proves
+the unpacked ID matches, adds only the exact beta origin beside the production
+origin, and runs the installed Chrome `hello`/launch smoke. It does not decide
+or begin the later control surface.
