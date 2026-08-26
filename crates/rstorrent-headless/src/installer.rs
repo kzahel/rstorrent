@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
@@ -21,6 +21,14 @@ const SERVICE_TEMPLATE: &str =
     include_str!("../resources/com.jstorrent.rstorrent.headless.service.in");
 const CONFIG_EXAMPLE: &str = include_str!("../resources/headless.toml.example");
 const OWNERSHIP_HEADER: &str = "rstorrent-headless-ownership-v1";
+#[cfg(not(test))]
+const HEALTH_READY_ATTEMPTS: usize = 101;
+#[cfg(test)]
+const HEALTH_READY_ATTEMPTS: usize = 3;
+#[cfg(not(test))]
+const HEALTH_READY_INTERVAL: Duration = Duration::from_millis(50);
+#[cfg(test)]
+const HEALTH_READY_INTERVAL: Duration = Duration::ZERO;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InstallPaths {
@@ -234,6 +242,29 @@ impl HealthVerifier for LocalHealthVerifier {
     }
 }
 
+fn verify_health_ready(
+    verifier: &mut dyn HealthVerifier,
+    paths: &InstallPaths,
+    version: &str,
+) -> Result<(), HeadlessError> {
+    let started = Instant::now();
+    let mut last_error = None;
+    for attempt in 0..HEALTH_READY_ATTEMPTS {
+        match verifier.verify(paths, version) {
+            Ok(()) => return Ok(()),
+            Err(error) => last_error = Some(error),
+        }
+        if attempt + 1 < HEALTH_READY_ATTEMPTS {
+            std::thread::sleep(HEALTH_READY_INTERVAL);
+        }
+    }
+    let error = last_error.unwrap_or_else(|| HeadlessError::runtime("health probe did not run"));
+    Err(HeadlessError::runtime(format!(
+        "service did not become healthy within {}ms: {error}",
+        started.elapsed().as_millis()
+    )))
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InstallOutcome {
     pub version: String,
@@ -341,7 +372,7 @@ pub fn install_bundle_at(
         }
         if was_active {
             manager.start(SERVICE_NAME)?;
-            verifier.verify(paths, &bundle.version)?;
+            verify_health_ready(verifier, paths, &bundle.version)?;
         }
         Ok(())
     })();
@@ -1255,14 +1286,17 @@ mod tests {
     }
 
     struct FakeHealth {
-        fail: bool,
+        fail_attempts: usize,
         versions: Vec<String>,
     }
 
     impl HealthVerifier for FakeHealth {
         fn verify(&mut self, _paths: &InstallPaths, version: &str) -> Result<(), HeadlessError> {
             self.versions.push(version.to_owned());
-            if self.fail {
+            if self.fail_attempts > 0 {
+                if self.fail_attempts != usize::MAX {
+                    self.fail_attempts -= 1;
+                }
                 Err(HeadlessError::runtime("injected health failure"))
             } else {
                 Ok(())
@@ -1352,7 +1386,7 @@ mod tests {
         let bundle = bundle_fixture(&root, "1.0.0");
         let mut manager = FakeManager::default();
         let mut health = FakeHealth {
-            fail: false,
+            fail_attempts: 0,
             versions: Vec::new(),
         };
         let outcome =
@@ -1392,13 +1426,13 @@ mod tests {
         let second = bundle_fixture(&root, "2.0.0");
         let mut manager = FakeManager::default();
         let mut health = FakeHealth {
-            fail: false,
+            fail_attempts: 0,
             versions: Vec::new(),
         };
         install_bundle_at(&first, &paths, &mut manager, &mut health).expect("first install");
         manager.enabled = true;
         manager.active = true;
-        health.fail = true;
+        health.fail_attempts = usize::MAX;
 
         let error = install_bundle_at(&second, &paths, &mut manager, &mut health)
             .expect_err("health failure must roll back");
@@ -1411,7 +1445,7 @@ mod tests {
         assert!(!paths.versions.join("2.0.0").exists());
         assert!(manager.enabled);
         assert!(manager.active);
-        assert_eq!(health.versions, ["2.0.0"]);
+        assert_eq!(health.versions, ["2.0.0", "2.0.0", "2.0.0"]);
 
         fs::remove_dir_all(root).expect("remove fixture");
     }
@@ -1424,7 +1458,7 @@ mod tests {
         let bundle = bundle_fixture(&root, "1.0.0");
         let mut manager = FakeManager::default();
         let mut health = FakeHealth {
-            fail: false,
+            fail_attempts: 0,
             versions: Vec::new(),
         };
         install_bundle_at(&bundle, &paths, &mut manager, &mut health).expect("first install");
@@ -1436,13 +1470,14 @@ mod tests {
         fs::write(payload.join("keep"), b"payload").expect("write payload");
         manager.enabled = true;
         manager.active = true;
+        health.fail_attempts = 1;
 
         let outcome = install_bundle_at(&bundle, &paths, &mut manager, &mut health)
             .expect("same-version repair");
         assert!(outcome.restored_enabled);
         assert!(outcome.restored_running);
         assert!(manager.active);
-        assert_eq!(health.versions, ["1.0.0"]);
+        assert_eq!(health.versions, ["1.0.0", "1.0.0"]);
 
         uninstall_at(&paths, &mut manager).expect("preserving uninstall");
         assert!(!paths.command.exists());
