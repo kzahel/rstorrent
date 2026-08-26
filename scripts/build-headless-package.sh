@@ -1,6 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+usage() {
+    echo "Usage: $0 [--architecture x86_64|aarch64] [--binary-directory ABSOLUTE_PATH]" >&2
+    exit 2
+}
+
+REQUESTED_ARCH=""
+BINARY_DIRECTORY=""
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --architecture)
+            [ "$#" -ge 2 ] || usage
+            REQUESTED_ARCH="$2"
+            shift 2
+            ;;
+        --binary-directory)
+            [ "$#" -ge 2 ] || usage
+            BINARY_DIRECTORY="$2"
+            shift 2
+            ;;
+        *) usage ;;
+    esac
+done
+
 if [ "$(uname -s)" != "Linux" ]; then
     echo "Headless packages must be built natively on Linux." >&2
     exit 1
@@ -13,20 +36,48 @@ case "$VERSION" in
     ''|*[!0-9A-Za-z.+_-]*|.*|*.) echo "Invalid headless package version: $VERSION" >&2; exit 1 ;;
 esac
 case "$(uname -m)" in
-    x86_64) ARCH="x86_64" ;;
-    aarch64|arm64) ARCH="aarch64" ;;
+    x86_64) HOST_ARCH="x86_64" ;;
+    aarch64|arm64) HOST_ARCH="aarch64" ;;
     *) echo "Unsupported headless architecture: $(uname -m)" >&2; exit 1 ;;
 esac
+ARCH="${REQUESTED_ARCH:-$HOST_ARCH}"
+case "$ARCH" in
+    x86_64|aarch64) ;;
+    *) echo "Unsupported headless package architecture: $ARCH" >&2; exit 1 ;;
+esac
+if [ -n "$BINARY_DIRECTORY" ] && [[ "$BINARY_DIRECTORY" != /* ]]; then
+    echo "--binary-directory must be absolute." >&2
+    exit 1
+fi
+if [ "$ARCH" != "$HOST_ARCH" ] && [ -z "$BINARY_DIRECTORY" ]; then
+    echo "Cross-architecture packaging requires --binary-directory." >&2
+    exit 1
+fi
 
 cd "$REPO_ROOT"
 VITE_RSTORRENT_DEFAULT_LIVE=same-origin npm run build --prefix clients/web
-cargo build --release -p rstorrent-gateway -p rstorrent-headless
+if [ -z "$BINARY_DIRECTORY" ]; then
+    cargo build --release -p rstorrent-gateway -p rstorrent-headless
+    BINARY_DIRECTORY="$REPO_ROOT/target/release"
+fi
+for binary in rstorrent-headless rstorrent-gateway; do
+    path="$BINARY_DIRECTORY/$binary"
+    if [ ! -x "$path" ]; then
+        echo "Missing executable package binary: $path" >&2
+        exit 1
+    fi
+    machine="$(od -An -tx1 -j18 -N2 "$path" | tr -d ' \n')"
+    case "$ARCH:$machine" in
+        x86_64:3e00|aarch64:b700) ;;
+        *) echo "Package binary $path does not match $ARCH." >&2; exit 1 ;;
+    esac
+done
 
 STAGING="$(mktemp -d)"
 trap 'rm -rf "$STAGING"' EXIT
 mkdir -p "$STAGING/bin" "$STAGING/resources" "$STAGING/web" target/headless
-install -m 0755 target/release/rstorrent-headless "$STAGING/bin/rstorrent-headless"
-install -m 0755 target/release/rstorrent-gateway "$STAGING/bin/rstorrent-gateway"
+install -m 0755 "$BINARY_DIRECTORY/rstorrent-headless" "$STAGING/bin/rstorrent-headless"
+install -m 0755 "$BINARY_DIRECTORY/rstorrent-gateway" "$STAGING/bin/rstorrent-gateway"
 cp -R clients/web/dist/. "$STAGING/web/"
 find "$STAGING/web" -type d -exec chmod 0755 {} +
 find "$STAGING/web" -type f -exec chmod 0644 {} +

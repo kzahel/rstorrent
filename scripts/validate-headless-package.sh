@@ -48,6 +48,19 @@ if [ ! -x "$SCRATCH/install.sh" ] || [ ! -x "$SCRATCH/bin/rstorrent-headless" ] 
     echo "Headless package executables have incorrect modes." >&2
     exit 1
 fi
+ARCH="$(tr -d '\n' < "$SCRATCH/ARCH")"
+case "$ARCH" in
+    x86_64) EXPECTED_MACHINE=3e00 ;;
+    aarch64) EXPECTED_MACHINE=b700 ;;
+    *) echo "Headless package architecture is invalid." >&2; exit 1 ;;
+esac
+for binary in rstorrent-headless rstorrent-gateway; do
+    machine="$(od -An -tx1 -j18 -N2 "$SCRATCH/bin/$binary" | tr -d ' \n')"
+    if [ "$machine" != "$EXPECTED_MACHINE" ]; then
+        echo "Headless package binary $binary does not match $ARCH." >&2
+        exit 1
+    fi
+done
 if grep -R -n -E 'systemctl[[:space:]]+--user[[:space:]]+enable|loginctl[[:space:]]+enable-linger' \
     "$SCRATCH/resources" "$SCRATCH/install.sh"; then
     echo "Headless package unexpectedly enables a service or lingering." >&2
@@ -60,13 +73,20 @@ if ! grep -Fq 'RestartPreventExitStatus=78' \
     echo "Headless package service template is incomplete." >&2
     exit 1
 fi
-"$SCRATCH/bin/rstorrent-headless" validate-package --bundle "$SCRATCH"
-HEADLESS_VERSION="$($SCRATCH/bin/rstorrent-headless --version)"
-GATEWAY_VERSION="$($SCRATCH/bin/rstorrent-gateway --version)"
 VERSION="$(tr -d '\n' < "$SCRATCH/VERSION")"
-if [ "$HEADLESS_VERSION" != "rstorrent-headless $VERSION" ] ||
-   [ "$GATEWAY_VERSION" != "rstorrent-gateway $VERSION" ]; then
-    echo "Headless package binary versions do not match VERSION." >&2
-    exit 1
-fi
+case "$(uname -m):$ARCH" in
+    x86_64:x86_64|aarch64:aarch64|arm64:aarch64)
+        "$SCRATCH/bin/rstorrent-headless" validate-package --bundle "$SCRATCH"
+        HEADLESS_VERSION="$($SCRATCH/bin/rstorrent-headless --version)"
+        GATEWAY_VERSION="$($SCRATCH/bin/rstorrent-gateway --version)"
+        if [ "$HEADLESS_VERSION" != "rstorrent-headless $VERSION" ] ||
+           [ "$GATEWAY_VERSION" != "rstorrent-gateway $VERSION" ]; then
+            echo "Headless package binary versions do not match VERSION." >&2
+            exit 1
+        fi
+        ;;
+    *)
+        echo "Cross-architecture package received construction-only validation ($ARCH)."
+        ;;
+esac
 echo "RSTorrent headless package validation passed ($FILE_COUNT files, $BYTE_COUNT bytes)."
