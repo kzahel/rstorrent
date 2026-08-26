@@ -24,6 +24,13 @@ existing desktop identity and updater channel, with best-effort state migration
 scoped at that time. This supersedes the earlier detailed import posture and
 does not make migration planning current work.
 
+Explicit maintainer direction on 2026-08-26 authorizes only the bounded
+desktop-bootstrap foundation in Tactical
+[`166`](../tactical/166-desktop-native-bootstrap-and-extension-scaffold.md): a
+distinct typed compatibility/launch host, per-user registration and sidecar
+packaging, and a store-seed MV3 extension. It does not choose the later
+headless service, full extension control, or Crostini topology.
+
 ## Scope
 
 This topic owns the product shape that separates a native engine host from the
@@ -185,6 +192,15 @@ x86_64-application plus macOS arm64 acceptance pass. The macOS campaign
 preserved JSTorrent as the inherited default handler and targeted RSTorrent by
 its current incubation bundle identifier. Exact hosted run `32775002484`
 passed all eight platform jobs.
+
+Tactical `166` now adds only the predecessor seam to that later control work.
+Its distinct `com.jstorrent.rstorrent.native` host can identify compatibility
+and request launch of the existing desktop application; it owns no profile,
+torrent state, listener, or application service. The initial JSTorrent Beta
+ZIP intentionally waits for the Chrome Web Store item ID/public key before the
+beta origin is pinned. Allow-listing the existing JSTorrent extension origin
+does not make that extension compatible while it still addresses legacy host
+`com.jstorrent.native`.
 
 ## ChromeOS Backends
 
@@ -435,9 +451,11 @@ fixture, or wire contract from either sibling project.
 
 ## Recommended Next Work
 
-The beta-readiness campaign is the explicit product priority. Complete the
-independent RSTorrent packaging, updater, product-quality, and installed-beta
-evidence without pulling legacy migration or extension control into its MVP.
+Complete bounded Tactical `166` through its store-identity and installed
+desktop bootstrap evidence, then resume the beta-readiness campaign's signed
+RSTorrent package and updater gates. Do not use this foundation to pull the
+later headless service, full extension control, Crostini, or legacy migration
+into the slice.
 When JSTorrent graduation is separately authorized, create one bounded
 tactical that fixes the production handoff and the intentionally best-effort
 legacy-state scope from then-current evidence.

@@ -43,7 +43,13 @@ machine-control.
 ## Current Tactical State
 
 The authoritative **Now** is
-[`158-desktop-signed-packaging-and-updater.md`](docs/tactical/158-desktop-signed-packaging-and-updater.md).
+[`166-desktop-native-bootstrap-and-extension-scaffold.md`](docs/tactical/166-desktop-native-bootstrap-and-extension-scaffold.md).
+It owns only a typed desktop compatibility/launch host, per-user native-host
+registration and sidecar packaging, and the initial self-contained Manifest V3
+JSTorrent Beta seed ZIP. The store draft supplies the beta item ID/public key
+needed for the exact origin; full extension control and Crostini topology are
+not decided here. Tactical `158` remains active and resumes afterward with its
+release gates unchanged.
 Completed Tactical `162` supplies one packaged desktop instance,
 close-to-tray policy, persisted background intent, joined Quit, release-only
 Windows GUI subsystem validation, a native Linux arm64 package gate, and

@@ -32,7 +32,13 @@ sleep-inhibition Tactical
 [`165`](../tactical/165-cross-platform-active-download-sleep-inhibition.md).
 It is complete with deterministic/build gates and guest-native installed
 macOS arm64, Windows arm64, Linux arm64, physical Android API 37, and physical
-iOS evidence. Release/updater Tactical `158` is again the single **Now**.
+iOS evidence. Explicit maintainer direction on 2026-08-26 temporarily yields
+release/updater Tactical `158` to bounded desktop native-bootstrap and
+extension-scaffold Tactical
+[`166`](../tactical/166-desktop-native-bootstrap-and-extension-scaffold.md),
+which is the single **Now**. It establishes only a typed launch/bootstrap host,
+first-launch registration, and a store-identity-seed MV3 extension; later
+extension control and Crostini topology remain undecided.
 
 The updater tactical's client,
 production route, five-target signed hosted rehearsal, public `0.1.0` release,
@@ -522,16 +528,18 @@ exactly.
 ### Now
 
 - **Tactical
-  [`158`](../tactical/158-desktop-signed-packaging-and-updater.md): desktop
-  signed packaging and updater.** Publish a signed candidate containing
-  completed Tacticals `160`--`165`, repeat Windows from a fresh default
-  profile, characterize firewall consent, and run Linux x86_64. The exact
-  update gate includes incomplete torrent state, selected files, configured
-  root, queue state, tray preference, resume, and independently verified
-  output.
+  [`166`](../tactical/166-desktop-native-bootstrap-and-extension-scaffold.md):
+  desktop native bootstrap and extension scaffold.** Build the bounded
+  `com.jstorrent.rstorrent.native` compatibility/launch host, per-user desktop
+  registration and sidecar packaging, and a self-contained Manifest V3
+  JSTorrent Beta seed ZIP. The initial store upload establishes the beta item
+  ID/public key; no placeholder or wildcard origin is accepted.
 
 ### Next
 
+- Resume Tactical
+  [`158`](../tactical/158-desktop-signed-packaging-and-updater.md) with its
+  signed-candidate and installed-update gates unchanged.
 - Freeze the application identities, first supported persistence baseline,
   changelog, privacy/support presentation, and repeatable beta torrent cohort
   around the first release candidate.

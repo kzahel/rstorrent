@@ -209,6 +209,29 @@ The maintained JSTorrent power-management source named in Tactical `165` was
 read as product/platform history at its recorded revision; RSTorrent retains
 its own state, ownership, and implementation.
 
+## Chrome Extension And Native-Messaging References
+
+Tactical
+[`166`](tactical/166-desktop-native-bootstrap-and-extension-scaffold.md) uses
+Chrome's official platform contracts:
+
+- [Native messaging](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging)
+  defines the host manifest, exact `allowed_origins`, platform registration
+  locations, caller-origin argument, native-endian length-prefixed JSON,
+  stdout discipline, process lifecycle, and message ceilings; and
+- the manifest [`key`](https://developer.chrome.com/docs/extensions/reference/manifest/key)
+  procedure defines draft ZIP upload, public-key recovery, and stable unpacked
+  development identity. Manifest V3's development guidance requires executable
+  extension code to be bundled locally.
+
+The maintained JSTorrent checkout at revision
+`9598770baecb1164a00ba5d41f7e7c11bfb78828` was inspected for product history
+at the exact manifest, host/registration, host-test, and extension-connection
+paths recorded in Tactical `166`. The sibling `web-server-chrome` checkout at
+revision `66a8c0ee95494f5b8632f7a2424a36e2da7495dd` informed only repeatable
+target-triple Tauri sidecar construction. RSTorrent imports no reference
+source, fixture, test data, protocol claim, Crostini topology, or asset.
+
 ## JSTorrent
 
 Repository: [kzahel/jstorrent](https://github.com/kzahel/jstorrent)

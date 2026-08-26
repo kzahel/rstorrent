@@ -1,6 +1,12 @@
 # Tactical 158: Desktop Signed Packaging And Updater
 
-Status: **Implementation in progress and again the sole Now on 2026-08-25.**
+Status: **Implementation in progress and temporarily yielded on 2026-08-26.**
+Explicit maintainer direction selected bounded desktop native-bootstrap and
+extension-scaffold Tactical
+[`166`](166-desktop-native-bootstrap-and-extension-scaffold.md) as the sole
+**Now** before the next signed candidate. This tactical resumes when that
+foundation reaches its stopping boundary; its release outcome and remaining
+gates are unchanged.
 Cross-platform sleep-inhibition Tactical
 [`165`](165-cross-platform-active-download-sleep-inhibition.md) is complete,
 as is desktop-notification Tactical
