@@ -1555,7 +1555,7 @@ pub fn run() {
                 .app_config_dir()
                 .map_err(|error| format!("resolve desktop config directory: {error}"))?;
             #[cfg(target_os = "linux")]
-            let appimage = app.env().appimage;
+            let appimage = app.env().appimage.map(PathBuf::from);
             #[cfg(not(target_os = "linux"))]
             let appimage: Option<PathBuf> = None;
             match app.path().home_dir() {
