@@ -1,9 +1,11 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 
 export const extensionRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+export const storeExtensionId = "gcgoepclopkgijmclmlheafaglmbjlcc";
 
 export const packagedFiles = Object.freeze([
   "manifest.json",
@@ -19,13 +21,31 @@ function fail(message) {
   throw new Error(`extension validation failed: ${message}`);
 }
 
+export function extensionIdFromPublicKey(publicKey) {
+  if (typeof publicKey !== "string" || publicKey.length === 0) {
+    fail("manifest key must be a nonempty base64 public key");
+  }
+  const der = Buffer.from(publicKey, "base64");
+  if (der.length === 0 || der.toString("base64") !== publicKey) {
+    fail("manifest key must be canonical unwrapped base64");
+  }
+  return createHash("sha256")
+    .update(der)
+    .digest("hex")
+    .slice(0, 32)
+    .replace(/[0-9a-f]/gu, (nibble) =>
+      String.fromCharCode("a".charCodeAt(0) + Number.parseInt(nibble, 16)),
+    );
+}
+
 export function validateSource() {
   const manifest = JSON.parse(readFileSync(path.join(extensionRoot, "manifest.json"), "utf8"));
   if (manifest.manifest_version !== 3 || manifest.name !== "JSTorrent Beta") {
     fail("expected the reviewed JSTorrent Beta Manifest V3 identity");
   }
-  if (manifest.key !== undefined) {
-    fail("store-seed manifest must omit key until the dashboard public key is returned");
+  const derivedExtensionId = extensionIdFromPublicKey(manifest.key);
+  if (derivedExtensionId !== storeExtensionId) {
+    fail(`manifest key derives ${derivedExtensionId}, expected store item ${storeExtensionId}`);
   }
   if (JSON.stringify(manifest.permissions) !== JSON.stringify(["nativeMessaging"])) {
     fail("nativeMessaging must be the only extension permission");

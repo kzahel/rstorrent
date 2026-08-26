@@ -97,6 +97,17 @@ test("rejects native host package or registration drift", () => {
     /desktop native host registration and target-triple packaging are incomplete/,
   );
 
+  const betaRegistrationFixture = repositoryFixture();
+  betaRegistrationFixture.nativeHostRegistration =
+    betaRegistrationFixture.nativeHostRegistration.replace(
+      "gcgoepclopkgijmclmlheafaglmbjlcc",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    );
+  assert.throws(
+    () => validateDesktopReleaseConfiguration(betaRegistrationFixture),
+    /desktop native host registration and target-triple packaging are incomplete/,
+  );
+
   const cleanupFixture = repositoryFixture();
   cleanupFixture.nsisHooks = cleanupFixture.nsisHooks.replace(
     "Software\\Google\\Chrome\\NativeMessagingHosts\\com.jstorrent.rstorrent.native",

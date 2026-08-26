@@ -7,6 +7,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 const PRODUCTION_EXTENSION_ORIGIN: &str = "chrome-extension://dbokmlpefliilbjldladbimlcfgbolhk/";
+const BETA_EXTENSION_ORIGIN: &str = "chrome-extension://gcgoepclopkgijmclmlheafaglmbjlcc/";
 const HOST_DESCRIPTION: &str = "RSTorrent desktop bootstrap";
 const HOST_MANIFEST_FILENAME: &str = "com.jstorrent.rstorrent.native.json";
 const HOST_DIRECTORY: &str = "native-host";
@@ -32,7 +33,7 @@ struct NativeHostManifest<'a> {
     path: &'a Path,
     #[serde(rename = "type")]
     transport: &'static str,
-    allowed_origins: [&'static str; 1],
+    allowed_origins: [&'static str; 2],
 }
 
 pub fn repair_native_host_registration(
@@ -127,7 +128,7 @@ fn manifest_bytes(host_path: &Path) -> Result<Vec<u8>, String> {
         description: HOST_DESCRIPTION,
         path: host_path,
         transport: "stdio",
-        allowed_origins: [PRODUCTION_EXTENSION_ORIGIN],
+        allowed_origins: [PRODUCTION_EXTENSION_ORIGIN, BETA_EXTENSION_ORIGIN],
     };
     let bytes = serde_json::to_vec_pretty(&manifest)
         .map_err(|error| format!("encode native host manifest: {error}"))?;
@@ -349,7 +350,7 @@ mod tests {
         assert_eq!(value["type"], "stdio");
         assert_eq!(
             value["allowed_origins"],
-            serde_json::json!([PRODUCTION_EXTENSION_ORIGIN])
+            serde_json::json!([PRODUCTION_EXTENSION_ORIGIN, BETA_EXTENSION_ORIGIN])
         );
         assert_eq!(value["path"], host.to_string_lossy().as_ref());
     }

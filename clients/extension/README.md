@@ -18,22 +18,18 @@ The package command validates the reviewed file allowlist and writes
 `target/extension/jstorrent-beta-<version>.zip`. The ZIP deliberately excludes
 this README, store notes, scripts, dependencies, build output, and secrets.
 
-## First Chrome Web Store Upload
+## Chrome Web Store Identity
 
-The initial manifest intentionally has no `key` because the beta extension
-does not have a store identity yet.
+The draft store item is `gcgoepclopkgijmclmlheafaglmbjlcc`. Its public key is
+pinned in the manifest so store and unpacked builds retain that identity. The
+validator independently derives the extension ID from the public key and
+rejects any mismatch.
 
-1. In the Chrome Developer Dashboard, choose **Add new item** and upload the
-   generated ZIP as a draft. Publication is not required for this checkpoint.
-2. Record the dashboard **Item ID**.
-3. On the item's **Package** tab, choose **View public key**. Copy only the
-   base64 text between the public-key markers and remove its newlines.
-4. Return the Item ID and single-line public key to this repository's
-   maintainer workflow. Do not commit a private `.pem` file or store
-   credentials.
-5. The follow-up change adds that public value as manifest `key`, derives and
-   verifies the same 32-character ID for unpacked development, and adds only
-   its exact `chrome-extension://<item-id>/` origin to the native-host manifest.
+Upload each generated ZIP to that same dashboard item rather than creating a
+new one. Loading this directory unpacked must also display the pinned ID.
+Publication is not required for the bootstrap checkpoint. Do not commit a
+private `.pem` file or store credentials; the manifest contains only the
+dashboard's public key.
 
 This follows Chrome's official [manifest key procedure](https://developer.chrome.com/docs/extensions/reference/manifest/key).
 

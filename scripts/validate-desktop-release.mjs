@@ -271,6 +271,8 @@ export function validateDesktopReleaseConfiguration({
     !desktopSource.includes("appimage.as_deref()") ||
     !nativeHostRegistration.includes('const PRODUCTION_EXTENSION_ORIGIN: &str =') ||
     !nativeHostRegistration.includes("dbokmlpefliilbjldladbimlcfgbolhk") ||
+    !nativeHostRegistration.includes('const BETA_EXTENSION_ORIGIN: &str =') ||
+    !nativeHostRegistration.includes("gcgoepclopkgijmclmlheafaglmbjlcc") ||
     !nativeHostRegistration.includes('const HOST_DIRECTORY: &str = "native-host";') ||
     !nativeHostRegistration.includes("register_windows_manifest(&stable_manifest)") ||
     !prepareNativeHost.includes('"build", "-p", "rstorrent-native-host"') ||
