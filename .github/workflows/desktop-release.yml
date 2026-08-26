@@ -385,7 +385,7 @@ jobs:
                 ;;
               deb)
                 PACKAGE=$(find target/release/bundle/deb -maxdepth 1 -type f -name '*.deb' -print -quit)
-                bsdtar -xf "$PACKAGE" -C "$EXTRACT_DIR"
+                dpkg-deb -x "$PACKAGE" "$EXTRACT_DIR"
                 SEARCH_ROOT="$EXTRACT_DIR"
                 ;;
               rpm)
