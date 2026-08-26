@@ -50,6 +50,14 @@ matrix. The conditional full reboot was unavailable because the testbed has no
 approved profile-login credential. Tactical `158` has resumed as the single
 **Now**.
 
+Explicit maintainer direction then temporarily yields Tactical `158` to
+platform-aware extension launcher Tactical
+[`168`](../tactical/168-platform-aware-extension-launcher.md), now the single
+**Now**. It makes the popup choose only platform-relevant surfaces: ChromeOS
+gets the published JSTorrent Android listing and ChromeOS Linux controls,
+desktop gets the native bootstrap, and unknown platforms retain both as a
+recovery fallback. It does not detect Play or Android-app availability.
+
 The updater tactical's client, production route, five-target signed hosted
 rehearsal, public `0.1.0`, `0.1.1`, and `0.1.2` releases, installed macOS arm64
 launch smoke, and exact macOS arm64 and Linux arm64 `0.1.0`-to-`0.1.1` updates
@@ -538,13 +546,18 @@ exactly.
 ### Now
 
 - **Tactical
-  [`158`](../tactical/158-desktop-signed-packaging-and-updater.md): desktop
-  signed packaging and updater.** Close its clean Windows and Linux x86_64
-  update/install evidence and Windows firewall-consent characterization.
-  Installed Intel macOS remains deliberately omitted.
+  [`168`](../tactical/168-platform-aware-extension-launcher.md):
+  platform-aware extension launcher.** Present only the relevant desktop or
+  ChromeOS launch choices, link the exact published JSTorrent Android listing
+  without claiming availability, and retain the Crostini handoff.
 
 ### Next
 
+- Resume Tactical
+  [`158`](../tactical/158-desktop-signed-packaging-and-updater.md) to close its
+  clean Windows and Linux x86_64 update/install evidence and Windows firewall-
+  consent characterization. Installed Intel macOS remains deliberately
+  omitted.
 - Freeze the application identities, first supported persistence baseline,
   changelog, privacy/support presentation, and repeatable beta torrent cohort
   around the first release candidate.
