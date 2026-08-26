@@ -2,6 +2,9 @@ const statusDot = document.querySelector("#status-dot");
 const statusTitle = document.querySelector("#status-title");
 const statusDetail = document.querySelector("#status-detail");
 const launchButton = document.querySelector("#launch");
+const linuxButton = document.querySelector("#launch-linux");
+const linuxHelpButton = document.querySelector("#linux-help");
+const linuxStatus = document.querySelector("#linux-status");
 
 function setStatus(kind, title, detail) {
   statusDot.className = `status-dot ${kind}`;
@@ -62,3 +65,31 @@ launchButton.addEventListener("click", async () => {
 });
 
 checkDesktop();
+
+linuxButton.addEventListener("click", async () => {
+  linuxButton.disabled = true;
+  linuxStatus.textContent = "Opening the ChromeOS Linux UI…";
+  try {
+    const response = await requestCrostini();
+    if (!response?.ok) {
+      throw new Error(response?.error?.message || "Chrome could not open RSTorrent Linux.");
+    }
+    linuxStatus.textContent =
+      "Opened. If Chrome shows that the page is unavailable, launch RSTorrent for ChromeOS Linux from the Chromebook Launcher.";
+  } catch (error) {
+    linuxStatus.textContent =
+      error instanceof Error
+        ? error.message
+        : "Use RSTorrent for ChromeOS Linux from the Chromebook Launcher.";
+  } finally {
+    linuxButton.disabled = false;
+  }
+});
+
+linuxHelpButton.addEventListener("click", () => {
+  chrome.tabs.create({ url: chrome.runtime.getURL("crostini/setup.html") });
+});
+
+function requestCrostini() {
+  return chrome.runtime.sendMessage({ type: "crostiniBootstrap", op: "open" });
+}

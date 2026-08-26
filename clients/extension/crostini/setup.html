@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RSTorrent for ChromeOS Linux</title>
+    <link rel="stylesheet" href="setup.css" />
+  </head>
+  <body>
+    <main>
+      <img src="../icons/icon-128.png" width="96" height="96" alt="" />
+      <p class="eyebrow">JSTorrent Beta</p>
+      <h1>RSTorrent for ChromeOS Linux</h1>
+      <p class="intro">
+        ChromeOS Linux runs the Rust torrent engine and serves the complete
+        RSTorrent interface to Chrome. This extension provides the handoff; it
+        cannot wake a fully stopped Linux environment by itself.
+      </p>
+
+      <section>
+        <h2>Install the preview</h2>
+        <ol>
+          <li>Enable <strong>Linux development environment</strong> in ChromeOS Settings.</li>
+          <li>Extract the RSTorrent Crostini package in Linux files.</li>
+          <li>Open Terminal in that folder and run <code>./install.sh</code>.</li>
+          <li>
+            Open <strong>RSTorrent for ChromeOS Linux</strong> from the Chromebook
+            Launcher. It wakes Linux, starts RSTorrent, and returns to Chrome.
+          </li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>Everyday launch</h2>
+        <p>
+          Use the Chromebook Launcher when Linux may be stopped. Once the local
+          backend is running, this extension’s ChromeOS Linux button opens or
+          focuses its UI. Closing the tab does not stop active torrents.
+        </p>
+      </section>
+
+      <section>
+        <h2>Files and recovery</h2>
+        <p>
+          Downloads initially use Linux <code>~/Downloads</code>. To use a
+          Chromebook folder, choose <strong>Share with Linux</strong> in the
+          Files app before adding it in RSTorrent.
+        </p>
+        <dl>
+          <dt>Check the installed backend</dt>
+          <dd><code>rstorrent-crostini status</code></dd>
+          <dt>Restart the backend</dt>
+          <dd><code>systemctl --user restart com.jstorrent.rstorrent.crostini.service</code></dd>
+          <dt>Remove app files, keep profile and downloads</dt>
+          <dd><code>rstorrent-crostini uninstall</code></dd>
+          <dt>Also remove the Crostini profile</dt>
+          <dd><code>rstorrent-crostini uninstall --purge</code></dd>
+        </dl>
+      </section>
+    </main>
+  </body>
+</html>

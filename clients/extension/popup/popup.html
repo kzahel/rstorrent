@@ -12,10 +12,11 @@
         <img src="../icons/icon-32.png" width="32" height="32" alt="" />
         <div>
           <h1>JSTorrent Beta</h1>
-          <p class="eyebrow">RSTorrent desktop bootstrap</p>
+          <p class="eyebrow">RSTorrent launch preview</p>
         </div>
       </div>
 
+      <h2>Desktop app</h2>
       <section class="status-card" aria-live="polite">
         <span id="status-dot" class="status-dot checking"></span>
         <div>
@@ -26,10 +27,22 @@
         </div>
       </section>
 
-      <button id="launch" type="button" disabled>Open RSTorrent</button>
+      <button id="launch" type="button" disabled>Open RSTorrent Desktop</button>
+
+      <h2>ChromeOS Linux</h2>
+      <section class="linux-card">
+        <p>
+          If Linux is already running, open or focus its RSTorrent tab here.
+          To wake stopped Linux, use <strong>RSTorrent for ChromeOS Linux</strong>
+          from the Chromebook Launcher.
+        </p>
+        <button id="launch-linux" type="button">Open ChromeOS Linux UI</button>
+        <button id="linux-help" class="secondary" type="button">Setup and recovery</button>
+        <p id="linux-status" class="status-detail" role="status"></p>
+      </section>
       <p class="footnote">
-        This preview only checks and opens the desktop app. Torrent controls
-        will arrive in a later beta.
+        ChromeOS Linux serves the complete RSTorrent UI from its local Rust
+        backend. The extension only performs launch and focus handoff.
       </p>
     </main>
     <script src="popup.js"></script>

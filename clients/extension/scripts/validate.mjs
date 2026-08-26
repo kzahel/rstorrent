@@ -14,6 +14,8 @@ export const packagedFiles = Object.freeze([
   "popup/popup.html",
   "popup/popup.css",
   "popup/popup.js",
+  "crostini/setup.html",
+  "crostini/setup.css",
   "src/service-worker.js",
 ]);
 
@@ -47,18 +49,19 @@ export function validateSource() {
   if (derivedExtensionId !== storeExtensionId) {
     fail(`manifest key derives ${derivedExtensionId}, expected store item ${storeExtensionId}`);
   }
-  if (JSON.stringify(manifest.permissions) !== JSON.stringify(["nativeMessaging"])) {
-    fail("nativeMessaging must be the only extension permission");
+  if (JSON.stringify(manifest.permissions) !== JSON.stringify(["nativeMessaging", "storage"])) {
+    fail("only nativeMessaging and storage permissions are accepted");
   }
-  for (const forbidden of [
-    "host_permissions",
-    "content_scripts",
-    "web_accessible_resources",
-    "externally_connectable",
-  ]) {
+  for (const forbidden of ["host_permissions", "content_scripts", "web_accessible_resources"]) {
     if (manifest[forbidden] !== undefined) {
       fail(`manifest must not declare ${forbidden}`);
     }
+  }
+  if (
+    JSON.stringify(manifest.externally_connectable) !==
+    JSON.stringify({ matches: ["http://penguin.linux.test/*"] })
+  ) {
+    fail("externally_connectable must contain only the exact Crostini host match");
   }
   if (manifest.background?.service_worker !== "src/service-worker.js") {
     fail("unexpected service worker entry point");
@@ -74,8 +77,12 @@ export function validateSource() {
   for (const relativePath of packagedFiles.filter((file) => file.endsWith(".js"))) {
     const absolutePath = path.join(extensionRoot, relativePath);
     const source = readFileSync(absolutePath, "utf8");
-    if (/https?:\/\//u.test(source) || /\beval\s*\(|\bnew\s+Function\b/u.test(source)) {
-      fail(`${relativePath} contains remote-code or dynamic-code syntax`);
+    if (/\beval\s*\(|\bnew\s+Function\b/u.test(source)) {
+      fail(`${relativePath} contains dynamic-code syntax`);
+    }
+    const urls = source.match(/https?:\/\/[^"'`\s)]+/gu) ?? [];
+    if (urls.some((url) => url !== "http://penguin.linux.test:3030")) {
+      fail(`${relativePath} contains a non-Crostini remote URL`);
     }
     execFileSync(process.execPath, ["--check", absolutePath], { stdio: "pipe" });
   }
@@ -86,6 +93,10 @@ export function validateSource() {
   }
   if (!popup.includes('<script src="popup.js"></script>')) {
     fail("popup script must remain a local external file");
+  }
+  const setup = readFileSync(path.join(extensionRoot, "crostini/setup.html"), "utf8");
+  if (/<script/iu.test(setup) || /\son[a-z]+\s*=/iu.test(setup)) {
+    fail("Crostini setup must remain a static offline document");
   }
 }
 

@@ -31,6 +31,7 @@ main {
 }
 
 h1,
+h2,
 p {
   margin: 0;
 }
@@ -38,6 +39,14 @@ p {
 h1 {
   font-size: 17px;
   line-height: 1.25;
+}
+
+h2 {
+  margin: 18px 0 8px;
+  color: #cbd5e1;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .eyebrow {
@@ -56,6 +65,16 @@ h1 {
   border: 1px solid #29384a;
   border-radius: 12px;
   background: rgb(18 27 39 / 88%);
+}
+
+.linux-card {
+  padding: 14px;
+  border: 1px solid #29384a;
+  border-radius: 12px;
+  background: rgb(18 27 39 / 88%);
+  color: #cbd5e1;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .status-dot {
@@ -119,6 +138,17 @@ button:focus-visible {
 button:disabled {
   cursor: default;
   opacity: 0.48;
+}
+
+button.secondary {
+  margin-top: 8px;
+  border: 1px solid #3a4b61;
+  background: transparent;
+  color: #cbd5e1;
+}
+
+button.secondary:hover:not(:disabled) {
+  background: #1e293b;
 }
 
 .footnote {
