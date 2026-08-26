@@ -126,8 +126,20 @@ password_file = ${JSON.stringify(passwordFile)}
       authorization: basicAuthorization(options.username, password),
       version: options.version,
     });
+    if (options.magnet) {
+      await verifyDetachedTransfer(
+        {
+          publicOrigin: options.publicOrigin,
+          publicHost: options.publicHost,
+          proxyHostname: options.proxy.hostname,
+          proxyPort: options.proxy.port,
+          authorization: basicAuthorization(options.username, password),
+        },
+        options.magnet,
+      );
+    }
     process.stdout.write(
-      `verified running headless ${options.version} through HTTPS static, health, HTTP, WSS, and exact auth/Host/Origin\n`,
+      `verified running headless ${options.version} through HTTPS static, health, HTTP, WSS, exact auth/Host/Origin${options.magnet ? ", detached transfer, and fresh presentation" : ""}\n`,
     );
   }
 } finally {
@@ -289,6 +301,230 @@ async function connectedWebSocket(context) {
   await new Promise((resolve) => socket.once("close", resolve));
 }
 
+async function verifyDetachedTransfer(context, magnet) {
+  context.requestPrefix = `hls-${crypto.randomBytes(6).toString("hex")}`;
+  context.commandOrdinal = 0;
+  const first = await openPresentation(context, "00000000000000000000000000000002");
+  try {
+    const response = await apiCommand(context, `${context.requestPrefix}-add`, {
+      type: "add_magnet",
+      magnet,
+      storage_root: "downloads",
+      start_content: true,
+      skip_files: [],
+    });
+    if (response.status !== "success") {
+      throw new Error(
+        `headless lifetime add failed with ${response.error?.code ?? response.status}: ${response.error?.message ?? "no detail"}`,
+      );
+    }
+    const torrentId = response.result?.result?.torrent_id;
+    if (!/^t1-[0-9a-f]{32}$/.test(torrentId)) {
+      throw new Error("headless lifetime add omitted its canonical torrent ID");
+    }
+    const active = await waitForTorrent(context, torrentId, (torrent) =>
+      torrent.state === "downloading" &&
+      torrent.verified_piece_count < torrent.piece_count
+        ? torrent
+        : undefined,
+    );
+    first.close(1000, "detach all presentation views");
+    await waitForClose(first);
+
+    await delay(1500);
+    const detached = await waitForTorrent(
+      context,
+      torrentId,
+      (torrent) =>
+        torrent.state === "complete" ||
+        torrent.verified_piece_count > active.verified_piece_count
+          ? torrent
+          : undefined,
+      10_000,
+    );
+    if (!detached.desired_running) {
+      throw new Error("detached transfer lost its desired-running state");
+    }
+
+    const second = await openPresentation(context, "00000000000000000000000000000003");
+    try {
+      await waitForTorrent(
+        context,
+        torrentId,
+        (torrent) =>
+          torrent.state === "complete" && torrent.storage_state === "published"
+            ? torrent
+            : undefined,
+        90_000,
+      );
+    } finally {
+      second.close(1000, "fresh presentation complete");
+      await waitForClose(second);
+    }
+  } finally {
+    if (first.readyState === WebSocket.OPEN || first.readyState === WebSocket.CONNECTING) {
+      first.terminate();
+    }
+  }
+}
+
+async function openPresentation(context, clientInstanceId) {
+  const socket = new WebSocket(
+    `${context.publicOrigin.replace("https:", "wss:")}/api/v1/connect`,
+    {
+      rejectUnauthorized: false,
+      headers: {
+        Authorization: context.authorization,
+        Origin: context.publicOrigin,
+      },
+    },
+  );
+  const frames = frameQueue(socket);
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("presentation open timed out")), 5000);
+    socket.once("open", () => {
+      clearTimeout(timeout);
+      resolve();
+    });
+    socket.once("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+  });
+  socket.send(
+    JSON.stringify({
+      type: "connect",
+      api_version: 1,
+      encoding: "json",
+      client_instance_id: clientInstanceId,
+    }),
+  );
+  const connected = await frames.next((frame) => frame.type === "connected");
+  if (connected.api_version !== 1) {
+    throw new Error("presentation negotiated the wrong application version");
+  }
+  socket.send(
+    JSON.stringify({
+      type: "call",
+      call_id: "open-library",
+      operation: {
+        type: "open_view_set",
+        request: {
+          views: [
+            {
+              type: "torrent_list",
+              view_id: "library",
+              delivery: { min_interval_millis: 0 },
+            },
+          ],
+          options: {},
+        },
+      },
+    }),
+  );
+  const opened = await frames.next(
+    (frame) => frame.type === "result" && frame.call_id === "open-library",
+  );
+  if (opened.result?.type !== "view_set_opened") {
+    throw new Error("presentation did not open its bounded library view");
+  }
+  return socket;
+}
+
+function frameQueue(socket) {
+  const queued = [];
+  const waiting = [];
+  socket.on("message", (data) => {
+    let frame;
+    try {
+      frame = JSON.parse(data.toString());
+    } catch {
+      socket.terminate();
+      return;
+    }
+    const index = waiting.findIndex((entry) => entry.predicate(frame));
+    if (index >= 0) {
+      const [entry] = waiting.splice(index, 1);
+      clearTimeout(entry.timeout);
+      entry.resolve(frame);
+    } else {
+      queued.push(frame);
+    }
+  });
+  return {
+    next(predicate) {
+      const index = queued.findIndex(predicate);
+      if (index >= 0) return Promise.resolve(queued.splice(index, 1)[0]);
+      return new Promise((resolve, reject) => {
+        const entry = { predicate, resolve, reject, timeout: undefined };
+        entry.timeout = setTimeout(() => {
+          const waitingIndex = waiting.indexOf(entry);
+          if (waitingIndex >= 0) waiting.splice(waitingIndex, 1);
+          reject(new Error("application frame timed out"));
+        }, 5000);
+        waiting.push(entry);
+      });
+    },
+  };
+}
+
+async function waitForClose(socket) {
+  if (socket.readyState === WebSocket.CLOSED) return;
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      socket.terminate();
+      reject(new Error("presentation close timed out"));
+    }, 5000);
+    socket.once("close", () => {
+      clearTimeout(timeout);
+      resolve();
+    });
+  });
+}
+
+async function apiCommand(context, requestId, command) {
+  const response = await tlsRequest(context, "/api/v1/commands", {
+    authorization: context.authorization,
+    origin: context.publicOrigin,
+    owner: "00000000000000000000000000000002",
+    method: "POST",
+    contentType: "application/json",
+    body: Buffer.from(
+      JSON.stringify({ version: 1, request_id: requestId, command }),
+      "utf8",
+    ),
+  });
+  if (response.status !== 200) {
+    throw new Error(`application command failed through TLS with HTTP ${response.status}`);
+  }
+  return JSON.parse(response.body.toString("utf8"));
+}
+
+async function waitForTorrent(
+  context,
+  torrentId,
+  predicate,
+  timeoutMilliseconds = 30_000,
+) {
+  const deadline = Date.now() + timeoutMilliseconds;
+  while (Date.now() < deadline) {
+    const response = await apiCommand(
+      context,
+      `${context.requestPrefix}-snapshot-${context.commandOrdinal++}`,
+      { type: "snapshot" },
+    );
+    const torrent = response.snapshot?.torrents?.find(
+      (candidate) => candidate.torrent_id === torrentId,
+    );
+    if (torrent) {
+      const result = predicate(torrent);
+      if (result !== undefined) return result;
+    }
+    await delay(100);
+  }
+  throw new Error("headless lifetime torrent did not reach the expected state");
+}
+
 async function rejectedWebSocketStatus(context, overrides) {
   const headers = {
     Authorization: overrides.authorization,
@@ -371,12 +607,14 @@ async function tlsRequest(context, requestPath, options) {
     if (options.authorization) headers.Authorization = options.authorization;
     if (options.origin) headers.Origin = options.origin;
     if (options.owner) headers["X-RSTorrent-Owner"] = options.owner;
+    if (options.contentType) headers["Content-Type"] = options.contentType;
+    if (options.body) headers["Content-Length"] = options.body.length;
     const request = https.request(
       {
         hostname: context.proxyHostname,
         port: context.proxyPort,
         path: requestPath,
-        method: "GET",
+        method: options.method ?? "GET",
         rejectUnauthorized: false,
         headers,
       },
@@ -402,7 +640,7 @@ async function tlsRequest(context, requestPath, options) {
     );
     request.setTimeout(5000, () => request.destroy(new Error("TLS request timed out")));
     request.once("error", reject);
-    request.end();
+    request.end(options.body);
   });
 }
 
@@ -545,14 +783,18 @@ function parseOptions(arguments_) {
     }
     values.set(key, value);
   }
-  const expected = [
+  const required = [
     "--upstream",
     "--public-origin",
     "--username",
     "--password-file",
     "--expected-version",
   ];
-  if (values.size !== expected.length || expected.some((key) => !values.has(key))) {
+  const optional = "--magnet";
+  if (
+    !required.every((key) => values.has(key)) ||
+    values.size !== required.length + (values.has(optional) ? 1 : 0)
+  ) {
     throw new Error(usage());
   }
   const upstreamUrl = new URL(values.get("--upstream"));
@@ -588,6 +830,10 @@ function parseOptions(arguments_) {
   if (!username || username.length > 128 || !version || version.length > 128) {
     throw new Error("username and expected version must be 1..128 characters");
   }
+  const magnet = values.get("--magnet");
+  if (magnet && (!magnet.startsWith("magnet:?") || magnet.length > 16 * 1024)) {
+    throw new Error("lifetime magnet is invalid");
+  }
   return {
     mode: "upstream",
     upstream: { hostname: upstreamUrl.hostname, port: Number(upstreamUrl.port) },
@@ -597,11 +843,12 @@ function parseOptions(arguments_) {
     username,
     passwordFile,
     version,
+    magnet,
   };
 }
 
 function usage() {
-  return "usage: verify-headless-service.mjs --archive ABSOLUTE_TAR_GZ | --upstream http://PRIVATE_IP:PORT --public-origin https://127.0.0.1:PORT --username USER --password-file ABSOLUTE_PATH --expected-version VERSION";
+  return "usage: verify-headless-service.mjs --archive ABSOLUTE_TAR_GZ | --upstream http://PRIVATE_IP:PORT --public-origin https://127.0.0.1:PORT --username USER --password-file ABSOLUTE_PATH --expected-version VERSION [--magnet URI]";
 }
 
 function isPrivateOrLoopback(hostname) {
