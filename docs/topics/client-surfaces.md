@@ -271,9 +271,11 @@ JSTorrent Beta popup/service worker and the distinct
 torrent, profile, listener, or application service. Desktop first launch
 repairs exact per-user Chrome registration to a content-versioned stable host;
 AppImage launch metadata points at the stable AppImage rather than its
-temporary mount. The seed intentionally awaits its Chrome Web Store item
-ID/public key before the beta origin can be allowed, so this does not yet claim
-an installed extension connection or extension control surface.
+temporary mount. Chrome Web Store item `gcgoepclopkgijmclmlheafaglmbjlcc` and
+its public key are pinned, validation independently derives that identity, and
+the host manifest allows only its exact beta origin beside the production
+JSTorrent origin. The remaining installed Chrome `hello`/launch smoke is still
+required, and this seam does not claim an extension control surface.
 
 Android uses UniFFI-generated Kotlin records, enums, objects, and suspend
 functions. A small Kotlin adapter exposes subscription handles as lifecycle-

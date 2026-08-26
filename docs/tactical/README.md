@@ -777,8 +777,9 @@ that scope and its cleanup or compatibility rules explicitly.
 - [`166-desktop-native-bootstrap-and-extension-scaffold.md`](166-desktop-native-bootstrap-and-extension-scaffold.md):
   implementation in progress and selected as Now; owns the bounded RSTorrent
   desktop native compatibility/launch host, per-user registration and sidecar
-  packaging, and a self-contained Manifest V3 JSTorrent Beta seed ZIP whose
-  draft upload establishes the exact beta extension identity.
+  packaging, and a self-contained Manifest V3 JSTorrent Beta seed ZIP. Its
+  draft identity, public key, and exact origin are pinned; the installed Chrome
+  `hello`/launch smoke remains.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

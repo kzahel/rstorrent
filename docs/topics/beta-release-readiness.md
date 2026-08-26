@@ -27,8 +27,9 @@ installed macOS arm64, Windows x86_64, and Linux arm64 evidence. Completed
 Tactical `165` adds default-on desktop/Android active-work sleep inhibition,
 removes Android's Wi-Fi lock, preserves truthful iOS finite-background policy,
 and passes guest-native installed macOS arm64, Windows arm64, Linux arm64,
-physical Android API 37, and physical iOS evidence. Tactical `158` is again
-the sole **Now**.
+physical Android API 37, and physical iOS evidence. Explicit maintainer
+direction temporarily yields Tactical `158` to bounded desktop-bootstrap
+Tactical `166`, which is the sole **Now**.
 Installed Intel macOS testing is deliberately omitted. The public product
 name is RSTorrent for the foreseeable release line. A later production
 graduation is expected to retain JSTorrent's existing name, application
@@ -44,10 +45,10 @@ complete. Packaged desktop picker Tactical
 [`161`](../tactical/161-packaged-desktop-folder-picker.md) is complete;
 desktop lifecycle Tactical
 [`162`](../tactical/162-desktop-single-instance-and-tray-lifecycle.md) is
-complete; completed sleep-inhibition Tactical
-[`165`](../tactical/165-cross-platform-active-download-sleep-inhibition.md)
-returns signed release Tactical
-[`158`](../tactical/158-desktop-signed-packaging-and-updater.md) to **Now**.
+complete; desktop-bootstrap Tactical
+[`166`](../tactical/166-desktop-native-bootstrap-and-extension-scaffold.md)
+temporarily owns **Now** before signed release Tactical
+[`158`](../tactical/158-desktop-signed-packaging-and-updater.md) resumes.
 Maintainer direction on 2026-08-24 promotes OS-level `magnet:` and local
 `.torrent` activation from a post-beta deferral to a beta usability gap;
 completed Tactical
@@ -366,11 +367,13 @@ without corrupting or silently reinterpreting user state.
   sidecar packaging, per-user first-launch registration repair, NSIS cleanup,
   and a self-contained Manifest V3 seed whose only permission is
   `nativeMessaging`. Deterministic host/extension tests and an actual unsigned
-  macOS app-bundle host `hello` pass. The generated ZIP still intentionally
-  omits `key`; the Chrome Web Store draft must return its item ID/public key
-  before the exact beta origin and installed Chrome `hello`/launch smoke can
-  close this row. Full extension control, Crostini, and production JSTorrent
-  migration are not part of this beta-bootstrap gate.
+  macOS app-bundle host `hello` pass. Chrome Web Store item
+  `gcgoepclopkgijmclmlheafaglmbjlcc`, its public key, independently derived
+  unpacked identity, and its exact native-host origin are pinned. The rebuilt
+  app repairs a manifest containing only the production and beta origins. An
+  installed Chrome `hello`/launch smoke remains before this row closes. Full
+  extension control, Crostini, and production JSTorrent migration are not part
+  of this beta-bootstrap gate.
 
 ### Desktop updater contract
 

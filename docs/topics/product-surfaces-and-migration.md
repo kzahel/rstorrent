@@ -197,10 +197,11 @@ Tactical `166` now adds only the predecessor seam to that later control work.
 Its distinct `com.jstorrent.rstorrent.native` host can identify compatibility
 and request launch of the existing desktop application; it owns no profile,
 torrent state, listener, or application service. The initial JSTorrent Beta
-ZIP intentionally waits for the Chrome Web Store item ID/public key before the
-beta origin is pinned. Allow-listing the existing JSTorrent extension origin
-does not make that extension compatible while it still addresses legacy host
-`com.jstorrent.native`.
+ZIP established Chrome Web Store item `gcgoepclopkgijmclmlheafaglmbjlcc`; its
+public key and exact beta origin are now pinned. The installed Chrome
+`hello`/launch smoke remains open. Allow-listing the existing JSTorrent
+extension origin does not make that extension compatible while it still
+addresses legacy host `com.jstorrent.native`.
 
 ## ChromeOS Backends
 

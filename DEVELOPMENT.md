@@ -45,11 +45,12 @@ machine-control.
 The authoritative **Now** is
 [`166-desktop-native-bootstrap-and-extension-scaffold.md`](docs/tactical/166-desktop-native-bootstrap-and-extension-scaffold.md).
 It owns only a typed desktop compatibility/launch host, per-user native-host
-registration and sidecar packaging, and the initial self-contained Manifest V3
-JSTorrent Beta seed ZIP. The store draft supplies the beta item ID/public key
-needed for the exact origin; full extension control and Crostini topology are
-not decided here. Tactical `158` remains active and resumes afterward with its
-release gates unchanged.
+registration and sidecar packaging, and the self-contained Manifest V3
+JSTorrent Beta seed ZIP. Store item `gcgoepclopkgijmclmlheafaglmbjlcc`, its
+public key, and its exact native-host origin are pinned; an installed Chrome
+`hello`/launch smoke remains before the tactical closes. Full extension control
+and Crostini topology are not decided here. Tactical `158` remains active and
+resumes afterward with its release gates unchanged.
 Completed Tactical `162` supplies one packaged desktop instance,
 close-to-tray policy, persisted background intent, joined Quit, release-only
 Windows GUI subsystem validation, a native Linux arm64 package gate, and
@@ -321,11 +322,11 @@ npm test --prefix clients/extension
 npm run package --prefix clients/extension
 ```
 
-The artifact is written below `target/extension/`. The initial seed omits the
-manifest `key`; upload it as a draft, then return the dashboard Item ID and
-single-line public key as described in
-[`clients/extension/README.md`](clients/extension/README.md). Only that
-follow-up pins the unpacked development identity and permits the beta origin.
+The artifact is written below `target/extension/`. Its manifest pins the public
+key for Chrome Web Store item `gcgoepclopkgijmclmlheafaglmbjlcc`; validation
+derives that same unpacked identity and the desktop host permits only its exact
+origin beside the existing production JSTorrent origin. Upload new packages to
+that same draft item. Never commit the private key or store credentials.
 
 ## Launching The Live Web UI
 

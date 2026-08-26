@@ -242,7 +242,7 @@ signing/release activity, or any architecture decision listed as a non-goal.
 The expected beta item-ID/public-key wait is an external checkpoint, not
 authority to invent a placeholder identity.
 
-## Implementation Checkpoint: Store Identity Pending
+## Implementation Checkpoint: Initial Store Seed
 
 The first implementation checkpoint is complete on 2026-08-26:
 
@@ -293,9 +293,38 @@ Recorded local evidence:
 
 No visible application, real browser connection, Web Store action, signed
 package, Windows/Linux hosted package, publish, tag, release, or Crostini work
-was performed. The tactical remains the sole **Now**, waiting for the
-maintainer to upload the seed as a draft and return the dashboard item ID plus
-single-line public key. The next in-scope change pins that public `key`, proves
-the unpacked ID matches, adds only the exact beta origin beside the production
-origin, and runs the installed Chrome `hello`/launch smoke. It does not decide
-or begin the later control surface.
+was performed at this checkpoint. The tactical remained the sole **Now** for
+the dashboard item ID/public-key handoff and installed Chrome smoke. It did not
+decide or begin the later control surface.
+
+## Implementation Checkpoint: Store Identity Pinned
+
+The maintainer returned provisional Chrome Web Store draft item
+`gcgoepclopkgijmclmlheafaglmbjlcc` and its public key on 2026-08-26. Commit
+`9fd6e88` pins that public value in the extension manifest, independently
+derives and checks the same 32-character ID, adds only its exact
+`chrome-extension://gcgoepclopkgijmclmlheafaglmbjlcc/` origin beside the
+existing production origin, and makes release validation reject either origin
+drifting.
+
+The returned-identity artifact is
+`target/extension/jstorrent-beta-0.1.1.zip`, SHA-256
+`21f099adb31920c9e748bd0e561652afcc3dfd6f896d8a1abb4124b8b78ec39c`.
+Two consecutive builds produced that same digest. Five extension tests pass,
+including exact public-key-to-ID derivation, as do the source/archive gate,
+the desktop release validator and its ten focused tests, five registration
+tests, focused desktop/native-host Clippy with warnings denied, and full Rust
+formatting.
+
+An exact unsigned macOS arm64 `RSTorrent.app` rebuilt through
+`tauri.package.conf.json`, passes package validation, and its packaged host
+passes a framed `hello`. Launching that app repaired three local Chrome-family
+registrations to the stable content-versioned host; the Chrome manifest
+contains exactly the production and beta origins. No private key or dashboard
+credential entered the repository.
+
+The available automated Chrome surface does not expose
+`chrome://extensions`, so loading the unpacked seed remains a manual browser
+action. The tactical remains the sole **Now** only for the installed Chrome
+`hello` and `launch` smoke. Publication, full extension control, Crostini, and
+the later presentation topology remain outside this stopping boundary.
