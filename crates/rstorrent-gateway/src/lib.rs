@@ -59,6 +59,7 @@ pub const MAX_BASIC_USERNAME_BYTES: usize = 64;
 pub const MAX_BASIC_PASSWORD_BYTES: usize = 128;
 pub const MAX_BASIC_AUTHORIZATION_BYTES: usize = 512;
 pub const MAX_BUILD_ID_BYTES: usize = 128;
+pub const MAX_PRODUCT_ID_BYTES: usize = 128;
 pub const HTTP_OWNER_HEX_BYTES: usize = 32;
 pub const CROSTINI_HOST: &str = "penguin.linux.test";
 pub const CROSTINI_PRODUCT: &str = "rstorrent-crostini";
@@ -265,6 +266,7 @@ impl GatewayConfig {
 pub struct HostedAssets {
     root: PathBuf,
     build_id: String,
+    product: Option<String>,
     chromeos_handoff: Option<ChromeOsHandoff>,
 }
 
@@ -291,8 +293,22 @@ impl HostedAssets {
         Ok(Self {
             root,
             build_id,
+            product: None,
             chromeos_handoff: None,
         })
+    }
+
+    pub fn with_product(mut self, product: String) -> Result<Self, GatewayError> {
+        if product.is_empty()
+            || product.len() > MAX_PRODUCT_ID_BYTES
+            || !product.bytes().all(|byte| byte.is_ascii_graphic())
+        {
+            return Err(GatewayError::Configuration(format!(
+                "hosted product ID must be 1..={MAX_PRODUCT_ID_BYTES} printable ASCII bytes"
+            )));
+        }
+        self.product = Some(product);
+        Ok(self)
     }
 
     pub fn with_chromeos_handoff(mut self, extension_id: String) -> Result<Self, GatewayError> {
@@ -302,6 +318,16 @@ impl HostedAssets {
                 "ChromeOS extension ID must contain exactly 32 lowercase a-p characters".to_owned(),
             ));
         }
+        if self
+            .product
+            .as_deref()
+            .is_some_and(|product| product != CROSTINI_PRODUCT)
+        {
+            return Err(GatewayError::Configuration(
+                "ChromeOS hosting cannot replace its product identity".to_owned(),
+            ));
+        }
+        self.product = Some(CROSTINI_PRODUCT.to_owned());
         self.chromeos_handoff = Some(ChromeOsHandoff { extension_id });
         Ok(self)
     }
@@ -411,9 +437,20 @@ pub async fn bind(
     config: GatewayConfig,
     service: Arc<Mutex<ApplicationService>>,
 ) -> Result<GatewayServer, GatewayError> {
-    bind_with_picker_and_assets(
+    prepare_with_picker_and_assets(
         config,
-        service,
+        Arc::new(NativeDownloadDirectoryPicker),
+        None,
+        GatewayValidation::Standard,
+    )
+    .await?
+    .attach(service)
+    .await
+}
+
+pub async fn prepare(config: GatewayConfig) -> Result<PreparedGateway, GatewayError> {
+    prepare_with_picker_and_assets(
+        config,
         Arc::new(NativeDownloadDirectoryPicker),
         None,
         GatewayValidation::Standard,
@@ -434,9 +471,31 @@ pub async fn bind_hosted(
             "hosted web assets require basic or browser-session authentication".to_owned(),
         ));
     }
-    bind_with_picker_and_assets(
+    prepare_with_picker_and_assets(
         config,
-        service,
+        Arc::new(UnavailableDownloadDirectoryPicker),
+        Some(assets),
+        GatewayValidation::Standard,
+    )
+    .await?
+    .attach(service)
+    .await
+}
+
+pub async fn prepare_hosted(
+    config: GatewayConfig,
+    assets: HostedAssets,
+) -> Result<PreparedGateway, GatewayError> {
+    if !matches!(
+        config.authentication,
+        GatewayAuthentication::Basic(_) | GatewayAuthentication::Web(_)
+    ) {
+        return Err(GatewayError::Configuration(
+            "hosted web assets require basic or browser-session authentication".to_owned(),
+        ));
+    }
+    prepare_with_picker_and_assets(
+        config,
         Arc::new(UnavailableDownloadDirectoryPicker),
         Some(assets),
         GatewayValidation::Standard,
@@ -457,9 +516,31 @@ pub async fn bind_local_hosted(
             "local hosted web assets require unauthenticated loopback development mode".to_owned(),
         ));
     }
-    bind_with_picker_and_assets(
+    prepare_with_picker_and_assets(
         config,
-        service,
+        Arc::new(NativeDownloadDirectoryPicker),
+        Some(assets),
+        GatewayValidation::Standard,
+    )
+    .await?
+    .attach(service)
+    .await
+}
+
+pub async fn prepare_local_hosted(
+    config: GatewayConfig,
+    assets: HostedAssets,
+) -> Result<PreparedGateway, GatewayError> {
+    if !matches!(
+        config.authentication,
+        GatewayAuthentication::UnauthenticatedLoopbackDevelopment
+    ) {
+        return Err(GatewayError::Configuration(
+            "local hosted web assets require unauthenticated loopback development mode".to_owned(),
+        ));
+    }
+    prepare_with_picker_and_assets(
+        config,
         Arc::new(NativeDownloadDirectoryPicker),
         Some(assets),
         GatewayValidation::Standard,
@@ -478,9 +559,29 @@ pub async fn bind_crostini_hosted(
         ));
     }
     config.validate_crostini()?;
-    bind_with_picker_and_assets(
+    prepare_with_picker_and_assets(
         config,
-        service,
+        Arc::new(NativeDownloadDirectoryPicker),
+        Some(assets),
+        GatewayValidation::CrostiniValidated,
+    )
+    .await?
+    .attach(service)
+    .await
+}
+
+pub async fn prepare_crostini_hosted(
+    config: GatewayConfig,
+    assets: HostedAssets,
+) -> Result<PreparedGateway, GatewayError> {
+    if assets.chromeos_handoff.is_none() {
+        return Err(GatewayError::Configuration(
+            "ChromeOS Linux hosting requires an exact extension handoff".to_owned(),
+        ));
+    }
+    config.validate_crostini()?;
+    prepare_with_picker_and_assets(
+        config,
         Arc::new(NativeDownloadDirectoryPicker),
         Some(assets),
         GatewayValidation::CrostiniValidated,
@@ -511,27 +612,32 @@ async fn bind_with_picker(
     service: Arc<Mutex<ApplicationService>>,
     download_directory_picker: Arc<dyn DownloadDirectoryPicker>,
 ) -> Result<GatewayServer, GatewayError> {
-    bind_with_picker_and_assets(
+    prepare_with_picker_and_assets(
         config,
-        service,
         download_directory_picker,
         None,
         GatewayValidation::Standard,
     )
+    .await?
+    .attach(service)
     .await
 }
 
-async fn bind_with_picker_and_assets(
+async fn prepare_with_picker_and_assets(
     config: GatewayConfig,
-    service: Arc<Mutex<ApplicationService>>,
     download_directory_picker: Arc<dyn DownloadDirectoryPicker>,
     hosted_assets: Option<HostedAssets>,
     validation: GatewayValidation,
-) -> Result<GatewayServer, GatewayError> {
+) -> Result<PreparedGateway, GatewayError> {
     if matches!(validation, GatewayValidation::Standard) {
         config.validate()?;
     }
-    ApplicationService::ensure_maintenance_owner(&service).await;
+    let web_auth = match &config.authentication {
+        GatewayAuthentication::Web(config) => Some(Arc::new(std::sync::Mutex::new(
+            web_auth_http::WebAuthRuntime::open(config)?,
+        ))),
+        _ => None,
+    };
     let listener = TcpListener::bind(config.bind)
         .await
         .map_err(GatewayError::Bind)?;
@@ -550,42 +656,76 @@ async fn bind_with_picker_and_assets(
         .ok()
         .and_then(|uri| uri.authority().map(ToString::to_string))
         .ok_or_else(|| GatewayError::Configuration("media origin has no authority".to_owned()))?;
-    let media_configuration = if matches!(validation, GatewayValidation::CrostiniValidated) {
-        service
-            .lock()
-            .await
-            .configure_media_origin_for_local_http_host(&media_origin, CROSTINI_HOST)
-    } else {
-        service.lock().await.configure_media_origin(&media_origin)
-    };
-    media_configuration.map_err(|error| GatewayError::Configuration(error.to_string()))?;
-    let web_auth = match &config.authentication {
-        GatewayAuthentication::Web(config) => Some(Arc::new(std::sync::Mutex::new(
-            web_auth_http::WebAuthRuntime::open(config)?,
-        ))),
-        _ => None,
-    };
-    let state = GatewayState {
-        authentication: Arc::new(config.authentication),
-        allowed_origin: Arc::from(config.allowed_origin),
-        allowed_host: Arc::from(local_addr.to_string()),
-        media_host: Arc::from(media_host),
-        service,
-        connections: Arc::new(Semaphore::new(config.max_connections)),
-        torrent_uploads: Arc::new(Semaphore::new(1)),
-        http_owner_namespace: NEXT_HTTP_OWNER.fetch_add(1, Ordering::Relaxed),
-        connection_registry: application_websocket::ApplicationConnectionRegistry::new(),
-        connection_metrics: ApplicationConnectionMetrics::default(),
-        gateway_shutdown: CancellationToken::new(),
-        download_directory_picker,
-        hosted_assets: hosted_assets.map(Arc::new),
-        web_auth,
-    };
-    Ok(GatewayServer {
+    Ok(PreparedGateway {
+        config,
         listener,
         local_addr,
-        state,
+        media_origin,
+        media_host,
+        download_directory_picker,
+        hosted_assets,
+        validation,
+        web_auth,
     })
+}
+
+pub struct PreparedGateway {
+    config: GatewayConfig,
+    listener: TcpListener,
+    local_addr: SocketAddr,
+    media_origin: String,
+    media_host: String,
+    download_directory_picker: Arc<dyn DownloadDirectoryPicker>,
+    hosted_assets: Option<HostedAssets>,
+    validation: GatewayValidation,
+    web_auth: Option<Arc<std::sync::Mutex<web_auth_http::WebAuthRuntime>>>,
+}
+
+impl PreparedGateway {
+    pub fn local_addr(&self) -> SocketAddr {
+        self.local_addr
+    }
+
+    pub async fn attach(
+        self,
+        service: Arc<Mutex<ApplicationService>>,
+    ) -> Result<GatewayServer, GatewayError> {
+        ApplicationService::ensure_maintenance_owner(&service).await;
+        let media_configuration = if matches!(self.validation, GatewayValidation::CrostiniValidated)
+        {
+            service
+                .lock()
+                .await
+                .configure_media_origin_for_local_http_host(&self.media_origin, CROSTINI_HOST)
+        } else {
+            service
+                .lock()
+                .await
+                .configure_media_origin(&self.media_origin)
+        };
+        media_configuration.map_err(|error| GatewayError::Configuration(error.to_string()))?;
+        let state = GatewayState {
+            authentication: Arc::new(self.config.authentication),
+            allowed_origin: Arc::from(self.config.allowed_origin),
+            allowed_host: Arc::from(self.local_addr.to_string()),
+            media_host: Arc::from(self.media_host),
+            service,
+            connections: Arc::new(Semaphore::new(self.config.max_connections)),
+            torrent_uploads: Arc::new(Semaphore::new(1)),
+            http_owner_namespace: NEXT_HTTP_OWNER.fetch_add(1, Ordering::Relaxed),
+            connection_registry: application_websocket::ApplicationConnectionRegistry::new(),
+            connection_metrics: ApplicationConnectionMetrics::default(),
+            gateway_shutdown: CancellationToken::new(),
+            download_directory_picker: self.download_directory_picker,
+            hosted_assets: self.hosted_assets.map(Arc::new),
+            web_auth: self.web_auth,
+        };
+        Ok(GatewayServer {
+            listener: self.listener,
+            local_addr: self.local_addr,
+            state,
+        })
+    }
 }
 
 pub struct GatewayServer {
@@ -731,6 +871,14 @@ async fn require_basic_auth(
     let GatewayAuthentication::Basic(credentials) = state.authentication.as_ref() else {
         return next.run(request).await;
     };
+    if request
+        .headers()
+        .get(header::HOST)
+        .and_then(|value| value.to_str().ok())
+        != Some(state.media_host.as_ref())
+    {
+        return StatusCode::FORBIDDEN.into_response();
+    }
     let accepted = request
         .headers()
         .get(header::AUTHORIZATION)
@@ -792,7 +940,7 @@ struct HealthResponse<'a> {
     status: &'static str,
     build_id: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    product: Option<&'static str>,
+    product: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     launch_protocol: Option<u16>,
 }
@@ -806,7 +954,7 @@ async fn healthz(State(state): State<GatewayState>) -> Response {
         &HealthResponse {
             status: "ok",
             build_id: &assets.build_id,
-            product: assets.chromeos_handoff.as_ref().map(|_| CROSTINI_PRODUCT),
+            product: assets.product.as_deref(),
             launch_protocol: assets
                 .chromeos_handoff
                 .as_ref()
@@ -1670,6 +1818,33 @@ mod tests {
         cookie: Option<&str>,
         body: Option<String>,
     ) -> (u16, String, Vec<u8>) {
+        raw_http_request_with_host(
+            address,
+            &address.to_string(),
+            method,
+            path,
+            authorization,
+            origin,
+            owner,
+            cookie,
+            body,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn raw_http_request_with_host(
+        address: SocketAddr,
+        host: &str,
+        method: &str,
+        path: &str,
+        authorization: Option<&str>,
+        origin: Option<&str>,
+        owner: Option<&str>,
+        cookie: Option<&str>,
+        body: Option<String>,
+    ) -> (u16, String, Vec<u8>) {
+        let host = host.to_owned();
         let method = method.to_owned();
         let path = path.to_owned();
         let authorization = authorization.map(str::to_owned);
@@ -1679,7 +1854,7 @@ mod tests {
         tokio::task::spawn_blocking(move || {
             let body = body.unwrap_or_default();
             let mut request = format!(
-                "{method} {path} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\nContent-Length: {}\r\n",
+                "{method} {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\nContent-Length: {}\r\n",
                 body.len()
             );
             if let Some(authorization) = authorization {
@@ -2203,13 +2378,24 @@ mod tests {
         let shutdown = CancellationToken::new();
         let task = tokio::spawn(server.serve(shutdown.clone()));
 
-        let (status, headers, _) =
-            raw_http_request(address, "GET", "/", None, None, None, None, None).await;
+        let (status, headers, _) = raw_http_request_with_host(
+            address,
+            "preview.example",
+            "GET",
+            "/",
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await;
         assert_eq!(status, 401);
         assert!(headers.contains("www-authenticate: Basic realm=\"RSTorrent\""));
         assert_eq!(
-            raw_http_request(
+            raw_http_request_with_host(
                 address,
+                "preview.example",
                 "GET",
                 "/",
                 Some("Basic wrong"),
@@ -2222,8 +2408,9 @@ mod tests {
             .0,
             401
         );
-        let (status, _, body) = raw_http_request(
+        let (status, _, body) = raw_http_request_with_host(
             address,
+            "preview.example",
             "GET",
             "/",
             Some(&authorization),
@@ -2235,8 +2422,9 @@ mod tests {
         .await;
         assert_eq!(status, 200);
         assert_eq!(body, b"private-preview-index");
-        let (status, _, body) = raw_http_request(
+        let (status, _, body) = raw_http_request_with_host(
             address,
+            "preview.example",
             "GET",
             "/healthz",
             Some(&authorization),
@@ -2252,8 +2440,9 @@ mod tests {
             serde_json::json!({"status": "ok", "build_id": "test-build"})
         );
         assert_eq!(
-            raw_http_request(
+            raw_http_request_with_host(
                 address,
+                "preview.example",
                 "GET",
                 "/assets/missing.js",
                 Some(&authorization),
@@ -2266,6 +2455,22 @@ mod tests {
             .0,
             404
         );
+        assert_eq!(
+            raw_http_request_with_host(
+                address,
+                "wrong.example",
+                "GET",
+                "/healthz",
+                Some(&authorization),
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .0,
+            403
+        );
 
         let mut request = format!("ws://{address}/api/v1/connect")
             .into_client_request()
@@ -2277,6 +2482,9 @@ mod tests {
             "Authorization",
             authorization.parse().expect("authorization"),
         );
+        request
+            .headers_mut()
+            .insert("Host", "preview.example".parse().expect("host"));
         let (mut socket, _) = connect_async(request).await.expect("connect");
         send_application_message(
             &mut socket,
@@ -2304,6 +2512,9 @@ mod tests {
             "Authorization",
             authorization.parse().expect("authorization"),
         );
+        wrong_origin
+            .headers_mut()
+            .insert("Host", "preview.example".parse().expect("host"));
         assert!(connect_async(wrong_origin).await.is_err());
 
         shutdown.cancel();

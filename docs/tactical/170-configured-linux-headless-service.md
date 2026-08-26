@@ -394,6 +394,16 @@ copied from a reference.
   clients retain `CreateMissing`; headless selects `PreserveUnavailable`,
   which leaves an absent mount absent and exposes it through the existing
   unavailable-root state. Runtime root availability also refuses a symlink.
+- The gateway now exposes a prepared-listener boundary. Gateway and hosted
+  authentication validation, web-auth initialization, asset identity, and the
+  exact socket bind complete before an `ApplicationService` may attach. The
+  gateway CLI uses that sequence too, while its existing bind entry points
+  remain source-compatible for tests and other clients.
+- Basic hosted mode now requires the exact external-origin authority in
+  `Host` before every static, health, HTTP application, media, or WebSocket
+  route. It does not accept the private bind address or forwarded headers as
+  an alternative. Hosted health may carry an explicit bounded product
+  identity; the existing Crostini identity and handoff fields are unchanged.
 
 ## Staged Implementation
 

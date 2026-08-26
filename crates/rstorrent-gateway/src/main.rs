@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use rstorrent_gateway::{
     CROSTINI_HOST, GatewayAuthentication, GatewayConfig, HostedAssets, JSTORRENT_BETA_EXTENSION_ID,
-    MAX_BASIC_PASSWORD_BYTES, WebAccessPolicy, WebAuthenticationConfig, bind, bind_crostini_hosted,
-    bind_hosted, bind_local_hosted,
+    MAX_BASIC_PASSWORD_BYTES, WebAccessPolicy, WebAuthenticationConfig, prepare,
+    prepare_crostini_hosted, prepare_hosted, prepare_local_hosted,
 };
 use rstorrent_session::{
     ApplicationConfig, ApplicationService, ConfiguredStorageRoot, DownloadResourceLimits,
@@ -212,7 +212,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let mut application_config = ApplicationConfig::new(
-        profile_root,
+        profile_root.clone(),
         "default".to_owned(),
         storage_roots,
         NetworkConfig::new(
@@ -240,8 +240,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     if test_peer_transport.is_some() {
         application_config.peer_transport_policy = PeerTransportPolicy::TcpOnly;
     }
-    let application = ApplicationService::open(application_config).await?;
-    let application = Arc::new(Mutex::new(application));
     let config = GatewayConfig {
         bind: bind_addr,
         authentication,
@@ -253,16 +251,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
         GatewayAuthentication::UnauthenticatedLoopbackDevelopment
     );
     let hosts_web = hosted_assets.is_some();
-    let server = match hosted_assets {
-        Some(assets) if cli.chromeos_crostini => {
-            bind_crostini_hosted(config, application.clone(), assets).await?
-        }
-        Some(assets) if local_hosted => {
-            bind_local_hosted(config, application.clone(), assets).await?
-        }
-        Some(assets) => bind_hosted(config, application.clone(), assets).await?,
-        None => bind(config, application.clone()).await?,
+    if matches!(config.authentication, GatewayAuthentication::Web(_)) {
+        std::fs::create_dir_all(&profile_root)?;
+    }
+    let prepared = match hosted_assets {
+        Some(assets) if cli.chromeos_crostini => prepare_crostini_hosted(config, assets).await?,
+        Some(assets) if local_hosted => prepare_local_hosted(config, assets).await?,
+        Some(assets) => prepare_hosted(config, assets).await?,
+        None => prepare(config).await?,
     };
+    let application = ApplicationService::open(application_config).await?;
+    let application = Arc::new(Mutex::new(application));
+    let server = prepared.attach(application.clone()).await?;
     let browser_url = if cli.chromeos_crostini {
         format!("{}/", origin.trim_end_matches('/'))
     } else {
