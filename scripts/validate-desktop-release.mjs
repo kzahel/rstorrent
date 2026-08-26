@@ -267,7 +267,9 @@ export function validateDesktopReleaseConfiguration({
   if (
     !desktopSource.includes("mod native_host_registration;") ||
     !desktopSource.includes("repair_native_host_registration(") ||
-    !desktopSource.includes("let appimage = app.env().appimage;") ||
+    !desktopSource.includes(
+      "let appimage = app.env().appimage.map(PathBuf::from);",
+    ) ||
     !desktopSource.includes("appimage.as_deref()") ||
     !nativeHostRegistration.includes('const PRODUCTION_EXTENSION_ORIGIN: &str =') ||
     !nativeHostRegistration.includes("dbokmlpefliilbjldladbimlcfgbolhk") ||
