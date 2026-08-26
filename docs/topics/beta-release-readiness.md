@@ -68,6 +68,12 @@ bounded platform-aware extension popup Tactical
 no release lane, permission, Android detection, or application-control scope;
 its deterministic package and physical ChromeOS chooser/link/handoff spot
 check pass. Tactical `158` has resumed as the sole **Now**.
+Explicit maintainer direction temporarily yields Tactical `158` to hosted
+Crostini bootstrap/release Tactical
+[`169`](../tactical/169-hosted-crostini-bootstrap-and-release.md). This is
+non-publishing source plumbing and physical fixture validation; it does not
+create a public ChromeOS Linux release or expand the beta lane. Tactical `158`
+resumes after the bounded stopping condition passes.
 Maintainer direction on 2026-08-24 promotes OS-level `magnet:` and local
 `.torrent` activation from a post-beta deferral to a beta usability gap;
 completed Tactical
@@ -590,7 +596,7 @@ no single optional BEP is mandatory.
    Windows x86_64/Linux arm64 proof pass. File/magnet handoff remains outside
    that completed slice and is now owned by Tactical `163`; autostart stays
    deferred.
-4. **Now — Tactical `158`: desktop signed packaging and updater adoption.**
+4. **Paused — Tactical `158`: desktop signed packaging and updater adoption.**
    The product-owned `desktop-update-v1` client, signed package workflow,
    release validation, per-app key, public configuration, production route,
    five-platform hosted rehearsal, three tagged publications, one installed
@@ -604,8 +610,8 @@ no single optional BEP is mandatory.
    and its signed package matrix plus bounded macOS arm64 launch/native-host
    spot check pass. Repeat clean Windows from the default with the strengthened
    `UPD-005` state, characterize firewall consent, and run Linux x86_64. Intel
-   macOS installed testing is deliberately omitted. Completed Tactical `168`
-   has returned this item to **Now**.
+   macOS installed testing is deliberately omitted. Explicit maintainer
+   direction temporarily yields this item to Tactical `169`.
 5. **Complete — Tactical `163`: desktop external torrent intake.** The
    bounded shell/UI implementation, package gates, and installed Linux arm64,
    Windows x86_64-application, and macOS arm64 cold/visible/tray-hidden/
@@ -649,6 +655,11 @@ no single optional BEP is mandatory.
     only desktop behavior. The deterministic reviewed `0.3.0` package and
     physical ChromeOS chooser, exact Play destination, and warm Crostini
     handoff pass without new permissions or availability claims.
+15. **Now — Tactical `169`: hosted Crostini bootstrap and release.** Add the
+    pinned-key signed-manifest one-command installer, native x86_64/ARM64
+    `crostini-v*` release workflow, and release runbook, then prove source-only
+    fixtures and the exact non-public x86_64 package on the Chromebook. A tag,
+    push, website deployment, and public support claim remain unauthorized.
 
 Each implementation item requires its own bounded tactical. This ordering is
 not authorization to tag, publish, alter production routing, create store

@@ -60,6 +60,13 @@ chooser, exact Play destination, and retained Crostini handoff pass without
 detecting Play or Android-app availability. Tactical `158` resumes as the
 single **Now**.
 
+Explicit maintainer direction next temporarily yields Tactical `158` to hosted
+Crostini bootstrap/release Tactical
+[`169`](../tactical/169-hosted-crostini-bootstrap-and-release.md), now the
+single **Now**. It adapts the proven signed-manifest one-command installer and
+separate two-architecture `crostini-v*` release plumbing without authorizing a
+tag, push, website deployment, or public support claim.
+
 The updater tactical's client, production route, five-target signed hosted
 rehearsal, public `0.1.0`, `0.1.1`, and `0.1.2` releases, installed macOS arm64
 launch smoke, and exact macOS arm64 and Linux arm64 `0.1.0`-to-`0.1.1` updates
@@ -548,13 +555,18 @@ exactly.
 ### Now
 
 - **Tactical
-  [`158`](../tactical/158-desktop-signed-packaging-and-updater.md): desktop
-  signed packaging and updater.** Close its clean Windows and Linux x86_64
-  update/install evidence and Windows firewall-consent characterization.
-  Installed Intel macOS remains deliberately omitted.
+  [`169`](../tactical/169-hosted-crostini-bootstrap-and-release.md): hosted
+  Crostini bootstrap and release.** Add the pinned-key, signed-manifest,
+  architecture-specific one-command installer and separate release workflow;
+  prove the non-public fixture on the physical x86_64 Chromebook.
 
 ### Next
 
+- Resume Tactical
+  [`158`](../tactical/158-desktop-signed-packaging-and-updater.md) to close its
+  clean Windows and Linux x86_64 update/install evidence and Windows firewall-
+  consent characterization. Installed Intel macOS remains deliberately
+  omitted.
 - Freeze the application identities, first supported persistence baseline,
   changelog, privacy/support presentation, and repeatable beta torrent cohort
   around the first release candidate.
