@@ -1452,6 +1452,59 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn running_update_advances_identity_and_preserves_operator_data() {
+        let root = test_root("update");
+        let paths = install_paths(&root);
+        let first = bundle_fixture(&root, "1.0.0");
+        let second = bundle_fixture(&root, "2.0.0");
+        let mut manager = FakeManager::default();
+        let mut health = FakeHealth {
+            fail_attempts: 0,
+            versions: Vec::new(),
+        };
+        install_bundle_at(&first, &paths, &mut manager, &mut health).expect("first install");
+        fs::create_dir_all(paths.profile_default()).expect("create profile");
+        fs::write(paths.profile_default().join("state"), b"profile").expect("write profile");
+        fs::write(&paths.config, b"operator config").expect("write config");
+        let payload = root.join("payload");
+        fs::create_dir_all(&payload).expect("create payload");
+        fs::write(payload.join("keep"), b"payload").expect("write payload");
+        manager.enabled = true;
+        manager.active = true;
+        health.fail_attempts = 1;
+
+        let outcome =
+            install_bundle_at(&second, &paths, &mut manager, &mut health).expect("running update");
+        assert_eq!(outcome.version, "2.0.0");
+        assert!(outcome.restored_enabled);
+        assert!(outcome.restored_running);
+        assert!(manager.enabled);
+        assert!(manager.active);
+        assert_eq!(health.versions, ["2.0.0", "2.0.0"]);
+        assert_eq!(
+            fs::read_link(&paths.current).expect("updated current"),
+            Path::new("versions/2.0.0")
+        );
+        assert!(paths.versions.join("1.0.0").is_dir());
+        assert!(paths.versions.join("2.0.0").is_dir());
+        assert_eq!(
+            fs::read(paths.profile_default().join("state")).expect("preserved profile"),
+            b"profile"
+        );
+        assert_eq!(
+            fs::read(&paths.config).expect("preserved config"),
+            b"operator config"
+        );
+        assert_eq!(
+            fs::read(payload.join("keep")).expect("preserved payload"),
+            b"payload"
+        );
+
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn repair_restores_running_state_and_uninstall_preserves_operator_data() {
         let root = test_root("repair-uninstall");
         let paths = install_paths(&root);
