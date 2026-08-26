@@ -19,7 +19,12 @@ use tokio_util::sync::CancellationToken;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let cli = CliOptions::parse(env::args().skip(1))?;
+    let arguments = env::args().skip(1).collect::<Vec<_>>();
+    if arguments.as_slice() == ["--version"] {
+        println!("rstorrent-gateway {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+    let cli = CliOptions::parse(arguments)?;
     if cli.help {
         print_help();
         return Ok(());

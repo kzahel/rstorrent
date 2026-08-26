@@ -417,6 +417,25 @@ copied from a reference.
   complete installed fixture, a missing payload root remaining absent, and a
   cancellation-driven joined shutdown. The isolated proxy and real-systemd
   gates remain open.
+- The owned installer now resolves the fixed XDG/home paths, validates an
+  architecture-matched package and exact embedded binary identities, stages a
+  complete immutable release, advances relative `current` and the stable
+  command atomically, writes the generated disabled unit and mode-0600 example,
+  and records exact ownership. It preserves prior enabled/running state only
+  for an existing installation. A failed running-generation authenticated
+  health check restores the former links, files, version, and service state.
+  Uninstall requires the matching manifest, stops/disables the exact unit, and
+  removes only owned application files while preserving config, example,
+  profile, secret, and payload paths. Fake-manager tests cover fresh install,
+  same-version running repair, failed-update rollback, and preservation-safe
+  removal.
+- Native Linux x86_64 package `0.1.0` was built twice from the production
+  same-origin web bundle. Both archives were byte-identical at SHA-256
+  `a8e3092f9d299e33a5d77a00d02c6407231ad5dc8b3cfe580593d44f984918f8`.
+  The validator reports 19 files and 69,018,601 bytes and checks the archive
+  allowlist, paths/types/modes, x86_64 ELF identity, exact adapter/gateway
+  versions, fixed templates, web bounds, and no enable/linger command. Native
+  ARM64 package construction remains open for the real-target gate.
 
 ## Staged Implementation
 

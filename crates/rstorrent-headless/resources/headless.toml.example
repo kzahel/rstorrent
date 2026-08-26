@@ -1,0 +1,16 @@
+# Copy this file to the configured headless.toml path, replace every CHANGE_ME
+# value, create the password file with mode 0600, then enable the user service.
+version = 1
+profile_root = "@RSTORRENT_HEADLESS_PROFILE_ROOT@"
+listen = "127.0.0.1:3030"
+public_origin = "https://CHANGE_ME.example"
+
+[[storage_roots]]
+id = "downloads"
+label = "Downloads"
+path = "/CHANGE_ME/payload-root"
+
+[authentication]
+mode = "basic"
+username = "CHANGE_ME"
+password_file = "/CHANGE_ME/basic-password"

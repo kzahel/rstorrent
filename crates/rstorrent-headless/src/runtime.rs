@@ -43,14 +43,14 @@ impl HeadlessError {
         self.class
     }
 
-    fn configuration(message: impl Into<String>) -> Self {
+    pub(crate) fn configuration(message: impl Into<String>) -> Self {
         Self {
             class: ErrorClass::Configuration,
             message: message.into(),
         }
     }
 
-    fn runtime(message: impl Into<String>) -> Self {
+    pub(crate) fn runtime(message: impl Into<String>) -> Self {
         Self {
             class: ErrorClass::Runtime,
             message: message.into(),
@@ -300,7 +300,7 @@ fn create_profile_root(path: &Path) -> Result<(), HeadlessError> {
     Ok(())
 }
 
-fn validate_web_tree(root: &Path) -> Result<(), HeadlessError> {
+pub(crate) fn validate_web_tree(root: &Path) -> Result<(), HeadlessError> {
     validate_directory(root, "hosted web root")?;
     let mut pending = vec![root.to_path_buf()];
     let mut files = 0usize;
@@ -352,7 +352,7 @@ fn validate_web_tree(root: &Path) -> Result<(), HeadlessError> {
     validate_regular_file(&root.join("index.html"), false, "hosted index")
 }
 
-fn validate_directory(path: &Path, label: &str) -> Result<(), HeadlessError> {
+pub(crate) fn validate_directory(path: &Path, label: &str) -> Result<(), HeadlessError> {
     let metadata = fs::symlink_metadata(path).map_err(|error| {
         HeadlessError::configuration(format!("inspect {label} {}: {error}", path.display()))
     })?;
@@ -365,7 +365,11 @@ fn validate_directory(path: &Path, label: &str) -> Result<(), HeadlessError> {
     validate_owned_mode(path, &metadata, true)
 }
 
-fn validate_regular_file(path: &Path, executable: bool, label: &str) -> Result<(), HeadlessError> {
+pub(crate) fn validate_regular_file(
+    path: &Path,
+    executable: bool,
+    label: &str,
+) -> Result<(), HeadlessError> {
     let metadata = fs::symlink_metadata(path).map_err(|error| {
         HeadlessError::configuration(format!("inspect {label} {}: {error}", path.display()))
     })?;
@@ -416,7 +420,7 @@ fn validate_owned_mode(
     )))
 }
 
-fn read_identity(path: &Path, label: &str) -> Result<String, HeadlessError> {
+pub(crate) fn read_identity(path: &Path, label: &str) -> Result<String, HeadlessError> {
     validate_regular_file(path, false, label)?;
     let value = fs::read(path).map_err(|error| {
         HeadlessError::configuration(format!("read {label} {}: {error}", path.display()))
@@ -441,7 +445,7 @@ fn read_identity(path: &Path, label: &str) -> Result<String, HeadlessError> {
     Ok(value.to_owned())
 }
 
-fn valid_version(version: &str) -> bool {
+pub(crate) fn valid_version(version: &str) -> bool {
     version.len() <= MAX_IDENTITY_BYTES
         && version
             .bytes()

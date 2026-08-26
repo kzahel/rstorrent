@@ -1,8 +1,10 @@
 use std::env;
+use std::path::Path;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use rstorrent_headless::runtime::{ErrorClass, InstalledLayout, run_installed_service};
+use rstorrent_headless::{SERVICE_NAME, installer};
 use tokio_util::sync::CancellationToken;
 
 const CONFIGURATION_EXIT: u8 = 78;
@@ -23,7 +25,28 @@ async fn main() -> ExitCode {
 }
 
 async fn execute() -> Result<(), rstorrent_headless::runtime::HeadlessError> {
-    let config_path = parse_config_path(env::args().skip(1))?;
+    let arguments = env::args().skip(1).collect::<Vec<_>>();
+    match arguments.as_slice() {
+        [argument] if argument == "--version" => {
+            println!("rstorrent-headless {}", env!("CARGO_PKG_VERSION"));
+            return Ok(());
+        }
+        [command, flag, bundle] if command == "install" && flag == "--bundle" => {
+            return install(Path::new(bundle));
+        }
+        [command, flag, bundle] if command == "validate-package" && flag == "--bundle" => {
+            let bundle = installer::BundleLayout::validate(Path::new(bundle))?;
+            println!(
+                "validated headless package version={} architecture={}",
+                bundle.version, bundle.architecture
+            );
+            return Ok(());
+        }
+        [command] if command == "status" => return print_status(),
+        [command] if command == "uninstall" => return uninstall(),
+        _ => {}
+    }
+    let config_path = parse_config_path(arguments.into_iter())?;
     let layout = InstalledLayout::discover()?;
     let shutdown = CancellationToken::new();
     let signal_shutdown = shutdown.clone();
@@ -38,6 +61,62 @@ async fn execute() -> Result<(), rstorrent_headless::runtime::HeadlessError> {
         report.listen,
         report.shutdown_elapsed.as_millis()
     );
+    Ok(())
+}
+
+fn install(bundle: &Path) -> Result<(), rstorrent_headless::runtime::HeadlessError> {
+    if !bundle.is_absolute() {
+        return Err(configuration_error(
+            "install --bundle requires an absolute path",
+        ));
+    }
+    let outcome = installer::install_bundle(bundle)?;
+    let paths = installer::InstallPaths::system()?;
+    println!("Installed RSTorrent Headless {}.", outcome.version);
+    if outcome.config_example_created {
+        println!(
+            "Created protected configuration example: {}",
+            paths.config_example.display()
+        );
+    }
+    if outcome.restored_running {
+        println!("The previously running user service passed authenticated health.");
+    } else {
+        println!("Installation did not start or enable the user service.");
+        println!("1. Copy and edit the protected example:");
+        println!(
+            "   cp {} {}",
+            paths.config_example.display(),
+            paths.config.display()
+        );
+        println!("   chmod 600 {}", paths.config.display());
+        println!("2. Enable and start explicitly:");
+        println!("   systemctl --user enable --now {SERVICE_NAME}");
+    }
+    println!("Status: {} status", paths.command.display());
+    println!("Logs: journalctl --user -u {SERVICE_NAME}");
+    Ok(())
+}
+
+fn print_status() -> Result<(), rstorrent_headless::runtime::HeadlessError> {
+    let report = installer::status()?;
+    println!(
+        "product=rstorrent-headless version={} enabled={} active={} healthy={}",
+        report.version, report.enabled, report.active, report.healthy
+    );
+    Ok(())
+}
+
+fn uninstall() -> Result<(), rstorrent_headless::runtime::HeadlessError> {
+    let paths = installer::InstallPaths::system()?;
+    installer::uninstall()?;
+    println!("Removed RSTorrent Headless application files and user service.");
+    println!("Preserved configuration: {}", paths.config.display());
+    println!(
+        "Preserved configuration example: {}",
+        paths.config_example.display()
+    );
+    println!("Profiles and every configured payload root were preserved.");
     Ok(())
 }
 

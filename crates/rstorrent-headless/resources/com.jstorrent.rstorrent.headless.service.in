@@ -1,0 +1,21 @@
+# Managed by rstorrent-headless. Operator overrides belong in systemd drop-ins.
+[Unit]
+Description=RSTorrent Headless Service
+Documentation=https://github.com/kzahel/rstorrent
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+ExecStart=@RSTORRENT_HEADLESS_COMMAND@ --config @RSTORRENT_HEADLESS_CONFIG@
+Restart=on-failure
+RestartSec=5s
+RestartPreventExitStatus=78
+NoNewPrivileges=true
+PrivateTmp=true
+TimeoutStopSec=45s
+
+[Install]
+WantedBy=default.target
