@@ -263,6 +263,18 @@ posture are recorded in
 does not make a production extension transport part of the currently
 implemented client surface.
 
+Tactical
+[`166`](../tactical/166-desktop-native-bootstrap-and-extension-scaffold.md)
+implements only the bounded predecessor seam: a self-contained Manifest V3
+JSTorrent Beta popup/service worker and the distinct
+`com.jstorrent.rstorrent.native` compatibility/launch host. The host owns no
+torrent, profile, listener, or application service. Desktop first launch
+repairs exact per-user Chrome registration to a content-versioned stable host;
+AppImage launch metadata points at the stable AppImage rather than its
+temporary mount. The seed intentionally awaits its Chrome Web Store item
+ID/public key before the beta origin can be allowed, so this does not yet claim
+an installed extension connection or extension control surface.
+
 Android uses UniFFI-generated Kotlin records, enums, objects, and suspend
 functions. A small Kotlin adapter exposes subscription handles as lifecycle-
 aware `Flow`s and maps portable application values into presentation models.

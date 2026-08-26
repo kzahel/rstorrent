@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import {
   validateLinuxDesktop,
   validateMacInfo,
+  validateMacNativeHost,
   validateWindowsAssociations,
 } from "./validate-desktop-package.mjs";
 
@@ -45,6 +49,21 @@ test("rejects incomplete macOS activation metadata", () => {
     () => validateMacInfo({ CFBundleIdentifier: identifier }),
     /does not register magnet/,
   );
+});
+
+test("requires an executable native host in the macOS application", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "rstorrent-mac-package-"));
+  try {
+    const executableDirectory = path.join(directory, "Contents", "MacOS");
+    fs.mkdirSync(executableDirectory, { recursive: true });
+    const nativeHost = path.join(executableDirectory, "rstorrent-native-host");
+    fs.writeFileSync(nativeHost, "native host");
+    assert.throws(() => validateMacNativeHost(directory), /must be executable/);
+    fs.chmodSync(nativeHost, 0o755);
+    assert.equal(validateMacNativeHost(directory), nativeHost);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("accepts a Linux handler that forwards one URL list", () => {

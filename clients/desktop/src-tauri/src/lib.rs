@@ -34,6 +34,7 @@ mod desktop_lifecycle;
 mod desktop_notifications;
 mod desktop_power;
 mod external_intake;
+mod native_host_registration;
 mod updater;
 mod view_delivery;
 
@@ -50,6 +51,7 @@ use external_intake::{
     DesktopActivationState, ExternalActivationSnapshot, ExternalActivationSource,
     read_torrent_source,
 };
+use native_host_registration::repair_native_host_registration;
 use updater::{desktop_release_info, get_or_create_installation_id};
 use view_delivery::{
     DesktopViewResources, application_view_close, application_view_hello, application_view_open,
@@ -1552,6 +1554,28 @@ pub fn run() {
                 .path()
                 .app_config_dir()
                 .map_err(|error| format!("resolve desktop config directory: {error}"))?;
+            #[cfg(target_os = "linux")]
+            let appimage = app.env().appimage;
+            #[cfg(not(target_os = "linux"))]
+            let appimage: Option<PathBuf> = None;
+            match app.path().home_dir() {
+                Ok(home_dir) => match repair_native_host_registration(
+                    &config_dir,
+                    &home_dir,
+                    appimage.as_deref(),
+                ) {
+                    Ok(report) => eprintln!(
+                        "RSTorrent native host is registered for {} Chrome installation(s)",
+                        report.browser_manifests
+                    ),
+                    Err(error) => eprintln!(
+                        "RSTorrent native host registration could not be repaired: {error}"
+                    ),
+                },
+                Err(error) => {
+                    eprintln!("resolve home directory for native host registration: {error}")
+                }
+            }
             let shell_settings = load_desktop_shell_settings(&config_dir);
             if let Some(diagnostic) = &shell_settings.diagnostic {
                 eprintln!("{diagnostic}");

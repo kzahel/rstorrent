@@ -112,6 +112,11 @@ jobs:
             .github/scripts/validate-desktop-release.test.mjs \
             .github/scripts/write-release-checksums.test.mjs
 
+      - name: Validate and package the JSTorrent Beta extension seed
+        run: |
+          npm test --prefix clients/extension
+          npm run package --prefix clients/extension
+
       - name: Regenerate and verify the application contract
         run: |
           npm run generate --prefix clients/web
@@ -225,6 +230,7 @@ jobs:
         shell: bash
         run: >-
           ../web/node_modules/.bin/tauri build
+          --config src-tauri/tauri.package.conf.json
           --bundles "${{ matrix.bundle }}" --no-sign --ci
 
       - name: Verify the native package exists
@@ -232,13 +238,20 @@ jobs:
         run: |
           case "$RUNNER_OS" in
             macOS)
-              test "$(find target/release/bundle/macos -maxdepth 1 -type d -name '*.app' | wc -l)" -eq 1
+              APP_PATH=$(find target/release/bundle/macos -maxdepth 1 -type d -name '*.app' -print -quit)
+              test -n "$APP_PATH"
+              node scripts/smoke-native-host.mjs "$APP_PATH/Contents/MacOS/rstorrent-native-host"
               ;;
             Windows)
               test "$(find target/release/bundle/nsis -maxdepth 1 -type f -name '*-setup.exe' | wc -l)" -eq 1
               ;;
             Linux)
-              test "$(find target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage' | wc -l)" -eq 1
+              APPIMAGE=$(find target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage' -print -quit)
+              test -n "$APPIMAGE"
+              "$APPIMAGE" --appimage-extract >/dev/null
+              test -x squashfs-root/usr/bin/rstorrent-native-host
+              node scripts/smoke-native-host.mjs squashfs-root/usr/bin/rstorrent-native-host
+              rm -rf squashfs-root
               ;;
           esac
 
@@ -261,6 +274,7 @@ jobs:
           }
           $installDirectory = Join-Path $env:LOCALAPPDATA 'RSTorrent'
           $executable = Join-Path $installDirectory 'rstorrent-desktop.exe'
+          $nativeHost = Join-Path $installDirectory 'rstorrent-native-host.exe'
           try {
             $install = Start-Process -FilePath $installer[0].FullName -ArgumentList '/S' -Wait -PassThru
             if ($install.ExitCode -ne 0) {
@@ -268,6 +282,13 @@ jobs:
             }
             if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
               throw "Installed RSTorrent executable is missing"
+            }
+            if (-not (Test-Path -LiteralPath $nativeHost -PathType Leaf)) {
+              throw "Installed RSTorrent native host is missing"
+            }
+            node scripts/smoke-native-host.mjs $nativeHost
+            if ($LASTEXITCODE -ne 0) {
+              throw "Installed Windows native host smoke failed"
             }
             $torrentExtension = Get-Item 'Registry::HKEY_CURRENT_USER\Software\Classes\.torrent'
             $torrentCommand = Get-Item 'Registry::HKEY_CURRENT_USER\Software\Classes\com.jstorrent.rstorrent.torrent\shell\open\command'

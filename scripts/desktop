@@ -7,6 +7,8 @@ installed_lock="$web_root/node_modules/.package-lock.json"
 
 unset npm_config_recursive NPM_CONFIG_RECURSIVE
 
+node "$repository_root/scripts/prepare-native-host.mjs"
+
 if [[ ! -x "$web_root/node_modules/.bin/vite" ||
     ! -f "$installed_lock" ||
     "$web_root/package-lock.json" -nt "$installed_lock" ]]; then

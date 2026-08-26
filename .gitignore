@@ -11,6 +11,7 @@
 .gradle/
 **/build/
 /clients/desktop/src-tauri/gen/
+/clients/desktop/src-tauri/binaries/
 /clients/ios/DerivedData/
 /clients/ios/Generated/
 /clients/ios/RSTorrent.xcodeproj/

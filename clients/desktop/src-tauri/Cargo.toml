@@ -16,6 +16,7 @@ tauri-build = { version = "2.6.3", features = [] }
 [dependencies]
 rstorrent-session = { path = "../../../crates/rstorrent-session" }
 rstorrent-media = { path = "../../../crates/rstorrent-media" }
+rstorrent-native-host = { path = "../../../crates/rstorrent-native-host" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
@@ -38,3 +39,6 @@ zbus = "=5.19.0"
 
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 keepawake = "=0.6.1"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+winreg = "=0.55.0"

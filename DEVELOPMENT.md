@@ -265,8 +265,24 @@ server, listening port, or installer bundle:
 
 The wrapper runs npm from `clients/web`; no separate npm command is required.
 Later runs reuse installed dependencies and Cargo build output while still
-refreshing the static web assets. The process remains attached to the terminal
-so `Ctrl+C` stops it.
+refreshing the static web assets. It also prepares the exact-target debug
+native-host sidecar; direct Cargo tests remain independent of generated
+sidecars. The process remains attached to the terminal so `Ctrl+C` stops it.
+
+Build an unsigned native package with the explicit sidecar overlay:
+
+```bash
+cd clients/desktop
+../web/node_modules/.bin/tauri build \
+  --config src-tauri/tauri.package.conf.json \
+  --bundles app --no-sign --ci
+```
+
+The package build cross-builds `rstorrent-native-host` for Tauri's exact
+target triple. On desktop launch, RSTorrent copies that sidecar to a stable,
+content-versioned per-user location, writes the bounded launch configuration,
+and repairs exact Chrome native-host registration. AppImage registration
+targets the stable AppImage path rather than its temporary mount.
 
 Signed packaging, updater rehearsals, version bumps, and tagged publication
 use the exact commands and validation gates in
@@ -283,6 +299,7 @@ node scripts/validate-desktop-package.mjs \
   --linux-desktop PATH/TO/com.jstorrent.rstorrent.desktop
 node scripts/validate-desktop-package.mjs \
   --windows-registry-json PATH/TO/installed-associations.json
+node scripts/smoke-native-host.mjs PATH/TO/rstorrent-native-host
 ```
 
 The Windows JSON is produced only after a silent per-user NSIS install and
@@ -293,6 +310,22 @@ controlled non-public magnets and tiny independently generated torrent files,
 records process/catalog identity before and after warm activation, and restores
 the inherited OS defaults and machine state afterward. Never print or persist
 the complete magnet or source path in product logs.
+
+## Packaging The JSTorrent Beta Extension Seed
+
+Validate the Manifest V3 permission/local-code boundary and produce the exact
+Chrome Web Store upload ZIP with:
+
+```bash
+npm test --prefix clients/extension
+npm run package --prefix clients/extension
+```
+
+The artifact is written below `target/extension/`. The initial seed omits the
+manifest `key`; upload it as a draft, then return the dashboard Item ID and
+single-line public key as described in
+[`clients/extension/README.md`](clients/extension/README.md). Only that
+follow-up pins the unpacked development identity and permits the beta origin.
 
 ## Launching The Live Web UI
 

@@ -78,6 +78,36 @@ test("rejects a release desktop binary with a Windows console", () => {
   );
 });
 
+test("rejects native host package or registration drift", () => {
+  const packageFixture = repositoryFixture();
+  packageFixture.packageTauri.bundle.externalBin = ["binaries/wrong-host"];
+  assert.throws(
+    () => validateDesktopReleaseConfiguration(packageFixture),
+    /unsigned package overlay must prepare and embed only the native host sidecar/,
+  );
+
+  const registrationFixture = repositoryFixture();
+  registrationFixture.nativeHostRegistration =
+    registrationFixture.nativeHostRegistration.replace(
+      "dbokmlpefliilbjldladbimlcfgbolhk",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    );
+  assert.throws(
+    () => validateDesktopReleaseConfiguration(registrationFixture),
+    /desktop native host registration and target-triple packaging are incomplete/,
+  );
+
+  const cleanupFixture = repositoryFixture();
+  cleanupFixture.nsisHooks = cleanupFixture.nsisHooks.replace(
+    "Software\\Google\\Chrome\\NativeMessagingHosts\\com.jstorrent.rstorrent.native",
+    "Software\\Google\\Chrome\\NativeMessagingHosts\\com.example.wrong",
+  );
+  assert.throws(
+    () => validateDesktopReleaseConfiguration(cleanupFixture),
+    /Windows native host cleanup is missing/,
+  );
+});
+
 test("rejects desktop association and command-quoting drift", () => {
   const associationFixture = repositoryFixture();
   associationFixture.tauri.bundle.fileAssociations[0].name = "torrent";
@@ -216,6 +246,8 @@ function repositoryFixture() {
     packageJson: readJson("clients/web/package.json"),
     tauri: readJson("clients/desktop/src-tauri/tauri.conf.json"),
     developmentTauri: readJson("clients/desktop/src-tauri/tauri.dev.conf.json"),
+    packageTauri: readJson("clients/desktop/src-tauri/tauri.package.conf.json"),
+    releaseTauri: readJson("clients/desktop/src-tauri/tauri.release.conf.json"),
     cargo: fs.readFileSync(path.join(root, "clients/desktop/src-tauri/Cargo.toml"), "utf8"),
     capability: readJson("clients/desktop/src-tauri/capabilities/default.json"),
     desktopMain: fs.readFileSync(
@@ -228,6 +260,14 @@ function repositoryFixture() {
     ),
     desktopPower: fs.readFileSync(
       path.join(root, "clients/desktop/src-tauri/src/desktop_power.rs"),
+      "utf8",
+    ),
+    nativeHostRegistration: fs.readFileSync(
+      path.join(root, "clients/desktop/src-tauri/src/native_host_registration.rs"),
+      "utf8",
+    ),
+    prepareNativeHost: fs.readFileSync(
+      path.join(root, "scripts/prepare-native-host.mjs"),
       "utf8",
     ),
     nsisHooks: fs.readFileSync(

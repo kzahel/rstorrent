@@ -33,7 +33,10 @@ and [protocol support matrix](docs/topics/protocol-support.md).
 - **Platforms are at different readiness levels.** Desktop/web is the leading
   product and inspection surface. Android is functional with native engine and
   durable storage integration but still has product gaps. ChromeOS deployment
-  and extension integration remain planned rather than released. The
+  remains planned rather than released. A minimal JSTorrent Beta Manifest V3
+  seed plus a bounded desktop compatibility/launch host now exists, but its
+  store identity and installed Chrome smoke are still pending and it is not a
+  torrent-control surface. The
   first-party in-process iOS campaign now has simulator, physical-device,
   public-swarm, system-preview, and unsigned/development archive evidence, but
   no TestFlight or App Store distribution. See

@@ -67,6 +67,11 @@ jobs:
             .github/scripts/validate-desktop-release.test.mjs \
             .github/scripts/write-release-checksums.test.mjs
 
+      - name: Validate and package the JSTorrent Beta extension seed
+        run: |
+          npm test --prefix clients/extension
+          npm run package --prefix clients/extension
+
       - name: Provide the Tauri compile-time asset directory
         run: mkdir -p clients/web/dist
 
@@ -126,6 +131,7 @@ jobs:
       HAS_MACOS_NOTARIZATION: ${{ secrets.ASC_API_KEY_P8_BASE64 != '' && secrets.ASC_API_KEY_ID != '' && secrets.ASC_API_ISSUER_ID != '' }}
       HAS_WINDOWS_SIGNING: ${{ secrets.AZURE_CLIENT_ID != '' && secrets.AZURE_TENANT_ID != '' && secrets.AZURE_CLIENT_SECRET != '' }}
       RSTORRENT_BUILD_ID: ${{ github.sha }}
+      RSTORRENT_NATIVE_HOST_TARGET: ${{ matrix.rust_target }}
     steps:
       - name: Check out source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -280,7 +286,7 @@ jobs:
           retryAttempts: ${{ runner.os == 'macOS' && '1' || '0' }}
           args: >-
             ${{ matrix.args }}
-            --config '{"bundle":{"createUpdaterArtifacts":true}}'
+            --config src-tauri/tauri.release.conf.json
             ${{ runner.os == 'Windows' && '--config ''{"bundle":{"windows":{"signCommand":"trusted-signing-cli -e https://eus.codesigning.azure.net -a kylegraehl -c jstorrent-profile %1"}}}''' || '' }}
 
       - name: Verify macOS signing and notarization

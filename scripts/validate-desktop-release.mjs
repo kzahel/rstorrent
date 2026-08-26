@@ -27,11 +27,15 @@ export function validateDesktopReleaseConfiguration({
   packageJson,
   tauri,
   developmentTauri,
+  packageTauri,
+  releaseTauri,
   cargo,
   capability,
   desktopMain,
   desktopSource,
   desktopPower,
+  nativeHostRegistration,
+  prepareNativeHost,
   nsisHooks,
   linuxDesktop,
   tauriUpdater,
@@ -68,6 +72,25 @@ export function validateDesktopReleaseConfiguration({
   }
   if (tauri.bundle?.createUpdaterArtifacts !== false) {
     fail("base config must leave updater artifacts disabled until release CI");
+  }
+  const expectedExternalBinary = ["binaries/rstorrent-native-host"];
+  const expectedBeforeBuild =
+    "node ../../scripts/prepare-native-host.mjs --release && npm --prefix ../web run build";
+  if (
+    JSON.stringify(packageTauri.bundle?.externalBin) !==
+      JSON.stringify(expectedExternalBinary) ||
+    packageTauri.build?.beforeBuildCommand !== expectedBeforeBuild ||
+    packageTauri.bundle?.createUpdaterArtifacts !== undefined
+  ) {
+    fail("unsigned package overlay must prepare and embed only the native host sidecar");
+  }
+  if (
+    JSON.stringify(releaseTauri.bundle?.externalBin) !==
+      JSON.stringify(expectedExternalBinary) ||
+    releaseTauri.build?.beforeBuildCommand !== expectedBeforeBuild ||
+    releaseTauri.bundle?.createUpdaterArtifacts !== true
+  ) {
+    fail("release package overlay must prepare the native host and updater artifacts");
   }
   if (tauri.bundle?.windows?.nsis?.installMode !== "currentUser") {
     fail("Windows NSIS must use currentUser installation");
@@ -168,6 +191,12 @@ export function validateDesktopReleaseConfiguration({
   if (!cargo.includes('zbus = "=5.19.0"')) {
     fail("Linux portal dependency must stay pinned to 5.19.0");
   }
+  if (!cargo.includes('rstorrent-native-host = { path = "../../../crates/rstorrent-native-host" }')) {
+    fail("desktop must depend on the bounded native bootstrap contract");
+  }
+  if (!cargo.includes('winreg = "=0.55.0"')) {
+    fail("Windows native host registration dependency must stay pinned to 0.55.0");
+  }
   if (
     !cargo.includes(
       'tauri-plugin-single-instance = { version = "=2.4.3", features = ["deep-link"] }',
@@ -236,6 +265,29 @@ export function validateDesktopReleaseConfiguration({
     fail("Rust-owned desktop automatic-sleep inhibition is incomplete");
   }
   if (
+    !desktopSource.includes("mod native_host_registration;") ||
+    !desktopSource.includes("repair_native_host_registration(") ||
+    !desktopSource.includes("let appimage = app.env().appimage;") ||
+    !desktopSource.includes("appimage.as_deref()") ||
+    !nativeHostRegistration.includes('const PRODUCTION_EXTENSION_ORIGIN: &str =') ||
+    !nativeHostRegistration.includes("dbokmlpefliilbjldladbimlcfgbolhk") ||
+    !nativeHostRegistration.includes('const HOST_DIRECTORY: &str = "native-host";') ||
+    !nativeHostRegistration.includes("register_windows_manifest(&stable_manifest)") ||
+    !prepareNativeHost.includes('"build", "-p", "rstorrent-native-host"') ||
+    !prepareNativeHost.includes("RSTORRENT_NATIVE_HOST_TARGET")
+  ) {
+    fail("desktop native host registration and target-triple packaging are incomplete");
+  }
+  for (const exactUninstallEntry of [
+    "Software\\Google\\Chrome\\NativeMessagingHosts\\com.jstorrent.rstorrent.native",
+    "Software\\Chromium\\NativeMessagingHosts\\com.jstorrent.rstorrent.native",
+    "$APPDATA\\com.jstorrent.rstorrent\\native-host",
+  ]) {
+    if (!nsisHooks.includes(exactUninstallEntry)) {
+      fail(`Windows native host cleanup is missing ${exactUninstallEntry}`);
+    }
+  }
+  if (
     singleInstancePlugin < 0 ||
     deepLinkPlugin < 0 ||
     singleInstancePlugin > deepLinkPlugin
@@ -283,6 +335,12 @@ export function validateDesktopReleaseRepository(root, tag) {
     developmentTauri: readJson(
       path.join(root, "clients", "desktop", "src-tauri", "tauri.dev.conf.json"),
     ),
+    packageTauri: readJson(
+      path.join(root, "clients", "desktop", "src-tauri", "tauri.package.conf.json"),
+    ),
+    releaseTauri: readJson(
+      path.join(root, "clients", "desktop", "src-tauri", "tauri.release.conf.json"),
+    ),
     cargo: fs.readFileSync(
       path.join(root, "clients", "desktop", "src-tauri", "Cargo.toml"),
       "utf8",
@@ -307,6 +365,21 @@ export function validateDesktopReleaseRepository(root, tag) {
     ),
     desktopPower: fs.readFileSync(
       path.join(root, "clients", "desktop", "src-tauri", "src", "desktop_power.rs"),
+      "utf8",
+    ),
+    nativeHostRegistration: fs.readFileSync(
+      path.join(
+        root,
+        "clients",
+        "desktop",
+        "src-tauri",
+        "src",
+        "native_host_registration.rs",
+      ),
+      "utf8",
+    ),
+    prepareNativeHost: fs.readFileSync(
+      path.join(root, "scripts", "prepare-native-host.mjs"),
       "utf8",
     ),
     nsisHooks: fs.readFileSync(

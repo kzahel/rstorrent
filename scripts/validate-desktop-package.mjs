@@ -65,6 +65,23 @@ export function validateMacInfo(info) {
   );
 }
 
+export function validateMacNativeHost(appPath) {
+  const nativeHost = path.join(appPath, "Contents", "MacOS", "rstorrent-native-host");
+  let metadata;
+  try {
+    metadata = fs.statSync(nativeHost);
+  } catch {
+    fail("macOS bundle does not contain rstorrent-native-host");
+  }
+  if (!metadata.isFile() || metadata.size === 0) {
+    fail("macOS native host must be a nonempty file");
+  }
+  if ((metadata.mode & 0o111) === 0) {
+    fail("macOS native host must be executable");
+  }
+  return nativeHost;
+}
+
 function desktopEntry(contents) {
   const entries = new Map();
   let inDesktopEntry = false;
@@ -137,6 +154,7 @@ function main(argv) {
       encoding: "utf8",
     });
     validateMacInfo(JSON.parse(json));
+    validateMacNativeHost(source);
     console.log(`Validated macOS activation metadata in ${path.basename(source)}`);
     return;
   }

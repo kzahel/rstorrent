@@ -9,3 +9,11 @@
     "" \
     "$\"$INSTDIR\${MAINBINARYNAME}.exe$\" $\"%1$\""
 !macroend
+
+!macro NSIS_HOOK_POSTUNINSTALL
+  DeleteRegKey SHCTX \
+    "Software\Google\Chrome\NativeMessagingHosts\com.jstorrent.rstorrent.native"
+  DeleteRegKey SHCTX \
+    "Software\Chromium\NativeMessagingHosts\com.jstorrent.rstorrent.native"
+  RMDir /r "$APPDATA\com.jstorrent.rstorrent\native-host"
+!macroend

@@ -361,6 +361,16 @@ without corrupting or silently reinterpreting user state.
   final cleanup all pass. The next signed-candidate campaign still repeats the
   integrated package-trust/update case. Explicit sleep, lid close, shutdown,
   low-power policy, and seeding remain under ordinary OS policy.
+- [ ] **DESK-011 — Establish the beta extension bootstrap identity.** Tactical
+  `166` adds the distinct bounded native-messaging host, target-triple Tauri
+  sidecar packaging, per-user first-launch registration repair, NSIS cleanup,
+  and a self-contained Manifest V3 seed whose only permission is
+  `nativeMessaging`. Deterministic host/extension tests and an actual unsigned
+  macOS app-bundle host `hello` pass. The generated ZIP still intentionally
+  omits `key`; the Chrome Web Store draft must return its item ID/public key
+  before the exact beta origin and installed Chrome `hello`/launch smoke can
+  close this row. Full extension control, Crostini, and production JSTorrent
+  migration are not part of this beta-bootstrap gate.
 
 ### Desktop updater contract
 

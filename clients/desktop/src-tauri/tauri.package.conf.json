@@ -1,0 +1,8 @@
+{
+  "build": {
+    "beforeBuildCommand": "node ../../scripts/prepare-native-host.mjs --release && npm --prefix ../web run build"
+  },
+  "bundle": {
+    "externalBin": ["binaries/rstorrent-native-host"]
+  }
+}
