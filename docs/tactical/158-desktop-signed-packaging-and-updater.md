@@ -40,7 +40,12 @@ Tactical `164` adds native completion/attention notifications before this
 tactical produces the next signed candidate. Completed Tactical `165` also
 adds desktop active-work sleep inhibition; its available Windows behavior run
 was arm64, so the next signed x86_64 candidate repeats the native assertion
-matrix while exercising the strengthened real-torrent update state.
+matrix while exercising the strengthened real-torrent update state. An
+exact-head unsigned preflight now passes native Windows x86_64 tests, package
+construction, clean installation, fresh-default startup, firewall-consent
+characterization, lifecycle/update presentation, and the native active-work
+sleep-inhibition matrix. The next signed x86_64 candidate still repeats that
+matrix while proving package trust and the strengthened real-torrent update.
 
 Topics: `beta-release-readiness`, `client-surfaces`,
 `product-state-and-feedback`, `product-surfaces-and-migration`,
@@ -441,6 +446,56 @@ guidance, and installed Linux x86_64 campaign remain this tactical's next
 boundary. Tactical `162` adds the selected single-instance/tray lifecycle,
 joined shutdown/restart, corrected Windows GUI launch, native Linux arm64
 package gate, and installed Windows x86_64/Linux arm64 evidence.
+
+Exact-head workflow-dispatch run
+[`32884674167`](https://github.com/kzahel/rstorrent/actions/runs/32884674167)
+then passed all eight jobs at commit
+`efd9cab2f2c287e95a39dfe3e9f1af580ede099c`. Its Windows x86_64 leg passed
+the native desktop tests, the native local-network route regression, unsigned
+NSIS construction, installed association-registry validation, and retained
+the package for an independent smoke. The extracted
+`RSTorrent_0.1.1_x64-setup.exe` was 10,484,552 bytes with SHA-256
+`19ed7e7ff74a5ef28a45b6adb44bc46fe0a3254fca8ab94e652a05226e4f5c98`.
+
+The retained installer was transferred without credentials into a claimed
+isolated Machine Control/libvirt Windows 11 Pro x86_64 workspace. A clean
+silent install returned zero and produced a 35,475,968-byte
+`rstorrent-desktop.exe` reporting version `0.1.1`, PE machine `0x8664`, PE32+
+magic `0x020b`, and Windows GUI subsystem `2`. Its torrent and magnet
+registrations matched the checked-in package contract, no process launched
+implicitly, and no matching firewall rule existed. `NotSigned` was the
+expected credential-free artifact status; this is not Authenticode evidence.
+
+The appliance then received one protected password login from locked Winlogon
+without persistent auto-login. The installed app launched through the
+guest-resident desktop route, reached its connected fresh-default transfer
+surface, and reported version `0.1.1`, build `development`, target
+`x86_64-pc-windows-msvc`, package `Windows NSIS`, and **RSTorrent is up to
+date**. First launch displayed the Windows Security listener-consent surface.
+Selecting **Cancel** granted no allow rule and produced the stock enabled
+Public-profile inbound block rules for TCP and UDP; this characterizes the
+unsigned build, not the required signed candidate.
+
+A prepared native-picker root and controlled no-peer magnet put the torrent in
+authoritative `Starting`. `powercfg /requests` then showed one RSTorrent SYSTEM
+request and no RSTorrent DISPLAY request for more than 35 seconds and while
+the window was minimized. The default-on preference released and reacquired
+the request immediately when toggled off/on. Pause released it; joined tray
+Quit reached zero processes; the paused torrent and enabled preference
+survived a true process restart without reacquiring; Start reacquired SYSTEM
+only; and joined Quit while active again released the request and reached zero
+processes. An ordinary second launch while minimized restored the one existing
+window and retained exactly one process.
+
+This closes the exact-head unsigned native x86_64 behavior preflight, but it
+is not Authenticode evidence, notification repetition, or the required newer
+signed older-to-newer update with strengthened real-torrent state. Cleanup
+used joined Quit and silent uninstall, removed the transferred installer,
+test root/profile, and firewall rules, and left zero RSTorrent processes or
+power requests. The host artifact and captures were removed, the disposable
+workspace was cleanly shut down and discarded, final temporary workspace
+inventory was empty, the protected source appliance remained off, and the
+target claim was available.
 
 ## Escalation Contract
 

@@ -651,9 +651,11 @@ remote exposure, and Android streaming remain independent product decisions.
   bounded native desktop-notification gap with deterministic/package gates and
   installed macOS arm64, Windows x86_64, and Linux arm64 evidence. Completed
   Tactical `165` closes active-work sleep inhibition with installed macOS
-  arm64, Windows arm64, Linux arm64, physical Android API 37, and physical iOS
-  evidence through guest/device-native machine-control routes. Tactical `158`
-  resumes for the next signed candidate. Broader cross-platform
+  arm64, Windows arm64, Linux arm64, native Windows x86_64, physical Android
+  API 37, and physical iOS evidence through guest/device-native
+  machine-control routes. The native x86_64 repeat used the exact unsigned
+  package from all-green workflow run `32884674167`; package trust and the
+  integrated signed update remain with Tactical `158`. Broader cross-platform
   window/platform-capability evidence remains open. The release gates live in
   [`beta-release-readiness.md`](beta-release-readiness.md).
 - The maintained Android product module now lives at `clients/android`; the

@@ -354,9 +354,12 @@ without corrupting or silently reinterpreting user state.
   `Starting`/`Downloading`/`Checking` policy, system-idle inhibition without
   display inhibition, and joined cleanup. Exact installed macOS arm64,
   Windows arm64, and Linux arm64 tests cover stalled work, minimized windows,
-  preference changes, Pause, restart, Start, Quit, and cleanup. Windows x86_64
-  retains hosted build/package coverage and must repeat native behavior in the
-  next signed-candidate campaign. Explicit sleep, lid close, shutdown,
+  preference changes, Pause, restart, Start, Quit, and cleanup. The exact-head
+  unsigned Windows x86_64 package now repeats that native matrix on the native
+  x86_64 appliance: SYSTEM-only request, more than 35 seconds held and
+  minimized, off/on, Pause, joined Quit, paused process restart, Start, and
+  final cleanup all pass. The next signed-candidate campaign still repeats the
+  integrated package-trust/update case. Explicit sleep, lid close, shutdown,
   low-power policy, and seeding remain under ordinary OS policy.
 
 ### Desktop updater contract

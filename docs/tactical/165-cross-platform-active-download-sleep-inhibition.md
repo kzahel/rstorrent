@@ -424,13 +424,20 @@ installation and its preexisting data were not destructively removed.
 
 ## Deliberate Limits And Next Step
 
-The available Windows testbed is arm64, so native behavior evidence is arm64;
-the supported x86_64 package retains hosted build/package coverage and should
-repeat this assertion matrix as part of the next signed-candidate campaign.
+A 2026-08-25 post-completion preflight repeated the Windows matrix with the
+exact unsigned x86_64 NSIS retained by all-green workflow run `32884674167`,
+this time on a native Windows 11 Pro x86_64 appliance. A controlled `Starting`
+torrent held SYSTEM-only inhibition for more than 35 seconds and while
+minimized; preference off/on, Pause, joined Quit, paused process restart,
+Start, and final active Quit produced the expected acquire/release transitions
+and zero-process cleanup. The next signed-candidate campaign still repeats the
+integrated package-trust/update case, but native x86_64 behavior is no longer
+represented by hosted build/package coverage alone.
+
 The GNOME route is installed evidence while the non-GNOME portal route has
 deterministic request construction, race, timeout, response, and cleanup
-coverage but no second live desktop environment. Neither limitation changes
-the platform contract or keeps Tactical `165` open.
+coverage but no second live desktop environment. That limitation does not
+change the platform contract or keep Tactical `165` open.
 
 Tactical [`158`](158-desktop-signed-packaging-and-updater.md) resumes as the
 sole **Now** and must put this implementation, along with completed Tacticals
