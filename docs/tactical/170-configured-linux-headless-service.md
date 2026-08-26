@@ -436,6 +436,18 @@ copied from a reference.
   allowlist, paths/types/modes, x86_64 ELF identity, exact adapter/gateway
   versions, fixed templates, web bounds, and no enable/linger command. Native
   ARM64 package construction remains open for the real-target gate.
+- The isolated proxy fixture extracts that package into an immutable
+  versions/current layout, creates an ephemeral random password and protected
+  secret/config files, generates a one-day self-signed IP certificate, and
+  terminates HTTPS/WSS in a temporary Node proxy that preserves the external
+  `Host`. It passes authenticated production static assets, product/build
+  health, HTTP API hello, and application WebSocket negotiation; rejects
+  missing/wrong Basic, wrong Host, and wrong HTTP/WebSocket Origin; observes
+  zero child processes; and joins SIGTERM twice around a restart of the same
+  durable profile. The configured missing payload root remains absent in both
+  generations, and captured process output contains no password. All temporary
+  certificates, secrets, profile, package extraction, sockets, and logs are
+  removed by the fixture.
 
 ## Staged Implementation
 
