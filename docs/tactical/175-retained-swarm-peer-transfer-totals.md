@@ -1,8 +1,10 @@
 # Tactical 175: Retained Swarm Peer Transfer Totals
 
-Status: **In progress.** Explicit maintainer direction on 2026-08-27
-temporarily yields desktop release Tactical `158` to this bounded diagnostic
-slice.
+Status: **Complete.** Explicit maintainer direction on 2026-08-27 temporarily
+yielded desktop release Tactical `158` to this bounded diagnostic slice. The
+engine, portable contract, React presentation, Android boundary/build, and
+installed LAN/tailnet service evidence pass; Tactical `158` has resumed as the
+sole **Now**.
 
 Topics: `peer-lifecycle`, `application-view-api`, `web-ui-design`,
 `client-surfaces`, `capability-readiness`
@@ -239,3 +241,58 @@ repair, and fixes at these exact ownership boundaries remain authorized. Stop
 for direction if evidence requires persistent peer history, policy changes,
 new dependencies, a different public compatibility contract, public traffic,
 or mutation outside the existing current-machine service deployment.
+
+## Implemented Outcome And Evidence
+
+Completed on 2026-08-27.
+
+- `PeerRecord` owns two saturating `u64` closed-generation counters.
+  `TorrentPeerState` publishes their sum with every matching active
+  generation and transfers a generation's final authoritative values into the
+  record exactly once before removal. Outgoing failure/cancellation/closure
+  and routed incoming cleanup all use that boundary. The existing 100 ms peer
+  observation cadence drives live Swarm changes without a new task or timer.
+- The application `SwarmPeerView`, Rust projection, JSON Schema, generated
+  TypeScript and validators, and UniFFI record carry canonical decimal
+  strings. Browser validation rejects malformed decimals; the reducer and
+  live adapter preserve values beyond JavaScript's safe-integer range.
+- React shows default-visible, right-aligned, arbitrary-precision sortable
+  **Downloaded** and **Uploaded** columns. Header help states the payload-only,
+  retained-record, volatile-lifetime semantics. Wide, 390-pixel, and
+  456-pixel fixtures keep every configured Swarm column reachable.
+- Deterministic engine coverage passes live contribution, overlapping
+  generations, disconnect, stale removal, reconnect accumulation, and
+  saturation. A session integration test caught a final-upload sample newer
+  than the last coalesced Peers observation; incoming cleanup now publishes
+  the authoritative final `UploadCounter` snapshot before retaining it, and
+  the exact seven-byte case passes without loss or double counting.
+- `cargo fmt --all -- --check`, `cargo clippy --workspace -- -D warnings`, and
+  `cargo test --workspace` pass. The workspace test run includes 576 engine
+  tests with 11 ignored and 256 session tests with two ignored, plus every
+  other crate, binary, and documentation test with no failure.
+- `npm run generate --prefix clients/web`, typecheck, and the production
+  build/CSP scan pass. The complete web suite passes 292 tests with two
+  skipped when Node 25's incomplete global Web Storage accessor is disabled
+  with `NODE_OPTIONS=--no-webstorage`; the browser application itself uses
+  normal Web Storage. The focused Playwright Swarm case passes desktop and
+  both phone widths with zero serious or critical accessibility violations.
+- `clients/android/build.sh` passes host UniFFI generation, x86_64 and
+  arm64-v8a native release builds, the debug APK, and Android unit tests. The
+  generated boundary carries both counters; the existing Compose Swarm count
+  summary has no peer rows to render, so presentation work is inapplicable to
+  this slice.
+- The x86_64 headless package validates as 20 files and 69,422,763 bytes with
+  SHA-256
+  `5009322f3509e79dd7af54e122e77f3d4c0e919d4df2cab4448a14bb410d1b65`.
+  Its supported same-version repair retained the enabled exact-access profile
+  and health-checked the restarted service. One process now listens only on
+  `192.168.1.129:3030` and `127.0.0.1:3031`; direct LAN, loopback with the
+  configured tailnet authority, and
+  `https://zblinux.tail71bc5c.ts.net:8445/healthz` all return the exact healthy
+  `rstorrent-headless` `0.1.1` identity.
+- A Playwright run against the installed tailnet HTTPS bundle passes the full
+  Swarm desktop/phone lifecycle case. A bounded read-only live inspection
+  sees both exact columns, no browser errors, and the two restored torrents'
+  25- and 20-row Swarm catalogs. The service restart correctly begins their
+  new volatile counters at zero; prior-process transfer history is not
+  fabricated.

@@ -871,6 +871,18 @@ and an empty active-connections patch cannot erase retained Swarm rows. The
 shared reducer handles keyed updates and terminal removals without joining the
 two projections in the browser.
 
+Completed Tactical
+[`175`](../tactical/175-retained-swarm-peer-transfer-totals.md) adds required
+`payload_downloaded_bytes` and `payload_uploaded_bytes` decimal strings to
+every Swarm row. They are exact payload-only totals for the retained record's
+current-process lifetime: live captures add every matching active generation
+to the closed-generation base, disconnect preserves the final values, and
+reconnect accumulates without double counting. Rust, JSON Schema, generated
+TypeScript/validators, and UniFFI carry the additive fields. Browser semantic
+validation requires canonical nonnegative decimals and sorting remains exact
+beyond JavaScript's safe-integer range. The counters reset on record eviction
+or engine restart and do not claim durable peer history.
+
 ## Live Peer Extension
 
 Tactical `035` implements `torrent_peers` as complete keyed rows for all and

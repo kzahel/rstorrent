@@ -799,7 +799,11 @@ remote exposure, and Android streaming remain independent product decisions.
   Disk, Swarm, Logs, Speed, and dual-family DHT projections. Search/plugins,
   playback, dynamic network policy, and tracker mutation remain explicitly
   unavailable rather than discarded or simulated. Manual session and torrent
-  peer-transfer limits are implemented.
+  peer-transfer limits are implemented. Completed Tactical `175` carries
+  exact retained Swarm payload download/upload totals through the generated
+  UniFFI/Kotlin record and dual-ABI build. Compose currently presents only the
+  Swarm catalog summary, not peer rows, so it does not fabricate a parallel
+  row presentation for those fields.
 - Diagnostics currently cover application lifecycle, discovery exhaustion,
   network restriction, tracker policy rejection, metadata, storage, piece,
   integrity, and terminal MSE handshake edges, including role, captured policy,

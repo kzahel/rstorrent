@@ -281,6 +281,12 @@ bounded, virtualized table over retained registry records while Peers remains
 active connections. One central tab vocabulary owns torrent/session scope,
 and the `swarm-lifecycle` plus 1,000-row fixtures cover state legibility,
 responsive layout, accessibility, and bounded rendering. Completed Tactical
+[`175`](../tactical/175-retained-swarm-peer-transfer-totals.md) makes exact
+retained-record **Downloaded** and **Uploaded** payload totals default-visible
+and arbitrary-precision sortable beside retry state. Column help distinguishes
+useful content from protocol traffic and states that counters reset with the
+engine or record; all configured columns remain reachable at 390 and 456
+pixels. Completed Tactical
 [`065`](../tactical/065-dht-observatory.md) makes DHT a
 session observatory led by a static shared-prefix-depth distribution with
 mirrored replacement occupancy, freshness, a truthful deeper-band summary, and

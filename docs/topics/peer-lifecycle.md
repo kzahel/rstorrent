@@ -124,6 +124,16 @@ and MSE generations, hash attempts, payload attempts, cancellation, and
 cleanup all attach to one `TorrentPeerHandle`; no parallel registry,
 connection scheduler, or per-lane task budget was introduced.
 
+Completed Tactical
+[`175`](../tactical/175-retained-swarm-peer-transfer-totals.md) adds two exact
+payload contribution counters to that same volatile retained record. A Swarm
+snapshot combines the closed-generation base with every matching active
+generation; connection removal transfers the final authoritative download and
+upload values into the base exactly once. The counters survive disconnect,
+backoff, and reconnect, saturate at `u64::MAX`, and disappear with record
+eviction or process restart. They are inspection facts only and do not affect
+selection, retry, reputation, choking, or request policy.
+
 ## Scope
 
 This topic owns the torrent-engine vocabulary and invariants for peer
@@ -274,6 +284,14 @@ history. Semantic registry transitions flow through the coordinator's existing
 activity boundary, retry expiry uses its existing deadline/wake path, and one
 inactive empty snapshot follows joined terminal cleanup. No view interest,
 application state, or browser timer can mutate registry lifecycle.
+
+Tactical `175` extends each retained row with exact useful payload downloaded
+from and payload uploaded to that record across all of its connection
+generations in the current process. Active generations are added to the
+retained closed-generation base at capture time. Finalization adds one
+generation exactly once before its active observation disappears, so Swarm
+never loses or duplicates contribution at disconnect. These are volatile
+record-lifetime totals, not durable endpoint identity or connection history.
 
 The current `PeerRegistry`, `PeerSocketSet`, and `SwarmState` remain valid
 subowners with distinct invariants. Tactical
@@ -763,6 +781,10 @@ interoperability and terminal resource closure.
 Tactical `088` additionally proves those unchanged observations during an
 exact 4,195,035-byte externally dialed transfer through a verified mapping,
 followed by retained Swarm history and terminal resource closure.
+Tactical `175` additionally proves exact active, disconnect, overlapping,
+reconnect, stale-removal, and saturation transitions plus final authoritative
+incoming upload capture, generated first-party boundaries, responsive React
+presentation, and the repaired installed LAN/tailnet service.
 Tactical `092` additionally proves tracker-only, DHT-only, and mapped
 wire-port discovery into the same retained peer lifetime. Tactical `097`
 additionally proves deterministic live limit reduction and increase plus

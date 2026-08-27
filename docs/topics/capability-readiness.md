@@ -105,15 +105,16 @@ mutation. Its deterministic, installed-service, package-repair, exact-route,
 WSS/media, and phone-sized browser evidence now passes without changing any
 existing Serve route or ACL. Tactical `158` has resumed as the sole **Now**.
 
-Explicit maintainer direction later on 2026-08-27 temporarily yields Tactical
+Explicit maintainer direction later on 2026-08-27 temporarily yielded Tactical
 `158` to retained Swarm transfer-total Tactical
 [`175`](../tactical/175-retained-swarm-peer-transfer-totals.md). This bounded
 slice makes exact useful payload downloaded from and uploaded to each retained
 peer record visible through disconnect, backoff, and reconnect. It does not
 change peer selection, retry policy, persistence, or the current stalled
-torrent's runtime behavior. Tactical `175` is the sole **Now** while its
-engine, generated-contract, React, Android-build, and installed-service gates
-run.
+torrent's runtime behavior. Exact engine/session transitions, generated web
+and UniFFI contracts, React desktop/phone presentation, Android dual-ABI
+build, full workspace/web gates, and the repaired installed LAN/tailnet
+service pass. Tactical `158` has resumed as the sole **Now**.
 
 The updater tactical's client, production route, five-target signed hosted
 rehearsal, public `0.1.0`, `0.1.1`, and `0.1.2` releases, installed macOS arm64
@@ -602,17 +603,13 @@ exactly.
 
 ### Now
 
-- **Tactical
-  [`175`](../tactical/175-retained-swarm-peer-transfer-totals.md): retained
-  Swarm peer transfer totals.** Carry exact useful payload download/upload
-  contribution across live, disconnected, backed-off, and reconnected peer
-  generations without changing peer policy or adding durable history.
+- **Tactical `158`: desktop release and updater completion.** Close the clean
+  Windows and Linux x86_64 update/install evidence plus Windows
+  firewall-consent characterization. Installed Intel macOS remains
+  deliberately omitted.
 
 ### Next
 
-- Resume Tactical `158` and close the clean Windows and Linux x86_64
-  update/install evidence plus Windows firewall-consent characterization.
-  Installed Intel macOS remains deliberately omitted.
 - Freeze the application identities, first supported persistence baseline,
   changelog, privacy/support presentation, and repeatable beta torrent cohort
   around the first release candidate.
@@ -740,7 +737,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Capability | State | Evidence | Highest-risk limit | Owner |
 | --- | --- | --- | --- | --- |
 | Bounded peer registry and source merging | Implemented | deterministic, runtime, interop | Records remain volatile and endpoint-keyed while the separate exact peer-ID admission index permits at most one established generation per claimed remote ID. Crossed, same-direction, self, stale-removal, saturation, and pinned-libtorrent cases pass without merging provenance or reputation. | [`peer-lifecycle`](peer-lifecycle.md) |
-| Registry-backed Swarm inspection | Implemented | deterministic, runtime, interop, web | The bounded volatile registry, exact state counts, source merging, retry eligibility, terminal cleanup, and typed self/duplicate closure reasons are visible; durable history remains absent. | [`peer-lifecycle`](peer-lifecycle.md), [`application-view-api`](application-view-api.md) |
+| Registry-backed Swarm inspection | Implemented | deterministic, runtime, interop, web, Android build, installed service | The bounded volatile registry, exact state counts, source merging, retry eligibility, terminal cleanup, typed self/duplicate closure reasons, and exact payload downloaded/uploaded across retained active, disconnected, backed-off, and reconnected generations are visible. Counters reset on process restart or record eviction; durable history remains absent. | [`peer-lifecycle`](peer-lifecycle.md), [`application-view-api`](application-view-api.md), [`175`](../tactical/175-retained-swarm-peer-transfer-totals.md) |
 | Deterministic dial selection and guarded attempts | Implemented | deterministic, runtime, interop | Selection remains intentionally basic. Post-handshake peer-ID admission deterministically resolves crossed and repeated connections without introducing peer scoring or treating IDs as durable identity. Tactical `132` adds bounded endpoint-scoped uTP unknown/advertised/confirmed/suppressed selection, exact outcome fencing, direct TCP during suppression, deadline/PEX recovery, and no durable cache. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Pre-content peer failover | Implemented | deterministic, runtime, interop, live | Bounded parallel metadata peers share one block owner; two tracker cohorts, 10/10 fresh-DHT owner runs, and 12/12 cross-catalog pairs pass. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Multiple simultaneous live peers | Implemented | deterministic, runtime, interop, live | Thirty established and thirty half-open attempts remain separate outbound torrent-local defaults beneath one shared session budget whose ordinary default is 200 after descriptor clamping and whose incoming-only slack is ten. Exact saturation, cancellation, mixed-direction release, and simultaneous incoming evidence pass. | [`peer-lifecycle`](peer-lifecycle.md) |
