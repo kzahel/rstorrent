@@ -5,7 +5,9 @@ operator-approved updater, exact trusted-LAN mode, truthful React
 presentation, and current-host installation pass. Desktop release Tactical
 [`158`](158-desktop-signed-packaging-and-updater.md) resumes as the sole
 **Now** with its existing gates unchanged. No tag, release, website/channel
-deployment, firewall change, or Raspberry Pi mutation was performed.
+deployment, router change, or Raspberry Pi mutation was performed. The
+initial slice made no firewall change; the 2026-08-27 reachability follow-up
+adds one exact current-host UFW rule documented below.
 
 Topics: `runtime-configurations-and-headless-deployment`,
 `application-connection-architecture`, `remote-access-authentication`,
@@ -294,17 +296,23 @@ channel is reachable. Published artifact acceptance and physical Raspberry Pi
 service/update evidence are the next release operations, not claims of this
 tactical.
 
-### 2026-08-27 phone boot repair
+### 2026-08-27 phone boot hardening and LAN admission
 
-The first phone visit reached the exact LAN HTML but displayed a white page.
-The installed page and application connection rendered correctly in desktop
-Chrome at the phone's exact 456-by-1024 viewport, so the service, responsive
-layout, and live backend path were healthy. The hosted static response had no
-cache contract: a browser could retain mutable `index.html` across a
-same-version repair and then request content-hashed modules that the immutable
-release directory no longer contained. The phone's console was unavailable,
-so that client-side sequence is the bounded diagnosis rather than a claimed
-captured exception.
+The first phone screenshot was initially interpreted as loaded white HTML, but
+its thin Chrome progress bar showed that the request was still pending. Kernel
+UFW logs later supplied the exact cause: SYN packets from the phone at
+`192.168.1.101` to `192.168.1.129:3030` reached the selected Ethernet interface
+and were explicitly logged `[UFW BLOCK]` from 05:19 through 05:35. The active
+default-drop rules admitted LAN ports 22 and 8080 but not 3030. The phone never
+reached RSTorrent, so cache or module startup did not cause the reported
+symptom.
+
+The investigation independently found a real hosted-shell hardening gap. The
+static response had no cache contract: a browser that had reached an earlier
+same-version installation could retain mutable `index.html` and then request
+content-hashed modules that the replacement directory no longer contained.
+The installed page and application connection otherwise rendered correctly in
+desktop Chrome at the phone's exact 456-by-1024 viewport.
 
 Commit `34edc7e` closes the server-side failure class. Mutable `index.html` and
 the classic boot guard now use `Cache-Control: no-store`; content-hashed
@@ -324,6 +332,20 @@ Same-version repair restored the enabled running service; the exact index now
 returns `no-store`, its hashed module returns `immutable`, health and status
 remain correct, and `NRestarts` remains zero.
 
+After the follow-up user direction required actual LAN reachability, the host
+received one persistent UFW rule:
+
+```text
+ALLOW IN TCP from 192.168.1.0/24 to 192.168.1.129 port 3030
+comment: RSTorrent Headless LAN
+```
+
+It adds no IPv6, public-source, wildcard-destination, router, or port-forward
+admission. The package still does not mutate firewall policy; this is explicit
+operator-owned host configuration. The rule is present in UFW and its compiled
+nftables chain. A post-rule phone retry remains required before claiming
+physical client acceptance.
+
 ## Non-Goals And Next Boundary
 
 - apt/RPM repositories, containers, AppImage, `/opt`, system-wide units,
@@ -338,8 +360,8 @@ remain correct, and `NRestarts` remains zero.
 - built-in TLS, Basic removal, owner passphrase/E2E authentication, relay,
   extension control, or Internet exposure;
 - publishing a tag/release, deploying the website/stable channel, changing
-  repository settings, opening a firewall/router, or installing on the
-  Raspberry Pi; and
+  repository settings, automatic package-managed firewall mutation, router or
+  public/IPv6 firewall exposure, or installing on the Raspberry Pi; and
 - release notes ingestion from unsigned GitHub metadata, telemetry, accounts,
   or an installation identifier for headless checks.
 
@@ -358,3 +380,7 @@ publication, repository settings, public/IPv6/wildcard exposure, system-wide
 or root installation, firewall/router mutation, Raspberry Pi/device mutation,
 an unattended update policy, a new dependency/credential, or any destructive
 operator-data action.
+
+The 2026-08-27 follow-up user direction supersedes only the current-host
+firewall-mutation stop for the exact LAN-source/host/port rule above. Every
+broader firewall or router change remains outside authorization.

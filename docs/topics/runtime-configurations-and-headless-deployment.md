@@ -367,8 +367,8 @@ The repository now proves these parts of this direction:
   exact production React assets for one ordinary user. Installation remains
   disabled, never changes lingering, and exposes explicit enable/start/status/
   restart/uninstall commands. Same-version repair preserves running/enabled
-  intent and rolls back on failed authenticated readiness; uninstall preserves
-  configuration, secrets, profile, and every payload root.
+  intent and rolls back on a failed mode-appropriate health check; uninstall
+  preserves configuration, secrets, profile, and every payload root.
 - One x86_64 Ubuntu systemd-user campaign proves exact bind failure, local
   pairing persistence, private HTTPS/WSS proxy control, an 8-MiB 128-piece
   transfer with all views detached, completed re-seeding to pinned
@@ -388,14 +388,20 @@ The repository now proves these parts of this direction:
   address, serves HTTP and the application WebSocket with no credentials,
   rejects wrong Host/Origin, survives joined restart and same-version repair,
   and keeps configuration/profile/payload modes at `0600`/`0700`/`0700`.
-  Firewall, router, TLS, DNS, unrelated user units, and existing lingering
-  policy were untouched.
-- A 2026-08-27 phone white-page report exposed that hosted `index.html` had no
+  Router, TLS, DNS, unrelated user units, and existing lingering policy were
+  untouched.
+- A 2026-08-27 phone pending-load report was definitively traced to the host's
+  active default-drop UFW policy: kernel logs recorded the phone's exact LAN
+  SYN packets being dropped before RSTorrent. Follow-up operator direction
+  adds one persistent IPv4 TCP rule from `192.168.1.0/24` to exact destination
+  `192.168.1.129:3030`; no IPv6, public, wildcard, router, or package-managed
+  firewall policy is added. A post-rule physical retry remains open.
+- The same investigation independently found that hosted `index.html` had no
   explicit cache contract across same-version repair. The mutable shell and
   classic boot guard now use `no-store`, content-hashed assets are immutable,
   and a visible loading/no-JavaScript/delayed-failure shell replaces silent
   white startup. Exact phone-sized desktop Chrome and repaired-package service
-  evidence pass; the reporting phone's browser console was unavailable.
+  evidence pass.
 
 The important remaining gaps are:
 

@@ -422,6 +422,24 @@ device that can reach the selected address has full owner control. Exact Host
 and HTTP/WebSocket Origin checks still apply, and status, health, logs, and the
 React UI report the effective exposure.
 
+The package deliberately does not change firewall policy. If UFW is active,
+an operator who accepts the entire selected LAN as trusted must add an exact
+source, destination, and port rule separately. The current workstation uses:
+
+```bash
+sudo ufw allow from 192.168.1.0/24 to 192.168.1.129 \
+  port 3030 proto tcp comment 'RSTorrent Headless LAN'
+```
+
+Inspect the existing rules before adding it. Do not replace the destination
+with `any`, add an IPv6 twin, or broaden the source unless that exposure is a
+separately reviewed choice. The exact reversal is:
+
+```bash
+sudo ufw delete allow from 192.168.1.0/24 to 192.168.1.129 \
+  port 3030 proto tcp
+```
+
 Running a new package's `install.sh` performs a same/new-version repair and
 restores prior running/enabled intent only after its configured identity and
 readiness check.
@@ -440,8 +458,9 @@ and Tacticals [`170`](docs/tactical/170-configured-linux-headless-service.md)
 and [`171`](docs/tactical/171-signed-headless-release-and-lan-service.md) for
 the fixed contract and evidence. The current workstation deployment is an
 enabled healthy user service at `http://192.168.1.129:3030/`, bound only to
-that selected Ethernet address; no firewall or system-wide service change was
-made.
+that selected Ethernet address. A persistent exact UFW rule now admits TCP
+3030 only from `192.168.1.0/24` to that address; no IPv6, public, router, or
+system-wide service change was made.
 
 ## Launching The Live Web UI
 
