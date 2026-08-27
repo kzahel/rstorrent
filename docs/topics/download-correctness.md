@@ -66,6 +66,14 @@ supervisors' joined cleanup and final empty peer observation.
 Tactical `063` adds live binary file selection while retaining full boundary
 piece verification, conservative recheck, explicit generation joins, and exact
 part-to-file materialization.
+Completed Tactical
+[`176`](../tactical/176-durable-high-file-priority.md) adds durable ordinary
+High scheduling without changing those storage or integrity rules. A piece
+inherits the maximum priority of its overlapping wanted non-padding files;
+the rarest-first picker ranks `availability * (8 - priority) * 3` with Normal
+4 and High 6, so rarity and priority compose rather than forming an absolute
+global tier. Live High/Normal changes rebuild bounded inactive rank and v2
+hash-need order without cancelling accepted work or replacing the generation.
 Tactical `073` removes the remaining single-file storage fork. BEP 3
 `length`, one-entry `files`, and ordinary multi-file torrents now share one
 positional storage, checkpoint, full-recheck, repair, and publication
@@ -137,7 +145,8 @@ Completed Tactical
 reader access only after every piece intersecting its next 64-KiB logical
 chunk passes that same complete hash and current-route publication boundary.
 Current stream demand schedules before ahead and ordinary work without
-changing durable selection; bounded untouched ordinary attempts may be
+changing durable selection or retaining a High override; bounded untouched
+ordinary attempts may be
 preempted, and one slow current block may gain at most one different-peer
 attempt whose first accepted response cancels the loser. Corrupt, stale,
 replaced, skipped, paused, or unavailable generations cannot wake or feed a
@@ -225,6 +234,9 @@ have state and storage-root identity.
   peer lacked it, choked, disconnected, or timed out.
 - Piece selection may optimize rarity, locality, streaming, or fairness only
   after preserving the ability to schedule every wanted piece.
+- Durable High/Normal ordinary ranking never outranks an active bounded
+  current/ahead streaming lease; removing the lease restores the same ordinary
+  weighted order.
 
 ### Progress Assessment
 

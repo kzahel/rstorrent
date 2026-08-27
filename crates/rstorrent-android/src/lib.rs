@@ -1470,6 +1470,7 @@ fn validate_config(config: EngineConfig) -> Result<(DownloadConfig, Duration), S
                 .into_iter()
                 .map(|index| index as usize)
                 .collect(),
+            high_priority_files: Vec::new(),
             materialize_files: config
                 .materialize_files
                 .into_iter()

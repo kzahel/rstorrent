@@ -14,6 +14,33 @@ pub enum PieceClass {
     Skipped,
 }
 
+/// Durable ordinary-download priority after file overlap has been resolved.
+///
+/// The numeric values intentionally match the useful subset of libtorrent's
+/// eight-level picker scale. Filtering remains owned by [`FileSelection`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
+pub enum PiecePriority {
+    #[default]
+    Normal = 4,
+    High = 6,
+}
+
+impl PiecePriority {
+    pub const LEVEL_COUNT: u32 = 8;
+    pub const AVAILABILITY_FACTOR: u32 = 3;
+
+    pub const fn value(self) -> u32 {
+        self as u32
+    }
+
+    pub const fn weighted_availability(self, availability: u32) -> u32 {
+        availability
+            .saturating_mul(Self::LEVEL_COUNT - self.value())
+            .saturating_mul(Self::AVAILABILITY_FACTOR)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SegmentTarget {
     WantedFile { file_index: usize, file_offset: u64 },
@@ -65,6 +92,13 @@ pub enum LayoutError {
     PaddingSelection {
         index: usize,
     },
+    InvalidPriorityFileOrder {
+        previous: usize,
+        index: usize,
+    },
+    PriorityForSkippedFile {
+        index: usize,
+    },
     InvalidPieceIndex {
         index: u32,
         piece_count: usize,
@@ -94,6 +128,18 @@ impl fmt::Display for LayoutError {
             }
             Self::PaddingSelection { index } => {
                 write!(formatter, "padding file {index} cannot be selected")
+            }
+            Self::InvalidPriorityFileOrder { previous, index } => {
+                write!(
+                    formatter,
+                    "file priority indices are not strictly increasing at {previous}, {index}"
+                )
+            }
+            Self::PriorityForSkippedFile { index } => {
+                write!(
+                    formatter,
+                    "skipped file {index} cannot have download priority"
+                )
             }
             Self::InvalidPieceIndex { index, piece_count } => {
                 write!(formatter, "piece index {index} is outside 0..{piece_count}")
@@ -318,6 +364,53 @@ impl ContentLayout {
                     piece_count: layout.piece_count(),
                 }),
         }
+    }
+
+    /// Resolves sparse High file overrides into one maximum priority per
+    /// piece. Boundary pieces inherit High from any overlapping wanted file.
+    pub fn piece_priorities(
+        &self,
+        selection: &FileSelection,
+        high_priority_files: &[usize],
+    ) -> Result<Vec<PiecePriority>, LayoutError> {
+        if selection.file_count() != self.files().len() {
+            return Err(LayoutError::InvalidFileIndex {
+                index: selection.file_count(),
+                file_count: self.files().len(),
+            });
+        }
+        let mut priorities = vec![PiecePriority::Normal; self.piece_count()];
+        let mut previous = None;
+        for &file_index in high_priority_files {
+            let file = self
+                .files()
+                .get(file_index)
+                .ok_or(LayoutError::InvalidFileIndex {
+                    index: file_index,
+                    file_count: self.files().len(),
+                })?;
+            if let Some(previous) = previous
+                && file_index <= previous
+            {
+                return Err(LayoutError::InvalidPriorityFileOrder {
+                    previous,
+                    index: file_index,
+                });
+            }
+            previous = Some(file_index);
+            if file.padding {
+                return Err(LayoutError::PaddingSelection { index: file_index });
+            }
+            if !selection.is_wanted(file_index) {
+                return Err(LayoutError::PriorityForSkippedFile { index: file_index });
+            }
+            if let Some(range) = self.file_piece_range(file_index)? {
+                for piece in range {
+                    priorities[piece as usize] = PiecePriority::High;
+                }
+            }
+        }
+        Ok(priorities)
     }
 
     pub fn segments(
@@ -984,7 +1077,7 @@ impl TorrentLayout {
 #[cfg(test)]
 mod tests {
     use super::{
-        ContentLayout, FileSelection, LayoutError, PieceClass, RequestRange,
+        ContentLayout, FileSelection, LayoutError, PieceClass, PiecePriority, RequestRange,
         RequiredPayloadGeometry, SegmentTarget, TorrentLayout,
     };
     use crate::metainfo::{MAX_METAINFO_PIECES, Metainfo, MetainfoFile, MetainfoMode};
@@ -1104,6 +1197,33 @@ mod tests {
             layout.piece_length_at(5),
             Err(LayoutError::InvalidPieceIndex { .. })
         ));
+    }
+
+    #[test]
+    fn maximum_file_priority_crosses_wanted_and_skipped_boundaries() {
+        let (layout, selection) = fixture();
+        let layout = ContentLayout::V1(layout);
+        assert_eq!(
+            layout.piece_priorities(&selection, &[3]),
+            Ok(vec![
+                PiecePriority::Normal,
+                PiecePriority::Normal,
+                PiecePriority::High,
+                PiecePriority::Normal,
+                PiecePriority::Normal,
+            ])
+        );
+        assert_eq!(
+            layout.piece_priorities(&selection, &[1]),
+            Err(LayoutError::PriorityForSkippedFile { index: 1 })
+        );
+        assert_eq!(
+            layout.piece_priorities(&selection, &[3, 3]),
+            Err(LayoutError::InvalidPriorityFileOrder {
+                previous: 3,
+                index: 3
+            })
+        );
     }
 
     #[test]

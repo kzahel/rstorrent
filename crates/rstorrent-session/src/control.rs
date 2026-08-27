@@ -203,6 +203,7 @@ const fn default_true() -> bool {
 pub enum FilePriority {
     #[default]
     Normal,
+    High,
     Skip,
 }
 
@@ -424,6 +425,8 @@ pub struct TorrentSnapshot {
     #[serde(default)]
     pub transfer_limits: TorrentTransferLimits,
     pub skip_files: Vec<u32>,
+    #[serde(default)]
+    pub high_priority_files: Vec<u32>,
     #[serde(default)]
     pub selection_default: FilePriority,
     #[serde(default)]

@@ -952,7 +952,13 @@ function demoFileSet(
       torrentOffsetBytes: offset.toString(),
       firstPiece: Math.floor(Number(offset / 262_144n)),
       lastPiece: Math.floor(Number((offset + length - 1n) / 262_144n)),
-      selection: padding ? null : index % 29 === 0 ? "skipped" : "wanted",
+      selection: padding
+        ? null
+        : index % 29 === 0
+          ? "skipped"
+          : index % 17 === 0
+            ? "high"
+            : "normal",
       padding,
       doneBytes: done.toString(),
       verifiedBytes: verified.toString(),

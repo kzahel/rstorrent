@@ -86,6 +86,7 @@ import org.rstorrent.session.uniffi.DiagnosticEvent
 import org.rstorrent.session.uniffi.DiagnosticCategory
 import org.rstorrent.session.uniffi.DiagnosticProfile
 import org.rstorrent.session.uniffi.DiagnosticSeverity
+import org.rstorrent.session.uniffi.FilePriority
 import org.rstorrent.session.uniffi.RemovalDataPolicy
 import org.rstorrent.session.uniffi.TorrentOperationalState
 import org.rstorrent.session.uniffi.TorrentTransferLimits
@@ -203,8 +204,8 @@ private fun ProductNavHost(
                 onLogs = { navController.navigate(ProductRoutes.LOGS) },
                 onSettings = { navController.navigate(ProductRoutes.SETTINGS) },
                 onPresent = { service?.presentTorrent(torrentId, it) },
-                onSetFileWanted = { file, wanted ->
-                    service?.setFileWanted(torrentId, file.fileIndex, wanted)
+                onSetFilePriority = { file, priority ->
+                    service?.setFilePriority(torrentId, file.fileIndex, priority)
                 },
                 onDownloadFile = { service?.downloadFileNow(torrentId, it.fileIndex) },
                 onOpenFile = { file ->
@@ -427,7 +428,7 @@ private fun TorrentDetailScreen(
     onLogs: () -> Unit,
     onSettings: () -> Unit,
     onPresent: (TorrentPresentation) -> Unit,
-    onSetFileWanted: (org.rstorrent.session.uniffi.FileView, Boolean) -> Unit,
+    onSetFilePriority: (org.rstorrent.session.uniffi.FileView, FilePriority) -> Unit,
     onDownloadFile: (org.rstorrent.session.uniffi.FileView) -> Unit,
     onOpenFile: (org.rstorrent.session.uniffi.FileView) -> Unit,
     onFilePage: (UInt) -> Unit,
@@ -516,7 +517,7 @@ private fun TorrentDetailScreen(
                     TorrentDetailTab.entries[page],
                     torrent,
                     state,
-                    onSetFileWanted,
+                    onSetFilePriority,
                     onDownloadFile,
                     onOpenFile,
                     onFilePage,
@@ -533,7 +534,7 @@ private fun DetailTabContent(
     tab: TorrentDetailTab,
     torrent: TorrentView?,
     state: ProductState,
-    onSetFileWanted: (org.rstorrent.session.uniffi.FileView, Boolean) -> Unit,
+    onSetFilePriority: (org.rstorrent.session.uniffi.FileView, FilePriority) -> Unit,
     onDownloadFile: (org.rstorrent.session.uniffi.FileView) -> Unit,
     onOpenFile: (org.rstorrent.session.uniffi.FileView) -> Unit,
     onFilePage: (UInt) -> Unit,
@@ -590,7 +591,7 @@ private fun DetailTabContent(
         TorrentDetailTab.FILES ->
             FilesScreen(
                 state.files[torrent.torrentId],
-                onSetFileWanted,
+                onSetFilePriority,
                 onDownloadFile,
                 onOpenFile,
                 onFilePage,

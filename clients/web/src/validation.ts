@@ -473,6 +473,9 @@ function validateServiceSnapshot(value: unknown): void {
     array(torrent.skip_files, "skipped files").forEach((index) =>
       boundedInteger(index, "file index", 0, MAX_U32),
     );
+    array(torrent.high_priority_files, "high-priority files").forEach((index) =>
+      boundedInteger(index, "file priority index", 0, MAX_U32),
+    );
     optionalString(torrent.error, "torrent error", 1_024);
   }
 }
@@ -1869,7 +1872,7 @@ function validateFileView(value: unknown): void {
   optionalInteger(file.first_piece, "first file piece", MAX_U32);
   optionalInteger(file.last_piece, "last file piece", MAX_U32);
   if (file.selection !== null) {
-    oneOf(file.selection, "file selection", ["wanted", "skipped"]);
+    oneOf(file.selection, "file selection", ["normal", "high", "skipped"]);
   }
   boolean(file.padding, "file padding flag");
   if (file.padding && file.selection !== null) {

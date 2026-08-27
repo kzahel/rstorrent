@@ -206,6 +206,7 @@ async fn main() -> ExitCode {
                         network: config.network,
                         resource_limits: config.resource_limits,
                         skip_files: config.skip_files,
+                        high_priority_files: Vec::new(),
                         materialize_files: config.materialize_files,
                     };
                     download_verified_piece_with_control(config, control.clone()).await
@@ -264,6 +265,7 @@ async fn main() -> ExitCode {
                             torrent_peers: Some(peers),
                             resource_limits: config.resource_limits,
                             skip_files: config.skip_files,
+                            high_priority_files: Vec::new(),
                             verified_pieces: vec![false; piece_count],
                             artifact_state: ResumeArtifactState::None,
                             resume_validation: ResumeValidationIntent::Full,
@@ -549,6 +551,7 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadCommand, String> 
                     network,
                     resource_limits,
                     skip_files,
+                    high_priority_files: Vec::new(),
                     materialize_files,
                     dht: None,
                 },

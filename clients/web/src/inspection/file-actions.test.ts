@@ -3,10 +3,11 @@ import { describe, expect, it } from "vitest";
 import { FILE_ACTIONS, resolveFileActions } from "./file-actions";
 
 describe("file selection actions", () => {
-  it("defines one stable Open, Download now, Normal, and Skip inventory", () => {
+  it("defines one stable Open, Download now, High, Normal, and Skip inventory", () => {
     expect(FILE_ACTIONS.map((action) => [action.group, action.id])).toEqual([
       ["open", "open"],
       ["download", "download_now"],
+      ["priority", "high"],
       ["priority", "normal"],
       ["priority", "skip"],
     ]);

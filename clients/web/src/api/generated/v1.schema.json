@@ -3271,6 +3271,7 @@
     "FilePriority": {
       "enum": [
         "normal",
+        "high",
         "skip"
       ],
       "type": "string"
@@ -3324,7 +3325,8 @@
     },
     "FileSelectionView": {
       "enum": [
-        "wanted",
+        "normal",
+        "high",
         "skipped"
       ],
       "type": "string"
@@ -5492,6 +5494,15 @@
         "force_recheck_available": {
           "default": false,
           "type": "boolean"
+        },
+        "high_priority_files": {
+          "default": [],
+          "items": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
         },
         "metadata_available": {
           "type": "boolean"

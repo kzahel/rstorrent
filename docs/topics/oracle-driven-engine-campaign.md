@@ -521,7 +521,11 @@ complete, and external-intake Tactical
 [`163`](../tactical/163-desktop-external-torrent-intake.md) is complete, as is
 desktop notification Tactical
 [`164`](../tactical/164-desktop-completion-and-attention-notifications.md).
-Release/updater Tactical `158` is the product **Now**.
+Durable High file-priority Tactical
+[`176`](../tactical/176-durable-high-file-priority.md) temporarily yields
+release/updater Tactical `158` and is the product/engine **Now**. Its
+implementation and Linux/web/Android gates pass; only the unavailable-on-Linux
+iOS simulator/archive compile remains before completion.
 Tacticals `142`, `145`, and `150` complete the uTP performance campaign at the
 maintainer-selected evidence stop. Completed Tactical `143` installs the
 v1-preserving opaque torrent owner, typed protocol aliases, schema-19 fresh
@@ -622,10 +626,13 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Current engine-campaign action: execute decision-complete measurement Tactical
-[`153`](../tactical/153-wired-lan-utp-data-plane-scalability.md). It measures
-the higher packet-rate data-plane frontier on a wired gigabit-effective
-Mac-to-native-desktop LAN without implying a product change or 2.5 GbE claim.
+Current engine-campaign action: close durable High file-priority Tactical
+[`176`](../tactical/176-durable-high-file-priority.md) with the macOS-only iOS
+simulator/archive compile. Its bounded High/Normal/Skip implementation,
+compatible persistence, weighted ordinary piece activation, independent
+stronger Tactical `139` streaming overlay, and every available Linux, web, and
+Android gate already pass. Decision-complete measurement Tactical `153`
+remains ready without competing with this explicit user priority.
 Completed Tactical `155` closes Stage 4 through hash scheduling, candidate
 verification, reconstruction, repair, service, first-party platforms, and
 two-role interoperability. Completed Tactical `156` closes Stage 5 through

@@ -39,10 +39,14 @@ const columns = (dataUnits: DataUnits): readonly VirtualColumn<FileRow>[] => [
     label: "Priority",
     width: 76,
     sortValue: (row) => row.selection,
-    sortOrder: ["wanted", "skipped"],
+    sortOrder: ["high", "normal", "skipped"],
     render: (row) => (
       <span className={styles.priority} data-selection={row.selection}>
-        {row.selection === "skipped" ? "Skip" : "Normal"}
+        {row.selection === "skipped"
+          ? "Skip"
+          : row.selection === "high"
+            ? "High"
+            : "Normal"}
       </span>
     ),
   },

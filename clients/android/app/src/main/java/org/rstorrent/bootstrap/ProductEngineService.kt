@@ -951,16 +951,16 @@ class ProductEngineService : Service() {
         dispatch(Command.RemoveTorrent(torrentId, policy))
     }
 
-    fun setFileWanted(
+    fun setFilePriority(
         torrentId: String,
         fileIndex: UInt,
-        wanted: Boolean,
+        priority: FilePriority,
     ) {
         dispatch(
             Command.SetFilePriority(
                 torrentId,
                 listOf(fileIndex),
-                if (wanted) FilePriority.NORMAL else FilePriority.SKIP,
+                priority,
             ),
         )
     }

@@ -306,7 +306,7 @@ export interface FileRow {
   readonly torrentOffsetBytes: string;
   readonly firstPiece: number | null;
   readonly lastPiece: number | null;
-  readonly selection: "wanted" | "skipped" | null;
+  readonly selection: "normal" | "high" | "skipped" | null;
   readonly padding: boolean;
   readonly doneBytes: string;
   readonly verifiedBytes: string;
@@ -580,7 +580,7 @@ export type InspectionCommand =
       readonly type: "set_file_priority";
       readonly torrentId: string;
       readonly fileIndices: readonly number[];
-      readonly priority: "normal" | "skip";
+      readonly priority: "high" | "normal" | "skip";
     }
   | {
       readonly type: "download_files";

@@ -2,6 +2,8 @@
 
 use std::cmp::Ordering;
 
+use rstorrent_protocol::storage_layout::PiecePriority;
+
 pub(crate) const MAX_PICKER_CANDIDATE_INSPECTIONS: usize = 256;
 
 const POSITION_UNWANTED: u32 = u32::MAX;
@@ -28,6 +30,7 @@ pub(crate) struct AvailabilityPicker {
     policy: PieceActivationPolicy,
     tie_seed: u64,
     counts: Vec<u16>,
+    priorities: Vec<PiecePriority>,
     heap: Vec<u32>,
     positions: Vec<u32>,
     ranked_len: usize,
@@ -38,14 +41,34 @@ pub(crate) struct AvailabilityPicker {
 }
 
 impl AvailabilityPicker {
+    #[cfg(test)]
     pub(crate) fn new(
         piece_count: usize,
         wanted: Vec<u32>,
         policy: PieceActivationPolicy,
         tie_seed: u64,
     ) -> Result<Self, &'static str> {
+        Self::new_with_priorities(
+            piece_count,
+            wanted,
+            vec![PiecePriority::Normal; piece_count],
+            policy,
+            tie_seed,
+        )
+    }
+
+    pub(crate) fn new_with_priorities(
+        piece_count: usize,
+        wanted: Vec<u32>,
+        priorities: Vec<PiecePriority>,
+        policy: PieceActivationPolicy,
+        tie_seed: u64,
+    ) -> Result<Self, &'static str> {
         if piece_count == 0 || piece_count > u32::MAX as usize {
             return Err("piece picker geometry is invalid");
+        }
+        if priorities.len() != piece_count {
+            return Err("piece priority geometry does not match picker geometry");
         }
         let mut positions = vec![POSITION_UNWANTED; piece_count];
         for (position, &piece) in wanted.iter().enumerate() {
@@ -64,6 +87,7 @@ impl AvailabilityPicker {
             policy,
             tie_seed,
             counts: vec![0; piece_count],
+            priorities,
             heap: wanted,
             positions,
             ranked_len,
@@ -96,6 +120,21 @@ impl AvailabilityPicker {
         self.positions
             .get(piece)
             .is_some_and(|position| *position != POSITION_UNWANTED)
+    }
+
+    pub(crate) fn replace_priorities(
+        &mut self,
+        priorities: Vec<PiecePriority>,
+    ) -> Result<(), &'static str> {
+        if priorities.len() != self.priorities.len() {
+            return Err("piece priority geometry does not match picker geometry");
+        }
+        if self.priorities == priorities {
+            return Ok(());
+        }
+        self.priorities = priorities;
+        self.rebuild_heap(true);
+        Ok(())
     }
 
     pub(crate) fn availability(&self, piece: usize) -> Option<u32> {
@@ -301,6 +340,11 @@ impl AvailabilityPicker {
             .capacity()
             .saturating_mul(std::mem::size_of::<u16>())
             .saturating_add(
+                self.priorities
+                    .capacity()
+                    .saturating_mul(std::mem::size_of::<PiecePriority>()),
+            )
+            .saturating_add(
                 self.heap
                     .capacity()
                     .saturating_mul(std::mem::size_of::<u32>()),
@@ -475,8 +519,9 @@ impl AvailabilityPicker {
         }
         match self.policy {
             PieceActivationPolicy::InOrder => lhs.cmp(&rhs),
-            PieceActivationPolicy::RarestFirst => lhs_availability
-                .cmp(&rhs_availability)
+            PieceActivationPolicy::RarestFirst => self.priorities[lhs]
+                .weighted_availability(lhs_availability)
+                .cmp(&self.priorities[rhs].weighted_availability(rhs_availability))
                 .then_with(|| self.tie_key(lhs).cmp(&self.tie_key(rhs)))
                 .then_with(|| lhs.cmp(&rhs)),
         }
@@ -531,6 +576,40 @@ mod tests {
         rarest.increment_piece(0).expect("common piece");
         assert_eq!(in_order.reserve_best_matching(|_| true), Some(0));
         assert_eq!(rarest.reserve_best_matching(|_| true), Some(1));
+    }
+
+    #[test]
+    fn high_priority_uses_weighted_rarest_first_and_updates_live() {
+        let mut picker = AvailabilityPicker::new_with_priorities(
+            3,
+            vec![0, 1, 2],
+            vec![
+                PiecePriority::Normal,
+                PiecePriority::High,
+                PiecePriority::Normal,
+            ],
+            PieceActivationPolicy::RarestFirst,
+            0,
+        )
+        .expect("priority picker");
+        for piece in 0..3 {
+            picker.increment_piece(piece).expect("availability");
+        }
+        picker.increment_piece(1).expect("high piece availability");
+
+        // Normal at availability 1 and High at availability 2 both score 12;
+        // the deterministic tie-break wins rather than a strict priority tier.
+        assert_eq!(picker.reserve_best_matching(|_| true), Some(0));
+        picker.cancel_reserved(0).expect("restore reservation");
+
+        picker
+            .replace_priorities(vec![
+                PiecePriority::Normal,
+                PiecePriority::High,
+                PiecePriority::High,
+            ])
+            .expect("replace priorities");
+        assert_eq!(picker.reserve_best_matching(|_| true), Some(2));
     }
 
     #[test]

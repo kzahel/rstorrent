@@ -61,7 +61,7 @@ export const DEFAULT_CLIENT_SETTINGS: ClientSettings = {"listener":{"type":"auto
 
 export const DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW: ClientSettingsRuntimeView = {"configured":{"listener":{"type":"automatic_local_network"},"preferred_listen_port":6881,"port_mapping":"upnp","peer_connection_limit":200,"upload_slots":8,"active_downloads":3,"upload_rate_limit":{"type":"unlimited"},"download_rate_limit":{"type":"unlimited"},"encryption":"allow","ipv6_enabled":true,"tracker_https_server_authentication":"system_trust"},"effective_listener":{"listener":{"type":"disabled"},"preferred_listen_port":6881},"effective_port_mapping":"disabled","effective_peer_connection_limit":200,"effective_upload_slots":8,"effective_active_downloads":3,"effective_upload_rate_limit":{"type":"unlimited"},"effective_download_rate_limit":{"type":"unlimited"},"active_download_count":0,"checking_count":0,"effective_encryption":"allow","effective_ipv6_enabled":false,"effective_tracker_https_server_authentication":"system_trust","transport_application":{"type":"applying"},"port_mapping_application":{"type":"applying"},"peer_connections_application":{"type":"applied"},"upload_slots_application":{"type":"applied"},"bandwidth_application":{"type":"applied"},"bandwidth":{"upload":{"registered_torrents":0,"active_waiters":0,"queued_requested_bytes":"0","granted_bytes":"0","returned_bytes":"0","cancelled_requests":"0","throttle_wait_micros":"0","throttle_wait_high_water_micros":"0","current_burst_credit_bytes":"0"},"download":{"registered_torrents":0,"active_waiters":0,"queued_requested_bytes":"0","granted_bytes":"0","returned_bytes":"0","cancelled_requests":"0","throttle_wait_micros":"0","throttle_wait_high_water_micros":"0","current_burst_credit_bytes":"0"}},"encryption_application":{"type":"applied"},"ipv6_application":{"type":"applying"},"tracker_https_authentication_application":{"type":"applied"},"listener_status":{"type":"disabled"},"session_udp_status":{"type":"unavailable"},"port_mapping_status":{"type":"disabled"},"udp_port_mapping_status":{"type":"disabled"},"ipv6_pinhole_status":{"type":"disabled"},"advertised_peer_endpoint":{"type":"unavailable"},"transport_families":[]};
 
-export type FilePriority = "normal" | "skip";
+export type FilePriority = "normal" | "high" | "skip";
 
 export type RemovalDataPolicy = "keep" | "delete_managed";
 
@@ -99,7 +99,7 @@ export type StorageState = "none" | "staging" | "prepared" | "published" | "need
 
 export type TorrentProtocolIdentities = { v1?: string | null, v2?: string | null, };
 
-export type TorrentSnapshot = { torrent_id: string, protocol_identities: TorrentProtocolIdentities, storage_root: string, state: TorrentState, storage_state: StorageState, metadata_available: boolean, piece_count: number, verified_piece_count: number, desired_running: boolean, download_queue_position?: number | null, transfer_limits: TorrentTransferLimits, skip_files: Array<number>, selection_default: FilePriority, selection_exceptions: Array<number>, archived: boolean, removal_state?: RemovalState | null, delete_managed_data_supported: boolean, force_recheck_available: boolean, error?: string | null, };
+export type TorrentSnapshot = { torrent_id: string, protocol_identities: TorrentProtocolIdentities, storage_root: string, state: TorrentState, storage_state: StorageState, metadata_available: boolean, piece_count: number, verified_piece_count: number, desired_running: boolean, download_queue_position?: number | null, transfer_limits: TorrentTransferLimits, skip_files: Array<number>, high_priority_files: Array<number>, selection_default: FilePriority, selection_exceptions: Array<number>, archived: boolean, removal_state?: RemovalState | null, delete_managed_data_supported: boolean, force_recheck_available: boolean, error?: string | null, };
 
 export type StorageRootAvailability = "available" | "unavailable";
 
@@ -235,7 +235,7 @@ export type SwarmPeerState = "eligible" | "not_connectable" | "dialing" | "conne
 
 export type SwarmPeerView = { peer_record_id: string, torrent_id: string, endpoint: string, sources: Array<PeerSourceView>, state: SwarmPeerState, connectable: boolean, first_observed_age_millis: string, last_observed_age_millis: string, retry_in_millis: string | null, dial_attempts: number, consecutive_failures: number, total_failures: number, last_dial_age_millis: string | null, last_connected_age_millis: string | null, last_failure: PeerDisconnectReason | null, last_failure_age_millis: string | null, payload_downloaded_bytes: string, payload_uploaded_bytes: string, trust_points: number, hash_failures: number, valid_pieces: number, on_parole: boolean, };
 
-export type FileSelectionView = "wanted" | "skipped";
+export type FileSelectionView = "normal" | "high" | "skipped";
 
 export type FileCatalogState = "metadata_pending" | "available" | "torrent_missing";
 

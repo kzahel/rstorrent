@@ -368,7 +368,21 @@ private struct TorrentFilesSection: View {
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                         }
+                        if let selection = file.selection {
+                            Text(
+                                selection == .high
+                                    ? L10n.string("file_priority_high")
+                                    : selection == .skipped
+                                        ? L10n.string("file_priority_skip")
+                                        : L10n.string("file_priority_normal")
+                            )
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        }
                         Menu {
+                            Button(L10n.string("file_priority_high")) {
+                                onPriority([file.fileIndex], .high)
+                            }
                             Button(L10n.string("file_priority_normal")) {
                                 onPriority([file.fileIndex], .normal)
                             }

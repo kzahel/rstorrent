@@ -285,7 +285,7 @@ describe("view-set reducer", () => {
       torrent_offset_bytes: "0",
       first_piece: 0,
       last_piece: 9,
-      selection: "wanted" as const,
+      selection: "normal" as const,
       padding: false,
       done_bytes: "16384",
       verified_bytes: "0",

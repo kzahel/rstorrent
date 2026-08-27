@@ -129,6 +129,7 @@ async fn pure_v2_complete_source_download_rechecks_and_reopens_without_part_file
                 torrent_peers: Some(peers),
                 resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
                 skip_files: vec![0],
+                high_priority_files: Vec::new(),
                 verified_pieces: vec![false; 3],
                 artifact_state: ResumeArtifactState::None,
                 resume_validation: ResumeValidationIntent::Full,
@@ -178,6 +179,7 @@ async fn pure_v2_complete_source_download_rechecks_and_reopens_without_part_file
             torrent_peers: Some(reopen_peers),
             resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
             skip_files: vec![0],
+            high_priority_files: Vec::new(),
             verified_pieces: vec![false, true, true],
             artifact_state: ResumeArtifactState::Published,
             resume_validation: ResumeValidationIntent::Full,
@@ -214,6 +216,7 @@ async fn pure_v2_complete_source_download_rechecks_and_reopens_without_part_file
                 torrent_peers: None,
                 resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
                 skip_files: vec![0],
+                high_priority_files: Vec::new(),
                 verified_info: Some(info_only),
                 verified_pieces: vec![false, true, true],
                 artifact_state: ResumeArtifactState::Published,
@@ -282,6 +285,7 @@ async fn multi_piece_single_file_uses_torrent_offsets_and_publishes() {
                 storage_intake_high_watermark_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
                 swarm_config: SwarmConfig::for_request_limit(2 * MIN_PAYLOAD_ALLOWANCE),
                 skip_files: Vec::new(),
+                high_priority_files: Vec::new(),
                 materialize_files: Vec::new(),
             },
             metainfo,
@@ -347,6 +351,7 @@ async fn one_entry_multi_file_uses_same_pipeline_and_publishes_a_tree() {
             storage_intake_high_watermark_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
             swarm_config: SwarmConfig::for_request_limit(2 * MIN_PAYLOAD_ALLOWANCE),
             skip_files: Vec::new(),
+            high_priority_files: Vec::new(),
             materialize_files: Vec::new(),
         },
         metainfo,
@@ -452,6 +457,7 @@ async fn full_recheck_recovers_synced_single_file_with_empty_have() {
             torrent_peers: None,
             resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
             skip_files: Vec::new(),
+            high_priority_files: Vec::new(),
             verified_info: Some(raw_info),
             verified_pieces: vec![false; layout.piece_count()],
             artifact_state: ResumeArtifactState::Staging,
@@ -529,6 +535,7 @@ async fn fast_resume_accepts_complete_publication_without_checker_or_hashing() {
             torrent_peers: None,
             resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
             skip_files: Vec::new(),
+            high_priority_files: Vec::new(),
             verified_info: Some(raw_info),
             verified_pieces: vec![true; layout.piece_count()],
             artifact_state: ResumeArtifactState::Published,
@@ -610,6 +617,7 @@ async fn cancelling_platform_fast_resume_drops_observation_without_admission() {
             torrent_peers: None,
             resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
             skip_files: Vec::new(),
+            high_priority_files: Vec::new(),
             verified_info: Some(raw_info),
             verified_pieces: vec![true; layout.piece_count()],
             artifact_state: ResumeArtifactState::Published,
@@ -707,6 +715,7 @@ async fn full_recheck_verifies_readable_skipped_pieces() {
     control.checker_started(1, layout.piece_count());
     let mut selection = AppliedFileSelection {
         selection: skipped,
+        high_priority_files: Vec::new(),
         revision: 0,
     };
     let content = TorrentContent::from_v1_metainfo(metainfo.clone());
@@ -810,6 +819,7 @@ async fn selection_fence_and_slow_hash_heartbeat_share_one_check_generation() {
     let task = tokio::spawn(async move {
         let mut selection = AppliedFileSelection {
             selection,
+            high_priority_files: Vec::new(),
             revision: 0,
         };
         let result = full_recheck_managed_storage(
@@ -837,6 +847,7 @@ async fn selection_fence_and_slow_hash_heartbeat_share_one_check_generation() {
     control.update_file_selection(FileSelectionUpdate {
         revision: 7,
         skip_files: vec![1],
+        high_priority_files: Vec::new(),
     });
     timeout(Duration::from_millis(1_050), async {
         loop {
@@ -1020,6 +1031,7 @@ async fn full_recheck_clears_stale_have_and_redownloads_only_corrupt_piece() {
             torrent_peers: None,
             resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
             skip_files: Vec::new(),
+            high_priority_files: Vec::new(),
             verified_info: Some(raw_info),
             verified_pieces: vec![true; layout.piece_count()],
             artifact_state: ResumeArtifactState::Staging,
@@ -1117,6 +1129,7 @@ async fn outgoing_connection_uploads_verified_piece_before_torrent_completion() 
             torrent_peers: None,
             resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
             skip_files: Vec::new(),
+            high_priority_files: Vec::new(),
             verified_info: Some(raw_info),
             verified_pieces: vec![true, false],
             artifact_state: ResumeArtifactState::Staging,
@@ -1232,6 +1245,7 @@ async fn accepted_connection_uploads_and_downloads_before_torrent_completion() {
             torrent_peers: Some(torrent_peers),
             resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
             skip_files: Vec::new(),
+            high_priority_files: Vec::new(),
             verified_info: Some(raw_info),
             verified_pieces: vec![true, false],
             artifact_state: ResumeArtifactState::Staging,
@@ -1356,6 +1370,7 @@ async fn incoming_contributor_survives_disconnect_until_delayed_hash_finishes() 
             torrent_peers: Some(torrent_peers),
             resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
             skip_files: Vec::new(),
+            high_priority_files: Vec::new(),
             verified_info: Some(raw_info),
             verified_pieces: vec![false],
             artifact_state: ResumeArtifactState::None,
@@ -1486,6 +1501,7 @@ async fn active_upload_read_failure_retracts_route_and_stops_generation() {
             torrent_peers: Some(torrent_peers),
             resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
             skip_files: Vec::new(),
+            high_priority_files: Vec::new(),
             verified_info: Some(raw_info),
             verified_pieces: vec![true, false],
             artifact_state: ResumeArtifactState::Staging,
@@ -1662,6 +1678,7 @@ async fn cancelling_full_recheck_stops_admission_and_joins_bounded_hashes() {
             torrent_peers: None,
             resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
             skip_files: Vec::new(),
+            high_priority_files: Vec::new(),
             verified_info: Some(raw_info),
             verified_pieces: vec![false; layout.piece_count()],
             artifact_state: ResumeArtifactState::Staging,
@@ -1748,6 +1765,7 @@ async fn publishing_intent_recovers_both_sides_of_atomic_rename() {
                 torrent_peers: None,
                 resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
                 skip_files: Vec::new(),
+                high_priority_files: Vec::new(),
                 verified_info: Some(raw_info.clone()),
                 verified_pieces: vec![false; layout.piece_count()],
                 artifact_state: ResumeArtifactState::Staging,
@@ -1794,6 +1812,7 @@ async fn publishing_intent_recovers_both_sides_of_atomic_rename() {
                 torrent_peers: None,
                 resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
                 skip_files: Vec::new(),
+                high_priority_files: Vec::new(),
                 verified_info: Some(raw_info.clone()),
                 verified_pieces: vec![false; layout.piece_count()],
                 artifact_state: ResumeArtifactState::Publishing,
@@ -1851,6 +1870,7 @@ async fn timeout_removes_unverified_staging_output() {
         network: loopback_network(Duration::from_millis(50)),
         resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
         skip_files: Vec::new(),
+        high_priority_files: Vec::new(),
         materialize_files: Vec::new(),
     })
     .await;
@@ -1899,6 +1919,7 @@ async fn selective_timeout_removes_owned_staging_and_part_paths() {
         network: loopback_network(Duration::from_millis(50)),
         resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
         skip_files: vec![1],
+        high_priority_files: Vec::new(),
         materialize_files: Vec::new(),
     })
     .await;
@@ -1954,6 +1975,7 @@ async fn cancellation_is_terminal_and_removes_owned_artifacts() {
             network: loopback_network(Duration::from_secs(5)),
             resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
             skip_files: vec![1],
+            high_priority_files: Vec::new(),
             materialize_files: Vec::new(),
         },
         download_control,
@@ -2061,6 +2083,7 @@ async fn preexisting_selective_part_file_is_preserved() {
         network: loopback_network(Duration::from_secs(1)),
         resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
         skip_files: vec![1],
+        high_priority_files: Vec::new(),
         materialize_files: Vec::new(),
     })
     .await;

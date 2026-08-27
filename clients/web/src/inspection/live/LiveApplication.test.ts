@@ -1032,7 +1032,7 @@ function snapshotFor(
               torrent_offset_bytes: "0",
               first_piece: 0,
               last_piece: 7,
-              selection: "wanted",
+              selection: "normal",
               padding: false,
               done_bytes: "16384",
               verified_bytes: "0",

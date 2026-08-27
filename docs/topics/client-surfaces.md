@@ -164,6 +164,13 @@ for toolbar, More, and actionable-row context menus, including coordinated
 multi-torrent removal and multi-file priority changes. Android receives and
 compiles the projected recheck-capability field but intentionally gains no
 desktop context-menu presentation.
+Completed Tactical
+[`176`](../tactical/176-durable-high-file-priority.md) carries
+High/Normal/Skip through the shared generated contract. React/Tauri exposes
+the three values through its existing grouped file actions, Android Compose
+replaces the binary checkbox with a three-value menu, and iOS SwiftUI displays
+and sets the same values. This presentation does not add a second scheduler or
+progressive Android/iOS playback.
 
 Tactical `081` adds adapter-level v1 `.torrent` byte intake through
 the ordinary browser WebSocket and raw in-process Tauri IPC, plus HTTP
@@ -792,7 +799,8 @@ remote exposure, and Android streaming remain independent product decisions.
   Compose client is still an experiment.
 - Android durable SAF session storage and provider publication are proven for
   one persisted root. The Compose product presents root setup/health/repair,
-  bounded file selection, `Download now`, and completed-file open. General
+  bounded High/Normal/Skip file priority, `Download now`, and completed-file
+  open. General
   root migration and cloud/removable-media policy remain product gaps.
 - The Android Compose product now presents authoritative multi-torrent queue
   and concurrent-admission state plus live Peers, Files, Trackers, Pieces,

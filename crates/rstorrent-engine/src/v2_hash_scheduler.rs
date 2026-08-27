@@ -1,8 +1,10 @@
 //! Task-free torrent ownership for bounded BEP 52 hash attempts.
 
+use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
+use rstorrent_protocol::storage_layout::PiecePriority;
 use rstorrent_protocol::v2_hashes::{
     HashExchangeError, HashRequest, HashResponse, V2FileHashGeometry, V2HashCatalog,
 };
@@ -20,6 +22,7 @@ pub(crate) struct HashNeedInput {
     pub request: HashRequest,
     pub piece: u32,
     pub candidate: bool,
+    pub priority: PiecePriority,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -33,6 +36,7 @@ struct LogicalHashNeed {
     fresh_pieces: BTreeSet<u32>,
     candidate_pieces: BTreeSet<u32>,
     attempts: BTreeMap<ConnectionId, HashAttempt>,
+    priority: PiecePriority,
     complete: bool,
 }
 
@@ -92,6 +96,7 @@ impl V2HashScheduler {
                     fresh_pieces: BTreeSet::new(),
                     candidate_pieces: BTreeSet::new(),
                     attempts: BTreeMap::new(),
+                    priority: input.priority,
                     complete: false,
                 });
             if need.geometry != input.geometry {
@@ -102,6 +107,7 @@ impl V2HashScheduler {
             } else {
                 need.fresh_pieces.insert(input.piece);
             }
+            need.priority = need.priority.max(input.priority);
         }
         Ok(scheduler)
     }
@@ -147,6 +153,7 @@ impl V2HashScheduler {
             .map(|(request, need)| {
                 (
                     need.fresh_pieces.is_empty(),
+                    Reverse(need.priority),
                     need.fresh_pieces
                         .iter()
                         .chain(&need.candidate_pieces)
@@ -158,7 +165,7 @@ impl V2HashScheduler {
             })
             .collect::<Vec<_>>();
         keys.sort_unstable();
-        for (_, _, request) in keys {
+        for (_, _, _, request) in keys {
             if total >= maximum_total_attempts {
                 break;
             }
@@ -206,6 +213,26 @@ impl V2HashScheduler {
             });
         }
         assignments
+    }
+
+    pub(crate) fn replace_piece_priorities(
+        &mut self,
+        priorities: &[PiecePriority],
+    ) -> Result<(), &'static str> {
+        for need in self.needs.values_mut() {
+            need.priority = need
+                .fresh_pieces
+                .iter()
+                .chain(&need.candidate_pieces)
+                .try_fold(PiecePriority::Normal, |priority, piece| {
+                    priorities
+                        .get(*piece as usize)
+                        .copied()
+                        .map(|piece_priority| priority.max(piece_priority))
+                        .ok_or("v2 hash piece priority is outside picker geometry")
+                })?;
+        }
+        Ok(())
     }
 
     pub(crate) fn send_failed(&mut self, connection: ConnectionId, request: HashRequest) {
@@ -380,6 +407,52 @@ mod tests {
     }
 
     #[test]
+    fn high_priority_orders_hash_needs_and_updates_live() {
+        let (geometry, normal_request, _) = fixture();
+        let high_request = HashRequest {
+            index: 2,
+            count: 1,
+            ..normal_request
+        };
+        let mut scheduler = V2HashScheduler::new([
+            HashNeedInput {
+                geometry,
+                request: normal_request,
+                piece: 0,
+                candidate: false,
+                priority: PiecePriority::Normal,
+            },
+            HashNeedInput {
+                geometry,
+                request: high_request,
+                piece: 1,
+                candidate: false,
+                priority: PiecePriority::High,
+            },
+        ])
+        .expect("priority scheduler");
+        assert_eq!(
+            scheduler.schedule_with_capacity(Duration::ZERO, 1, |_| vec![connection(1)]),
+            [HashAssignment {
+                connection: connection(1),
+                request: high_request,
+            }]
+        );
+
+        scheduler.send_failed(connection(1), high_request);
+        scheduler
+            .replace_piece_priorities(&[PiecePriority::High, PiecePriority::Normal])
+            .expect("live priority update");
+        assert_eq!(
+            scheduler.schedule_with_capacity(Duration::ZERO, 1, |_| vec![connection(2)]),
+            [HashAssignment {
+                connection: connection(2),
+                request: normal_request,
+            }]
+        );
+    }
+
+    #[test]
     fn stalls_duplicate_once_and_peer_limits_remain_exact() {
         let (geometry, request, _) = fixture();
         let mut scheduler = V2HashScheduler::new([
@@ -388,12 +461,14 @@ mod tests {
                 request,
                 piece: 0,
                 candidate: false,
+                priority: PiecePriority::Normal,
             },
             HashNeedInput {
                 geometry,
                 request,
                 piece: 1,
                 candidate: false,
+                priority: PiecePriority::Normal,
             },
         ])
         .unwrap();
@@ -433,6 +508,7 @@ mod tests {
             request,
             piece: 0,
             candidate: true,
+            priority: PiecePriority::Normal,
         }])
         .unwrap();
         scheduler.schedule(Duration::ZERO, |_| vec![connection(1)]);
@@ -462,6 +538,7 @@ mod tests {
             request,
             piece: 0,
             candidate: false,
+            priority: PiecePriority::Normal,
         }])
         .unwrap();
         scheduler.schedule(Duration::ZERO, |_| vec![connection(1)]);

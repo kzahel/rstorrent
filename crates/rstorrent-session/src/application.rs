@@ -1161,8 +1161,14 @@ impl ApplicationService {
                 .load_resume(&torrent_id.to_ascii_lowercase())
                 .map(|resume| {
                     file_indices.iter().any(|file_index| {
-                        let skipped = resume.skip_files.binary_search(file_index).is_ok();
-                        skipped != matches!(priority, FilePriority::Skip)
+                        let current = if resume.skip_files.binary_search(file_index).is_ok() {
+                            FilePriority::Skip
+                        } else if resume.high_priority_files.binary_search(file_index).is_ok() {
+                            FilePriority::High
+                        } else {
+                            FilePriority::Normal
+                        };
+                        current != *priority
                     })
                 })
                 .unwrap_or(true),
@@ -1174,9 +1180,10 @@ impl ApplicationService {
                 .store_mut()?
                 .load_resume(&torrent_id.to_ascii_lowercase())
                 .map(|resume| {
-                    file_indices
-                        .iter()
-                        .any(|file_index| resume.skip_files.binary_search(file_index).is_ok())
+                    file_indices.iter().any(|file_index| {
+                        resume.skip_files.binary_search(file_index).is_ok()
+                            || resume.high_priority_files.binary_search(file_index).is_ok()
+                    })
                 })
                 .unwrap_or(true),
             _ => false,
@@ -1468,6 +1475,17 @@ impl ApplicationService {
                                 })
                             })
                             .collect::<Result<Vec<_>, _>>()?;
+                        let high_priority_files = resume
+                            .high_priority_files
+                            .into_iter()
+                            .map(|index| {
+                                usize::try_from(index).map_err(|_| {
+                                    ApplicationError::Configuration(
+                                        "file priority index overflow".to_owned(),
+                                    )
+                                })
+                            })
+                            .collect::<Result<Vec<_>, _>>()?;
                         let revision = response.revision.parse::<u64>().map_err(|_| {
                             ApplicationError::Configuration(
                                 "durable response contains an invalid revision".to_owned(),
@@ -1476,6 +1494,7 @@ impl ApplicationService {
                         control.update_file_selection(FileSelectionUpdate {
                             revision,
                             skip_files,
+                            high_priority_files,
                         });
                     } else {
                         self.start_if_possible(&torrent_id).await?;
@@ -1521,9 +1540,22 @@ impl ApplicationService {
                                     })
                                 })
                                 .collect::<Result<Vec<_>, _>>()?;
+                            let high_priority_files = resume
+                                .high_priority_files
+                                .iter()
+                                .copied()
+                                .map(|index| {
+                                    usize::try_from(index).map_err(|_| {
+                                        ApplicationError::Configuration(
+                                            "file priority index overflow".to_owned(),
+                                        )
+                                    })
+                                })
+                                .collect::<Result<Vec<_>, _>>()?;
                             control.update_file_selection(FileSelectionUpdate {
                                 revision,
                                 skip_files,
+                                high_priority_files,
                             });
                         }
                     }
@@ -3152,11 +3184,12 @@ impl ApplicationService {
                     if !continue_downloading {
                         return Ok(ApplicationTaskReport::Metadata);
                     }
-                    let skip_files = {
+                    let (skip_files, high_priority_files) = {
                         let store = checkpoints.store().map_err(DownloadError::Checkpoint)?;
-                        store
+                        let resume = store
                             .load_resume(&checkpoints.torrent_id)
-                            .map_err(|error| DownloadError::Checkpoint(error.to_string()))?
+                            .map_err(|error| DownloadError::Checkpoint(error.to_string()))?;
+                        let skip_files = resume
                             .skip_files
                             .into_iter()
                             .map(|index| {
@@ -3166,7 +3199,19 @@ impl ApplicationService {
                                     )
                                 })
                             })
-                            .collect::<Result<Vec<_>, _>>()?
+                            .collect::<Result<Vec<_>, _>>()?;
+                        let high_priority_files = resume
+                            .high_priority_files
+                            .into_iter()
+                            .map(|index| {
+                                usize::try_from(index).map_err(|_| {
+                                    DownloadError::Checkpoint(
+                                        "file priority index overflow".to_owned(),
+                                    )
+                                })
+                            })
+                            .collect::<Result<Vec<_>, _>>()?;
+                        (skip_files, high_priority_files)
                     };
                     let content = if pure_v2 {
                         TorrentContent::from_v2_info_bytes_with_limits(
@@ -3202,6 +3247,7 @@ impl ApplicationService {
                             torrent_peers: Some(torrent_peers),
                             resource_limits,
                             skip_files,
+                            high_priority_files,
                             verified_info: Some(raw_info),
                             verified_pieces: Vec::new(),
                             artifact_state: ResumeArtifactState::None,
@@ -3308,6 +3354,15 @@ impl ApplicationService {
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
+        let high_priority_files = resume
+            .high_priority_files
+            .iter()
+            .map(|index| {
+                usize::try_from(*index).map_err(|_| {
+                    ApplicationError::Configuration("file priority index overflow".to_owned())
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let verified_pieces = resume
             .have
             .as_ref()
@@ -3368,6 +3423,7 @@ impl ApplicationService {
                 torrent_peers: Some(torrent_peers),
                 resource_limits: self.download_resource_limits,
                 skip_files,
+                high_priority_files,
                 verified_pieces,
                 artifact_state,
                 resume_validation,
@@ -3388,6 +3444,7 @@ impl ApplicationService {
                 torrent_peers: Some(torrent_peers),
                 resource_limits: self.download_resource_limits,
                 skip_files,
+                high_priority_files,
                 verified_info: resume.raw_info,
                 verified_pieces,
                 artifact_state,
@@ -5792,6 +5849,7 @@ fn durable_view_state(
             FileProgressModel::new_content_with_media(
                 content,
                 &resume.skip_files,
+                &resume.high_priority_files,
                 &verified_indices,
                 filesystem_content_base,
                 media_catalog_availability(torrent, &resume, storage_roots),
@@ -12930,7 +12988,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn partial_file_priority_reconciles_without_replacing_the_peer_generation() {
+    async fn live_file_priority_updates_do_not_replace_the_peer_generation() {
         let root = test_root("file-priority-live-reconcile");
         let configuration = config(&root);
         let raw_info = multi_file_info();
@@ -13025,6 +13083,36 @@ mod tests {
             .1
             .control
             .clone();
+
+        let raised = service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "raise-one-live-file".to_owned(),
+                expected_revision: None,
+                command: Command::SetFilePriority {
+                    torrent_id: torrent_id.clone(),
+                    file_indices: vec![0],
+                    priority: FilePriority::High,
+                },
+            })
+            .await
+            .expect("raise one file");
+        let raised_revision = raised.revision.parse::<u64>().expect("raise revision");
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while control.applied_file_selection_revision() < raised_revision {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("raised priority did not apply live");
+        assert!(closed_receiver.try_recv().is_err());
+        assert_eq!(
+            service
+                .load_resume_conservative(&torrent_id)
+                .expect("load raised priority")
+                .high_priority_files,
+            vec![0]
+        );
 
         let skipped = service
             .dispatch(RequestEnvelope {

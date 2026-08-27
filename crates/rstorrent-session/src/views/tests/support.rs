@@ -50,6 +50,7 @@ pub(super) fn snapshot(revision: u64, piece_count: u32) -> ServiceSnapshot {
             download_queue_position: None,
             transfer_limits: Default::default(),
             skip_files: Vec::new(),
+            high_priority_files: Vec::new(),
             selection_default: Default::default(),
             selection_exceptions: Vec::new(),
             archived: false,

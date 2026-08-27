@@ -635,7 +635,7 @@ failure, and displays an irreversible warning only when managed-data deletion
 is selected.
 
 Tactical `041` makes Files a live responsive detail rather than a placeholder.
-The default table shows Name, Folder, Normal/Skip selection, Size, Progress,
+The default table shows Name, Folder, High/Normal/Skip selection, Size, Progress,
 Done, and Verified; Type, Index, torrent offset, piece span, and absolute
 Storage Path are optional columns. Padding remains available in the typed
 projection but is hidden with an explicit count. Exact decimal counters use
@@ -645,7 +645,9 @@ rates or progress do not make rows jump while being inspected.
 
 Tactical `058` adds a Files-local current row and explicit multi-selection
 using the shared table interaction. Tactical `063` activates its More menu
-with exactly `Normal` and `Skip` for the current row or selected range. The
+for the current row or selected range; completed Tactical
+[`176`](../tactical/176-durable-high-file-priority.md) makes those shared
+actions exactly `High`, `Normal`, and `Skip`. The
 live adapter sends bounded semantic file indices, displays command results,
 and waits for the authoritative Files view to change the priority column. Demo
 scenarios retain disabled actions with an explicit reason rather than

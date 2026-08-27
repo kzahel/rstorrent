@@ -407,6 +407,7 @@ fn rapid_file_selection_updates_retain_only_the_latest_revision() {
         control.update_file_selection(FileSelectionUpdate {
             revision,
             skip_files: vec![revision as usize % 3],
+            high_priority_files: Vec::new(),
         });
     }
 
@@ -416,6 +417,7 @@ fn rapid_file_selection_updates_retain_only_the_latest_revision() {
         Some(FileSelectionUpdate {
             revision: 1_000,
             skip_files: vec![1],
+            high_priority_files: Vec::new(),
         })
     );
     assert!(!updates.has_changed().expect("selection controller open"));

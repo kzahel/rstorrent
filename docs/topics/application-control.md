@@ -31,7 +31,13 @@ hierarchical structured records with explicit capture interest and distinct
 source, delivery, and local loss while keeping them separate from commands and
 product-state authority. Tactical `063` adds metadata-only magnet intent and
 durable live `Normal`/`Skip` file selection through the same semantic command
-boundary.
+boundary. Completed Tactical
+[`176`](../tactical/176-durable-high-file-priority.md) extends that command to
+the product-level `High`/`Normal`/`Skip` model. High and Normal are wanted;
+Skip is unwanted. High changes durable ordinary scheduling in the active
+generation without restarting storage or invalidating verified data, while
+`Download now` means Normal plus running and therefore clears High on its
+targets. Repeated semantic values remain revision-idempotent.
 Tactical `073` adds `force_recheck` as a semantic durable command with the
 same expected-revision and request-receipt rules. It joins an active matching
 generation, preserves durable run intent, and starts the common managed-

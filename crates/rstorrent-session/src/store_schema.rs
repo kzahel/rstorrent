@@ -1,6 +1,17 @@
 //! SQLite schema facts for the fresh dual-identity catalog epoch.
 
-pub(crate) const SCHEMA_VERSION: i64 = 19;
+pub(crate) const SCHEMA_VERSION: i64 = 20;
+pub(crate) const PREVIOUS_COMPATIBLE_SCHEMA_VERSION: i64 = 19;
+
+pub(crate) const FILE_PRIORITIES_TABLE_SQL: &str = "CREATE TABLE file_priorities (
+        torrent_id BLOB NOT NULL CHECK (
+            length(torrent_id) = 16 AND torrent_id <> zeroblob(16)
+        ) REFERENCES torrents(torrent_id) ON DELETE CASCADE,
+        file_index INTEGER NOT NULL
+            CHECK (file_index >= 0 AND file_index < 374998),
+        priority TEXT NOT NULL CHECK (priority = 'high'),
+        PRIMARY KEY (torrent_id, file_index)
+     ) WITHOUT ROWID;";
 
 pub(crate) const DHT_TABLES_SQL: &str = "CREATE TABLE dht_state (
         singleton INTEGER PRIMARY KEY CHECK (singleton = 1),

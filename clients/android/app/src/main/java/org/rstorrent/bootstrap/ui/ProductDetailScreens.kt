@@ -3,6 +3,7 @@
 package org.rstorrent.bootstrap.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,7 +15,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
@@ -22,6 +24,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -31,6 +37,7 @@ import org.rstorrent.bootstrap.DiskViewState
 import org.rstorrent.bootstrap.FileCatalogViewState
 import org.rstorrent.bootstrap.SwarmViewState
 import org.rstorrent.bootstrap.TrackerCatalogViewState
+import org.rstorrent.session.uniffi.FilePriority
 import org.rstorrent.session.uniffi.FileSelectionView
 import org.rstorrent.session.uniffi.FileView
 import org.rstorrent.session.uniffi.PeerView
@@ -38,7 +45,7 @@ import org.rstorrent.session.uniffi.PeerView
 @Composable
 internal fun FilesScreen(
     catalog: FileCatalogViewState?,
-    onSetWanted: (FileView, Boolean) -> Unit,
+    onSetPriority: (FileView, FilePriority) -> Unit,
     onDownloadNow: (FileView) -> Unit,
     onOpen: (FileView) -> Unit,
     onPage: (UInt) -> Unit,
@@ -64,16 +71,44 @@ internal fun FilesScreen(
         }
         items(files, key = FileView::fileId) { file ->
             val wanted = file.selection != FileSelectionView.SKIPPED
+            var priorityMenuExpanded by remember(file.fileId) { mutableStateOf(false) }
             val length = file.lengthBytes.toULongOrNull() ?: 0UL
             val done = file.verifiedBytes.toULongOrNull() ?: 0UL
             val complete = length > 0UL && done >= length
             Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp)) {
                 Row(Modifier.fillMaxWidth()) {
-                    Checkbox(
-                        checked = wanted,
-                        onCheckedChange = { onSetWanted(file, it) },
-                        enabled = file.selection != null,
-                    )
+                    Box {
+                        OutlinedButton(
+                            onClick = { priorityMenuExpanded = true },
+                            enabled = file.selection != null,
+                        ) {
+                            Text(
+                                when (file.selection) {
+                                    FileSelectionView.HIGH -> "High"
+                                    FileSelectionView.SKIPPED -> "Skip"
+                                    else -> "Normal"
+                                },
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = priorityMenuExpanded,
+                            onDismissRequest = { priorityMenuExpanded = false },
+                        ) {
+                            listOf(
+                                "High" to FilePriority.HIGH,
+                                "Normal" to FilePriority.NORMAL,
+                                "Skip" to FilePriority.SKIP,
+                            ).forEach { (label, priority) ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    onClick = {
+                                        priorityMenuExpanded = false
+                                        onSetPriority(file, priority)
+                                    },
+                                )
+                            }
+                        }
+                    }
                     Column(Modifier.weight(1f).padding(top = 8.dp)) {
                         Text(
                             file.path.joinToString("/"),

@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use rstorrent_protocol::peer_wire::{BlockRequest, MAX_REQUEST_BLOCK_LENGTH, PeerMessage};
 use rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE;
+use rstorrent_protocol::storage_layout::PiecePriority;
 
 use crate::piece_picker::{AvailabilityPicker, PieceActivationPolicy};
 use crate::session_resources::SessionTorrentResources;
@@ -1049,13 +1050,32 @@ impl SwarmState {
         plans: Vec<PiecePlan>,
         picker_seed: u64,
     ) -> Result<Self, SwarmError> {
+        Self::new_with_wanted_priorities(
+            config,
+            piece_count,
+            wanted,
+            vec![PiecePriority::Normal; piece_count],
+            plans,
+            picker_seed,
+        )
+    }
+
+    pub fn new_with_wanted_priorities(
+        config: SwarmConfig,
+        piece_count: usize,
+        wanted: Vec<u32>,
+        priorities: Vec<PiecePriority>,
+        plans: Vec<PiecePlan>,
+        picker_seed: u64,
+    ) -> Result<Self, SwarmError> {
         let config = config.validate()?;
         if piece_count == 0 {
             return Err(SwarmError::InvalidConfig("piece count must be nonzero"));
         }
-        let picker = AvailabilityPicker::new(
+        let picker = AvailabilityPicker::new_with_priorities(
             piece_count,
             wanted,
+            priorities,
             config.piece_activation_policy,
             picker_seed,
         )
@@ -1211,14 +1231,26 @@ impl SwarmState {
         &mut self,
         wanted: Vec<u32>,
     ) -> Result<Vec<RequestCancellation>, SwarmError> {
+        self.replace_wanted_pieces_with_priorities(
+            wanted,
+            vec![PiecePriority::Normal; self.piece_count],
+        )
+    }
+
+    pub fn replace_wanted_pieces_with_priorities(
+        &mut self,
+        wanted: Vec<u32>,
+        priorities: Vec<PiecePriority>,
+    ) -> Result<Vec<RequestCancellation>, SwarmError> {
         if self.writing_blocks != 0 {
             return Err(SwarmError::InvalidTransition(
                 "wanted pieces cannot change while storage writes are active",
             ));
         }
-        let mut picker = AvailabilityPicker::new(
+        let mut picker = AvailabilityPicker::new_with_priorities(
             self.piece_count,
             wanted,
+            priorities,
             self.picker.policy(),
             self.picker.tie_seed(),
         )
@@ -1280,6 +1312,17 @@ impl SwarmState {
         self.last_activated_piece = None;
         self.last_activated_availability = None;
         Ok(cancellations)
+    }
+
+    pub fn replace_piece_priorities(
+        &mut self,
+        priorities: Vec<PiecePriority>,
+    ) -> Result<(), SwarmError> {
+        self.picker
+            .replace_priorities(priorities)
+            .map_err(SwarmError::Invariant)?;
+        self.inactive_rank_dirty = true;
+        Ok(())
     }
 
     pub fn add_wanted_pieces(&mut self, wanted: &[u32]) -> Result<usize, SwarmError> {
@@ -4146,8 +4189,48 @@ mod tests {
     }
 
     #[test]
+    fn high_priority_precedes_equal_availability_normal_work() {
+        let mut state = SwarmState::new_with_wanted_priorities(
+            SwarmConfig::for_request_limit(BLOCK as usize),
+            3,
+            vec![0, 1, 2],
+            vec![PiecePriority::Normal; 3],
+            vec![plan(0, 1), plan(1, 1), plan(2, 1)],
+            0,
+        )
+        .expect("priority swarm");
+        state
+            .replace_piece_priorities(vec![
+                PiecePriority::Normal,
+                PiecePriority::High,
+                PiecePriority::Normal,
+            ])
+            .expect("live priority update");
+        add_peer(&mut state, connection(1), &[0, 1, 2], false);
+
+        let assigned = state.schedule(Duration::ZERO).expect("ordinary schedule");
+        assert_eq!(assigned.len(), 1);
+        assert_eq!(assigned[0].block.piece, 1);
+    }
+
+    #[test]
     fn streaming_schedules_current_before_ahead_and_suppresses_ordinary_fill() {
-        let mut state = state(3, vec![plan(0, 1), plan(1, 1), plan(2, 1)], 8);
+        let mut config = SwarmConfig::for_request_limit(8 * BLOCK as usize);
+        config.request_timeout = Duration::from_secs(30);
+        config.unproductive_grace = Duration::from_secs(30);
+        let mut state = SwarmState::new_with_wanted_priorities(
+            config,
+            3,
+            vec![0, 1, 2],
+            vec![
+                PiecePriority::High,
+                PiecePriority::Normal,
+                PiecePriority::Normal,
+            ],
+            vec![plan(0, 1), plan(1, 1), plan(2, 1)],
+            0,
+        )
+        .expect("priority swarm");
         add_peer(&mut state, connection(1), &[0, 1, 2], false);
         add_peer(&mut state, connection(2), &[0, 1, 2], false);
         let demands = streaming_demands((2, 2), Some((1, 1)));

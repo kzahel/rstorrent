@@ -217,6 +217,14 @@ user-selected roots, old partial artifacts, and published payload remain
 untouched and are never adopted as verified state.
 
 Completed Tactical
+[`176`](../tactical/176-durable-high-file-priority.md) advances the catalog to
+schema 20 with one additive sparse `file_priorities` table. Schema 19 migrates
+transactionally in place and retains torrents, roots, settings, sources,
+identities, selection, and verification state. Only sorted High overrides are
+stored; Normal remains implicit for wanted files, Skip remains the existing
+binary selection authority, and a file cannot be both High and skipped.
+
+Completed Tactical
 [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) reuses
 schema 19 for the strict complete-source pure-v2 subset. The retained verbatim
 outer source is required runtime authority because piece layers live outside
@@ -699,6 +707,13 @@ row, stores only skipped overrides, and retains the request receipt at the
 same revision. A no-op is replay-safe. Metadata-only add uses ordinary durable
 paused intent while allowing the metadata worker to finish; restart restores
 that acquisition without preparing payload storage.
+
+Tactical `176` composes a second bounded sparse set beside those rows. One
+transaction validates the complete file target, makes High/Normal wanted,
+removes High when Normal or Skip is selected, and advances the revision only
+when the semantic result changes. Both sparse sets retain the existing 4,096-
+entry ceiling; malformed, padding, out-of-range, duplicate, and oversized
+commands fail before mutation.
 
 Tactical
 [`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md)

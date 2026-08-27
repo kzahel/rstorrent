@@ -415,6 +415,7 @@ pub struct CheckerProgress {
 pub struct FileSelectionUpdate {
     pub revision: u64,
     pub skip_files: Vec<usize>,
+    pub high_priority_files: Vec<usize>,
 }
 
 #[derive(Clone, Debug)]

@@ -106,6 +106,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
             .with_peer_id(arguments.peer_id),
             resource_limits: DownloadResourceLimits::DESKTOP,
             skip_files: Vec::new(),
+            high_priority_files: Vec::new(),
             materialize_files: Vec::new(),
         },
         task_control,

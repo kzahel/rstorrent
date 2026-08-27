@@ -20,7 +20,8 @@ use crate::MediaFileAvailability;
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum FileSelectionView {
-    Wanted,
+    Normal,
+    High,
     Skipped,
 }
 
@@ -54,6 +55,7 @@ pub struct FileView {
 struct FileCatalog {
     layout: ContentLayout,
     selection: FileSelection,
+    high_priority_files: BTreeSet<usize>,
     filesystem_content_base: Option<String>,
     media_availability: MediaFileAvailability,
 }
@@ -145,6 +147,7 @@ impl FileProgressModel {
         Self::new_content_with_media(
             &content,
             skipped,
+            &[],
             verified_pieces,
             filesystem_content_base,
             media_availability,
@@ -154,6 +157,7 @@ impl FileProgressModel {
     pub(crate) fn new_content_with_media(
         content: &TorrentContent,
         skipped: &[u32],
+        high_priority_files: &[u32],
         verified_pieces: &[u32],
         filesystem_content_base: Option<String>,
         media_availability: MediaFileAvailability,
@@ -164,12 +168,19 @@ impl FileProgressModel {
             .map(|index| usize::try_from(*index).map_err(|_| FileProgressError::FileIndexOverflow))
             .collect::<Result<Vec<_>, _>>()?;
         let selection = FileSelection::new_content(&layout, &skipped)?;
+        let high_priority_files = high_priority_files
+            .iter()
+            .map(|index| usize::try_from(*index).map_err(|_| FileProgressError::FileIndexOverflow))
+            .collect::<Result<BTreeSet<_>, _>>()?;
+        let high_priority_files_vec = high_priority_files.iter().copied().collect::<Vec<_>>();
+        layout.piece_priorities(&selection, &high_priority_files_vec)?;
         let file_count = layout.files().len();
         u32::try_from(file_count).map_err(|_| FileProgressError::FileIndexOverflow)?;
         let mut model = Self {
             catalog: Arc::new(FileCatalog {
                 layout,
                 selection,
+                high_priority_files,
                 filesystem_content_base,
                 media_availability,
             }),
@@ -265,7 +276,11 @@ impl FileProgressModel {
             last_piece,
             selection: (!file.padding).then(|| {
                 if self.catalog.selection.is_wanted(index) {
-                    FileSelectionView::Wanted
+                    if self.catalog.high_priority_files.contains(&index) {
+                        FileSelectionView::High
+                    } else {
+                        FileSelectionView::Normal
+                    }
                 } else {
                     FileSelectionView::Skipped
                 }
@@ -596,8 +611,16 @@ mod tests {
 
     #[test]
     fn catalog_preserves_geometry_selection_and_padding() {
-        let model = FileProgressModel::new(&fixture(), &[2], &[], Some("/tmp/content".to_owned()))
-            .expect("model");
+        let content = TorrentContent::from_v1_metainfo(fixture());
+        let model = FileProgressModel::new_content_with_media(
+            &content,
+            &[2],
+            &[1],
+            &[],
+            Some("/tmp/content".to_owned()),
+            MediaFileAvailability::NotPublished,
+        )
+        .expect("model");
         let rows = model.rows();
         assert_eq!(rows.len(), 5);
         assert_eq!(rows[0].first_piece, None);
@@ -605,7 +628,9 @@ mod tests {
         assert_eq!(rows[1].last_piece, Some(1));
         assert_eq!(rows[2].first_piece, Some(1));
         assert_eq!(rows[2].last_piece, Some(2));
+        assert_eq!(rows[1].selection, Some(FileSelectionView::High));
         assert_eq!(rows[2].selection, Some(FileSelectionView::Skipped));
+        assert_eq!(rows[4].selection, Some(FileSelectionView::Normal));
         assert_eq!(rows[3].selection, None);
         assert!(rows[3].padding);
         assert_eq!(rows[3].media_availability, MediaFileAvailability::Padding);

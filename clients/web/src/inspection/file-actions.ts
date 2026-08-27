@@ -1,6 +1,6 @@
 import type { MediaFileAvailability } from "../api";
 
-export type FileActionId = "open" | "download_now" | "normal" | "skip";
+export type FileActionId = "open" | "download_now" | "high" | "normal" | "skip";
 
 interface OpenFileActionDefinition {
   readonly id: "open";
@@ -15,10 +15,10 @@ interface DownloadFileActionDefinition {
 }
 
 interface PriorityFileActionDefinition {
-  readonly id: "normal" | "skip";
+  readonly id: "high" | "normal" | "skip";
   readonly label: string;
   readonly group: "priority";
-  readonly priority: "normal" | "skip";
+  readonly priority: "high" | "normal" | "skip";
 }
 
 export type FileActionDefinition =
@@ -34,6 +34,7 @@ export type ResolvedFileAction = FileActionDefinition & {
 export const FILE_ACTIONS: readonly FileActionDefinition[] = [
   { id: "open", label: "Open", group: "open" },
   { id: "download_now", label: "Download now", group: "download" },
+  { id: "high", label: "High", group: "priority", priority: "high" },
   { id: "normal", label: "Normal", group: "priority", priority: "normal" },
   { id: "skip", label: "Skip", group: "priority", priority: "skip" },
 ];

@@ -46,7 +46,8 @@ use crate::settings::{
     read_client_settings, replace_client_settings,
 };
 use crate::store_schema::{
-    DHT_TABLES_SQL, DOWNLOAD_QUEUE_INDEX_SQL, REMOVAL_TABLE_SQL, SCHEMA_VERSION, SOURCE_TABLES_SQL,
+    DHT_TABLES_SQL, DOWNLOAD_QUEUE_INDEX_SQL, FILE_PRIORITIES_TABLE_SQL,
+    PREVIOUS_COMPATIBLE_SCHEMA_VERSION, REMOVAL_TABLE_SQL, SCHEMA_VERSION, SOURCE_TABLES_SQL,
 };
 
 const MAX_RECEIPTS: i64 = 1024;
@@ -150,6 +151,7 @@ pub struct ResumeRecord {
     pub magnet: String,
     pub storage_root: String,
     pub skip_files: Vec<u32>,
+    pub high_priority_files: Vec<u32>,
     pub trackers: Vec<StoredTracker>,
     pub state: TorrentState,
     pub storage_state: StorageState,
@@ -448,7 +450,7 @@ impl SessionStore {
 
         if let Some(maximum_bytes) = ephemeral_maximum_bytes {
             configure_ephemeral_connection(&connection, maximum_bytes)?;
-            create_or_validate_schema_19(
+            create_or_validate_schema_20(
                 &mut connection,
                 profile_id,
                 initial_client_settings,
@@ -461,11 +463,16 @@ impl SessionStore {
             match preparation {
                 CatalogPreparation::Current => {
                     configure_durable_connection(&connection)?;
-                    validate_schema_19(&connection, profile_id)?;
+                    create_or_validate_schema_20(
+                        &mut connection,
+                        profile_id,
+                        initial_client_settings,
+                        None,
+                    )?;
                 }
                 CatalogPreparation::Create { reset_report } => {
                     connection.pragma_update(None, "synchronous", "FULL")?;
-                    create_or_validate_schema_19(
+                    create_or_validate_schema_20(
                         &mut connection,
                         profile_id,
                         initial_client_settings,
@@ -1104,6 +1111,15 @@ impl SessionStore {
             )
         })?;
         let skip_files = read_selection(&self.connection, &torrent_id)?;
+        let high_priority_files = read_high_priority_files(&self.connection, &torrent_id)?;
+        if high_priority_files
+            .iter()
+            .any(|index| skip_files.binary_search(index).is_ok())
+        {
+            return Err(StoreError::DurableState(
+                "skipped file retains a high priority".to_owned(),
+            ));
+        }
         let trackers = read_trackers(&self.connection, &torrent_id)?;
         let have = match (row.4, row.5, row.6) {
             (None, None, None) => None,
@@ -1191,6 +1207,7 @@ impl SessionStore {
             magnet: operational_magnet,
             storage_root: row.1,
             skip_files,
+            high_priority_files,
             trackers,
             state,
             storage_state,
@@ -2750,15 +2767,22 @@ fn pragma_u64(connection: &Connection, pragma: &str) -> Result<u64, StoreError> 
     u64::try_from(value).map_err(|_| StoreError::DurableState(format!("negative SQLite {pragma}")))
 }
 
-fn create_or_validate_schema_19(
+fn create_or_validate_schema_20(
     connection: &mut Connection,
     profile_id: &str,
     initial_client_settings: &ClientSettings,
     reset_report: Option<&ProfileResetReport>,
 ) -> Result<(), StoreError> {
     let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    if version == PREVIOUS_COMPATIBLE_SCHEMA_VERSION {
+        let transaction = connection.transaction()?;
+        transaction.execute_batch(FILE_PRIORITIES_TABLE_SQL)?;
+        transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+        transaction.commit()?;
+        return validate_schema_20(connection, profile_id);
+    }
     if version != 0 {
-        return validate_schema_19(connection, profile_id);
+        return validate_schema_20(connection, profile_id);
     }
     let transaction = connection.transaction()?;
     transaction.execute_batch(
@@ -2942,12 +2966,13 @@ fn create_or_validate_schema_19(
     transaction.execute_batch(REMOVAL_TABLE_SQL)?;
     transaction.execute_batch(SOURCE_TABLES_SQL)?;
     transaction.execute_batch(DOWNLOAD_QUEUE_INDEX_SQL)?;
+    transaction.execute_batch(FILE_PRIORITIES_TABLE_SQL)?;
     transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     transaction.commit()?;
-    validate_schema_19(connection, profile_id)
+    validate_schema_20(connection, profile_id)
 }
 
-fn validate_schema_19(connection: &Connection, profile_id: &str) -> Result<(), StoreError> {
+fn validate_schema_20(connection: &Connection, profile_id: &str) -> Result<(), StoreError> {
     let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version != SCHEMA_VERSION {
         return Err(StoreError::UnsupportedSchema {
@@ -2964,6 +2989,16 @@ fn validate_schema_19(connection: &Connection, profile_id: &str) -> Result<(), S
         return Err(StoreError::Configuration(format!(
             "session database belongs to profile {stored_profile}, not {profile_id}"
         )));
+    }
+    let invalid_file_priorities: i64 = connection.query_row(
+        "SELECT count(*) FROM file_priorities WHERE priority <> 'high'",
+        [],
+        |row| row.get(0),
+    )?;
+    if invalid_file_priorities != 0 {
+        return Err(StoreError::DurableState(
+            "catalog contains an invalid file priority".to_owned(),
+        ));
     }
     let invalid_identity_owners: i64 = connection.query_row(
         "SELECT count(*) FROM torrents t
@@ -4261,13 +4296,40 @@ where
     }
     let (selection_default, mut exceptions) = read_selection_state(transaction, &torrent_id)
         .map_err(|error| internal_message(&error.to_string()))?;
+    let mut high_priority_files = read_high_priority_files(transaction, &torrent_id)
+        .map_err(|error| internal_message(&error.to_string()))?;
     let initial_exceptions = exceptions.clone();
+    let initial_high_priority_files = high_priority_files.clone();
     for file_index in file_indices.clone() {
-        if priority == selection_default {
+        let selection_priority = if priority == FilePriority::Skip {
+            FilePriority::Skip
+        } else {
+            FilePriority::Normal
+        };
+        if selection_priority == selection_default {
             exceptions.retain(|index| *index != file_index);
         } else if let Err(position) = exceptions.binary_search(&file_index) {
             exceptions.insert(position, file_index);
         }
+        if priority == FilePriority::High {
+            if let Err(position) = high_priority_files.binary_search(&file_index) {
+                high_priority_files.insert(position, file_index);
+            }
+        } else {
+            high_priority_files.retain(|index| *index != file_index);
+        }
+    }
+    if exceptions.len() > MAX_FILE_SELECTION_ENTRIES {
+        return Err((
+            ErrorCode::ResourceLimit,
+            format!("file selection exceeds {MAX_FILE_SELECTION_ENTRIES} exceptions"),
+        ));
+    }
+    if high_priority_files.len() > MAX_FILE_SELECTION_ENTRIES {
+        return Err((
+            ErrorCode::ResourceLimit,
+            format!("file priority exceeds {MAX_FILE_SELECTION_ENTRIES} overrides"),
+        ));
     }
     if !matches!(row.4.as_str(), "wanted" | "skipped") {
         return Err(internal_message(
@@ -4288,13 +4350,14 @@ where
         ));
     }
     let selection_changed = exceptions != initial_exceptions;
+    let priority_changed = high_priority_files != initial_high_priority_files;
     let running_changed = set_running && row.5 != "running";
     let move_download_to_head = set_running
         && row.7.is_some()
         && !download_queue::is_at_edge(transaction, &torrent_id, QueueEdge::Top)
             .map_err(|error| internal_message(&error.to_string()))?;
     let append_reopened_download = selection_changed
-        && priority == FilePriority::Normal
+        && priority != FilePriority::Skip
         && row.5 == "running"
         && row.7.is_none();
     if (selection_changed || set_running)
@@ -4305,7 +4368,11 @@ where
             "file selection cannot change during repair or publication".to_owned(),
         ));
     }
-    if !selection_changed && !running_changed && !move_download_to_head && !append_reopened_download
+    if !selection_changed
+        && !priority_changed
+        && !running_changed
+        && !move_download_to_head
+        && !append_reopened_download
     {
         return Ok(current_revision);
     }
@@ -4328,6 +4395,23 @@ where
                         i64::from(file_index),
                         exception_wanted
                     ],
+                )
+                .map_err(internal_error)?;
+        }
+    }
+    if priority_changed {
+        transaction
+            .execute(
+                "DELETE FROM file_priorities WHERE torrent_id = ?1",
+                [torrent_id.as_bytes()],
+            )
+            .map_err(internal_error)?;
+        for file_index in high_priority_files {
+            transaction
+                .execute(
+                    "INSERT INTO file_priorities(torrent_id, file_index, priority)
+                     VALUES (?1, ?2, 'high')",
+                    params![torrent_id.as_bytes(), i64::from(file_index)],
                 )
                 .map_err(internal_error)?;
         }
@@ -4746,6 +4830,7 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
         } else {
             read_selection(connection, &torrent_id)?
         };
+        let high_priority_files = read_high_priority_files(connection, &torrent_id)?;
         let metainfo_source = read_verbatim_metainfo_source(connection, &torrent_id)?;
         let (has_wanted_pieces, all_wanted_verified, evidence_error) = match (&row.2, &have) {
             (Some(raw_info), Some(have)) => {
@@ -4808,6 +4893,7 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
             } else {
                 Vec::new()
             },
+            high_priority_files,
             selection_default,
             selection_exceptions,
             archived: row.7,
@@ -4918,6 +5004,45 @@ fn read_selection(connection: &Connection, torrent_id: &TorrentId) -> Result<Vec
         }
     }
     Ok(skipped)
+}
+
+fn read_high_priority_files(
+    connection: &Connection,
+    torrent_id: &TorrentId,
+) -> Result<Vec<u32>, StoreError> {
+    let mut statement = connection.prepare(
+        "SELECT file_index, priority FROM file_priorities
+         WHERE torrent_id = ?1 ORDER BY file_index",
+    )?;
+    let rows = statement.query_map([torrent_id.as_bytes()], |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+    })?;
+    let mut priorities = Vec::new();
+    for row in rows {
+        let (index, priority) = row?;
+        if priority != "high" {
+            return Err(StoreError::DurableState(
+                "invalid persisted file priority".to_owned(),
+            ));
+        }
+        if !(0..i64::try_from(DURABLE_METAINFO_LIMITS.max_files).expect("file bound fits i64"))
+            .contains(&index)
+        {
+            return Err(StoreError::DurableState(
+                "invalid file priority index".to_owned(),
+            ));
+        }
+        priorities.push(
+            u32::try_from(index)
+                .map_err(|_| StoreError::DurableState("priority index overflow".to_owned()))?,
+        );
+    }
+    if priorities.len() > MAX_FILE_SELECTION_ENTRIES {
+        return Err(StoreError::DurableState(
+            "file priority count exceeds the supported bound".to_owned(),
+        ));
+    }
+    Ok(priorities)
 }
 
 fn read_selection_state(
@@ -7263,7 +7388,7 @@ mod tests {
     }
 
     #[test]
-    fn metadata_only_add_and_binary_file_priority_are_durable() {
+    fn metadata_only_add_and_three_value_file_priority_are_durable() {
         let root = test_root("file-priority");
         let configured = configured_root(&root);
         let mut store = SessionStore::open(&root, "default", &[configured]).expect("open store");
@@ -7297,6 +7422,35 @@ mod tests {
         assert_eq!(ready.state, TorrentState::Paused);
         assert_eq!(ready.storage_state, StorageState::None);
 
+        let high = RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: "high-file".to_owned(),
+            expected_revision: None,
+            command: Command::SetFilePriority {
+                torrent_id: torrent_id.clone(),
+                file_indices: vec![0],
+                priority: FilePriority::High,
+            },
+        };
+        store.handle_durable(&high).expect("raise file priority");
+        let raised_revision = store.revision().expect("raised revision");
+        assert_eq!(
+            store
+                .load_resume(&torrent_id)
+                .expect("load raised priority")
+                .high_priority_files,
+            [0]
+        );
+        let mut repeated_high = high.clone();
+        repeated_high.request_id = "high-file-again".to_owned();
+        store
+            .handle_durable(&repeated_high)
+            .expect("repeat high priority");
+        assert_eq!(
+            store.revision().expect("idempotent priority revision"),
+            raised_revision
+        );
+
         let skip = RequestEnvelope {
             version: CONTROL_VERSION,
             request_id: "skip-file".to_owned(),
@@ -7311,22 +7465,57 @@ mod tests {
         assert!(matches!(skipped.outcome, ResponseOutcome::Success { .. }));
         let selected = store.load_resume(&torrent_id).expect("load selection");
         assert_eq!(selected.skip_files, vec![1]);
+        assert_eq!(selected.high_priority_files, vec![0]);
         assert_eq!(selected.state, TorrentState::Paused);
         assert_eq!(
             store.handle_durable(&skip).expect("replay skip receipt"),
             skipped
         );
 
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "raise-skipped-file".to_owned(),
+                expected_revision: None,
+                command: Command::SetFilePriority {
+                    torrent_id: torrent_id.clone(),
+                    file_indices: vec![1],
+                    priority: FilePriority::High,
+                },
+            })
+            .expect("high implies wanted");
+        let raised = store.load_resume(&torrent_id).expect("load raised file");
+        assert!(raised.skip_files.is_empty());
+        assert_eq!(raised.high_priority_files, [0, 1]);
+        for (request_id, priority) in [
+            ("normalize-raised-file", FilePriority::Normal),
+            ("skip-normalized-file", FilePriority::Skip),
+        ] {
+            store
+                .handle_durable(&RequestEnvelope {
+                    version: CONTROL_VERSION,
+                    request_id: request_id.to_owned(),
+                    expected_revision: None,
+                    command: Command::SetFilePriority {
+                        torrent_id: torrent_id.clone(),
+                        file_indices: vec![1],
+                        priority,
+                    },
+                })
+                .expect("transition file priority");
+        }
+        let transitioned = store.load_resume(&torrent_id).expect("load transitions");
+        assert_eq!(transitioned.skip_files, [1]);
+        assert_eq!(transitioned.high_priority_files, [0]);
+
         drop(store);
         let reopened =
             SessionStore::open(&root, "default", &[configured_root(&root)]).expect("reopen store");
-        assert_eq!(
-            reopened
-                .load_resume(&torrent_id)
-                .expect("load reopened selection")
-                .skip_files,
-            vec![1]
-        );
+        let reopened_resume = reopened
+            .load_resume(&torrent_id)
+            .expect("load reopened selection");
+        assert_eq!(reopened_resume.skip_files, vec![1]);
+        assert_eq!(reopened_resume.high_priority_files, vec![0]);
         drop(reopened);
         fs::remove_dir_all(root).expect("remove profile");
     }
@@ -7746,8 +7935,58 @@ mod tests {
     }
 
     #[test]
-    fn recognized_profile_resets_to_empty_schema_nineteen_with_one_report() {
-        let root = test_root("schema-reset-19");
+    fn schema_nineteen_migrates_in_place_without_losing_profile_state() {
+        let root = test_root("schema-19-to-20");
+        let configured = configured_root(&root);
+        let mut store =
+            SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
+        let added = store
+            .handle_durable(&add_request("migration-owner"))
+            .expect("add retained owner");
+        let torrent_id = added_torrent_id(&added);
+        let revision = store.revision().expect("retained revision");
+        let database_path = store.database_path().expect("database path").to_owned();
+        drop(store);
+
+        let connection = Connection::open(&database_path).expect("open schema 20 directly");
+        connection
+            .execute_batch("DROP TABLE file_priorities; PRAGMA user_version = 19;")
+            .expect("reconstruct exact schema 19 delta");
+        drop(connection);
+
+        let reopened = SessionStore::open(&root, "default", &[configured]).expect("migrate");
+        assert_eq!(reopened.revision().expect("migrated revision"), revision);
+        assert_eq!(
+            reopened
+                .load_resume(&torrent_id)
+                .expect("retained torrent")
+                .torrent_id
+                .to_string(),
+            torrent_id
+        );
+        assert_eq!(
+            reopened
+                .connection
+                .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+                .expect("migrated schema version"),
+            SCHEMA_VERSION
+        );
+        assert_eq!(
+            reopened
+                .connection
+                .query_row("SELECT count(*) FROM file_priorities", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .expect("new priority table"),
+            0
+        );
+        drop(reopened);
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
+    fn recognized_profile_resets_to_empty_current_schema_with_one_report() {
+        let root = test_root("schema-reset-current");
         fs::create_dir_all(&root).expect("create profile root");
         let database = root.join("session.db");
         let connection = Connection::open(&database).expect("legacy database");
@@ -7800,7 +8039,7 @@ mod tests {
         );
         drop(store);
 
-        let reopened = SessionStore::open(&root, "default", &[]).expect("reopen schema 19");
+        let reopened = SessionStore::open(&root, "default", &[]).expect("reopen current schema");
         assert!(
             reopened
                 .pending_profile_reset_report()
@@ -7812,12 +8051,12 @@ mod tests {
     }
 
     #[test]
-    fn schema_nineteen_enforces_owner_and_full_alias_authority() {
+    fn current_schema_enforces_owner_and_full_alias_authority() {
         let mut store = SessionStore::open_ephemeral(
             "identity-schema",
             &[ConfiguredStorageRoot::platform("downloads")],
         )
-        .expect("open schema 19");
+        .expect("open current schema");
         let added = store
             .handle_durable(&add_request("identity-owner"))
             .expect("add owner");

@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::store::StoreError;
-use crate::store_schema::SCHEMA_VERSION;
+use crate::store_schema::{PREVIOUS_COMPATIBLE_SCHEMA_VERSION, SCHEMA_VERSION};
 
 pub(crate) const DATABASE_FILENAME: &str = "session.db";
 const WAL_FILENAME: &str = "session.db-wal";
@@ -126,6 +126,14 @@ pub(crate) fn prepare_catalog(profile_root: &Path) -> Result<CatalogPreparation,
         Err(error) => return Err(error),
     };
     if version == SCHEMA_VERSION {
+        if let Some(previous) = marker_version {
+            validate_committed_report(&database_path, previous)?;
+            remove_fixed_file(&shm_path, SHM_FILENAME)?;
+            sync_directory(profile_root)?;
+        }
+        return Ok(CatalogPreparation::Current);
+    }
+    if version == PREVIOUS_COMPATIBLE_SCHEMA_VERSION {
         if let Some(previous) = marker_version {
             validate_committed_report(&database_path, previous)?;
             remove_fixed_file(&shm_path, SHM_FILENAME)?;

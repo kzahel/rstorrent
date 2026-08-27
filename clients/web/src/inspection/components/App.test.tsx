@@ -791,6 +791,9 @@ describe("inspection application", () => {
       name: "More file actions",
     });
     expect(
+      within(fileActions).getByRole("menuitem", { name: "High" }),
+    ).toHaveAttribute("aria-disabled", "true");
+    expect(
       within(fileActions).getByRole("menuitem", { name: "Normal" }),
     ).toHaveAttribute("aria-disabled", "true");
     expect(
@@ -833,7 +836,7 @@ describe("inspection application", () => {
     ).toBeVisible();
   });
 
-  it("sends Skip and Normal for the active live torrent files", async () => {
+  it("sends High, Skip, and Normal for the active live torrent files", async () => {
     const user = userEvent.setup();
     const snapshot = buildScenarioSnapshot("file-progress", 24_000, false, 1);
     const application = new RecordingLiveApplication({
@@ -850,6 +853,20 @@ describe("inspection application", () => {
     await user.click(screen.getByRole("tab", { name: "Files" }));
     const files = screen.getByRole("grid", { name: "Torrent files" });
     await user.click(within(files).getAllByRole("row")[1]!);
+    await user.click(screen.getByRole("button", { name: "More file actions" }));
+    const high = screen.getByRole("menuitem", { name: "High" });
+    expect(high).not.toHaveAttribute("aria-disabled");
+    await user.click(high);
+
+    await waitFor(() =>
+      expect(application.commands.at(-1)).toEqual({
+        type: "set_file_priority",
+        torrentId: DEMO_PRIMARY_TORRENT_ID,
+        fileIndices: [firstFile.index],
+        priority: "high",
+      }),
+    );
+
     await user.click(screen.getByRole("button", { name: "More file actions" }));
     const skip = screen.getByRole("menuitem", { name: "Skip" });
     expect(skip).not.toHaveAttribute("aria-disabled");
@@ -969,7 +986,7 @@ describe("inspection application", () => {
             ...fileSet,
             rows: {
               ...fileSet.rows,
-              [skippedFile.id]: { ...skippedFile, selection: "wanted" },
+              [skippedFile.id]: { ...skippedFile, selection: "normal" },
             },
           },
         },

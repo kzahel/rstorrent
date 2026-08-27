@@ -93,6 +93,14 @@ paths around storage ownership.
 
 No source, fixture, or test data is imported from either reference.
 
+Completed Tactical
+[`176`](../tactical/176-durable-high-file-priority.md) confirms the same
+separation for durable file priority. High affects only ordinary weighted
+rarest-first activation; current and ahead streaming demand remains the
+stronger transient owner with its existing preemption, peer-capacity,
+duplicate, and cleanup bounds. Streaming is therefore not represented as an
+extra persistent priority level.
+
 ## Accepted Architecture
 
 ### One logical service, two hosting modes
@@ -252,7 +260,7 @@ The stream-session owner must:
 
 - map logical file byte ranges to exact piece and boundary-file geometry;
 - represent current and bounded look-ahead demand independently from durable
-  file selection and ordinary picker policy;
+  High/Normal/Skip file selection and ordinary picker policy;
 - prioritize time-critical pieces using measured peer capacity and deadlines,
   not only a global sequential-download switch;
 - support initial probes near both the start and end of a media file;

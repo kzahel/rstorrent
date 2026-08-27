@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::error::Error;
 use std::fmt;
@@ -273,6 +274,7 @@ pub struct DownloadConfig {
     pub network: NetworkConfig,
     pub resource_limits: DownloadResourceLimits,
     pub skip_files: Vec<usize>,
+    pub high_priority_files: Vec<usize>,
     pub materialize_files: Vec<usize>,
 }
 
@@ -284,6 +286,7 @@ pub struct MagnetDownloadConfig {
     pub network: NetworkConfig,
     pub resource_limits: DownloadResourceLimits,
     pub skip_files: Vec<usize>,
+    pub high_priority_files: Vec<usize>,
     pub materialize_files: Vec<usize>,
     pub dht: Option<DhtHandle>,
 }
@@ -307,6 +310,7 @@ pub struct ResumableMagnetDownloadConfig {
     pub torrent_peers: Option<TorrentPeerHandle>,
     pub resource_limits: DownloadResourceLimits,
     pub skip_files: Vec<usize>,
+    pub high_priority_files: Vec<usize>,
     pub verified_info: Option<Vec<u8>>,
     pub verified_pieces: Vec<bool>,
     pub artifact_state: ResumeArtifactState,
@@ -333,6 +337,7 @@ pub struct ResumableMetainfoDownloadConfig {
     pub torrent_peers: Option<TorrentPeerHandle>,
     pub resource_limits: DownloadResourceLimits,
     pub skip_files: Vec<usize>,
+    pub high_priority_files: Vec<usize>,
     pub verified_pieces: Vec<bool>,
     pub artifact_state: ResumeArtifactState,
     pub resume_validation: ResumeValidationIntent,
@@ -375,6 +380,7 @@ struct ContentDownloadConfig {
     storage_intake_high_watermark_bytes: usize,
     swarm_config: SwarmConfig,
     skip_files: Vec<usize>,
+    high_priority_files: Vec<usize>,
     materialize_files: Vec<usize>,
 }
 
@@ -3919,6 +3925,7 @@ async fn run_magnet_download_with_peers(
             .storage_intake_high_watermark_bytes,
         swarm_config: config.resource_limits.swarm_config(),
         skip_files,
+        high_priority_files: config.high_priority_files,
         materialize_files: config.materialize_files,
     };
     run_content_download(content_config, content, control, None, peers, None).await
@@ -4132,6 +4139,7 @@ async fn run_resumable_magnet_download(
                 .storage_intake_high_watermark_bytes,
             swarm_config: config.resource_limits.swarm_config(),
             skip_files,
+            high_priority_files: config.high_priority_files,
             materialize_files: Vec::new(),
         };
         let result = run_content_download(
@@ -4206,6 +4214,7 @@ async fn run_resumable_magnet_download(
                 .storage_intake_high_watermark_bytes,
             swarm_config: config.resource_limits.swarm_config(),
             skip_files,
+            high_priority_files: config.high_priority_files,
             materialize_files: Vec::new(),
         };
         run_content_download(
@@ -4289,6 +4298,7 @@ async fn run_resumable_metainfo_download(
             .storage_intake_high_watermark_bytes,
         swarm_config: config.resource_limits.swarm_config(),
         skip_files: config.skip_files,
+        high_priority_files: config.high_priority_files,
         materialize_files: Vec::new(),
     };
     let result = run_content_download(
@@ -4635,6 +4645,7 @@ async fn run_download(
             .storage_intake_high_watermark_bytes,
         swarm_config: config.resource_limits.swarm_config(),
         skip_files: config.skip_files,
+        high_priority_files: config.high_priority_files,
         materialize_files: config.materialize_files,
     };
     let result = run_content_download(
@@ -4708,6 +4719,7 @@ struct ContentSwarmDownload<'a> {
     last_piece: Option<VerifiedPiece>,
     contributor_attempts: BTreeMap<ConnectionId, ContentContributor>,
     selection: FileSelection,
+    high_priority_files: Vec<usize>,
     streaming_cursor: StreamingCandidateCursor,
     maximum_planned_bytes: usize,
     storage_limits: ContentStorageLimits,
@@ -4753,6 +4765,7 @@ struct OutgoingUploadRead {
 
 struct AppliedFileSelection {
     selection: FileSelection,
+    high_priority_files: Vec<usize>,
     revision: u64,
 }
 
@@ -4848,10 +4861,15 @@ impl<'a> ContentSwarmDownload<'a> {
             control,
             candidate_pieces,
         } = context;
+        let piece_priorities = layout
+            .piece_priorities(&selection.selection, &selection.high_priority_files)
+            .map_err(DownloadError::Layout)?;
         let mut requestable_pieces = Vec::new();
         let mut hash_needs = Vec::new();
         let mut ready_candidates = Vec::new();
         for piece in wanted_pieces {
+            let piece_index = usize::try_from(piece)
+                .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
             let candidate = candidate_pieces.contains(&piece);
             match content {
                 TorrentContent::V1(_) => requestable_pieces.push(piece),
@@ -4867,6 +4885,7 @@ impl<'a> ContentSwarmDownload<'a> {
                             request,
                             piece,
                             candidate,
+                            priority: piece_priorities[piece_index],
                         });
                     }
                 },
@@ -4874,6 +4893,8 @@ impl<'a> ContentSwarmDownload<'a> {
         }
         let hash_scheduler = V2HashScheduler::new(hash_needs)
             .map_err(|error| DownloadError::StorageTask(error.to_owned()))?;
+        ready_candidates
+            .sort_unstable_by_key(|piece| (Reverse(piece_priorities[*piece as usize]), *piece));
         let v2_hashes = match &*integrity {
             TorrentIntegrity::V2(catalog) | TorrentIntegrity::Hybrid(catalog) => {
                 Some(V2SeedHashService::new(content.clone(), catalog.clone()))
@@ -4881,10 +4902,11 @@ impl<'a> ContentSwarmDownload<'a> {
             TorrentIntegrity::V1 => None,
         };
         let maximum_planned_bytes = config.max_active_piece_bytes;
-        let mut state = SwarmState::new_with_wanted(
+        let mut state = SwarmState::new_with_wanted_priorities(
             config,
             layout.piece_count(),
             requestable_pieces,
+            piece_priorities,
             Vec::new(),
             picker_seed,
         )
@@ -4953,6 +4975,7 @@ impl<'a> ContentSwarmDownload<'a> {
             last_piece: None,
             contributor_attempts: BTreeMap::new(),
             selection: selection.selection,
+            high_priority_files: selection.high_priority_files,
             streaming_cursor,
             maximum_planned_bytes,
             storage_limits,
@@ -5135,6 +5158,7 @@ impl<'a> ContentSwarmDownload<'a> {
                 },
                 piece,
                 candidate: false,
+                priority: rstorrent_protocol::storage_layout::PiecePriority::Normal,
             });
             offset = offset
                 .checked_add(u64::from(count))
@@ -6563,6 +6587,22 @@ impl<'a> ContentSwarmDownload<'a> {
         }
         let next_selection = FileSelection::new_content(self.layout, &update.skip_files)
             .map_err(DownloadError::Layout)?;
+        let next_priorities = self
+            .layout
+            .piece_priorities(&next_selection, &update.high_priority_files)
+            .map_err(DownloadError::Layout)?;
+        if next_selection == self.selection {
+            self.hash_scheduler
+                .replace_piece_priorities(&next_priorities)
+                .map_err(|error| DownloadError::StorageTask(error.to_owned()))?;
+            self.state
+                .replace_piece_priorities(next_priorities)
+                .map_err(DownloadError::Swarm)?;
+            self.high_priority_files = update.high_priority_files;
+            self.selection_revision = update.revision;
+            self.control.file_selection_applied(update.revision);
+            return Ok(());
+        }
         let previous_availability_empty = self.availability.snapshot().available_count == 0;
         self.stop_storage(false).await?;
         let mut storage = self.take_storage()?;
@@ -6585,7 +6625,7 @@ impl<'a> ContentSwarmDownload<'a> {
         let mut hash_needs = Vec::new();
         let mut next_candidates = BTreeSet::new();
         let mut ready_candidates = Vec::new();
-        for piece_index in 0..self.layout.piece_count() {
+        for (piece_index, &priority) in next_priorities.iter().enumerate() {
             let piece_index_u32 = match u32::try_from(piece_index) {
                 Ok(piece_index) => piece_index,
                 Err(_) => {
@@ -6642,6 +6682,7 @@ impl<'a> ContentSwarmDownload<'a> {
                                 request,
                                 piece: piece_index_u32,
                                 candidate,
+                                priority,
                             });
                         }
                     }
@@ -6655,7 +6696,12 @@ impl<'a> ContentSwarmDownload<'a> {
                 return Err(DownloadError::StorageTask(error.to_owned()));
             }
         };
-        let cancellations = match self.state.replace_wanted_pieces(requestable) {
+        ready_candidates
+            .sort_unstable_by_key(|piece| (Reverse(next_priorities[*piece as usize]), *piece));
+        let cancellations = match self
+            .state
+            .replace_wanted_pieces_with_priorities(requestable, next_priorities)
+        {
             Ok(cancellations) => cancellations,
             Err(error) => {
                 self.restart_storage(storage).await?;
@@ -6677,6 +6723,7 @@ impl<'a> ContentSwarmDownload<'a> {
         self.candidate_pieces = next_candidates;
         self.candidate_verifications.clear();
         self.selection = next_selection;
+        self.high_priority_files = update.high_priority_files;
         self.selection_revision = update.revision;
         self.control.file_selection_applied(update.revision);
         let next_availability_empty = !storage.0.verified_pieces().iter().any(|piece| *piece);
@@ -8208,17 +8255,23 @@ async fn full_recheck_managed_storage(
         {
             let next_selection = FileSelection::new_content(layout, &update.skip_files)
                 .map_err(DownloadError::Layout)?;
-            let reconcile = storage
-                .reconcile_selection(next_selection.clone())
-                .await
-                .map_err(DownloadError::SelectiveStorage)?;
-            for piece_index in reconcile.invalidated_pieces {
-                verified[piece_index] = false;
-                let piece_index = u32::try_from(piece_index)
-                    .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
-                recovered.retain(|recovered| *recovered != piece_index);
+            layout
+                .piece_priorities(&next_selection, &update.high_priority_files)
+                .map_err(DownloadError::Layout)?;
+            if next_selection != selection.selection {
+                let reconcile = storage
+                    .reconcile_selection(next_selection.clone())
+                    .await
+                    .map_err(DownloadError::SelectiveStorage)?;
+                for piece_index in reconcile.invalidated_pieces {
+                    verified[piece_index] = false;
+                    let piece_index = u32::try_from(piece_index)
+                        .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+                    recovered.retain(|recovered| *recovered != piece_index);
+                }
             }
             selection.selection = next_selection;
+            selection.high_priority_files = update.high_priority_files.clone();
             selection.revision = update.revision;
             control.file_selection_applied(update.revision);
             control.checker_set_phase(CheckerPhase::Hashing);
@@ -8503,6 +8556,9 @@ async fn run_selective_download(
     let layout = ContentLayout::from_content(&content);
     let selection =
         FileSelection::new_content(&layout, &config.skip_files).map_err(DownloadError::Layout)?;
+    layout
+        .piece_priorities(&selection, &config.high_priority_files)
+        .map_err(DownloadError::Layout)?;
     for &file_index in &config.materialize_files {
         let file = layout.files().get(file_index).ok_or(DownloadError::Layout(
             LayoutError::InvalidFileIndex {
@@ -8743,6 +8799,7 @@ async fn run_selective_download(
 
     let mut applied_selection = AppliedFileSelection {
         selection,
+        high_priority_files: config.high_priority_files.clone(),
         revision: 0,
     };
     if let (Some(resume), Some(resumed)) = (&resume, resumed_storage) {
@@ -8902,6 +8959,7 @@ async fn run_selective_download(
 
     let AppliedFileSelection {
         mut selection,
+        mut high_priority_files,
         revision: mut selection_revision,
     } = applied_selection;
 
@@ -8911,22 +8969,28 @@ async fn run_selective_download(
     {
         let next_selection = FileSelection::new_content(&layout, &update.skip_files)
             .map_err(DownloadError::Layout)?;
-        let reconcile = storage
-            .reconcile_selection(next_selection.clone())
-            .await
-            .map_err(DownloadError::SelectiveStorage)?;
-        if !reconcile.invalidated_pieces.is_empty() {
-            if let Some(resume) = &resume {
-                resume
-                    .checkpoints
-                    .pieces_invalidated(&reconcile.invalidated_pieces)
-                    .map_err(DownloadError::Checkpoint)?;
-            }
-            for piece_index in reconcile.invalidated_pieces {
-                verified_pieces[piece_index] = false;
+        layout
+            .piece_priorities(&next_selection, &update.high_priority_files)
+            .map_err(DownloadError::Layout)?;
+        if next_selection != selection {
+            let reconcile = storage
+                .reconcile_selection(next_selection.clone())
+                .await
+                .map_err(DownloadError::SelectiveStorage)?;
+            if !reconcile.invalidated_pieces.is_empty() {
+                if let Some(resume) = &resume {
+                    resume
+                        .checkpoints
+                        .pieces_invalidated(&reconcile.invalidated_pieces)
+                        .map_err(DownloadError::Checkpoint)?;
+                }
+                for piece_index in reconcile.invalidated_pieces {
+                    verified_pieces[piece_index] = false;
+                }
             }
         }
         selection = next_selection;
+        high_priority_files = update.high_priority_files;
         selection_revision = update.revision;
         control.file_selection_applied(update.revision);
         wanted_pieces.clear();
@@ -9043,6 +9107,7 @@ async fn run_selective_download(
             picker_seed(content.swarm_key().into_bytes(), peers.network.peer_id),
             AppliedFileSelection {
                 selection: plan_selection,
+                high_priority_files,
                 revision: selection_revision,
             },
             ContentStorage(Box::new(storage)),

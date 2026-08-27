@@ -960,11 +960,16 @@ the ordinary gateway configuration.
 Tactical `041` implements `torrent_files` as a complete ordered catalog for
 the selected torrent. Stable file IDs are metainfo indices. Each row carries
 validated relative path components, exact decimal length and offset, inclusive
-piece span, wanted/skipped selection for ordinary files, independent padding
+piece span, High/Normal/Skipped selection for ordinary files, independent padding
 identity, and exact Done and Verified byte counts. The snapshot also carries
 one filesystem content base; the TypeScript adapter derives optional absolute
 storage paths without repeating the base in every wire row. Capability-backed
 storage reports no fabricated filesystem path.
+
+Tactical [`176`](../tactical/176-durable-high-file-priority.md) replaces the
+former binary wanted label with the truthful three-value projection and adds
+the bounded sparse High indices to torrent snapshots. Padding still has no
+selection value, and clients do not infer High from progress or streaming.
 
 The runtime-independent file-progress owner shares immutable catalog geometry
 and updates only rows intersected by stored, verified, or hash-failed piece

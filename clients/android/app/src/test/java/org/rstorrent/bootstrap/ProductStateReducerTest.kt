@@ -460,7 +460,7 @@ class ProductStateReducerTest {
             torrentOffsetBytes = (index.toULong() * 1024UL).toString(),
             firstPiece = index,
             lastPiece = index,
-            selection = FileSelectionView.WANTED,
+            selection = FileSelectionView.NORMAL,
             padding = false,
             doneBytes = "0",
             verifiedBytes = "0",
