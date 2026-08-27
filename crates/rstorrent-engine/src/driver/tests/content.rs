@@ -44,6 +44,41 @@ fn half_open_dials_do_not_consume_established_connection_slots() {
 }
 
 #[test]
+fn dry_swarm_probe_requires_every_ordinary_connection_action_to_be_exhausted() {
+    let dry = crate::peer::PeerRegistryCounts {
+        total: 3,
+        not_connectable: 1,
+        banned: 1,
+        failure_limited: 1,
+        ..crate::peer::PeerRegistryCounts::default()
+    };
+    assert!(dry_swarm_probe_available(dry, 0, 0, true, true));
+
+    for blocked in [
+        crate::peer::PeerRegistryCounts { eligible: 1, ..dry },
+        crate::peer::PeerRegistryCounts { dialing: 1, ..dry },
+        crate::peer::PeerRegistryCounts {
+            connected: 1,
+            ..dry
+        },
+        crate::peer::PeerRegistryCounts {
+            backed_off: 1,
+            ..dry
+        },
+        crate::peer::PeerRegistryCounts {
+            failure_limited: 0,
+            ..dry
+        },
+    ] {
+        assert!(!dry_swarm_probe_available(blocked, 0, 0, true, true));
+    }
+    assert!(!dry_swarm_probe_available(dry, 1, 0, true, true));
+    assert!(!dry_swarm_probe_available(dry, 0, 1, true, true));
+    assert!(!dry_swarm_probe_available(dry, 0, 0, false, true));
+    assert!(!dry_swarm_probe_available(dry, 0, 0, true, false));
+}
+
+#[test]
 fn content_supervisor_owner_rotation_is_complete_and_stable() {
     let mut owner = ContentSupervisorOwner::Storage;
     let mut observed = Vec::new();
@@ -1164,6 +1199,136 @@ async fn full_choked_set_without_an_alternative_waits_without_churn() {
         .expect("choked peer joined")
         .expect("choked peer task");
     let _ = tokio::fs::remove_file(staging_path(&output).expect("staging path")).await;
+}
+
+#[tokio::test]
+async fn dry_swarm_probe_recovers_after_three_transient_handshake_failures() {
+    let payload = b"bounded dry swarm recovery".to_vec();
+    let metainfo =
+        Metainfo::from_info_bytes(&single_file_info(&payload)).expect("dry-swarm metainfo");
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind recovering peer");
+    let address = listener.local_addr().expect("recovering peer address");
+    let peer_task = tokio::spawn(serve_content_peer_after_failed_handshakes(
+        listener,
+        3,
+        metainfo.info_hash,
+        Arc::new(vec![payload.clone()]),
+        vec![true],
+    ));
+
+    let control = DownloadControl::new();
+    let activity = Arc::new(RecordingActivitySink::default());
+    control.set_activity_sink(activity.clone());
+    let network = loopback_network(Duration::from_millis(250));
+    let peer_handle = crate::torrent_peer::TorrentPeerHandle::with_registry_config(
+        PeerRegistryConfig {
+            max_records: 4,
+            max_consecutive_failures: 3,
+            reconnect_backoff: Duration::from_millis(20),
+        },
+        Arc::new(control.clone()),
+    )
+    .expect("peer handle");
+    let mut peers = TorrentPeerCoordinator::new_with_peer_state(
+        network,
+        control.clone(),
+        crate::peer_budget::PeerBudget::system_default(),
+        Some(peer_handle),
+        crate::mse::MseDhWorkOwner::new(),
+        crate::network::PeerEncryptionPolicyHandle::new(network.encryption),
+    )
+    .expect("peer coordinator");
+    peers
+        .observe_address(address, PeerSource::Dht)
+        .expect("DHT peer observation");
+    let output = test_path("dry-swarm-recovery.bin");
+
+    let report = timeout(
+        Duration::from_secs(3),
+        run_content_download(
+            ContentDownloadConfig {
+                artifact_identity: test_artifact_identity(),
+                output_path: output.clone(),
+                max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+                storage_intake_high_watermark_bytes: MIN_PAYLOAD_ALLOWANCE,
+                swarm_config: SwarmConfig::for_request_limit(MIN_PAYLOAD_ALLOWANCE),
+                skip_files: Vec::new(),
+                high_priority_files: Vec::new(),
+                materialize_files: Vec::new(),
+            },
+            metainfo,
+            control,
+            None,
+            &mut peers,
+            None,
+        ),
+    )
+    .await
+    .expect("bounded dry-swarm recovery")
+    .expect("probe completed content");
+
+    assert_eq!(report.verified_piece_count, 1);
+    assert_eq!(report.bytes_written, payload.len());
+    assert_eq!(
+        tokio::fs::read(&output).await.expect("published output"),
+        payload
+    );
+    peer_task.await.expect("recovering peer task");
+
+    let events = activity
+        .events
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| matches!(event, DownloadActivityEvent::PeerDialStarted { .. }))
+            .count(),
+        4
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter_map(|event| match event {
+                DownloadActivityEvent::DrySwarmProbeStarted {
+                    failures,
+                    ordinal,
+                    next_delay_seconds,
+                    ..
+                } => Some((*failures, *ordinal, *next_delay_seconds)),
+                _ => None,
+            })
+            .collect::<Vec<_>>(),
+        [(3, 1, 5 * 60)]
+    );
+    drop(events);
+
+    let snapshot = peers.registry_snapshot();
+    assert_eq!(snapshot.counts.total, 1);
+    assert_eq!(snapshot.counts.dialing, 0);
+    assert_eq!(snapshot.counts.connected, 0);
+    assert_eq!(snapshot.counts.failure_limited, 0);
+    assert_eq!(snapshot.records[0].history.consecutive_failures, 0);
+    assert_eq!(peers.dry_swarm_probe.admissions(), 0);
+    assert_eq!(peers.dry_swarm_probe.next_at(), None);
+
+    let _ = tokio::fs::remove_file(output).await;
+}
+
+async fn serve_content_peer_after_failed_handshakes(
+    listener: TcpListener,
+    failures: usize,
+    info_hash: [u8; 20],
+    pieces: Arc<Vec<Vec<u8>>>,
+    available: Vec<bool>,
+) {
+    for _ in 0..failures {
+        let (stream, _) = listener.accept().await.expect("accept failed handshake");
+        drop(stream);
+    }
+    serve_content_peer(listener, info_hash, pieces, available).await;
 }
 
 #[tokio::test]

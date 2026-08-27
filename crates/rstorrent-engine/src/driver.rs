@@ -60,8 +60,9 @@ use crate::mse::MseDhWorkOwner;
 use crate::network::DEFAULT_PEER_ID;
 use crate::network::{NetworkConfig, NetworkPolicy, PeerEncryptionPolicyHandle};
 use crate::peer::{
-    DialAttempt, DialAttemptId, DialCandidate, PeerEndpoint, PeerFailure, PeerIntegrityAction,
-    PeerObservation, PeerRegistryError, PeerSelectionContext, PeerSelector, PeerSource,
+    DialAttempt, DialAttemptId, DialCandidate, DrySwarmProbeAdmission, DrySwarmProbeState,
+    PeerEndpoint, PeerFailure, PeerIntegrityAction, PeerObservation, PeerRegistryCounts,
+    PeerRegistryError, PeerSelectionContext, PeerSelector, PeerSource,
 };
 use crate::peer_budget::PeerBudget;
 use crate::peer_runtime::{
@@ -2165,6 +2166,7 @@ struct TorrentPeerCoordinator {
     last_error: Option<DownloadError>,
     next_dht_lookup: Instant,
     next_dht_lane: usize,
+    dry_swarm_probe: DrySwarmProbeState,
     hybrid_upgrade_hash: Option<[u8; 20]>,
     swarm_key: Option<SwarmKey>,
     swarm_keys: Vec<SwarmKey>,
@@ -2436,6 +2438,7 @@ impl TorrentPeerCoordinator {
             last_error: None,
             next_dht_lookup: Instant::now(),
             next_dht_lane: 0,
+            dry_swarm_probe: DrySwarmProbeState::default(),
             hybrid_upgrade_hash: None,
             swarm_key: None,
             swarm_keys: Vec::new(),
@@ -2483,6 +2486,23 @@ impl TorrentPeerCoordinator {
         candidate: DialCandidate,
         role: PeerConnectionRole,
     ) -> Result<DialAttempt, DownloadError> {
+        self.begin_outgoing(candidate, role, false)
+    }
+
+    fn begin_failure_limited_probe(
+        &mut self,
+        candidate: DialCandidate,
+        role: PeerConnectionRole,
+    ) -> Result<DialAttempt, DownloadError> {
+        self.begin_outgoing(candidate, role, true)
+    }
+
+    fn begin_outgoing(
+        &mut self,
+        candidate: DialCandidate,
+        role: PeerConnectionRole,
+        failure_limited_probe: bool,
+    ) -> Result<DialAttempt, DownloadError> {
         let context = PeerSelectionContext {
             now: self.elapsed(),
         };
@@ -2491,7 +2511,11 @@ impl TorrentPeerCoordinator {
         let attempt = self
             .peers
             .with_state(|state| {
-                let attempt = state.begin_dial(candidate, role, context.now)?;
+                let attempt = if failure_limited_probe {
+                    state.begin_failure_limited_probe(candidate, role, context.now)?
+                } else {
+                    state.begin_dial(candidate, role, context.now)?
+                };
                 let initial_transport = peer_socket::preferred_transport(
                     attempt.endpoint().address(),
                     encryption,
@@ -2594,6 +2618,9 @@ impl TorrentPeerCoordinator {
             }
         };
         self.peers.apply_admission(connection_id, outcome);
+        if matches!(outcome, PeerAdmissionOutcome::Admitted { .. }) {
+            self.dry_swarm_probe.reset();
+        }
         self.publish_peer_runtime(true)?;
         Ok(outcome)
     }
@@ -3079,6 +3106,40 @@ impl TorrentPeerCoordinator {
             self.selector
                 .select_with_address_families(&state.registry, context, address_families)
         })
+    }
+
+    fn select_failure_limited_probe(&self, context: PeerSelectionContext) -> Option<DialCandidate> {
+        let address_families = self.peers.address_family_policy();
+        self.peers.with_state(|state| {
+            self.selector
+                .select_failure_limited_probe_with_address_families(
+                    &state.registry,
+                    context,
+                    address_families,
+                )
+        })
+    }
+
+    fn registry_counts(&self, context: PeerSelectionContext) -> PeerRegistryCounts {
+        self.peers
+            .with_state(|state| state.registry.counts(context))
+    }
+
+    fn candidate_failure_count(&self, candidate: DialCandidate) -> Option<u32> {
+        self.peers.with_state(|state| {
+            state
+                .registry
+                .get(candidate.record_id())
+                .map(|record| record.history().consecutive_failures)
+        })
+    }
+
+    fn dry_swarm_probe_is_ready(&self, now: Duration) -> bool {
+        self.dry_swarm_probe.is_ready(now)
+    }
+
+    fn admit_dry_swarm_probe(&mut self, now: Duration) -> DrySwarmProbeAdmission {
+        self.dry_swarm_probe.admit(now)
     }
 
     fn registry_snapshot(&self) -> crate::peer::PeerRegistrySnapshot {
@@ -6950,12 +7011,30 @@ fn content_dial_slot_available(
     established < config.max_established_connections || (pending == 0 && replacement_available)
 }
 
+fn dry_swarm_probe_available(
+    counts: PeerRegistryCounts,
+    established: usize,
+    pending: usize,
+    discovery_active: bool,
+    cadence_ready: bool,
+) -> bool {
+    discovery_active
+        && cadence_ready
+        && established == 0
+        && pending == 0
+        && counts.eligible == 0
+        && counts.dialing == 0
+        && counts.connected == 0
+        && counts.backed_off == 0
+        && counts.failure_limited != 0
+}
+
 fn fill_content_dials(
     peers: &mut TorrentPeerCoordinator,
     sockets: &mut PeerSocketSet,
     state: &mut SwarmState,
-    _info_hash: [u8; 20],
     incoming_established: usize,
+    discovery_active: bool,
 ) -> Result<usize, DownloadError> {
     let mut started = 0;
     while content_dial_slot_available(
@@ -6967,66 +7046,127 @@ fn fill_content_dials(
         !peers.peers.download_rate_limited()
             && state.replacement_candidate(peers.elapsed()).is_some(),
     ) {
-        if !peers.control.try_acquire_outbound_turn() {
-            break;
-        }
         let context = PeerSelectionContext {
             now: peers.elapsed(),
         };
         let Some(candidate) = peers.select_candidate(context) else {
             break;
         };
-        peers.control.emit(DownloadActivityEvent::PeerDialStarted {
-            peer: candidate.endpoint().to_string(),
-        });
-        let dial_swarm_key = peers.candidate_swarm_key(candidate);
-        let attempt = peers.begin_dial(candidate, PeerConnectionRole::Content)?;
-        if let Err(error) = state.begin_dial(pending_dial_id(attempt)) {
-            peers.dial_cancelled(attempt)?;
-            return Err(DownloadError::Swarm(error));
+        if !peers.control.try_acquire_outbound_turn() {
+            break;
         }
-        let services = PeerDialServices {
-            byte_metric_sink: peers.control.byte_metric_sink(),
-            mse_handshake_sink: peers.control.mse_handshake_sink(),
-            utp: peers.control.utp_handle(),
-        };
-        let dial = match (dial_swarm_key, peers.hybrid_upgrade_hash) {
-            (SwarmKey::V1(_), Some(v2_hash)) => sockets.begin_hybrid_dial(
-                attempt,
-                dial_swarm_key.into_bytes(),
-                v2_hash,
-                true,
-                peers.connection_network(),
-                services,
-            ),
-            (SwarmKey::V2Truncated(_), _) => sockets.begin_v2_dial(
-                attempt,
-                dial_swarm_key.into_bytes(),
-                true,
-                peers.connection_network(),
-                services,
-            ),
-            (SwarmKey::V1(_), None) => sockets.begin_dial(
-                attempt,
-                dial_swarm_key.into_bytes(),
-                true,
-                peers.connection_network(),
-                services,
-            ),
-        };
-        if let Err(error) = dial {
-            state
-                .finish_dial(pending_dial_id(attempt))
-                .map_err(DownloadError::Swarm)?;
-            peers.dial_cancelled(attempt)?;
-            if matches!(error, PeerSetError::ConnectionLimit(_)) {
-                break;
-            }
-            return Err(download_peer_set_error(error));
+        if !start_content_dial(peers, sockets, state, candidate, false)? {
+            break;
         }
         started += 1;
     }
+
+    if started != 0 {
+        return Ok(started);
+    }
+    let established = sockets
+        .established_len()
+        .saturating_add(incoming_established);
+    let context = PeerSelectionContext {
+        now: peers.elapsed(),
+    };
+    let counts = peers.registry_counts(context);
+    if !dry_swarm_probe_available(
+        counts,
+        established,
+        sockets.pending_len(),
+        discovery_active,
+        peers.dry_swarm_probe_is_ready(context.now),
+    ) {
+        return Ok(started);
+    }
+    let Some(candidate) = peers.select_failure_limited_probe(context) else {
+        return Ok(started);
+    };
+    if !peers.control.try_acquire_outbound_turn() {
+        return Ok(started);
+    }
+    if start_content_dial(peers, sockets, state, candidate, true)? {
+        started += 1;
+    }
     Ok(started)
+}
+
+fn start_content_dial(
+    peers: &mut TorrentPeerCoordinator,
+    sockets: &mut PeerSocketSet,
+    state: &mut SwarmState,
+    candidate: DialCandidate,
+    failure_limited_probe: bool,
+) -> Result<bool, DownloadError> {
+    let failures = failure_limited_probe
+        .then(|| peers.candidate_failure_count(candidate))
+        .flatten()
+        .unwrap_or(0);
+    peers.control.emit(DownloadActivityEvent::PeerDialStarted {
+        peer: candidate.endpoint().to_string(),
+    });
+    let dial_swarm_key = peers.candidate_swarm_key(candidate);
+    let attempt = if failure_limited_probe {
+        peers.begin_failure_limited_probe(candidate, PeerConnectionRole::Content)?
+    } else {
+        peers.begin_dial(candidate, PeerConnectionRole::Content)?
+    };
+    if let Err(error) = state.begin_dial(pending_dial_id(attempt)) {
+        peers.dial_cancelled(attempt)?;
+        return Err(DownloadError::Swarm(error));
+    }
+    let services = PeerDialServices {
+        byte_metric_sink: peers.control.byte_metric_sink(),
+        mse_handshake_sink: peers.control.mse_handshake_sink(),
+        utp: peers.control.utp_handle(),
+    };
+    let dial = match (dial_swarm_key, peers.hybrid_upgrade_hash) {
+        (SwarmKey::V1(_), Some(v2_hash)) => sockets.begin_hybrid_dial(
+            attempt,
+            dial_swarm_key.into_bytes(),
+            v2_hash,
+            true,
+            peers.connection_network(),
+            services,
+        ),
+        (SwarmKey::V2Truncated(_), _) => sockets.begin_v2_dial(
+            attempt,
+            dial_swarm_key.into_bytes(),
+            true,
+            peers.connection_network(),
+            services,
+        ),
+        (SwarmKey::V1(_), None) => sockets.begin_dial(
+            attempt,
+            dial_swarm_key.into_bytes(),
+            true,
+            peers.connection_network(),
+            services,
+        ),
+    };
+    if let Err(error) = dial {
+        state
+            .finish_dial(pending_dial_id(attempt))
+            .map_err(DownloadError::Swarm)?;
+        peers.dial_cancelled(attempt)?;
+        if matches!(error, PeerSetError::ConnectionLimit(_)) {
+            return Ok(false);
+        }
+        return Err(download_peer_set_error(error));
+    }
+    if failure_limited_probe {
+        let admission = peers.admit_dry_swarm_probe(peers.elapsed());
+        peers
+            .control
+            .emit(DownloadActivityEvent::DrySwarmProbeStarted {
+                record_id: candidate.record_id().get(),
+                failures,
+                ordinal: admission.ordinal,
+                next_delay_seconds: admission.next_delay.as_secs(),
+            });
+    }
+    Ok(true)
 }
 
 async fn close_content_connection(
@@ -7691,11 +7831,8 @@ async fn run_selective_swarm_loop(
                 peers,
                 sockets,
                 &mut download.state,
-                peers
-                    .swarm_key
-                    .unwrap_or_else(|| download.content.swarm_key())
-                    .into_bytes(),
                 download.incoming_content.len(),
+                discovery.is_active(),
             )?;
         }
         if sockets.established_len() == 0

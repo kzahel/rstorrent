@@ -56,11 +56,11 @@ use super::{
     coalesce_content_writes, collect_content_write_batch, content_dial_slot_available,
     content_storage_job_limit, download_magnet, download_magnet_metadata_with_control,
     download_magnet_metadata_with_dht, download_magnet_with_control, download_verified_piece,
-    download_verified_piece_with_control, execute_content_storage_verification,
-    execute_content_storage_writes, full_recheck_managed_storage, next_peer_message, resume_magnet,
-    resume_magnet_with_control, resume_metainfo_with_control, retrying_dht_lookup,
-    run_content_download, run_magnet_download_with_peers, send_message,
-    validate_v1_runtime_identity,
+    download_verified_piece_with_control, dry_swarm_probe_available,
+    execute_content_storage_verification, execute_content_storage_writes,
+    full_recheck_managed_storage, next_peer_message, resume_magnet, resume_magnet_with_control,
+    resume_metainfo_with_control, retrying_dht_lookup, run_content_download,
+    run_magnet_download_with_peers, send_message, validate_v1_runtime_identity,
 };
 
 trait TestMetainfoParse: Sized {

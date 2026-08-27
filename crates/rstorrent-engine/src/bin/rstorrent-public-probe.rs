@@ -665,6 +665,7 @@ impl DownloadActivitySink for ProbeSink {
             DownloadActivityEvent::PeerDialStarted { .. } => {
                 observation.peer_dial_attempts = observation.peer_dial_attempts.saturating_add(1);
             }
+            DownloadActivityEvent::DrySwarmProbeStarted { .. } => {}
             DownloadActivityEvent::DhtLookupSucceeded { peer_count } => {
                 if peer_count > 0 {
                     observation

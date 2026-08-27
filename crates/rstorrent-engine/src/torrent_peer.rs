@@ -184,11 +184,34 @@ impl TorrentPeerState {
         role: PeerConnectionRole,
         now: Duration,
     ) -> Result<DialAttempt, TorrentPeerError> {
+        self.begin_outgoing(candidate, role, now, false)
+    }
+
+    pub(crate) fn begin_failure_limited_probe(
+        &mut self,
+        candidate: DialCandidate,
+        role: PeerConnectionRole,
+        now: Duration,
+    ) -> Result<DialAttempt, TorrentPeerError> {
+        self.begin_outgoing(candidate, role, now, true)
+    }
+
+    fn begin_outgoing(
+        &mut self,
+        candidate: DialCandidate,
+        role: PeerConnectionRole,
+        now: Duration,
+        failure_limited_probe: bool,
+    ) -> Result<DialAttempt, TorrentPeerError> {
         let connection_id = self.allocate_connection_id()?;
         let context = PeerSelectionContext { now };
-        let attempt =
+        let attempt = if failure_limited_probe {
             self.registry
-                .begin_dial_with_connection_id(candidate, context, connection_id)?;
+                .begin_failure_limited_probe_with_connection_id(candidate, context, connection_id)?
+        } else {
+            self.registry
+                .begin_dial_with_connection_id(candidate, context, connection_id)?
+        };
         if let Err(error) = self.runtime.begin_outgoing(attempt, role, now) {
             let _ = self.registry.dial_cancelled(attempt);
             return Err(error.into());

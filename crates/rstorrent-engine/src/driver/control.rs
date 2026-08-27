@@ -204,6 +204,12 @@ pub enum DownloadActivityEvent {
     PeerDialStarted {
         peer: String,
     },
+    DrySwarmProbeStarted {
+        record_id: u64,
+        failures: u32,
+        ordinal: u32,
+        next_delay_seconds: u64,
+    },
     PeerConnections {
         captured_at: Duration,
         peers: Box<Vec<PeerConnectionObservation>>,

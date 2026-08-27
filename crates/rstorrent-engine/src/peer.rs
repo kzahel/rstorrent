@@ -12,6 +12,8 @@ use crate::swarm::ConnectionId;
 pub const DEFAULT_MAX_PEER_RECORDS: usize = 1_000;
 pub const DEFAULT_MAX_CONSECUTIVE_FAILURES: u32 = 3;
 pub const DEFAULT_RECONNECT_BACKOFF: Duration = Duration::from_secs(60);
+pub const DRY_SWARM_PROBE_INITIAL_BACKOFF: Duration = Duration::from_secs(5 * 60);
+pub const DRY_SWARM_PROBE_MAX_BACKOFF: Duration = Duration::from_secs(60 * 60);
 pub const UTP_RETRY_INITIAL_BACKOFF: Duration = Duration::from_secs(5 * 60);
 pub const UTP_RETRY_MAX_BACKOFF: Duration = Duration::from_secs(60 * 60);
 
@@ -353,6 +355,49 @@ pub struct PeerSelectionContext {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DrySwarmProbeAdmission {
+    pub ordinal: u32,
+    pub next_at: Duration,
+    pub next_delay: Duration,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DrySwarmProbeState {
+    admissions: u32,
+    next_at: Option<Duration>,
+}
+
+impl DrySwarmProbeState {
+    pub fn is_ready(self, now: Duration) -> bool {
+        self.next_at.is_none_or(|next_at| now >= next_at)
+    }
+
+    pub fn admit(&mut self, now: Duration) -> DrySwarmProbeAdmission {
+        self.admissions = self.admissions.saturating_add(1);
+        let next_delay = dry_swarm_probe_backoff(self.admissions);
+        let next_at = now.saturating_add(next_delay);
+        self.next_at = Some(next_at);
+        DrySwarmProbeAdmission {
+            ordinal: self.admissions,
+            next_at,
+            next_delay,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    pub fn admissions(self) -> u32 {
+        self.admissions
+    }
+
+    pub fn next_at(self) -> Option<Duration> {
+        self.next_at
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DialEligibility {
     Eligible,
     NotConnectable,
@@ -514,6 +559,47 @@ impl PeerSelector {
                 endpoint: record.endpoint,
             })
     }
+
+    pub fn select_failure_limited_probe_with_address_families(
+        self,
+        registry: &PeerRegistry,
+        context: PeerSelectionContext,
+        address_families: AddressFamilyPolicy,
+    ) -> Option<DialCandidate> {
+        registry
+            .records
+            .iter()
+            .filter(|record| {
+                address_families.permits(record.endpoint.address().ip())
+                    && self.is_failure_limited_probe(record, context, registry.config)
+            })
+            .min_by(|left, right| compare_probe_candidates(left, right))
+            .map(|record| DialCandidate {
+                record_id: record.id,
+                endpoint: record.endpoint,
+            })
+    }
+
+    fn is_failure_limited_probe(
+        self,
+        record: &PeerRecord,
+        context: PeerSelectionContext,
+        config: PeerRegistryConfig,
+    ) -> bool {
+        record.incoming_connections == 0
+            && record.phase == PeerPhase::Idle
+            && record.connectable
+            && record.history.consecutive_failures >= config.max_consecutive_failures
+            && record
+                .history
+                .retry_at
+                .is_some_and(|retry_at| context.now >= retry_at)
+            && record.integrity.hash_failures == 0
+            && matches!(
+                record.history.last_failure,
+                Some(PeerFailure::Connect | PeerFailure::Handshake | PeerFailure::RemoteClosed)
+            )
+    }
 }
 
 fn compare_dial_candidates(left: &PeerRecord, right: &PeerRecord) -> Ordering {
@@ -530,6 +616,36 @@ fn compare_dial_candidates(left: &PeerRecord, right: &PeerRecord) -> Ordering {
         )
         .then_with(|| source_rank(right.sources).cmp(&source_rank(left.sources)))
         .then_with(|| left.observation_order.cmp(&right.observation_order))
+        .then_with(|| left.id.cmp(&right.id))
+}
+
+fn compare_probe_candidates(left: &PeerRecord, right: &PeerRecord) -> Ordering {
+    right
+        .history
+        .last_connected_at
+        .is_some()
+        .cmp(&left.history.last_connected_at.is_some())
+        .then_with(|| right.sources.len().cmp(&left.sources.len()))
+        .then_with(|| {
+            right
+                .sources
+                .contains(PeerSource::Tracker)
+                .cmp(&left.sources.contains(PeerSource::Tracker))
+        })
+        .then_with(|| right.last_observed_at.cmp(&left.last_observed_at))
+        .then_with(
+            || match (left.history.last_dial_at, right.history.last_dial_at) {
+                (None, None) => Ordering::Equal,
+                (None, Some(_)) => Ordering::Less,
+                (Some(_), None) => Ordering::Greater,
+                (Some(left), Some(right)) => left.cmp(&right),
+            },
+        )
+        .then_with(|| {
+            left.history
+                .consecutive_failures
+                .cmp(&right.history.consecutive_failures)
+        })
         .then_with(|| left.id.cmp(&right.id))
 }
 
@@ -794,6 +910,25 @@ impl PeerRegistry {
         context: PeerSelectionContext,
         connection_id: ConnectionId,
     ) -> Result<DialAttempt, PeerRegistryError> {
+        self.begin_dial_with_connection_id_and_policy(candidate, context, connection_id, false)
+    }
+
+    pub(crate) fn begin_failure_limited_probe_with_connection_id(
+        &mut self,
+        candidate: DialCandidate,
+        context: PeerSelectionContext,
+        connection_id: ConnectionId,
+    ) -> Result<DialAttempt, PeerRegistryError> {
+        self.begin_dial_with_connection_id_and_policy(candidate, context, connection_id, true)
+    }
+
+    fn begin_dial_with_connection_id_and_policy(
+        &mut self,
+        candidate: DialCandidate,
+        context: PeerSelectionContext,
+        connection_id: ConnectionId,
+        allow_failure_limited_probe: bool,
+    ) -> Result<DialAttempt, PeerRegistryError> {
         let record_index = self
             .record_index(candidate.record_id)
             .ok_or(PeerRegistryError::UnknownRecord(candidate.record_id))?;
@@ -802,7 +937,13 @@ impl PeerRegistry {
         }
         let eligibility =
             PeerSelector.eligibility(&self.records[record_index], context, self.config);
-        if eligibility != DialEligibility::Eligible {
+        let probe_eligible = allow_failure_limited_probe
+            && PeerSelector.is_failure_limited_probe(
+                &self.records[record_index],
+                context,
+                self.config,
+            );
+        if eligibility != DialEligibility::Eligible && !probe_eligible {
             return Err(PeerRegistryError::Ineligible {
                 record_id: candidate.record_id,
                 eligibility,
@@ -1200,6 +1341,14 @@ fn utp_retry_backoff(failures: u8) -> Duration {
         .min(UTP_RETRY_MAX_BACKOFF)
 }
 
+fn dry_swarm_probe_backoff(admissions: u32) -> Duration {
+    let shift = admissions.saturating_sub(1).min(4);
+    DRY_SWARM_PROBE_INITIAL_BACKOFF
+        .checked_mul(1_u32 << shift)
+        .unwrap_or(DRY_SWARM_PROBE_MAX_BACKOFF)
+        .min(DRY_SWARM_PROBE_MAX_BACKOFF)
+}
+
 fn compare_eviction_candidates(
     left: &PeerRecord,
     right: &PeerRecord,
@@ -1316,12 +1465,15 @@ mod tests {
     use std::time::Duration;
 
     use super::{
-        DialEligibility, PeerEndpoint, PeerFailure, PeerIntegrityAction, PeerObservation,
+        DRY_SWARM_PROBE_INITIAL_BACKOFF, DRY_SWARM_PROBE_MAX_BACKOFF, DialEligibility,
+        DrySwarmProbeState, PeerEndpoint, PeerFailure, PeerIntegrityAction, PeerObservation,
         PeerObservationDisposition, PeerPhase, PeerRegistry, PeerRegistryConfig, PeerRegistryError,
         PeerSelectionContext, PeerSelector, PeerSource, PeerTransferTotals,
         UTP_RETRY_INITIAL_BACKOFF, UTP_RETRY_MAX_BACKOFF, UtpConnectOutcome, UtpDialDecision,
         UtpEndpointState,
     };
+    use crate::network::AddressFamilyPolicy;
+    use crate::swarm::ConnectionId;
 
     fn endpoint(port: u16) -> PeerEndpoint {
         PeerEndpoint::new(SocketAddr::from((Ipv4Addr::LOCALHOST, port))).expect("valid endpoint")
@@ -1453,6 +1605,265 @@ mod tests {
                     },
                 )
                 .is_some()
+        );
+    }
+
+    #[test]
+    fn failure_limited_probe_waits_for_retry_and_uses_guarded_attempt() {
+        let mut registry = PeerRegistry::new(config(1)).expect("registry");
+        let record_id = registry
+            .observe(
+                PeerObservation::dialable(endpoint(6_881), PeerSource::Dht),
+                Duration::ZERO,
+            )
+            .expect("DHT observation")
+            .record_id;
+        for now in [0, 10, 30] {
+            let context = PeerSelectionContext {
+                now: Duration::from_secs(now),
+            };
+            let candidate = PeerSelector
+                .select(&registry, context)
+                .expect("ordinary candidate");
+            let attempt = registry.begin_dial(candidate, context).expect("begin dial");
+            registry
+                .dial_failed(attempt, context.now, PeerFailure::Connect)
+                .expect("connect failure");
+        }
+
+        let before_retry = PeerSelectionContext {
+            now: Duration::from_secs(59),
+        };
+        assert!(
+            PeerSelector
+                .select_failure_limited_probe_with_address_families(
+                    &registry,
+                    before_retry,
+                    AddressFamilyPolicy::dual_stack(),
+                )
+                .is_none()
+        );
+
+        let at_retry = PeerSelectionContext {
+            now: Duration::from_secs(60),
+        };
+        let candidate = PeerSelector
+            .select_failure_limited_probe_with_address_families(
+                &registry,
+                at_retry,
+                AddressFamilyPolicy::dual_stack(),
+            )
+            .expect("expired failure-limited probe");
+        assert_eq!(candidate.record_id(), record_id);
+        assert!(matches!(
+            registry.begin_dial(candidate, at_retry),
+            Err(PeerRegistryError::Ineligible {
+                eligibility: DialEligibility::FailureLimit { .. },
+                ..
+            })
+        ));
+
+        let attempt = registry
+            .begin_failure_limited_probe_with_connection_id(
+                candidate,
+                at_retry,
+                ConnectionId::new(99).expect("connection ID"),
+            )
+            .expect("guarded probe attempt");
+        assert_eq!(attempt.record_id(), record_id);
+        assert_eq!(attempt.connection_id().get(), 99);
+        assert_eq!(
+            registry.get(record_id).expect("dialing probe").phase(),
+            PeerPhase::Dialing {
+                attempt_id: attempt.id(),
+            }
+        );
+        assert_eq!(
+            registry
+                .get(record_id)
+                .expect("probe history")
+                .history()
+                .dial_attempts,
+            4
+        );
+    }
+
+    #[test]
+    fn failure_limited_probe_excludes_definite_and_integrity_failures() {
+        let mut registry = PeerRegistry::new(config(5)).expect("registry");
+        let failures = [
+            PeerFailure::Protocol,
+            PeerFailure::SelfConnection,
+            PeerFailure::DuplicatePeerId,
+            PeerFailure::Handshake,
+            PeerFailure::RemoteClosed,
+        ];
+        let mut record_ids = Vec::new();
+        for (offset, failure) in failures.into_iter().enumerate() {
+            let record_id = registry
+                .observe(
+                    PeerObservation::dialable(
+                        endpoint(6_881 + u16::try_from(offset).expect("small offset")),
+                        PeerSource::Dht,
+                    ),
+                    Duration::ZERO,
+                )
+                .expect("observation")
+                .record_id;
+            let record = registry
+                .records
+                .iter_mut()
+                .find(|record| record.id == record_id)
+                .expect("record");
+            record.history.consecutive_failures = 3;
+            record.history.retry_at = Some(Duration::ZERO);
+            record.history.last_failure = Some(failure);
+            record_ids.push(record_id);
+        }
+        registry
+            .records
+            .iter_mut()
+            .find(|record| record.id == record_ids[3])
+            .expect("integrity-suspect record")
+            .integrity
+            .hash_failures = 1;
+
+        let candidate = PeerSelector
+            .select_failure_limited_probe_with_address_families(
+                &registry,
+                PeerSelectionContext {
+                    now: Duration::ZERO,
+                },
+                AddressFamilyPolicy::dual_stack(),
+            )
+            .expect("one plausible transient failure");
+        assert_eq!(candidate.record_id(), record_ids[4]);
+
+        registry.ban(record_ids[4]).expect("ban final candidate");
+        assert!(
+            PeerSelector
+                .select_failure_limited_probe_with_address_families(
+                    &registry,
+                    PeerSelectionContext {
+                        now: Duration::ZERO,
+                    },
+                    AddressFamilyPolicy::dual_stack(),
+                )
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn failure_limited_probe_ranking_prefers_credible_fresh_records() {
+        let mut registry = PeerRegistry::new(config(3)).expect("registry");
+        let previously_connected = registry
+            .observe(
+                PeerObservation::dialable(endpoint(6_881), PeerSource::Dht),
+                Duration::from_secs(1),
+            )
+            .expect("previously connected observation")
+            .record_id;
+        let multi_source = registry
+            .observe(
+                PeerObservation::dialable(endpoint(6_882), PeerSource::Dht),
+                Duration::from_secs(2),
+            )
+            .expect("multi-source observation")
+            .record_id;
+        registry
+            .observe(
+                PeerObservation::dialable(endpoint(6_882), PeerSource::Tracker),
+                Duration::from_secs(3),
+            )
+            .expect("tracker source merge");
+        let fresh_single_source = registry
+            .observe(
+                PeerObservation::dialable(endpoint(6_883), PeerSource::Dht),
+                Duration::from_secs(4),
+            )
+            .expect("fresh observation")
+            .record_id;
+
+        for record in &mut registry.records {
+            record.history.consecutive_failures = 3;
+            record.history.retry_at = Some(Duration::ZERO);
+            record.history.last_failure = Some(PeerFailure::Connect);
+            record.history.last_dial_at = Some(Duration::from_secs(record.id.get()));
+        }
+        registry
+            .records
+            .iter_mut()
+            .find(|record| record.id == previously_connected)
+            .expect("previously connected record")
+            .history
+            .last_connected_at = Some(Duration::from_secs(1));
+
+        let context = PeerSelectionContext {
+            now: Duration::from_secs(10),
+        };
+        assert_eq!(
+            PeerSelector
+                .select_failure_limited_probe_with_address_families(
+                    &registry,
+                    context,
+                    AddressFamilyPolicy::dual_stack(),
+                )
+                .expect("credible candidate")
+                .record_id(),
+            previously_connected
+        );
+
+        registry
+            .records
+            .iter_mut()
+            .find(|record| record.id == previously_connected)
+            .expect("previously connected record")
+            .history
+            .last_connected_at = None;
+        assert_eq!(
+            PeerSelector
+                .select_failure_limited_probe_with_address_families(
+                    &registry,
+                    context,
+                    AddressFamilyPolicy::dual_stack(),
+                )
+                .expect("multi-source candidate")
+                .record_id(),
+            multi_source
+        );
+        assert_ne!(multi_source, fresh_single_source);
+    }
+
+    #[test]
+    fn dry_swarm_probe_cadence_increases_caps_saturates_and_resets() {
+        let mut state = DrySwarmProbeState::default();
+        let mut now = Duration::ZERO;
+        for expected in [5, 10, 20, 40, 60, 60] {
+            assert!(state.is_ready(now));
+            let admission = state.admit(now);
+            assert_eq!(admission.next_delay, Duration::from_secs(expected * 60));
+            assert_eq!(admission.next_at, now + admission.next_delay);
+            assert_eq!(state.next_at(), Some(admission.next_at));
+            assert!(!state.is_ready(admission.next_at - Duration::from_nanos(1)));
+            now = admission.next_at;
+        }
+        assert_eq!(state.admissions(), 6);
+        assert_eq!(
+            state.admit(Duration::MAX),
+            super::DrySwarmProbeAdmission {
+                ordinal: 7,
+                next_at: Duration::MAX,
+                next_delay: DRY_SWARM_PROBE_MAX_BACKOFF,
+            }
+        );
+
+        state.reset();
+        assert_eq!(state.admissions(), 0);
+        assert_eq!(state.next_at(), None);
+        assert!(state.is_ready(Duration::ZERO));
+        assert_eq!(
+            state.admit(Duration::ZERO).next_delay,
+            DRY_SWARM_PROBE_INITIAL_BACKOFF
         );
     }
 

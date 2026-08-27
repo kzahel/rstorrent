@@ -5628,6 +5628,30 @@ impl ViewActivitySink {
                     &[],
                 );
             }
+            DownloadActivityEvent::DrySwarmProbeStarted {
+                record_id,
+                failures,
+                ordinal,
+                next_delay_seconds,
+            } => {
+                let record = record_id.to_string();
+                let failures = failures.to_string();
+                let ordinal = ordinal.to_string();
+                let next_delay = next_delay_seconds.to_string();
+                let _ = self.views.record_diagnostic(
+                    DiagnosticSeverity::Info,
+                    category::PEER_CONNECTION,
+                    "dry_swarm_probe_started",
+                    Some(&self.torrent_id),
+                    "Trying one previously failed peer because no ordinary connection action remains",
+                    &[
+                        ("record_id", &record),
+                        ("failures", &failures),
+                        ("probe_ordinal", &ordinal),
+                        ("next_delay_seconds", &next_delay),
+                    ],
+                );
+            }
             DownloadActivityEvent::SwarmState(snapshot) => {
                 let connected = snapshot.connected_peers.to_string();
                 let pending = snapshot.pending_dials.to_string();

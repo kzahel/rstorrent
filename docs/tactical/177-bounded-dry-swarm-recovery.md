@@ -247,6 +247,26 @@ reports ordinary backoff until the original deadline, and then exposes one
 ordinary candidate. Repository formatting and the focused `rstorrent-engine`
 tracker-rehabilitation test pass.
 
+Stages 2 through 4 are implemented. Runtime-independent selection waits for
+the endpoint's ordinary retry deadline, admits only connect, handshake, or
+remote-close failures, excludes protocol/identity/integrity cases, ranks
+credible records deterministically, and revalidates the candidate under the
+registry owner. The task-free torrent cadence produces exact 5, 10, 20, 40,
+and capped 60-minute delays with saturating time/counters and success reset.
+The content coordinator requires every ordinary connection action plus the
+normal backoff cohort to be exhausted, then spends one existing fair outbound
+turn and pending slot. Its structured event maps to the endpoint-free
+`dry_swarm_probe_started` session diagnostic.
+
+The scripted vertical closes three accepted TCP sockets during handshake,
+observes exactly three ordinary attempts, admits exactly one probe after the
+third ordinary retry deadline, completes and verifies the same endpoint on
+attempt four, publishes exact bytes, resets endpoint failure and torrent probe
+state, and terminates with zero dialing, connected, or failure-limited record
+counts. The 26 peer/long-lived-owner tests, three focused dry-swarm tests,
+formatting, and warning-denying clippy for `rstorrent-engine` and
+`rstorrent-session` pass.
+
 ## Non-Goals
 
 - Removing or raising the ordinary failure ceiling, releasing all failed peers,
