@@ -198,6 +198,7 @@ engine with its own explicit ownership boundaries.
 | `CLAUDE.md` / `AGENTS.md` | Mandatory entry path and source-first campaign contract |
 | This topic | Runbook, parity rules, campaign checkpoint, and next action |
 | `capability-readiness.md` | Exactly one **Now**, at most three **Next**, and readiness roll-up |
+| `libtorrent-policy-alignment.md` | Cross-tactical ledger of aligned limits, meaningful policy deltas, and deliberate platform adaptations |
 | `performance-and-live-evidence.md` | Comparator schema, measurement policy, cohort summaries, and artifact safety |
 | `download-correctness.md` | Integrity, liveness, completion, and adversarial scenario ledger |
 | `peer-lifecycle.md` | Candidate, dial, connection, request-owner, and replacement behavior |

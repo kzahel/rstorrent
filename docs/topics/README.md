@@ -82,6 +82,10 @@ Topics own the current truth for a continuing concern. Tactical docs under
 - [`oracle-driven-engine-campaign.md`](oracle-driven-engine-campaign.md):
   source-first libtorrent-oracle runbook, parity gates, autonomous restart
   checkpoint, milestone sequence, and transition to measured BEP breadth.
+- [`libtorrent-policy-alignment.md`](libtorrent-policy-alignment.md): continuing
+  ledger of aligned limits, meaningful behavioral deltas, deliberate platform
+  adaptations, and evidence required before changing defaults toward the
+  pinned libtorrent oracle.
 - [`client-persistence.md`](client-persistence.md): SQLite-backed client state,
   verified metadata and resume invariants, cross-platform storage-root
   identity, and the application-service boundary above the torrent engine.
