@@ -161,6 +161,20 @@
   box-shadow: 0 0 0 3px rgb(243 196 110 / 13%);
 }
 
+.lanAccessStatus {
+  display: inline-flex;
+  min-height: 1.7rem;
+  align-items: center;
+  border: 1px solid #c88424;
+  border-radius: 999px;
+  padding: 0 0.55rem;
+  color: #ffdda0;
+  background: rgb(180 106 0 / 18%);
+  font-size: var(--ui-font-caption);
+  font-weight: 750;
+  white-space: nowrap;
+}
+
 .settingsButton {
   display: grid;
   width: var(--ui-control-height);
@@ -195,19 +209,49 @@
   display: flex;
   min-width: 0;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   gap: var(--ui-space-xs);
   border-bottom: 1px solid #b46a00;
-  padding: 0.42rem var(--ui-space-md);
+  padding: 0.34rem var(--ui-space-md);
   color: #321d00;
   background: #ffd98a;
   font-size: var(--ui-font-small);
   line-height: 1.35;
-  text-align: center;
+  text-align: left;
 }
 
-.lanWarning span {
+.lanWarningMessage {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: var(--ui-space-xs);
+  flex-wrap: wrap;
+}
+
+.lanWarningMessage span {
   overflow-wrap: anywhere;
+}
+
+.lanWarning button {
+  min-height: 1.9rem;
+  flex: 0 0 auto;
+  border: 1px solid #8b5100;
+  border-radius: 0.4rem;
+  padding: 0 0.58rem;
+  color: #321d00;
+  background: rgb(255 255 255 / 35%);
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.lanWarning button:hover {
+  background: rgb(255 255 255 / 60%);
+}
+
+.lanWarning button:focus-visible {
+  outline: 2px solid #321d00;
+  outline-offset: 1px;
 }
 
 .updateNotice {
@@ -388,6 +432,12 @@
     display: none;
   }
 
+  .lanAccessStatus {
+    grid-row: 1;
+    grid-column: 3;
+    justify-self: end;
+  }
+
   .settingsButton {
     grid-column: 4;
   }
@@ -461,8 +511,12 @@
 
 @media (max-width: 430px) {
   .lanWarning {
+    align-items: center;
+  }
+
+  .lanWarningMessage {
     display: grid;
-    justify-items: center;
+    gap: 0;
   }
 
   .primaryNavigation button span {

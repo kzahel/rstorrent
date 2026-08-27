@@ -23,6 +23,7 @@ import type {
 } from "../../desktop-external-intake";
 import { clientSettingsRuntimeFixture } from "../../test-support/client-settings";
 import { APPEARANCE_STORAGE_KEY, type AppearanceStorage } from "../appearance";
+import { LAN_NONE_NOTICE_STORAGE_KEY } from "../lan-none-notice";
 import type { InspectionApplication } from "../application";
 import { InspectionProvider } from "../context";
 import { InspectionController } from "../controller";
@@ -556,7 +557,46 @@ describe("inspection application", () => {
     expect(within(dialog).getByText("Checking for updates")).toBeVisible();
   });
 
-  it("keeps the credential-free LAN owner warning visible", () => {
+  it("dismisses the LAN notice per browser while retaining compact status", async () => {
+    const user = userEvent.setup();
+    const first = renderApplication(
+      new DemoApplication({
+        scenarioId: "empty-library",
+        elapsedMs: 0,
+        running: false,
+      }),
+      null,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "lan_none",
+    );
+    const notice = screen.getByRole("complementary", {
+      name: "LAN security notice",
+    });
+    expect(within(notice).getByText("Authentication is off.")).toBeVisible();
+    expect(
+      within(notice).getByText(
+        "Every device on this LAN has full owner control.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByLabelText("LAN access has no authentication"),
+    ).toHaveTextContent("No auth");
+
+    await user.click(screen.getByRole("button", { name: "Got it" }));
+    expect(
+      screen.queryByRole("complementary", { name: "LAN security notice" }),
+    ).not.toBeInTheDocument();
+    expect(globalThis.localStorage.getItem(LAN_NONE_NOTICE_STORAGE_KEY)).toBe(
+      "true",
+    );
+    expect(
+      screen.getByLabelText("LAN access has no authentication"),
+    ).toBeVisible();
+
+    first.unmount();
     renderApplication(
       new DemoApplication({
         scenarioId: "empty-library",
@@ -571,10 +611,11 @@ describe("inspection application", () => {
       "lan_none",
     );
     expect(
-      screen.getByRole("complementary", { name: "LAN security warning" }),
-    ).toHaveTextContent(
-      "Authentication is off. Every device on this LAN has full owner control.",
-    );
+      screen.queryByRole("complementary", { name: "LAN security notice" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByLabelText("LAN access has no authentication"),
+    ).toBeVisible();
   });
 
   it("shows notification settings only when the desktop capability is injected", async () => {
