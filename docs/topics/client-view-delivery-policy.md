@@ -217,6 +217,18 @@ view combinations and serialized bytes. It proves that observer selection and
 consumer behavior are measurable, but it does not yet compare server-enforced
 delivery intervals, hidden-client policy or remote transport byte rates.
 
+Completed Tactical
+[`180`](../tactical/180-typed-settings-patches-and-draft-convergence.md)
+confirms that unchanged global client settings are already omitted from an
+unrelated torrent-list patch. Its representative compact one-row trace is
+1,157 bytes per update, including a 915-byte complete changed row and its
+unchanged 64-byte transfer-limits value; the comparable full reset is 3,215
+bytes. Twenty-four fresh torrent rows, 25 fresh client-settings values, and
+reset snapshots each notify/reduce without losing an edit. One controlled
+receipt-to-applied-view transition measured 24.1 ms. Broader allocation,
+notification, render, and reset-rate measurement remains necessary before
+choosing sparse rows or structural sharing.
+
 ## Required Evidence
 
 An implementing tactical should retain, for at least idle, Library, ordinary

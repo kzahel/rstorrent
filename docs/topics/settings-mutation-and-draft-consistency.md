@@ -2,10 +2,11 @@
 
 Topic: `settings-mutation-and-draft-consistency`
 
-Status: Direction accepted 2026-08-27. Tactical
-[`180`](../tactical/180-typed-settings-patches-and-draft-convergence.md) is
-active as the single authoritative **Now**. Explicit user direction removes
-the unsupported old settings command variants without aliases, adapters, or a
+Status: Implemented 2026-08-27 by completed Tactical
+[`180`](../tactical/180-typed-settings-patches-and-draft-convergence.md).
+Typed resource patches, atomic merge/validation, receipt/revision convergence,
+and value-semantic web/Android drafts now pass SM-001 through SM-010. The
+unsupported old settings variants are removed without aliases, adapters, or a
 version bridge.
 
 ## Purpose And Scope
@@ -172,12 +173,12 @@ priority ranges also retain their dedicated typed operations. A resource patch
 is for bounded declarative properties whose combined validation and commit are
 meaningful.
 
-The existing internal `SetTorrentTransferLimits` and whole-value
-`SetClientSettings` variants are superseded. Tactical 180 updates all
-first-party producers and consumers together and does not retain aliases only
-for disposable pre-support incubation compatibility. This is not a stable
-public remote wire claim; the first supported contract baseline remains owned
-by product/release direction.
+The former internal `SetTorrentTransferLimits` and whole-value
+`SetClientSettings` variants are removed. Tactical 180 updated all first-party
+producers and consumers together and retained no compatibility aliases for
+disposable pre-support incubation formats. This is not a stable public remote
+wire claim; the first supported contract baseline remains owned by
+product/release direction.
 
 ## Receipt And Convergence Contract
 
@@ -304,10 +305,30 @@ before selecting a wire change. It must preserve coherent fresh snapshots,
 cursor/epoch recovery, coalescing, and SM-010. Binary encoding and delivery
 profile policy remain separately owned concerns.
 
+Tactical 180's closing observation confirms that unchanged global
+`client_settings` are already omitted from unrelated torrent-list patches. A
+changed torrent still carries its complete row: the checked-in one-row trace
+encodes a 1,157-byte update batch containing a 915-byte row and a 64-byte
+unchanged transfer-limits object. Its complete client-settings runtime snapshot
+is 2,003 bytes but is not present in that unrelated update. The corresponding
+reset is 3,215 bytes. Source inspection still finds a complete Rust row clone,
+client row/map reconstruction, and one reducer/store notification per delivered
+batch. Twenty-four cloned torrent updates, 25 cloned client-settings updates,
+and complete resets preserve drafts; controlled receipt-to-applied-view
+convergence measured 24.1 ms.
+
+That settings-specific sample does not yet justify a sparse wire change. The
+broader full-row allocation/render question remains measurable work under
+[`client-view-delivery-policy`](client-view-delivery-policy.md) and Tactical
+`057`; open a bounded optimization tactical only after representative
+multi-torrent allocation, notification, reset-rate, and render evidence makes
+one approach decision-complete.
+
 ## Recommended Direction
 
-Execute Tactical 180 after the current release/state queue permits it. Treat
-the complete-update stress cases as primary acceptance tests. Once the API and
-all current editors use typed patches and explicit convergence, characterize
-the remaining high-frequency delivery cost and create one bounded optimization
-tactical only if the measurements justify it.
+Retain the implemented typed-patch and draft-convergence contract as the
+baseline for every settings field and first-party client. Treat complete-update
+stress cases as acceptance tests for later editors and delivery changes.
+Characterize broader high-frequency delivery cost before choosing structural
+sharing, sparse rows, projection separation, or response reduction; do not
+trade SM-010 correctness for transport-specific object identity.

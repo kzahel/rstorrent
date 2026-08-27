@@ -84,9 +84,9 @@ that scope and its cleanup or compatibility rules explicitly.
   DHT, desktop-shell, and browser-appearance readers while preserving the
   bounded reset and external payload.
 - [`180-typed-settings-patches-and-draft-convergence.md`](180-typed-settings-patches-and-draft-convergence.md):
-  active sole-Now slice replacing whole/pair-specific settings mutation with
-  typed partial patches and giving web/Android editors revision-aware draft
-  convergence under complete live updates.
+  completed replacement of whole/pair-specific settings mutation with typed
+  partial patches and revision-aware web/Android draft convergence under
+  complete live updates.
 - [`178-crostini-storage-guidance.md`](178-crostini-storage-guidance.md):
   Crostini-only Add and Downloads guidance for the fast Linux default and the
   explicit, slower ChromeOS **Share with Linux** alternative.

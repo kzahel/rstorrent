@@ -196,6 +196,16 @@ behavior; the API 34 no-window AVD proves durable limited concurrent transfer
 through the Android product boundary.
 
 Completed Tactical
+[`180`](../tactical/180-typed-settings-patches-and-draft-convergence.md)
+replaces those mutation shapes with independent typed resource patches and
+revision-aware drafts. Browser/Tauri and both Android Compose editors preserve
+dirty, submitted, failed, and conflicting fields under complete cloned
+updates and resets; clean fields continue to follow authority. Android owns
+requests in its existing service/state boundary. iOS gains the generated
+patch command boundary but no invented settings presentation because none
+currently exists.
+
+Completed Tactical
 [`138`](../tactical/138-verified-http-file-serving.md) adds one `Open` action
 to eligible rows in the shared React Files table. Browser hosting reserves an
 opener-isolated tab before the asynchronous capability call; Tauri validates

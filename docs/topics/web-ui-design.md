@@ -203,6 +203,16 @@ keyboard toggling, retained input, save feedback, and zero serious/critical
 Axe violations.
 
 Completed Tactical
+[`180`](../tactical/180-typed-settings-patches-and-draft-convergence.md)
+replaces prop-to-form synchronization in both settings editors with one pure
+typed draft reducer/hook. Torrent upload and download are independently dirty
+and independently patched; any current client-settings subset shares the same
+model. A receipt moves captured fields to awaiting-view, and only matching
+authority at or beyond the accepted durable revision clears them. Continuous
+autoplay, reset, conflict, failure, and edit-while-pending tests no longer
+depend on sparse delivery or retained object identity.
+
+Completed Tactical
 [`138`](../tactical/138-verified-http-file-serving.md) presents `Open` only for
 Files rows whose producer-owned media availability is `available`. Browser
 mode synchronously reserves an opener-isolated tab before requesting the

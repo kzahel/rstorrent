@@ -1,9 +1,11 @@
 # Tactical 180: Typed Settings Patches And Draft Convergence
 
-Status: **Active (2026-08-27); sole Now.** Explicit user direction selected
-this tactical after completed Tactical `179` and paused Tactical `176` at its
-existing macOS-only iOS compile gate. No other settings/store or generated-
-contract change may overlap this slice.
+Status: **Complete (2026-08-27).** Typed resource patches replace both old
+settings commands without compatibility aliases. Rust, browser/Tauri,
+Android, and generated Swift/Kotlin boundaries agree; complete cloned updates,
+reset/reconnect, failure, replay, and live listener handover evidence pass.
+The unavailable macOS-only Swift simulator/archive compile remains Tactical
+`176`'s host gate, and Tactical `176` resumes as the sole **Now**.
 
 Topics:
 [`settings-mutation-and-draft-consistency`](../topics/settings-mutation-and-draft-consistency.md),
@@ -343,6 +345,118 @@ deterministic high-cadence local publication is the controlled evidence.
 Record the exact commands, host/platform matrix, pre-fix failure, post-fix
 results, and receipt-to-view latency observations in this tactical before
 marking it complete.
+
+## Implementation And Evidence
+
+The application contract now has closed `ClientSettingsPatch` and
+`TorrentSettingsPatch` records plus `update_client_settings` and
+`update_torrent_settings` command variants. The old whole-client and forced-
+pair variants are absent from generated TypeScript, JSON Schema, UniFFI
+construction, adapters, and first-party producers. The only remaining old
+wire names outside historical documentation are deliberate negative decoder
+fixtures proving that those variants reject.
+
+`crates/rstorrent-session/src/settings/contract.rs`, `control.rs`, `store.rs`,
+and `application.rs` own closed-field validation, merge-then-validate,
+expected revision, atomic persistence, semantic no-op, durable request replay,
+and affected-domain runtime reconciliation. Store/service tests cover upload-
+only, download-only, combined, cross-field validity, empty/unknown input,
+rollback, replay, stale revision, and unchanged revision outcomes.
+
+The web implementation in `clients/web/src/inspection/settings-draft.ts` and
+`use-settings-draft.ts` is one pure value-semantic reducer/hook reused by the
+global client-settings and selected-torrent editors. It records edit bases,
+overlays, one captured submission, accepted revision, newer edits, conflicts,
+and one bounded failure. The live, demo, HTTP/WebSocket, and Tauri adapters
+submit only the generated non-empty patch with the current opaque durable
+revision. The pre-fix characterization reproduced the reported failure: one
+unrelated freshly allocated active-torrent row restored the limited download
+value after the checkbox was cleared. Post-fix component coverage retains the
+cleared draft across 24 complete cloned row updates; the global editor retains
+its dirty field across 25 complete cloned runtime updates.
+
+Android implements the same transitions in
+`SettingsDraftModel.kt`, keeps coroutine/request ownership in
+`ProductEngineService`, and applies sparse generated patches from both current
+Compose settings editors. JVM tables and Compose interaction tests cover 24
+fresh torrent rows, global updates, failure, conflict, reset, resource change,
+and captured-submit convergence. iOS has no settings editor to migrate, so no
+new Apple presentation was invented. Fresh generated Swift inspection proved
+both patch records and both new command cases are present and both old cases
+are absent.
+
+SM-001 through SM-010 are covered across the Rust merge/store tests, the seven
+web reducer tables, web component/demo autoplay cases, Android reducer and
+Compose cases, generated-schema fixtures, and the controlled restart script.
+The latter establishes a peer connection at a one-byte/s gate, changes the
+fixed loopback listener while the torrent remains active, reconnects the
+libtorrent oracle to the replacement endpoint, and then releases a bounded
+256 KiB/s transfer. It also persists/reopens settings, injects a bind conflict,
+recovers in the same generation, restarts again, and verifies joined cleanup.
+
+## Validation Record
+
+Validation run on Linux on 2026-08-27:
+
+- `cargo fmt --all -- --check`, `cargo clippy --workspace -- -D warnings`, and
+  `cargo test --workspace` pass. The workspace run includes 597 engine tests
+  and 260 session tests plus every other workspace and doc-test target; only
+  declared opt-in tests are ignored.
+- `cargo check -p rstorrent-desktop` and
+  `cargo build -p rstorrent-ios --release` pass on the host.
+- `npm run generate --prefix clients/web`,
+  `npm run typecheck --prefix clients/web`, and
+  `npm run build --prefix clients/web` pass. The production build reports only
+  its existing large-bundle warning and passes the CSP gate.
+- `NODE_OPTIONS='--localstorage-file=/tmp/rstorrent-t180-vitest-localstorage.json'
+  npm run test --prefix clients/web` passes 306 tests in 46 files with two
+  declared skips. `npm run test:e2e --prefix clients/web` passes 34 cases with
+  12 opt-in live cases skipped. The two active-settings autoplay cases pass
+  separately.
+- `clients/android/build.sh` produces the dual-ABI debug APK with arm64-v8a and
+  x86_64 native libraries. `lintDebug testDebugUnitTest
+  assembleDebugAndroidTest` passes, and `connectedDebugAndroidTest` passes all
+  four tests on the configured headless `jstorrent-tablet` AVD, including both
+  new settings interactions.
+- fresh Swift generation and inspection pass on Linux. This host has no
+  `swift`, `xcodegen`, Apple Rust targets, or Xcode, so the proportional iOS
+  simulator/archive compile was unavailable; no physical-device interaction
+  was required.
+- `uv run --project tests/interop --locked python
+  tests/interop/client_settings_restart.py` passes. It verifies exactly
+  8,388,608 payload bytes and SHA-1
+  `c995f4a05e42222e94d1133536701d6edd70dbc6`, one live listener handover,
+  persisted restart, injected bind failure and recovery, zero terminal owners,
+  bounded storage/peer high-water marks, joined shutdown, cleanup, and zero
+  serious/critical Axe findings. Receipt to applied authoritative listener
+  view measured 24.1 ms in this run.
+
+## Delivery-Cost Observation And Deferral
+
+The existing producer already omits `client_settings` from an unrelated
+torrent-list patch; global settings are not blindly streamed on every active
+update. A changing torrent is still cloned and encoded as one complete
+`TorrentView`, including semantically unchanged transfer limits. Compact JSON
+measurements from the checked-in one-torrent view-set trace are 3,220 bytes for
+the initial batch, 1,157 bytes for its one-row update batch, 3,215 bytes for a
+reset batch, 915 bytes for the changed row, 64 bytes for its transfer-limits
+object, and 2,003 bytes for the complete client-settings runtime snapshot.
+
+Source inspection shows one complete Rust row clone/serialization and one
+client row/map reconstruction plus reducer/store notification per delivered
+active-row batch. The adversarial tests deliberately force 24 torrent and 25
+client-settings notifications with fresh identities; neither causes draft
+loss. Resets still replace the complete snapshot and converge by resource key
+and durable revision.
+
+These observations do not justify inventing a sparse wire shape in this
+correctness slice: the settings-specific repeated portion in the representative
+active row is 64 bytes, and unchanged global settings are already suppressed.
+The broader full-row allocation/render cost remains a real measurement target
+under `client-view-delivery-policy` and Tactical `057`. A later bounded
+optimization tactical should be opened only with representative multi-torrent
+allocation, notification, reset-rate, and render evidence; SM-010 remains its
+correctness gate.
 
 ## Non-Goals
 

@@ -53,6 +53,10 @@ ordinary peer failure ceiling while adding exact tracker-source rehabilitation
 and one slowly paced transient-failure content probe only after every ordinary
 connection action is exhausted. Tactical `158` retains its signed-candidate
 and installed-update gates unchanged.
+Completed Tactical `180` replaces the unsupported whole-value and forced-pair
+settings commands with closed typed patches and makes web/Android settings
+drafts converge by durable receipt revision under complete live updates and
+resets. Delivery-shape optimization remains separate measured work.
 Completed Tactical `170` supplies the configured ordinary-user Linux headless
 service: strict versioned root/listener/origin/auth configuration, one process
 and profile owner, a disabled-by-default systemd user unit, rollback-safe

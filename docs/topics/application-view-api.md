@@ -60,7 +60,7 @@ Tactical `049` completes the diagnostics specialization: hierarchical
 categories, structured bounded subjects and fields, capture interest,
 separate source/delivery/local loss semantics, and one ordered console over
 the existing view-set path.
-Active Tactical
+Completed Tactical
 [`180`](../tactical/180-typed-settings-patches-and-draft-convergence.md) keeps
 complete rows and fresh reset snapshots as valid authoritative input while
 making settings drafts survive unrelated live updates until a command receipt

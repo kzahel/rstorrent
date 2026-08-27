@@ -75,6 +75,16 @@ ordinary hidden-field saves; malformed durable values fail closed. Effective
 policy and TLS outcomes remain runtime facts.
 
 Completed Tactical
+[`180`](../tactical/180-typed-settings-patches-and-draft-convergence.md) changes
+no schema or durable representation. The service merges each closed typed
+client or torrent settings patch with the current complete row, validates the
+final candidate once, and commits the candidate, receipt, and resulting
+revision under the existing transaction. Omitted fields remain untouched;
+invalid combinations and injected store failure persist nothing; semantic
+no-ops retain the revision; and exact replay returns the prior receipt before
+runtime reconciliation.
+
+Completed Tactical
 [`105`](../tactical/105-fact-based-persistence-and-recheck-containment.md)
 advances the store to schema version `14` after an observed schema-13 profile
 proved that generic piece checkpoints could contradict separately persisted

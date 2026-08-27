@@ -172,6 +172,14 @@ boundary, and makes web and Android settings edits survive complete live view
 updates through receipt/revision convergence. Tactical `180` is the sole
 **Now**; Tactical `176` retains its existing macOS-only iOS compile gate.
 
+Tactical `180` is complete. Closed client/torrent patches, atomic merge and
+replay semantics, generated browser/Tauri/Android/Swift boundaries, web and
+Compose draft convergence, full repository/web/Android gates, and controlled
+active listener handover/restart/bind-recovery evidence pass. The Linux host
+could inspect but not compile the regenerated Swift boundary; Tactical `176`
+therefore resumes as the sole **Now** for its unchanged macOS-only iOS
+simulator/archive gate. Tactical `158` remains next.
+
 The updater tactical's client, production route, five-target signed hosted
 rehearsal, public `0.1.0`, `0.1.1`, and `0.1.2` releases, installed macOS arm64
 launch smoke, and exact macOS arm64 and Linux arm64 `0.1.0`-to-`0.1.1` updates
@@ -667,16 +675,10 @@ exactly.
 
 ### Now
 
-- **Tactical `180`: typed settings patches and draft convergence.** Replace
-  whole-value and forced-pair settings commands without compatibility aliases,
-  migrate every first-party boundary, and keep web/Android dirty and submitted
-  settings stable until the correlated receipt and authoritative view
-  converge. Complete rows and reset snapshots remain valid input.
+- Resume **Tactical `176`** only for its existing macOS-hosted iOS simulator/
+  archive compile; every implementation and other validation gate passes.
 
 ### Next
-
-- Resume **Tactical `176`** only for its existing macOS-hosted iOS simulator/
-  archive compile; every other implementation and validation gate passes.
 
 - Resume **Tactical `158`** and close the clean Windows and Linux x86_64
   signed replacement/relaunch evidence plus Windows firewall-consent
@@ -834,7 +836,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Hash-failure recovery | Implemented subset | deterministic, runtime, interop, live | A failed v1 generation resets the whole piece with bounded contributors. A pure-v2 or hybrid generation obtains authenticated leaf proofs, retains exact good blocks/contributors, and refetches only bad blocks; reject or stall falls back to whole-piece reset. Hybrid have requires both schemes, and a one-scheme pass is a typed terminal inconsistency. Full parole selection remains absent. | [`download-correctness`](download-correctness.md) |
 | Reliable completion on ordinary swarms | Partial | deterministic, runtime, interop, live | Multi-peer liveness, endgame, corrupt-generation retry, and bounded storage completion pass, but completion latency is not yet comparable and public corruption was not induced. | [`download-correctness`](download-correctness.md) |
 | Payload upload and seeding | Implemented | deterministic, runtime, interop, web, AVD, physical | Published and active incomplete torrents serve exact verified/readable availability and bounded 16-KiB requests through initiated or accepted TCP/uTP peers under the shared live 0--50 slot, ten-read, 40-handle, writer, and hierarchical rate bounds. Complementary RSTorrent/libtorrent ordinary, Fast, forced-MSE, cross-file, part-backed, rate-limited full-duplex, and API 34 SAF transfers capture Piece frames in both directions before completion and independently verify every final hash. Active routed torrents advertise the real tracker/DHT port with nonzero `left`; failure and lifecycle changes retract or replace authority before stale reads. Exact completed-seed local, mapped off-LAN, AVD, and physical evidence remains. Ratio/time goals and discovery-driven public incomplete-swarm reliability remain absent. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`protocol-support`](protocol-support.md) |
-| Hierarchical peer-transfer rate limits | Implemented | deterministic, persistence, runtime, interop, web, AVD | Semantic Unlimited or bounded upload/download limits compose at session and torrent levels across initiated and accepted TCP/uTP plaintext and TCP MSE streams. One torrent-first fair owner bounds grants, bursts, registrations, and waits; excludes deliberate throttling from network-stall clocks; applies live without replacing peer generations; and terminates empty. Schema-18 restart, unequal three-peer/one-peer fairness, session/torrent cap, full-duplex pinned-libtorrent, responsive React/Axe, both Android builds, and API 34 limited concurrent-transfer gates pass. The scope is established peer-stream bytes, not total-device traffic; network automation, generic weights/classes, and seeding goals remain separate. | [`application-control`](application-control.md), [`performance-and-live-evidence`](performance-and-live-evidence.md) |
+| Hierarchical peer-transfer rate limits | Implemented | deterministic, persistence, runtime, interop, web, AVD | Semantic Unlimited or bounded upload/download limits compose at session and torrent levels across initiated and accepted TCP/uTP plaintext and TCP MSE streams. One torrent-first fair owner bounds grants, bursts, registrations, and waits; excludes deliberate throttling from network-stall clocks; applies live without replacing peer generations; and terminates empty. Schema-18 restart, unequal three-peer/one-peer fairness, session/torrent cap, full-duplex pinned-libtorrent, responsive React/Axe, both Android builds, and API 34 limited concurrent-transfer gates pass. Tactical `180` replaces the old forced pair/whole-client commands with independent typed patches and makes web/Compose drafts converge by receipt revision under complete cloned updates and resets; controlled 8 MiB listener handover and bind recovery pass. The scope is established peer-stream bytes, not total-device traffic; network automation, generic weights/classes, and seeding goals remain separate. | [`application-control`](application-control.md), [`settings-mutation-and-draft-consistency`](settings-mutation-and-draft-consistency.md), [`performance-and-live-evidence`](performance-and-live-evidence.md) |
 
 ### Integrity, Storage, And Resume
 
