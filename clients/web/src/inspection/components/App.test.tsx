@@ -23,7 +23,10 @@ import type {
 } from "../../desktop-external-intake";
 import { clientSettingsRuntimeFixture } from "../../test-support/client-settings";
 import { APPEARANCE_STORAGE_KEY, type AppearanceStorage } from "../appearance";
-import { LAN_NONE_NOTICE_STORAGE_KEY } from "../lan-none-notice";
+import {
+  LAN_NONE_NOTICE_STORAGE_KEY,
+  NETWORK_NONE_NOTICE_STORAGE_KEY,
+} from "../lan-none-notice";
 import type { InspectionApplication } from "../application";
 import { InspectionProvider } from "../context";
 import { InspectionController } from "../controller";
@@ -573,7 +576,7 @@ describe("inspection application", () => {
       "lan_none",
     );
     const notice = screen.getByRole("complementary", {
-      name: "LAN security notice",
+      name: "Network security notice",
     });
     expect(within(notice).getByText("Authentication is off.")).toBeVisible();
     expect(
@@ -582,18 +585,18 @@ describe("inspection application", () => {
       ),
     ).toBeVisible();
     expect(
-      screen.getByLabelText("LAN access has no authentication"),
+      screen.getByLabelText("Network access has no authentication"),
     ).toHaveTextContent("No auth");
 
     await user.click(screen.getByRole("button", { name: "Got it" }));
     expect(
-      screen.queryByRole("complementary", { name: "LAN security notice" }),
+      screen.queryByRole("complementary", { name: "Network security notice" }),
     ).not.toBeInTheDocument();
     expect(globalThis.localStorage.getItem(LAN_NONE_NOTICE_STORAGE_KEY)).toBe(
       "true",
     );
     expect(
-      screen.getByLabelText("LAN access has no authentication"),
+      screen.getByLabelText("Network access has no authentication"),
     ).toBeVisible();
 
     first.unmount();
@@ -611,11 +614,45 @@ describe("inspection application", () => {
       "lan_none",
     );
     expect(
-      screen.queryByRole("complementary", { name: "LAN security notice" }),
+      screen.queryByRole("complementary", { name: "Network security notice" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByLabelText("LAN access has no authentication"),
+      screen.getByLabelText("Network access has no authentication"),
     ).toBeVisible();
+  });
+
+  it("describes trusted-network owner exposure once per browser", async () => {
+    const user = userEvent.setup();
+    renderApplication(
+      new DemoApplication({
+        scenarioId: "empty-library",
+        elapsedMs: 0,
+        running: false,
+      }),
+      null,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "network_none",
+    );
+    const notice = screen.getByRole("complementary", {
+      name: "Network security notice",
+    });
+    expect(
+      within(notice).getByText(
+        "Every device that can reach this service has full owner control.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByLabelText("Network access has no authentication"),
+    ).toHaveTextContent("No auth");
+
+    await user.click(within(notice).getByRole("button", { name: "Got it" }));
+    expect(globalThis.localStorage.getItem(NETWORK_NONE_NOTICE_STORAGE_KEY)).toBe(
+      "true",
+    );
+    expect(globalThis.localStorage.getItem(LAN_NONE_NOTICE_STORAGE_KEY)).toBeNull();
   });
 
   it("shows notification settings only when the desktop capability is injected", async () => {

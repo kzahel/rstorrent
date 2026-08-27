@@ -4,8 +4,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   LAN_NONE_NOTICE_STORAGE_KEY,
-  loadLanNoneNoticeDismissed,
-  saveLanNoneNoticeDismissed,
+  NETWORK_NONE_NOTICE_STORAGE_KEY,
+  loadCredentialFreeNoticeDismissed,
+  saveCredentialFreeNoticeDismissed,
 } from "./lan-none-notice";
 
 describe("credential-free LAN notice preference", () => {
@@ -16,25 +17,31 @@ describe("credential-free LAN notice preference", () => {
       setItem: (key: string, value: string) => values.set(key, value),
     };
 
-    expect(loadLanNoneNoticeDismissed(storage)).toBe(false);
+    expect(loadCredentialFreeNoticeDismissed("lan_none", storage)).toBe(false);
     values.set(LAN_NONE_NOTICE_STORAGE_KEY, "yes");
-    expect(loadLanNoneNoticeDismissed(storage)).toBe(false);
-    saveLanNoneNoticeDismissed(storage);
+    expect(loadCredentialFreeNoticeDismissed("lan_none", storage)).toBe(false);
+    saveCredentialFreeNoticeDismissed("lan_none", storage);
     expect(values.get(LAN_NONE_NOTICE_STORAGE_KEY)).toBe("true");
-    expect(loadLanNoneNoticeDismissed(storage)).toBe(true);
+    expect(loadCredentialFreeNoticeDismissed("lan_none", storage)).toBe(true);
+
+    saveCredentialFreeNoticeDismissed("network_none", storage);
+    expect(values.get(NETWORK_NONE_NOTICE_STORAGE_KEY)).toBe("true");
+    expect(loadCredentialFreeNoticeDismissed("network_none", storage)).toBe(
+      true,
+    );
   });
 
   it("fails open to a visible notice when browser storage is unavailable", () => {
-    expect(loadLanNoneNoticeDismissed(null)).toBe(false);
+    expect(loadCredentialFreeNoticeDismissed("network_none", null)).toBe(false);
     expect(
-      loadLanNoneNoticeDismissed({
+      loadCredentialFreeNoticeDismissed("network_none", {
         getItem: () => {
           throw new Error("storage unavailable");
         },
       }),
     ).toBe(false);
     expect(() =>
-      saveLanNoneNoticeDismissed({
+      saveCredentialFreeNoticeDismissed("network_none", {
         setItem: () => {
           throw new Error("storage unavailable");
         },

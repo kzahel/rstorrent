@@ -12,24 +12,51 @@ use rstorrent_session::{
 use serde::Deserialize;
 use url::Url;
 
-pub const CONFIG_VERSION: u32 = 1;
+pub const CONFIG_VERSION: u32 = 2;
+pub const LEGACY_CONFIG_VERSION: u32 = 1;
 pub const MAX_CONFIG_BYTES: usize = 64 * 1024;
+pub const MAX_ENDPOINTS: usize = 4;
 pub const MAX_USERNAME_BYTES: usize = 64;
 pub const MAX_PASSWORD_BYTES: usize = 128;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HeadlessConfig {
+    pub version: u32,
     pub profile_root: PathBuf,
-    pub listen: SocketAddr,
-    pub public_origin: String,
+    pub endpoints: Vec<HeadlessEndpoint>,
     pub storage_roots: Vec<ConfiguredStorageRoot>,
     pub authentication: AuthenticationConfig,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HeadlessEndpoint {
+    pub kind: HeadlessEndpointKind,
+    pub listen: SocketAddr,
+    pub public_origin: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HeadlessEndpointKind {
+    Standard,
+    DirectLan,
+    TailscaleServe,
+}
+
+impl HeadlessEndpointKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Standard => "standard",
+            Self::DirectLan => "direct-lan",
+            Self::TailscaleServe => "tailscale-serve",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AuthenticationConfig {
     LocalBrowser,
     LanNone,
+    TrustedNetworkNone,
     Basic {
         username: String,
         password_file: PathBuf,
@@ -41,6 +68,7 @@ impl AuthenticationConfig {
         match self {
             Self::LocalBrowser => "local-browser",
             Self::LanNone => "lan-none",
+            Self::TrustedNetworkNone => "trusted-network-none",
             Self::Basic { .. } => "basic",
         }
     }
@@ -57,11 +85,23 @@ impl HeadlessConfig {
             })
             .collect::<Vec<_>>()
             .join(",");
+        let endpoints = self
+            .endpoints
+            .iter()
+            .map(|endpoint| {
+                format!(
+                    "{}@{}=>{}",
+                    endpoint.kind.name(),
+                    endpoint.listen,
+                    endpoint.public_origin
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",");
         format!(
-            "config_version={CONFIG_VERSION} profile_root={} listen={} public_origin={} authentication={} storage_roots=[{roots}]",
+            "config_version={} profile_root={} endpoints=[{endpoints}] authentication={} storage_roots=[{roots}]",
+            self.version,
             self.profile_root.display(),
-            self.listen,
-            self.public_origin,
             self.authentication.mode_name(),
         )
     }
@@ -125,14 +165,37 @@ impl std::error::Error for ConfigError {
 }
 
 #[derive(Deserialize)]
+struct RawVersion {
+    version: u32,
+}
+
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RawConfig {
+struct RawConfigV1 {
     version: u32,
     profile_root: String,
     listen: String,
     public_origin: String,
     storage_roots: Vec<RawStorageRoot>,
     authentication: RawAuthentication,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawConfigV2 {
+    version: u32,
+    profile_root: String,
+    endpoints: Vec<RawEndpoint>,
+    storage_roots: Vec<RawStorageRoot>,
+    authentication: RawAuthentication,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawEndpoint {
+    kind: String,
+    listen: String,
+    public_origin: String,
 }
 
 #[derive(Deserialize)]
@@ -159,11 +222,23 @@ pub fn parse(bytes: &[u8]) -> Result<HeadlessConfig, ConfigError> {
     }
     let source =
         std::str::from_utf8(bytes).map_err(|_| invalid("configuration is not valid UTF-8"))?;
-    let raw: RawConfig = toml::from_str(source)
+    let version: RawVersion = toml::from_str(source)
         .map_err(|error| invalid(format!("invalid configuration: {error}")))?;
-    if raw.version != CONFIG_VERSION {
+    match version.version {
+        LEGACY_CONFIG_VERSION => parse_v1(source),
+        CONFIG_VERSION => parse_v2(source),
+        _ => Err(invalid(format!(
+            "configuration version must be {LEGACY_CONFIG_VERSION} or {CONFIG_VERSION}"
+        ))),
+    }
+}
+
+fn parse_v1(source: &str) -> Result<HeadlessConfig, ConfigError> {
+    let raw: RawConfigV1 = toml::from_str(source)
+        .map_err(|error| invalid(format!("invalid configuration: {error}")))?;
+    if raw.version != LEGACY_CONFIG_VERSION {
         return Err(invalid(format!(
-            "configuration version must be {CONFIG_VERSION}"
+            "legacy configuration version must be {LEGACY_CONFIG_VERSION}"
         )));
     }
 
@@ -174,17 +249,113 @@ pub fn parse(bytes: &[u8]) -> Result<HeadlessConfig, ConfigError> {
         .map_err(|_| invalid("listen must be one concrete IP socket address"))?;
     validate_listener_basics(listen)?;
     let public_origin = validate_origin(&raw.public_origin)?;
-    let authentication = validate_authentication(raw.authentication, listen, &public_origin)?;
+    let authentication = validate_v1_authentication(raw.authentication, listen, &public_origin)?;
+    let kind = if matches!(authentication, AuthenticationConfig::LanNone) {
+        HeadlessEndpointKind::DirectLan
+    } else {
+        HeadlessEndpointKind::Standard
+    };
+    let storage_roots = validate_storage_roots(&profile_root, raw.storage_roots)?;
 
-    if raw.storage_roots.is_empty() || raw.storage_roots.len() > MAX_STORAGE_ROOTS {
+    Ok(HeadlessConfig {
+        version: raw.version,
+        profile_root,
+        endpoints: vec![HeadlessEndpoint {
+            kind,
+            listen,
+            public_origin,
+        }],
+        storage_roots,
+        authentication,
+    })
+}
+
+fn parse_v2(source: &str) -> Result<HeadlessConfig, ConfigError> {
+    let raw: RawConfigV2 = toml::from_str(source)
+        .map_err(|error| invalid(format!("invalid configuration: {error}")))?;
+    if raw.version != CONFIG_VERSION {
+        return Err(invalid(format!(
+            "configuration version must be {CONFIG_VERSION}"
+        )));
+    }
+    if raw.authentication.mode != "trusted-network-none"
+        || raw.authentication.username.is_some()
+        || raw.authentication.password_file.is_some()
+    {
+        return Err(invalid(
+            "version 2 requires trusted-network-none authentication without credential fields",
+        ));
+    }
+    if raw.endpoints.is_empty() || raw.endpoints.len() > MAX_ENDPOINTS {
+        return Err(invalid(format!(
+            "endpoints must contain 1..={MAX_ENDPOINTS} entries"
+        )));
+    }
+
+    let profile_root = validate_path(&raw.profile_root, "profile_root")?;
+    let mut listens = BTreeSet::new();
+    let mut origins = BTreeSet::new();
+    let mut endpoints = Vec::with_capacity(raw.endpoints.len());
+    for endpoint in raw.endpoints {
+        let listen = endpoint
+            .listen
+            .parse::<SocketAddr>()
+            .map_err(|_| invalid("endpoint listen must be one concrete IP socket address"))?;
+        validate_listener_basics(listen)?;
+        let public_origin = validate_origin(&endpoint.public_origin)?;
+        let kind = match endpoint.kind.as_str() {
+            "direct-lan" => {
+                validate_direct_lan_endpoint(listen, &public_origin)?;
+                HeadlessEndpointKind::DirectLan
+            }
+            "tailscale-serve" => {
+                validate_tailscale_serve_endpoint(listen, &public_origin)?;
+                HeadlessEndpointKind::TailscaleServe
+            }
+            _ => {
+                return Err(invalid(
+                    "endpoint kind must be direct-lan or tailscale-serve",
+                ));
+            }
+        };
+        if !listens.insert(listen) {
+            return Err(invalid(format!("endpoint listen {listen} is duplicated")));
+        }
+        if !origins.insert(public_origin.clone()) {
+            return Err(invalid(format!(
+                "endpoint public_origin {public_origin} is duplicated"
+            )));
+        }
+        endpoints.push(HeadlessEndpoint {
+            kind,
+            listen,
+            public_origin,
+        });
+    }
+    let storage_roots = validate_storage_roots(&profile_root, raw.storage_roots)?;
+
+    Ok(HeadlessConfig {
+        version: raw.version,
+        profile_root,
+        endpoints,
+        storage_roots,
+        authentication: AuthenticationConfig::TrustedNetworkNone,
+    })
+}
+
+fn validate_storage_roots(
+    profile_root: &Path,
+    raw_storage_roots: Vec<RawStorageRoot>,
+) -> Result<Vec<ConfiguredStorageRoot>, ConfigError> {
+    if raw_storage_roots.is_empty() || raw_storage_roots.len() > MAX_STORAGE_ROOTS {
         return Err(invalid(format!(
             "storage_roots must contain 1..={MAX_STORAGE_ROOTS} entries"
         )));
     }
     let mut ids = BTreeSet::new();
     let mut paths = BTreeSet::new();
-    let mut storage_roots = Vec::with_capacity(raw.storage_roots.len());
-    for root in raw.storage_roots {
+    let mut storage_roots = Vec::with_capacity(raw_storage_roots.len());
+    for root in raw_storage_roots {
         validate_identifier(&root.id)?;
         if root.label.is_empty()
             || root.label.len() > MAX_ROOT_LABEL_LENGTH
@@ -207,7 +378,7 @@ pub fn parse(bytes: &[u8]) -> Result<HeadlessConfig, ConfigError> {
                 path.display()
             )));
         }
-        if paths_overlap(&profile_root, &path) {
+        if paths_overlap(profile_root, &path) {
             return Err(invalid(format!(
                 "storage root {} overlaps profile_root",
                 root.id
@@ -216,13 +387,7 @@ pub fn parse(bytes: &[u8]) -> Result<HeadlessConfig, ConfigError> {
         storage_roots.push(ConfiguredStorageRoot::path(root.id, path).with_label(root.label));
     }
 
-    Ok(HeadlessConfig {
-        profile_root,
-        listen,
-        public_origin,
-        storage_roots,
-        authentication,
-    })
+    Ok(storage_roots)
 }
 
 pub fn load(path: &Path) -> Result<HeadlessConfig, ConfigError> {
@@ -312,7 +477,7 @@ pub fn load_basic_credentials(config: &HeadlessConfig) -> Result<BasicCredential
     })
 }
 
-fn validate_authentication(
+fn validate_v1_authentication(
     raw: RawAuthentication,
     listen: SocketAddr,
     public_origin: &str,
@@ -376,28 +541,61 @@ fn validate_authentication(
                     "lan-none authentication does not accept username or password_file",
                 ));
             }
-            let IpAddr::V4(address) = listen.ip() else {
-                return Err(invalid(
-                    "lan-none requires one exact non-loopback RFC 1918 IPv4 listener",
-                ));
-            };
-            if address.is_loopback() || !address.is_private() {
-                return Err(invalid(
-                    "lan-none requires one exact non-loopback RFC 1918 IPv4 listener",
-                ));
-            }
-            let expected = format!("http://{listen}");
-            if public_origin != expected {
-                return Err(invalid(format!(
-                    "lan-none public_origin must be exactly {expected}"
-                )));
-            }
+            validate_direct_lan_endpoint(listen, public_origin)?;
             Ok(AuthenticationConfig::LanNone)
         }
         _ => Err(invalid(
             "authentication mode must be local-browser, lan-none, or basic",
         )),
     }
+}
+
+fn validate_direct_lan_endpoint(
+    listen: SocketAddr,
+    public_origin: &str,
+) -> Result<(), ConfigError> {
+    let IpAddr::V4(address) = listen.ip() else {
+        return Err(invalid(
+            "direct-lan requires one exact non-loopback RFC 1918 IPv4 listener",
+        ));
+    };
+    if address.is_loopback() || !address.is_private() {
+        return Err(invalid(
+            "direct-lan requires one exact non-loopback RFC 1918 IPv4 listener",
+        ));
+    }
+    let expected = format!("http://{listen}");
+    if public_origin != expected {
+        return Err(invalid(format!(
+            "direct-lan public_origin must be exactly {expected}"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_tailscale_serve_endpoint(
+    listen: SocketAddr,
+    public_origin: &str,
+) -> Result<(), ConfigError> {
+    if !listen.is_ipv4() || !listen.ip().is_loopback() {
+        return Err(invalid(
+            "tailscale-serve requires one exact IPv4 loopback listener",
+        ));
+    }
+    let origin = Url::parse(public_origin)
+        .map_err(|_| invalid("tailscale-serve public_origin is invalid"))?;
+    let host = origin
+        .host_str()
+        .ok_or_else(|| invalid("tailscale-serve public_origin has no host"))?;
+    if origin.scheme() != "https"
+        || !host.ends_with(".ts.net")
+        || host.trim_end_matches(".ts.net").is_empty()
+    {
+        return Err(invalid(
+            "tailscale-serve requires one exact HTTPS *.ts.net public_origin",
+        ));
+    }
+    Ok(())
 }
 
 fn validate_listener_basics(listen: SocketAddr) -> Result<(), ConfigError> {
@@ -607,7 +805,10 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
 
-    use super::{AuthenticationConfig, MAX_CONFIG_BYTES, load, load_basic_credentials, parse};
+    use super::{
+        AuthenticationConfig, HeadlessEndpointKind, MAX_CONFIG_BYTES, load, load_basic_credentials,
+        parse,
+    };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
 
@@ -663,6 +864,31 @@ password_file = "/var/lib/rstorrent/password"
             )
     }
 
+    fn trusted_network_config() -> String {
+        r#"version = 2
+profile_root = "/var/lib/rstorrent/profile"
+
+[[endpoints]]
+kind = "direct-lan"
+listen = "192.168.1.20:3030"
+public_origin = "http://192.168.1.20:3030"
+
+[[endpoints]]
+kind = "tailscale-serve"
+listen = "127.0.0.1:3031"
+public_origin = "https://rstorrent.example-tailnet.ts.net:8445"
+
+[[storage_roots]]
+id = "downloads"
+label = "Downloads"
+path = "/srv/media/torrents"
+
+[authentication]
+mode = "trusted-network-none"
+"#
+        .to_owned()
+    }
+
     #[test]
     fn parses_valid_authentication_configurations() {
         let basic = parse(basic_config().as_bytes()).expect("valid Basic configuration");
@@ -674,6 +900,19 @@ password_file = "/var/lib/rstorrent/password"
         assert_eq!(local.authentication, AuthenticationConfig::LocalBrowser);
         let lan = parse(lan_none_config().as_bytes()).expect("valid private LAN configuration");
         assert_eq!(lan.authentication, AuthenticationConfig::LanNone);
+        let trusted = parse(trusted_network_config().as_bytes())
+            .expect("valid trusted-network configuration");
+        assert_eq!(trusted.version, 2);
+        assert_eq!(
+            trusted.authentication,
+            AuthenticationConfig::TrustedNetworkNone
+        );
+        assert_eq!(trusted.endpoints.len(), 2);
+        assert_eq!(trusted.endpoints[0].kind, HeadlessEndpointKind::DirectLan);
+        assert_eq!(
+            trusted.endpoints[1].kind,
+            HeadlessEndpointKind::TailscaleServe
+        );
     }
 
     #[test]
@@ -682,9 +921,47 @@ password_file = "/var/lib/rstorrent/password"
         assert!(parse(unknown.as_bytes()).is_err());
         let duplicate = basic_config().replace("version = 1", "version = 1\nversion = 1");
         assert!(parse(duplicate.as_bytes()).is_err());
-        let version = basic_config().replace("version = 1", "version = 2");
+        let version = basic_config().replace("version = 1", "version = 3");
         assert!(parse(version.as_bytes()).is_err());
         assert!(parse(&vec![b'x'; MAX_CONFIG_BYTES + 1]).is_err());
+    }
+
+    #[test]
+    fn rejects_unsafe_or_ambiguous_trusted_network_endpoints() {
+        for invalid in [
+            trusted_network_config().replace("192.168.1.20:3030", "100.76.216.59:3030"),
+            trusted_network_config().replace("192.168.1.20:3030", "0.0.0.0:3030"),
+            trusted_network_config().replace("127.0.0.1:3031", "192.168.1.20:3031"),
+            trusted_network_config().replace("https://", "http://"),
+            trusted_network_config()
+                .replace("rstorrent.example-tailnet.ts.net", "rstorrent.example.com"),
+            trusted_network_config().replace("tailscale-serve", "generic-proxy"),
+            trusted_network_config().replace(
+                "mode = \"trusted-network-none\"",
+                "mode = \"trusted-network-none\"\nusername = \"owner\"",
+            ),
+            trusted_network_config().replace(
+                "listen = \"127.0.0.1:3031\"",
+                "listen = \"192.168.1.20:3030\"",
+            ),
+            trusted_network_config().replace(
+                "public_origin = \"https://rstorrent.example-tailnet.ts.net:8445\"",
+                "public_origin = \"http://192.168.1.20:3030\"",
+            ),
+        ] {
+            assert!(parse(invalid.as_bytes()).is_err(), "accepted:\n{invalid}");
+        }
+
+        let duplicate_listen = trusted_network_config().replace(
+            "kind = \"direct-lan\"\nlisten = \"192.168.1.20:3030\"\npublic_origin = \"http://192.168.1.20:3030\"",
+            "kind = \"tailscale-serve\"\nlisten = \"127.0.0.1:3031\"\npublic_origin = \"https://first.example-tailnet.ts.net:8446\"",
+        );
+        assert!(parse(duplicate_listen.as_bytes()).is_err());
+        let duplicate_origin = trusted_network_config().replace(
+            "kind = \"direct-lan\"\nlisten = \"192.168.1.20:3030\"\npublic_origin = \"http://192.168.1.20:3030\"",
+            "kind = \"tailscale-serve\"\nlisten = \"127.0.0.1:3032\"\npublic_origin = \"https://rstorrent.example-tailnet.ts.net:8445\"",
+        );
+        assert!(parse(duplicate_origin.as_bytes()).is_err());
     }
 
     #[test]

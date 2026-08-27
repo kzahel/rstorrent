@@ -14,7 +14,11 @@ const MAX_RESPONSE_BYTES = 16_384;
 const HOST_DISCOVERY_TIMEOUT_MS = 5_000;
 const APPLY_COMMAND = "$HOME/.local/bin/rstorrent-headless update --apply";
 
-export type HostedAccessMode = "basic" | "browser_session" | "lan_none";
+export type HostedAccessMode =
+  | "basic"
+  | "browser_session"
+  | "lan_none"
+  | "network_none";
 
 export interface HeadlessHostIntegration {
   readonly accessMode: HostedAccessMode;
@@ -49,7 +53,8 @@ export async function createHeadlessHostIntegration(
     if (
       accessMode !== "basic" &&
       accessMode !== "browser_session" &&
-      accessMode !== "lan_none"
+      accessMode !== "lan_none" &&
+      accessMode !== "network_none"
     ) {
       throw new Error("Headless health omitted its exact access mode");
     }

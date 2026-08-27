@@ -39,8 +39,9 @@ use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use rstorrent_platform::{DownloadDirectoryPicker, NativeDownloadDirectoryPicker, PickerError};
 use rstorrent_session::{
     AddTorrentBytesRequest, ApplicationService, CONTROL_VERSION, FileIndexRange,
-    FileSelectionIntent, OpenViewSetRequest, RequestEnvelope, StorageRootSnapshot,
-    UpdateViewSetRequest, ViewSetError, ViewSetOwner, application_error_response,
+    FileSelectionIntent, MediaUrlOutcome, MediaUrlResponse, OpenViewSetRequest, RequestEnvelope,
+    StorageRootSnapshot, UpdateViewSetRequest, ViewSetError, ViewSetOwner,
+    application_error_response,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -84,6 +85,7 @@ pub enum GatewayAuthentication {
     Bearer { token: String },
     Basic(BasicCredentials),
     PrivateLanNone,
+    TailscaleServeNone,
     Web(WebAuthenticationConfig),
     UnauthenticatedLoopbackDevelopment,
 }
@@ -132,6 +134,7 @@ impl fmt::Debug for GatewayAuthentication {
             Self::Bearer { .. } => formatter.write_str("Bearer { token: [redacted] }"),
             Self::Basic(_) => formatter.write_str("Basic { credential: [redacted] }"),
             Self::PrivateLanNone => formatter.write_str("PrivateLanNone"),
+            Self::TailscaleServeNone => formatter.write_str("TailscaleServeNone"),
             Self::Web(config) => formatter.debug_tuple("Web").field(config).finish(),
             Self::UnauthenticatedLoopbackDevelopment => {
                 formatter.write_str("UnauthenticatedLoopbackDevelopment")
@@ -208,6 +211,19 @@ impl GatewayConfig {
                     "credential-free LAN origin must be exactly {expected_origin}"
                 )));
             }
+        }
+        if matches!(
+            self.authentication,
+            GatewayAuthentication::TailscaleServeNone
+        ) && (!self.bind.is_ipv4()
+            || !self.bind.ip().is_loopback()
+            || self.bind.port() == 0
+            || !is_tailscale_https_origin(&self.allowed_origin))
+        {
+            return Err(GatewayError::Configuration(
+                "credential-free Tailscale Serve hosting requires one exact IPv4 loopback bind and HTTPS *.ts.net origin"
+                    .to_owned(),
+            ));
         }
         if matches!(self.authentication, GatewayAuthentication::Web(_))
             && !self.bind.ip().is_loopback()
@@ -317,6 +333,7 @@ pub enum HostedAccessMode {
     Basic,
     BrowserSession,
     LanNone,
+    NetworkNone,
 }
 
 impl HostedAccessMode {
@@ -325,6 +342,7 @@ impl HostedAccessMode {
             Self::Basic => "basic",
             Self::BrowserSession => "browser_session",
             Self::LanNone => "lan_none",
+            Self::NetworkNone => "network_none",
         }
     }
 }
@@ -507,6 +525,7 @@ struct GatewayState {
     allowed_origin: Arc<str>,
     allowed_host: Arc<str>,
     media_host: Arc<str>,
+    media_origin: Arc<str>,
     service: Arc<Mutex<ApplicationService>>,
     connections: Arc<Semaphore>,
     torrent_uploads: Arc<Semaphore>,
@@ -567,10 +586,11 @@ pub async fn bind_hosted(
         config.authentication,
         GatewayAuthentication::Basic(_)
             | GatewayAuthentication::PrivateLanNone
+            | GatewayAuthentication::TailscaleServeNone
             | GatewayAuthentication::Web(_)
     ) {
         return Err(GatewayError::Configuration(
-            "hosted web assets require basic, credential-free private LAN, or browser-session authentication"
+            "hosted web assets require basic, credential-free trusted-network, or browser-session authentication"
                 .to_owned(),
         ));
     }
@@ -593,10 +613,11 @@ pub async fn prepare_hosted(
         config.authentication,
         GatewayAuthentication::Basic(_)
             | GatewayAuthentication::PrivateLanNone
+            | GatewayAuthentication::TailscaleServeNone
             | GatewayAuthentication::Web(_)
     ) {
         return Err(GatewayError::Configuration(
-            "hosted web assets require basic, credential-free private LAN, or browser-session authentication"
+            "hosted web assets require basic, credential-free trusted-network, or browser-session authentication"
                 .to_owned(),
         ));
     }
@@ -753,6 +774,7 @@ async fn prepare_with_picker_and_assets(
     let media_origin = match &config.authentication {
         GatewayAuthentication::Basic(_)
         | GatewayAuthentication::PrivateLanNone
+        | GatewayAuthentication::TailscaleServeNone
         | GatewayAuthentication::Web(_) => config.allowed_origin.trim_end_matches('/').to_owned(),
         GatewayAuthentication::Bearer { .. }
         | GatewayAuthentication::UnauthenticatedLoopbackDevelopment => {
@@ -798,13 +820,30 @@ impl PreparedGateway {
         self,
         service: Arc<Mutex<ApplicationService>>,
     ) -> Result<GatewayServer, GatewayError> {
+        self.attach_inner(service, true).await
+    }
+
+    pub async fn attach_to_configured_service(
+        self,
+        service: Arc<Mutex<ApplicationService>>,
+    ) -> Result<GatewayServer, GatewayError> {
+        self.attach_inner(service, false).await
+    }
+
+    async fn attach_inner(
+        self,
+        service: Arc<Mutex<ApplicationService>>,
+        configure_media_origin: bool,
+    ) -> Result<GatewayServer, GatewayError> {
         ApplicationService::ensure_maintenance_owner(&service).await;
         #[cfg(test)]
         let prevalidated_for_test =
             matches!(self.validation, GatewayValidation::PrevalidatedForTest);
         #[cfg(not(test))]
         let prevalidated_for_test = false;
-        let media_configuration = if prevalidated_for_test {
+        let media_configuration = if !configure_media_origin {
+            Ok(())
+        } else if prevalidated_for_test {
             service
                 .lock()
                 .await
@@ -834,6 +873,7 @@ impl PreparedGateway {
             allowed_origin: Arc::from(self.config.allowed_origin),
             allowed_host: Arc::from(self.local_addr.to_string()),
             media_host: Arc::from(self.media_host),
+            media_origin: Arc::from(self.media_origin),
             service,
             connections: Arc::new(Semaphore::new(self.config.max_connections)),
             torrent_uploads: Arc::new(Semaphore::new(1)),
@@ -859,6 +899,14 @@ pub struct GatewayServer {
     state: GatewayState,
 }
 
+struct GatewayServeGuard(CancellationToken);
+
+impl Drop for GatewayServeGuard {
+    fn drop(&mut self) {
+        self.0.cancel();
+    }
+}
+
 impl fmt::Debug for GatewayServer {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -880,6 +928,7 @@ impl GatewayServer {
     pub async fn serve(self, shutdown: CancellationToken) -> Result<(), GatewayError> {
         let service = self.state.service.clone();
         let gateway_shutdown = self.state.gateway_shutdown.clone();
+        let _serve_guard = GatewayServeGuard(gateway_shutdown.clone());
         let allowed_origin =
             HeaderValue::from_str(&self.state.allowed_origin).expect("validated allowed origin");
         let cors = CorsLayer::new()
@@ -1028,7 +1077,9 @@ async fn require_host_and_basic_auth(
     }
     if matches!(
         state.authentication.as_ref(),
-        GatewayAuthentication::Basic(_) | GatewayAuthentication::PrivateLanNone
+        GatewayAuthentication::Basic(_)
+            | GatewayAuthentication::PrivateLanNone
+            | GatewayAuthentication::TailscaleServeNone
     ) && request
         .headers()
         .get(header::HOST)
@@ -1284,6 +1335,20 @@ fn is_https_origin(origin: &str) -> bool {
         .is_none_or(|path| path.as_str().is_empty() || path.as_str() == "/")
 }
 
+fn is_tailscale_https_origin(origin: &str) -> bool {
+    let Ok(uri) = origin.parse::<Uri>() else {
+        return false;
+    };
+    let Some(authority) = uri.authority() else {
+        return false;
+    };
+    is_https_origin(origin)
+        && authority
+            .host()
+            .strip_suffix(".ts.net")
+            .is_some_and(|prefix| !prefix.is_empty())
+}
+
 fn validate_update_info(info: &HostedUpdateInfo) -> Result<(), GatewayError> {
     let fields = [
         info.version.as_str(),
@@ -1406,13 +1471,34 @@ async fn create_media_url(
         .create_media_url(&request.torrent_id, request.file_index)
         .await
     {
-        Ok(response) => json_response(StatusCode::OK, &response),
+        Ok(mut response) => match apply_gateway_media_origin(&mut response, &state.media_origin) {
+            Ok(()) => json_response(StatusCode::OK, &response),
+            Err(message) => api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ApiErrorCode::Internal,
+                message,
+            ),
+        },
         Err(error) => api_error(
             StatusCode::INTERNAL_SERVER_ERROR,
             ApiErrorCode::Internal,
             &error.to_string(),
         ),
     }
+}
+
+fn apply_gateway_media_origin(
+    response: &mut MediaUrlResponse,
+    media_origin: &str,
+) -> Result<(), &'static str> {
+    let MediaUrlOutcome::Created { url, .. } = &mut response.outcome else {
+        return Ok(());
+    };
+    let Some((_, capability)) = url.rsplit_once("/media/v1/") else {
+        return Err("application returned a malformed media capability URL");
+    };
+    *url = format!("{media_origin}/media/v1/{capability}");
+    Ok(())
 }
 
 async fn api_torrent_upload(
@@ -1860,8 +1946,9 @@ mod tests {
         GatewayAuthentication, GatewayConfig, GatewayValidation, HostedAccessMode, HostedAssets,
         HostedUpdateCandidate, HostedUpdateCheckFuture, HostedUpdateInfo, HostedUpdateProvider,
         JSTORRENT_BETA_EXTENSION_ID, MAX_TORRENT_SOURCE_BYTES, UnavailableDownloadDirectoryPicker,
-        WebAccessPolicy, WebAuthenticationConfig, bind, bind_crostini_hosted, bind_hosted,
-        bind_local_hosted, bind_with_picker, constant_time_equal, prepare_with_picker_and_assets,
+        WebAccessPolicy, WebAuthenticationConfig, apply_gateway_media_origin, bind,
+        bind_crostini_hosted, bind_hosted, bind_local_hosted, bind_with_picker,
+        constant_time_equal, prepare_with_picker_and_assets,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -4321,6 +4408,152 @@ mod tests {
         let mut secure_proxy = valid("192.168.1.20:3030");
         secure_proxy.allowed_origin = "https://192.168.1.20:3030".to_owned();
         assert!(secure_proxy.validate().is_err());
+    }
+
+    #[test]
+    fn tailscale_serve_none_requires_exact_loopback_and_ts_net_https() {
+        let valid = GatewayConfig {
+            bind: "127.0.0.1:3031".parse().expect("loopback socket"),
+            authentication: GatewayAuthentication::TailscaleServeNone,
+            allowed_origin: "https://rstorrent.example-tailnet.ts.net:8445".to_owned(),
+            max_connections: 2,
+        };
+        valid.validate().expect("exact Tailscale Serve endpoint");
+        for (bind, origin) in [
+            ("0.0.0.0:3031", valid.allowed_origin.as_str()),
+            ("127.0.0.1:0", valid.allowed_origin.as_str()),
+            ("192.168.1.20:3031", valid.allowed_origin.as_str()),
+            ("[::1]:3031", valid.allowed_origin.as_str()),
+            (
+                "127.0.0.1:3031",
+                "http://rstorrent.example-tailnet.ts.net:8445",
+            ),
+            ("127.0.0.1:3031", "https://rstorrent.example.com:8445"),
+        ] {
+            let mut candidate = valid.clone();
+            candidate.bind = bind.parse().expect("candidate socket");
+            candidate.allowed_origin = origin.to_owned();
+            assert!(candidate.validate().is_err(), "accepted {bind} {origin}");
+        }
+    }
+
+    #[test]
+    fn media_capability_response_uses_the_serving_gateway_origin() {
+        let mut response = MediaUrlResponse {
+            torrent_id: "t1-00000000000000000000000000000000".to_owned(),
+            file_index: 0,
+            outcome: MediaUrlOutcome::Created {
+                url: "http://192.168.1.20:3030/media/v1/capability-token".to_owned(),
+                idle_timeout_millis: "1000".to_owned(),
+                absolute_timeout_millis: "2000".to_owned(),
+            },
+        };
+        apply_gateway_media_origin(
+            &mut response,
+            "https://rstorrent.example-tailnet.ts.net:8445",
+        )
+        .expect("replace media origin");
+        let MediaUrlOutcome::Created { url, .. } = response.outcome else {
+            panic!("created outcome changed")
+        };
+        assert_eq!(
+            url,
+            "https://rstorrent.example-tailnet.ts.net:8445/media/v1/capability-token"
+        );
+    }
+
+    #[tokio::test]
+    async fn tailscale_serve_none_requires_endpoint_local_host_and_origin() {
+        let root = test_root("tailscale-serve-none");
+        let web_root = root.join("web");
+        std::fs::create_dir_all(&web_root).expect("create web root");
+        std::fs::write(web_root.join("index.html"), b"tailnet-index").expect("write index");
+        let service = test_service(&root).await;
+        let origin = "https://rstorrent.example-tailnet.ts.net:8445";
+        let host = "rstorrent.example-tailnet.ts.net:8445";
+        let reservation = std::net::TcpListener::bind("127.0.0.1:0").expect("reserve port");
+        let bind = reservation.local_addr().expect("reserved address");
+        drop(reservation);
+        let assets = HostedAssets::new(web_root, "tailnet-test".to_owned())
+            .expect("hosted assets")
+            .with_access_mode(HostedAccessMode::NetworkNone);
+        let prepared = prepare_with_picker_and_assets(
+            GatewayConfig {
+                bind,
+                authentication: GatewayAuthentication::TailscaleServeNone,
+                allowed_origin: origin.to_owned(),
+                max_connections: 2,
+            },
+            Arc::new(UnavailableDownloadDirectoryPicker),
+            Some(assets),
+            GatewayValidation::Standard,
+        )
+        .await
+        .expect("prepare tailnet endpoint");
+        let server = prepared
+            .attach(service.clone())
+            .await
+            .expect("attach tailnet endpoint");
+        let address = server.local_addr();
+        let shutdown = CancellationToken::new();
+        let task = tokio::spawn(server.serve(shutdown.clone()));
+
+        assert_eq!(raw_get_with_host(address, host, "/").await.0, 200);
+        assert_eq!(
+            raw_get_with_host(address, "wrong.example:8445", "/")
+                .await
+                .0,
+            403
+        );
+        assert_eq!(
+            raw_http_request_with_host(
+                address,
+                host,
+                "GET",
+                "/api/v1/hello",
+                None,
+                Some(origin),
+                Some("00000000000000000000000000000001"),
+                None,
+                None,
+            )
+            .await
+            .0,
+            200
+        );
+        assert_eq!(
+            raw_http_request_with_host(
+                address,
+                host,
+                "GET",
+                "/api/v1/hello",
+                None,
+                Some("https://wrong.example.ts.net:8445"),
+                Some("00000000000000000000000000000001"),
+                None,
+                None,
+            )
+            .await
+            .0,
+            403
+        );
+        let (_, _, health) = raw_get_with_host(address, host, "/healthz").await;
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&health).expect("health JSON"),
+            serde_json::json!({
+                "status": "ok",
+                "build_id": "tailnet-test",
+                "access_mode": "network_none",
+            })
+        );
+
+        shutdown.cancel();
+        task.await
+            .expect("server join")
+            .expect("server termination");
+        service.lock().await.shutdown().await.expect("shutdown");
+        drop(service);
+        std::fs::remove_dir_all(root).expect("remove root");
     }
 
     #[tokio::test]

@@ -4,6 +4,14 @@
 
 No unreleased headless-service changes.
 
+## [0.1.1]
+
+- Add bounded exact multi-endpoint hosting for one direct trusted LAN and one
+  loopback-only Tailscale Serve HTTPS authority under the same application
+  owner.
+- Make the credential-free owner notice dismissible per browser origin while
+  retaining a compact `No auth` status.
+
 ## [0.1.0]
 
 - Add the configured ordinary-user Linux service and exact production React

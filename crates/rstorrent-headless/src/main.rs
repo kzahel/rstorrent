@@ -63,9 +63,14 @@ async fn execute() -> Result<(), rstorrent_headless::runtime::HeadlessError> {
     });
     let report = run_installed_service(&config_path, &layout, shutdown).await?;
     eprintln!(
-        "headless stopped version={} listen={} shutdown_millis={}",
+        "headless stopped version={} listeners={} shutdown_millis={}",
         report.version,
-        report.listen,
+        report
+            .listeners
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(","),
         report.shutdown_elapsed.as_millis()
     );
     Ok(())

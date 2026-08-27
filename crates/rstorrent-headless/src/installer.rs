@@ -509,13 +509,6 @@ struct HealthResponse {
 
 fn probe_health(config_path: &Path, version: &str) -> Result<HealthResponse, HeadlessError> {
     let config = load(config_path)?;
-    let _origin = url::Url::parse(&config.public_origin)
-        .map_err(|_| HeadlessError::configuration("configured public origin is invalid"))?;
-    let host = config
-        .public_origin
-        .split_once("://")
-        .map(|(_, authority)| authority)
-        .ok_or_else(|| HeadlessError::configuration("configured public origin has no authority"))?;
     let authorization = match &config.authentication {
         AuthenticationConfig::Basic { .. } => {
             let credentials = load_basic_credentials(&config)?;
@@ -528,9 +521,37 @@ fn probe_health(config_path: &Path, version: &str) -> Result<HealthResponse, Hea
                 ))
             ))
         }
-        AuthenticationConfig::LocalBrowser | AuthenticationConfig::LanNone => None,
+        AuthenticationConfig::LocalBrowser
+        | AuthenticationConfig::LanNone
+        | AuthenticationConfig::TrustedNetworkNone => None,
     };
-    let mut stream = TcpStream::connect_timeout(&config.listen, Duration::from_secs(2))
+    let mut primary = None;
+    for endpoint in &config.endpoints {
+        let health = probe_endpoint_health(endpoint, authorization.as_deref())?;
+        if health.status != "ok" || health.product != PRODUCT_ID || health.build_id != version {
+            return Err(HeadlessError::runtime(
+                "service health returned the wrong product or build identity",
+            ));
+        }
+        if primary.is_none() {
+            primary = Some(health);
+        }
+    }
+    primary.ok_or_else(|| HeadlessError::configuration("configuration has no endpoint"))
+}
+
+fn probe_endpoint_health(
+    endpoint: &crate::config::HeadlessEndpoint,
+    authorization: Option<&str>,
+) -> Result<HealthResponse, HeadlessError> {
+    let _origin = url::Url::parse(&endpoint.public_origin)
+        .map_err(|_| HeadlessError::configuration("configured public origin is invalid"))?;
+    let host = endpoint
+        .public_origin
+        .split_once("://")
+        .map(|(_, authority)| authority)
+        .ok_or_else(|| HeadlessError::configuration("configured public origin has no authority"))?;
+    let mut stream = TcpStream::connect_timeout(&endpoint.listen, Duration::from_secs(2))
         .map_err(|error| HeadlessError::runtime(format!("connect service health: {error}")))?;
     stream
         .set_read_timeout(Some(Duration::from_secs(3)))
@@ -538,7 +559,7 @@ fn probe_health(config_path: &Path, version: &str) -> Result<HealthResponse, Hea
     let mut request = format!("GET /healthz HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n");
     if let Some(authorization) = authorization {
         request.push_str("Authorization: ");
-        request.push_str(&authorization);
+        request.push_str(authorization);
         request.push_str("\r\n");
     }
     request.push_str("\r\n");
@@ -563,14 +584,8 @@ fn probe_health(config_path: &Path, version: &str) -> Result<HealthResponse, Hea
             "service health did not return HTTP 200",
         ));
     }
-    let health: HealthResponse = serde_json::from_slice(&response[split + 4..])
-        .map_err(|error| HeadlessError::runtime(format!("decode service health: {error}")))?;
-    if health.status != "ok" || health.product != PRODUCT_ID || health.build_id != version {
-        return Err(HeadlessError::runtime(
-            "service health returned the wrong product or build identity",
-        ));
-    }
-    Ok(health)
+    serde_json::from_slice(&response[split + 4..])
+        .map_err(|error| HeadlessError::runtime(format!("decode service health: {error}")))
 }
 
 #[allow(clippy::too_many_arguments)]

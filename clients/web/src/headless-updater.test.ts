@@ -12,6 +12,26 @@ afterEach(() => {
 });
 
 describe("headless browser updater", () => {
+  it("accepts the trusted-network credential-free access mode", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: "ok",
+          build_id: "0.1.1",
+          product: "rstorrent-headless",
+          access_mode: "network_none",
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(releaseInfo()));
+    const integration = await createHeadlessHostIntegration(
+      new URL("https://rstorrent.example-tailnet.ts.net:8445"),
+      fetcher,
+    );
+    expect(integration?.accessMode).toBe("network_none");
+    if (integration?.updater !== undefined) openUpdaters.push(integration.updater);
+  });
+
   it("reports LAN exposure and presents a signed shell-approved update", async () => {
     const fetcher = vi
       .fn()

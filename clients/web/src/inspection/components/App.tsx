@@ -17,8 +17,8 @@ import {
 } from "../document-title";
 import { formatRate } from "../format";
 import {
-  loadLanNoneNoticeDismissed,
-  saveLanNoneNoticeDismissed,
+  loadCredentialFreeNoticeDismissed,
+  saveCredentialFreeNoticeDismissed,
 } from "../lan-none-notice";
 import type { ApplicationDestination } from "../model";
 import { MAX_DETAIL_PANE_PERCENT, MIN_DETAIL_PANE_PERCENT } from "../state";
@@ -124,9 +124,16 @@ function AppContent({ webAuth, updater, notifications, power, accessMode }: AppP
   const setColorTheme = useInspectionStore((state) => state.setColorTheme);
   const setDataUnits = useInspectionStore((state) => state.setDataUnits);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [lanNoneNoticeDismissed, setLanNoneNoticeDismissed] = useState(() =>
-    loadLanNoneNoticeDismissed(),
-  );
+  const credentialFreeAccessMode =
+    accessMode === "lan_none" || accessMode === "network_none"
+      ? accessMode
+      : null;
+  const [credentialFreeNoticeDismissed, setCredentialFreeNoticeDismissed] =
+    useState(() =>
+      credentialFreeAccessMode === null
+        ? false
+        : loadCredentialFreeNoticeDismissed(credentialFreeAccessMode),
+    );
   const [settingsCategory, setSettingsCategory] =
     useState<SettingsCategory>("appearance");
   const updaterSnapshot = useDesktopUpdater(updater);
@@ -297,11 +304,11 @@ function AppContent({ webAuth, updater, notifications, power, accessMode }: AppP
           <span aria-hidden="true" />
           {session.connection === "demo" ? "Demo adapter" : session.connection}
         </div>
-        {accessMode === "lan_none" ? (
+        {credentialFreeAccessMode !== null ? (
           <span
             className={styles.lanAccessStatus}
-            aria-label="LAN access has no authentication"
-            title="Authentication is off; every device on this LAN has full owner control."
+            aria-label="Network access has no authentication"
+            title="Authentication is off; every device that can reach this service has full owner control."
           >
             No auth
           </span>
@@ -322,18 +329,26 @@ function AppContent({ webAuth, updater, notifications, power, accessMode }: AppP
           <Icon name="settings" />
         </button>
       </header>
-      {accessMode === "lan_none" && !lanNoneNoticeDismissed ? (
+      {credentialFreeAccessMode !== null &&
+      !credentialFreeNoticeDismissed ? (
         <div className={styles.topNotices}>
-          <aside className={styles.lanWarning} aria-label="LAN security notice">
+          <aside
+            className={styles.lanWarning}
+            aria-label="Network security notice"
+          >
             <span className={styles.lanWarningMessage}>
               <strong>Authentication is off.</strong>
-              <span>Every device on this LAN has full owner control.</span>
+              <span>
+                {credentialFreeAccessMode === "network_none"
+                  ? "Every device that can reach this service has full owner control."
+                  : "Every device on this LAN has full owner control."}
+              </span>
             </span>
             <button
               type="button"
               onClick={() => {
-                setLanNoneNoticeDismissed(true);
-                saveLanNoneNoticeDismissed();
+                setCredentialFreeNoticeDismissed(true);
+                saveCredentialFreeNoticeDismissed(credentialFreeAccessMode);
               }}
             >
               Got it

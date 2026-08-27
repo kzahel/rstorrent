@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use futures_util::future::try_join_all;
 use rstorrent_gateway::{
     GatewayAuthentication, GatewayConfig, GatewayError, HostedAccessMode, HostedAssets,
     WebAuthenticationConfig, prepare_hosted,
@@ -17,8 +18,8 @@ use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::config::{
-    AuthenticationConfig, ConfigError, HeadlessConfig, load, load_basic_credentials,
-    validate_runtime_paths,
+    AuthenticationConfig, ConfigError, HeadlessConfig, HeadlessEndpoint, HeadlessEndpointKind,
+    load, load_basic_credentials, validate_runtime_paths,
 };
 use crate::updater::{HeadlessUpdateProvider, UpdateError};
 use crate::{PACKAGE_ID, PRODUCT_ID};
@@ -198,7 +199,7 @@ impl InstalledLayout {
 
 #[derive(Clone, Debug)]
 pub struct ServiceReport {
-    pub listen: SocketAddr,
+    pub listeners: Vec<SocketAddr>,
     pub version: String,
     pub shutdown_elapsed: Duration,
 }
@@ -215,30 +216,33 @@ pub async fn run_installed_service(
         &[&layout.application_root, &layout.release_root],
     )?;
     let access_mode = hosted_access_mode(&config.authentication);
-    let authentication = gateway_authentication(&config)?;
-    let browser_sessions = matches!(authentication, GatewayAuthentication::Web(_));
+    let browser_sessions = matches!(config.authentication, AuthenticationConfig::LocalBrowser);
     if browser_sessions {
         create_profile_root(&config.profile_root)?;
     }
-    let gateway_config = GatewayConfig {
-        bind: config.listen,
-        authentication,
-        allowed_origin: config.public_origin.clone(),
-        max_connections: rstorrent_gateway::MAX_CONNECTIONS,
-    };
     let update_provider = Arc::new(HeadlessUpdateProvider::production(layout.version.clone())?);
     let assets = layout
         .hosted_assets()?
         .with_access_mode(access_mode)
         .with_update_provider(update_provider)
         .map_err(configuration_gateway_error)?;
-    let prepared = prepare_hosted(gateway_config, assets)
-        .await
-        .map_err(configuration_gateway_error)?;
+    let mut prepared = Vec::with_capacity(config.endpoints.len());
+    for endpoint in &config.endpoints {
+        let gateway_config = GatewayConfig {
+            bind: endpoint.listen,
+            authentication: gateway_authentication(&config, endpoint)?,
+            allowed_origin: endpoint.public_origin.clone(),
+            max_connections: rstorrent_gateway::MAX_CONNECTIONS,
+        };
+        prepared.push(
+            prepare_hosted(gateway_config, assets.clone())
+                .await
+                .map_err(configuration_gateway_error)?,
+        );
+    }
     if !browser_sessions {
         create_profile_root(&config.profile_root)?;
     }
-    let listen = prepared.local_addr();
     let application_config = ApplicationConfig::new(
         config.profile_root.clone(),
         "default".to_owned(),
@@ -255,25 +259,58 @@ pub async fn run_installed_service(
         .await
         .map_err(configuration_application_error)?;
     let application = Arc::new(Mutex::new(application));
-    let server = match prepared.attach(application.clone()).await {
+    let first = prepared.remove(0);
+    let first_server = match first.attach(application.clone()).await {
         Ok(server) => server,
         Err(error) => {
             let _ = application.lock().await.shutdown().await;
             return Err(configuration_gateway_error(error));
         }
     };
+    let mut servers = vec![first_server];
+    for endpoint in prepared {
+        let server = match endpoint
+            .attach_to_configured_service(application.clone())
+            .await
+        {
+            Ok(server) => server,
+            Err(error) => {
+                let _ = application.lock().await.shutdown().await;
+                return Err(configuration_gateway_error(error));
+            }
+        };
+        servers.push(server);
+    }
     eprintln!("headless {}", config.redacted_summary());
+    let listeners = servers
+        .iter()
+        .map(|server| server.local_addr())
+        .collect::<Vec<_>>();
     eprintln!(
-        "headless product={} version={} listening={listen}",
-        PRODUCT_ID, layout.version
+        "headless product={} version={} listening={}",
+        PRODUCT_ID,
+        layout.version,
+        listeners
+            .iter()
+            .map(SocketAddr::to_string)
+            .collect::<Vec<_>>()
+            .join(",")
     );
-    if matches!(config.authentication, AuthenticationConfig::LanNone) {
+    if matches!(
+        config.authentication,
+        AuthenticationConfig::LanNone | AuthenticationConfig::TrustedNetworkNone
+    ) {
         eprintln!(
-            "headless warning=authentication-disabled every-client-on-this-LAN-has-full-owner-control"
+            "headless warning=authentication-disabled every-reachable-client-has-full-owner-control"
         );
     }
 
-    let serve_result = server.serve(shutdown).await;
+    let serve_result = try_join_all(
+        servers
+            .into_iter()
+            .map(|server| server.serve(shutdown.clone())),
+    )
+    .await;
     let shutdown_started = Instant::now();
     let application_shutdown = application.lock().await.shutdown().await;
     let shutdown_elapsed = shutdown_started.elapsed();
@@ -282,13 +319,16 @@ pub async fn run_installed_service(
     }
     application_shutdown.map_err(runtime_application_error)?;
     Ok(ServiceReport {
-        listen,
+        listeners,
         version: layout.version.clone(),
         shutdown_elapsed,
     })
 }
 
-fn gateway_authentication(config: &HeadlessConfig) -> Result<GatewayAuthentication, HeadlessError> {
+fn gateway_authentication(
+    config: &HeadlessConfig,
+    endpoint: &HeadlessEndpoint,
+) -> Result<GatewayAuthentication, HeadlessError> {
     match &config.authentication {
         AuthenticationConfig::LocalBrowser => {
             Ok(GatewayAuthentication::Web(WebAuthenticationConfig {
@@ -303,6 +343,13 @@ fn gateway_authentication(config: &HeadlessConfig) -> Result<GatewayAuthenticati
                 .map_err(configuration_gateway_error)
         }
         AuthenticationConfig::LanNone => Ok(GatewayAuthentication::PrivateLanNone),
+        AuthenticationConfig::TrustedNetworkNone => match endpoint.kind {
+            HeadlessEndpointKind::DirectLan => Ok(GatewayAuthentication::PrivateLanNone),
+            HeadlessEndpointKind::TailscaleServe => Ok(GatewayAuthentication::TailscaleServeNone),
+            HeadlessEndpointKind::Standard => Err(HeadlessError::configuration(
+                "trusted-network-none does not accept a standard endpoint",
+            )),
+        },
     }
 }
 
@@ -311,6 +358,7 @@ fn hosted_access_mode(authentication: &AuthenticationConfig) -> HostedAccessMode
         AuthenticationConfig::LocalBrowser => HostedAccessMode::BrowserSession,
         AuthenticationConfig::Basic { .. } => HostedAccessMode::Basic,
         AuthenticationConfig::LanNone => HostedAccessMode::LanNone,
+        AuthenticationConfig::TrustedNetworkNone => HostedAccessMode::NetworkNone,
     }
 }
 
@@ -585,17 +633,55 @@ mod tests {
         (config_path, profile, payload)
     }
 
-    async fn request_health(address: SocketAddr) -> Option<String> {
+    #[cfg(unix)]
+    fn trusted_network_configuration(
+        root: &Path,
+        endpoints: &[(SocketAddr, &str)],
+    ) -> (PathBuf, PathBuf, PathBuf) {
+        let config_path = root.join("config/headless.toml");
+        let profile = root.join("state/profile");
+        let payload = root.join("missing-payload");
+        let mut endpoint_source = String::new();
+        for (listen, origin) in endpoints {
+            endpoint_source.push_str(&format!(
+                "[[endpoints]]\nkind = \"tailscale-serve\"\nlisten = \"{listen}\"\npublic_origin = \"{origin}\"\n\n"
+            ));
+        }
+        let source = format!(
+            "version = 2\n\
+             profile_root = {:?}\n\n\
+             {endpoint_source}\
+             [[storage_roots]]\n\
+             id = \"downloads\"\n\
+             label = \"Downloads\"\n\
+             path = {:?}\n\n\
+             [authentication]\n\
+             mode = \"trusted-network-none\"\n",
+            profile.to_str().expect("profile path"),
+            payload.to_str().expect("payload path"),
+        );
+        write_file(&config_path, source.as_bytes(), 0o600);
+        (config_path, profile, payload)
+    }
+
+    async fn request_health(
+        address: SocketAddr,
+        host: String,
+        authorization: Option<String>,
+    ) -> Option<String> {
         tokio::task::spawn_blocking(move || {
-            let mut stream = TcpStream::connect_timeout(&address, Duration::from_millis(200)).ok()?;
-            stream
-                .set_read_timeout(Some(Duration::from_secs(2)))
-                .ok()?;
-            stream
-                .write_all(
-                    b"GET /healthz HTTP/1.1\r\nHost: torrent.example.test\r\nAuthorization: Basic b3duZXI6c2VjcmV0\r\nConnection: close\r\n\r\n",
-                )
-                .ok()?;
+            let mut stream =
+                TcpStream::connect_timeout(&address, Duration::from_millis(200)).ok()?;
+            stream.set_read_timeout(Some(Duration::from_secs(2))).ok()?;
+            let mut request =
+                format!("GET /healthz HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n");
+            if let Some(authorization) = authorization {
+                request.push_str("Authorization: ");
+                request.push_str(&authorization);
+                request.push_str("\r\n");
+            }
+            request.push_str("\r\n");
+            stream.write_all(request.as_bytes()).ok()?;
             let mut response = String::new();
             stream.read_to_string(&mut response).ok()?;
             response.starts_with("HTTP/1.1 200").then_some(response)
@@ -661,6 +747,44 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
+    async fn second_endpoint_bind_failure_releases_first_before_profile_creation() {
+        let root = test_root("multi-bind-first");
+        let executable = installed_fixture(&root.join("install"));
+        let layout = InstalledLayout::discover_from_executable(&executable)
+            .expect("discover installed layout");
+        let first_reservation = TcpListener::bind("127.0.0.1:0").expect("reserve first listener");
+        let first = first_reservation
+            .local_addr()
+            .expect("first listener address");
+        drop(first_reservation);
+        let second_reservation = TcpListener::bind("127.0.0.1:0").expect("reserve second listener");
+        let second = second_reservation
+            .local_addr()
+            .expect("second listener address");
+        let first_origin = format!("https://first.example-tailnet.ts.net:{}", first.port());
+        let second_origin = format!("https://second.example-tailnet.ts.net:{}", second.port());
+        let (config_path, profile, payload) = trusted_network_configuration(
+            &root,
+            &[
+                (first, first_origin.as_str()),
+                (second, second_origin.as_str()),
+            ],
+        );
+
+        let error = run_installed_service(&config_path, &layout, CancellationToken::new())
+            .await
+            .expect_err("reserved second bind must fail");
+        assert_eq!(error.class(), super::ErrorClass::Configuration);
+        assert!(TcpListener::bind(first).is_ok(), "first listener leaked");
+        assert!(!profile.exists());
+        assert!(!payload.exists());
+
+        drop(second_reservation);
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
     async fn installed_service_serves_product_health_and_joins_without_creating_missing_root() {
         let root = test_root("service");
         let executable = installed_fixture(&root.join("install"));
@@ -678,7 +802,13 @@ mod tests {
 
         let mut health = None;
         for _ in 0..50 {
-            if let Some(response) = request_health(listen).await {
+            if let Some(response) = request_health(
+                listen,
+                "torrent.example.test".to_owned(),
+                Some("Basic b3duZXI6c2VjcmV0".to_owned()),
+            )
+            .await
+            {
                 health = Some(response);
                 break;
             }
@@ -709,9 +839,84 @@ mod tests {
             .expect("service shutdown timeout")
             .expect("service task")
             .expect("joined service shutdown");
-        assert_eq!(report.listen, listen);
+        assert_eq!(report.listeners, vec![listen]);
         assert!(report.shutdown_elapsed < Duration::from_secs(5));
         assert!(!payload.exists());
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn trusted_network_endpoints_share_one_joined_application_owner() {
+        let root = test_root("trusted-network-service");
+        let executable = installed_fixture(&root.join("install"));
+        let layout = InstalledLayout::discover_from_executable(&executable)
+            .expect("discover installed layout");
+        let first_reservation = TcpListener::bind("127.0.0.1:0").expect("reserve first listener");
+        let first = first_reservation
+            .local_addr()
+            .expect("first listener address");
+        let second_reservation = TcpListener::bind("127.0.0.1:0").expect("reserve second listener");
+        let second = second_reservation
+            .local_addr()
+            .expect("second listener address");
+        drop(first_reservation);
+        drop(second_reservation);
+        let first_origin = format!("https://first.example-tailnet.ts.net:{}", first.port());
+        let second_origin = format!("https://second.example-tailnet.ts.net:{}", second.port());
+        let (config_path, profile, payload) = trusted_network_configuration(
+            &root,
+            &[
+                (first, first_origin.as_str()),
+                (second, second_origin.as_str()),
+            ],
+        );
+        let shutdown = CancellationToken::new();
+        let task_shutdown = shutdown.clone();
+        let mut task = tokio::spawn(async move {
+            run_installed_service(&config_path, &layout, task_shutdown).await
+        });
+
+        for (address, host) in [
+            (first, first_origin.trim_start_matches("https://")),
+            (second, second_origin.trim_start_matches("https://")),
+        ] {
+            let mut health = None;
+            for _ in 0..50 {
+                if let Some(response) = request_health(address, host.to_owned(), None).await {
+                    health = Some(response);
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            if health.is_none() && task.is_finished() {
+                panic!("service ended before health: {:?}", (&mut task).await);
+            }
+            let health = health.expect("trusted-network endpoint became reachable");
+            assert!(health.contains("\"product\":\"rstorrent-headless\""));
+            assert!(health.contains("\"access_mode\":\"network_none\""));
+        }
+        assert!(
+            request_health(
+                first,
+                second_origin.trim_start_matches("https://").to_owned(),
+                None,
+            )
+            .await
+            .is_none(),
+            "first endpoint accepted the second endpoint Host"
+        );
+        assert!(profile.is_dir());
+        assert!(!payload.exists());
+
+        shutdown.cancel();
+        let report = tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .expect("service shutdown timeout")
+            .expect("service task")
+            .expect("joined multi-endpoint shutdown");
+        assert_eq!(report.listeners, vec![first, second]);
+        assert!(report.shutdown_elapsed < Duration::from_secs(5));
         fs::remove_dir_all(root).expect("remove fixture");
     }
 }

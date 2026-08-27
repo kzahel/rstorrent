@@ -23,7 +23,7 @@ use ts_rs::TS;
 
 use super::{
     GatewayAuthentication, GatewayState, MAX_INCOMING_MESSAGE_BYTES, MAX_TOKEN_BYTES,
-    MAX_TORRENT_SOURCE_BYTES, constant_time_equal, valid_view_set_id,
+    MAX_TORRENT_SOURCE_BYTES, apply_gateway_media_origin, constant_time_equal, valid_view_set_id,
 };
 
 pub const MAX_APPLICATION_PAYLOAD_BYTES: usize = 16 * 1024 * 1024;
@@ -1244,6 +1244,7 @@ async fn handle_client_frame(
             let reservations = reservations.clone();
             let pending_ids = pending_ids.clone();
             let metrics = state.connection_metrics.clone();
+            let media_origin = state.media_origin.clone();
             calls.spawn(async move {
                 let reservation_started = Instant::now();
                 let reservation = reservations.acquire_owned().await.ok();
@@ -1254,19 +1255,36 @@ async fn handle_client_frame(
                     .application_call(&owner, operation)
                     .await;
                 let frame = match result {
-                    Ok(result) if semantic_size(&result).is_some() => {
-                        ApplicationServerFrame::Result {
-                            call_id: call_id.clone(),
-                            result,
+                    Ok(mut result) => {
+                        let media_origin_result = match &mut result {
+                            ApplicationCallResult::MediaUrl { response } => {
+                                apply_gateway_media_origin(response, &media_origin)
+                            }
+                            _ => Ok(()),
+                        };
+                        if media_origin_result.is_err() {
+                            ApplicationServerFrame::CallError {
+                                call_id: call_id.clone(),
+                                error: ApplicationConnectionError::new(
+                                    ApplicationConnectionErrorCode::Internal,
+                                    "application returned a malformed media capability URL",
+                                ),
+                            }
+                        } else if semantic_size(&result).is_some() {
+                            ApplicationServerFrame::Result {
+                                call_id: call_id.clone(),
+                                result,
+                            }
+                        } else {
+                            ApplicationServerFrame::CallError {
+                                call_id: call_id.clone(),
+                                error: ApplicationConnectionError::new(
+                                    ApplicationConnectionErrorCode::ResponseTooLarge,
+                                    "application call result exceeds its configured bound",
+                                ),
+                            }
                         }
                     }
-                    Ok(_) => ApplicationServerFrame::CallError {
-                        call_id: call_id.clone(),
-                        error: ApplicationConnectionError::new(
-                            ApplicationConnectionErrorCode::ResponseTooLarge,
-                            "application call result exceeds its configured bound",
-                        ),
-                    },
                     Err(error) => ApplicationServerFrame::CallError {
                         call_id: call_id.clone(),
                         error: application_call_error(error),
@@ -1785,6 +1803,7 @@ fn connection_token_matches(
         }),
         GatewayAuthentication::Basic(_)
         | GatewayAuthentication::PrivateLanNone
+        | GatewayAuthentication::TailscaleServeNone
         | GatewayAuthentication::Web(_)
         | GatewayAuthentication::UnauthenticatedLoopbackDevelopment => candidate.is_none(),
     }
