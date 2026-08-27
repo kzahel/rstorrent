@@ -48,6 +48,7 @@ import org.rstorrent.session.uniffi.CommandResult
 import org.rstorrent.session.uniffi.AddTorrentBytesRequest
 import org.rstorrent.session.uniffi.CatalogPageRequest
 import org.rstorrent.session.uniffi.ClientSettings
+import org.rstorrent.session.uniffi.ClientSettingsPatch
 import org.rstorrent.session.uniffi.ClientSettingsApplicationState
 import org.rstorrent.session.uniffi.ClientSettingsRuntimeView
 import org.rstorrent.session.uniffi.DeliveryPolicy
@@ -72,6 +73,7 @@ import org.rstorrent.session.uniffi.SpeedMetric
 import org.rstorrent.session.uniffi.SpeedRange
 import org.rstorrent.session.uniffi.SubscriptionSpec
 import org.rstorrent.session.uniffi.TorrentState
+import org.rstorrent.session.uniffi.TorrentSettingsPatch
 import org.rstorrent.session.uniffi.TorrentTransferLimits
 import org.rstorrent.session.uniffi.TransferRateLimit
 import org.rstorrent.session.uniffi.ViewProjection
@@ -105,6 +107,8 @@ class ProductEngineService : Service() {
     @Volatile private var safTreeUri: Uri? = null
     private val safWork = ConcurrentHashMap.newKeySet<String>()
     private val crashAfterSafRename = AtomicBoolean(false)
+    private val clientSettingsRequestActive = AtomicBoolean(false)
+    private val torrentSettingsRequestActive = AtomicBoolean(false)
     private var powerLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
@@ -144,6 +148,7 @@ class ProductEngineService : Service() {
                         onUpdate = { update, product, driveSaf ->
                             traceUpdate(update, product)
                             if (driveSaf) advanceSaf(product)
+                            driveSettingsMutations()
                         },
                         onError = ::reportError,
                     )
@@ -339,7 +344,7 @@ class ProductEngineService : Service() {
             try {
                 clientReady.await()
                 dispatchAwait(
-                    Command.SetClientSettings(
+                    Command.UpdateClientSettings(
                         ClientSettings(
                             listener = ListenerPolicy.Disabled,
                             preferredListenPort = 6_881U.toUShort(),
@@ -352,7 +357,7 @@ class ProductEngineService : Service() {
                             encryption = EncryptionPolicy.ALLOW,
                             ipv6Enabled = true,
                             trackerHttpsServerAuthentication = policy,
-                        ),
+                        ).asPatch(),
                     ),
                 )
                 awaitTrackerPolicy(policy)
@@ -391,7 +396,7 @@ class ProductEngineService : Service() {
             try {
                 clientReady.await()
                 dispatchAwait(
-                    Command.SetClientSettings(
+                    Command.UpdateClientSettings(
                         ClientSettings(
                             listener = ListenerPolicy.Disabled,
                             preferredListenPort = 6_881U.toUShort(),
@@ -405,7 +410,7 @@ class ProductEngineService : Service() {
                             ipv6Enabled = true,
                             trackerHttpsServerAuthentication =
                                 HttpsServerAuthenticationPolicy.SYSTEM_TRUST,
-                        ),
+                        ).asPatch(),
                     ),
                 )
                 awaitEncryptionPolicy(policy)
@@ -548,8 +553,8 @@ class ProductEngineService : Service() {
                 if (mode == "disable_sequence") {
                     logIpv6Evidence("initial", current)
                     dispatchAwait(
-                        Command.SetClientSettings(
-                            current.configured.copy(ipv6Enabled = false),
+                        Command.UpdateClientSettings(
+                            clientSettingsPatch(ipv6Enabled = false),
                         ),
                     )
                     logIpv6Evidence("disabled", awaitIpv6Policy(false))
@@ -558,8 +563,8 @@ class ProductEngineService : Service() {
                 if (mode == "enable_sequence") {
                     logIpv6Evidence("restarted", current)
                     dispatchAwait(
-                        Command.SetClientSettings(
-                            current.configured.copy(ipv6Enabled = true),
+                        Command.UpdateClientSettings(
+                            clientSettingsPatch(ipv6Enabled = true),
                         ),
                     )
                     logIpv6Evidence("reenabled", awaitIpv6Policy(true))
@@ -577,8 +582,8 @@ class ProductEngineService : Service() {
                         current
                     } else {
                         dispatchAwait(
-                            Command.SetClientSettings(
-                                current.configured.copy(ipv6Enabled = desired),
+                            Command.UpdateClientSettings(
+                                clientSettingsPatch(ipv6Enabled = desired),
                             ),
                         )
                         awaitIpv6Policy(desired)
@@ -601,8 +606,8 @@ class ProductEngineService : Service() {
                     val current = awaitIpv6Policy(null)
                     val limit = TransferRateLimit.Limited(ANDROID_RATE_BYTES_PER_SECOND.toUInt())
                     dispatchAwait(
-                        Command.SetClientSettings(
-                            current.configured.copy(
+                        Command.UpdateClientSettings(
+                            clientSettingsPatch(
                                 uploadRateLimit = limit,
                                 downloadRateLimit = limit,
                             ),
@@ -804,8 +809,8 @@ class ProductEngineService : Service() {
                     action == "enable_upload" -> {
                         val current = awaitIpv6Policy(null)
                         dispatchAwait(
-                            Command.SetClientSettings(
-                                current.configured.copy(
+                            Command.UpdateClientSettings(
+                                clientSettingsPatch(
                                     listener = ListenerPolicy.FixedLocalNetwork(6_881U.toUShort()),
                                     preferredListenPort = 6_881U.toUShort(),
                                     portMapping = PortMappingPolicy.DISABLED,
@@ -1003,13 +1008,28 @@ class ProductEngineService : Service() {
         }
     }
 
-    fun updateClientSettings(transform: (ClientSettings) -> ClientSettings) {
-        val configured = mutableState.value.clientSettings?.configured
-        if (configured == null) {
-            mutableState.update { it.copy(error = "Settings are still loading") }
+    fun updateClientSettings(patch: ClientSettingsPatch) {
+        val changes = patch.fieldValues()
+        if (changes.isEmpty()) {
+            mutableState.update { it.copy(error = "Settings update is empty") }
             return
         }
-        dispatch(Command.SetClientSettings(transform(configured)))
+        mutableState.update { product ->
+            val configured = product.clientSettings?.configured
+                ?: return@update product.copy(error = "Settings are still loading")
+            val initialized =
+                if (product.clientSettingsDraft.resourceKey == null) {
+                    product.clientSettingsDraft.authority(
+                        "client-settings",
+                        product.latestDurableRevision(),
+                        configured.fieldValues(),
+                    )
+                } else {
+                    product.clientSettingsDraft
+                }
+            product.copy(clientSettingsDraft = initialized.edit(changes), error = null)
+        }
+        driveClientSettingsMutation()
     }
 
     fun setPreventSleepDuringActiveDownloads(enabled: Boolean) {
@@ -1026,11 +1046,141 @@ class ProductEngineService : Service() {
         Log.i(TAG, "prevent_sleep_setting enabled=$enabled")
     }
 
-    fun setTorrentTransferLimits(
+    fun updateTorrentSettings(
         torrentId: String,
-        limits: TorrentTransferLimits,
+        patch: TorrentSettingsPatch,
     ) {
-        dispatch(Command.SetTorrentTransferLimits(torrentId, limits))
+        val changes = patch.fieldValues()
+        if (changes.isEmpty()) {
+            mutableState.update { it.copy(error = "Torrent settings update is empty") }
+            return
+        }
+        mutableState.update { product ->
+            val torrent = product.torrents[torrentId]
+                ?: return@update product.copy(error = "Torrent is no longer present")
+            val initialized =
+                if (product.torrentSettingsDraft.resourceKey != torrentId) {
+                    product.torrentSettingsDraft.authority(
+                        torrentId,
+                        product.latestDurableRevision(),
+                        torrent.transferLimits.fieldValues(),
+                    )
+                } else {
+                    product.torrentSettingsDraft
+                }
+            product.copy(torrentSettingsDraft = initialized.edit(changes), error = null)
+        }
+        driveTorrentSettingsMutation()
+    }
+
+    private fun driveSettingsMutations() {
+        driveClientSettingsMutation()
+        driveTorrentSettingsMutation()
+    }
+
+    private fun driveClientSettingsMutation() {
+        if (!clientSettingsRequestActive.compareAndSet(false, true)) return
+        var request: SettingsDraftRequest<ClientSettingsField>? = null
+        mutableState.update { product ->
+            val captured = captureSettingsDraftRequest(product.clientSettingsDraft)
+            request = captured.request
+            product.copy(clientSettingsDraft = captured.draft)
+        }
+        val outbound = request
+        if (outbound == null) {
+            clientSettingsRequestActive.set(false)
+            if (mutableState.value.clientSettingsDraft.hasDispatchableSettingsDraft()) {
+                driveClientSettingsMutation()
+            }
+            return
+        }
+        scope.launch {
+            try {
+                clientReady.await()
+                val response =
+                    dispatchForResponse(
+                        Command.UpdateClientSettings(outbound.values.toClientSettingsPatch()),
+                        outbound.expectedRevision,
+                    )
+                mutableState.update {
+                    it.copy(
+                        clientSettingsDraft =
+                            it.clientSettingsDraft.accepted(
+                                outbound.resourceKey,
+                                response.revision,
+                            ),
+                    )
+                }
+            } catch (error: Throwable) {
+                mutableState.update {
+                    it.copy(
+                        clientSettingsDraft =
+                            it.clientSettingsDraft.failed(
+                                outbound.resourceKey,
+                                error.message ?: error.toString(),
+                            ),
+                    )
+                }
+                reportError(error)
+            } finally {
+                clientSettingsRequestActive.set(false)
+                driveClientSettingsMutation()
+            }
+        }
+    }
+
+    private fun driveTorrentSettingsMutation() {
+        if (!torrentSettingsRequestActive.compareAndSet(false, true)) return
+        var request: SettingsDraftRequest<TorrentSettingsField>? = null
+        mutableState.update { product ->
+            val captured = captureSettingsDraftRequest(product.torrentSettingsDraft)
+            request = captured.request
+            product.copy(torrentSettingsDraft = captured.draft)
+        }
+        val outbound = request
+        if (outbound == null) {
+            torrentSettingsRequestActive.set(false)
+            if (mutableState.value.torrentSettingsDraft.hasDispatchableSettingsDraft()) {
+                driveTorrentSettingsMutation()
+            }
+            return
+        }
+        scope.launch {
+            try {
+                clientReady.await()
+                val response =
+                    dispatchForResponse(
+                        Command.UpdateTorrentSettings(
+                            outbound.resourceKey,
+                            outbound.values.toTorrentSettingsPatch(),
+                        ),
+                        outbound.expectedRevision,
+                    )
+                mutableState.update {
+                    it.copy(
+                        torrentSettingsDraft =
+                            it.torrentSettingsDraft.accepted(
+                                outbound.resourceKey,
+                                response.revision,
+                            ),
+                    )
+                }
+            } catch (error: Throwable) {
+                mutableState.update {
+                    it.copy(
+                        torrentSettingsDraft =
+                            it.torrentSettingsDraft.failed(
+                                outbound.resourceKey,
+                                error.message ?: error.toString(),
+                            ),
+                    )
+                }
+                reportError(error)
+            } finally {
+                torrentSettingsRequestActive.set(false)
+                driveTorrentSettingsMutation()
+            }
+        }
     }
 
     fun copyMagnet(torrentId: String) {
@@ -1159,13 +1309,16 @@ class ProductEngineService : Service() {
         return add.torrentId
     }
 
-    private suspend fun dispatchForResponse(command: Command): org.rstorrent.session.uniffi.ResponseEnvelope {
+    private suspend fun dispatchForResponse(
+        command: Command,
+        expectedRevision: String? = null,
+    ): org.rstorrent.session.uniffi.ResponseEnvelope {
         val response =
             client.dispatch(
                 RequestEnvelope(
                     1U.toUShort(),
                     "android-$requestPrefix-${requestIds.getAndIncrement()}",
-                    null,
+                    expectedRevision,
                     command,
                 ),
             )

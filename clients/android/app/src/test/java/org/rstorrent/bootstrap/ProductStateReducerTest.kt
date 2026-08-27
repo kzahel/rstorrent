@@ -64,6 +64,166 @@ import org.rstorrent.bootstrap.ui.torrentPresentationName
 
 class ProductStateReducerTest {
     @Test
+    fun settingsDraftPreservesDirtyFieldsAcrossClonedAuthorityAndConvergesByReceipt() {
+        var draft =
+            SettingsDraftState<ClientSettingsField>().authority(
+                "client-settings",
+                "7",
+                mapOf(
+                    ClientSettingsField.PEER_CONNECTION_LIMIT to 200U,
+                    ClientSettingsField.UPLOAD_SLOTS to 8U.toUShort(),
+                ),
+            )
+        draft =
+            draft.edit(
+                mapOf(ClientSettingsField.PEER_CONNECTION_LIMIT to 321U),
+            )
+        draft =
+            draft.authority(
+                "client-settings",
+                "8",
+                mapOf(
+                    ClientSettingsField.PEER_CONNECTION_LIMIT to 200U,
+                    ClientSettingsField.UPLOAD_SLOTS to 9U.toUShort(),
+                ),
+            )
+        assertEquals(321U, draft.materialized()[ClientSettingsField.PEER_CONNECTION_LIMIT])
+        assertEquals(9U.toUShort(), draft.materialized()[ClientSettingsField.UPLOAD_SLOTS])
+        assertEquals(emptySet<ClientSettingsField>(), draft.conflicts)
+
+        draft = draft.beginSubmit()
+        draft = draft.accepted("client-settings", "9")
+        assertEquals("9", draft.submission?.acceptedRevision)
+        draft =
+            draft.authority(
+                "client-settings",
+                "8",
+                mapOf(
+                    ClientSettingsField.PEER_CONNECTION_LIMIT to 200U,
+                    ClientSettingsField.UPLOAD_SLOTS to 10U.toUShort(),
+                ),
+            )
+        assertEquals(321U, draft.materialized()[ClientSettingsField.PEER_CONNECTION_LIMIT])
+        val converged =
+            mapOf<ClientSettingsField, Any>(
+                ClientSettingsField.PEER_CONNECTION_LIMIT to 321U,
+                ClientSettingsField.UPLOAD_SLOTS to 10U.toUShort(),
+            )
+        draft = draft.authority("client-settings", "9", converged)
+        assertEquals(null, draft.submission)
+        assertEquals(emptyMap<ClientSettingsField, Any>(), draft.overlays)
+    }
+
+    @Test
+    fun settingsDraftKeepsANewerEditWhenTheCapturedValueConverges() {
+        var draft =
+            SettingsDraftState<TorrentSettingsField>().authority(
+                TORRENT_ID,
+                "10",
+                mapOf(
+                    TorrentSettingsField.UPLOAD_RATE_LIMIT to TransferRateLimit.Unlimited,
+                    TorrentSettingsField.DOWNLOAD_RATE_LIMIT to TransferRateLimit.Unlimited,
+                ),
+            )
+        val first = TransferRateLimit.Limited(64U * 1_024U)
+        val newer = TransferRateLimit.Limited(96U * 1_024U)
+        draft = draft.edit(mapOf(TorrentSettingsField.DOWNLOAD_RATE_LIMIT to first))
+        draft = draft.beginSubmit()
+        draft = draft.edit(mapOf(TorrentSettingsField.DOWNLOAD_RATE_LIMIT to newer))
+        draft = draft.accepted(TORRENT_ID, "11")
+        draft =
+            draft.authority(
+                TORRENT_ID,
+                "11",
+                mapOf(
+                    TorrentSettingsField.UPLOAD_RATE_LIMIT to TransferRateLimit.Unlimited,
+                    TorrentSettingsField.DOWNLOAD_RATE_LIMIT to first,
+                ),
+            )
+
+        assertEquals(null, draft.submission)
+        assertEquals(newer, draft.materialized()[TorrentSettingsField.DOWNLOAD_RATE_LIMIT])
+        assertEquals(first, draft.editBases[TorrentSettingsField.DOWNLOAD_RATE_LIMIT])
+    }
+
+    @Test
+    fun serviceDraftCaptureUsesTheAuthorityRevisionAndWaitsForConvergence() {
+        var draft =
+            SettingsDraftState<TorrentSettingsField>().authority(
+                TORRENT_ID,
+                "41",
+                mapOf<TorrentSettingsField, Any>(
+                    TorrentSettingsField.UPLOAD_RATE_LIMIT to TransferRateLimit.Unlimited,
+                    TorrentSettingsField.DOWNLOAD_RATE_LIMIT to TransferRateLimit.Unlimited,
+                ),
+            )
+        draft =
+            draft.edit(
+                mapOf(
+                    TorrentSettingsField.DOWNLOAD_RATE_LIMIT to
+                        TransferRateLimit.Limited(64U * 1_024U),
+                ),
+            )
+
+        val captured = captureSettingsDraftRequest(draft)
+        assertEquals(TORRENT_ID, captured.request?.resourceKey)
+        assertEquals("41", captured.request?.expectedRevision)
+        assertEquals(
+            TransferRateLimit.Limited(64U * 1_024U),
+            captured.request?.values?.get(TorrentSettingsField.DOWNLOAD_RATE_LIMIT),
+        )
+        draft = captured.draft.accepted(TORRENT_ID, "42")
+        assertEquals(null, captureSettingsDraftRequest(draft).request)
+
+        draft =
+            draft.authority(
+                TORRENT_ID,
+                "42",
+                mapOf<TorrentSettingsField, Any>(
+                    TorrentSettingsField.UPLOAD_RATE_LIMIT to TransferRateLimit.Unlimited,
+                    TorrentSettingsField.DOWNLOAD_RATE_LIMIT to
+                        TransferRateLimit.Limited(64U * 1_024U),
+                ),
+            )
+        assertEquals(emptyMap<TorrentSettingsField, Any>(), draft.overlays)
+        assertEquals(null, captureSettingsDraftRequest(draft).request)
+    }
+
+    @Test
+    fun settingsDraftReportsConflictFailureIdentityAndOpaqueRevisions() {
+        var draft =
+            SettingsDraftState<ClientSettingsField>().authority(
+                "client-settings",
+                "18446744073709551616",
+                mapOf(ClientSettingsField.IPV6_ENABLED to true),
+            )
+        draft = draft.edit(mapOf(ClientSettingsField.IPV6_ENABLED to false))
+        draft =
+            draft.authority(
+                "client-settings",
+                "18446744073709551617",
+                mapOf(ClientSettingsField.IPV6_ENABLED to "changed elsewhere"),
+            )
+        assertEquals(setOf(ClientSettingsField.IPV6_ENABLED), draft.conflicts)
+        draft = draft.beginSubmit().failed("client-settings", "x".repeat(600))
+        assertEquals(512, draft.failure?.length)
+        assertEquals(false, draft.materialized()[ClientSettingsField.IPV6_ENABLED])
+        assertEquals(
+            1,
+            compareSettingsRevisions("18446744073709551617", "9999999999999999999"),
+        )
+
+        draft =
+            draft.authority(
+                "another-resource",
+                "1",
+                mapOf(ClientSettingsField.IPV6_ENABLED to true),
+            )
+        assertEquals(emptyMap<ClientSettingsField, Any>(), draft.overlays)
+        assertEquals("another-resource", draft.resourceKey)
+    }
+
+    @Test
     fun clientSettingsRemainTypedAcrossTheKotlinContract() {
         val settings =
             ClientSettings(
@@ -80,7 +240,14 @@ class ProductStateReducerTest {
                 trackerHttpsServerAuthentication = HttpsServerAuthenticationPolicy.DISABLED,
             )
 
-        assertEquals(settings, Command.SetClientSettings(settings).settings)
+        val patch = clientSettingsPatch(
+            peerConnectionLimit = settings.peerConnectionLimit,
+            encryption = settings.encryption,
+        )
+        val command = Command.UpdateClientSettings(patch)
+        assertEquals(2_000U, command.patch.peerConnectionLimit)
+        assertEquals(EncryptionPolicy.REQUIRED, command.patch.encryption)
+        assertEquals(null, command.patch.uploadSlots)
         assertEquals(settings, clientSettings(settings).configured)
     }
 
@@ -96,9 +263,11 @@ class ProductStateReducerTest {
                 upload = TransferRateLimit.Limited(64U * 1_024U),
                 download = TransferRateLimit.Unlimited,
             )
-        val command = Command.SetTorrentTransferLimits(TORRENT_ID, limits)
+        val patch = torrentSettingsPatch(downloadRateLimit = limits.download)
+        val command = Command.UpdateTorrentSettings(TORRENT_ID, patch)
         assertEquals(TORRENT_ID, command.torrentId)
-        assertEquals(limits, command.limits)
+        assertEquals(null, command.patch.uploadRateLimit)
+        assertEquals(TransferRateLimit.Unlimited, command.patch.downloadRateLimit)
     }
 
     @Test

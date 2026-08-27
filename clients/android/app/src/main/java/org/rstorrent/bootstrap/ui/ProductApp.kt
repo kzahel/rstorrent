@@ -82,14 +82,19 @@ import org.rstorrent.bootstrap.ProductEngineService
 import org.rstorrent.bootstrap.ProductState
 import org.rstorrent.bootstrap.GlobalPresentation
 import org.rstorrent.bootstrap.TorrentPresentation
+import org.rstorrent.bootstrap.clientSettingsPatch
+import org.rstorrent.bootstrap.presentedClientSettings
+import org.rstorrent.bootstrap.presentedTorrent
+import org.rstorrent.bootstrap.torrentSettingsPatch
 import org.rstorrent.session.uniffi.DiagnosticEvent
 import org.rstorrent.session.uniffi.DiagnosticCategory
 import org.rstorrent.session.uniffi.DiagnosticProfile
 import org.rstorrent.session.uniffi.DiagnosticSeverity
+import org.rstorrent.session.uniffi.ClientSettingsPatch
 import org.rstorrent.session.uniffi.FilePriority
 import org.rstorrent.session.uniffi.RemovalDataPolicy
 import org.rstorrent.session.uniffi.TorrentOperationalState
-import org.rstorrent.session.uniffi.TorrentTransferLimits
+import org.rstorrent.session.uniffi.TorrentSettingsPatch
 import org.rstorrent.session.uniffi.TorrentView
 
 @Composable
@@ -105,6 +110,8 @@ fun ProductApp(
     onThemeMode: (ProductThemeMode) -> Unit,
     onDynamicColor: (Boolean) -> Unit,
     stateOverride: ProductState? = null,
+    onUpdateClientSettings: ((ClientSettingsPatch) -> Unit)? = null,
+    onUpdateTorrentSettings: ((String, TorrentSettingsPatch) -> Unit)? = null,
 ) {
     RstorrentTheme(mode = themeMode, dynamicColor = dynamicColor) {
         val state =
@@ -129,6 +136,16 @@ fun ProductApp(
                 dynamicColor = dynamicColor,
                 onThemeMode = onThemeMode,
                 onDynamicColor = onDynamicColor,
+                onUpdateClientSettings =
+                    onUpdateClientSettings ?: {
+                        service?.updateClientSettings(it)
+                        Unit
+                    },
+                onUpdateTorrentSettings =
+                    onUpdateTorrentSettings ?: { torrentId, patch ->
+                        service?.updateTorrentSettings(torrentId, patch)
+                        Unit
+                    },
             )
         }
     }
@@ -147,6 +164,8 @@ private fun ProductNavHost(
     dynamicColor: Boolean,
     onThemeMode: (ProductThemeMode) -> Unit,
     onDynamicColor: (Boolean) -> Unit,
+    onUpdateClientSettings: (ClientSettingsPatch) -> Unit,
+    onUpdateTorrentSettings: (String, TorrentSettingsPatch) -> Unit,
 ) {
     val navController = rememberNavController()
     var removeTargets by remember { mutableStateOf(emptySet<String>()) }
@@ -180,7 +199,7 @@ private fun ProductNavHost(
         }
         composable(ProductRoutes.DETAIL) { entry ->
             val torrentId = requireNotNull(entry.arguments?.getString("torrentId"))
-            val torrent = state.torrents[torrentId]
+            val torrent = state.presentedTorrent(state.torrents[torrentId])
             DisposableEffect(torrentId) {
                 service?.selectTorrent(torrentId)
                 onDispose { service?.clearTorrentPresentation(torrentId) }
@@ -198,7 +217,7 @@ private fun ProductNavHost(
                 onRestore = { service?.restoreArchive(torrentId) },
                 onRemove = { removeTargets = setOf(torrentId) },
                 onCopyMagnet = { service?.copyMagnet(torrentId) },
-                onTransferLimits = { service?.setTorrentTransferLimits(torrentId, it) },
+                onTransferLimits = { onUpdateTorrentSettings(torrentId, it) },
                 onSpeed = { navController.navigate(ProductRoutes.SPEED) },
                 onDht = { navController.navigate(ProductRoutes.DHT) },
                 onLogs = { navController.navigate(ProductRoutes.LOGS) },
@@ -266,26 +285,34 @@ private fun ProductNavHost(
         }
         composable(ProductRoutes.SETTINGS_SPEED) {
             SettingsPage("Speed & Connection Limits", navController::popBackStack) {
-                val settings = state.clientSettings
+                val settings = state.presentedClientSettings()
                 if (settings == null) {
                     Text("Settings are loading…", modifier = Modifier.padding(16.dp))
                 } else {
                     ConnectionLimitsSettings(
                         settings,
                         onPeerConnections = { value ->
-                            service?.updateClientSettings { it.copy(peerConnectionLimit = value) }
+                            onUpdateClientSettings(
+                                clientSettingsPatch(peerConnectionLimit = value),
+                            )
                         },
                         onUploadSlots = { value ->
-                            service?.updateClientSettings { it.copy(uploadSlots = value) }
+                            onUpdateClientSettings(clientSettingsPatch(uploadSlots = value))
                         },
                         onActiveDownloads = { value ->
-                            service?.updateClientSettings { it.copy(activeDownloads = value) }
+                            onUpdateClientSettings(
+                                clientSettingsPatch(activeDownloads = value),
+                            )
                         },
                         onUploadRateLimit = { value ->
-                            service?.updateClientSettings { it.copy(uploadRateLimit = value) }
+                            onUpdateClientSettings(
+                                clientSettingsPatch(uploadRateLimit = value),
+                            )
                         },
                         onDownloadRateLimit = { value ->
-                            service?.updateClientSettings { it.copy(downloadRateLimit = value) }
+                            onUpdateClientSettings(
+                                clientSettingsPatch(downloadRateLimit = value),
+                            )
                         },
                     )
                 }
@@ -304,38 +331,38 @@ private fun ProductNavHost(
         }
         composable(ProductRoutes.SETTINGS_NETWORK) {
             SettingsPage("Network & Privacy", navController::popBackStack) {
-                state.clientSettings?.let { settings ->
+                state.presentedClientSettings()?.let { settings ->
                     NetworkSettings(
                         settings,
                         onListener = { enabled ->
-                            service?.updateClientSettings {
-                                it.copy(
+                            onUpdateClientSettings(
+                                clientSettingsPatch(
                                     listener =
                                         if (enabled) {
                                             org.rstorrent.session.uniffi.ListenerPolicy.AutomaticLocalNetwork
                                         } else {
                                             org.rstorrent.session.uniffi.ListenerPolicy.Disabled
                                         },
-                                )
-                            }
+                                ),
+                            )
                         },
                         onPortMapping = { enabled ->
-                            service?.updateClientSettings {
-                                it.copy(
+                            onUpdateClientSettings(
+                                clientSettingsPatch(
                                     portMapping =
                                         if (enabled) {
                                             org.rstorrent.session.uniffi.PortMappingPolicy.UPNP
                                         } else {
                                             org.rstorrent.session.uniffi.PortMappingPolicy.DISABLED
                                         },
-                                )
-                            }
+                                ),
+                            )
                         },
                         onIpv6 = { enabled ->
-                            service?.updateClientSettings { it.copy(ipv6Enabled = enabled) }
+                            onUpdateClientSettings(clientSettingsPatch(ipv6Enabled = enabled))
                         },
                         onEncryption = { policy ->
-                            service?.updateClientSettings { it.copy(encryption = policy) }
+                            onUpdateClientSettings(clientSettingsPatch(encryption = policy))
                         },
                     )
                 } ?: Text("Settings are loading…", modifier = Modifier.padding(16.dp))
@@ -422,7 +449,7 @@ private fun TorrentDetailScreen(
     onRestore: () -> Unit,
     onRemove: () -> Unit,
     onCopyMagnet: () -> Unit,
-    onTransferLimits: (TorrentTransferLimits) -> Unit,
+    onTransferLimits: (TorrentSettingsPatch) -> Unit,
     onSpeed: () -> Unit,
     onDht: () -> Unit,
     onLogs: () -> Unit,
@@ -539,7 +566,7 @@ private fun DetailTabContent(
     onOpenFile: (org.rstorrent.session.uniffi.FileView) -> Unit,
     onFilePage: (UInt) -> Unit,
     onTrackerPage: (UInt) -> Unit,
-    onTransferLimits: (TorrentTransferLimits) -> Unit,
+    onTransferLimits: (TorrentSettingsPatch) -> Unit,
 ) {
     if (torrent == null) {
         CenterMessage("Torrent is no longer available")
@@ -609,7 +636,7 @@ private fun DetailTabContent(
 @Composable
 private fun TorrentDetails(
     torrent: TorrentView,
-    onTransferLimits: (TorrentTransferLimits) -> Unit,
+    onTransferLimits: (TorrentSettingsPatch) -> Unit,
     vararg rows: Pair<String, String>,
 ) {
     LazyColumn(contentPadding = PaddingValues(vertical = 8.dp)) {
@@ -619,7 +646,7 @@ private fun TorrentDetails(
                 title = "Torrent download limit",
                 configured = torrent.transferLimits.download,
                 onValue = { limit ->
-                    onTransferLimits(torrent.transferLimits.copy(download = limit))
+                    onTransferLimits(torrentSettingsPatch(downloadRateLimit = limit))
                 },
             )
         }
@@ -628,7 +655,7 @@ private fun TorrentDetails(
                 title = "Torrent upload limit",
                 configured = torrent.transferLimits.upload,
                 onValue = { limit ->
-                    onTransferLimits(torrent.transferLimits.copy(upload = limit))
+                    onTransferLimits(torrentSettingsPatch(uploadRateLimit = limit))
                 },
             )
         }

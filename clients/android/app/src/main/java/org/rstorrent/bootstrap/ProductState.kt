@@ -67,6 +67,10 @@ data class ProductState(
     val torrents: Map<String, TorrentView> = emptyMap(),
     val storage: StorageSettingsSnapshot? = null,
     val clientSettings: ClientSettingsRuntimeView? = null,
+    internal val clientSettingsDraft: SettingsDraftState<ClientSettingsField> =
+        SettingsDraftState(),
+    internal val torrentSettingsDraft: SettingsDraftState<TorrentSettingsField> =
+        SettingsDraftState(),
     val pieces: Map<String, PieceActivityState> = emptyMap(),
     val files: Map<String, FileCatalogViewState> = emptyMap(),
     val trackers: Map<String, TrackerCatalogViewState> = emptyMap(),
@@ -112,10 +116,10 @@ internal object ProductStateReducer {
                 ) {
                     throw ViewContinuityException("view patch does not continue its stream")
                 }
-                return applyPatch(state.withPosition(update), payload.patch)
+                return applyPatch(state.withPosition(update), payload.patch, update.revision)
             }
             is ViewUpdatePayload.Snapshot ->
-                return applySnapshot(state.withPosition(update), payload.snapshot)
+                return applySnapshot(state.withPosition(update), payload.snapshot, update.revision)
         }
     }
 
@@ -138,20 +142,52 @@ internal object ProductStateReducer {
     private fun applySnapshot(
         state: ProductState,
         snapshot: ViewSnapshot,
+        revision: String,
     ): ProductState =
         when (snapshot) {
-            is ViewSnapshot.TorrentList ->
+            is ViewSnapshot.TorrentList -> {
+                val torrents = snapshot.torrents.associateBy(TorrentView::torrentId)
+                val configured = snapshot.clientSettings?.configured
+                val clientDraft =
+                    if (configured == null) {
+                        state.clientSettingsDraft
+                    } else {
+                        state.clientSettingsDraft.authority(
+                            "client-settings",
+                            revision,
+                            configured.fieldValues(),
+                        )
+                    }
+                val torrentDraft =
+                    reconcileTorrentDraft(
+                        state.torrentSettingsDraft,
+                        torrents[state.torrentSettingsDraft.resourceKey],
+                        revision,
+                        removeWhenMissing = true,
+                    )
                 state.copy(
-                    torrents = snapshot.torrents.associateBy(TorrentView::torrentId),
+                    torrents = torrents,
                     storage = snapshot.storage,
                     clientSettings = snapshot.clientSettings,
+                    clientSettingsDraft = clientDraft,
+                    torrentSettingsDraft = torrentDraft,
                 )
+            }
             is ViewSnapshot.Torrent -> {
                 val torrent = snapshot.torrent
                 if (torrent == null) {
                     state
                 } else {
-                    state.copy(torrents = state.torrents + (torrent.torrentId to torrent))
+                    state.copy(
+                        torrents = state.torrents + (torrent.torrentId to torrent),
+                        torrentSettingsDraft =
+                            reconcileTorrentDraft(
+                                state.torrentSettingsDraft,
+                                torrent,
+                                revision,
+                                removeWhenMissing = false,
+                            ),
+                    )
                 }
             }
             is ViewSnapshot.PieceActivity ->
@@ -233,16 +269,43 @@ internal object ProductStateReducer {
     private fun applyPatch(
         state: ProductState,
         patch: ViewPatch,
+        revision: String,
     ): ProductState =
         when (patch) {
             is ViewPatch.TorrentList -> {
                 val torrents = state.torrents.toMutableMap()
                 patch.removed.forEach(torrents::remove)
                 patch.upsert.forEach { torrents[it.torrentId] = it }
+                val configured = patch.clientSettings?.configured
+                val clientDraft =
+                    if (configured == null) {
+                        state.clientSettingsDraft
+                    } else {
+                        state.clientSettingsDraft.authority(
+                            "client-settings",
+                            revision,
+                            configured.fieldValues(),
+                        )
+                    }
+                val draftKey = state.torrentSettingsDraft.resourceKey
+                val matching = patch.upsert.firstOrNull { it.torrentId == draftKey }
+                val torrentDraft =
+                    if (draftKey != null && draftKey in patch.removed) {
+                        SettingsDraftState()
+                    } else {
+                        reconcileTorrentDraft(
+                            state.torrentSettingsDraft,
+                            matching,
+                            revision,
+                            removeWhenMissing = false,
+                        )
+                    }
                 state.copy(
                     torrents = torrents,
                     storage = patch.storage ?: state.storage,
                     clientSettings = patch.clientSettings ?: state.clientSettings,
+                    clientSettingsDraft = clientDraft,
+                    torrentSettingsDraft = torrentDraft,
                 )
             }
             is ViewPatch.Torrent -> {
@@ -250,7 +313,16 @@ internal object ProductStateReducer {
                 if (torrent == null) {
                     state
                 } else {
-                    state.copy(torrents = state.torrents + (torrent.torrentId to torrent))
+                    state.copy(
+                        torrents = state.torrents + (torrent.torrentId to torrent),
+                        torrentSettingsDraft =
+                            reconcileTorrentDraft(
+                                state.torrentSettingsDraft,
+                                torrent,
+                                revision,
+                                removeWhenMissing = false,
+                            ),
+                    )
                 }
             }
             is ViewPatch.PieceActivity -> {
@@ -345,6 +417,24 @@ internal object ProductStateReducer {
                 )
             }
         }
+
+    private fun reconcileTorrentDraft(
+        draft: SettingsDraftState<TorrentSettingsField>,
+        torrent: TorrentView?,
+        revision: String,
+        removeWhenMissing: Boolean,
+    ): SettingsDraftState<TorrentSettingsField> {
+        val key = draft.resourceKey ?: return draft
+        if (torrent == null) {
+            return if (removeWhenMissing) SettingsDraftState() else draft
+        }
+        if (torrent.torrentId != key) return draft
+        return draft.authority(
+            key,
+            revision,
+            torrent.transferLimits.fieldValues(),
+        )
+    }
 
     private fun insertRange(
         ranges: List<IndexRange>,
