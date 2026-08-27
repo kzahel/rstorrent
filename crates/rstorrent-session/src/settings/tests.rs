@@ -7,10 +7,11 @@ use rusqlite::Connection;
 
 use super::{
     ActiveDownloadsClampReason, AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus,
-    ClientSettings, ClientSettingsApplicationState, ClientSettingsError, ClientSettingsRuntimeView,
-    EffectiveListenerSettings, EncryptionPolicy, HttpsServerAuthenticationPolicy,
-    Ipv6PinholeStatus, ListenerPolicy, ListenerStatus, PortMappingPolicy, PortMappingStatus,
-    SessionUdpStatus, SettingsPersistenceError, TransferRateLimit, classify_listener_bind_failure,
+    ClientSettings, ClientSettingsApplicationState, ClientSettingsError, ClientSettingsPatch,
+    ClientSettingsRuntimeView, EffectiveListenerSettings, EncryptionPolicy,
+    HttpsServerAuthenticationPolicy, Ipv6PinholeStatus, ListenerPolicy, ListenerStatus,
+    PortMappingPolicy, PortMappingStatus, SessionUdpStatus, SettingsPersistenceError,
+    TorrentSettingsPatch, TransferRateLimit, classify_listener_bind_failure,
     create_client_settings, read_client_settings, replace_client_settings,
 };
 
@@ -86,6 +87,30 @@ fn transfer_rate_limits_are_semantic_and_validate_finite_bounds() {
             ..ClientSettings::default()
         }
         .validate()
+        .is_err()
+    );
+}
+
+#[test]
+fn settings_patch_json_is_sparse_and_closed() {
+    let patch = ClientSettingsPatch {
+        peer_connection_limit: Some(321),
+        ipv6_enabled: Some(false),
+        ..ClientSettingsPatch::default()
+    };
+    assert_eq!(
+        serde_json::to_value(patch).unwrap(),
+        serde_json::json!({"peer_connection_limit": 321, "ipv6_enabled": false})
+    );
+    assert!(
+        serde_json::from_value::<ClientSettingsPatch>(serde_json::json!({"surprise": true}))
+            .is_err()
+    );
+    assert!(
+        serde_json::from_value::<TorrentSettingsPatch>(serde_json::json!({
+            "upload_rate_limit": {"type": "unlimited"},
+            "surprise": true
+        }))
         .is_err()
     );
 }

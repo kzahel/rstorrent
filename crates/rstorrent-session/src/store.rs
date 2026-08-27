@@ -42,8 +42,8 @@ use crate::profile_reset::{
 };
 use crate::settings::{
     ClientSettings, SettingsPersistenceError, StorageRootAvailability, StorageRootSnapshot,
-    StorageSettingsSnapshot, TorrentTransferLimits, TransferRateLimit, create_client_settings,
-    read_client_settings, replace_client_settings,
+    StorageSettingsSnapshot, TorrentSettingsPatch, TorrentTransferLimits, TransferRateLimit,
+    create_client_settings, read_client_settings, replace_client_settings,
 };
 use crate::store_schema::{
     DHT_TABLES_SQL, DOWNLOAD_QUEUE_INDEX_SQL, FILE_PRIORITIES_TABLE_SQL, REMOVAL_TABLE_SQL,
@@ -3167,8 +3167,20 @@ fn apply_mutation(
     current_revision: u64,
     profile_id: &str,
 ) -> Result<ResponseEnvelope, StoreError> {
-    if let Command::SetClientSettings { settings } = &request.command {
-        let changed = replace_client_settings(transaction, settings)?;
+    if let Command::UpdateClientSettings { patch } = &request.command {
+        let current = read_client_settings(transaction)?;
+        let settings = match patch.apply_to(&current) {
+            Ok(settings) => settings,
+            Err(error) => {
+                return Ok(ResponseEnvelope::error(
+                    request.request_id.clone(),
+                    current_revision,
+                    ErrorCode::InvalidRequest,
+                    error.to_string(),
+                ));
+            }
+        };
+        let changed = replace_client_settings(transaction, &settings)?;
         let revision = if changed {
             next_revision_strict(transaction, current_revision)?
         } else {
@@ -3252,9 +3264,11 @@ fn apply_mutation(
         Command::SetShowAddOptions { show } => {
             set_show_add_options(transaction, *show, current_revision)
         }
-        Command::SetClientSettings { .. } => unreachable!("settings are handled atomically above"),
-        Command::SetTorrentTransferLimits { torrent_id, limits } => {
-            set_torrent_transfer_limits(transaction, torrent_id, *limits, current_revision)
+        Command::UpdateClientSettings { .. } => {
+            unreachable!("settings are handled atomically above")
+        }
+        Command::UpdateTorrentSettings { torrent_id, patch } => {
+            update_torrent_settings(transaction, torrent_id, *patch, current_revision)
         }
         Command::RemoveStorageRoot { storage_root } => {
             remove_storage_root(transaction, storage_root, current_revision)
@@ -4648,10 +4662,10 @@ fn next_revision(
     Ok(revision)
 }
 
-fn set_torrent_transfer_limits(
+fn update_torrent_settings(
     transaction: &Transaction<'_>,
     torrent_id: &str,
-    limits: TorrentTransferLimits,
+    patch: TorrentSettingsPatch,
     current_revision: u64,
 ) -> Result<u64, (ErrorCode, String)> {
     let torrent_id = decode_torrent_id(torrent_id).ok_or_else(|| {
@@ -4675,6 +4689,16 @@ fn set_torrent_transfer_limits(
                 format!("torrent {torrent_id} is not in the profile"),
             )
         })?;
+    let current_limits = TorrentTransferLimits {
+        upload: TransferRateLimit::from_persisted(current.0)
+            .map_err(|error| internal_message(&format!("invalid durable upload limit: {error}")))?,
+        download: TransferRateLimit::from_persisted(current.1).map_err(|error| {
+            internal_message(&format!("invalid durable download limit: {error}"))
+        })?,
+    };
+    let limits = patch
+        .apply_to(current_limits)
+        .map_err(|error| (ErrorCode::InvalidRequest, error.to_string()))?;
     let desired = (limits.upload.persisted(), limits.download.persisted());
     if current == desired {
         return Ok(current_revision);
@@ -9214,6 +9238,164 @@ mod tests {
     }
 
     #[test]
+    fn settings_patches_preserve_omissions_and_reject_invalid_groups_atomically() {
+        let root = test_root("settings-patch-semantics");
+        let configured = configured_root(&root);
+        let mut store =
+            SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
+        let added = store
+            .handle_durable(&add_hash_request("add-settings-patch-target", 8))
+            .expect("add torrent");
+        let torrent_id = added_torrent_id(&added);
+
+        let client_request = RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: "update-client-settings-partial".to_owned(),
+            expected_revision: Some("1".to_owned()),
+            command: Command::UpdateClientSettings {
+                patch: crate::ClientSettingsPatch {
+                    peer_connection_limit: Some(321),
+                    upload_slots: Some(4),
+                    ..crate::ClientSettingsPatch::default()
+                },
+            },
+        };
+        let client_accepted = store
+            .handle_durable(&client_request)
+            .expect("apply client patch");
+        assert_eq!(client_accepted.revision, "2");
+        assert_eq!(
+            store.handle_durable(&client_request).unwrap(),
+            client_accepted
+        );
+        let configured_client = store.client_settings().unwrap();
+        assert_eq!(configured_client.peer_connection_limit, 321);
+        assert_eq!(configured_client.upload_slots, 4);
+        assert_eq!(
+            configured_client.download_rate_limit,
+            TransferRateLimit::Unlimited
+        );
+
+        let torrent_request = RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: "update-torrent-settings-partial".to_owned(),
+            expected_revision: Some("2".to_owned()),
+            command: Command::UpdateTorrentSettings {
+                torrent_id: torrent_id.clone(),
+                patch: crate::TorrentSettingsPatch {
+                    upload_rate_limit: Some(TransferRateLimit::Limited {
+                        bytes_per_second: 24 * 1_024,
+                    }),
+                    download_rate_limit: None,
+                },
+            },
+        };
+        let torrent_accepted = store
+            .handle_durable(&torrent_request)
+            .expect("apply torrent patch");
+        assert_eq!(torrent_accepted.revision, "3");
+        assert_eq!(
+            store.handle_durable(&torrent_request).unwrap(),
+            torrent_accepted
+        );
+        assert_eq!(
+            store.snapshot().unwrap().torrents[0].transfer_limits,
+            TorrentTransferLimits {
+                upload: TransferRateLimit::Limited {
+                    bytes_per_second: 24 * 1_024,
+                },
+                download: TransferRateLimit::Unlimited,
+            }
+        );
+
+        let no_op = store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "update-client-settings-no-op".to_owned(),
+                expected_revision: Some("3".to_owned()),
+                command: Command::UpdateClientSettings {
+                    patch: crate::ClientSettingsPatch {
+                        peer_connection_limit: Some(321),
+                        ..crate::ClientSettingsPatch::default()
+                    },
+                },
+            })
+            .expect("accept semantic no-op");
+        assert_eq!(no_op.revision, "3");
+
+        for (request_id, command) in [
+            (
+                "reject-empty-client-patch",
+                Command::UpdateClientSettings {
+                    patch: crate::ClientSettingsPatch::default(),
+                },
+            ),
+            (
+                "reject-invalid-client-group",
+                Command::UpdateClientSettings {
+                    patch: crate::ClientSettingsPatch {
+                        peer_connection_limit: Some(500),
+                        upload_rate_limit: Some(TransferRateLimit::Limited {
+                            bytes_per_second: 1_023,
+                        }),
+                        ..crate::ClientSettingsPatch::default()
+                    },
+                },
+            ),
+            (
+                "reject-empty-torrent-patch",
+                Command::UpdateTorrentSettings {
+                    torrent_id: torrent_id.clone(),
+                    patch: crate::TorrentSettingsPatch::default(),
+                },
+            ),
+            (
+                "reject-invalid-torrent-group",
+                Command::UpdateTorrentSettings {
+                    torrent_id: torrent_id.clone(),
+                    patch: crate::TorrentSettingsPatch {
+                        upload_rate_limit: Some(TransferRateLimit::Limited {
+                            bytes_per_second: 48 * 1_024,
+                        }),
+                        download_rate_limit: Some(TransferRateLimit::Limited {
+                            bytes_per_second: 1_023,
+                        }),
+                    },
+                },
+            ),
+        ] {
+            let response = store
+                .handle_durable(&RequestEnvelope {
+                    version: CONTROL_VERSION,
+                    request_id: request_id.to_owned(),
+                    expected_revision: Some("3".to_owned()),
+                    command,
+                })
+                .expect("return a structured rejection");
+            assert!(matches!(
+                response.outcome,
+                ResponseOutcome::Error {
+                    error: crate::ErrorResponse {
+                        code: ErrorCode::InvalidRequest,
+                        ..
+                    }
+                }
+            ));
+            assert_eq!(response.revision, "3");
+        }
+        assert_eq!(store.revision().unwrap(), 3);
+        assert_eq!(store.client_settings().unwrap(), configured_client);
+        assert_eq!(
+            store.snapshot().unwrap().torrents[0].transfer_limits.upload,
+            TransferRateLimit::Limited {
+                bytes_per_second: 24 * 1_024,
+            }
+        );
+        drop(store);
+        fs::remove_dir_all(root).expect("remove profile");
+    }
+
+    #[test]
     fn torrent_transfer_limits_are_atomic_replayable_and_durable() {
         let root = test_root("torrent-transfer-limits");
         let configured = configured_root(&root);
@@ -9235,9 +9417,9 @@ mod tests {
             version: CONTROL_VERSION,
             request_id: "set-torrent-transfer-limits".to_owned(),
             expected_revision: Some("1".to_owned()),
-            command: Command::SetTorrentTransferLimits {
+            command: Command::UpdateTorrentSettings {
                 torrent_id: torrent_id.clone(),
-                limits,
+                patch: limits.into(),
             },
         };
         let accepted = store.handle_durable(&request).expect("set torrent limits");
@@ -9253,9 +9435,9 @@ mod tests {
                 version: CONTROL_VERSION,
                 request_id: "torrent-transfer-limits-no-op".to_owned(),
                 expected_revision: Some("2".to_owned()),
-                command: Command::SetTorrentTransferLimits {
+                command: Command::UpdateTorrentSettings {
                     torrent_id: torrent_id.clone(),
-                    limits,
+                    patch: limits.into(),
                 },
             })
             .expect("no-op torrent limits");
@@ -9265,9 +9447,9 @@ mod tests {
                 version: CONTROL_VERSION,
                 request_id: "torrent-transfer-limits-stale".to_owned(),
                 expected_revision: Some("1".to_owned()),
-                command: Command::SetTorrentTransferLimits {
+                command: Command::UpdateTorrentSettings {
                     torrent_id,
-                    limits: TorrentTransferLimits::default(),
+                    patch: TorrentTransferLimits::default().into(),
                 },
             })
             .expect("stale torrent limits");
@@ -9320,8 +9502,8 @@ mod tests {
             version: CONTROL_VERSION,
             request_id: "set-client-settings".to_owned(),
             expected_revision: Some("0".to_owned()),
-            command: Command::SetClientSettings {
-                settings: configured.clone(),
+            command: Command::UpdateClientSettings {
+                patch: configured.clone().into(),
             },
         };
         let accepted = store.handle_durable(&request).expect("set settings");
@@ -9334,8 +9516,8 @@ mod tests {
 
         let conflict = store
             .handle_durable(&RequestEnvelope {
-                command: Command::SetClientSettings {
-                    settings: ClientSettings::default(),
+                command: Command::UpdateClientSettings {
+                    patch: ClientSettings::default().into(),
                 },
                 ..request.clone()
             })
@@ -9355,8 +9537,8 @@ mod tests {
                 version: CONTROL_VERSION,
                 request_id: "settings-no-op".to_owned(),
                 expected_revision: Some("1".to_owned()),
-                command: Command::SetClientSettings {
-                    settings: configured.clone(),
+                command: Command::UpdateClientSettings {
+                    patch: configured.clone().into(),
                 },
             })
             .expect("no-op settings");
@@ -9366,8 +9548,8 @@ mod tests {
                 version: CONTROL_VERSION,
                 request_id: "settings-stale".to_owned(),
                 expected_revision: Some("0".to_owned()),
-                command: Command::SetClientSettings {
-                    settings: ClientSettings::default(),
+                command: Command::UpdateClientSettings {
+                    patch: ClientSettings::default().into(),
                 },
             })
             .expect("stale settings");
@@ -9386,11 +9568,12 @@ mod tests {
                 version: CONTROL_VERSION,
                 request_id: invalid_request_id.clone(),
                 expected_revision: Some("1".to_owned()),
-                command: Command::SetClientSettings {
-                    settings: ClientSettings {
+                command: Command::UpdateClientSettings {
+                    patch: ClientSettings {
                         peer_connection_limit: 0,
                         ..ClientSettings::default()
-                    },
+                    }
+                    .into(),
                 },
             })
             .expect("reject invalid settings");
@@ -9415,8 +9598,8 @@ mod tests {
                 version: CONTROL_VERSION,
                 request_id: invalid_request_id,
                 expected_revision: Some("1".to_owned()),
-                command: Command::SetClientSettings {
-                    settings: ClientSettings::default(),
+                command: Command::UpdateClientSettings {
+                    patch: ClientSettings::default().into(),
                 },
             })
             .expect("retry corrected settings request");
@@ -9434,11 +9617,12 @@ mod tests {
                 version: CONTROL_VERSION,
                 request_id: "ephemeral-settings".to_owned(),
                 expected_revision: None,
-                command: Command::SetClientSettings {
-                    settings: ClientSettings {
+                command: Command::UpdateClientSettings {
+                    patch: ClientSettings {
                         peer_connection_limit: 199,
                         ..ClientSettings::default()
-                    },
+                    }
+                    .into(),
                 },
             })
             .expect("accept ephemeral settings");
@@ -9475,11 +9659,12 @@ mod tests {
             version: CONTROL_VERSION,
             request_id: "settings-write-failure".to_owned(),
             expected_revision: Some("0".to_owned()),
-            command: Command::SetClientSettings {
-                settings: ClientSettings {
+            command: Command::UpdateClientSettings {
+                patch: ClientSettings {
                     peer_connection_limit: 199,
                     ..ClientSettings::default()
-                },
+                }
+                .into(),
             },
         };
         assert!(store.handle_durable(&request).is_err());

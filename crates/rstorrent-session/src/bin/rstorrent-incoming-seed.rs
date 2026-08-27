@@ -423,8 +423,8 @@ fn initialize_catalog(
             version: CONTROL_VERSION,
             request_id: format!("configure-incoming-seed-{}", store.revision()?),
             expected_revision: None,
-            command: Command::SetClientSettings {
-                settings: desired_settings,
+            command: Command::UpdateClientSettings {
+                patch: desired_settings.into(),
             },
         })?;
         if !matches!(settings.outcome, ResponseOutcome::Success { .. }) {
@@ -628,9 +628,9 @@ fn ensure_transfer_limits(
         version: CONTROL_VERSION,
         request_id: format!("configure-incoming-seed-rates-{}", store.revision()?),
         expected_revision: None,
-        command: Command::SetTorrentTransferLimits {
+        command: Command::UpdateTorrentSettings {
             torrent_id: torrent_id.to_owned(),
-            limits,
+            patch: limits.into(),
         },
     })?;
     if matches!(response.outcome, ResponseOutcome::Success { .. }) {
@@ -1238,13 +1238,14 @@ async fn apply_port_mapping(
             version: CONTROL_VERSION,
             request_id: format!("staged-pinhole-{}-{port_mapping:?}", service.revision()?),
             expected_revision: None,
-            command: Command::SetClientSettings {
-                settings: ClientSettings {
+            command: Command::UpdateClientSettings {
+                patch: ClientSettings {
                     listener: ListenerPolicy::AutomaticLocalNetwork,
                     port_mapping,
                     encryption: arguments.encryption,
                     ..ClientSettings::default()
-                },
+                }
+                .into(),
             },
         })
         .await?;

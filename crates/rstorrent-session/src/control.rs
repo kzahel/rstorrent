@@ -7,7 +7,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::settings::{ClientSettings, StorageSettingsSnapshot, TorrentTransferLimits};
+use crate::settings::{
+    ClientSettings, ClientSettingsPatch, StorageSettingsSnapshot, TorrentSettingsPatch,
+    TorrentTransferLimits,
+};
 
 pub const CONTROL_VERSION: u16 = 1;
 pub const MAX_REQUEST_ID_LENGTH: usize = 128;
@@ -124,13 +127,13 @@ pub enum Command {
     SetShowAddOptions {
         show: bool,
     },
-    SetClientSettings {
-        settings: ClientSettings,
+    UpdateClientSettings {
+        patch: ClientSettingsPatch,
     },
-    SetTorrentTransferLimits {
+    UpdateTorrentSettings {
         #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
-        limits: TorrentTransferLimits,
+        patch: TorrentSettingsPatch,
     },
     RemoveStorageRoot {
         storage_root: String,
@@ -175,8 +178,8 @@ impl Command {
             Self::AddMagnet { .. }
                 | Self::SetDefaultStorageRoot { .. }
                 | Self::SetShowAddOptions { .. }
-                | Self::SetClientSettings { .. }
-                | Self::SetTorrentTransferLimits { .. }
+                | Self::UpdateClientSettings { .. }
+                | Self::UpdateTorrentSettings { .. }
                 | Self::RemoveStorageRoot { .. }
                 | Self::Pause { .. }
                 | Self::Resume { .. }
@@ -578,9 +581,15 @@ pub(crate) fn validate_request(request: &RequestEnvelope) -> Result<(), (ErrorCo
         | Command::ExportMagnet { torrent_id } => {
             validate_torrent_id(torrent_id)?;
         }
-        Command::SetTorrentTransferLimits { torrent_id, limits } => {
+        Command::UpdateTorrentSettings { torrent_id, patch } => {
             validate_torrent_id(torrent_id)?;
-            limits
+            if patch.is_empty() {
+                return Err((
+                    ErrorCode::InvalidRequest,
+                    "torrent settings patch must contain at least one property".to_owned(),
+                ));
+            }
+            patch
                 .validate()
                 .map_err(|error| (ErrorCode::InvalidRequest, error.to_string()))?;
         }
@@ -588,8 +597,14 @@ pub(crate) fn validate_request(request: &RequestEnvelope) -> Result<(), (ErrorCo
         | Command::RemoveStorageRoot { storage_root } => {
             validate_identifier(storage_root, "storage root", MAX_ROOT_ID_LENGTH)?;
         }
-        Command::SetClientSettings { settings } => {
-            settings
+        Command::UpdateClientSettings { patch } => {
+            if patch.is_empty() {
+                return Err((
+                    ErrorCode::InvalidRequest,
+                    "client settings patch must contain at least one property".to_owned(),
+                ));
+            }
+            patch
                 .validate()
                 .map_err(|error| (ErrorCode::InvalidRequest, error.to_string()))?;
         }
@@ -739,6 +754,34 @@ mod tests {
         CONTROL_VERSION, Command, ErrorCode, FileIndexRange, FilePriority, RequestEnvelope,
         encode_info_hash, validate_request,
     };
+
+    #[test]
+    fn settings_commands_require_nonempty_patches_and_old_variants_are_absent() {
+        let empty = RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: "empty-settings-patch".to_owned(),
+            expected_revision: None,
+            command: Command::UpdateClientSettings {
+                patch: crate::ClientSettingsPatch::default(),
+            },
+        };
+        assert_eq!(
+            validate_request(&empty).map_err(|error| error.0),
+            Err(ErrorCode::InvalidRequest)
+        );
+        assert!(
+            serde_json::from_str::<RequestEnvelope>(
+                r#"{"version":1,"request_id":"old","command":{"type":"set_client_settings","settings":{}}}"#,
+            )
+            .is_err()
+        );
+        assert!(
+            serde_json::from_str::<RequestEnvelope>(
+                r#"{"version":1,"request_id":"old","command":{"type":"set_torrent_transfer_limits","torrent_id":"t1-000102030405060708090a0b0c0d0e0f","limits":{}}}"#,
+            )
+            .is_err()
+        );
+    }
 
     #[test]
     fn validates_sorted_bounded_selection() {

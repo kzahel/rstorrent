@@ -98,6 +98,55 @@ impl TorrentTransferLimits {
         }
     }
 }
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+#[serde(deny_unknown_fields)]
+#[schemars(extend("minProperties" = 1))]
+pub struct TorrentSettingsPatch {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upload_rate_limit: Option<TransferRateLimit>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub download_rate_limit: Option<TransferRateLimit>,
+}
+
+impl TorrentSettingsPatch {
+    pub(crate) const fn is_empty(self) -> bool {
+        self.upload_rate_limit.is_none() && self.download_rate_limit.is_none()
+    }
+
+    pub(crate) fn validate(self) -> Result<(), ClientSettingsError> {
+        if let Some(limit) = self.upload_rate_limit {
+            limit.validate()?;
+        }
+        if let Some(limit) = self.download_rate_limit {
+            limit.validate()?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn apply_to(
+        self,
+        current: TorrentTransferLimits,
+    ) -> Result<TorrentTransferLimits, ClientSettingsError> {
+        let candidate = TorrentTransferLimits {
+            upload: self.upload_rate_limit.unwrap_or(current.upload),
+            download: self.download_rate_limit.unwrap_or(current.download),
+        };
+        candidate.validate()?;
+        Ok(candidate)
+    }
+}
+
+impl From<TorrentTransferLimits> for TorrentSettingsPatch {
+    fn from(limits: TorrentTransferLimits) -> Self {
+        Self {
+            upload_rate_limit: Some(limits.upload),
+            download_rate_limit: Some(limits.download),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
@@ -266,6 +315,102 @@ impl ClientSettings {
         self.upload_rate_limit.validate()?;
         self.download_rate_limit.validate()?;
         Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+#[serde(deny_unknown_fields)]
+#[schemars(extend("minProperties" = 1))]
+pub struct ClientSettingsPatch {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub listener: Option<ListenerPolicy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preferred_listen_port: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub port_mapping: Option<PortMappingPolicy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub peer_connection_limit: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upload_slots: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_downloads: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upload_rate_limit: Option<TransferRateLimit>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub download_rate_limit: Option<TransferRateLimit>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encryption: Option<EncryptionPolicy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ipv6_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tracker_https_server_authentication: Option<HttpsServerAuthenticationPolicy>,
+}
+
+impl ClientSettingsPatch {
+    pub(crate) const fn is_empty(self) -> bool {
+        self.listener.is_none()
+            && self.preferred_listen_port.is_none()
+            && self.port_mapping.is_none()
+            && self.peer_connection_limit.is_none()
+            && self.upload_slots.is_none()
+            && self.active_downloads.is_none()
+            && self.upload_rate_limit.is_none()
+            && self.download_rate_limit.is_none()
+            && self.encryption.is_none()
+            && self.ipv6_enabled.is_none()
+            && self.tracker_https_server_authentication.is_none()
+    }
+
+    pub(crate) fn validate(self) -> Result<(), ClientSettingsError> {
+        self.apply_to(&ClientSettings::default()).map(|_| ())
+    }
+
+    pub(crate) fn apply_to(
+        self,
+        current: &ClientSettings,
+    ) -> Result<ClientSettings, ClientSettingsError> {
+        let candidate = ClientSettings {
+            listener: self.listener.unwrap_or(current.listener),
+            preferred_listen_port: self
+                .preferred_listen_port
+                .unwrap_or(current.preferred_listen_port),
+            port_mapping: self.port_mapping.unwrap_or(current.port_mapping),
+            peer_connection_limit: self
+                .peer_connection_limit
+                .unwrap_or(current.peer_connection_limit),
+            upload_slots: self.upload_slots.unwrap_or(current.upload_slots),
+            active_downloads: self.active_downloads.unwrap_or(current.active_downloads),
+            upload_rate_limit: self.upload_rate_limit.unwrap_or(current.upload_rate_limit),
+            download_rate_limit: self
+                .download_rate_limit
+                .unwrap_or(current.download_rate_limit),
+            encryption: self.encryption.unwrap_or(current.encryption),
+            ipv6_enabled: self.ipv6_enabled.unwrap_or(current.ipv6_enabled),
+            tracker_https_server_authentication: self
+                .tracker_https_server_authentication
+                .unwrap_or(current.tracker_https_server_authentication),
+        };
+        candidate.validate()?;
+        Ok(candidate)
+    }
+}
+
+impl From<ClientSettings> for ClientSettingsPatch {
+    fn from(settings: ClientSettings) -> Self {
+        Self {
+            listener: Some(settings.listener),
+            preferred_listen_port: Some(settings.preferred_listen_port),
+            port_mapping: Some(settings.port_mapping),
+            peer_connection_limit: Some(settings.peer_connection_limit),
+            upload_slots: Some(settings.upload_slots),
+            active_downloads: Some(settings.active_downloads),
+            upload_rate_limit: Some(settings.upload_rate_limit),
+            download_rate_limit: Some(settings.download_rate_limit),
+            encryption: Some(settings.encryption),
+            ipv6_enabled: Some(settings.ipv6_enabled),
+            tracker_https_server_authentication: Some(settings.tracker_https_server_authentication),
+        }
     }
 }
 

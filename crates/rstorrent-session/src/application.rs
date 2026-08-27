@@ -1604,18 +1604,27 @@ impl ApplicationService {
             }
             Command::SetDefaultStorageRoot { .. } | Command::SetShowAddOptions { .. } => {}
             Command::MoveDownloadToTop { .. } | Command::MoveDownloadToBottom { .. } => {}
-            Command::SetClientSettings { .. } => {
+            Command::UpdateClientSettings { .. } => {
                 let settings = self.store_mut()?.snapshot()?.client_settings;
                 self.session_network
                     .as_mut()
                     .expect("session network exists while settings are accepted")
                     .submit_settings(settings)?;
             }
-            Command::SetTorrentTransferLimits { torrent_id, limits } => {
+            Command::UpdateTorrentSettings { torrent_id, .. } => {
                 let torrent_id = torrent_id.to_ascii_lowercase();
-                self.ensure_torrent_runtime(&torrent_id)?
-                    .peers()
-                    .set_transfer_rate_limits(limits.into_engine());
+                let limits = self
+                    .store_mut()?
+                    .snapshot()?
+                    .torrents
+                    .into_iter()
+                    .find(|torrent| torrent.torrent_id == torrent_id)
+                    .map(|torrent| torrent.transfer_limits);
+                if let Some(limits) = limits {
+                    self.ensure_torrent_runtime(&torrent_id)?
+                        .peers()
+                        .set_transfer_rate_limits(limits.into_engine());
+                }
             }
             Command::Shutdown => {
                 self.shutdown().await?;
@@ -6352,7 +6361,9 @@ mod tests {
                 version: CONTROL_VERSION,
                 request_id: "configure-client-settings".to_owned(),
                 expected_revision: None,
-                command: Command::SetClientSettings { settings },
+                command: Command::UpdateClientSettings {
+                    patch: settings.into(),
+                },
             })
             .expect("configure client settings");
         assert!(matches!(response.outcome, ResponseOutcome::Success { .. }));
@@ -7059,8 +7070,8 @@ mod tests {
                 version: CONTROL_VERSION,
                 request_id: "increase-active-downloads".to_owned(),
                 expected_revision: None,
-                command: Command::SetClientSettings {
-                    settings: increased.clone(),
+                command: Command::UpdateClientSettings {
+                    patch: increased.clone().into(),
                 },
             })
             .await
@@ -7101,11 +7112,12 @@ mod tests {
                 version: CONTROL_VERSION,
                 request_id: "decrease-active-downloads".to_owned(),
                 expected_revision: None,
-                command: Command::SetClientSettings {
-                    settings: ClientSettings {
+                command: Command::UpdateClientSettings {
+                    patch: ClientSettings {
                         active_downloads: 1,
                         ..increased
-                    },
+                    }
+                    .into(),
                 },
             })
             .await
@@ -8075,8 +8087,8 @@ mod tests {
                 version: CONTROL_VERSION,
                 request_id: "configure-tracker-ipv6-loopback".to_owned(),
                 expected_revision: None,
-                command: Command::SetClientSettings {
-                    settings: ClientSettings {
+                command: Command::UpdateClientSettings {
+                    patch: ClientSettings {
                         listener: ListenerPolicy::AutomaticLoopback,
                         tracker_https_server_authentication: if https {
                             HttpsServerAuthenticationPolicy::Disabled
@@ -8084,7 +8096,8 @@ mod tests {
                             HttpsServerAuthenticationPolicy::SystemTrust
                         },
                         ..ClientSettings::default()
-                    },
+                    }
+                    .into(),
                 },
             })
             .expect("persist loopback IPv6 and HTTPS policy");
@@ -8119,8 +8132,8 @@ mod tests {
                 version: CONTROL_VERSION,
                 request_id: format!("live-listener-during-{scheme}-download"),
                 expected_revision: None,
-                command: Command::SetClientSettings {
-                    settings: live_settings.clone(),
+                command: Command::UpdateClientSettings {
+                    patch: live_settings.clone().into(),
                 },
             })
             .await
@@ -10101,8 +10114,8 @@ mod tests {
                 version: CONTROL_VERSION,
                 request_id: "ephemeral-live-client-settings".to_owned(),
                 expected_revision: Some("0".to_owned()),
-                command: Command::SetClientSettings {
-                    settings: settings.clone(),
+                command: Command::UpdateClientSettings {
+                    patch: settings.clone().into(),
                 },
             })
             .await
@@ -10171,16 +10184,17 @@ mod tests {
                 bytes_per_second: 96 * 1_024,
             },
         };
+        let initial_request = RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: "update-transfer-limit-runtime".to_owned(),
+            expected_revision: None,
+            command: Command::UpdateTorrentSettings {
+                torrent_id: torrent_id.clone(),
+                patch: limits.into(),
+            },
+        };
         let response = service
-            .dispatch(RequestEnvelope {
-                version: CONTROL_VERSION,
-                request_id: "set-transfer-limit-runtime".to_owned(),
-                expected_revision: None,
-                command: Command::SetTorrentTransferLimits {
-                    torrent_id: torrent_id.clone(),
-                    limits,
-                },
-            })
+            .dispatch(initial_request.clone())
             .await
             .expect("set live torrent limits");
         let ResponseOutcome::Success { snapshot } = response.outcome else {
@@ -10195,6 +10209,36 @@ mod tests {
             .transfer_rate_limits();
         assert_eq!(active.upload.bytes_per_second(), Some(24 * 1_024));
         assert_eq!(active.download.bytes_per_second(), Some(96 * 1_024));
+
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "update-download-limit-runtime".to_owned(),
+                expected_revision: None,
+                command: Command::UpdateTorrentSettings {
+                    torrent_id: torrent_id.clone(),
+                    patch: crate::TorrentSettingsPatch {
+                        upload_rate_limit: None,
+                        download_rate_limit: Some(crate::TransferRateLimit::Limited {
+                            bytes_per_second: 128 * 1_024,
+                        }),
+                    },
+                },
+            })
+            .await
+            .expect("update only the live download limit");
+        service
+            .dispatch(initial_request)
+            .await
+            .expect("replay the older accepted request");
+        let after_replay = service
+            .torrent_runtimes
+            .get(&torrent_id)
+            .expect("torrent runtime after replay")
+            .peers()
+            .transfer_rate_limits();
+        assert_eq!(after_replay.upload.bytes_per_second(), Some(24 * 1_024));
+        assert_eq!(after_replay.download.bytes_per_second(), Some(128 * 1_024));
         let observed = wait_for_client_settings(&service, |runtime| {
             runtime.bandwidth.upload.registered_torrents == 1
                 && runtime.bandwidth.download.registered_torrents == 1
@@ -10216,7 +10260,7 @@ mod tests {
             .peers()
             .transfer_rate_limits();
         assert_eq!(restored.upload.bytes_per_second(), Some(24 * 1_024));
-        assert_eq!(restored.download.bytes_per_second(), Some(96 * 1_024));
+        assert_eq!(restored.download.bytes_per_second(), Some(128 * 1_024));
         reopened
             .shutdown()
             .await
@@ -10390,8 +10434,8 @@ mod tests {
                 version: CONTROL_VERSION,
                 request_id: "replace-coordinated-session-sockets".to_owned(),
                 expected_revision: None,
-                command: Command::SetClientSettings {
-                    settings: replacement.clone(),
+                command: Command::UpdateClientSettings {
+                    patch: replacement.clone().into(),
                 },
             })
             .await
@@ -10457,8 +10501,8 @@ mod tests {
                 version: CONTROL_VERSION,
                 request_id: "disable-ipv6-session-sockets".to_owned(),
                 expected_revision: None,
-                command: Command::SetClientSettings {
-                    settings: ipv4_only.clone(),
+                command: Command::UpdateClientSettings {
+                    patch: ipv4_only.clone().into(),
                 },
             })
             .await
@@ -10494,8 +10538,8 @@ mod tests {
                 version: CONTROL_VERSION,
                 request_id: "reenable-ipv6-session-sockets".to_owned(),
                 expected_revision: None,
-                command: Command::SetClientSettings {
-                    settings: replacement.clone(),
+                command: Command::UpdateClientSettings {
+                    patch: replacement.clone().into(),
                 },
             })
             .await
@@ -10632,8 +10676,8 @@ mod tests {
                     version: CONTROL_VERSION,
                     request_id: format!("rapid-settings-{index}"),
                     expected_revision: None,
-                    command: Command::SetClientSettings {
-                        settings: settings.clone(),
+                    command: Command::UpdateClientSettings {
+                        patch: settings.clone().into(),
                     },
                 })
                 .await
@@ -10728,8 +10772,8 @@ mod tests {
                 version: CONTROL_VERSION,
                 request_id: "decrease-live-peer-limit".to_owned(),
                 expected_revision: None,
-                command: Command::SetClientSettings {
-                    settings: reduced.clone(),
+                command: Command::UpdateClientSettings {
+                    patch: reduced.clone().into(),
                 },
             })
             .await
@@ -10770,8 +10814,8 @@ mod tests {
                 version: CONTROL_VERSION,
                 request_id: "increase-live-peer-limit".to_owned(),
                 expected_revision: None,
-                command: Command::SetClientSettings {
-                    settings: increased.clone(),
+                command: Command::UpdateClientSettings {
+                    patch: increased.clone().into(),
                 },
             })
             .await
@@ -10820,8 +10864,8 @@ mod tests {
                 version: CONTROL_VERSION,
                 request_id: "require-mse-live".to_owned(),
                 expected_revision: None,
-                command: Command::SetClientSettings {
-                    settings: required.clone(),
+                command: Command::UpdateClientSettings {
+                    patch: required.clone().into(),
                 },
             })
             .await
@@ -11127,8 +11171,8 @@ mod tests {
                 version: CONTROL_VERSION,
                 request_id: "set-client-settings-view".to_owned(),
                 expected_revision: Some("0".to_owned()),
-                command: Command::SetClientSettings {
-                    settings: configured.clone(),
+                command: Command::UpdateClientSettings {
+                    patch: configured.clone().into(),
                 },
             })
             .await
@@ -11161,8 +11205,8 @@ mod tests {
                 version: CONTROL_VERSION,
                 request_id: "revert-client-settings-view".to_owned(),
                 expected_revision: Some("1".to_owned()),
-                command: Command::SetClientSettings {
-                    settings: initial_settings.clone(),
+                command: Command::UpdateClientSettings {
+                    patch: initial_settings.clone().into(),
                 },
             })
             .await
@@ -14895,8 +14939,8 @@ mod tests {
                 version: CONTROL_VERSION,
                 request_id: "handover-established-incoming-upload".to_owned(),
                 expected_revision: None,
-                command: Command::SetClientSettings {
-                    settings: handover_settings.clone(),
+                command: Command::UpdateClientSettings {
+                    patch: handover_settings.clone().into(),
                 },
             })
             .await
@@ -14987,8 +15031,8 @@ mod tests {
                 version: CONTROL_VERSION,
                 request_id: "configure-zero-upload-slots".to_owned(),
                 expected_revision: None,
-                command: Command::SetClientSettings {
-                    settings: zero_slots.clone(),
+                command: Command::UpdateClientSettings {
+                    patch: zero_slots.clone().into(),
                 },
             })
             .await
@@ -15227,8 +15271,8 @@ mod tests {
                 version: CONTROL_VERSION,
                 request_id: "disable-ineligible-live-mapping".to_owned(),
                 expected_revision: None,
-                command: Command::SetClientSettings {
-                    settings: mapping_disabled.clone(),
+                command: Command::UpdateClientSettings {
+                    patch: mapping_disabled.clone().into(),
                 },
             })
             .await
@@ -15253,8 +15297,8 @@ mod tests {
                 version: CONTROL_VERSION,
                 request_id: "reenable-ineligible-live-mapping".to_owned(),
                 expected_revision: None,
-                command: Command::SetClientSettings {
-                    settings: mapping_enabled.clone(),
+                command: Command::UpdateClientSettings {
+                    patch: mapping_enabled.clone().into(),
                 },
             })
             .await
@@ -15365,8 +15409,8 @@ mod tests {
                 version: CONTROL_VERSION,
                 request_id: "repair-fixed-listener".to_owned(),
                 expected_revision: None,
-                command: Command::SetClientSettings {
-                    settings: repaired.clone(),
+                command: Command::UpdateClientSettings {
+                    patch: repaired.clone().into(),
                 },
             })
             .await
@@ -15409,8 +15453,8 @@ mod tests {
                 version: CONTROL_VERSION,
                 request_id: "select-blocked-fixed-listener".to_owned(),
                 expected_revision: None,
-                command: Command::SetClientSettings {
-                    settings: fixed.clone(),
+                command: Command::UpdateClientSettings {
+                    patch: fixed.clone().into(),
                 },
             })
             .await
@@ -15449,8 +15493,8 @@ mod tests {
                 version: CONTROL_VERSION,
                 request_id: "retry-released-fixed-listener".to_owned(),
                 expected_revision: None,
-                command: Command::SetClientSettings {
-                    settings: fixed.clone(),
+                command: Command::UpdateClientSettings {
+                    patch: fixed.clone().into(),
                 },
             })
             .await
@@ -15502,8 +15546,8 @@ mod tests {
                 version: CONTROL_VERSION,
                 request_id: "change-fixed-future-preference".to_owned(),
                 expected_revision: None,
-                command: Command::SetClientSettings {
-                    settings: fixed_future_preference.clone(),
+                command: Command::UpdateClientSettings {
+                    patch: fixed_future_preference.clone().into(),
                 },
             })
             .await
