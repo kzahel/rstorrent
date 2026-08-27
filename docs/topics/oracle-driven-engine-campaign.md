@@ -633,12 +633,18 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Current engine-campaign action: close durable High file-priority Tactical
-[`176`](../tactical/176-durable-high-file-priority.md) with the macOS-only iOS
-simulator/archive compile. Its bounded High/Normal/Skip implementation, fresh
-schema-21 persistence, weighted ordinary piece activation, independent
-stronger Tactical `139` streaming overlay, and every available Linux, web, and
-Android gate already pass. Completed Tactical
+Current engine-campaign action: execute source-first Tactical
+[`182`](../tactical/182-bounded-outbound-attempt-and-metadata-turnover.md).
+It makes 15 seconds one total preferred-uTP/TCP/MSE/plain-handshake attempt
+lifetime and adds one-at-a-time, paced replacement of a zero-contribution
+metadata worker only while all 30 cohort slots are occupied and an eligible
+candidate waits. Durable High file-priority Tactical
+[`176`](../tactical/176-durable-high-file-priority.md) retains only its
+unchanged macOS-only iOS simulator/archive compile and resumes afterward. Its
+bounded High/Normal/Skip implementation, fresh schema-21 persistence, weighted
+ordinary piece activation, independent stronger Tactical `139` streaming
+overlay, and every available Linux, web, and Android gate already pass.
+Completed Tactical
 [`181`](../tactical/181-paced-metadata-connection-cohort.md) retains exact
 global connection accounting while expanding the combined metadata
 dial/worker cohort to 30 and spacing accepted attempts at a configurable

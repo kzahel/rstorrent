@@ -675,10 +675,15 @@ exactly.
 
 ### Now
 
-- Resume **Tactical `176`** only for its existing macOS-hosted iOS simulator/
-  archive compile; every implementation and other validation gate passes.
+- Execute **Tactical `182`**: apply one absolute 15-second outbound-attempt
+  budget with bounded uTP fallback/handshake sub-budgets, then add conservative
+  one-at-a-time turnover of a zero-contribution metadata worker only while the
+  30-peer cohort is saturated and another eligible candidate is waiting.
 
 ### Next
+
+- Resume **Tactical `176`** only for its existing macOS-hosted iOS simulator/
+  archive compile; every implementation and other validation gate passes.
 
 - Resume **Tactical `158`** and close the clean Windows and Linux x86_64
   signed replacement/relaunch evidence plus Windows firewall-consent

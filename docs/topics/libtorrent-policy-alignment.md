@@ -4,9 +4,9 @@ Topic: `libtorrent-policy-alignment`
 
 Status: **Active.** The initial cross-policy audit was recorded on 2026-08-27
 against pinned Rasterbar libtorrent `2.0.13` at
-`7d7fc38fac61177fa5e02148f791b2f65250b09d`. It identifies connection timing
-and saturated metadata-worker turnover as the strongest next candidates, but
-does not activate a tactical or change the authoritative queue.
+`7d7fc38fac61177fa5e02148f791b2f65250b09d`. Tactical
+[`182`](../tactical/182-bounded-outbound-attempt-and-metadata-turnover.md) is
+the active source-first implementation of `LPA-001` and `LPA-002`.
 
 ## Scope
 
@@ -320,11 +320,13 @@ A public-swarm observation may identify a problem and a repeated controlled
 cohort may support a policy choice. One changing swarm does not establish the
 new default by itself.
 
-## Suggested Next Tactical Boundary
+## Active Tactical Boundary
 
-The strongest later candidate is a bounded **outbound attempt deadline and
-metadata cohort turnover** tactical covering `LPA-001` and the tightly related
-`LPA-002` transition. It should stop when:
+Tactical
+[`182`](../tactical/182-bounded-outbound-attempt-and-metadata-turnover.md)
+implements a bounded **outbound attempt deadline and metadata cohort
+turnover** slice covering `LPA-001` and the tightly related `LPA-002`
+transition. It stops when:
 
 - one explicit total attempt budget bounds uTP selection/fallback, TCP
   connection, plaintext/MSE negotiation, and the BitTorrent handshake;
@@ -338,7 +340,7 @@ metadata cohort turnover** tactical covering `LPA-001` and the tightly related
 - desktop/workspace gates plus Android arm64-v8a and x86_64 builds pass with
   recorded resource high waters.
 
-That candidate is not active while
-[`capability-readiness.md`](capability-readiness.md) names another **Now**.
-Activating it requires a numbered tactical and ordinary queue reconciliation;
-this living topic is not a competing backlog.
+The tactical is the sole **Now** while active. On completion, this topic must
+record the landed timing/turnover behavior and the ordinary queue restores
+Tactical `176`; this living topic remains a ledger rather than a competing
+backlog.

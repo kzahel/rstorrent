@@ -43,9 +43,12 @@ machine-control.
 ## Current Tactical State
 
 The authoritative **Now** is
-[`176-durable-high-file-priority.md`](docs/tactical/176-durable-high-file-priority.md).
-Its semantic model, fresh schema-21 persistence, and every Linux/web/Android
-gate pass; only the macOS-hosted iOS simulator/archive compile remains.
+[`182-bounded-outbound-attempt-and-metadata-turnover.md`](docs/tactical/182-bounded-outbound-attempt-and-metadata-turnover.md).
+It bounds preferred-uTP/TCP/MSE/plain handshake work to one 15-second
+outbound-attempt lifetime and conservatively turns over a zero-contribution
+metadata worker only when the 30-peer cohort is saturated and another eligible
+candidate is waiting. Tactical `176` retains only its unchanged macOS-hosted
+iOS simulator/archive compile and resumes afterward.
 Completed Tactical `181` expands metadata acquisition from eight combined
 dial/worker slots to a 30-peer cohort while spacing accepted attempts at a
 configurable no-burst default of ten per second beneath unchanged fair and

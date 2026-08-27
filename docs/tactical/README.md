@@ -79,6 +79,10 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`182-bounded-outbound-attempt-and-metadata-turnover.md`](182-bounded-outbound-attempt-and-metadata-turnover.md):
+  active; bounds preferred-uTP/TCP/MSE/plain handshake work to one 15-second
+  outbound attempt and adds conservative one-at-a-time replacement of a
+  zero-contribution worker only while the 30-peer metadata cohort is full.
 - [`181-paced-metadata-connection-cohort.md`](181-paced-metadata-connection-cohort.md):
   completed expansion of the combined metadata dial/worker cohort to 30 with a
   configurable no-burst default of ten new connection attempts per second,
