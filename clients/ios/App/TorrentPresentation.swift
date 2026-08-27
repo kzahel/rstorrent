@@ -24,7 +24,7 @@ struct TorrentListItem: Identifiable, Equatable {
 
     var id: String { value.torrentId }
     var infoHash: String { value.protocolIdentities.v1 ?? value.torrentId }
-    var name: String { value.displayName ?? "" }
+    var name: String { value.displayName ?? value.sourceDisplayName ?? "" }
     var status: String {
         switch value.operationalState {
         case .queued: return "queued"

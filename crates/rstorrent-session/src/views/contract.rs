@@ -1040,6 +1040,8 @@ pub struct TorrentView {
     pub protocol_identities: TorrentProtocolIdentities,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_display_name: Option<String>,
     pub state: TorrentState,
     pub operational_state: TorrentOperationalState,
     #[serde(default, skip_serializing_if = "Option::is_none")]

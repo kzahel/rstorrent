@@ -1620,6 +1620,7 @@ function validateTorrentView(value: unknown): asserts value is TorrentView {
   torrentId(torrent.torrent_id);
   validateProtocolIdentities(torrent.protocol_identities);
   optionalString(torrent.display_name, "torrent display name", 255);
+  optionalString(torrent.source_display_name, "torrent source display name", 255);
   oneOf(torrent.operational_state, "torrent operational state", [
     "queued",
     "starting",

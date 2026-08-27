@@ -500,6 +500,7 @@ fn fixture_torrent(torrent_id: &str, verified: u32) -> TorrentView {
             v2: None,
         },
         display_name: Some("Fixture torrent".to_owned()),
+        source_display_name: None,
         state: if verified == 3 {
             TorrentState::Complete
         } else {

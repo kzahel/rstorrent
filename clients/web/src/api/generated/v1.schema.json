@@ -5708,6 +5708,12 @@
             "null"
           ]
         },
+        "source_display_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "state": {
           "$ref": "#/$defs/TorrentState"
         },

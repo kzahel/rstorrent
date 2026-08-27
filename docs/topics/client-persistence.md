@@ -421,10 +421,11 @@ infrastructure and never become source authority.
 
 The exact outer source is a provenance/export BLOB in SQLite, not runtime
 authority and not a payload-adjacent or profile sidecar file. Ordinary startup
-does not select or parse it. Durable mode therefore keeps one transactional
-backup/removal boundary; ephemeral mode gets the same semantics in memory
-without a path. A later explicit export may use those exact bytes, while a
-source-less export remains synthesized and must be labeled accordingly.
+does not use it as protocol, storage, or publication authority. Durable mode
+therefore keeps one transactional backup/removal boundary; ephemeral mode gets
+the same semantics in memory without a path. A later explicit export may use
+those exact bytes, while a source-less export remains synthesized and must be
+labeled accordingly.
 
 Tactical `081` raises explicit `.torrent`, original-source, and durable
 `raw_info` bounds to 64 MiB while independently raising
@@ -448,6 +449,16 @@ metainfo, or integrity-failed source records instead synthesize from durable
 identity, verified publication name, and normalized trackers. The output
 remains within 16 KiB and 32 trackers and reports omissions; no schema or
 startup authority changes.
+
+Completed Tactical
+[`172`](../tactical/172-provisional-magnet-display-name.md) adds one narrow
+startup read without changing that authority boundary. If an older
+current-schema operational magnet lacks `dn`, resume may recover only the
+provisional display name from its retained magnet after checking recorded
+length, SHA-256, bounded current parsing, source fidelity, and exact torrent
+identity. New operational magnets retain the bounded `dn` directly. The exact
+source remains unchanged and the complete URI, tracker credentials, and all
+other unsupported parameters remain outside routine views and logs.
 
 ### Verified-piece state is essential resume state
 

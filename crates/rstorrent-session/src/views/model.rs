@@ -682,6 +682,7 @@ pub(super) struct DiskSessionView {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct DurableTorrentViewState {
     pub(crate) display_name: Option<String>,
+    pub(crate) source_display_name: Option<String>,
     pub(crate) checking_generation: Option<u64>,
     pub(crate) verified: Vec<IndexRange>,
     pub(crate) files: Option<FileProgressModel>,
@@ -697,6 +698,7 @@ impl TorrentModel {
                 torrent_id: snapshot.torrent_id.clone(),
                 protocol_identities: snapshot.protocol_identities.clone(),
                 display_name: None,
+                source_display_name: None,
                 state: snapshot.state,
                 operational_state: operational_state(snapshot, progress_inputs),
                 download_queue_position: snapshot.download_queue_position,

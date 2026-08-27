@@ -45,6 +45,8 @@ class FakeLiveClient implements ApplicationViewClient {
   openCount = 0;
   private rejectPoll: ((error: Error) => void) | null = null;
 
+  constructor(private readonly torrentView: TorrentView = torrent()) {}
+
   async hello(): Promise<ApiHello> {
     return {
       api: { current: 1, minimum: 1 },
@@ -210,7 +212,9 @@ class FakeLiveClient implements ApplicationViewClient {
       base_cursor: "0",
       cursor: "1",
       durable_revision: "4",
-      updates: request.views.map((view) => snapshotFor(view, this.openCount)),
+      updates: request.views.map((view) =>
+        snapshotFor(view, this.openCount, this.torrentView),
+      ),
     };
     return {
       view_set_id: viewSetId,
@@ -317,6 +321,25 @@ describe("LiveApplication", () => {
       metrics: ["payload_received", "payload_uploaded"],
       delivery: { min_interval_millis: 1_000 },
     });
+    await application.close();
+  });
+
+  it("uses the provisional magnet name until a verified name is available", async () => {
+    const pending = torrent();
+    pending.display_name = null;
+    pending.source_display_name = "Waiting for metadata";
+    pending.metadata_available = false;
+    pending.piece_count = 0;
+    pending.verified_piece_count = 0;
+    const application = await LiveApplication.open(new FakeLiveClient(pending));
+    const snapshots: InspectionSnapshot[] = [];
+    application.subscribe((update) => {
+      if (update.type === "snapshot") snapshots.push(update.snapshot);
+    });
+
+    expect(snapshots.at(-1)?.torrents[TORRENT_ID]?.name).toBe(
+      "Waiting for metadata",
+    );
     await application.close();
   });
 
@@ -928,7 +951,11 @@ describe("LiveApplication", () => {
   });
 });
 
-function snapshotFor(view: ViewSpec, generation: number): ViewSetUpdate {
+function snapshotFor(
+  view: ViewSpec,
+  generation: number,
+  torrentView: TorrentView,
+): ViewSetUpdate {
   switch (view.type) {
     case "torrent_list":
       return {
@@ -936,7 +963,7 @@ function snapshotFor(view: ViewSpec, generation: number): ViewSetUpdate {
         view_id: view.view_id,
         snapshot: {
           type: "torrent_list",
-          torrents: [torrent()],
+          torrents: [torrentView],
           storage: { roots: [], show_add_options: true },
           client_settings: clientSettingsRuntimeFixture(),
         },
@@ -945,7 +972,7 @@ function snapshotFor(view: ViewSpec, generation: number): ViewSetUpdate {
       return {
         type: "snapshot",
         view_id: view.view_id,
-        snapshot: { type: "torrent", torrent: torrent() },
+        snapshot: { type: "torrent", torrent: torrentView },
       };
     case "torrent_peers":
       return {
@@ -1255,6 +1282,7 @@ function torrent(): TorrentView {
     torrent_id: TORRENT_ID,
     protocol_identities: { v1: V1_INFO_HASH },
     display_name: "movie.mkv",
+    source_display_name: "Unverified source name",
     state: "downloading",
     operational_state: "downloading",
     transfer_limits: {

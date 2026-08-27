@@ -5757,6 +5757,7 @@ fn durable_view_state(
                 torrent.torrent_id.clone(),
                 DurableTorrentViewState {
                     display_name: None,
+                    source_display_name: None,
                     checking_generation: None,
                     verified: Vec::new(),
                     files: None,
@@ -5779,6 +5780,9 @@ fn durable_view_state(
             .as_ref()
             .and_then(|_| parse_resume_content(&resume).ok());
         let display_name = content.as_ref().map(|content| content.name().to_owned());
+        let source_display_name = Magnet::parse(&resume.magnet)
+            .ok()
+            .and_then(|magnet| magnet.display_name);
         let files = if let Some(content) = content.as_ref() {
             let filesystem_content_base = filesystem_content_base(
                 storage_roots.get(&resume.storage_root),
@@ -5808,6 +5812,7 @@ fn durable_view_state(
             torrent.torrent_id.clone(),
             DurableTorrentViewState {
                 display_name,
+                source_display_name,
                 checking_generation: resume
                     .verification
                     .is_pending()
@@ -13944,6 +13949,74 @@ mod tests {
         service.shutdown().await.expect("shutdown");
         drop(service);
         fs::remove_dir_all(root).expect("remove offline test root");
+    }
+
+    #[tokio::test]
+    async fn startup_projects_provisional_magnet_display_name() {
+        let root = test_root("magnet-display-name");
+        let configuration = config(&root);
+        let mut store = SessionStore::open(
+            configuration
+                .durable_profile_root()
+                .expect("durable profile root"),
+            &configuration.profile_id,
+            &configuration.storage_roots,
+        )
+        .expect("open store");
+        let response = store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "add-named-magnet".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213&dn=Waiting+for+metadata".to_owned(),
+                    storage_root: "downloads".to_owned(),
+                    start_content: false,
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("add named magnet");
+        let torrent_id = match response.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("named magnet add omitted its torrent owner"),
+        };
+        drop(store);
+
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("open service");
+        let summary = service
+            .subscribe(SubscriptionSpec {
+                selector: ViewSelector::TorrentList,
+                projection: ViewProjection::Summary,
+                delivery: DeliveryPolicy {
+                    min_interval_millis: 0,
+                    max_queue_bytes: 256 * 1024,
+                },
+                diagnostics: None,
+                catalog_page: None,
+            })
+            .expect("summary");
+        let update = summary.next_update().await.expect("summary snapshot");
+        let ViewUpdatePayload::Snapshot {
+            snapshot: ViewSnapshot::TorrentList { torrents, .. },
+        } = update.payload
+        else {
+            panic!("expected torrent-list snapshot");
+        };
+        let torrent = torrents
+            .iter()
+            .find(|torrent| torrent.torrent_id == torrent_id)
+            .expect("named torrent row");
+        assert!(torrent.display_name.is_none());
+        assert_eq!(
+            torrent.source_display_name.as_deref(),
+            Some("Waiting for metadata")
+        );
+
+        service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove magnet-name test root");
     }
 
     #[tokio::test]

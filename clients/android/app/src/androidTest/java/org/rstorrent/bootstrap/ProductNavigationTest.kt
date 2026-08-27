@@ -102,6 +102,7 @@ class ProductNavigationTest {
                     v2 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
                 ),
             displayName = "Fixture torrent",
+            sourceDisplayName = null,
             state = TorrentState.DOWNLOADING,
             operationalState = TorrentOperationalState.DOWNLOADING,
             downloadQueuePosition = 1U,

@@ -317,8 +317,9 @@ final class IOSPresentationRepository: ObservableObject {
             let left = $0.downloadQueuePosition ?? UInt32.max
             let right = $1.downloadQueuePosition ?? UInt32.max
             if left != right { return left < right }
-            return ($0.displayName ?? $0.torrentId)
-                .localizedStandardCompare($1.displayName ?? $1.torrentId) == .orderedAscending
+            let firstName = $0.displayName ?? $0.sourceDisplayName ?? $0.torrentId
+            let secondName = $1.displayName ?? $1.sourceDisplayName ?? $1.torrentId
+            return firstName.localizedStandardCompare(secondName) == .orderedAscending
         }
     }
 

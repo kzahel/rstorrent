@@ -374,11 +374,13 @@ impl ViewHub {
             let durable_state = durable.get(&torrent.torrent_id);
             if let Some(state) = durable.get(&torrent.torrent_id) {
                 model.view.display_name = state.display_name.clone();
+                model.view.source_display_name = state.source_display_name.clone();
                 model.verified = state.verified.clone();
                 model.files = state.files.clone();
                 model.trackers = state.trackers.clone();
             } else if let Some(old) = previous.get(&torrent.torrent_id) {
                 model.view.display_name = old.view.display_name.clone();
+                model.view.source_display_name = old.view.source_display_name.clone();
                 model.verified = old.verified.clone();
                 model.files = old.files.clone();
                 model.trackers = old.trackers.clone();

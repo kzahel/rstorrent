@@ -5,6 +5,7 @@ use crate::identity::{FullInfoHash, InfoHashes, V1InfoHash, V2InfoHash};
 
 pub const MAX_MAGNET_LENGTH: usize = 16 * 1024;
 pub const MAX_MAGNET_PARAMETERS: usize = 128;
+pub const MAX_MAGNET_DISPLAY_NAME_LENGTH: usize = 255;
 pub const MAX_PEER_HINTS: usize = 32;
 pub const MAX_TRACKERS: usize = 32;
 pub const MAX_HOST_LENGTH: usize = 253;
@@ -49,6 +50,8 @@ pub struct Magnet {
     /// and authenticate both values against the exact metadata bytes.
     pub identity: FullInfoHash,
     pub identities: InfoHashes,
+    /// Unauthenticated presentation text from the first acceptable `dn`.
+    pub display_name: Option<String>,
     pub peer_hints: Vec<PeerHint>,
     pub trackers: Vec<TrackerUrl>,
     pub select_only: Option<SelectOnly>,
@@ -242,6 +245,7 @@ impl Magnet {
 
         let mut v1_info_hash = None;
         let mut v2_info_hash = None;
+        let mut display_name = None;
         let mut peer_hints = Vec::new();
         let mut trackers = Vec::new();
         let mut select_only_ranges = Vec::new();
@@ -267,6 +271,8 @@ impl Magnet {
                     }
                     v1_info_hash = Some(hash);
                 }
+            } else if name.eq_ignore_ascii_case("dn") && display_name.is_none() {
+                display_name = valid_display_name(value);
             } else if name.eq_ignore_ascii_case("x.pe")
                 && let Some(hint) = parse_peer_hint(&value)
                 && !peer_hints.contains(&hint)
@@ -314,6 +320,7 @@ impl Magnet {
         Ok(Self {
             identity,
             identities,
+            display_name,
             peer_hints,
             trackers,
             select_only: has_select_only.then(|| SelectOnly {
@@ -321,6 +328,13 @@ impl Magnet {
             }),
         })
     }
+}
+
+fn valid_display_name(value: String) -> Option<String> {
+    (!value.is_empty()
+        && value.len() <= MAX_MAGNET_DISPLAY_NAME_LENGTH
+        && !value.chars().any(char::is_control))
+    .then_some(value)
 }
 
 fn parse_select_only(value: &str, ranges: &mut Vec<FileIndexRange>) -> Result<(), MagnetError> {
@@ -735,13 +749,41 @@ mod tests {
     use crate::identity::{FullInfoHash, V1InfoHash, V2InfoHash};
 
     use super::{
-        MAX_FILE_INDEX, MAX_HOST_LENGTH, MAX_MAGNET_LENGTH, MAX_MAGNET_PARAMETERS, MAX_PEER_HINTS,
-        MAX_SELECT_ONLY_RANGES, MAX_TRACKER_URL_LENGTH, MAX_TRACKERS, Magnet, MagnetError,
-        PeerHint, TrackerUrlTransport,
+        MAX_FILE_INDEX, MAX_HOST_LENGTH, MAX_MAGNET_DISPLAY_NAME_LENGTH, MAX_MAGNET_LENGTH,
+        MAX_MAGNET_PARAMETERS, MAX_PEER_HINTS, MAX_SELECT_ONLY_RANGES, MAX_TRACKER_URL_LENGTH,
+        MAX_TRACKERS, Magnet, MagnetError, PeerHint, TrackerUrlTransport,
     };
 
     const HEX_HASH: &str = "0123456789abcdef0123456789abcdef01234567";
     const BASE32_HASH: &str = "AERUKZ4JVPG66AJDIVTYTK6N54ASGRLH";
+
+    #[test]
+    fn display_name_is_bounded_decoded_and_uses_first_acceptable_value() {
+        let magnet = Magnet::parse(&format!(
+            "magnet:?xt=urn:btih:{HEX_HASH}&dN=Ubuntu+24.04+%28Final%29&dn=ignored"
+        ))
+        .expect("named magnet");
+        assert_eq!(magnet.display_name.as_deref(), Some("Ubuntu 24.04 (Final)"));
+
+        let maximum = "x".repeat(MAX_MAGNET_DISPLAY_NAME_LENGTH);
+        let magnet = Magnet::parse(&format!("magnet:?xt=urn:btih:{HEX_HASH}&dn={maximum}"))
+            .expect("maximum display name");
+        assert_eq!(magnet.display_name.as_deref(), Some(maximum.as_str()));
+
+        for value in [
+            String::new(),
+            "x".repeat(MAX_MAGNET_DISPLAY_NAME_LENGTH + 1),
+            "line%0Abreak".to_owned(),
+        ] {
+            let magnet = Magnet::parse(&format!("magnet:?xt=urn:btih:{HEX_HASH}&dn={value}"))
+                .expect("invalid optional display name does not reject identity");
+            assert!(magnet.display_name.is_none(), "{value:?}");
+        }
+
+        let fallback = Magnet::parse(&format!("magnet:?xt=urn:btih:{HEX_HASH}&dn=&dn=usable"))
+            .expect("later acceptable display name");
+        assert_eq!(fallback.display_name.as_deref(), Some("usable"));
+    }
 
     #[test]
     fn select_only_is_strict_compact_and_canonical() {

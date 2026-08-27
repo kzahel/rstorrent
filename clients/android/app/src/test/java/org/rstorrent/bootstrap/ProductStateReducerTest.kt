@@ -60,6 +60,7 @@ import org.rstorrent.bootstrap.ui.LibrarySort
 import org.rstorrent.bootstrap.ui.filteredAndSortedTorrents
 import org.rstorrent.bootstrap.ui.parseRateLimit
 import org.rstorrent.bootstrap.ui.rateLimitLabel
+import org.rstorrent.bootstrap.ui.torrentPresentationName
 
 class ProductStateReducerTest {
     @Test
@@ -399,6 +400,13 @@ class ProductStateReducerTest {
             torrent("finished", TorrentState.COMPLETE).copy(
                 operationalState = TorrentOperationalState.PAUSED,
             )
+        val provisional =
+            torrent("provisional", TorrentState.PAUSED).copy(
+                displayName = null,
+                sourceDisplayName = "Magnet name",
+            )
+
+        assertEquals("Magnet name", torrentPresentationName(provisional))
 
         assertEquals(
             listOf("active"),
@@ -563,6 +571,7 @@ class ProductStateReducerTest {
                     v2 = null,
                 ),
             displayName = "Verified torrent",
+            sourceDisplayName = null,
             state = state,
             operationalState = TorrentOperationalState.DOWNLOADING,
             downloadQueuePosition = null,

@@ -108,6 +108,13 @@ first UI-complete Android product for the current application boundary. Its
 single-stack Material 3 Library, six-tab torrent detail, Speed, dual-family
 DHT, structured Logs, and Settings hierarchy deliberately follow JSTorrent
 Android standalone with RSTorrent branding and honest capability gaps.
+Completed Tactical
+[`172`](../tactical/172-provisional-magnet-display-name.md) gives the shared
+web, Android, iOS, and desktop-notification presentation boundary one
+consistent torrent-name order: verified metainfo name, bounded provisional
+magnet `dn`, then the surface's existing opaque fallback. Android file-open
+and all other path-authority behavior continue to require the verified name;
+the full retained magnet never crosses the application view boundary.
 Active Tactical
 [`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md)
 adds no setting. Browser and Tauri render the existing IPv4 mapping status and

@@ -751,11 +751,15 @@ regresses only unverified Done bytes while Verified remains monotonic, then
 recovers. These are bounded development observations, not browser-wide
 performance guarantees.
 
-Tactical `042` removes the live adapter's permanent hash-only label. Before
-metadata, the library and General view retain `Torrent <hash-prefix>`; after
-verified metainfo is durably recorded, the shared torrent row automatically
-uses its bounded name. No view selection, table identity, or local preference
-changes during that transition.
+Tactical `042` removes the live adapter's permanent hash-only label. Completed
+Tactical
+[`172`](../tactical/172-provisional-magnet-display-name.md) refines the
+pre-metadata state: a valid bounded magnet `dn` labels Library, Transfers, and
+Workbench immediately, while `Torrent <hash-prefix>` remains the fallback
+when it is absent. After verified metainfo is durably recorded, the shared
+torrent row automatically uses its bounded verified name. No view selection,
+table identity, or local preference changes during that transition, and the
+source URI itself never enters React state.
 
 The detail-tab regression suite records each tab's layout offset and width
 while selecting every view. It asserts label-only tabs, equal footprints at

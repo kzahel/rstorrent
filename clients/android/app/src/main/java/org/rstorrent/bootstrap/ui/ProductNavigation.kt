@@ -68,12 +68,12 @@ internal fun filteredAndSortedTorrents(
                     .thenBy(TorrentView::torrentId)
             LibrarySort.NAME ->
                 compareBy<TorrentView> {
-                    (it.displayName ?: it.torrentId).lowercase(Locale.ROOT)
+                    torrentPresentationName(it).lowercase(Locale.ROOT)
                 }.thenBy(TorrentView::torrentId)
             LibrarySort.DOWNLOAD_SPEED ->
                 compareByDescending<TorrentView> {
                     it.payloadDownloadRateBytes.toULongOrNull() ?: 0UL
-                }.thenBy { it.displayName ?: it.torrentId }
+                }.thenBy(::torrentPresentationName)
         }
     return torrents.filter(filter::matches).sortedWith(comparator)
 }

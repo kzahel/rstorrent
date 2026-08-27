@@ -207,6 +207,7 @@ fn eta_durable(
         TORRENT_ID.to_owned(),
         DurableTorrentViewState {
             display_name: Some("ETA fixture".to_owned()),
+            source_display_name: None,
             checking_generation: None,
             verified: Vec::new(),
             files,
@@ -999,6 +1000,7 @@ fn durable_replacement_preserves_exact_have_ranges() {
             "t1-000102030405060708090a0b0c0d0e0f".to_owned(),
             DurableTorrentViewState {
                 display_name: Some("Verified fixture".to_owned()),
+                source_display_name: None,
                 checking_generation: None,
                 verified: vec![IndexRange {
                     start: 1,
@@ -1014,7 +1016,7 @@ fn durable_replacement_preserves_exact_have_ranges() {
 }
 
 #[tokio::test]
-async fn verified_metadata_name_patches_list_and_selected_summary() {
+async fn source_name_is_provisional_until_verified_metadata_patches_both_summaries() {
     let torrent_id = "t1-000102030405060708090a0b0c0d0e0f";
     let hub = ViewHub::new(&snapshot(0, 4)).expect("hub");
     let list = hub
@@ -1051,7 +1053,8 @@ async fn verified_metadata_name_patches_list_and_selected_summary() {
         &BTreeMap::from([(
             torrent_id.to_owned(),
             DurableTorrentViewState {
-                display_name: Some("Verified fixture".to_owned()),
+                display_name: None,
+                source_display_name: Some("Magnet fixture".to_owned()),
                 checking_generation: None,
                 verified: Vec::new(),
                 files: None,
@@ -1069,7 +1072,11 @@ async fn verified_metadata_name_patches_list_and_selected_summary() {
     else {
         panic!("expected torrent-list patch");
     };
-    assert_eq!(upsert[0].display_name.as_deref(), Some("Verified fixture"));
+    assert!(upsert[0].display_name.is_none());
+    assert_eq!(
+        upsert[0].source_display_name.as_deref(),
+        Some("Magnet fixture")
+    );
 
     let summary_update = summary.next_update().await.expect("summary patch");
     let ViewUpdatePayload::Patch {
@@ -1080,7 +1087,56 @@ async fn verified_metadata_name_patches_list_and_selected_summary() {
     else {
         panic!("expected selected-summary patch");
     };
+    assert!(torrent.display_name.is_none());
+    assert_eq!(
+        torrent.source_display_name.as_deref(),
+        Some("Magnet fixture")
+    );
+
+    hub.replace_durable(
+        &snapshot(2, 4),
+        &BTreeMap::from([(
+            torrent_id.to_owned(),
+            DurableTorrentViewState {
+                display_name: Some("Verified fixture".to_owned()),
+                source_display_name: Some("Magnet fixture".to_owned()),
+                checking_generation: None,
+                verified: Vec::new(),
+                files: None,
+                eta_geometry: None,
+                trackers: TrackerViewModel::default(),
+            },
+        )]),
+    )
+    .expect("replace with verified name");
+
+    let list_update = list.next_update().await.expect("verified list patch");
+    let ViewUpdatePayload::Patch {
+        patch: ViewPatch::TorrentList { upsert, .. },
+    } = list_update.payload
+    else {
+        panic!("expected verified torrent-list patch");
+    };
+    assert_eq!(upsert[0].display_name.as_deref(), Some("Verified fixture"));
+    assert_eq!(
+        upsert[0].source_display_name.as_deref(),
+        Some("Magnet fixture")
+    );
+
+    let summary_update = summary.next_update().await.expect("verified summary patch");
+    let ViewUpdatePayload::Patch {
+        patch: ViewPatch::Torrent {
+            torrent: Some(torrent),
+        },
+    } = summary_update.payload
+    else {
+        panic!("expected verified selected-summary patch");
+    };
     assert_eq!(torrent.display_name.as_deref(), Some("Verified fixture"));
+    assert_eq!(
+        torrent.source_display_name.as_deref(),
+        Some("Magnet fixture")
+    );
 }
 
 #[test]

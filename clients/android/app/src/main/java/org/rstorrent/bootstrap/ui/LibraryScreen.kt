@@ -417,7 +417,7 @@ private fun TorrentCard(
             }
             Column(Modifier.weight(1f)) {
                 Text(
-                    torrent.displayName ?: torrent.torrentId,
+                    torrentPresentationName(torrent),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     fontWeight = FontWeight.SemiBold,

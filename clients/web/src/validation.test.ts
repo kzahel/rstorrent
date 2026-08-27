@@ -407,12 +407,22 @@ describe("swarm view validation", () => {
 });
 
 describe("torrent display-name validation", () => {
-  it("accepts a bounded verified name and rejects oversized input", () => {
+  it("bounds verified and provisional source names independently", () => {
     const batch = torrentBatch("Verified torrent");
+    const torrent = batch.updates[0]!.snapshot.torrents[0]! as TorrentView;
+    torrent.source_display_name = "Magnet torrent";
     expect(decodeUpdateBatch(JSON.stringify(batch)).updates).toHaveLength(1);
     batch.updates[0]!.snapshot.torrents[0]!.display_name = "x".repeat(256);
     expect(() => decodeUpdateBatch(JSON.stringify(batch))).toThrow(
       /display name exceeds 255 bytes/,
+    );
+
+    const sourceBatch = torrentBatch("Verified torrent");
+    const sourceTorrent = sourceBatch.updates[0]!.snapshot
+      .torrents[0]! as TorrentView;
+    sourceTorrent.source_display_name = "x".repeat(256);
+    expect(() => decodeUpdateBatch(JSON.stringify(sourceBatch))).toThrow(
+      /source display name exceeds 255 bytes/,
     );
   });
 });

@@ -23,6 +23,9 @@ internal fun formatBytes(decimal: String?): String {
 internal fun formatRate(decimal: String?): String =
     if ((decimal?.toULongOrNull() ?: 0UL) == 0UL) "0 B/s" else "${formatBytes(decimal)}/s"
 
+internal fun torrentPresentationName(torrent: TorrentView): String =
+    torrent.displayName ?: torrent.sourceDisplayName ?: torrent.torrentId
+
 internal fun formatDuration(seconds: ULong): String {
     val days = seconds / 86_400UL
     val hours = seconds % 86_400UL / 3_600UL

@@ -50,8 +50,12 @@ selected-torrent detail projections. See
 [`application-interface-direction.md`](application-interface-direction.md).
 
 Tactical `042` makes a magnet's verified metainfo name appear in both the live
-library row and General heading as soon as metadata arrives. The hash-prefix
-label remains only as the truthful pre-metadata fallback.
+library row and General heading as soon as metadata arrives. Completed
+Tactical
+[`172`](../tactical/172-provisional-magnet-display-name.md) uses a bounded
+magnet `dn` as the provisional label while metadata is pending; the
+hash-prefix remains the fallback when neither source nor verified name exists,
+and verified metadata always supersedes the source label.
 
 Tactical `103` completes the immediately available Peers transfer and recency
 columns. The shared React table now displays sortable upload rate, physical

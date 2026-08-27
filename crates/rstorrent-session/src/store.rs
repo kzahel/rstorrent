@@ -1127,12 +1127,21 @@ impl SessionStore {
         };
         let info_hashes = read_info_hashes(&self.connection, &torrent_id)?;
         let metainfo_source = read_verbatim_metainfo_source(&self.connection, &torrent_id)?;
-        let operational_magnet = match (row.0, info_hashes.v1_hash(), info_hashes.v2_hash()) {
+        let mut operational_magnet = match (row.0, info_hashes.v1_hash(), info_hashes.v2_hash()) {
             (Some(magnet), _, _) => magnet,
             (None, Some(v1), None) => format!("magnet:?xt=urn:btih:{v1}"),
             (None, None, Some(v2)) => format!("magnet:?xt=urn:btmh:1220{v2}"),
             (None, _, _) => String::new(),
         };
+        if let Ok(mut parsed) = Magnet::parse(&operational_magnet)
+            && parsed.display_name.is_none()
+            && let Some(source) =
+                read_verified_retained_magnet(&self.connection, &torrent_id, info_hashes)?
+            && source.parsed.display_name.is_some()
+        {
+            parsed.display_name = source.parsed.display_name;
+            operational_magnet = canonical_magnet(&parsed);
+        }
         let desired_running = match row.7.as_str() {
             "running" => true,
             "paused" => false,
@@ -1212,37 +1221,12 @@ impl SessionStore {
             .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_string()))?;
 
         let info_hashes = read_info_hashes(&self.connection, &torrent_id)?;
-        let source = self
-            .connection
-            .query_row(
-                "SELECT kind, fidelity, magnet, byte_length, sha256
-                 FROM torrent_source WHERE torrent_id = ?1",
-                [torrent_id.as_bytes()],
-                |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, Option<String>>(2)?,
-                        row.get::<_, i64>(3)?,
-                        row.get::<_, Vec<u8>>(4)?,
-                    ))
-                },
-            )
-            .optional()?;
-        if let Some((kind, fidelity, Some(magnet), byte_length, digest)) = source
-            && kind == "magnet"
-            && usize::try_from(byte_length).ok() == Some(magnet.len())
-            && digest == Sha256::digest(magnet.as_bytes()).as_slice()
-            && Magnet::parse(&magnet).is_ok_and(|parsed| parsed.identities == info_hashes)
-            && let Some(source) = match fidelity.as_str() {
-                "verbatim" => Some(MagnetExportSource::Verbatim),
-                "canonicalized" => Some(MagnetExportSource::Canonicalized),
-                _ => None,
-            }
+        if let Some(retained) =
+            read_verified_retained_magnet(&self.connection, &torrent_id, info_hashes)?
         {
             return Ok(MagnetExportResult {
-                magnet,
-                source,
+                magnet: retained.magnet,
+                source: retained.source,
                 omitted_tracker_count: 0,
             });
         }
@@ -2337,6 +2321,60 @@ impl SessionStore {
         transaction.commit()?;
         Ok(revision)
     }
+}
+
+struct VerifiedRetainedMagnet {
+    magnet: String,
+    source: MagnetExportSource,
+    parsed: Magnet,
+}
+
+fn read_verified_retained_magnet(
+    connection: &Connection,
+    torrent_id: &TorrentId,
+    info_hashes: InfoHashes,
+) -> Result<Option<VerifiedRetainedMagnet>, StoreError> {
+    let source = connection
+        .query_row(
+            "SELECT kind, fidelity, magnet, byte_length, sha256
+             FROM torrent_source WHERE torrent_id = ?1",
+            [torrent_id.as_bytes()],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, Vec<u8>>(4)?,
+                ))
+            },
+        )
+        .optional()?;
+    let Some((kind, fidelity, Some(magnet), byte_length, digest)) = source else {
+        return Ok(None);
+    };
+    if kind != "magnet"
+        || usize::try_from(byte_length).ok() != Some(magnet.len())
+        || digest != Sha256::digest(magnet.as_bytes()).as_slice()
+    {
+        return Ok(None);
+    }
+    let Ok(parsed) = Magnet::parse(&magnet) else {
+        return Ok(None);
+    };
+    if parsed.identities != info_hashes {
+        return Ok(None);
+    }
+    let source = match fidelity.as_str() {
+        "verbatim" => MagnetExportSource::Verbatim,
+        "canonicalized" => MagnetExportSource::Canonicalized,
+        _ => return Ok(None),
+    };
+    Ok(Some(VerifiedRetainedMagnet {
+        magnet,
+        source,
+        parsed,
+    }))
 }
 
 fn torrent_bytes_receipt_json(
@@ -5473,6 +5511,10 @@ fn wanted_piece_evidence(
 fn canonical_magnet(magnet: &Magnet) -> String {
     let mut output = String::from("magnet:?");
     append_magnet_identities(&mut output, magnet.identities);
+    if let Some(display_name) = &magnet.display_name {
+        output.push_str("&dn=");
+        percent_encode_query_value(&mut output, display_name.as_bytes());
+    }
     for hint in &magnet.peer_hints {
         output.push_str("&x.pe=");
         if hint.host.contains(':') {
@@ -5620,7 +5662,7 @@ mod tests {
     use rstorrent_protocol::magnet::{MAX_MAGNET_LENGTH, MAX_TRACKERS, Magnet};
     use rstorrent_protocol::merkle::file_root_from_data;
     use rstorrent_protocol::metainfo::{EXPLICIT_IMPORT_METAINFO_LIMITS, Metainfo, MetainfoFile};
-    use rusqlite::Connection;
+    use rusqlite::{Connection, params};
     use sha1::{Digest, Sha1};
     use sha2::Sha256;
 
@@ -5735,6 +5777,7 @@ mod tests {
     fn canonical_magnet_preserves_supported_discovery_sources() {
         let parsed = rstorrent_protocol::magnet::Magnet::parse(
             "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213\
+             &dn=Source+display+name\
              &x.pe=[::1]:6881\
              &tr=UDP%3A%2F%2FTRACKER.EXAMPLE%3A6969%2Fannounce\
              &tr=udp%3A%2F%2F%5B2001%3Adb8%3A%3A1%5D%3A80\
@@ -5745,6 +5788,7 @@ mod tests {
         assert_eq!(
             super::canonical_magnet(&parsed),
             "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213\
+             &dn=Source%20display%20name\
              &x.pe=[::1]:6881\
              &tr=UDP%3A%2F%2FTRACKER.EXAMPLE%3A6969%2Fannounce\
              &tr=udp%3A%2F%2F%5B2001%3Adb8%3A%3A1%5D%3A80\
@@ -6019,6 +6063,37 @@ mod tests {
             .expect("add exact source");
         assert_eq!(added.revision, "1");
         let torrent_id = added_torrent_id(&added);
+        let resume = store.load_resume(&torrent_id).expect("load named source");
+        assert_eq!(
+            Magnet::parse(&resume.magnet)
+                .expect("parse operational magnet")
+                .display_name
+                .as_deref(),
+            Some("Original Name")
+        );
+
+        let owner = super::decode_torrent_id(&torrent_id).expect("owner");
+        store
+            .connection
+            .execute(
+                "UPDATE torrents SET magnet = ?2 WHERE torrent_id = ?1",
+                params![
+                    owner.as_bytes().as_slice(),
+                    "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213\
+                     &tr=udp%3A%2F%2Ftracker.example%3A6969%2Fannounce"
+                ],
+            )
+            .expect("simulate older operational magnet");
+        let recovered = store
+            .load_resume(&torrent_id)
+            .expect("recover retained source name");
+        assert_eq!(
+            Magnet::parse(&recovered.magnet)
+                .expect("parse recovered operational magnet")
+                .display_name
+                .as_deref(),
+            Some("Original Name")
+        );
 
         let export = store
             .handle_durable(&export_request("export-verbatim", &torrent_id))
@@ -6036,10 +6111,7 @@ mod tests {
             .connection
             .execute(
                 "UPDATE torrent_source SET fidelity = 'canonicalized' WHERE torrent_id = ?1",
-                [super::decode_torrent_id(&torrent_id)
-                    .expect("owner")
-                    .as_bytes()
-                    .as_slice()],
+                [owner.as_bytes().as_slice()],
             )
             .expect("mark source as migrated canonical text");
         let canonicalized = store
@@ -6056,10 +6128,7 @@ mod tests {
             .connection
             .execute(
                 "UPDATE torrent_source SET sha256 = zeroblob(32) WHERE torrent_id = ?1",
-                [super::decode_torrent_id(&torrent_id)
-                    .expect("owner")
-                    .as_bytes()
-                    .as_slice()],
+                [owner.as_bytes().as_slice()],
             )
             .expect("corrupt retained source digest");
         let fallback = store

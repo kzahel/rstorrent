@@ -32,7 +32,10 @@ impl From<&TorrentView> for TorrentObservation {
     fn from(torrent: &TorrentView) -> Self {
         Self {
             torrent_id: torrent.torrent_id.clone(),
-            display_name: torrent.display_name.clone(),
+            display_name: torrent
+                .display_name
+                .clone()
+                .or_else(|| torrent.source_display_name.clone()),
             state: torrent.state,
             storage_state: torrent.storage_state,
             received_bytes: torrent.received_bytes.parse().ok(),

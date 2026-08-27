@@ -1147,6 +1147,16 @@ name arrival is an ordinary keyed upsert in both surfaces rather than a new
 view or event. The client validates the metainfo component's 255-byte bound
 and retains its info-hash fallback when the field is absent.
 
+Completed Tactical
+[`172`](../tactical/172-provisional-magnet-display-name.md) adds the separate
+optional `source_display_name` field for bounded, unauthenticated magnet `dn`
+text. It can label a metadata-less row immediately, but it never substitutes
+for `display_name` in filesystem, publication, or integrity decisions.
+Complete-row replacement preserves the source field when verified metadata
+arrives; clients render verified name, then source name, then their existing
+opaque fallback. The additive optional field leaves the v1 contract version
+unchanged.
+
 Tactical `043` adds deterministic tracker snapshot, keyed-patch, catalog
 replacement, removal, reset, and lease-recovery coverage. Its controlled
 tracker-only browser run observed `announcing` before a delayed response, then

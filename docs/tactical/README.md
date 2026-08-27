@@ -813,6 +813,10 @@ that scope and its cleanup or compatibility rules explicitly.
   Public publication, unattended replacement, system-wide ownership, firewall
   changes, and Raspberry Pi mutation remain explicitly absent; Tactical `158`
   resumes as the sole **Now**.
+- [`172-provisional-magnet-display-name.md`](172-provisional-magnet-display-name.md):
+  complete; carries bounded magnet `dn` as a distinct provisional source
+  label through current-schema restart and first-party torrent-list
+  presentation, with verified metainfo retaining authority.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

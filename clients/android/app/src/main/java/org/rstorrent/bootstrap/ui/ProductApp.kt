@@ -459,7 +459,7 @@ private fun TorrentDetailScreen(
                 },
                 title = {
                     Text(
-                        torrent?.displayName ?: torrent?.torrentId ?: "Torrent",
+                        torrent?.let(::torrentPresentationName) ?: "Torrent",
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )

@@ -1103,7 +1103,10 @@ function mapTorrent(torrent: TorrentView): TorrentRow {
   }
   return {
     id: torrent.torrent_id,
-    name: torrent.display_name ?? `Torrent ${torrent.torrent_id.slice(0, 12)}`,
+    name:
+      torrent.display_name ??
+      torrent.source_display_name ??
+      `Torrent ${torrent.torrent_id.slice(0, 12)}`,
     status: mapTorrentState(torrent.state),
     operationalState: torrent.operational_state,
     queuePosition: torrent.download_queue_position ?? null,
