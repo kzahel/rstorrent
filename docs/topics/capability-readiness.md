@@ -95,6 +95,15 @@ service, firewall change, or Raspberry Pi mutation. Tactical `158` resumes as
 the single **Now** with its open signed Windows and Linux x86_64 gates
 unchanged.
 
+Explicit maintainer direction on 2026-08-27 temporarily yields Tactical `158`
+to exact tailnet headless-access Tactical
+[`174`](../tactical/174-exact-tailnet-headless-access.md). The bounded design
+keeps the installed exact LAN endpoint, adds one exact loopback endpoint for a
+dedicated Tailscale Serve HTTPS authority, retains one application owner, and
+rejects wildcard binds, direct shared-range binds, Funnel, and tailnet policy
+mutation. Tactical `174` is the sole **Now** until its deterministic,
+installed-service, and exact-route evidence completes.
+
 The updater tactical's client, production route, five-target signed hosted
 rehearsal, public `0.1.0`, `0.1.1`, and `0.1.2` releases, installed macOS arm64
 launch smoke, and exact macOS arm64 and Linux arm64 `0.1.0`-to-`0.1.1` updates
