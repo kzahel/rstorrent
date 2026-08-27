@@ -410,6 +410,7 @@ function snapshot(
   }
   return {
     revision: 1,
+    durableRevision: "1",
     session: {
       connection: "demo",
       downloadRate: 0,

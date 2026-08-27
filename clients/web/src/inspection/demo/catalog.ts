@@ -237,6 +237,7 @@ export function buildScenarioSnapshot(
   );
   return {
     revision,
+    durableRevision: String(revision),
     session: {
       connection: "demo",
       downloadRate: sum(active.map((torrent) => torrent.downloadRate)),

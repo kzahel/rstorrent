@@ -107,6 +107,12 @@ fn settings_patch_json_is_sparse_and_closed() {
             .is_err()
     );
     assert!(
+        serde_json::from_value::<ClientSettingsPatch>(serde_json::json!({
+            "peer_connection_limit": null
+        }))
+        .is_err()
+    );
+    assert!(
         serde_json::from_value::<TorrentSettingsPatch>(serde_json::json!({
             "upload_rate_limit": {"type": "unlimited"},
             "surprise": true

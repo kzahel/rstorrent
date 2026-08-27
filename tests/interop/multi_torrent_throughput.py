@@ -277,8 +277,8 @@ def run_case(
             envelope(
                 "settings",
                 {
-                    "type": "set_client_settings",
-                    "settings": settings(
+                    "type": "update_client_settings",
+                    "patch": settings(
                         configured_limit,
                         download_bytes_per_second=(
                             rate_policy.session_download_bytes_per_second
@@ -319,11 +319,10 @@ def run_case(
                     envelope(
                         f"rate-{fixture.index}",
                         {
-                            "type": "set_torrent_transfer_limits",
+                            "type": "update_torrent_settings",
                             "torrent_id": torrent_ids[fixture.index],
-                            "limits": {
-                                "upload": transfer_rate_limit(None),
-                                "download": transfer_rate_limit(torrent_rate),
+                            "patch": {
+                                "download_rate_limit": transfer_rate_limit(torrent_rate),
                             },
                         },
                     ),

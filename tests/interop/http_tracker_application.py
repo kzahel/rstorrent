@@ -333,8 +333,8 @@ def run(binary: Path, root: Path, *, https: bool) -> dict[str, Any]:
             envelope(
                 "enable-loopback-listener",
                 {
-                    "type": "set_client_settings",
-                    "settings": {
+                    "type": "update_client_settings",
+                    "patch": {
                         "listener": {"type": "automatic_loopback"},
                         "preferred_listen_port": 6881,
                         "port_mapping": "disabled",

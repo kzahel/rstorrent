@@ -103,10 +103,21 @@ impl TorrentTransferLimits {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 #[serde(deny_unknown_fields)]
 #[schemars(extend("minProperties" = 1))]
+#[ts(optional_fields)]
 pub struct TorrentSettingsPatch {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_patch_value"
+    )]
+    #[schemars(with = "TransferRateLimit")]
     pub upload_rate_limit: Option<TransferRateLimit>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_patch_value"
+    )]
+    #[schemars(with = "TransferRateLimit")]
     pub download_rate_limit: Option<TransferRateLimit>,
 }
 
@@ -322,28 +333,84 @@ impl ClientSettings {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 #[serde(deny_unknown_fields)]
 #[schemars(extend("minProperties" = 1))]
+#[ts(optional_fields)]
 pub struct ClientSettingsPatch {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_patch_value"
+    )]
+    #[schemars(with = "ListenerPolicy")]
     pub listener: Option<ListenerPolicy>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_patch_value"
+    )]
+    #[schemars(with = "u16", range(min = 1_024))]
     pub preferred_listen_port: Option<u16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_patch_value"
+    )]
+    #[schemars(with = "PortMappingPolicy")]
     pub port_mapping: Option<PortMappingPolicy>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_patch_value"
+    )]
+    #[schemars(with = "u32", range(min = 1, max = 2_000))]
     pub peer_connection_limit: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_patch_value"
+    )]
+    #[schemars(with = "u16", range(min = 0, max = 50))]
     pub upload_slots: Option<u16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_patch_value"
+    )]
+    #[schemars(with = "u16", range(min = 1, max = 20))]
     pub active_downloads: Option<u16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_patch_value"
+    )]
+    #[schemars(with = "TransferRateLimit")]
     pub upload_rate_limit: Option<TransferRateLimit>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_patch_value"
+    )]
+    #[schemars(with = "TransferRateLimit")]
     pub download_rate_limit: Option<TransferRateLimit>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_patch_value"
+    )]
+    #[schemars(with = "EncryptionPolicy")]
     pub encryption: Option<EncryptionPolicy>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_patch_value"
+    )]
+    #[schemars(with = "bool")]
     pub ipv6_enabled: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_patch_value"
+    )]
+    #[schemars(with = "HttpsServerAuthenticationPolicy")]
     pub tracker_https_server_authentication: Option<HttpsServerAuthenticationPolicy>,
 }
 
@@ -412,6 +479,14 @@ impl From<ClientSettings> for ClientSettingsPatch {
             tracker_https_server_authentication: Some(settings.tracker_https_server_authentication),
         }
     }
+}
+
+fn deserialize_optional_patch_value<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    T::deserialize(deserializer).map(Some)
 }
 
 const fn default_active_downloads() -> u16 {

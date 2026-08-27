@@ -146,8 +146,8 @@ def set_fixed_settings(
         gateway_address,
         request_id,
         {
-            "type": "set_client_settings",
-            "settings": {
+            "type": "update_client_settings",
+            "patch": {
                 "listener": {"type": "fixed_loopback", "port": port},
                 "preferred_listen_port": 6881,
                 "port_mapping": "disabled",

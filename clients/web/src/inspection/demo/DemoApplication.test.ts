@@ -44,12 +44,13 @@ describe("DemoApplication", () => {
     const torrentId = controller.store.getState().torrentOrder[0]!;
     expect(controller.store.getState().peersByTorrent[torrentId]?.order).toHaveLength(0);
     controller.store.getState().selectTab("trackers");
-    await Promise.resolve();
-    expect(
-      controller.store.getState().trackersByTorrent[torrentId]?.rows[
-        "udp://tracker.openbittorrent.com:80"
-      ]?.status,
-    ).toBe("announcing");
+    await vi.waitFor(() => {
+      expect(
+        controller.store.getState().trackersByTorrent[torrentId]?.rows[
+          "udp://tracker.openbittorrent.com:80"
+        ]?.status,
+      ).toBe("announcing");
+    });
 
     await controller.dispatch({
       type: "advance_demo_clock",
@@ -146,8 +147,9 @@ describe("DemoApplication", () => {
     expect(state.torrentOrder).toHaveLength(2_000);
     expect(state.peersByTorrent[torrentId]?.order).toHaveLength(10_000);
     controller.store.getState().selectTab("swarm");
-    await Promise.resolve();
-    expect(controller.store.getState().swarmByTorrent[torrentId]?.order).toHaveLength(1_000);
+    await vi.waitFor(() => {
+      expect(controller.store.getState().swarmByTorrent[torrentId]?.order).toHaveLength(1_000);
+    });
     const revision = controller.store.getState().revision;
     await vi.advanceTimersByTimeAsync(60_000);
     expect(controller.store.getState().revision).toBe(revision);

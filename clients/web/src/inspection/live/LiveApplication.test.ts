@@ -435,33 +435,25 @@ describe("LiveApplication", () => {
     application.subscribe((update) => {
       if (update.type === "snapshot") snapshots.push(update.snapshot);
     });
-    const settings = {
-      listener: { type: "fixed_loopback" as const, port: 51_413 },
-      preferred_listen_port: 6_881,
-      port_mapping: "disabled" as const,
+    const patch = {
       peer_connection_limit: 2_000,
       upload_slots: 0,
-      active_downloads: 3,
-      upload_rate_limit: { type: "limited" as const, bytes_per_second: 65_536 },
-      download_rate_limit: { type: "unlimited" as const },
-      encryption: "allow" as const,
-      ipv6_enabled: true,
-      tracker_https_server_authentication: "system_trust" as const,
     };
 
     expect(snapshots.at(-1)?.clientSettings).toEqual(
       clientSettingsRuntimeFixture(),
     );
     await expect(
-      application.dispatch({ type: "set_client_settings", settings }),
-    ).resolves.toEqual({
+      application.dispatch({ type: "update_client_settings", patch }),
+    ).resolves.toMatchObject({
       accepted: true,
       message: "Connection and seeding settings saved",
+      resultingRevision: "4",
     });
     expect(client.requests).toHaveLength(1);
     expect(client.requests[0]?.command).toEqual({
-      type: "set_client_settings",
-      settings,
+      type: "update_client_settings",
+      patch,
     });
     await application.close();
   });
@@ -469,25 +461,28 @@ describe("LiveApplication", () => {
   it("maps one atomic torrent transfer-limit pair through the generic command path", async () => {
     const client = new FakeLiveClient();
     const application = await LiveApplication.open(client);
-    const limits = {
-      upload: { type: "limited" as const, bytes_per_second: 32_768 },
-      download: { type: "unlimited" as const },
+    const patch = {
+      upload_rate_limit: {
+        type: "limited" as const,
+        bytes_per_second: 32_768,
+      },
     };
 
     await expect(
       application.dispatch({
-        type: "set_torrent_transfer_limits",
+        type: "update_torrent_settings",
         torrentId: TORRENT_ID,
-        limits,
+        patch,
       }),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       accepted: true,
       message: "Torrent transfer limits saved",
+      resultingRevision: "4",
     });
     expect(client.requests[0]?.command).toEqual({
-      type: "set_torrent_transfer_limits",
+      type: "update_torrent_settings",
       torrent_id: TORRENT_ID,
-      limits,
+      patch,
     });
     await application.close();
   });

@@ -1,5 +1,6 @@
 import type {
   ClientSettings,
+  ClientSettingsPatch,
   ClientSettingsRuntimeView,
   DiagnosticField,
   DiagnosticSubject,
@@ -16,6 +17,7 @@ import type {
   SwarmCountsView,
   SwarmPeerState,
   TorrentOperationalState,
+  TorrentSettingsPatch,
   TorrentTransferLimits,
 } from "../api";
 
@@ -486,6 +488,7 @@ export interface PieceMapSet {
 
 export interface InspectionSnapshot {
   readonly revision: number;
+  readonly durableRevision: string;
   readonly session: SessionSummary;
   readonly demo: DemoState | null;
   readonly storage: DownloadStorageSettings;
@@ -515,6 +518,7 @@ export type InspectionUpdate =
   | {
       readonly type: "patch";
       readonly revision: number;
+      readonly durableRevision?: string;
       readonly session?: SessionSummary;
       readonly demo?: DemoState;
       readonly storage?: DownloadStorageSettings;
@@ -595,11 +599,11 @@ export type InspectionCommand =
   | { readonly type: "choose_download_root"; readonly repairRoot?: string }
   | { readonly type: "set_default_download_root"; readonly rootId: string }
   | { readonly type: "set_show_add_options"; readonly show: boolean }
-  | { readonly type: "set_client_settings"; readonly settings: ClientSettings }
+  | { readonly type: "update_client_settings"; readonly patch: ClientSettingsPatch }
   | {
-      readonly type: "set_torrent_transfer_limits";
+      readonly type: "update_torrent_settings";
       readonly torrentId: string;
-      readonly limits: TorrentTransferLimits;
+      readonly patch: TorrentSettingsPatch;
     }
   | { readonly type: "remove_download_root"; readonly rootId: string }
   | { readonly type: "export_magnet"; readonly torrentId: string }
@@ -657,6 +661,8 @@ export interface DemoScenarioSummary {
 export interface CommandResult {
   readonly accepted: boolean;
   readonly message: string;
+  readonly requestId?: string;
+  readonly resultingRevision?: string;
   readonly storageRoot?: DownloadRoot | null;
   readonly torrentId?: string;
   readonly magnetExport?: MagnetExport;

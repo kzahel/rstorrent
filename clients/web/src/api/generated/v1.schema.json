@@ -1554,6 +1554,58 @@
       ],
       "type": "string"
     },
+    "ClientSettingsPatch": {
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "active_downloads": {
+          "format": "uint16",
+          "maximum": 20,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "download_rate_limit": {
+          "$ref": "#/$defs/TransferRateLimit"
+        },
+        "encryption": {
+          "$ref": "#/$defs/EncryptionPolicy"
+        },
+        "ipv6_enabled": {
+          "type": "boolean"
+        },
+        "listener": {
+          "$ref": "#/$defs/ListenerPolicy"
+        },
+        "peer_connection_limit": {
+          "format": "uint32",
+          "maximum": 2000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "port_mapping": {
+          "$ref": "#/$defs/PortMappingPolicy"
+        },
+        "preferred_listen_port": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 1024,
+          "type": "integer"
+        },
+        "tracker_https_server_authentication": {
+          "$ref": "#/$defs/HttpsServerAuthenticationPolicy"
+        },
+        "upload_rate_limit": {
+          "$ref": "#/$defs/TransferRateLimit"
+        },
+        "upload_slots": {
+          "format": "uint16",
+          "maximum": 50,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "ClientSettingsRuntimeView": {
       "additionalProperties": false,
       "properties": {
@@ -1906,38 +1958,38 @@
         },
         {
           "properties": {
-            "settings": {
-              "$ref": "#/$defs/ClientSettings"
+            "patch": {
+              "$ref": "#/$defs/ClientSettingsPatch"
             },
             "type": {
-              "const": "set_client_settings",
+              "const": "update_client_settings",
               "type": "string"
             }
           },
           "required": [
             "type",
-            "settings"
+            "patch"
           ],
           "type": "object"
         },
         {
           "properties": {
-            "limits": {
-              "$ref": "#/$defs/TorrentTransferLimits"
+            "patch": {
+              "$ref": "#/$defs/TorrentSettingsPatch"
             },
             "torrent_id": {
               "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
-              "const": "set_torrent_transfer_limits",
+              "const": "update_torrent_settings",
               "type": "string"
             }
           },
           "required": [
             "type",
             "torrent_id",
-            "limits"
+            "patch"
           ],
           "type": "object"
         },
@@ -5459,6 +5511,19 @@
         "v2": {
           "pattern": "^[0-9a-f]{64}$",
           "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "TorrentSettingsPatch": {
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "download_rate_limit": {
+          "$ref": "#/$defs/TransferRateLimit"
+        },
+        "upload_rate_limit": {
+          "$ref": "#/$defs/TransferRateLimit"
         }
       },
       "type": "object"

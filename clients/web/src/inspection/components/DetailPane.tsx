@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, type FormEvent } from "react";
 
+import type { TorrentSettingsPatch, TransferRateLimit } from "../../api";
 import { useInspectionCommand, useInspectionStore } from "../context";
 import {
   checkingStatusLabel,
@@ -11,12 +12,20 @@ import {
 } from "../format";
 import type { DetailTab } from "../model";
 import {
+  settingsDraftFields,
+  settingsDraftPhase,
+  settingsDraftValue,
+  type SettingsDraftComparators,
+  type SettingsDraftPhase,
+  type SettingsDraftState,
+} from "../settings-draft";
+import {
   RATE_LIMIT_MAXIMUM_BYTES,
   rateLimitDraftValue,
-  sameRateLimit,
   validateRateLimit,
 } from "../transfer-rate";
 import { DETAIL_TABS } from "../tabs";
+import { useSettingsDraft } from "../use-settings-draft";
 import { PeerTable } from "./PeerTable";
 import { SwarmTable } from "./SwarmTable";
 import { FileTable } from "./FileTable";
@@ -318,59 +327,50 @@ function TorrentRateLimits({
   readonly torrent: NonNullable<ReturnType<typeof useCurrentTorrent>>;
 }) {
   const execute = useInspectionCommand();
-  const [uploadUnlimited, setUploadUnlimited] = useState(
-    torrent.transferLimits.upload.type === "unlimited",
+  const durableRevision = useInspectionStore((state) => state.durableRevision);
+  const transportPending = useRef(false);
+  const authority = torrentRateDraft(torrent.transferLimits);
+  const [draftState, dispatchDraft] = useSettingsDraft(
+    torrent.id,
+    durableRevision,
+    authority,
+    TORRENT_RATE_COMPARATORS,
   );
-  const [uploadKiB, setUploadKiB] = useState(
-    rateLimitDraftValue(torrent.transferLimits.upload, "1024"),
+  const draft = settingsDraftValue(draftState) ?? authority;
+  const upload = validateRateLimit(draft.upload.unlimited, draft.upload.valueKiB);
+  const download = validateRateLimit(
+    draft.download.unlimited,
+    draft.download.valueKiB,
   );
-  const [downloadUnlimited, setDownloadUnlimited] = useState(
-    torrent.transferLimits.download.type === "unlimited",
-  );
-  const [downloadKiB, setDownloadKiB] = useState(
-    rateLimitDraftValue(torrent.transferLimits.download, "4096"),
-  );
-  const [pending, setPending] = useState(false);
-  const [status, setStatus] = useState<string | null>(null);
-
-  useEffect(() => {
-    setUploadUnlimited(torrent.transferLimits.upload.type === "unlimited");
-    if (torrent.transferLimits.upload.type === "limited") {
-      setUploadKiB(rateLimitDraftValue(torrent.transferLimits.upload, "1024"));
-    }
-    setDownloadUnlimited(torrent.transferLimits.download.type === "unlimited");
-    if (torrent.transferLimits.download.type === "limited") {
-      setDownloadKiB(rateLimitDraftValue(torrent.transferLimits.download, "4096"));
-    }
-  }, [torrent.transferLimits]);
-
-  const upload = validateRateLimit(uploadUnlimited, uploadKiB);
-  const download = validateRateLimit(downloadUnlimited, downloadKiB);
-  const limits =
-    upload.limit === null || download.limit === null
-      ? null
-      : { upload: upload.limit, download: download.limit };
-  const dirty =
-    limits !== null &&
-    (!sameRateLimit(limits.upload, torrent.transferLimits.upload) ||
-      !sameRateLimit(limits.download, torrent.transferLimits.download));
+  const dirtyFields = settingsDraftFields(draftState);
+  const patch = torrentRatePatch(dirtyFields, upload.limit, download.limit);
+  const phase = settingsDraftPhase(draftState);
+  const pending = phase === "submitting" || phase === "awaiting_view";
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!dirty || limits === null || pending) return;
-    setPending(true);
-    setStatus(null);
+    if (patch === null || transportPending.current || draftState.submission !== null) {
+      return;
+    }
+    transportPending.current = true;
+    dispatchDraft({ type: "submit" });
     try {
-      await execute({
-        type: "set_torrent_transfer_limits",
+      const result = await execute({
+        type: "update_torrent_settings",
         torrentId: torrent.id,
-        limits,
+        patch,
       });
-      setStatus("Torrent peer transfer limits saved.");
+      if (result.resultingRevision === undefined) {
+        throw new Error("Settings response did not include a durable revision.");
+      }
+      dispatchDraft({ type: "accept", revision: result.resultingRevision });
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error));
+      dispatchDraft({
+        type: "fail",
+        message: error instanceof Error ? error.message : String(error),
+      });
     } finally {
-      setPending(false);
+      transportPending.current = false;
     }
   };
 
@@ -386,30 +386,119 @@ function TorrentRateLimits({
       </div>
       <TorrentRateField
         direction="upload"
-        unlimited={uploadUnlimited}
-        value={uploadKiB}
+        unlimited={draft.upload.unlimited}
+        value={draft.upload.valueKiB}
         error={upload.error}
-        disabled={pending}
-        onUnlimited={setUploadUnlimited}
-        onValue={setUploadKiB}
+        disabled={false}
+        onUnlimited={(unlimited) =>
+          dispatchDraft({
+            type: "edit",
+            field: "upload",
+            value: { ...draft.upload, unlimited },
+          })
+        }
+        onValue={(valueKiB) =>
+          dispatchDraft({
+            type: "edit",
+            field: "upload",
+            value: { ...draft.upload, valueKiB },
+          })
+        }
       />
       <TorrentRateField
         direction="download"
-        unlimited={downloadUnlimited}
-        value={downloadKiB}
+        unlimited={draft.download.unlimited}
+        value={draft.download.valueKiB}
         error={download.error}
-        disabled={pending}
-        onUnlimited={setDownloadUnlimited}
-        onValue={setDownloadKiB}
+        disabled={false}
+        onUnlimited={(unlimited) =>
+          dispatchDraft({
+            type: "edit",
+            field: "download",
+            value: { ...draft.download, unlimited },
+          })
+        }
+        onValue={(valueKiB) =>
+          dispatchDraft({
+            type: "edit",
+            field: "download",
+            value: { ...draft.download, valueKiB },
+          })
+        }
       />
       <div className={styles.rateLimitActions}>
-        <button type="submit" disabled={!dirty || pending || limits === null}>
+        <button type="submit" disabled={patch === null || pending}>
           {pending ? "Saving…" : "Save torrent limits"}
         </button>
-        {status === null ? null : <output aria-live="polite">{status}</output>}
+        {draftStatus(draftState, phase) === null ? null : (
+          <output aria-live="polite">{draftStatus(draftState, phase)}</output>
+        )}
       </div>
     </form>
   );
+}
+
+interface TorrentRateDraftField {
+  readonly unlimited: boolean;
+  readonly valueKiB: string;
+}
+
+interface TorrentRateDraft {
+  readonly upload: TorrentRateDraftField;
+  readonly download: TorrentRateDraftField;
+}
+
+const TORRENT_RATE_COMPARATORS: SettingsDraftComparators<TorrentRateDraft> = {
+  upload: sameTorrentRateDraftField,
+  download: sameTorrentRateDraftField,
+};
+
+function torrentRateDraft(limits: {
+  readonly upload: TransferRateLimit;
+  readonly download: TransferRateLimit;
+}): TorrentRateDraft {
+  return {
+    upload: {
+      unlimited: limits.upload.type === "unlimited",
+      valueKiB: rateLimitDraftValue(limits.upload, "1024"),
+    },
+    download: {
+      unlimited: limits.download.type === "unlimited",
+      valueKiB: rateLimitDraftValue(limits.download, "4096"),
+    },
+  };
+}
+
+function sameTorrentRateDraftField(
+  left: TorrentRateDraftField,
+  right: TorrentRateDraftField,
+): boolean {
+  return left.unlimited === right.unlimited &&
+    (left.unlimited || left.valueKiB === right.valueKiB);
+}
+
+function torrentRatePatch(
+  fields: readonly (keyof TorrentRateDraft)[],
+  upload: TransferRateLimit | null,
+  download: TransferRateLimit | null,
+): TorrentSettingsPatch | null {
+  if (upload === null || download === null || fields.length === 0) return null;
+  return {
+    ...(fields.includes("upload") ? { upload_rate_limit: upload } : {}),
+    ...(fields.includes("download") ? { download_rate_limit: download } : {}),
+  };
+}
+
+function draftStatus(
+  state: SettingsDraftState<TorrentRateDraft>,
+  phase: SettingsDraftPhase,
+): string | null {
+  if (phase === "submitting") return "Saving torrent limits…";
+  if (phase === "awaiting_view") return "Saved; waiting for the live view…";
+  if (phase === "conflict") {
+    return "These limits changed elsewhere. Your draft is preserved for review.";
+  }
+  return state.failure;
 }
 
 function TorrentRateField({

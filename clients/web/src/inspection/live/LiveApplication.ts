@@ -287,8 +287,8 @@ export class LiveApplication implements InspectionApplication {
       command.type !== "download_files" &&
       command.type !== "set_default_download_root" &&
       command.type !== "set_show_add_options" &&
-      command.type !== "set_client_settings" &&
-      command.type !== "set_torrent_transfer_limits" &&
+      command.type !== "update_client_settings" &&
+      command.type !== "update_torrent_settings" &&
       command.type !== "remove_download_root" &&
       command.type !== "export_magnet" &&
       command.type !== "pause" &&
@@ -308,6 +308,10 @@ export class LiveApplication implements InspectionApplication {
     const request: RequestEnvelope = {
       version: 1,
       request_id: `web-${this.requestInstanceId}-${this.requestSequence++}`,
+      ...(command.type === "update_client_settings" ||
+      command.type === "update_torrent_settings"
+        ? { expected_revision: this.snapshot.durableRevision }
+        : {}),
       command:
         command.type === "add_magnet"
           ? {
@@ -341,13 +345,13 @@ export class LiveApplication implements InspectionApplication {
                   }
             : command.type === "set_show_add_options"
               ? { type: "set_show_add_options", show: command.show }
-              : command.type === "set_client_settings"
-                ? { type: "set_client_settings", settings: command.settings }
-              : command.type === "set_torrent_transfer_limits"
+              : command.type === "update_client_settings"
+                ? { type: "update_client_settings", patch: command.patch }
+              : command.type === "update_torrent_settings"
                 ? {
-                    type: "set_torrent_transfer_limits",
+                    type: "update_torrent_settings",
                     torrent_id: command.torrentId,
-                    limits: command.limits,
+                    patch: command.patch,
                   }
               : command.type === "remove_download_root"
                 ? {
@@ -390,8 +394,8 @@ export class LiveApplication implements InspectionApplication {
       return magnetCommandResult(response);
     }
     if (
-      command.type === "set_client_settings" ||
-      command.type === "set_torrent_transfer_limits"
+      command.type === "update_client_settings" ||
+      command.type === "update_torrent_settings"
     ) {
       this.controller?.requestImmediatePoll();
     }
@@ -405,6 +409,13 @@ export class LiveApplication implements InspectionApplication {
     }
     return {
       accepted: true,
+      ...(command.type === "update_client_settings" ||
+      command.type === "update_torrent_settings"
+        ? {
+            requestId: response.request_id,
+            resultingRevision: response.revision,
+          }
+        : {}),
       message:
         command.type === "set_file_priority"
           ? command.priority === "skip"
@@ -420,9 +431,9 @@ export class LiveApplication implements InspectionApplication {
               ? command.show
                 ? "Add options will be shown"
                 : "Add options will be skipped when a default is available"
-              : command.type === "set_client_settings"
+              : command.type === "update_client_settings"
                 ? "Connection and seeding settings saved"
-              : command.type === "set_torrent_transfer_limits"
+              : command.type === "update_torrent_settings"
                 ? "Torrent transfer limits saved"
               : command.type === "remove_download_root"
                 ? "Download folder removed"
@@ -855,6 +866,7 @@ function mapViewState(
   );
   return {
     revision: safeNumber(state.durableRevision),
+    durableRevision: state.durableRevision,
     session: {
       connection,
       downloadRate: speedDownloadRate === null
@@ -1665,6 +1677,7 @@ function emptyLiveSnapshot(
 ): InspectionSnapshot {
   return {
     revision: 0,
+    durableRevision: "0",
     session: {
       connection,
       downloadRate: 0,

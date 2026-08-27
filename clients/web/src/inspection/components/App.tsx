@@ -502,9 +502,9 @@ function AppContent({
           onRemoveRoot={async (rootId) => {
             await execute({ type: "remove_download_root", rootId });
           }}
-          onClientSettingsSave={async (settings) => {
-            await execute({ type: "set_client_settings", settings });
-          }}
+          onClientSettingsSave={(patch) =>
+            execute({ type: "update_client_settings", patch })
+          }
           onWebAuthSignedOut={() => window.location.reload()}
           onClose={() => setSettingsOpen(false)}
         />

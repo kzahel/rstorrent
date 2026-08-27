@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useMemo, useRef, type FormEvent } from "react";
 
 import type {
   AdvertisedPeerEndpointStatus,
   ClientSettings,
+  ClientSettingsPatch,
   ClientSettingsRuntimeView,
   EncryptionPolicy,
   Ipv6PinholeStatus,
@@ -12,14 +13,24 @@ import type {
   PortMappingStatus,
   TransferRateLimit,
 } from "../../api";
+import { useInspectionStore } from "../context";
+import type { CommandResult } from "../model";
+import {
+  settingsDraftFields,
+  settingsDraftPhase,
+  settingsDraftValue,
+  type SettingsDraftComparators,
+  type SettingsDraftPhase,
+  type SettingsDraftState,
+} from "../settings-draft";
 import {
   RATE_LIMIT_MAXIMUM_BYTES,
   rateLimitDraftValue,
   rateLimitLabel,
-  sameRateLimit,
   validateRateLimit,
   type RateLimitValidation,
 } from "../transfer-rate";
+import { useSettingsDraft } from "../use-settings-draft";
 import styles from "./SettingsDialog.module.css";
 
 const FIXED_PORT_MINIMUM = 1_024;
@@ -38,7 +49,7 @@ type ListenerMode = "automatic" | "fixed";
 interface ConnectionSeedingSettingsSectionProps {
   readonly settings: ClientSettingsRuntimeView;
   readonly manageable: boolean;
-  readonly onSave: (settings: ClientSettings) => Promise<void>;
+  readonly onSave: (patch: ClientSettingsPatch) => Promise<CommandResult>;
 }
 
 interface DraftValidation {
@@ -58,177 +69,78 @@ export function ConnectionSeedingSettingsSection({
   onSave,
 }: ConnectionSeedingSettingsSectionProps) {
   const configured = settings.configured;
-  const [listenerMode, setListenerMode] = useState<ListenerMode>(
-    productListenerMode(configured.listener),
+  const durableRevision = useInspectionStore((state) => state.durableRevision);
+  const authority = clientSettingsDraft(configured);
+  const [draftState, dispatchDraft] = useSettingsDraft(
+    "client-settings",
+    durableRevision,
+    authority,
+    CLIENT_SETTINGS_COMPARATORS,
   );
-  const [fixedPort, setFixedPort] = useState(
-    isFixedListener(configured.listener)
-      ? String(configured.listener.port)
-      : "",
-  );
-  const [preferredPort, setPreferredPort] = useState(
-    String(configured.preferred_listen_port),
-  );
-  const [portMapping, setPortMapping] = useState<PortMappingPolicy>(
-    configured.port_mapping,
-  );
-  const [peerLimit, setPeerLimit] = useState(
-    String(configured.peer_connection_limit),
-  );
-  const [uploadSlots, setUploadSlots] = useState(
-    String(configured.upload_slots),
-  );
-  const [activeDownloads, setActiveDownloads] = useState(
-    String(configured.active_downloads),
-  );
-  const [uploadRateUnlimited, setUploadRateUnlimited] = useState(
-    configured.upload_rate_limit.type === "unlimited",
-  );
-  const [uploadRateKiB, setUploadRateKiB] = useState(
-    rateLimitDraftValue(configured.upload_rate_limit, DEFAULT_UPLOAD_RATE_KIB),
-  );
-  const [downloadRateUnlimited, setDownloadRateUnlimited] = useState(
-    configured.download_rate_limit.type === "unlimited",
-  );
-  const [downloadRateKiB, setDownloadRateKiB] = useState(
-    rateLimitDraftValue(configured.download_rate_limit, DEFAULT_DOWNLOAD_RATE_KIB),
-  );
-  const [encryption, setEncryption] = useState<EncryptionPolicy>(
-    configured.encryption,
-  );
-  const [ipv6Enabled, setIpv6Enabled] = useState(configured.ipv6_enabled);
-  const [pending, setPending] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<
-    { readonly type: "success" | "error"; readonly message: string } | null
-  >(null);
-
-  useEffect(() => {
-    setListenerMode(productListenerMode(configured.listener));
-    setFixedPort(
-      isFixedListener(configured.listener)
-        ? String(configured.listener.port)
-        : "",
-    );
-    setPortMapping(configured.port_mapping);
-    setPreferredPort(String(configured.preferred_listen_port));
-    setPeerLimit(String(configured.peer_connection_limit));
-    setUploadSlots(String(configured.upload_slots));
-    setActiveDownloads(String(configured.active_downloads));
-    setUploadRateUnlimited(configured.upload_rate_limit.type === "unlimited");
-    if (configured.upload_rate_limit.type === "limited") {
-      setUploadRateKiB(rateLimitDraftValue(configured.upload_rate_limit, DEFAULT_UPLOAD_RATE_KIB));
-    }
-    setDownloadRateUnlimited(configured.download_rate_limit.type === "unlimited");
-    if (configured.download_rate_limit.type === "limited") {
-      setDownloadRateKiB(rateLimitDraftValue(configured.download_rate_limit, DEFAULT_DOWNLOAD_RATE_KIB));
-    }
-    setEncryption(configured.encryption);
-    setIpv6Enabled(configured.ipv6_enabled);
-  }, [
-    configured.listener.type,
-    isFixedListener(configured.listener)
-      ? configured.listener.port
-      : null,
-    configured.port_mapping,
-    configured.preferred_listen_port,
-    configured.peer_connection_limit,
-    configured.upload_slots,
-    configured.active_downloads,
-    configured.upload_rate_limit,
-    configured.download_rate_limit,
-    configured.encryption,
-    configured.ipv6_enabled,
-  ]);
+  const draft = settingsDraftValue(draftState) ?? authority;
+  const transportPending = useRef(false);
+  const phase = settingsDraftPhase(draftState);
+  const pending = phase === "submitting" || phase === "awaiting_view";
 
   const validation = useMemo(
     () => {
-      const uploadRate = validateRateLimit(uploadRateUnlimited, uploadRateKiB);
-      const downloadRate = validateRateLimit(downloadRateUnlimited, downloadRateKiB);
+      const uploadRate = validateRateLimit(
+        draft.uploadRate.unlimited,
+        draft.uploadRate.valueKiB,
+      );
+      const downloadRate = validateRateLimit(
+        draft.downloadRate.unlimited,
+        draft.downloadRate.valueKiB,
+      );
       return validateDraft(
-        listenerMode,
-        preferredPort,
-        fixedPort,
-        portMapping,
-        peerLimit,
-        uploadSlots,
-        activeDownloads,
+        draft.listener.mode,
+        draft.preferredPort,
+        draft.listener.fixedPort,
+        draft.portMapping,
+        draft.peerLimit,
+        draft.uploadSlots,
+        draft.activeDownloads,
         uploadRate,
         downloadRate,
-        encryption,
-        ipv6Enabled,
+        draft.encryption,
+        draft.ipv6Enabled,
         configured.tracker_https_server_authentication,
       );
     },
-    [
-      configured.tracker_https_server_authentication,
-      fixedPort,
-      listenerMode,
-      peerLimit,
-      portMapping,
-      preferredPort,
-      uploadSlots,
-      activeDownloads,
-      uploadRateUnlimited,
-      uploadRateKiB,
-      downloadRateUnlimited,
-      downloadRateKiB,
-      encryption,
-      ipv6Enabled,
-    ],
+    [configured.tracker_https_server_authentication, draft],
   );
-  const dirty =
-    validation.settings !== null &&
-    !sameClientSettings(validation.settings, configured);
-
-  const updateDraft = (update: () => void) => {
-    setSaveStatus(null);
-    update();
-  };
+  const dirtyFields = settingsDraftFields(draftState);
+  const patch = clientSettingsPatch(dirtyFields, validation.settings);
 
   const resetDraft = () => {
-    setListenerMode(productListenerMode(configured.listener));
-    setFixedPort(
-      isFixedListener(configured.listener)
-        ? String(configured.listener.port)
-        : "",
-    );
-    setPortMapping(configured.port_mapping);
-    setPreferredPort(String(configured.preferred_listen_port));
-    setPeerLimit(String(configured.peer_connection_limit));
-    setUploadSlots(String(configured.upload_slots));
-    setActiveDownloads(String(configured.active_downloads));
-    setUploadRateUnlimited(configured.upload_rate_limit.type === "unlimited");
-    if (configured.upload_rate_limit.type === "limited") {
-      setUploadRateKiB(rateLimitDraftValue(configured.upload_rate_limit, DEFAULT_UPLOAD_RATE_KIB));
-    }
-    setDownloadRateUnlimited(configured.download_rate_limit.type === "unlimited");
-    if (configured.download_rate_limit.type === "limited") {
-      setDownloadRateKiB(rateLimitDraftValue(configured.download_rate_limit, DEFAULT_DOWNLOAD_RATE_KIB));
-    }
-    setEncryption(configured.encryption);
-    setIpv6Enabled(configured.ipv6_enabled);
-    setSaveStatus(null);
+    dispatchDraft({ type: "discard" });
   };
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!manageable || !dirty || validation.settings === null) return;
-    const nextSettings = validation.settings;
-    setPending(true);
-    setSaveStatus(null);
+    if (
+      !manageable ||
+      patch === null ||
+      transportPending.current ||
+      draftState.submission !== null
+    ) {
+      return;
+    }
+    transportPending.current = true;
+    dispatchDraft({ type: "submit" });
     try {
-      await onSave(nextSettings);
-      setSaveStatus({
-        type: "success",
-        message: "Settings accepted and applying.",
-      });
+      const result = await onSave(patch);
+      if (result.resultingRevision === undefined) {
+        throw new Error("Settings response did not include a durable revision.");
+      }
+      dispatchDraft({ type: "accept", revision: result.resultingRevision });
     } catch (error) {
-      setSaveStatus({
-        type: "error",
+      dispatchDraft({
+        type: "fail",
         message: error instanceof Error ? error.message : String(error),
       });
     } finally {
-      setPending(false);
+      transportPending.current = false;
     }
   };
 
@@ -260,31 +172,47 @@ export function ConnectionSeedingSettingsSection({
               mode="automatic"
               label="Automatic port"
               description="Choose an available TCP and UDP port automatically."
-              selected={listenerMode === "automatic"}
-              disabled={!manageable || pending}
+              selected={draft.listener.mode === "automatic"}
+              disabled={!manageable}
               onSelect={() =>
-                updateDraft(() => setListenerMode("automatic"))
+                dispatchDraft({
+                  type: "edit",
+                  field: "listener",
+                  value: { ...draft.listener, mode: "automatic" },
+                })
               }
             />
             <ListenerOption
               mode="fixed"
               label="Fixed port"
               description="Always use the exact port entered below."
-              selected={listenerMode === "fixed"}
-              disabled={!manageable || pending}
-              onSelect={() => updateDraft(() => setListenerMode("fixed"))}
+              selected={draft.listener.mode === "fixed"}
+              disabled={!manageable}
+              onSelect={() =>
+                dispatchDraft({
+                  type: "edit",
+                  field: "listener",
+                  value: { ...draft.listener, mode: "fixed" },
+                })
+              }
             />
           </div>
-          {listenerMode === "fixed" ? (
+          {draft.listener.mode === "fixed" ? (
             <NumberField
               id="fixed-listener-port"
               label="Fixed listener port"
-              value={fixedPort}
+              value={draft.listener.fixedPort}
               minimum={FIXED_PORT_MINIMUM}
               maximum={FIXED_PORT_MAXIMUM}
               error={validation.fixedPortError}
-              disabled={!manageable || pending}
-              onChange={(value) => updateDraft(() => setFixedPort(value))}
+              disabled={!manageable}
+              onChange={(fixedPort) =>
+                dispatchDraft({
+                  type: "edit",
+                  field: "listener",
+                  value: { ...draft.listener, fixedPort },
+                })
+              }
             />
           ) : null}
         </div>
@@ -292,10 +220,14 @@ export function ConnectionSeedingSettingsSection({
         <label className={styles.option}>
           <input
             type="checkbox"
-            checked={ipv6Enabled}
-            disabled={!manageable || pending}
+            checked={draft.ipv6Enabled}
+            disabled={!manageable}
             onChange={(event) =>
-              updateDraft(() => setIpv6Enabled(event.currentTarget.checked))
+              dispatchDraft({
+                type: "edit",
+                field: "ipv6Enabled",
+                value: event.currentTarget.checked,
+              })
             }
           />
           <span>
@@ -310,12 +242,14 @@ export function ConnectionSeedingSettingsSection({
         <label className={styles.option}>
           <input
             type="checkbox"
-            checked={portMapping === "upnp"}
-            disabled={!manageable || pending}
+            checked={draft.portMapping === "upnp"}
+            disabled={!manageable}
             onChange={(event) =>
-              updateDraft(() =>
-                setPortMapping(event.currentTarget.checked ? "upnp" : "disabled"),
-              )
+              dispatchDraft({
+                type: "edit",
+                field: "portMapping",
+                value: event.currentTarget.checked ? "upnp" : "disabled",
+              })
             }
           />
           <span>
@@ -331,12 +265,14 @@ export function ConnectionSeedingSettingsSection({
           id="active-downloads"
           label="Simultaneous downloads"
           description="Incomplete torrents admitted at once. Additional runnable torrents remain queued and start automatically as capacity opens."
-          value={activeDownloads}
+          value={draft.activeDownloads}
           minimum={ACTIVE_DOWNLOADS_MINIMUM}
           maximum={ACTIVE_DOWNLOADS_MAXIMUM}
           error={validation.activeDownloadsError}
-          disabled={!manageable || pending}
-          onChange={(value) => updateDraft(() => setActiveDownloads(value))}
+          disabled={!manageable}
+          onChange={(value) =>
+            dispatchDraft({ type: "edit", field: "activeDownloads", value })
+          }
         />
 
         <div
@@ -354,26 +290,46 @@ export function ConnectionSeedingSettingsSection({
           <RateLimitField
             id="all-torrents-upload-rate"
             label="All torrents upload limit"
-            unlimited={uploadRateUnlimited}
-            valueKiB={uploadRateKiB}
+            unlimited={draft.uploadRate.unlimited}
+            valueKiB={draft.uploadRate.valueKiB}
             error={validation.uploadRateError}
-            disabled={!manageable || pending}
+            disabled={!manageable}
             onUnlimitedChange={(unlimited) =>
-              updateDraft(() => setUploadRateUnlimited(unlimited))
+              dispatchDraft({
+                type: "edit",
+                field: "uploadRate",
+                value: { ...draft.uploadRate, unlimited },
+              })
             }
-            onValueChange={(value) => updateDraft(() => setUploadRateKiB(value))}
+            onValueChange={(valueKiB) =>
+              dispatchDraft({
+                type: "edit",
+                field: "uploadRate",
+                value: { ...draft.uploadRate, valueKiB },
+              })
+            }
           />
           <RateLimitField
             id="all-torrents-download-rate"
             label="All torrents download limit"
-            unlimited={downloadRateUnlimited}
-            valueKiB={downloadRateKiB}
+            unlimited={draft.downloadRate.unlimited}
+            valueKiB={draft.downloadRate.valueKiB}
             error={validation.downloadRateError}
-            disabled={!manageable || pending}
+            disabled={!manageable}
             onUnlimitedChange={(unlimited) =>
-              updateDraft(() => setDownloadRateUnlimited(unlimited))
+              dispatchDraft({
+                type: "edit",
+                field: "downloadRate",
+                value: { ...draft.downloadRate, unlimited },
+              })
             }
-            onValueChange={(value) => updateDraft(() => setDownloadRateKiB(value))}
+            onValueChange={(valueKiB) =>
+              dispatchDraft({
+                type: "edit",
+                field: "downloadRate",
+                value: { ...draft.downloadRate, valueKiB },
+              })
+            }
           />
         </div>
 
@@ -381,12 +337,14 @@ export function ConnectionSeedingSettingsSection({
           id="peer-connection-limit"
           label="Peer connection limit"
           description="Ordinary outgoing, established, and accepted peer connections across the session. The running process may use a lower safe limit."
-          value={peerLimit}
+          value={draft.peerLimit}
           minimum={PEER_LIMIT_MINIMUM}
           maximum={PEER_LIMIT_MAXIMUM}
           error={validation.peerLimitError}
-          disabled={!manageable || pending}
-          onChange={(value) => updateDraft(() => setPeerLimit(value))}
+          disabled={!manageable}
+          onChange={(value) =>
+            dispatchDraft({ type: "edit", field: "peerLimit", value })
+          }
         />
 
         <div
@@ -410,10 +368,14 @@ export function ConnectionSeedingSettingsSection({
                   type="radio"
                   name="encryption-policy"
                   value={option.value}
-                  checked={encryption === option.value}
-                  disabled={!manageable || pending}
+                  checked={draft.encryption === option.value}
+                  disabled={!manageable}
                   onChange={() =>
-                    updateDraft(() => setEncryption(option.value))
+                    dispatchDraft({
+                      type: "edit",
+                      field: "encryption",
+                      value: option.value,
+                    })
                   }
                 />
                 <span>
@@ -429,12 +391,14 @@ export function ConnectionSeedingSettingsSection({
           id="upload-slots"
           label="Payload upload slots"
           description="Peers allowed to receive piece payload at once. Zero keeps interested peers choked for piece payload; metadata and the listener remain available."
-          value={uploadSlots}
+          value={draft.uploadSlots}
           minimum={UPLOAD_SLOTS_MINIMUM}
           maximum={UPLOAD_SLOTS_MAXIMUM}
           error={validation.uploadSlotsError}
-          disabled={!manageable || pending}
-          onChange={(value) => updateDraft(() => setUploadSlots(value))}
+          disabled={!manageable}
+          onChange={(value) =>
+            dispatchDraft({ type: "edit", field: "uploadSlots", value })
+          }
         />
 
         <RuntimeState settings={settings} />
@@ -443,32 +407,30 @@ export function ConnectionSeedingSettingsSection({
           <button
             className={styles.primaryAction}
             type="submit"
-            disabled={
-              !manageable || pending || validation.settings === null || !dirty
-            }
+            disabled={!manageable || pending || patch === null}
           >
             {pending ? "Saving…" : "Save settings"}
           </button>
           <button
             className={styles.secondaryAction}
             type="button"
-            disabled={!manageable || pending || !dirty}
+            disabled={!manageable || dirtyFields.length === 0}
             onClick={resetDraft}
           >
             Cancel changes
           </button>
         </div>
-        {saveStatus === null ? null : (
+        {clientDraftStatus(draftState, phase) === null ? null : (
           <output
             className={
-              saveStatus.type === "error"
+              phase === "failed" || phase === "conflict"
                 ? styles.errorStatus
                 : styles.successStatus
             }
-            role={saveStatus.type === "error" ? "alert" : "status"}
+            role={phase === "failed" || phase === "conflict" ? "alert" : "status"}
             aria-live="polite"
           >
-            {saveStatus.message}
+            {clientDraftStatus(draftState, phase)}
           </output>
         )}
       </form>
@@ -963,6 +925,135 @@ function Ipv6PinholeRuntime({ status }: { readonly status: Ipv6PinholeStatus }) 
   }
 }
 
+interface RateLimitDraftField {
+  readonly unlimited: boolean;
+  readonly valueKiB: string;
+}
+
+interface ListenerDraftField {
+  readonly mode: ListenerMode;
+  readonly fixedPort: string;
+}
+
+interface ClientSettingsDraft {
+  readonly listener: ListenerDraftField;
+  readonly preferredPort: string;
+  readonly portMapping: PortMappingPolicy;
+  readonly peerLimit: string;
+  readonly uploadSlots: string;
+  readonly activeDownloads: string;
+  readonly uploadRate: RateLimitDraftField;
+  readonly downloadRate: RateLimitDraftField;
+  readonly encryption: EncryptionPolicy;
+  readonly ipv6Enabled: boolean;
+}
+
+const CLIENT_SETTINGS_COMPARATORS: SettingsDraftComparators<ClientSettingsDraft> = {
+  listener: (left, right) =>
+    left.mode === right.mode &&
+    (left.mode === "automatic" || left.fixedPort === right.fixedPort),
+  preferredPort: Object.is,
+  portMapping: Object.is,
+  peerLimit: Object.is,
+  uploadSlots: Object.is,
+  activeDownloads: Object.is,
+  uploadRate: sameRateLimitDraftField,
+  downloadRate: sameRateLimitDraftField,
+  encryption: Object.is,
+  ipv6Enabled: Object.is,
+};
+
+function clientSettingsDraft(settings: ClientSettings): ClientSettingsDraft {
+  return {
+    listener: {
+      mode: productListenerMode(settings.listener),
+      fixedPort: isFixedListener(settings.listener)
+        ? String(settings.listener.port)
+        : "",
+    },
+    preferredPort: String(settings.preferred_listen_port),
+    portMapping: settings.port_mapping,
+    peerLimit: String(settings.peer_connection_limit),
+    uploadSlots: String(settings.upload_slots),
+    activeDownloads: String(settings.active_downloads),
+    uploadRate: {
+      unlimited: settings.upload_rate_limit.type === "unlimited",
+      valueKiB: rateLimitDraftValue(
+        settings.upload_rate_limit,
+        DEFAULT_UPLOAD_RATE_KIB,
+      ),
+    },
+    downloadRate: {
+      unlimited: settings.download_rate_limit.type === "unlimited",
+      valueKiB: rateLimitDraftValue(
+        settings.download_rate_limit,
+        DEFAULT_DOWNLOAD_RATE_KIB,
+      ),
+    },
+    encryption: settings.encryption,
+    ipv6Enabled: settings.ipv6_enabled,
+  };
+}
+
+function sameRateLimitDraftField(
+  left: RateLimitDraftField,
+  right: RateLimitDraftField,
+): boolean {
+  return left.unlimited === right.unlimited &&
+    (left.unlimited || left.valueKiB === right.valueKiB);
+}
+
+function clientSettingsPatch(
+  fields: readonly (keyof ClientSettingsDraft)[],
+  settings: ClientSettings | null,
+): ClientSettingsPatch | null {
+  if (settings === null || fields.length === 0) return null;
+  return {
+    ...(fields.includes("listener") ? { listener: settings.listener } : {}),
+    ...(fields.includes("preferredPort")
+      ? { preferred_listen_port: settings.preferred_listen_port }
+      : {}),
+    ...(fields.includes("portMapping")
+      ? { port_mapping: settings.port_mapping }
+      : {}),
+    ...(fields.includes("peerLimit")
+      ? { peer_connection_limit: settings.peer_connection_limit }
+      : {}),
+    ...(fields.includes("uploadSlots")
+      ? { upload_slots: settings.upload_slots }
+      : {}),
+    ...(fields.includes("activeDownloads")
+      ? { active_downloads: settings.active_downloads }
+      : {}),
+    ...(fields.includes("uploadRate")
+      ? { upload_rate_limit: settings.upload_rate_limit }
+      : {}),
+    ...(fields.includes("downloadRate")
+      ? { download_rate_limit: settings.download_rate_limit }
+      : {}),
+    ...(fields.includes("encryption")
+      ? { encryption: settings.encryption }
+      : {}),
+    ...(fields.includes("ipv6Enabled")
+      ? { ipv6_enabled: settings.ipv6_enabled }
+      : {}),
+  };
+}
+
+function clientDraftStatus(
+  state: SettingsDraftState<ClientSettingsDraft>,
+  phase: SettingsDraftPhase,
+): string | null {
+  if (phase === "submitting") return "Saving settings…";
+  if (phase === "awaiting_view") {
+    return "Settings accepted; waiting for the live view…";
+  }
+  if (phase === "conflict") {
+    return "One or more settings changed elsewhere. Your draft is preserved for review.";
+  }
+  return state.failure;
+}
+
 function validateDraft(
   listenerMode: ListenerMode,
   preferredPort: string,
@@ -1079,26 +1170,6 @@ function parseBoundedInteger(
   return Number.isSafeInteger(parsed) && parsed >= minimum && parsed <= maximum
     ? parsed
     : null;
-}
-
-function sameClientSettings(left: ClientSettings, right: ClientSettings): boolean {
-  return (
-    left.listener.type === right.listener.type &&
-    (!isFixedListener(left.listener) ||
-      (isFixedListener(right.listener) &&
-        left.listener.port === right.listener.port)) &&
-    left.port_mapping === right.port_mapping &&
-    left.preferred_listen_port === right.preferred_listen_port &&
-    left.peer_connection_limit === right.peer_connection_limit &&
-    left.upload_slots === right.upload_slots &&
-    left.active_downloads === right.active_downloads &&
-    sameRateLimit(left.upload_rate_limit, right.upload_rate_limit) &&
-    sameRateLimit(left.download_rate_limit, right.download_rate_limit) &&
-    left.encryption === right.encryption &&
-    left.ipv6_enabled === right.ipv6_enabled &&
-    left.tracker_https_server_authentication ===
-      right.tracker_https_server_authentication
-  );
 }
 
 const ENCRYPTION_OPTIONS: ReadonlyArray<{

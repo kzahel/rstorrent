@@ -14,12 +14,12 @@ use rstorrent_session::{
     ApiLimits, ApiVersion, ApplicationCall, ApplicationCallResult, BandwidthDirectionRuntimeView,
     BandwidthRuntimeView, CapabilityStatus, CatalogPageRequest, CatalogPageView, CheckingPhaseView,
     CheckingProgressView, ClientSettings, ClientSettingsApplicationState,
-    ClientSettingsDegradedReason, ClientSettingsRuntimeView, Command, CommandResult, DeliveryMode,
-    DeliveryPolicy, DhtAddressFamilyView, DhtBucketView, DhtFamilyInspectionView,
-    DhtInspectionView, DhtLifecycleView, DhtLookupView, DhtNetworkPolicyView, DiagnosticCategory,
-    DiagnosticEvent, DiagnosticField, DiagnosticFilter, DiagnosticProfile, DiagnosticRetention,
-    DiagnosticSeverity, DiagnosticSubject, DiagnosticValue, DiskCheckpointStageView,
-    DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView,
+    ClientSettingsDegradedReason, ClientSettingsPatch, ClientSettingsRuntimeView, Command,
+    CommandResult, DeliveryMode, DeliveryPolicy, DhtAddressFamilyView, DhtBucketView,
+    DhtFamilyInspectionView, DhtInspectionView, DhtLifecycleView, DhtLookupView,
+    DhtNetworkPolicyView, DiagnosticCategory, DiagnosticEvent, DiagnosticField, DiagnosticFilter,
+    DiagnosticProfile, DiagnosticRetention, DiagnosticSeverity, DiagnosticSubject, DiagnosticValue,
+    DiskCheckpointStageView, DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView,
     EffectiveListenerSettings, EncryptionPolicy, ErrorCode, ErrorResponse, FileCatalogState,
     FileIndexRange, FilePriority, FileSelectionIntent, FileSelectionView, FileView,
     HttpsServerAuthenticationPolicy, IndexRange, Ipv6PinholeFailureStage, Ipv6PinholeStatus,
@@ -35,8 +35,8 @@ use rstorrent_session::{
     SpeedMetric, SpeedMetricAvailability, SpeedPersistenceState, SpeedRange, SpeedSeriesView,
     StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot, StorageState,
     SubscriptionSpec, SwarmCatalogState, SwarmCountsView, SwarmPeerState, SwarmPeerView,
-    TorrentEtaView, TorrentOperationalState, TorrentProtocolIdentities, TorrentSnapshot,
-    TorrentState, TorrentTransferLimits, TorrentView, TrackerAnnounceEventView,
+    TorrentEtaView, TorrentOperationalState, TorrentProtocolIdentities, TorrentSettingsPatch,
+    TorrentSnapshot, TorrentState, TorrentTransferLimits, TorrentView, TrackerAnnounceEventView,
     TrackerCatalogState, TrackerConnectionFamilyView, TrackerNextActionView, TrackerSecurityView,
     TrackerSourceView, TrackerStatusView, TrackerTransportView, TrackerView, TransferRateLimit,
     TransportAddressFamily, TransportFamilyRuntimeView, UpdateBatch, UpdateViewSetRequest,
@@ -82,6 +82,8 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     );
     append::<TransferRateLimit>(&mut declarations)?;
     append::<TorrentTransferLimits>(&mut declarations)?;
+    append::<TorrentSettingsPatch>(&mut declarations)?;
+    append::<ClientSettingsPatch>(&mut declarations)?;
     append::<Command>(&mut declarations)?;
     append::<ListenerPolicy>(&mut declarations)?;
     append::<PortMappingPolicy>(&mut declarations)?;

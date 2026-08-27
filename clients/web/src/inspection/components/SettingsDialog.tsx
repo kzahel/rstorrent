@@ -7,9 +7,9 @@ import {
   type RefObject,
 } from "react";
 
-import type { ClientSettings, ClientSettingsRuntimeView } from "../../api";
+import type { ClientSettingsPatch, ClientSettingsRuntimeView } from "../../api";
 import type { ColorTheme, DataUnits, InterfaceSize } from "../appearance";
-import type { DownloadRoot, DownloadStorageSettings } from "../model";
+import type { CommandResult, DownloadRoot, DownloadStorageSettings } from "../model";
 import { AppearanceSettingsSection } from "./AppearanceSettingsSection";
 import { AboutUpdatesSettingsSection } from "./AboutUpdatesSettingsSection";
 import { ConnectionSeedingSettingsSection } from "./ConnectionSeedingSettingsSection";
@@ -58,7 +58,7 @@ export interface SettingsDialogProps {
   readonly onDefaultRootChange: (rootId: string) => Promise<void>;
   readonly onShowAddOptionsChange: (show: boolean) => Promise<void>;
   readonly onRemoveRoot: (rootId: string) => Promise<void>;
-  readonly onClientSettingsSave: (settings: ClientSettings) => Promise<void>;
+  readonly onClientSettingsSave: (patch: ClientSettingsPatch) => Promise<CommandResult>;
   readonly onWebAuthSignedOut: () => void;
   readonly onClose: () => void;
 }

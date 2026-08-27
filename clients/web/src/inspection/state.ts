@@ -137,6 +137,7 @@ export const MAX_DETAIL_PANE_PERCENT = 80;
 
 const EMPTY_SNAPSHOT: InspectionSnapshot = {
   revision: 0,
+  durableRevision: "0",
   session: {
     connection: "offline",
     downloadRate: 0,
@@ -820,6 +821,7 @@ export function reduceInspectionUpdate(
 
   return {
     revision: update.revision,
+    durableRevision: update.durableRevision ?? state.durableRevision,
     session: update.session ?? state.session,
     demo: update.demo ?? state.demo,
     storage: update.storage ?? state.storage,

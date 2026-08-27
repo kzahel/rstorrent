@@ -45,6 +45,7 @@ import type {
   InspectionCommand,
   InspectionUpdate,
   MagnetExport,
+  TorrentRow,
 } from "../model";
 import { WEBTORRENT_TEST_TORRENTS } from "../testTorrents";
 import type { DesktopUpdater, DesktopUpdaterSnapshot } from "../updater/types";
@@ -232,17 +233,76 @@ describe("inspection application", () => {
 
     await waitFor(() =>
       expect(application.commands.at(-1)).toEqual({
-        type: "set_torrent_transfer_limits",
+        type: "update_torrent_settings",
         torrentId: snapshot.torrentOrder[0],
-        limits: {
-          upload: { type: "limited", bytes_per_second: 32_768 },
-          download: { type: "limited", bytes_per_second: 98_304 },
+        patch: {
+          upload_rate_limit: { type: "limited", bytes_per_second: 32_768 },
+          download_rate_limit: { type: "limited", bytes_per_second: 98_304 },
         },
       }),
     );
-    expect(
-      within(detail).getByText("Torrent peer transfer limits saved."),
-    ).toBeVisible();
+  });
+
+  it("preserves a download-limit draft through continuous complete row updates", async () => {
+    const user = userEvent.setup();
+    const base = buildScenarioSnapshot("healthy-download", 42_000, false, 1);
+    const torrentId = base.torrentOrder[0] as string;
+    const row = base.torrents[torrentId] as TorrentRow;
+    const limited = {
+      ...row,
+      transferLimits: {
+        upload: { type: "limited" as const, bytes_per_second: 32_768 },
+        download: { type: "limited" as const, bytes_per_second: 98_304 },
+      },
+    };
+    const snapshot = {
+      ...base,
+      demo: null,
+      torrents: { ...base.torrents, [torrentId]: limited },
+    };
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot,
+    });
+    renderApplication(application);
+    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(screen.getByRole("tab", { name: "General" }));
+    const detail = screen.getByRole("region", { name: "Torrent details" });
+    const downloadUnlimited = within(detail).getByRole("checkbox", {
+      name: "Torrent download limit unlimited",
+    });
+
+    await user.click(downloadUnlimited);
+    expect(downloadUnlimited).toBeChecked();
+    for (let revision = 2; revision <= 25; revision += 1) {
+      application.emitUpdate({
+        type: "patch",
+        revision,
+        durableRevision: "1",
+        torrents: {
+          upsert: [
+            {
+              ...limited,
+              downloadRate: limited.downloadRate + revision,
+            },
+          ],
+          removed: [],
+        },
+      });
+    }
+    expect(downloadUnlimited).toBeChecked();
+
+    await user.click(
+      within(detail).getByRole("button", { name: "Save torrent limits" }),
+    );
+    await waitFor(() =>
+      expect(application.commands.at(-1)).toEqual({
+        type: "update_torrent_settings",
+        torrentId,
+        patch: { download_rate_limit: { type: "unlimited" } },
+      }),
+    );
+    expect(downloadUnlimited).toBeChecked();
   });
 
   it("renders the responsive hierarchy and changes detail tabs", async () => {
@@ -2382,10 +2442,9 @@ describe("inspection application", () => {
     await user.click(save);
     await waitFor(() =>
       expect(application.commands.at(-1)).toEqual({
-        type: "set_client_settings",
-        settings: {
+        type: "update_client_settings",
+        patch: {
           listener: { type: "fixed_local_network", port: 1024 },
-          preferred_listen_port: 6881,
           port_mapping: "upnp",
           peer_connection_limit: 2000,
           upload_slots: 0,
@@ -2400,35 +2459,34 @@ describe("inspection application", () => {
           },
           encryption: "prefer",
           ipv6_enabled: false,
-          tracker_https_server_authentication: "disabled",
         },
       }),
     );
-    expect(
-      within(dialog).getByText(/Settings accepted and applying/i),
-    ).toBeVisible();
     expect(within(dialog).getByText(/Transport: applying/i)).toBeVisible();
     expect(within(dialog).queryByText(/restart/i)).not.toBeInTheDocument();
 
     await user.clear(peers);
     await user.type(peers, "1999");
-    application.emitClientSettings({
-      ...clientSettingsRuntimeFixture(),
-      configured: {
-        ...clientSettingsRuntimeFixture().configured,
-        listener: { type: "fixed_local_network", port: 1024 },
-        preferred_listen_port: 6881,
-        port_mapping: "upnp",
-        peer_connection_limit: 2000,
-        upload_slots: 0,
-        active_downloads: 4,
-        encryption: "prefer",
-        ipv6_enabled: false,
-        tracker_https_server_authentication: "system_trust",
-      },
-      effective_encryption: "prefer",
-      effective_tracker_https_server_authentication: "system_trust",
-    });
+    for (let update = 0; update < 25; update += 1) {
+      application.emitClientSettings({
+        ...clientSettingsRuntimeFixture(),
+        configured: {
+          ...clientSettingsRuntimeFixture().configured,
+          listener: { type: "fixed_local_network", port: 1024 },
+          preferred_listen_port: 6881,
+          port_mapping: "upnp",
+          peer_connection_limit: 2000,
+          upload_slots: 0,
+          active_downloads: 4,
+          encryption: "prefer",
+          ipv6_enabled: false,
+          tracker_https_server_authentication: "system_trust",
+        },
+        effective_peer_connection_limit: 120 + update,
+        effective_encryption: "prefer",
+        effective_tracker_https_server_authentication: "system_trust",
+      });
+    }
     expect(peers).toHaveValue(1999);
     await user.click(
       within(dialog).getByRole("button", { name: "Cancel changes" }),
@@ -2449,7 +2507,7 @@ describe("inspection application", () => {
     await waitFor(() =>
       expect(
         application.commands.filter(
-          (command) => command.type === "set_client_settings",
+          (command) => command.type === "update_client_settings",
         ),
       ).toHaveLength(3),
     );
@@ -2960,6 +3018,9 @@ class RecordingLiveApplication implements InspectionApplication {
   private listener: ((update: InspectionUpdate) => void) | null = null;
   private storage: DownloadStorageSettings;
   private clientSettings: ClientSettingsRuntimeView;
+  private torrents: Record<string, TorrentRow>;
+  private durableRevision: bigint;
+  private viewRevision: number;
 
   constructor(
     private readonly initialSnapshot?: InspectionUpdate & {
@@ -2975,6 +3036,11 @@ class RecordingLiveApplication implements InspectionApplication {
     this.clientSettings =
       initialSnapshot?.snapshot.clientSettings ??
       clientSettingsRuntimeFixture();
+    this.torrents = { ...(initialSnapshot?.snapshot.torrents ?? {}) };
+    this.durableRevision = BigInt(
+      initialSnapshot?.snapshot.durableRevision ?? "0",
+    );
+    this.viewRevision = initialSnapshot?.snapshot.revision ?? 0;
   }
 
   subscribe(listener: (update: InspectionUpdate) => void): () => void {
@@ -2993,7 +3059,8 @@ class RecordingLiveApplication implements InspectionApplication {
     this.clientSettings = settings;
     this.listener?.({
       type: "patch",
-      revision: 2,
+      revision: ++this.viewRevision,
+      durableRevision: this.durableRevision.toString(),
       clientSettings: settings,
     });
   }
@@ -3088,14 +3155,18 @@ class RecordingLiveApplication implements InspectionApplication {
       this.emitStorage();
       return { accepted: true, message: "Folder removed" };
     }
-    if (command.type === "set_client_settings") {
+    if (command.type === "update_client_settings") {
       if (this.rejectNextClientSettings) {
         this.rejectNextClientSettings = false;
         return { accepted: false, message: "settings save rejected" };
       }
+      const revision = this.nextDurableRevision();
       this.clientSettings = {
         ...this.clientSettings,
-        configured: command.settings,
+        configured: {
+          ...this.clientSettings.configured,
+          ...command.patch,
+        },
         transport_application: { type: "applying" },
         port_mapping_application: { type: "applying" },
         peer_connections_application: { type: "applying" },
@@ -3104,18 +3175,59 @@ class RecordingLiveApplication implements InspectionApplication {
       };
       this.listener?.({
         type: "patch",
-        revision: 2,
+        revision: ++this.viewRevision,
+        durableRevision: revision,
         clientSettings: this.clientSettings,
       });
-      return { accepted: true, message: "Settings saved" };
+      return {
+        accepted: true,
+        message: "Settings saved",
+        requestId: `test-client-${revision}`,
+        resultingRevision: revision,
+      };
+    }
+    if (command.type === "update_torrent_settings") {
+      const torrent = this.torrents[command.torrentId];
+      if (torrent === undefined) {
+        return { accepted: false, message: "Torrent is not present" };
+      }
+      const revision = this.nextDurableRevision();
+      const updated = {
+        ...torrent,
+        transferLimits: {
+          upload:
+            command.patch.upload_rate_limit ?? torrent.transferLimits.upload,
+          download:
+            command.patch.download_rate_limit ?? torrent.transferLimits.download,
+        },
+      };
+      this.torrents = { ...this.torrents, [command.torrentId]: updated };
+      this.listener?.({
+        type: "patch",
+        revision: ++this.viewRevision,
+        durableRevision: revision,
+        torrents: { upsert: [updated], removed: [] },
+      });
+      return {
+        accepted: true,
+        message: "Torrent settings saved",
+        requestId: `test-torrent-${revision}`,
+        resultingRevision: revision,
+      };
     }
     return { accepted: true, message: "Torrent added" };
+  }
+
+  private nextDurableRevision(): string {
+    this.durableRevision += 1n;
+    return this.durableRevision.toString();
   }
 
   private emitStorage(): void {
     this.listener?.({
       type: "patch",
-      revision: 2,
+      revision: ++this.viewRevision,
+      durableRevision: this.durableRevision.toString(),
       storage: this.storage,
     });
   }

@@ -191,22 +191,34 @@ export class DemoApplication implements InspectionApplication {
         return rejected("File actions are unavailable in demo scenarios");
       case "force_recheck":
         return rejected("Force recheck is unavailable in demo scenarios");
-      case "set_torrent_transfer_limits":
-        if (this.snapshot.torrents[command.torrentId] === undefined) {
-          return rejected("Torrent is not present");
+      case "update_torrent_settings":
+        {
+          const torrent = this.snapshot.torrents[command.torrentId];
+          if (torrent === undefined) {
+            return rejected("Torrent is not present");
+          }
+          const current =
+            this.transferLimits.get(command.torrentId) ?? torrent.transferLimits;
+          this.transferLimits.set(command.torrentId, {
+            upload: command.patch.upload_rate_limit ?? current.upload,
+            download: command.patch.download_rate_limit ?? current.download,
+          });
         }
-        this.transferLimits.set(command.torrentId, command.limits);
         this.addCommandLog(
           "policy",
           "Torrent peer transfer limits changed in demo mode",
           command.torrentId,
         );
         this.advance(0);
-        return accepted("Torrent transfer limits saved");
+        return {
+          ...accepted("Torrent transfer limits saved"),
+          requestId: `demo-${this.revision}`,
+          resultingRevision: String(this.revision),
+        };
       case "choose_download_root":
       case "set_default_download_root":
       case "set_show_add_options":
-      case "set_client_settings":
+      case "update_client_settings":
       case "remove_download_root":
         return rejected("Download folder management is unavailable in demo scenarios");
     }
@@ -887,6 +899,7 @@ function diffSnapshots(
   return {
     type: "patch",
     revision: next.revision,
+    durableRevision: next.durableRevision,
     session: next.session,
     ...(next.demo === null ? {} : { demo: next.demo }),
     ...(torrentUpserts.length === 0 &&
