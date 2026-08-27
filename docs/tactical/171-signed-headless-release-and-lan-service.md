@@ -77,8 +77,10 @@ route, or system-wide service is changed implicitly.
    fail before profile creation or peer networking.
 6. **HLU-006 truthful presentation.** Health and the production React UI say
    that authentication is absent and every LAN client has full control. The
-   update UI identifies the headless package, performs the signed check from
-   the backend, and directs apply through the stable installed command.
+   browser shows that explanation as a one-time, per-origin dismissible notice
+   and retains a compact `No auth` status after dismissal. The update UI
+   identifies the headless package, performs the signed check from the backend,
+   and directs apply through the stable installed command.
 7. **HLU-007 installed host.** The exact locally built x86_64 package installs
    on the current machine, uses a protected configuration and explicit payload
    root, binds the chosen LAN address, survives user-service restart, and is
@@ -214,8 +216,8 @@ No reference source, fixture, or test data is copied.
    owner, CLI check/apply behavior, website bootstrap, native release workflow,
    changelog, and adversarial tests.
 4. Reuse the injected updater presentation for browser-hosted headless builds,
-   including the LAN warning and manual-command update action, without adding
-   headless facts to the torrent application contract.
+   including the LAN exposure notice/status and manual-command update action,
+   without adding headless facts to the torrent application contract.
 5. Run focused Rust, shell, Node, generated-web, package, and local signed-
    fixture gates; then run the proportional workspace baseline.
 6. Build and install the exact x86_64 package on the current machine, create
@@ -232,7 +234,7 @@ No reference source, fixture, or test data is copied.
 | --- | --- |
 | Pure | Manifest/version/LAN matrix, wrong product/tag/runtime/architecture, metadata/order/size/path/archive hostile cases, update UI state/policy tests |
 | Scripted runtime | Signed local metadata/package download, signature/package tamper, safe extraction, current/older/newer selection, successful update and rollback through a fake user manager |
-| Gateway/web | Exact LAN Host/Origin and no-credential success/rejection, truthful health/access warning, automatic/manual available/current/error update presentation |
+| Gateway/web | Exact LAN Host/Origin and no-credential success/rejection, truthful health/access notice and retained status, automatic/manual available/current/error update presentation |
 | Package | Two byte-identical x86_64 builds, separate native ARM64 workflow construction/ELF validation, exact release allowlist, no enable/linger/sudo drift |
 | Repository | Rust format, strict workspace Clippy, workspace tests, generated TypeScript drift, web typecheck/tests/build, shell syntax, Node manifest tests, `git diff --check` |
 | Installed host | Exact package/config/root ownership, enabled/active/healthy service, LAN URL static/health/application connection, restart, logs without secrets, retained linger policy |
@@ -250,7 +252,7 @@ The initial implementation landed as five reviewable commits:
   Host/Origin enforcement with truthful status, logs, and health;
 - `9754101` injects the signed headless checker into the shared React updater,
   keeps automatic failures quiet, exposes only the explicit installed apply
-  command, and presents the persistent full-owner LAN warning; and
+  command, and initially presents the full-owner LAN warning; and
 - `bea7477` creates and protects the non-browser profile root only after
   listener admission.
 
@@ -325,7 +327,7 @@ Chrome capture pass. Commit `7bb7183` also makes installer output describe the
 configured health check rather than falsely calling `lan-none` readiness
 authenticated.
 
-The repaired final x86_64 package again constructs twice byte-identically. It
+The boot-hardened x86_64 package again constructed twice byte-identically. It
 validates as 20 files with 69,260,221 uncompressed bytes and SHA-256
 `fb390c41e88ea2e9743e6a743c22b68299975d3cbd6b30fade0c0587b2f41428`.
 Same-version repair restored the enabled running service; the exact index now
@@ -343,8 +345,35 @@ comment: RSTorrent Headless LAN
 It adds no IPv6, public-source, wildcard-destination, router, or port-forward
 admission. The package still does not mutate firewall policy; this is explicit
 operator-owned host configuration. The rule is present in UFW and its compiled
-nftables chain. A post-rule phone retry remains required before claiming
-physical client acceptance.
+nftables chain. A post-rule Android phone retry over the LAN reached and
+rendered the application at the exact 456-by-1024 viewport, proving physical
+client admission through that rule.
+
+### 2026-08-27 LAN notice refinement
+
+Commit `f5b916d` replaces the page-height persistent warning with a one-time
+notice and explicit `Got it` action. Dismissal is scoped to the browser origin
+and stored as the exact value `true` under the versioned key
+`rstorrent.notice.lan-none.v1.dismissed`; a new key version can deliberately
+re-present materially changed guidance. Missing, malformed, or inaccessible
+browser storage fails to a visible notice, while storage failure after the
+action still dismisses it for the current tab. A compact `No auth` header
+status remains visible for every `lan-none` session, so dismissal does not hide
+the active security posture.
+
+The storage unit tests and focused React dismissal/remount test pass, as do
+Node 20 typecheck and production build/CSP validation. The complete web suite
+finishes with 289 tests passed and two skipped; the same unrelated pre-existing
+keyboard-submenu focus-restoration assertion remains the sole failure. A
+456-by-1024 hosted-browser smoke shows the notice, exercises `Got it`, reloads,
+then proves the notice stays absent and the compact status remains.
+
+The resulting x86_64 package constructed twice byte-identically and validates
+as 20 files with 69,290,383 uncompressed bytes. The archive is 23,528,948 bytes
+with SHA-256
+`8e7af3af2c2386b7768922c7677fe7733687dbe0c1e53c7f2c062da29489505d`.
+Same-version repair restored the enabled service, its configured health check
+passes, and the installed content contains the versioned dismissal key.
 
 ## Non-Goals And Next Boundary
 

@@ -266,9 +266,11 @@ request-routing defenses, not caller authentication. Every process and device
 that can reach the address has complete owner authority, traffic is readable
 on the LAN, and a malicious page may still attempt requests that the Origin
 gate must reject. Health, status, startup logs, and the persistent React
-warning identify this posture. It is suitable only when the operator accepts
-the whole selected LAN as trusted; it must never be port-forwarded or treated
-as Internet, guest-Wi-Fi, or untrusted-overlay security.
+status identify this posture. React also explains the full-owner consequence
+in a one-time per-origin notice; dismissing it retains the compact `No auth`
+status. It is suitable only when the operator accepts the whole selected LAN
+as trusted; it must never be port-forwarded or treated as Internet,
+guest-Wi-Fi, or untrusted-overlay security.
 
 RSTorrent does not currently terminate TLS itself. In-process TLS may be added
 later if it materially simplifies supported deployments, but it is not
@@ -395,13 +397,19 @@ The repository now proves these parts of this direction:
   SYN packets being dropped before RSTorrent. Follow-up operator direction
   adds one persistent IPv4 TCP rule from `192.168.1.0/24` to exact destination
   `192.168.1.129:3030`; no IPv6, public, wildcard, router, or package-managed
-  firewall policy is added. A post-rule physical retry remains open.
+  firewall policy is added. A post-rule Android phone retry renders the
+  application at the exact 456-by-1024 viewport.
 - The same investigation independently found that hosted `index.html` had no
   explicit cache contract across same-version repair. The mutable shell and
   classic boot guard now use `no-store`, content-hashed assets are immutable,
   and a visible loading/no-JavaScript/delayed-failure shell replaces silent
   white startup. Exact phone-sized desktop Chrome and repaired-package service
   evidence pass.
+- The `lan-none` explanation is a one-time per-browser-origin notice persisted
+  under a versioned local-storage key. Dismissal and reload retain a compact
+  `No auth` header status; unavailable storage fails open by showing the notice.
+  Focused storage/React tests and a phone-sized installed-service browser smoke
+  pass.
 
 The important remaining gaps are:
 

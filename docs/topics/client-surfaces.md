@@ -709,13 +709,15 @@ remote exposure, and Android streaming remain independent product decisions.
   passphrase/device principal model, relay, wake-up path, or public wire
   compatibility promise.
 - The configured Linux headless surface now also supports exact RFC 1918
-  `lan-none`, with a persistent warning that authentication is absent and
-  every LAN client has full owner control. Exact Host/Origin checks pass on the
-  installed current-host service, but this is neither encrypted nor
-  authenticated remote access. Strict two-architecture signed release,
-  bootstrap, and explicit check/apply source machinery exists; no public
-  `headless-v*` candidate or stable manifest has been promoted, and native
-  Raspberry Pi service/update evidence remains absent.
+  `lan-none`, with a one-time per-origin notice that authentication is absent
+  and every LAN client has full owner control. Dismissal survives reload while
+  a compact `No auth` header status remains. Exact Host/Origin checks and a
+  physical Android phone load pass on the installed current-host service, but
+  this is neither encrypted nor authenticated remote access. Strict
+  two-architecture signed release, bootstrap, and explicit check/apply source
+  machinery exists; no public `headless-v*` candidate or stable manifest has
+  been promoted, and native Raspberry Pi service/update evidence remains
+  absent.
 - The Tauri shell has basic macOS close-and-reopen behavior, provisional icon
   assets, ordinary local bundle configuration, implemented updater UI/
   lifecycle behavior, and hosted signed package evidence across macOS arm64/

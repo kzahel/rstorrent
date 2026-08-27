@@ -420,7 +420,10 @@ Do not use a wildcard, public address, port forward, guest network, or
 untrusted overlay. This mode has no authentication or encryption: every
 device that can reach the selected address has full owner control. Exact Host
 and HTTP/WebSocket Origin checks still apply, and status, health, logs, and the
-React UI report the effective exposure.
+React UI report the effective exposure. React presents the full explanation
+once per browser origin and keeps a compact `No auth` header status after it is
+dismissed. Clearing site data or changing the notice-key version presents the
+explanation again.
 
 The package deliberately does not change firewall policy. If UFW is active,
 an operator who accepts the entire selected LAN as trusted must add an exact

@@ -61,11 +61,11 @@ Completed Tactical
 [`171-signed-headless-release-and-lan-service.md`](../tactical/171-signed-headless-release-and-lan-service.md)
 adds a deliberately non-authenticated operator mode, not progress toward the
 owner-remote protocol. `lan-none` admits only one exact RFC 1918 IPv4 listener
-and matching HTTP origin, retains exact Host/Origin rejection, and permanently
-warns that every reachable LAN device has full owner control. It has no
-confidentiality, caller identity, revocation, or defense against a compromised
-trusted-LAN device. The mode must not be forwarded or re-described as remote,
-overlay, guest-network, or Internet authentication.
+and matching HTTP origin, retains exact Host/Origin rejection, and shows a
+one-time per-origin full-owner notice plus a persistent compact `No auth`
+status. It has no confidentiality, caller identity, revocation, or defense
+against a compromised trusted-LAN device. The mode must not be forwarded or
+re-described as remote, overlay, guest-network, or Internet authentication.
 
 Tactical
 [`101-first-run-web-authentication.md`](../tactical/101-first-run-web-authentication.md)
