@@ -2559,10 +2559,16 @@ async fn stalled_metadata_peer_does_not_delay_useful_peer() {
             .await
             .expect("resolve metadata peers");
 
-    let (raw_info, metainfo) = timeout(Duration::from_secs(4), peers.acquire_metadata(info_hash))
-        .await
-        .expect("stalled metadata peer must not set the completion deadline")
-        .expect("useful metadata peer supplies verified metadata");
+    let (raw_info, metainfo) = timeout(
+        Duration::from_secs(4),
+        peers.acquire_metadata(
+            info_hash,
+            DownloadResourceLimits::DESKTOP.metadata_connections,
+        ),
+    )
+    .await
+    .expect("stalled metadata peer must not set the completion deadline")
+    .expect("useful metadata peer supplies verified metadata");
 
     assert_eq!(raw_info, single_file_info(&payload));
     assert_eq!(metainfo.v1().expect("v1 metadata").info_hash, info_hash);
@@ -2665,6 +2671,103 @@ async fn metadata_cancellation_publishes_empty_peers_after_joined_cleanup() {
 }
 
 #[tokio::test]
+async fn metadata_default_cohort_is_paced_to_thirty_and_cancels_exactly() {
+    let payload = b"paced metadata cohort".to_vec();
+    let info = single_file_info(&payload);
+    let info_hash: [u8; 20] = Sha1::digest(&info).into();
+    let mut magnet = format!("magnet:?xt=urn:btih:{}", hex(&info_hash));
+    let mut peer_tasks = Vec::new();
+    for _ in 0..=MAX_METADATA_PEERS {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind paced metadata peer");
+        let address = listener.local_addr().expect("paced metadata address");
+        magnet.push_str(&format!("&x.pe={address}"));
+        peer_tasks.push(tokio::spawn(serve_idle_metadata_peer(
+            listener,
+            info_hash,
+            info.len(),
+        )));
+    }
+
+    let control = DownloadControl::new();
+    let task_control = control.clone();
+    let peer_budget = crate::PeerBudget::new(crate::PeerBudgetConfig {
+        configured_limit: MAX_METADATA_PEERS,
+        incoming_slack: 0,
+        max_open_files: 1_024,
+    });
+    let task_budget = peer_budget.clone();
+    let task = tokio::spawn(download_magnet_metadata_with_dht(
+        test_identity(info_hash),
+        magnet,
+        loopback_network(Duration::from_secs(6)),
+        task_control,
+        None,
+        task_budget,
+    ));
+
+    timeout(Duration::from_secs(5), async {
+        loop {
+            let metadata = control.diagnostic_snapshot().metadata;
+            if metadata.pending_dials + metadata.active_workers == MAX_METADATA_PEERS {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("paced metadata cohort reaches its default bound");
+
+    let active = control.diagnostic_snapshot().metadata;
+    assert_eq!(active.total_attempts, MAX_METADATA_PEERS);
+    assert_eq!(active.active_attempts.len(), MAX_METADATA_PEERS);
+    let registry = active.registry.expect("paced metadata registry");
+    assert_eq!(registry.counts.total, MAX_METADATA_PEERS + 1);
+    assert_eq!(registry.counts.eligible, 1);
+    assert_eq!(peer_budget.snapshot().total, MAX_METADATA_PEERS);
+    assert_eq!(peer_budget.snapshot().total_high_water, MAX_METADATA_PEERS);
+
+    control.cancel();
+    let result = timeout(Duration::from_secs(2), task)
+        .await
+        .expect("paced metadata cancellation joins")
+        .expect("paced metadata task");
+    assert!(matches!(result, Err(DownloadError::Cancelled)));
+    assert_eq!(peer_budget.snapshot().total, 0);
+    let terminal = control.diagnostic_snapshot().metadata;
+    assert_eq!(terminal.pending_dials, 0);
+    assert_eq!(terminal.active_workers, 0);
+    assert!(terminal.active_attempts.is_empty());
+
+    timeout(Duration::from_secs(2), async {
+        loop {
+            if peer_tasks.iter().filter(|task| task.is_finished()).count() == MAX_METADATA_PEERS {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("every admitted remote metadata peer observes closure");
+    assert_eq!(
+        peer_tasks.iter().filter(|task| !task.is_finished()).count(),
+        1
+    );
+    for task in &peer_tasks {
+        if !task.is_finished() {
+            task.abort();
+        }
+    }
+    for task in peer_tasks {
+        match task.await {
+            Ok(()) => {}
+            Err(error) => assert!(error.is_cancelled()),
+        }
+    }
+}
+
+#[tokio::test]
 async fn metadata_blocks_from_multiple_peers_complete_one_dictionary() {
     let payload = vec![0x5a; 1_700];
     let info = single_file_info_with_piece_length(&payload, 1);
@@ -2706,10 +2809,16 @@ async fn metadata_blocks_from_multiple_peers_complete_one_dictionary() {
     .await
     .expect("resolve multi-source metadata peers");
 
-    let (raw_info, metainfo) = timeout(Duration::from_secs(3), peers.acquire_metadata(info_hash))
-        .await
-        .expect("multi-source metadata completion bound")
-        .expect("combine metadata blocks across peers");
+    let (raw_info, metainfo) = timeout(
+        Duration::from_secs(3),
+        peers.acquire_metadata(
+            info_hash,
+            DownloadResourceLimits::DESKTOP.metadata_connections,
+        ),
+    )
+    .await
+    .expect("multi-source metadata completion bound")
+    .expect("combine metadata blocks across peers");
     assert_eq!(raw_info, info);
     assert_eq!(metainfo.v1().expect("v1 metadata").info_hash, info_hash);
     let snapshot = control.diagnostic_snapshot().metadata;
@@ -2779,10 +2888,16 @@ async fn corrupt_metadata_generation_resets_before_clean_peer_completes() {
     .await
     .expect("resolve corrupt recovery peers");
 
-    let (raw_info, metainfo) = timeout(Duration::from_secs(3), peers.acquire_metadata(info_hash))
-        .await
-        .expect("corrupt metadata recovery bound")
-        .expect("clean source completes after corrupt generation");
+    let (raw_info, metainfo) = timeout(
+        Duration::from_secs(3),
+        peers.acquire_metadata(
+            info_hash,
+            DownloadResourceLimits::DESKTOP.metadata_connections,
+        ),
+    )
+    .await
+    .expect("corrupt metadata recovery bound")
+    .expect("clean source completes after corrupt generation");
     assert_eq!(raw_info, info);
     assert_eq!(metainfo.v1().expect("v1 metadata").info_hash, info_hash);
     let snapshot = control.diagnostic_snapshot().metadata;
@@ -2828,10 +2943,16 @@ async fn metadata_requests_ramp_for_one_at_a_time_peer() {
     .await
     .expect("resolve one-at-a-time peer");
 
-    let (raw_info, metainfo) = timeout(Duration::from_secs(2), peers.acquire_metadata(info_hash))
-        .await
-        .expect("one-at-a-time metadata completion bound")
-        .expect("pace requests until first response");
+    let (raw_info, metainfo) = timeout(
+        Duration::from_secs(2),
+        peers.acquire_metadata(
+            info_hash,
+            DownloadResourceLimits::DESKTOP.metadata_connections,
+        ),
+    )
+    .await
+    .expect("one-at-a-time metadata completion bound")
+    .expect("pace requests until first response");
     assert_eq!(raw_info, info);
     assert_eq!(metainfo.v1().expect("v1 metadata").info_hash, info_hash);
     let snapshot = control.diagnostic_snapshot().metadata;
@@ -2889,10 +3010,16 @@ async fn peers_without_ut_metadata_release_slots_and_remain_diagnosable() {
     .await
     .expect("resolve diagnostic metadata peers");
 
-    let (raw_info, _) = timeout(Duration::from_secs(1), peers.acquire_metadata(info_hash))
-        .await
-        .expect("metadata-incapable peers must release all slots")
-        .expect("later useful peer supplies metadata");
+    let (raw_info, _) = timeout(
+        Duration::from_secs(5),
+        peers.acquire_metadata(
+            info_hash,
+            DownloadResourceLimits::DESKTOP.metadata_connections,
+        ),
+    )
+    .await
+    .expect("metadata-incapable peers must release all slots")
+    .expect("later useful peer supplies metadata");
     assert_eq!(raw_info, info);
 
     let snapshot = control.diagnostic_snapshot().metadata;
@@ -2982,22 +3109,40 @@ async fn unrelated_messages_cannot_hold_every_metadata_slot() {
     .await
     .expect("resolve chattering metadata peers");
 
-    let (raw_info, _) = timeout(Duration::from_secs(2), peers.acquire_metadata(info_hash))
-        .await
-        .expect("metadata progress deadline releases chattering peers")
-        .expect("later useful peer supplies metadata");
+    let (raw_info, _) = timeout(
+        Duration::from_secs(6),
+        peers.acquire_metadata(
+            info_hash,
+            DownloadResourceLimits::DESKTOP.metadata_connections,
+        ),
+    )
+    .await
+    .expect("metadata progress deadline releases chattering peers")
+    .expect("later useful peer supplies metadata");
     assert_eq!(raw_info, info);
     let snapshot = control.diagnostic_snapshot().metadata;
     assert_eq!(snapshot.phase, MetadataAcquisitionPhase::Complete);
     assert_eq!(snapshot.total_attempts, MAX_METADATA_PEERS + 1);
+    let metadata_timeouts = snapshot
+        .recent_attempts
+        .iter()
+        .filter_map(|peer| peer.terminal_detail.as_deref())
+        .filter(|detail| detail.contains("metadata progress timed out"))
+        .count();
     assert!(
+        metadata_timeouts >= MAX_METADATA_PEERS - 2,
+        "expected all but the bounded overlap to time out, observed {metadata_timeouts}"
+    );
+    assert_eq!(
         snapshot
             .recent_attempts
             .iter()
-            .filter_map(|peer| peer.terminal_detail.as_deref())
-            .filter(|detail| detail.contains("metadata progress timed out"))
-            .count()
-            >= MAX_METADATA_PEERS
+            .filter(|peer| matches!(
+                peer.stage,
+                MetadataPeerStage::Failed | MetadataPeerStage::Cancelled
+            ))
+            .count(),
+        MAX_METADATA_PEERS
     );
     assert!(
         snapshot
@@ -3061,10 +3206,16 @@ async fn metadata_rejections_release_slots_and_are_counted() {
     .await
     .expect("resolve rejecting metadata peers");
 
-    let (raw_info, _) = timeout(Duration::from_secs(1), peers.acquire_metadata(info_hash))
-        .await
-        .expect("rejecting peers must release all slots")
-        .expect("later useful peer supplies metadata");
+    let (raw_info, _) = timeout(
+        Duration::from_secs(5),
+        peers.acquire_metadata(
+            info_hash,
+            DownloadResourceLimits::DESKTOP.metadata_connections,
+        ),
+    )
+    .await
+    .expect("rejecting peers must release all slots")
+    .expect("later useful peer supplies metadata");
     assert_eq!(raw_info, info);
     let snapshot = control.diagnostic_snapshot().metadata;
     assert_eq!(snapshot.phase, MetadataAcquisitionPhase::Complete);
@@ -3152,10 +3303,16 @@ async fn tracker_discovery_continues_while_metadata_peer_stalls() {
     .await
     .expect("start metadata discovery");
 
-    let (_, metainfo) = timeout(Duration::from_secs(4), peers.acquire_metadata(info_hash))
-        .await
-        .expect("late tracker peer must be consumed during metadata work")
-        .expect("tracker peer supplies metadata");
+    let (_, metainfo) = timeout(
+        Duration::from_secs(4),
+        peers.acquire_metadata(
+            info_hash,
+            DownloadResourceLimits::DESKTOP.metadata_connections,
+        ),
+    )
+    .await
+    .expect("late tracker peer must be consumed during metadata work")
+    .expect("tracker peer supplies metadata");
 
     assert_eq!(metainfo.v1().expect("v1 metadata").info_hash, info_hash);
     let discovered = peers

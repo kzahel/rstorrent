@@ -3183,6 +3183,7 @@ impl ApplicationService {
                             mse_dh: mse_dh.clone(),
                             encryption: encryption.clone(),
                             torrent_peers: torrent_peers.clone(),
+                            resource_limits,
                         },
                         task_control.clone(),
                     )
@@ -3321,6 +3322,7 @@ impl ApplicationService {
             let task_control = control.clone();
             let magnet = resume.magnet;
             let network = self.network;
+            let resource_limits = self.download_resource_limits;
             let peer_budget = self.session_network().peer_budget();
             let mse_dh = self.session_network().mse_dh();
             let encryption = self.session_network().encryption();
@@ -3334,6 +3336,7 @@ impl ApplicationService {
                         mse_dh,
                         encryption,
                         torrent_peers,
+                        resource_limits,
                     },
                     task_control,
                 )

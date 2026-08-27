@@ -116,6 +116,10 @@ fn product_profiles_are_generous_and_fill_every_initial_peer_window() {
         DownloadResourceLimits::DESKTOP,
         DownloadResourceLimits::ANDROID,
     ] {
+        assert_eq!(
+            limits.metadata_connections,
+            MetadataConnectionLimits::DEFAULT
+        );
         assert!(limits.max_outstanding_request_bytes >= initial_window_bytes);
         assert!(limits.max_buffered_payload_bytes >= MIN_PAYLOAD_ALLOWANCE);
         assert_eq!(
@@ -127,6 +131,85 @@ fn product_profiles_are_generous_and_fill_every_initial_peer_window() {
         assert!(limits.max_active_piece_bytes >= initial_window_bytes);
         limits.validate().expect("valid product profile");
     }
+}
+
+#[test]
+fn metadata_connection_limits_validate_platform_defaults_and_hard_ceilings() {
+    for limits in [
+        DownloadResourceLimits::DESKTOP,
+        DownloadResourceLimits::ANDROID,
+    ] {
+        assert_eq!(limits.metadata_connections.max_peers, 30);
+        assert_eq!(limits.metadata_connections.max_attempts_per_second, 10);
+        limits
+            .validate()
+            .expect("valid metadata connection defaults");
+    }
+
+    let mut invalid = DownloadResourceLimits::DESKTOP;
+    invalid.metadata_connections.max_peers = 0;
+    assert!(matches!(
+        invalid.validate(),
+        Err(DownloadError::InvalidResourceLimit(
+            "metadata peer count must be nonzero"
+        ))
+    ));
+    invalid.metadata_connections.max_peers = MetadataConnectionLimits::MAX_PEERS + 1;
+    assert!(matches!(
+        invalid.validate(),
+        Err(DownloadError::InvalidResourceLimit(
+            "metadata peer count exceeds the hard ceiling"
+        ))
+    ));
+
+    invalid = DownloadResourceLimits::DESKTOP;
+    invalid.metadata_connections.max_attempts_per_second = 0;
+    assert!(matches!(
+        invalid.validate(),
+        Err(DownloadError::InvalidResourceLimit(
+            "metadata connection attempt rate must be nonzero"
+        ))
+    ));
+    invalid.metadata_connections.max_attempts_per_second =
+        MetadataConnectionLimits::MAX_ATTEMPTS_PER_SECOND + 1;
+    assert!(matches!(
+        invalid.validate(),
+        Err(DownloadError::InvalidResourceLimit(
+            "metadata connection attempt rate exceeds the hard ceiling"
+        ))
+    ));
+
+    assert!(metadata_cohort_has_capacity(29, 0, 30));
+    assert!(!metadata_cohort_has_capacity(29, 1, 30));
+    assert!(!metadata_cohort_has_capacity(usize::MAX, 1, 30));
+}
+
+#[test]
+fn metadata_dial_pacer_spaces_attempts_without_catch_up_bursts() {
+    let mut pacer = MetadataDialPacer::new(10);
+    assert!(pacer.is_ready(Duration::ZERO));
+    pacer.record_attempt(Duration::ZERO);
+    assert_eq!(
+        pacer.until_ready(Duration::from_millis(99)),
+        Duration::from_millis(1)
+    );
+    assert!(!pacer.is_ready(Duration::from_millis(99)));
+    assert!(pacer.is_ready(Duration::from_millis(100)));
+
+    pacer.record_attempt(Duration::from_secs(1));
+    assert_eq!(
+        pacer.until_ready(Duration::from_secs(1)),
+        Duration::from_millis(100)
+    );
+    assert!(!pacer.is_ready(Duration::from_millis(1_099)));
+    assert!(pacer.is_ready(Duration::from_millis(1_100)));
+
+    let mut maximum_rate = MetadataDialPacer::new(30);
+    maximum_rate.record_attempt(Duration::ZERO);
+    assert_eq!(
+        maximum_rate.until_ready(Duration::ZERO),
+        Duration::from_nanos(33_333_334)
+    );
 }
 
 #[test]

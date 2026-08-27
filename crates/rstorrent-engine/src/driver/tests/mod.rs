@@ -47,20 +47,21 @@ use super::{
     DiskPressure, DownloadActivityEvent, DownloadActivitySink, DownloadConfig, DownloadControl,
     DownloadError, DownloadResourceLimits, MAX_CONCURRENT_TRACKER_OPERATIONS,
     MAX_DIAGNOSTIC_ERROR_LENGTH, MAX_METADATA_PEERS, MAX_RECENT_METADATA_ATTEMPTS,
-    MagnetDownloadConfig, MetadataAcquisitionPhase, MetadataPeerStage, PeerConnection,
-    PreparedContentWrite, QueuedContentStorageCommand, ResumableMagnetDownloadConfig,
-    ResumableMetainfoDownloadConfig, ResumeArtifactState, ResumedStorage, SwarmConfig,
-    TorrentPeerCoordinator, TrackerManager, UdpTrackerAnnounce, UdpTrackerExchange,
-    UdpTrackerTiming, UdpTrackerTokenCache, announce_udp_tracker, announce_udp_tracker_address,
-    atomic_saturating_add, atomic_saturating_increment, build_content_plan_window,
-    coalesce_content_writes, collect_content_write_batch, content_dial_slot_available,
-    content_storage_job_limit, download_magnet, download_magnet_metadata_with_control,
-    download_magnet_metadata_with_dht, download_magnet_with_control, download_verified_piece,
-    download_verified_piece_with_control, dry_swarm_probe_available,
-    execute_content_storage_verification, execute_content_storage_writes,
-    full_recheck_managed_storage, next_peer_message, resume_magnet, resume_magnet_with_control,
-    resume_metainfo_with_control, retrying_dht_lookup, run_content_download,
-    run_magnet_download_with_peers, send_message, validate_v1_runtime_identity,
+    MagnetDownloadConfig, MetadataAcquisitionPhase, MetadataConnectionLimits, MetadataDialPacer,
+    MetadataPeerStage, PeerConnection, PreparedContentWrite, QueuedContentStorageCommand,
+    ResumableMagnetDownloadConfig, ResumableMetainfoDownloadConfig, ResumeArtifactState,
+    ResumedStorage, SwarmConfig, TorrentPeerCoordinator, TrackerManager, UdpTrackerAnnounce,
+    UdpTrackerExchange, UdpTrackerTiming, UdpTrackerTokenCache, announce_udp_tracker,
+    announce_udp_tracker_address, atomic_saturating_add, atomic_saturating_increment,
+    build_content_plan_window, coalesce_content_writes, collect_content_write_batch,
+    content_dial_slot_available, content_storage_job_limit, download_magnet,
+    download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
+    download_magnet_with_control, download_verified_piece, download_verified_piece_with_control,
+    dry_swarm_probe_available, execute_content_storage_verification,
+    execute_content_storage_writes, full_recheck_managed_storage, metadata_cohort_has_capacity,
+    next_peer_message, resume_magnet, resume_magnet_with_control, resume_metainfo_with_control,
+    retrying_dht_lookup, run_content_download, run_magnet_download_with_peers, send_message,
+    validate_v1_runtime_identity,
 };
 
 trait TestMetainfoParse: Sized {
@@ -1903,6 +1904,66 @@ async fn serve_stalled_metadata_peer(
             Err(DownloadError::PeerClosed | DownloadError::PeerTimedOut { .. }) => break,
             Ok(message) => panic!("unexpected stalled metadata message {message:?}"),
             Err(error) => panic!("stalled metadata peer failed: {error}"),
+        }
+    }
+}
+
+async fn serve_idle_metadata_peer(
+    listener: TcpListener,
+    info_hash: [u8; 20],
+    metadata_size: usize,
+) {
+    let (mut stream, _) = listener.accept().await.expect("accept metadata client");
+    let mut handshake_bytes = [0; HANDSHAKE_LENGTH];
+    stream
+        .read_exact(&mut handshake_bytes)
+        .await
+        .expect("read client handshake");
+    assert!(
+        decode_handshake(&handshake_bytes, info_hash)
+            .expect("client handshake identity")
+            .supports_extensions()
+    );
+    let mut reserved = [0; 8];
+    reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
+    stream
+        .write_all(&encode_handshake_with_reserved(
+            info_hash,
+            scripted_peer_id(&listener, *b"-RS-IDLE--0000000000"),
+            reserved,
+        ))
+        .await
+        .expect("send server handshake");
+    let mut peer = PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(6));
+    match next_peer_message(&mut peer).await {
+        Ok(PeerMessage::Extended { id: 0, .. }) => {}
+        Err(DownloadError::PeerClosed | DownloadError::PeerTimedOut { .. }) => return,
+        Ok(message) => panic!("unexpected idle metadata preamble {message:?}"),
+        Err(error) => panic!("idle metadata preamble failed: {error}"),
+    }
+    if let Err(error) = send_message(
+        &mut peer,
+        &PeerMessage::Extended {
+            id: 0,
+            payload: encode_extension_handshake(Some(metadata_size)),
+        },
+    )
+    .await
+    {
+        if matches!(
+            error,
+            DownloadError::PeerClosed | DownloadError::PeerTimedOut { .. }
+        ) {
+            return;
+        }
+        panic!("send idle metadata extension handshake failed: {error}");
+    }
+    loop {
+        match next_peer_message(&mut peer).await {
+            Ok(PeerMessage::Extended { id: 1, .. } | PeerMessage::KeepAlive) => {}
+            Err(DownloadError::PeerClosed | DownloadError::PeerTimedOut { .. }) => break,
+            Ok(message) => panic!("unexpected idle metadata message {message:?}"),
+            Err(error) => panic!("idle metadata peer failed: {error}"),
         }
     }
 }

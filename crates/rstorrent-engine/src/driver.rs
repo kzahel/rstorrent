@@ -159,7 +159,6 @@ const CONTENT_SWARM_MAINTENANCE_INTERVAL: Duration = Duration::from_millis(100);
 const V2_LEAF_DIAGNOSIS_TIMEOUT: Duration = Duration::from_secs(10);
 #[cfg(test)]
 const V2_LEAF_DIAGNOSIS_TIMEOUT: Duration = Duration::from_millis(250);
-const MAX_METADATA_PEERS: usize = 8;
 const METADATA_SCHEDULER_TICK: Duration = Duration::from_millis(100);
 const MAX_ENGINE_PIECES: usize = MAX_METAINFO_PIECES;
 const MAX_PLANNED_CONTENT_PIECES: usize = 256;
@@ -173,12 +172,93 @@ fn public_pex_extension_handshake() -> Vec<u8> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MetadataConnectionLimits {
+    pub max_peers: usize,
+    pub max_attempts_per_second: u32,
+}
+
+impl MetadataConnectionLimits {
+    pub const MAX_PEERS: usize = 200;
+    pub const MAX_ATTEMPTS_PER_SECOND: u32 = 30;
+    pub const DEFAULT: Self = Self::new(30, 10);
+
+    pub const fn new(max_peers: usize, max_attempts_per_second: u32) -> Self {
+        Self {
+            max_peers,
+            max_attempts_per_second,
+        }
+    }
+
+    fn validate(self) -> Result<Self, DownloadError> {
+        if self.max_peers == 0 {
+            return Err(DownloadError::InvalidResourceLimit(
+                "metadata peer count must be nonzero",
+            ));
+        }
+        if self.max_peers > Self::MAX_PEERS {
+            return Err(DownloadError::InvalidResourceLimit(
+                "metadata peer count exceeds the hard ceiling",
+            ));
+        }
+        if self.max_attempts_per_second == 0 {
+            return Err(DownloadError::InvalidResourceLimit(
+                "metadata connection attempt rate must be nonzero",
+            ));
+        }
+        if self.max_attempts_per_second > Self::MAX_ATTEMPTS_PER_SECOND {
+            return Err(DownloadError::InvalidResourceLimit(
+                "metadata connection attempt rate exceeds the hard ceiling",
+            ));
+        }
+        Ok(self)
+    }
+}
+
+#[cfg(test)]
+const MAX_METADATA_PEERS: usize = MetadataConnectionLimits::DEFAULT.max_peers;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct MetadataDialPacer {
+    interval: Duration,
+    next_attempt_at: Duration,
+}
+
+impl MetadataDialPacer {
+    fn new(max_attempts_per_second: u32) -> Self {
+        debug_assert!(max_attempts_per_second > 0);
+        let rate = u64::from(max_attempts_per_second.max(1));
+        let interval_nanos = 1_000_000_000_u64.div_ceil(rate);
+        Self {
+            interval: Duration::from_nanos(interval_nanos),
+            next_attempt_at: Duration::ZERO,
+        }
+    }
+
+    fn is_ready(self, now: Duration) -> bool {
+        now >= self.next_attempt_at
+    }
+
+    fn until_ready(self, now: Duration) -> Duration {
+        self.next_attempt_at.saturating_sub(now)
+    }
+
+    fn record_attempt(&mut self, now: Duration) {
+        self.next_attempt_at = now.saturating_add(self.interval);
+    }
+}
+
+fn metadata_cohort_has_capacity(pending: usize, workers: usize, maximum: usize) -> bool {
+    pending.saturating_add(workers) < maximum
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DownloadResourceLimits {
     pub max_outstanding_request_bytes: usize,
     pub max_buffered_payload_bytes: usize,
     pub storage_intake_high_watermark_bytes: usize,
     pub max_active_piece_bytes: usize,
     pub max_active_pieces: usize,
+    pub metadata_connections: MetadataConnectionLimits,
 }
 
 impl DownloadResourceLimits {
@@ -188,6 +268,7 @@ impl DownloadResourceLimits {
         storage_intake_high_watermark_bytes: 1024 * 1024,
         max_active_piece_bytes: 256 * 1024 * 1024,
         max_active_pieces: crate::swarm::DEFAULT_MAX_ACTIVE_PIECES,
+        metadata_connections: MetadataConnectionLimits::DEFAULT,
     };
 
     pub const ANDROID: Self = Self {
@@ -196,6 +277,7 @@ impl DownloadResourceLimits {
         storage_intake_high_watermark_bytes: 1024 * 1024,
         max_active_piece_bytes: 128 * 1024 * 1024,
         max_active_pieces: crate::swarm::DEFAULT_MAX_ACTIVE_PIECES,
+        metadata_connections: MetadataConnectionLimits::DEFAULT,
     };
 
     pub const fn new(
@@ -211,6 +293,7 @@ impl DownloadResourceLimits {
             ),
             max_active_piece_bytes,
             max_active_pieces: crate::swarm::DEFAULT_MAX_ACTIVE_PIECES,
+            metadata_connections: MetadataConnectionLimits::DEFAULT,
         }
     }
 
@@ -255,6 +338,7 @@ impl DownloadResourceLimits {
                 "active piece count must be nonzero",
             ));
         }
+        self.metadata_connections.validate()?;
         Ok(self)
     }
 
@@ -356,6 +440,14 @@ pub struct ExternalMagnetMetadataDownloadConfig {
     pub mse_dh: MseDhWorkOwner,
     pub encryption: PeerEncryptionPolicyHandle,
     pub torrent_peers: TorrentPeerHandle,
+    pub resource_limits: DownloadResourceLimits,
+}
+
+struct MagnetMetadataRuntimeConfig {
+    identity: TorrentIdentityContext,
+    magnet: String,
+    network: NetworkConfig,
+    connections: MetadataConnectionLimits,
 }
 
 pub trait DownloadCheckpointSink: Send + Sync {
@@ -806,9 +898,12 @@ pub async fn download_magnet_metadata_with_dht_and_peers(
         return Err(DownloadError::Cancelled);
     }
     let result = run_magnet_metadata(
-        identity,
-        magnet,
-        network,
+        MagnetMetadataRuntimeConfig {
+            identity,
+            magnet,
+            network,
+            connections: DownloadResourceLimits::DESKTOP.metadata_connections,
+        },
         control.clone(),
         dht,
         None,
@@ -830,13 +925,17 @@ pub async fn download_magnet_metadata_with_external_discovery(
     control: DownloadControl,
 ) -> Result<Vec<u8>, DownloadError> {
     validate_network_config(config.network)?;
+    config.resource_limits.validate()?;
     if control.is_cancelled() {
         return Err(DownloadError::Cancelled);
     }
     let result = run_magnet_metadata(
-        config.identity,
-        config.magnet,
-        config.network,
+        MagnetMetadataRuntimeConfig {
+            identity: config.identity,
+            magnet: config.magnet,
+            network: config.network,
+            connections: config.resource_limits.metadata_connections,
+        },
         control.clone(),
         None,
         Some(Vec::new()),
@@ -3347,10 +3446,12 @@ impl TorrentPeerCoordinator {
     async fn acquire_metadata(
         &mut self,
         identity: impl Into<FullInfoHash>,
+        limits: MetadataConnectionLimits,
     ) -> Result<(Vec<u8>, AcquiredMetainfo), DownloadError> {
+        let limits = limits.validate()?;
         let identity = identity.into();
         self.control.metadata_started();
-        let result = self.acquire_metadata_inner(identity).await;
+        let result = self.acquire_metadata_inner(identity, limits).await;
         self.control.observe_metadata_supervisor(
             self.registry_snapshot(),
             0,
@@ -3372,6 +3473,7 @@ impl TorrentPeerCoordinator {
     async fn acquire_metadata_inner(
         &mut self,
         identity: FullInfoHash,
+        limits: MetadataConnectionLimits,
     ) -> Result<(Vec<u8>, AcquiredMetainfo), DownloadError> {
         debug_assert!(self.connection.is_none());
         let info_hash = identity.swarm_key().into_bytes();
@@ -3380,6 +3482,7 @@ impl TorrentPeerCoordinator {
         let mut workers = JoinSet::new();
         let mut worker_cancellations: BTreeMap<DialAttemptId, (DialAttempt, CancellationToken)> =
             BTreeMap::new();
+        let mut dial_pacer = MetadataDialPacer::new(limits.max_attempts_per_second);
         let mut discovery_failed_while_active = false;
         let metadata = Arc::new(Mutex::new(TorrentMetadataDownload::new(identity)));
 
@@ -3394,7 +3497,12 @@ impl TorrentPeerCoordinator {
             self.peers
                 .enforce_address_families(address_families)
                 .map_err(map_torrent_peer_error)?;
-            while sockets.pending_len() + workers.len() < MAX_METADATA_PEERS {
+            while metadata_cohort_has_capacity(
+                sockets.pending_len(),
+                workers.len(),
+                limits.max_peers,
+            ) && dial_pacer.is_ready(self.elapsed())
+            {
                 if !self.control.try_acquire_outbound_turn() {
                     break;
                 }
@@ -3446,6 +3554,7 @@ impl TorrentPeerCoordinator {
                     }
                     return Err(download_peer_set_error(error));
                 }
+                dial_pacer.record_attempt(self.elapsed());
             }
 
             self.control.observe_metadata_supervisor(
@@ -3455,22 +3564,39 @@ impl TorrentPeerCoordinator {
                 self.last_error.as_ref(),
             );
 
+            let pacing_wait = dial_pacer.until_ready(self.elapsed());
+            let policy_wait = if pacing_wait.is_zero() {
+                CONTENT_SWARM_MAINTENANCE_INTERVAL
+            } else {
+                pacing_wait.min(CONTENT_SWARM_MAINTENANCE_INTERVAL)
+            };
             if sockets.pending_len() == 0 && workers.is_empty() {
+                let candidate_waiting = self
+                    .select_candidate(PeerSelectionContext {
+                        now: self.elapsed(),
+                    })
+                    .is_some();
                 let cancellation = self.control.cancellation_token();
                 tokio::select! {
                     biased;
                     _ = cancellation.cancelled() => {
                         return Err(DownloadError::Cancelled);
                     }
-                    result = self.receive_discovery_peers(info_hash) => result?,
-                    _ = tokio::time::sleep(CONTENT_SWARM_MAINTENANCE_INTERVAL) => {},
+                    result = self.receive_discovery_peers(info_hash), if !candidate_waiting => {
+                        result?;
+                    }
+                    _ = tokio::time::sleep(policy_wait) => {},
                 }
                 discovery_failed_while_active = false;
                 continue;
             }
 
             let can_discover = !discovery_failed_while_active
-                && sockets.pending_len() + workers.len() < MAX_METADATA_PEERS
+                && metadata_cohort_has_capacity(
+                    sockets.pending_len(),
+                    workers.len(),
+                    limits.max_peers,
+                )
                 && (!self.trackers.is_empty() || self.dht.is_some());
             let cancellation = self.control.cancellation_token();
             let event = tokio::select! {
@@ -3481,7 +3607,7 @@ impl TorrentPeerCoordinator {
                 result = self.receive_discovery_peers(info_hash), if can_discover => {
                     MetadataSupervisorEvent::Discovery(result)
                 }
-                _ = tokio::time::sleep(CONTENT_SWARM_MAINTENANCE_INTERVAL) => {
+                _ = tokio::time::sleep(policy_wait) => {
                     MetadataSupervisorEvent::PolicyCheck
                 }
                 event = sockets.next_event() => MetadataSupervisorEvent::Socket(event),
@@ -3968,7 +4094,9 @@ async fn run_magnet_download_with_peers(
     magnet: Magnet,
     peers: &mut TorrentPeerCoordinator,
 ) -> Result<DownloadReport, DownloadError> {
-    let (raw_info, metainfo) = peers.acquire_metadata(magnet.identity).await?;
+    let (raw_info, metainfo) = peers
+        .acquire_metadata(magnet.identity, config.resource_limits.metadata_connections)
+        .await?;
     let content = runtime_content_from_acquired(&raw_info, metainfo)?;
     peers.set_content_identities(content.content.info_hashes());
     peers.ensure_tracker_lanes()?;
@@ -4048,27 +4176,27 @@ fn effective_magnet_skip_files(
 }
 
 async fn run_magnet_metadata(
-    identity: TorrentIdentityContext,
-    magnet: String,
-    network: NetworkConfig,
+    config: MagnetMetadataRuntimeConfig,
     control: DownloadControl,
     dht: Option<DhtHandle>,
     configured_trackers: Option<Vec<TrackerConfig>>,
     resources: TorrentPeerResources,
 ) -> Result<Vec<u8>, DownloadError> {
-    let magnet = Magnet::parse(&magnet).map_err(DownloadError::Magnet)?;
-    validate_magnet_runtime_identity(identity, magnet.identity)?;
+    let magnet = Magnet::parse(&config.magnet).map_err(DownloadError::Magnet)?;
+    validate_magnet_runtime_identity(config.identity, magnet.identity)?;
     let mut peers = TorrentPeerCoordinator::from_magnet_with_trackers(
         &magnet,
         configured_trackers,
-        network,
+        config.network,
         control,
         dht,
         resources,
     )
     .await?;
     let result = async {
-        let (raw_info, _) = peers.acquire_metadata(magnet.identity).await?;
+        let (raw_info, _) = peers
+            .acquire_metadata(magnet.identity, config.connections)
+            .await?;
         peers.close_current(None)?;
         Ok(raw_info)
     }
@@ -4240,7 +4368,9 @@ async fn run_resumable_magnet_download(
     )
     .await?;
     let result = async {
-        let (raw_info, metainfo) = peers.acquire_metadata(magnet.identity).await?;
+        let (raw_info, metainfo) = peers
+            .acquire_metadata(magnet.identity, config.resource_limits.metadata_connections)
+            .await?;
         let parsed = ParsedInfo::from_bytes_with_limits(&raw_info, DURABLE_METAINFO_LIMITS)
             .map_err(DownloadError::Metainfo)?;
         if !metadata_matches_known_identities(parsed.info_hashes(), magnet.identities) {

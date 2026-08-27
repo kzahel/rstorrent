@@ -4846,6 +4846,7 @@ mod tests {
                 storage_intake_high_watermark_bytes: BLOCK as usize,
                 max_active_piece_bytes: BLOCK as usize,
                 max_active_pieces: 1,
+                metadata_connections: crate::MetadataConnectionLimits::DEFAULT,
             },
             1,
             1,
