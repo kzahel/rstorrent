@@ -250,6 +250,12 @@ pub struct PeerHistory {
     pub utp_endpoint: UtpEndpointState,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PeerTransferTotals {
+    pub payload_downloaded_bytes: u64,
+    pub payload_uploaded_bytes: u64,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PeerRecord {
     id: PeerRecordId,
@@ -261,6 +267,7 @@ pub struct PeerRecord {
     observation_order: u64,
     phase: PeerPhase,
     history: PeerHistory,
+    transfers: PeerTransferTotals,
     integrity: PeerIntegrity,
     last_connection_attempt: Option<DialAttemptId>,
     incoming_connections: u32,
@@ -299,6 +306,10 @@ impl PeerRecord {
 
     pub fn history(&self) -> PeerHistory {
         self.history
+    }
+
+    pub fn transfers(&self) -> PeerTransferTotals {
+        self.transfers
     }
 
     pub fn integrity(&self) -> PeerIntegrity {
@@ -375,6 +386,7 @@ pub struct PeerRecordSnapshot {
     pub phase: PeerPhase,
     pub eligibility: DialEligibility,
     pub history: PeerHistory,
+    pub transfers: PeerTransferTotals,
     pub integrity: PeerIntegrity,
 }
 
@@ -607,6 +619,7 @@ impl PeerRegistry {
                     phase: record.phase,
                     eligibility,
                     history: record.history,
+                    transfers: record.transfers,
                     integrity: record.integrity,
                 }
             })
@@ -745,6 +758,7 @@ impl PeerRegistry {
             observation_order,
             phase: PeerPhase::Idle,
             history,
+            transfers: PeerTransferTotals::default(),
             integrity: PeerIntegrity::default(),
             last_connection_attempt: None,
             incoming_connections: 0,
@@ -903,6 +917,27 @@ impl PeerRegistry {
             apply_failure(record, now, failure, backoff)?;
         }
         settle_pending_ban(record);
+        Ok(())
+    }
+
+    pub(crate) fn record_transfer(
+        &mut self,
+        record_id: PeerRecordId,
+        transfer: PeerTransferTotals,
+    ) -> Result<(), PeerRegistryError> {
+        let record = self
+            .records
+            .iter_mut()
+            .find(|record| record.id == record_id)
+            .ok_or(PeerRegistryError::UnknownRecord(record_id))?;
+        record.transfers.payload_downloaded_bytes = record
+            .transfers
+            .payload_downloaded_bytes
+            .saturating_add(transfer.payload_downloaded_bytes);
+        record.transfers.payload_uploaded_bytes = record
+            .transfers
+            .payload_uploaded_bytes
+            .saturating_add(transfer.payload_uploaded_bytes);
         Ok(())
     }
 
@@ -1279,8 +1314,9 @@ mod tests {
     use super::{
         DialEligibility, PeerEndpoint, PeerFailure, PeerIntegrityAction, PeerObservation,
         PeerObservationDisposition, PeerPhase, PeerRegistry, PeerRegistryConfig, PeerRegistryError,
-        PeerSelectionContext, PeerSelector, PeerSource, UTP_RETRY_INITIAL_BACKOFF,
-        UTP_RETRY_MAX_BACKOFF, UtpConnectOutcome, UtpDialDecision, UtpEndpointState,
+        PeerSelectionContext, PeerSelector, PeerSource, PeerTransferTotals,
+        UTP_RETRY_INITIAL_BACKOFF, UTP_RETRY_MAX_BACKOFF, UtpConnectOutcome, UtpDialDecision,
+        UtpEndpointState,
     };
 
     fn endpoint(port: u16) -> PeerEndpoint {
@@ -1322,6 +1358,56 @@ mod tests {
         assert!(record.sources().contains(PeerSource::Tracker));
         assert_eq!(record.sources().len(), 2);
         assert_eq!(registry.len(), 1);
+    }
+
+    #[test]
+    fn retained_transfer_totals_accumulate_and_saturate() {
+        let mut registry = PeerRegistry::new(config(1)).expect("registry");
+        let record_id = registry
+            .observe(
+                PeerObservation::dialable(endpoint(6_881), PeerSource::Tracker),
+                Duration::ZERO,
+            )
+            .expect("observation")
+            .record_id;
+        registry
+            .record_transfer(
+                record_id,
+                PeerTransferTotals {
+                    payload_downloaded_bytes: u64::MAX - 5,
+                    payload_uploaded_bytes: u64::MAX - 7,
+                },
+            )
+            .expect("initial transfer");
+        registry
+            .record_transfer(
+                record_id,
+                PeerTransferTotals {
+                    payload_downloaded_bytes: 10,
+                    payload_uploaded_bytes: 20,
+                },
+            )
+            .expect("saturating transfer");
+
+        assert_eq!(
+            registry.get(record_id).expect("record").transfers(),
+            PeerTransferTotals {
+                payload_downloaded_bytes: u64::MAX,
+                payload_uploaded_bytes: u64::MAX,
+            }
+        );
+        assert_eq!(
+            registry
+                .snapshot(PeerSelectionContext {
+                    now: Duration::ZERO
+                })
+                .records[0]
+                .transfers,
+            PeerTransferTotals {
+                payload_downloaded_bytes: u64::MAX,
+                payload_uploaded_bytes: u64::MAX,
+            }
+        );
     }
 
     #[test]

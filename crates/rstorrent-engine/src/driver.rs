@@ -2610,10 +2610,7 @@ impl TorrentPeerCoordinator {
         self.peers
             .with_state(|state| {
                 state.registry.dial_failed(attempt, now, failure)?;
-                state
-                    .runtime
-                    .remove(connection)
-                    .map_err(TorrentPeerError::Runtime)?;
+                state.remove_connection(connection)?;
                 Ok::<_, TorrentPeerError>(())
             })
             .map_err(map_torrent_peer_error)?;
@@ -2655,10 +2652,7 @@ impl TorrentPeerCoordinator {
         self.peers
             .with_state(|state| {
                 state.registry.dial_cancelled(attempt)?;
-                state
-                    .runtime
-                    .remove(connection)
-                    .map_err(TorrentPeerError::Runtime)?;
+                state.remove_connection(connection)?;
                 Ok::<_, TorrentPeerError>(())
             })
             .map_err(map_torrent_peer_error)?;
@@ -2701,10 +2695,7 @@ impl TorrentPeerCoordinator {
                 state.pex.remove_source(connection, &mut state.registry);
                 state.pex.peer_dropped(attempt.endpoint());
                 state.registry.connection_closed(attempt, now, failure)?;
-                state
-                    .runtime
-                    .remove(connection)
-                    .map_err(TorrentPeerError::Runtime)?;
+                state.remove_connection(connection)?;
                 Ok::<_, TorrentPeerError>(())
             })
             .map_err(map_torrent_peer_error)?;

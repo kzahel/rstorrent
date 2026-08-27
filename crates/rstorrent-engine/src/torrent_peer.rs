@@ -18,7 +18,7 @@ use crate::network::{AddressFamilyPolicy, AddressFamilyPolicyHandle};
 use crate::peer::{
     DialAttempt, DialCandidate, DialEligibility, PeerFailure, PeerObservation, PeerRecordId,
     PeerRegistry, PeerRegistryConfig, PeerRegistryCounts, PeerRegistryError, PeerRegistrySnapshot,
-    PeerSelectionContext, PeerSource,
+    PeerSelectionContext, PeerSource, PeerTransferTotals,
 };
 use crate::peer_runtime::{
     IncomingPeerStart, PeerAdmissionOutcome, PeerConnectionObservation, PeerConnectionRole,
@@ -318,10 +318,31 @@ impl TorrentPeerState {
         if let Some(endpoint) = advertised {
             self.pex.peer_dropped(endpoint);
         }
-        self.runtime.remove(attachment.connection_id)?;
+        self.remove_connection(attachment.connection_id)?;
         self.registry
             .incoming_closed(attachment.record_id, now, failure)?;
         Ok(())
+    }
+
+    pub(crate) fn remove_connection(
+        &mut self,
+        connection_id: ConnectionId,
+    ) -> Result<PeerConnectionObservation, TorrentPeerError> {
+        let peer = self
+            .runtime
+            .observation(connection_id)
+            .ok_or(PeerRuntimeError::UnknownConnection(connection_id))?;
+        if let Some(record_id) = peer.record_id {
+            self.registry
+                .get(record_id)
+                .ok_or(PeerRegistryError::UnknownRecord(record_id))?;
+        }
+        let removed = self.runtime.remove(connection_id)?;
+        if let Some(record_id) = removed.record_id {
+            self.registry
+                .record_transfer(record_id, connection_transfer(&removed))?;
+        }
+        Ok(removed)
     }
 
     fn allocate_connection_id(&mut self) -> Result<ConnectionId, TorrentPeerError> {
@@ -742,7 +763,10 @@ impl TorrentPeerHandle {
 
     pub fn registry_snapshot(&self, active: bool) -> PeerRegistrySnapshot {
         let now = self.elapsed();
-        self.with_state(|state| registry_snapshot(&state.registry, now, active))
+        self.with_state(|state| {
+            let connections = state.runtime.snapshot();
+            registry_snapshot(&state.registry, &connections, now, active)
+        })
     }
 
     pub fn publish_active(&self, force: bool) -> Result<(), TorrentPeerError> {
@@ -844,15 +868,20 @@ impl TorrentPeerHandle {
                 || state.last_connections_emitted_at.is_none_or(|previous| {
                     captured_at.saturating_sub(previous) >= PEER_OBSERVATION_INTERVAL
                 });
-            let connections = if due && state.last_connections_emitted != current {
+            let connections_changed = due && state.last_connections_emitted != current;
+            if connections_changed {
                 state.last_connections_emitted = current.clone();
                 state.last_connections_emitted_at = Some(captured_at);
-                Some(current)
-            } else {
-                None
-            };
+            }
 
-            let registry = registry_publication(state, captured_at, active, force);
+            let registry = registry_publication(
+                state,
+                &current,
+                captured_at,
+                active,
+                force || connections_changed,
+            );
+            let connections = connections_changed.then_some(current);
             Ok::<_, TorrentPeerError>((connections, registry))
         })?;
         let sink = self
@@ -873,6 +902,7 @@ impl TorrentPeerHandle {
 
 fn registry_snapshot(
     registry: &PeerRegistry,
+    connections: &[PeerConnectionObservation],
     captured_at: Duration,
     active: bool,
 ) -> PeerRegistrySnapshot {
@@ -880,12 +910,44 @@ fn registry_snapshot(
     if !active {
         snapshot.records.clear();
         snapshot.counts = PeerRegistryCounts::default();
+    } else {
+        for connection in connections {
+            let Some(record_id) = connection.record_id else {
+                continue;
+            };
+            let Some(record) = snapshot
+                .records
+                .iter_mut()
+                .find(|record| record.id == record_id)
+            else {
+                continue;
+            };
+            let transfer = connection_transfer(connection);
+            record.transfers.payload_downloaded_bytes = record
+                .transfers
+                .payload_downloaded_bytes
+                .saturating_add(transfer.payload_downloaded_bytes);
+            record.transfers.payload_uploaded_bytes = record
+                .transfers
+                .payload_uploaded_bytes
+                .saturating_add(transfer.payload_uploaded_bytes);
+        }
     }
     snapshot
 }
 
+fn connection_transfer(connection: &PeerConnectionObservation) -> PeerTransferTotals {
+    PeerTransferTotals {
+        payload_downloaded_bytes: connection.content.map_or(0, |content| {
+            u64::try_from(content.useful_payload_bytes).unwrap_or(u64::MAX)
+        }),
+        payload_uploaded_bytes: connection.upload.map_or(0, |upload| upload.payload_bytes),
+    }
+}
+
 fn registry_publication(
     state: &mut TorrentPeerState,
+    connections: &[PeerConnectionObservation],
     captured_at: Duration,
     active: bool,
     force: bool,
@@ -899,7 +961,7 @@ fn registry_publication(
     {
         return None;
     }
-    let snapshot = registry_snapshot(&state.registry, captured_at, active);
+    let snapshot = registry_snapshot(&state.registry, connections, captured_at, active);
     state.registry_publication.next_transition_at = active
         .then(|| {
             snapshot
@@ -944,8 +1006,8 @@ mod tests {
     };
     use crate::peer_runtime::{
         PeerAdmissionOutcome, PeerAdmissionRejection, PeerConnectionDirection,
-        PeerConnectionLifecycle, PeerConnectionRole, PeerTransport, PeerUploadActivity,
-        PeerUploadGrant,
+        PeerConnectionLifecycle, PeerConnectionRole, PeerContentActivity, PeerRequestWindowPhase,
+        PeerTransport, PeerUploadActivity, PeerUploadGrant,
     };
     use crate::swarm::ConnectionId;
     use rstorrent_protocol::identity::{SwarmKey, V1InfoHash};
@@ -1313,6 +1375,167 @@ mod tests {
                 .expect("upload activity")
                 .payload_bytes,
             2
+        );
+        let registries = sink.registries.lock().expect("registries");
+        assert_eq!(
+            registries
+                .last()
+                .expect("live registry publication")
+                .1
+                .records[0]
+                .transfers
+                .payload_uploaded_bytes,
+            2
+        );
+    }
+
+    #[test]
+    fn retained_transfer_totals_cover_overlap_disconnect_and_reconnect() {
+        let (handle, _) = handle();
+        let remote = "127.0.0.1:51413".parse().expect("remote");
+        let local = "127.0.0.1:43210".parse().expect("local");
+        let first = handle
+            .begin_incoming(
+                remote,
+                local,
+                *b"-LTTEST-000000000000",
+                true,
+                PeerConnectionRole::Content,
+            )
+            .expect("first incoming");
+        let second = handle
+            .begin_incoming(
+                remote,
+                local,
+                *b"-LTTEST-000000000001",
+                true,
+                PeerConnectionRole::Content,
+            )
+            .expect("second incoming");
+        assert_eq!(first.record_id(), second.record_id());
+        handle
+            .incoming_handshake_completed(first, *b"-RS0001-LOCALPEER001")
+            .expect("first connected");
+        handle
+            .incoming_handshake_completed(second, *b"-RS0001-LOCALPEER001")
+            .expect("second connected");
+
+        handle.with_state(|state| {
+            state
+                .runtime
+                .set_content_activity(first.connection_id(), content_activity(1_000))
+                .expect("first download");
+            state
+                .set_incoming_upload(first, upload_activity(100))
+                .expect("first upload");
+            state
+                .runtime
+                .set_content_activity(second.connection_id(), content_activity(2_000))
+                .expect("second download");
+            state
+                .set_incoming_upload(second, upload_activity(200))
+                .expect("second upload");
+        });
+        assert_transfer_totals(&handle, 3_000, 300);
+
+        handle
+            .begin_incoming_disconnect(first, None)
+            .expect("first disconnecting");
+        handle.remove_incoming(first, None).expect("remove first");
+        assert_transfer_totals(&handle, 3_000, 300);
+
+        handle.with_state(|state| {
+            state
+                .runtime
+                .set_content_activity(second.connection_id(), content_activity(2_500))
+                .expect("updated second download");
+            state
+                .set_incoming_upload(second, upload_activity(250))
+                .expect("updated second upload");
+        });
+        assert_transfer_totals(&handle, 3_500, 350);
+        handle
+            .begin_incoming_disconnect(second, None)
+            .expect("second disconnecting");
+        handle.remove_incoming(second, None).expect("remove second");
+        assert_transfer_totals(&handle, 3_500, 350);
+        assert!(handle.remove_incoming(second, None).is_err());
+        assert_transfer_totals(&handle, 3_500, 350);
+
+        let third = handle
+            .begin_incoming(
+                remote,
+                local,
+                *b"-LTTEST-000000000002",
+                true,
+                PeerConnectionRole::Content,
+            )
+            .expect("reconnected incoming");
+        handle
+            .incoming_handshake_completed(third, *b"-RS0001-LOCALPEER001")
+            .expect("reconnected");
+        handle.with_state(|state| {
+            state
+                .runtime
+                .set_content_activity(third.connection_id(), content_activity(500))
+                .expect("third download");
+            state
+                .set_incoming_upload(third, upload_activity(50))
+                .expect("third upload");
+        });
+        assert_transfer_totals(&handle, 4_000, 400);
+        handle
+            .begin_incoming_disconnect(third, None)
+            .expect("third disconnecting");
+        handle.remove_incoming(third, None).expect("remove third");
+        assert_transfer_totals(&handle, 4_000, 400);
+    }
+
+    fn content_activity(useful_payload_bytes: usize) -> PeerContentActivity {
+        PeerContentActivity {
+            choking: false,
+            wanted_piece_count: 1,
+            pending_requests: 0,
+            target_requests: 1,
+            queued_payload_bytes: 0,
+            useful_payload_bytes,
+            observed_payload_rate: useful_payload_bytes,
+            connected_age: Duration::ZERO,
+            last_useful_age: Some(Duration::ZERO),
+            last_payload_age: Some(Duration::ZERO),
+            request_timeout: Duration::from_secs(10),
+            oldest_request_age: None,
+            request_window_phase: PeerRequestWindowPhase::Steady,
+        }
+    }
+
+    fn upload_activity(payload_bytes: u64) -> PeerUploadActivity {
+        PeerUploadActivity {
+            interested: true,
+            grant: PeerUploadGrant::Regular,
+            queued_requests: 0,
+            queued_bytes: 0,
+            read_active: false,
+            writer_bytes: 0,
+            payload_bytes,
+            payload_rate: payload_bytes,
+        }
+    }
+
+    fn assert_transfer_totals(
+        handle: &TorrentPeerHandle,
+        payload_downloaded_bytes: u64,
+        payload_uploaded_bytes: u64,
+    ) {
+        let snapshot = handle.registry_snapshot(true);
+        assert_eq!(snapshot.records.len(), 1);
+        assert_eq!(
+            snapshot.records[0].transfers.payload_downloaded_bytes,
+            payload_downloaded_bytes
+        );
+        assert_eq!(
+            snapshot.records[0].transfers.payload_uploaded_bytes,
+            payload_uploaded_bytes
         );
     }
 
