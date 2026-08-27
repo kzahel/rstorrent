@@ -1,11 +1,16 @@
 import { useState } from "react";
 
 import type { DownloadRoot, DownloadStorageSettings } from "../model";
+import {
+  CrostiniStorageHelp,
+  describeCrostiniStoragePath,
+} from "./CrostiniStorageHelp";
 import styles from "./SettingsDialog.module.css";
 
 interface DownloadSettingsSectionProps {
   readonly storage: DownloadStorageSettings;
   readonly manageable: boolean;
+  readonly showCrostiniStorageHelp: boolean;
   readonly onChooseFolder: (repairRoot?: string) => Promise<DownloadRoot | null>;
   readonly onDefaultRootChange: (rootId: string) => Promise<void>;
   readonly onShowAddOptionsChange: (show: boolean) => Promise<void>;
@@ -15,6 +20,7 @@ interface DownloadSettingsSectionProps {
 export function DownloadSettingsSection({
   storage,
   manageable,
+  showCrostiniStorageHelp,
   onChooseFolder,
   onDefaultRootChange,
   onShowAddOptionsChange,
@@ -54,87 +60,98 @@ export function DownloadSettingsSection({
               stay attached to their selected folder.
             </span>
           </div>
+          {showCrostiniStorageHelp ? <CrostiniStorageHelp /> : null}
           <div className={styles.rootList}>
             {storage.roots.length === 0 ? (
               <p className={styles.storageNote}>
                 No download folder has been chosen yet.
               </p>
             ) : (
-              storage.roots.map((root) => (
-                <article
-                  key={root.id}
-                  className={styles.root}
-                  data-availability={root.availability}
-                >
-                  <div>
-                    <strong>{root.label}</strong>
-                    <span>{root.path ?? "Location is unavailable"}</span>
-                    <small>
-                      {root.availability === "available"
-                        ? root.id === storage.defaultRoot
-                          ? "Default download folder"
-                          : "Available"
-                        : "Unavailable — repair required"}
-                    </small>
-                  </div>
-                  <div className={styles.rootActions}>
-                    {root.availability === "unavailable" ? (
+              storage.roots.map((root) => {
+                const performance = showCrostiniStorageHelp
+                  ? describeCrostiniStoragePath(root.path)
+                  : null;
+                return (
+                  <article
+                    key={root.id}
+                    className={styles.root}
+                    data-availability={root.availability}
+                  >
+                    <div>
+                      <strong>{root.label}</strong>
+                      <span>{root.path ?? "Location is unavailable"}</span>
+                      <small>
+                        {root.availability === "available"
+                          ? root.id === storage.defaultRoot
+                            ? "Default download folder"
+                            : "Available"
+                          : "Unavailable — repair required"}
+                      </small>
+                      {performance === null ? null : (
+                        <small className={styles.rootPerformance}>
+                          {performance}
+                        </small>
+                      )}
+                    </div>
+                    <div className={styles.rootActions}>
+                      {root.availability === "unavailable" ? (
+                        <button
+                          type="button"
+                          disabled={pendingAction !== null}
+                          onClick={() =>
+                            void runStorageAction(
+                              `repair-${root.id}`,
+                              async () => {
+                                const repaired = await onChooseFolder(root.id);
+                                return repaired === null
+                                  ? "Folder selection canceled"
+                                  : `${repaired.label} repaired`;
+                              },
+                            )
+                          }
+                        >
+                          {pendingAction === `repair-${root.id}`
+                            ? "Repairing…"
+                            : "Repair…"}
+                        </button>
+                      ) : root.id !== storage.defaultRoot ? (
+                        <button
+                          type="button"
+                          disabled={pendingAction !== null}
+                          onClick={() =>
+                            void runStorageAction(
+                              `default-${root.id}`,
+                              async () => {
+                                await onDefaultRootChange(root.id);
+                                return `${root.label} is now the default`;
+                              },
+                            )
+                          }
+                        >
+                          Make default
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         disabled={pendingAction !== null}
                         onClick={() =>
                           void runStorageAction(
-                            `repair-${root.id}`,
+                            `remove-${root.id}`,
                             async () => {
-                              const repaired = await onChooseFolder(root.id);
-                              return repaired === null
-                                ? "Folder selection canceled"
-                                : `${repaired.label} repaired`;
+                              await onRemoveRoot(root.id);
+                              return `${root.label} removed`;
                             },
                           )
                         }
                       >
-                        {pendingAction === `repair-${root.id}`
-                          ? "Repairing…"
-                          : "Repair…"}
+                        {pendingAction === `remove-${root.id}`
+                          ? "Removing…"
+                          : "Remove"}
                       </button>
-                    ) : root.id !== storage.defaultRoot ? (
-                      <button
-                        type="button"
-                        disabled={pendingAction !== null}
-                        onClick={() =>
-                          void runStorageAction(
-                            `default-${root.id}`,
-                            async () => {
-                              await onDefaultRootChange(root.id);
-                              return `${root.label} is now the default`;
-                            },
-                          )
-                        }
-                      >
-                        Make default
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      disabled={pendingAction !== null}
-                      onClick={() =>
-                        void runStorageAction(
-                          `remove-${root.id}`,
-                          async () => {
-                            await onRemoveRoot(root.id);
-                            return `${root.label} removed`;
-                          },
-                        )
-                      }
-                    >
-                      {pendingAction === `remove-${root.id}`
-                        ? "Removing…"
-                        : "Remove"}
-                    </button>
-                  </div>
-                </article>
-              ))
+                    </div>
+                  </article>
+                );
+              })
             )}
           </div>
           <button

@@ -79,6 +79,9 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`178-crostini-storage-guidance.md`](178-crostini-storage-guidance.md):
+  Crostini-only Add and Downloads guidance for the fast Linux default and the
+  explicit, slower ChromeOS **Share with Linux** alternative.
 - [`161-packaged-desktop-folder-picker.md`](161-packaged-desktop-folder-picker.md):
   completed parented native Tauri picker for Windows and packaged Linux,
   preserving the path-authority boundary and proving installed Windows

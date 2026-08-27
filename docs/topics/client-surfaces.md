@@ -319,6 +319,19 @@ x86_64 Chromebook. ARM64 retains native hosted build/archive evidence without
 a physical runtime claim.
 
 Tactical
+[`178`](../tactical/178-crostini-storage-guidance.md) uses the exact Crostini
+health identity as a presentation-only capability. Add and Downloads Settings
+recommend Linux Downloads, explain that ChromeOS Files already exposes it,
+and expand to the exact **Share with Linux** and native folder-picker steps
+for users who prefer direct **My files** access despite the measured
+performance penalty. The help does not require a keyboard shortcut or typed
+Linux mount path. No portable application command, root policy, or other
+platform presentation changes. A physical x86_64 Chromebook
+Launcher run proves the collapsed/expanded Settings states, Add dialog, and
+Files-app **Share with Linux** context action; its synthetic add was cancelled
+with a zero-torrent queue and the original public install was restored.
+
+Tactical
 [`166`](../tactical/166-desktop-native-bootstrap-and-extension-scaffold.md)
 implements only the bounded predecessor seam: a self-contained Manifest V3
 JSTorrent Beta popup/service worker and the distinct

@@ -290,8 +290,13 @@ physical x86_64 campaign proves warm and twice-stopped-VM launch, singleton
 service/listener/UI behavior, continued controlled transfer with no browser
 view, persistent-profile recovery, and exact normal-uninstall and purge
 ownership. It does not prove full reboot, suspend, signed update/rollback,
-ARM64, ChromeOS-shared storage performance, incoming TCP, UDP tracker/DHT,
-uTP, or forwarding behavior.
+ARM64, incoming TCP, UDP tracker/DHT, uTP, or forwarding behavior. A later
+physical storage campaign proves that the automatically mounted ChromeOS
+Downloads path is not writable before **Share with Linux** and that its shared
+9P path is materially slower than Crostini-local Btrfs for torrent-relevant
+reads and writes. Tactical `178` keeps Linux `~/Downloads` as the recommended
+default, explains its automatic **Linux files > Downloads** visibility, and
+gives the exact opt-in sharing and selection steps in the Crostini React UI.
 
 The efficiency advantage is architectural: the control boundary carries UI
 state, while all frequent peer and file operations remain in one Rust process.

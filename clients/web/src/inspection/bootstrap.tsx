@@ -17,8 +17,9 @@ import { TauriApplicationViewClient } from "../tauri-view-client";
 import { WebSocketApplicationViewClient } from "../websocket-view-client";
 import { WebAuthClient } from "../web-auth-client";
 import {
-  createHeadlessHostIntegration,
+  createHostedHostIntegration,
   type HostedAccessMode,
+  type HostedProduct,
 } from "../headless-updater";
 import "./global.css";
 
@@ -99,12 +100,12 @@ async function openLiveInspection(
     transport === "http"
       ? new HttpApplicationClient(baseUrl.href, token, window.location.origin)
       : new WebSocketApplicationViewClient(baseUrl.href, token);
-  const [application, headless] = await Promise.all([
+  const [application, hosted] = await Promise.all([
     LiveApplication.open(client, {
       ...(waitMillis === undefined ? {} : { waitMillis }),
     }),
-    createHeadlessHostIntegration(baseUrl).catch((error: unknown) => {
-      console.error("Headless host integration initialization failed:", error);
+    createHostedHostIntegration(baseUrl).catch((error: unknown) => {
+      console.error("Hosted product integration initialization failed:", error);
       return undefined;
     }),
   ]);
@@ -113,11 +114,12 @@ async function openLiveInspection(
     new InspectionController(application),
     root,
     webAuth,
-    headless?.updater,
+    hosted?.updater,
     undefined,
     undefined,
     undefined,
-    headless?.accessMode,
+    hosted?.accessMode,
+    hosted?.product,
   );
 }
 
@@ -173,6 +175,7 @@ function renderInspection(
   notifications?: DesktopNotifications,
   power?: DesktopPower,
   accessMode?: HostedAccessMode,
+  hostedProduct?: HostedProduct,
 ): void {
   controller.start();
   root.render(
@@ -184,6 +187,7 @@ function renderInspection(
         notifications={notifications}
         power={power}
         accessMode={accessMode}
+        hostedProduct={hostedProduct}
       />
     </InspectionProvider>,
   );

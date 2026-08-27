@@ -44,7 +44,13 @@ interface PendingExternalAdd {
 
 type PendingAdd = PendingMagnetAdd | PendingTorrentFileAdd | PendingExternalAdd;
 
-export function TorrentActions() {
+interface TorrentActionsProps {
+  readonly showCrostiniStorageHelp: boolean;
+}
+
+export function TorrentActions({
+  showCrostiniStorageHelp,
+}: TorrentActionsProps) {
   const demo = useInspectionStore((state) => state.demo);
   const storage = useInspectionStore((state) => state.storage);
   const dispatch = useInspectionDispatch();
@@ -454,6 +460,7 @@ export function TorrentActions() {
               ? pendingAdd.activation.kind
               : undefined
           }
+          showCrostiniStorageHelp={showCrostiniStorageHelp}
           onChooseFolder={chooseFolder}
           onCancel={cancelPendingAdd}
           onConfirm={confirmAdd}

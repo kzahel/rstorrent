@@ -40,7 +40,10 @@ import type { DesktopExternalIntake } from "../../desktop-external-intake";
 import { DesktopExternalIntakeProvider } from "../desktop-external-intake-context";
 import type { DesktopNotifications } from "../desktop-notifications/types";
 import type { DesktopPower } from "../desktop-power/types";
-import type { HostedAccessMode } from "../../headless-updater";
+import type {
+  HostedAccessMode,
+  HostedProduct,
+} from "../../headless-updater";
 
 const DESTINATIONS: readonly {
   readonly id: ApplicationDestination;
@@ -59,6 +62,7 @@ export interface AppProps {
   readonly notifications?: DesktopNotifications | undefined;
   readonly power?: DesktopPower | undefined;
   readonly accessMode?: HostedAccessMode | undefined;
+  readonly hostedProduct?: HostedProduct | undefined;
 }
 
 export function App({
@@ -68,6 +72,7 @@ export function App({
   notifications,
   power,
   accessMode,
+  hostedProduct,
 }: AppProps) {
   return (
     <DesktopExternalIntakeProvider intake={externalIntake}>
@@ -78,13 +83,21 @@ export function App({
           notifications={notifications}
           power={power}
           accessMode={accessMode}
+          hostedProduct={hostedProduct}
         />
       </TorrentActionProvider>
     </DesktopExternalIntakeProvider>
   );
 }
 
-function AppContent({ webAuth, updater, notifications, power, accessMode }: AppProps) {
+function AppContent({
+  webAuth,
+  updater,
+  notifications,
+  power,
+  accessMode,
+  hostedProduct,
+}: AppProps) {
   const session = useInspectionStore((state) => state.session);
   const demo = useInspectionStore((state) => state.demo);
   const storage = useInspectionStore((state) => state.storage);
@@ -379,14 +392,18 @@ function AppContent({ webAuth, updater, notifications, power, accessMode }: AppP
           {destination === "library" ? (
             <LibraryView />
           ) : destination === "transfers" ? (
-            <TransfersView />
+            <TransfersView
+              showCrostiniStorageHelp={hostedProduct === "crostini"}
+            />
           ) : (
             <>
               <section
                 className={styles.collection}
                 aria-label="Workbench torrent collection"
               >
-                <TorrentActions />
+                <TorrentActions
+                  showCrostiniStorageHelp={hostedProduct === "crostini"}
+                />
                 <div className={styles.tableWrap}>
                   <TorrentTable />
                 </div>
@@ -457,6 +474,7 @@ function AppContent({ webAuth, updater, notifications, power, accessMode }: AppP
           storage={storage}
           clientSettings={clientSettings}
           downloadsManageable={demo === null}
+          showCrostiniStorageHelp={hostedProduct === "crostini"}
           clientSettingsManageable={demo === null}
           notifications={notifications}
           power={power}

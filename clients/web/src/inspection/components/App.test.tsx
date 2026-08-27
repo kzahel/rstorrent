@@ -15,7 +15,10 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createRef } from "react";
 
 import type { ClientSettingsRuntimeView } from "../../api";
-import type { HostedAccessMode } from "../../headless-updater";
+import type {
+  HostedAccessMode,
+  HostedProduct,
+} from "../../headless-updater";
 import type {
   DesktopExternalActivation,
   DesktopExternalIntake,
@@ -2135,6 +2138,129 @@ describe("inspection application", () => {
     expect(within(dialog).getByText(/future torrents only/i)).toBeVisible();
   });
 
+  it("explains Crostini storage performance and ChromeOS sharing in Add and Settings", async () => {
+    const user = userEvent.setup();
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot: liveSnapshot({
+        roots: [
+          downloadRoot(
+            "root_linux",
+            "Downloads",
+            "available",
+            "/home/test/Downloads",
+          ),
+          downloadRoot(
+            "root_chromeos",
+            "ChromeOS Downloads",
+            "available",
+            "/mnt/chromeos/MyFiles/Downloads",
+          ),
+        ],
+        defaultRoot: "root_linux",
+        showAddOptions: true,
+      }),
+    });
+    renderApplication(
+      application,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "crostini",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    let dialog = screen.getByRole("dialog", { name: "Settings" });
+    await user.click(within(dialog).getByRole("tab", { name: "Downloads" }));
+    const settingsHelp = within(dialog).getByLabelText(
+      "Chromebook storage guidance",
+    );
+    expect(settingsHelp).toHaveTextContent(/Linux files.*Downloads/);
+    expect(
+      within(dialog).getByText("Linux Downloads — faster (recommended)"),
+    ).toBeVisible();
+    expect(
+      within(dialog).getByText(
+        "ChromeOS shared folder — convenient, but slower",
+      ),
+    ).toBeVisible();
+    await user.click(
+      within(settingsHelp).getByText("How to use a folder from My files"),
+    );
+    expect(within(settingsHelp).getByText("Share with Linux")).toBeVisible();
+    expect(
+      within(settingsHelp).getByText(/select the folder you just shared/i),
+    ).toBeVisible();
+    expect(within(settingsHelp).queryByText(/Ctrl\+?L/i)).not.toBeInTheDocument();
+    expect(
+      within(settingsHelp).queryByText(/\/mnt\/chromeos/i),
+    ).not.toBeInTheDocument();
+
+    await user.click(
+      within(dialog).getByRole("button", { name: "Close settings" }),
+    );
+    const magnet =
+      "magnet:?xt=urn:btih:211102030405060708090a0b0c0d0e0f10111213";
+    await user.type(
+      screen.getByRole("textbox", { name: "Magnet link or torrent URL" }),
+      magnet,
+    );
+    await user.click(screen.getByRole("button", { name: "Add" }));
+    dialog = screen.getByRole("dialog", { name: "Choose download options" });
+    expect(
+      within(dialog).getByLabelText("Chromebook storage guidance"),
+    ).toBeVisible();
+    expect(
+      within(dialog).getByText("Linux Downloads — faster (recommended)"),
+    ).toBeVisible();
+    expect(
+      within(dialog).getByText(
+        "ChromeOS shared folder — convenient, but slower",
+      ),
+    ).toBeVisible();
+  });
+
+  it("omits Crostini storage guidance from another hosted product", async () => {
+    const user = userEvent.setup();
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot: liveSnapshot({
+        roots: [
+          downloadRoot(
+            "root_linux",
+            "Downloads",
+            "available",
+            "/home/test/Downloads",
+          ),
+        ],
+        defaultRoot: "root_linux",
+        showAddOptions: true,
+      }),
+    });
+    renderApplication(
+      application,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "basic",
+      "headless",
+    );
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const dialog = screen.getByRole("dialog", { name: "Settings" });
+    await user.click(within(dialog).getByRole("tab", { name: "Downloads" }));
+    expect(
+      within(dialog).queryByLabelText("Chromebook storage guidance"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dialog).queryByText("Linux Downloads — faster (recommended)"),
+    ).not.toBeInTheDocument();
+  });
+
   it("validates and atomically saves connection and seeding settings", async () => {
     const user = userEvent.setup();
     const application = new RecordingLiveApplication({
@@ -2756,6 +2882,7 @@ function renderApplication(
   notifications?: DesktopNotifications,
   power?: DesktopPower,
   accessMode?: HostedAccessMode,
+  hostedProduct?: HostedProduct,
 ) {
   const controller = new InspectionController(application, appearanceStorage);
   controllers.push(controller);
@@ -2768,6 +2895,7 @@ function renderApplication(
         notifications={notifications}
         power={power}
         accessMode={accessMode}
+        hostedProduct={hostedProduct}
       />
     </InspectionProvider>,
   );
@@ -3078,11 +3206,12 @@ function downloadRoot(
   id: string,
   label: string,
   availability: "available" | "unavailable" = "available",
+  path = `/Users/test/${label}`,
 ) {
   return {
     id,
     label,
-    path: `/Users/test/${label}`,
+    path,
     availability,
   } as const;
 }

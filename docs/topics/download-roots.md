@@ -27,7 +27,12 @@ checked-by-default start-content option, metadata-only intake with no payload
 artifact, and live path-backed file selection in the Files tab. A manual
 macOS chooser/restart smoke also
 remains required because Computer Use cannot attach to the transient system
-folder panel. Tactical `076` lets a headless private host install one explicit
+folder panel. Tactical
+[`178`](../tactical/178-crostini-storage-guidance.md) retains Crostini's fast
+Linux `~/Downloads` default while making the exact ChromeOS Files visibility,
+**Share with Linux**, picker path, and measured shared-storage performance
+tradeoff visible only on the exact Crostini product. Tactical `076` lets a
+headless private host install one explicit
 configured payload root while making the native picker unavailable; it does
 not add ambient remote path authority or change durable root identity.
 Android already proves one user-selected persisted SAF root but not general
@@ -278,6 +283,39 @@ service; JavaScript receives no dialog permission or path authority. Installed
 Windows evidence proves the common first-root, default, repair, and restart
 semantics. Installed Linux picker interaction remains a release gate rather
 than being inferred from its hosted package build.
+
+### ChromeOS Linux (Crostini)
+
+The Crostini package installs Linux `~/Downloads` as its initial root. This is
+the recommended performance path. ChromeOS Files already exposes that content
+under **Linux files > Downloads**, so a user does not share or copy it merely
+to find completed files from ChromeOS.
+
+The reverse direction requires explicit authority. To let RSTorrent write to
+ChromeOS **My files**, the user opens Files, right-clicks **Downloads** or
+another folder below **My files**, and selects **Share with Linux**. The
+existing RSTorrent **Choose folder...** or **Add folder...** action can then
+select `/mnt/chromeos/MyFiles/Downloads` (or the corresponding shared path).
+The picker remains the capability-acquisition boundary; React neither grants
+sharing nor submits an ambient path. Product guidance tells the user to
+select the folder just shared; it does not require `Ctrl+L` or expose the
+Linux mount path as a user workflow.
+
+Physical x86_64 Chromebook evidence in Tactical `178` found the shared 9P path
+materially slower than Crostini-local Btrfs: median sequential reads were
+48.6x slower, durable sequential and scattered writes were about 2x slower,
+and four concurrent durable writers were 5.5x slower across five alternating
+128 MiB trials. Small 128-file durable publication was approximately equal.
+These values are device evidence, not universal product promises. The UI
+therefore says only that Linux Downloads is faster/recommended and ChromeOS
+sharing is convenient but can be much slower, especially for download,
+checking, reading, and seeding.
+
+Exact `rstorrent-crostini` health identity gates this help. A path under
+`/mnt/chromeos` may receive a shared/slower label and a path matching
+`/home/<user>/Downloads` may receive a faster/recommended label, but only
+within that identified product. Generic Linux, Tauri, headless, Android, and
+iOS surfaces do not infer ChromeOS from hostnames, user agents, or path text.
 
 ### Android and ChromeOS Android
 

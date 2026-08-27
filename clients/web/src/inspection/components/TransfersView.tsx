@@ -7,7 +7,13 @@ import { TorrentActions } from "./TorrentActions";
 import { TransferTable } from "./TransferTable";
 import styles from "./TransfersView.module.css";
 
-export function TransfersView() {
+interface TransfersViewProps {
+  readonly showCrostiniStorageHelp: boolean;
+}
+
+export function TransfersView({
+  showCrostiniStorageHelp,
+}: TransfersViewProps) {
   const order = useInspectionStore((state) => state.torrentOrder);
   const torrents = useInspectionStore((state) => state.torrents);
   const category = useInspectionStore(
@@ -42,7 +48,7 @@ export function TransfersView() {
           {activeCount.toLocaleString()} active
         </span>
       </div>
-      <TorrentActions />
+      <TorrentActions showCrostiniStorageHelp={showCrostiniStorageHelp} />
       <div className={styles.table}>
         <TransferTable />
       </div>

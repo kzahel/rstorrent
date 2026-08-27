@@ -166,6 +166,15 @@ access owns immediate browser approval, session listing and revocation,
 sign-out, and restart-pairing recovery. Tauri, demo, Basic-only, and bearer
 surfaces do not show an inert cookie-session category.
 
+Tactical
+[`178`](../tactical/178-crostini-storage-guidance.md) applies the same
+capability-gating rule to storage help. Only an exact `rstorrent-crostini`
+health identity adds a collapsed Chromebook storage explanation to Add and
+Downloads Settings. It recommends Linux Downloads, provides the complete
+ChromeOS **Share with Linux** workflow on expansion, and labels only known
+Linux-Downloads and `/mnt/chromeos` roots. Other browser, headless, Tauri, and
+demo surfaces do not receive path-derived ChromeOS copy.
+
 Completed desktop-notification Tactical
 [`164`](../tactical/164-desktop-completion-and-attention-notifications.md)
 reuses that capability-gated category model for a Tauri-only

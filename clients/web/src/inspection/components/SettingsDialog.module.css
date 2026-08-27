@@ -413,6 +413,11 @@
   font-size: var(--ui-font-caption);
 }
 
+.root .rootPerformance {
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+
 .rootActions {
   display: flex;
   flex-wrap: wrap;

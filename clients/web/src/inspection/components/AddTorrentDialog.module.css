@@ -105,6 +105,11 @@
   white-space: nowrap;
 }
 
+.location .performance {
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+
 .location button,
 .choose,
 .actions button {

@@ -20,8 +20,11 @@ export type HostedAccessMode =
   | "lan_none"
   | "network_none";
 
-export interface HeadlessHostIntegration {
-  readonly accessMode: HostedAccessMode;
+export type HostedProduct = "headless" | "crostini";
+
+export interface HostedHostIntegration {
+  readonly product: HostedProduct;
+  readonly accessMode?: HostedAccessMode;
   readonly updater?: DesktopUpdater;
 }
 
@@ -30,10 +33,10 @@ type Fetcher = (
   init?: RequestInit,
 ) => Promise<Response>;
 
-export async function createHeadlessHostIntegration(
+export async function createHostedHostIntegration(
   baseUrl: URL,
   fetcher: Fetcher = globalThis.fetch.bind(globalThis),
-): Promise<HeadlessHostIntegration | undefined> {
+): Promise<HostedHostIntegration | undefined> {
   const controller = new AbortController();
   const timeout = globalThis.setTimeout(
     () => controller.abort(),
@@ -46,6 +49,22 @@ export async function createHeadlessHostIntegration(
     });
     if (healthResponse.status === 404) return undefined;
     const health = await responseJson(healthResponse);
+    if (isRecord(health) && health.product === "rstorrent-crostini") {
+      if (
+        !hasExactKeys(health, [
+          "status",
+          "build_id",
+          "product",
+          "launch_protocol",
+        ]) ||
+        health.status !== "ok" ||
+        !validText(health.build_id) ||
+        health.launch_protocol !== 1
+      ) {
+        throw new Error("Crostini health identity is invalid");
+      }
+      return { product: "crostini" };
+    }
     if (!isRecord(health) || health.product !== "rstorrent-headless") {
       return undefined;
     }
@@ -63,7 +82,7 @@ export async function createHeadlessHostIntegration(
       fetcher,
       controller.signal,
     );
-    return { accessMode, updater };
+    return { product: "headless", accessMode, updater };
   } finally {
     globalThis.clearTimeout(timeout);
   }

@@ -9,6 +9,10 @@ import {
 } from "react";
 
 import type { DownloadRoot } from "../model";
+import {
+  CrostiniStorageHelp,
+  describeCrostiniStoragePath,
+} from "./CrostiniStorageHelp";
 import styles from "./AddTorrentDialog.module.css";
 
 export interface AddTorrentDialogProps {
@@ -16,6 +20,7 @@ export interface AddTorrentDialogProps {
   readonly defaultRoot: string | null;
   readonly returnFocus: RefObject<HTMLInputElement | null>;
   readonly externalKind?: "magnet" | "torrent_file" | undefined;
+  readonly showCrostiniStorageHelp: boolean;
   readonly onChooseFolder: (repairRoot?: string) => Promise<DownloadRoot | null>;
   readonly onCancel: () => void;
   readonly onConfirm: (
@@ -30,6 +35,7 @@ export function AddTorrentDialog({
   defaultRoot,
   returnFocus,
   externalKind,
+  showCrostiniStorageHelp,
   onChooseFolder,
   onCancel,
   onConfirm,
@@ -140,6 +146,8 @@ export function AddTorrentDialog({
           this torrent unless you change the default in Settings.
         </p>
 
+        {showCrostiniStorageHelp ? <CrostiniStorageHelp /> : null}
+
         <fieldset className={styles.locations} disabled={busy}>
           <legend>Download location</legend>
           {roots.length === 0 ? (
@@ -147,39 +155,49 @@ export function AddTorrentDialog({
               A download folder is required before RSTorrent can add this torrent.
             </p>
           ) : (
-            roots.map((root) => (
-              <div
-                key={root.id}
-                className={styles.location}
-                data-availability={root.availability}
-              >
-                <label>
-                  <input
-                    type="radio"
-                    name="download-root"
-                    value={root.id}
-                    checked={selectedRoot === root.id}
-                    disabled={root.availability !== "available"}
-                    onChange={() => setSelectedRoot(root.id)}
-                  />
-                  <span>
-                    <strong>{root.label}</strong>
-                    <small>{root.path ?? "Location is not available"}</small>
-                  </span>
-                </label>
-                {root.availability === "unavailable" ? (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void chooseFolder(root.id)}
-                  >
-                    {choosingRoot === root.id ? "Repairing…" : "Repair…"}
-                  </button>
-                ) : root.id === defaultRoot ? (
-                  <span className={styles.defaultBadge}>Default</span>
-                ) : null}
-              </div>
-            ))
+            roots.map((root) => {
+              const performance = showCrostiniStorageHelp
+                ? describeCrostiniStoragePath(root.path)
+                : null;
+              return (
+                <div
+                  key={root.id}
+                  className={styles.location}
+                  data-availability={root.availability}
+                >
+                  <label>
+                    <input
+                      type="radio"
+                      name="download-root"
+                      value={root.id}
+                      checked={selectedRoot === root.id}
+                      disabled={root.availability !== "available"}
+                      onChange={() => setSelectedRoot(root.id)}
+                    />
+                    <span>
+                      <strong>{root.label}</strong>
+                      <small>{root.path ?? "Location is not available"}</small>
+                      {performance === null ? null : (
+                        <small className={styles.performance}>
+                          {performance}
+                        </small>
+                      )}
+                    </span>
+                  </label>
+                  {root.availability === "unavailable" ? (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void chooseFolder(root.id)}
+                    >
+                      {choosingRoot === root.id ? "Repairing…" : "Repair…"}
+                    </button>
+                  ) : root.id === defaultRoot ? (
+                    <span className={styles.defaultBadge}>Default</span>
+                  ) : null}
+                </div>
+              );
+            })
           )}
           <button
             className={styles.choose}
