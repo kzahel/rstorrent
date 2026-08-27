@@ -151,7 +151,7 @@ Python baseline runner
   begins with 12 total rows: 11 metadata-complete stopped rows and one active
   row.
 - The active payload is configurable from 8 through 256 MiB. The retained run
-  uses 64 MiB with a 256 KiB piece size and a 512 KiB/s source limit so it stays
+  uses 64 MiB with a 256 KiB piece size and a 256 KiB/s source limit so it stays
   active without allocating a large benchmark corpus.
 - A steady window is configurable from 1 through 60 seconds. The retained
   baseline uses the same duration for every steady view; transitions have an
