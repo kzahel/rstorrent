@@ -522,12 +522,13 @@ complete, and external-intake Tactical
 desktop notification Tactical
 [`164`](../tactical/164-desktop-completion-and-attention-notifications.md).
 Bounded dry-swarm recovery Tactical
-[`177`](../tactical/177-bounded-dry-swarm-recovery.md) temporarily yields
-durable High file-priority Tactical `176` and release/updater Tactical `158`
-and is the product/engine **Now**. Its source dossier selects exact tracker-
-source rehabilitation plus one capped, transient-failure content probe only
-after every ordinary connection action is exhausted. Tactical `176` retains
-only its unavailable-on-Linux iOS simulator/archive compile before completion.
+[`177`](../tactical/177-bounded-dry-swarm-recovery.md) is complete with exact
+tracker-source rehabilitation, one capped transient-failure content probe,
+scripted fourth-attempt verified completion, full workspace gates, and both
+maintained Android native builds. Durable High file-priority Tactical `176`
+resumes as the product/engine **Now** with only its unavailable-on-Linux iOS
+simulator/archive compile before completion; release/updater Tactical `158`
+remains next.
 Tacticals `142`, `145`, and `150` complete the uTP performance campaign at the
 maintainer-selected evidence stop. Completed Tactical `143` installs the
 v1-preserving opaque torrent owner, typed protocol aliases, schema-19 fresh

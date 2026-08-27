@@ -74,6 +74,14 @@ the rarest-first picker ranks `availability * (8 - priority) * 3` with Normal
 4 and High 6, so rarity and priority compose rather than forming an absolute
 global tier. Live High/Normal changes rebuild bounded inactive rank and v2
 hash-need order without cancelling accepted work or replacing the generation.
+Completed Tactical
+[`177`](../tactical/177-bounded-dry-swarm-recovery.md) closes a distinct
+connection-liveness trap without changing request or integrity authority. The
+ordinary three-failure ceiling remains; tracker refresh may rehabilitate one
+failure, and an otherwise dry content swarm may admit one expired transient-
+failure probe under a capped torrent-wide cadence. The successful scripted
+probe enters the ordinary request, storage, verification, publication, and
+joined cleanup path.
 Tactical `073` removes the remaining single-file storage fork. BEP 3
 `length`, one-entry `files`, and ordinary multi-file torrents now share one
 positional storage, checkpoint, full-recheck, repair, and publication
@@ -243,8 +251,8 @@ have state and storage-root identity.
 - Failure of one tracker, peer, request, or piece attempt is not automatically
   torrent failure.
 - A torrent is waiting, not blocked, while a retained tracker retry, eligible
-  peer dial, request expiry, recheck, publication action, or other installed
-  automatic mechanism can still act.
+  peer dial, dry-swarm probe deadline, request expiry, recheck, publication
+  action, or other installed automatic mechanism can still act.
 - A torrent is blocked only when the next prerequisite requires external
   action and no installed or scheduled automatic mechanism can supply it.
 - Progress assessment is a projection from authoritative owners. Diagnostic
@@ -349,6 +357,7 @@ related unit test exists.
 | DL-C38 | A strict complete-source pure-v2 torrent contains aligned empty, sub-block, exact-block, exact-piece, multi-piece, selected, and skipped files, then encounters restart, corruption, incomplete storage, publication interruption, or concurrent upload. | Only file-local payload ranges are requested or written; alignment gaps and skipped pieces create no payload or part artifact. A piece becomes have, streamable, publishable, or uploadable only after the correct SHA-256 Merkle result and durability transition. Restart/recheck conservatively invalidates missing, short, structurally incompatible, stale, or corrupt evidence while retaining exact verified content. | Passing Tactical [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) deterministic, runtime, two-role pinned-libtorrent, browser, path/platform, Android SAF/AVD, and resource evidence. The selective oracle fixture verifies four of five pieces and omits exactly 137 skipped bytes; the active uploader serves one exact verified 16-KiB block before final completion. |
 | DL-C39 | A pure-v2 magnet has authenticated info and selected candidate bytes but lacks durable piece or leaf hashes, then encounters corruption, selection change, or restart. | New payload waits for a piece root proved to the authenticated file root. Candidate bytes remain unavailable until refetch and verification; a complete file may reconstruct locally. A valid leaf proof retains good blocks and resets only exact corrupt blocks, while reject/stall falls back to whole-piece recovery. | Passing Tactical [`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md) deterministic hostile-state, scripted restart/fallback, two-role pinned-libtorrent wire, same-session promotion, production browser, Android incomplete-candidate, and bounded-resource evidence. The AVD interrupts after wire pieces 0 and 1 of nine selected pieces and observes hash requests increase from one to two after restart. |
 | DL-C40 | A strict hybrid piece arrives through either swarm lane, crosses real files and BEP 47 padding, restarts, rechecks, uploads, or yields disagreeing v1/v2 results. | One storage read feeds both integrity schemes; only validated synthetic padding feeds legacy SHA-1. Both schemes must pass before have or service. One-scheme success fails typed and closed, ordinary corruption retries without retaining authority, incomplete restart refetches sparse hashes, and complete reconstruction still revalidates the exact file root. | Passing Tactical [`156`](../tactical/156-hybrid-dual-swarm-runtime-closure.md) deterministic disagreement/padding/restart tests, both-role and both-entry-lane pinned-libtorrent transfer, selection promotion, browser restart/seeding, Android API 34 SAF recheck/upload, resource, and cleanup evidence. |
+| DL-C41 | Every retained content endpoint reaches the ordinary connection-failure ceiling while discovery remains active and no normal connection action can advance wanted work. | Trusted tracker refresh may grant one ordinary retry without erasing history. Otherwise one expired transient-failure endpoint is probed at a globally paced 5-to-60-minute cadence; normal candidates/backoff always precede it, definite failures remain excluded, and success reuses ordinary verified-content and exact cleanup ownership. | Passing Tactical [`177`](../tactical/177-bounded-dry-swarm-recovery.md) source-specific deterministic transitions, exclusion/rank/cadence bounds, and scripted four-attempt completion. Three ordinary handshake failures precede exactly one probe; the verified payload publishes and terminal dialing, connected, failure-limited, request, and payload ownership is zero. |
 
 ## Required Scheduler Observability
 

@@ -883,6 +883,15 @@ validation requires canonical nonnegative decimals and sorting remains exact
 beyond JavaScript's safe-integer range. The counters reset on record eviction
 or engine restart and do not claim durable peer history.
 
+Completed Tactical
+[`177`](../tactical/177-bounded-dry-swarm-recovery.md) deliberately leaves
+that generated Swarm contract unchanged: idle records retain their truthful
+ordinary `failure_limited` classification until an admitted probe moves the
+existing row to dialing. The exceptional admission emits one structured
+`dry_swarm_probe_started` diagnostic carrying only volatile record ID, failure
+count, probe ordinal, and next delay. It exposes no endpoint or peer ID and
+creates no client command, view kind, schema, reducer, or presentation policy.
+
 ## Live Peer Extension
 
 Tactical `035` implements `torrent_peers` as complete keyed rows for all and

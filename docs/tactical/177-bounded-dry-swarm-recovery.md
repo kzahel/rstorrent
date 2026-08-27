@@ -1,8 +1,9 @@
 # Tactical 177: Bounded Dry-Swarm Recovery
 
-Status: **In progress.** Explicit user direction on 2026-08-27 temporarily
-yields durable High file-priority Tactical `176` and release/updater Tactical
-`158` to this bounded peer-lifecycle correction.
+Status: **Complete.** Explicit user direction on 2026-08-27 temporarily
+yielded durable High file-priority Tactical `176` and release/updater Tactical
+`158` to this bounded peer-lifecycle correction. Every stopping-condition gate
+passes, and Tactical `176` resumes as the sole **Now**.
 
 Topics: `oracle-driven-engine-campaign`, `capability-readiness`,
 `peer-lifecycle`, `download-correctness`, `application-view-api`
@@ -266,6 +267,21 @@ state, and terminates with zero dialing, connected, or failure-limited record
 counts. The 26 peer/long-lived-owner tests, three focused dry-swarm tests,
 formatting, and warning-denying clippy for `rstorrent-engine` and
 `rstorrent-session` pass.
+
+Closure validation on 2026-08-27 passes:
+
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace -- -D warnings`;
+- `cargo test --workspace`, including 586 passed engine tests with 11 declared
+  opt-in/maximum tests ignored and 257 passed session tests with two declared
+  ignored; and
+- `clients/android/build.sh`, including locked x86_64 and arm64-v8a release
+  Rust builds, Kotlin UniFFI generation, debug APK assembly, and JVM unit
+  tests. Existing Android deprecation warnings remain unrelated.
+
+No generated application type changed, so TypeScript/schema regeneration and
+web presentation gates are inapplicable. No installed service, live public
+swarm, external machine, release, or network policy was mutated.
 
 ## Non-Goals
 

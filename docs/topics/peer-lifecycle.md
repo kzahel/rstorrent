@@ -134,6 +134,17 @@ backoff, and reconnect, saturate at `u64::MAX`, and disappear with record
 eviction or process restart. They are inspection facts only and do not affect
 selection, retry, reputation, choking, or request policy.
 
+Completed Tactical
+[`177`](../tactical/177-bounded-dry-swarm-recovery.md) retains the ordinary
+three-failure ceiling while closing its process-lifetime no-progress trap. An
+exact tracker re-observation decrements one consecutive failure without
+erasing total history or the scheduled retry deadline. Separately, a content
+swarm with no connected, incoming, dialing, eligible, or normally backed-off
+peer may spend one existing outbound turn and pending slot on an expired
+transient-failure record. Torrent-wide admission then waits 5, 10, 20, 40, and
+at most 60 minutes; an admitted handshake resets it. Definite protocol,
+identity, integrity, ban, and address-policy exclusions remain absolute.
+
 ## Scope
 
 This topic owns the torrent-engine vocabulary and invariants for peer
@@ -232,6 +243,16 @@ eligible while non-connectable, dialing, connected, banned, within reconnect
 backoff, or at its configured failure ceiling. Selection is deterministic
 when policy inputs are equal so controlled tests can explain why one endpoint
 was chosen.
+
+The failure ceiling remains absolute for ordinary selection. Matching pinned
+libtorrent, a fresh exact tracker observation is trusted to reduce consecutive
+failures by one while preserving its prior retry deadline. Other discovery
+sources do not rehabilitate failure history. Unlike libtorrent, RSTorrent also
+admits one content-only dry-swarm probe after the ordinary deadline only when
+every normal connection action is exhausted. That exceptional selector is
+restricted to connect, handshake, and remote-close failures, deterministically
+prefers credible/fresh records, and is paced per torrent rather than releasing
+the failure-limited cohort.
 
 Every dial attempt carries a generation identity. Success, failure, and close
 transitions must match that identity so a stale asynchronous completion cannot
@@ -785,6 +806,12 @@ Tactical `175` additionally proves exact active, disconnect, overlapping,
 reconnect, stale-removal, and saturation transitions plus final authoritative
 incoming upload capture, generated first-party boundaries, responsive React
 presentation, and the repaired installed LAN/tailnet service.
+Tactical `177` additionally proves source-specific one-step tracker
+rehabilitation, the unchanged ordinary hard ceiling, transient-only dry
+selection, deterministic credibility rank, exact backoff/cadence saturation,
+and a scripted endpoint that fails three handshakes before the sole probe
+completes verified content on attempt four. The success resets peer and probe
+state and terminates with zero dialing, connected, or failure-limited counts.
 Tactical `092` additionally proves tracker-only, DHT-only, and mapped
 wire-port discovery into the same retained peer lifetime. Tactical `097`
 additionally proves deterministic live limit reduction and increase plus

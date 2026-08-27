@@ -133,8 +133,10 @@ swarm exhausted its ordinary three-attempt ceiling for every retained peer and
 had no eligible, dialing, connected, or payload-active alternative despite
 continuing discovery. Tactical `177` retains that ceiling while adding exact
 tracker-source rehabilitation plus one globally paced transient-failure probe
-only when no ordinary action remains. It is the sole **Now** until its bounded
-runtime and repository evidence closes.
+only when no ordinary action remains. Deterministic source/selection/cadence
+evidence, scripted fourth-attempt verified completion, full workspace gates,
+and both maintained Android native builds pass. Tactical `177` is complete and
+Tactical `176` resumes as the sole **Now**.
 
 The updater tactical's client, production route, five-target signed hosted
 rehearsal, public `0.1.0`, `0.1.1`, and `0.1.2` releases, installed macOS arm64
@@ -623,16 +625,13 @@ exactly.
 
 ### Now
 
-- **Tactical `177`: bounded dry-swarm recovery.** Preserve the normal
-  three-failure ceiling, add pinned-libtorrent-compatible tracker-source
-  rehabilitation, and reserve one slowly paced transient-failure content probe
-  only when connected, incoming, dialing, eligible, and normally backed-off
-  alternatives are all absent.
+- **Tactical `176`: durable High file priority.** Implementation, compatible
+  schema-19 migration, ordinary weighted scheduling, generated contracts,
+  React, and Android dual-ABI/APK gates pass while Tactical `139` remains the
+  stronger transient overlay. Run the updated iOS SwiftUI presentation through
+  its macOS-only simulator/archive compile, then complete the slice.
 
 ### Next
-
-- Return to **Tactical `176`** for its updated iOS SwiftUI simulator/archive
-  compile, the only remaining stopping-condition gate.
 
 - Resume **Tactical `158`** and close the clean Windows and Linux x86_64
   update/install evidence plus Windows firewall-consent characterization.
@@ -765,7 +764,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | --- | --- | --- | --- | --- |
 | Bounded peer registry and source merging | Implemented | deterministic, runtime, interop | Records remain volatile and endpoint-keyed while the separate exact peer-ID admission index permits at most one established generation per claimed remote ID. Crossed, same-direction, self, stale-removal, saturation, and pinned-libtorrent cases pass without merging provenance or reputation. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Registry-backed Swarm inspection | Implemented | deterministic, runtime, interop, web, Android build, installed service | The bounded volatile registry, exact state counts, source merging, retry eligibility, terminal cleanup, typed self/duplicate closure reasons, and exact payload downloaded/uploaded across retained active, disconnected, backed-off, and reconnected generations are visible. Counters reset on process restart or record eviction; durable history remains absent. | [`peer-lifecycle`](peer-lifecycle.md), [`application-view-api`](application-view-api.md), [`175`](../tactical/175-retained-swarm-peer-transfer-totals.md) |
-| Deterministic dial selection and guarded attempts | Implemented | deterministic, runtime, interop | Selection remains intentionally basic. Post-handshake peer-ID admission deterministically resolves crossed and repeated connections without introducing peer scoring or treating IDs as durable identity. Tactical `132` adds bounded endpoint-scoped uTP unknown/advertised/confirmed/suppressed selection, exact outcome fencing, direct TCP during suppression, deadline/PEX recovery, and no durable cache. | [`peer-lifecycle`](peer-lifecycle.md) |
+| Deterministic dial selection and guarded attempts | Implemented | deterministic, runtime, interop | Ordinary selection retains the three-failure ceiling. Tactical `177` trusts only exact tracker refresh to rehabilitate one failure, and only a completely dry content swarm may spend one existing turn/slot on an expired transient-failure record under a 5-to-60-minute torrent cadence. Definite/integrity failures remain excluded; a scripted fourth attempt completes after three handshake failures. Post-handshake peer-ID admission still resolves crossed/repeated connections without treating IDs as durable identity, and Tactical `132` retains bounded uTP capability suppression/recovery. | [`peer-lifecycle`](peer-lifecycle.md), [`177`](../tactical/177-bounded-dry-swarm-recovery.md) |
 | Pre-content peer failover | Implemented | deterministic, runtime, interop, live | Bounded parallel metadata peers share one block owner; two tracker cohorts, 10/10 fresh-DHT owner runs, and 12/12 cross-catalog pairs pass. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Multiple simultaneous live peers | Implemented | deterministic, runtime, interop, live | Thirty established and thirty half-open attempts remain separate outbound torrent-local defaults beneath one shared session budget whose ordinary default is 200 after descriptor clamping and whose incoming-only slack is ten. Exact saturation, cancellation, mixed-direction release, and simultaneous incoming evidence pass. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Transfer request ownership and failover | Implemented | deterministic, runtime, interop, live | Ordinary blocks have one generation; strict endgame adds bounded duplicate attempts, first-response cancellation, and harmless losing payload. | [`download-correctness`](download-correctness.md) |
