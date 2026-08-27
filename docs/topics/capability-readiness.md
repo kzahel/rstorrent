@@ -189,6 +189,16 @@ Diagnostics, before choosing a delivery or wire optimization. It adds no
 polling fallback, product telemetry, delivery policy, or API optimization.
 Tactical `176` retains only its unchanged macOS-hosted iOS compile gate.
 
+Tactical `183` is complete. Its clean production React run uses exactly one
+WebSocket and no semantic HTTP, cross-checks browser and gateway bytes, and
+separates initial/transition traffic from equal steady windows across
+Transfers, Peers, General, Files, Pieces, and Normal Logs. Projection interest
+already excludes inactive details, but interleaved view IDs defeat the
+view-set's tail-only current-state coalescing; complete Library and Summary
+rows dominate the measured Workbench traffic before Logs or framing. No
+product API or delivery behavior changed. Tactical `176` resumes as the sole
+**Now** for its unchanged macOS-only iOS compile gate.
+
 The updater tactical's client, production route, five-target signed hosted
 rehearsal, public `0.1.0`, `0.1.1`, and `0.1.2` releases, installed macOS arm64
 launch smoke, and exact macOS arm64 and Linux arm64 `0.1.0`-to-`0.1.1` updates
@@ -684,14 +694,10 @@ exactly.
 
 ### Now
 
-- Execute **Tactical `183`**: measure the current production React UI over one
-  WebSocket, separating initial/transition bytes from steady selected-view
-  traffic and ranking the next optimization from evidence.
-
-### Next
-
 - Resume **Tactical `176`** only for its existing macOS-hosted iOS simulator/
   archive compile; every implementation and other validation gate passes.
+
+### Next
 
 - Resume **Tactical `158`** and close the clean Windows and Linux x86_64
   signed replacement/relaunch evidence plus Windows firewall-consent

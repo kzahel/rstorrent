@@ -469,6 +469,63 @@ uv run --project tests/interop \
   --output /tmp/rstorrent-application-transport-1g.json
 ```
 
+## Production UI WebSocket Bandwidth Evidence: 2026-08-27
+
+Tactical `183` adds `tests/interop/application_ui_bandwidth.py`, a bounded
+production-browser application-byte baseline rather than another engine
+throughput comparison. It starts a clean gateway and production web preview,
+preloads 11 unchanged stopped torrents, and adds one 64 MiB direct-peer
+transfer through the ordinary React UI. The pinned libtorrent 2.0.13 seed is
+limited to 256 KiB/s so the same active transfer spans equal eight-second idle,
+Transfers, Peers, General, Files, Pieces, and Normal Logs windows.
+
+On `zblinux` (AMD Ryzen AI 9 365, 20 logical CPUs, 24.3 GB) clean commit
+`5435c66196983bb29936f89de3b8ec6a38ebac50` completed in 75.3 seconds. One
+WebSocket and no semantic HTTP carried 5,268,042 server payload bytes and
+30,124 client payload bytes in 529 messages per direction. The browser totals
+matched the gateway's independent per-frame-family counters exactly. The
+active torrent advanced from 1% to 20%; resets, binary frames, heartbeat
+timeouts, and cleanup failures were zero. Maximum gateway outbound message
+size was 68,781 bytes.
+
+| Eight-second steady window | Server application KiB/s | Batches/s |
+| --- | ---: | ---: |
+| idle Transfers | 5.28 | 1.00 |
+| active Transfers | 12.84 | 7.37 |
+| Peers | 114.05 | 16.11 |
+| General | 101.86 | 5.62 |
+| Files | 113.31 | 8.24 |
+| Pieces | 147.93 | 14.61 |
+| Normal Logs | 103.23 | 6.99 |
+
+These are exact UTF-8 application payload rates on one controlled local run.
+The report's WebSocket estimate adds only base framing and client masking; it
+does not measure TLS, TCP/IP, retransmission, cellular billing, radio energy,
+or a real WAN. Transition bursts are separately retained: initial Library was
+18,938 bytes and entering Peers, Files, Pieces, and Logs was respectively
+73,736, 91,376, 9,703, and 101,976 bytes while the active transfer continued.
+
+Standalone semantic attribution explains the steady result. Idle traffic was
+almost entirely a roughly 5 KiB/s complete session-rate history replacement.
+In General, Library and selected Summary each contributed about 48 KiB/s; in
+Pieces they each exceeded 51 KiB/s while Piece activity added 36.9 KiB/s.
+Normal Logs themselves added only 0.42 KiB/s steady. Inspection confirms that
+the view-set accumulator coalesces only an immediately adjacent same-view
+patch, while ordinary hub publication interleaves Library, Summary, and detail
+IDs. Thus the 100 ms cadence delayed but did not merge 390 compatible Library
+patches and 390 Summary replacements observed in General. This is the first
+causal optimization target; sparse rows, delivery profiles, and codecs remain
+post-coalescing measurements.
+
+The reproducible command is:
+
+```bash
+source ~/.profile
+uv run --project tests/interop --locked \
+  tests/interop/application_ui_bandwidth.py \
+  --output /tmp/rstorrent-ui-bandwidth-baseline.json
+```
+
 ## Headless Comparator
 
 The comparator is a CLI or application-service harness. It must not launch the

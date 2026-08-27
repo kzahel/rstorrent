@@ -450,6 +450,17 @@ WebSocket-update mode. Tactical `060` deleted the legacy route and direct-DOM
 client after proving equivalent useful origin, authentication, command,
 delivery and shutdown behavior.
 
+Tactical `183` adds the first representative selected-view byte baseline on
+this path. One production React page used exactly one `/api/v1/connect`
+upgrade and zero semantic HTTP calls while a controlled active transfer
+crossed Transfers and five Workbench details. Browser-observed payload totals
+matched the gateway's independent frame-family counters exactly, with no
+binary frame, reset, heartbeat timeout, or leaked connection. The measured
+cost is semantic update volume rather than physical socket proliferation:
+current wide Workbench keeps Library, Summary, one selected detail, and
+session rates on the same connection. Networks that block WebSocket remain
+unsupported; the result does not motivate fallback polling.
+
 JSON text frames are the first diagnostic codec. A future binary codec is a
 connection negotiation that produces the same generated DTOs and reducer
 inputs; it is not another semantic API version by itself.

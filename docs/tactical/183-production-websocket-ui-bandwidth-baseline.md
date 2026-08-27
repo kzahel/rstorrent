@@ -1,8 +1,10 @@
 # Tactical 183: Production WebSocket UI Bandwidth Baseline
 
-Status: **In progress (2026-08-27).** Explicit user direction temporarily
-yields Tactical `176` to this measurement-only slice. Tactical `176` retains
-only its unchanged macOS-hosted iOS simulator/archive compile gate.
+Status: **Complete (2026-08-27).** The bounded production-browser baseline,
+independent gateway cross-check, attribution, and cleanup pass on clean commit
+`5435c66196983bb29936f89de3b8ec6a38ebac50`. No product behavior changed.
+Tactical `176` resumes as the sole **Now** for its unchanged macOS-hosted iOS
+simulator/archive compile gate.
 
 Topics:
 [`client-view-delivery-policy`](../topics/client-view-delivery-policy.md),
@@ -184,6 +186,97 @@ Python baseline runner
 5. Update the owning delivery/performance/application topics, restore Tactical
    `176` as the sole **Now**, and retain optimization choices as evidence-led
    follow-up rather than part of this tactical.
+
+## Result And Evidence
+
+The retained Linux x86_64 run used Playwright Chrome, JSON over exactly one
+`/api/v1/connect` WebSocket, 11 stopped rows plus one active row, a 64 MiB
+single-file payload, 256 KiB pieces, a 256 KiB/s source limit, and equal
+eight-second steady windows. The active torrent advanced from 1% to 20%.
+There were no semantic HTTP requests, binary frames, reset batches, heartbeat
+timeouts, or leaked owners. The independent browser and gateway totals matched
+exactly: 5,268,042 server payload bytes in 529 messages and 30,124 client
+payload bytes in 529 messages. Basic WebSocket framing raises those totals only
+to 5,270,188 and 33,314 bytes respectively; neither figure includes TLS,
+TCP/IP, retransmission, carrier accounting, or radio energy.
+
+Steady server-to-browser application payload was:
+
+| Visible surface | KiB/s | Batches/s | Dominant standalone update JSON (KiB/s) |
+| --- | ---: | ---: | --- |
+| idle Transfers | 5.28 | 1.00 | session rates 5.09 |
+| active Transfers | 12.84 | 7.37 | Library 6.28; session rates 5.12 |
+| Peers Workbench | 114.05 | 16.11 | Library 45.62; Summary 45.12; Peers 14.99 |
+| General Workbench | 101.86 | 5.62 | Library 48.08; Summary 47.56 |
+| Files Workbench | 113.31 | 8.24 | Library 49.93; Summary 49.39; Files 7.25 |
+| Pieces Workbench | 147.93 | 14.61 | Library 51.76; Summary 51.20; Pieces 36.89 |
+| Normal Logs Workbench | 103.23 | 6.99 | Library 48.72; Summary 48.19; Logs 0.42 |
+
+Every Workbench row also carried about 4.5--5.2 KiB/s of the always-retained
+ten-minute session-rate projection. Standalone update JSON intentionally omits
+the shared batch/frame envelope, so its columns are attribution rather than an
+alternative wire total. At the measured fixed activity, the application-only
+steady rates extrapolate to about 19 MiB/hour for idle Transfers, 45 MiB/hour
+for active Transfers, 358 MiB/hour for General, and 520 MiB/hour for Pieces.
+Those extrapolations are useful scale indicators, not cellular billing claims.
+
+The initial Library connection was 18,938 server payload bytes. Later
+transition windows were 73,736 bytes into Peers Workbench, 91,376 bytes into
+Files, 9,703 bytes into Pieces, and 101,976 bytes into Normal Logs; each also
+contains concurrent active-transfer changes during its short observation.
+The Logs transition's standalone retained-history snapshot was 19,591 bytes.
+The subsequent eight-second Normal feed added eight log patches totaling 3,408
+standalone bytes, and the UI ended with 75 retained Normal events. Logs are
+therefore not the leading steady cost in this scenario.
+
+Current navigation interest selection is real. No inactive detail projection
+appeared in a steady window, and the 11 unchanged stopped Library rows produced
+no steady row updates. It remains projection-level rather than viewport-row
+selection: wide Workbench intentionally retains the visible Library, selected
+Summary, one detail, and session rates.
+
+The dominant defect is earlier than a codec or field-mask change. A General
+window delivered 390 complete Library-row patches and 390 complete Summary
+replacements in eight seconds despite both views requesting a 100 ms minimum
+interval. `ViewSetInner::enqueue_update` coalesces only when the immediately
+preceding pending item has the same view ID. Hub publication interleaves
+Library and Summary, so their compatible latest-value patches do not meet and
+many same-view updates accumulate in a later batch. Pieces and Files expose
+the same shape. Each retained update then repeats a complete row, and Library
+plus Summary serialize nearly the same active-torrent value twice.
+
+The next optimization should first make pending current-state coalescing
+view-aware across interleaved view IDs while retaining strict Diagnostics
+ordering, byte bounds, cursor continuity, and reset behavior. Re-run this
+baseline after that bounded repair. Sparse volatile torrent fields,
+incremental session-rate samples, viewport/page scope, named low-bandwidth and
+background profiles, and compression or a binary codec remain later measured
+choices; do not bundle them into the coalescing repair.
+
+The retained command is:
+
+```bash
+source ~/.profile
+uv run --project tests/interop --locked \
+  tests/interop/application_ui_bandwidth.py \
+  --output /tmp/rstorrent-ui-bandwidth-baseline.json
+```
+
+Validation completed:
+
+- the complete web unit suite passed 311 tests with two skipped after
+  `NODE_OPTIONS=--no-webstorage` disabled Node 25.2.0's process-global Web
+  Storage; the ordinary invocation otherwise fails all 57 `App` tests before
+  their assertions because it supplies no `--localstorage-file`;
+- web typecheck and production/CSP build passed;
+- the opt-in Playwright file compiled and skipped when its live environment
+  was absent;
+- the pure frame-accounting tests passed within the full web suite;
+- the Python metric/cross-check unit suite passed all three tests and both new
+  Python files compiled;
+- a reduced 2-row/1-second live smoke passed before the retained run; and
+- the retained 75.3-second run passed with exact browser/gateway totals and
+  complete cleanup from a clean repository revision.
 
 ## Non-Goals
 

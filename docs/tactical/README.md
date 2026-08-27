@@ -80,9 +80,9 @@ that scope and its cleanup or compatibility rules explicitly.
 ## Current Tacticals
 
 - [`183-production-websocket-ui-bandwidth-baseline.md`](183-production-websocket-ui-bandwidth-baseline.md):
-  active measurement-only production React/WebSocket baseline, separating
-  view-transition bursts from steady selected-view traffic before choosing
-  any delivery, log, row-shape, paging, or codec optimization.
+  complete; adds bounded exact production React/WebSocket measurement and
+  shows that interleaved same-view current-state updates defeat the intended
+  coalescing before any delivery, row-shape, paging, or codec optimization.
 - [`182-bounded-outbound-attempt-and-metadata-turnover.md`](182-bounded-outbound-attempt-and-metadata-turnover.md):
   complete; bounds preferred-uTP/TCP/MSE/plain handshake work to one 15-second
   outbound attempt and adds proven conservative one-at-a-time replacement of

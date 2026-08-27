@@ -10,10 +10,11 @@ Tauri adapter currently hardcodes 100 ms for Library, Summary, Peers, Pieces,
 Disk and Diagnostics and 250 ms for Files and Trackers. There is no
 user-selectable delivery profile, visibility-driven downshift, global
 bandwidth budget, or cadence-specific performance gate. Changing only a
-delivery interval also causes an unnecessary fresh snapshot today. Active
+delivery interval also causes an unnecessary fresh snapshot today. Completed
 Tactical [`183`](../tactical/183-production-websocket-ui-bandwidth-baseline.md)
-measures the current production WebSocket baseline before any of those
-controls or wire-shape optimizations are selected.
+measured the current production WebSocket baseline. The first follow-up is
+view-aware coalescing of interleaved current-state patches, not a codec,
+Diagnostics-default, or WebSocket-fallback change.
 
 ## Purpose And Scope
 
@@ -246,6 +247,33 @@ payload. That short high-speed loopback case is transport evidence, not a
 representative idle, selected-detail, or cellular baseline.
 
 Completed Tactical
+[`183`](../tactical/183-production-websocket-ui-bandwidth-baseline.md) supplies
+the representative production-browser baseline. One clean Linux x86_64 run
+used 11 stopped torrents plus one 256 KiB/s active torrent and equal
+eight-second windows. Idle Transfers received 5.28 KiB/s of application
+payload, active Transfers 12.84 KiB/s, General 101.86 KiB/s, Peers 114.05
+KiB/s, Files 113.31 KiB/s, Pieces 147.93 KiB/s, and Normal Logs 103.23 KiB/s.
+There was exactly one WebSocket, no semantic HTTP, no reset or heartbeat
+timeout, and browser-observed totals matched gateway counters exactly.
+
+This validates projection interest but also sharpens its limit. Unselected
+details produced no steady updates, and 11 unchanged stopped rows produced no
+row updates. Wide Workbench still correctly retained its visible Library,
+selected Summary, one detail, and session rates. General nevertheless carried
+390 complete Library-row patches and 390 complete Summary replacements in
+eight seconds. Current view-set coalescing examines only the immediately prior
+pending item; the hub interleaves view IDs, so compatible latest-value patches
+for one view remain separate even while waiting for the same cadence gate.
+Complete-row encoding then repeats mostly unchanged fields, and Library plus
+Summary duplicate nearly the same active-torrent value.
+
+Normal Logs were not the dominant steady source. Its retained-history update
+was 19,591 standalone JSON bytes, and eight steady log patches totaled 3,408
+bytes; Library and Summary each accounted for about 48 KiB/s during that Logs
+window. The always-retained ten-minute session-rate replacement independently
+cost about 5 KiB/s, including on otherwise idle Transfers.
+
+Completed Tactical
 [`180`](../tactical/180-typed-settings-patches-and-draft-convergence.md)
 confirms that unchanged global client settings are already omitted from an
 unrelated torrent-list patch. Its representative compact one-row trace is
@@ -283,15 +311,17 @@ continuity and reset gates instead of a narrow wall-clock throughput threshold.
 
 ## Recommended Next Work
 
-Complete Tactical `183` first. It measures exact production WebSocket
-application payload, transition bursts, steady bytes, view attribution, ACKs,
-and resets for representative current navigation, including Normal Logs.
+Create one bounded tactical for view-aware pending coalescing. It should merge
+compatible current-state patches for the same view across interleaved other
+view IDs, preserve the newest complete keyed row/singleton, retain ordered
+Diagnostics without reordering or silent loss, recompute exact queue bytes,
+and prove cadence, cursor, reset, fairness, and browser equivalence. Re-run
+Tactical `183`'s retained scenario as the causal A/B gate.
 
-Use that evidence to choose one subsequent optimization tactical. Plausible
-owners remain server-side Diagnostic filtering/default scope, sparse volatile
-torrent-row patches, smaller viewport/page projections, or background view
-release. Do not bundle all four, select a codec, expose raw intervals, add a
-general remote service, or implement a bandwidth budget before the baseline
-identifies the dominant source. A later delivery-profile tactical may then
-calibrate named cadence/lifecycle policy and interval-only updates against the
-retained baseline.
+Only then choose a second optimization from the residual measurements. Likely
+candidates are sparse volatile torrent fields or avoiding duplicate Library/
+Summary row material, incremental session-rate samples, smaller viewport/page
+projections, and named low-bandwidth/background delivery profiles. Diagnostic
+scope was not the first observed problem. Do not bundle those changes, select
+a codec, expose raw intervals, add a general remote service, or implement a
+bandwidth budget before the coalescing result establishes the remaining cost.

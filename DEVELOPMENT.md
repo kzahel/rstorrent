@@ -42,11 +42,12 @@ machine-control.
 
 ## Current Tactical State
 
-The authoritative **Now** is the measurement-only
-[`183-production-websocket-ui-bandwidth-baseline.md`](docs/tactical/183-production-websocket-ui-bandwidth-baseline.md).
-It records production React/WebSocket transition and steady bytes before any
-delivery or wire-shape optimization. Tactical `176` retains only its unchanged
-macOS-hosted iOS simulator/archive compile gate and resumes afterward.
+The authoritative **Now** is
+[`176-durable-high-file-priority.md`](docs/tactical/176-durable-high-file-priority.md),
+only for its unchanged macOS-hosted iOS simulator/archive compile gate.
+Completed Tactical `183` records production React/WebSocket transition and
+steady bytes and identifies interleaved tail-only current-state coalescing as
+the first measured delivery optimization; it changed no product behavior.
 Completed Tactical `182` bounds preferred-uTP/TCP/MSE/plain handshake work to
 one 15-second outbound-attempt lifetime and conservatively turns over a
 zero-contribution metadata worker only when the 30-peer cohort is saturated
@@ -627,6 +628,22 @@ behavior without touching the visible desktop:
 
 ```bash
 npm run test:e2e --prefix clients/web
+```
+
+The opt-in production UI bandwidth baseline starts a clean gateway and
+production preview, preloads a 12-row Library, keeps one deterministic
+libtorrent-seeded transfer rate-limited and active, and measures exact
+application-frame bytes across Transfers and selected Workbench details. It
+uses one WebSocket, asserts no semantic HTTP, cross-checks browser totals with
+gateway counters, and removes every temporary owner. The result is application
+payload plus a basic WebSocket framing estimate, not TLS/IP or billed cellular
+traffic:
+
+```bash
+source ~/.profile
+uv run --project tests/interop --locked \
+  tests/interop/application_ui_bandwidth.py \
+  --output /tmp/rstorrent-ui-bandwidth-baseline.json
 ```
 
 The deterministic first-piece interoperability scenario uses its own locked

@@ -1226,6 +1226,26 @@ view together fell to 74.0 MiB/s and serialized 1.742 GB while incurring up to
 1,737 resets. A deliberately one-second consumer completed at 122.3 MiB/s
 with nine reset snapshots and a 16.78 MB queue high water.
 
+Tactical `183` measures the ordinary production React navigation at a
+deliberately slow 256 KiB/s transfer rate rather than maximizing engine
+throughput. Its clean 12-row Linux run observes 5.28 KiB/s server application
+payload for idle Transfers, 12.84 KiB/s for active Transfers, 101.86 KiB/s for
+General, 114.05 KiB/s for Peers, 113.31 KiB/s for Files, 147.93 KiB/s for
+Pieces, and 103.23 KiB/s for Normal Logs. One WebSocket, no semantic HTTP, exact
+gateway/browser byte agreement, zero resets, and joined cleanup pass.
+
+The navigation contract already omits unselected details and unchanged
+Library rows. The dominant residual is an accumulator mismatch with the
+documented coalescing rule: `ViewSetInner::enqueue_update` only attempts to
+coalesce the pending tail. Hub publication interleaves Library, Summary, and
+selected-detail IDs, so later compatible patches for one view do not reach an
+earlier same-view patch. General consequently delivered 390 complete active
+Library rows and 390 complete Summary replacements during one eight-second
+window even though both views requested a 100 ms minimum interval. Full-row
+upserts also repeat unchanged fields and Library plus Summary repeat nearly
+the same selected torrent, but those are second-order wire-shape choices after
+the intended latest-value coalescing works across interleaved view IDs.
+
 Tactical `104` adds required/remaining payload decimal strings, the distinct
 smoothed ETA payload rate, and the closed tagged ETA to every torrent row.
 Generated schema/TypeScript/validator drift, Rust serialization, UniFFI/Kotlin
@@ -1236,11 +1256,13 @@ torrent-row changes rather than cloning file, peer, swarm, or piece state.
 
 These are now reproducible regression observations, not accepted efficiency
 targets. Library's zero-reset behavior proves the common Summary/reset path is
-already material before detail views amplify it. The next API optimization
-should therefore reduce snapshot reconstruction and repeated JSON delivery,
-starting with Summary and trace Diagnostics, while preserving cursor,
-coalescing and fresh-snapshot recovery semantics. Browser decode/reducer/paint
-cost remains a distinct measurement boundary.
+already material before detail views amplify it. The next delivery optimization
+should make pending current-state coalescing view-aware across interleaved IDs
+while preserving ordered Diagnostics, exact queue accounting, cursor, reset,
+and fresh-snapshot recovery semantics. Re-measure before choosing sparse
+volatile fields, incremental rate history, projection overlap removal, or a
+wire codec. Browser decode/reducer/paint cost remains a distinct measurement
+boundary.
 
 Public swarms and visible Tauri launch are unnecessary for this foundation.
 The browser gateway, temporary profiles, controlled libtorrent peer, and pure
