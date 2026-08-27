@@ -857,6 +857,13 @@ impl TorrentMetadataDownload {
         self.blocks.iter().filter(|block| block.received).count()
     }
 
+    pub fn received_blocks_for_peer(&self, peer: u64) -> usize {
+        self.blocks
+            .iter()
+            .filter(|block| block.received && block.source == Some(peer))
+            .count()
+    }
+
     pub fn pending_requests(&self) -> usize {
         self.peers.values().map(|peer| peer.pending.len()).sum()
     }
@@ -1486,6 +1493,8 @@ mod tests {
                 .expect("first block"),
             TorrentMetadataEvent::BlockAccepted { piece: 0 }
         );
+        assert_eq!(download.received_blocks_for_peer(1), 1);
+        assert_eq!(download.received_blocks_for_peer(2), 0);
         assert_eq!(
             download
                 .requests_for_peer(1, MetadataInstant::ZERO)
@@ -1504,6 +1513,8 @@ mod tests {
                 .expect("second block"),
             TorrentMetadataEvent::BlockAccepted { piece: 1 }
         );
+        assert_eq!(download.received_blocks_for_peer(1), 1);
+        assert_eq!(download.received_blocks_for_peer(2), 1);
         assert_eq!(
             download
                 .on_data(

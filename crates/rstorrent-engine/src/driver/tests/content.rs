@@ -141,6 +141,10 @@ fn metadata_connection_limits_validate_platform_defaults_and_hard_ceilings() {
     ] {
         assert_eq!(limits.metadata_connections.max_peers, 30);
         assert_eq!(limits.metadata_connections.max_attempts_per_second, 10);
+        assert_eq!(
+            limits.metadata_connections.saturated_no_progress_grace,
+            Duration::from_secs(15)
+        );
         limits
             .validate()
             .expect("valid metadata connection defaults");
@@ -179,9 +183,87 @@ fn metadata_connection_limits_validate_platform_defaults_and_hard_ceilings() {
         ))
     ));
 
+    invalid = DownloadResourceLimits::DESKTOP;
+    invalid.metadata_connections.saturated_no_progress_grace = Duration::ZERO;
+    assert!(matches!(
+        invalid.validate(),
+        Err(DownloadError::InvalidResourceLimit(
+            "metadata saturated no-progress grace must be nonzero"
+        ))
+    ));
+    invalid.metadata_connections.saturated_no_progress_grace =
+        MetadataConnectionLimits::MAX_SATURATED_NO_PROGRESS_GRACE + Duration::from_millis(1);
+    assert!(matches!(
+        invalid.validate(),
+        Err(DownloadError::InvalidResourceLimit(
+            "metadata saturated no-progress grace exceeds the hard ceiling"
+        ))
+    ));
+
     assert!(metadata_cohort_has_capacity(29, 0, 30));
     assert!(!metadata_cohort_has_capacity(29, 1, 30));
     assert!(!metadata_cohort_has_capacity(usize::MAX, 1, 30));
+}
+
+#[test]
+fn outbound_attempt_sub_budgets_must_be_nonzero() {
+    let mut network = loopback_network(Duration::from_secs(1));
+    network.utp_fallback_timeout = Duration::ZERO;
+    assert!(matches!(
+        validate_network_config(network),
+        Err(DownloadError::InvalidNetworkTimeout {
+            operation: "uTP fallback"
+        })
+    ));
+
+    network = loopback_network(Duration::from_secs(1));
+    network.outgoing_handshake_timeout = Duration::ZERO;
+    assert!(matches!(
+        validate_network_config(network),
+        Err(DownloadError::InvalidNetworkTimeout {
+            operation: "outgoing handshake"
+        })
+    ));
+}
+
+#[test]
+fn metadata_turnover_selects_oldest_expired_zero_contributor() {
+    let now = Duration::from_secs(30);
+    let grace = Duration::from_secs(15);
+    let states = [
+        MetadataWorkerTurnoverState {
+            attempt_id: 4_u64,
+            connected_at: Duration::from_secs(10),
+            turnover_requested: false,
+            contributed: true,
+        },
+        MetadataWorkerTurnoverState {
+            attempt_id: 3_u64,
+            connected_at: Duration::from_secs(10),
+            turnover_requested: false,
+            contributed: false,
+        },
+        MetadataWorkerTurnoverState {
+            attempt_id: 2_u64,
+            connected_at: Duration::from_secs(9),
+            turnover_requested: true,
+            contributed: false,
+        },
+        MetadataWorkerTurnoverState {
+            attempt_id: 1_u64,
+            connected_at: Duration::from_secs(16),
+            turnover_requested: false,
+            contributed: false,
+        },
+    ];
+    assert_eq!(
+        select_metadata_turnover_candidate(states, now, grace),
+        Some(3)
+    );
+    assert_eq!(
+        select_metadata_turnover_candidate(states, Duration::from_secs(24), grace),
+        None
+    );
 }
 
 #[test]

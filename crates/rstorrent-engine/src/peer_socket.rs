@@ -26,7 +26,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::task::{JoinError, JoinHandle, JoinSet};
-use tokio::time::{Instant, timeout, timeout_at};
+use tokio::time::{Instant, timeout_at};
 use tokio_util::sync::CancellationToken;
 
 use crate::TorrentBandwidth;
@@ -200,7 +200,7 @@ impl PeerSocketError {
                 ..
             } => PeerFailure::Connect,
             Self::TimedOut {
-                operation: "handshake read" | "handshake write",
+                operation: "handshake read" | "handshake write" | "handshake compute",
                 ..
             }
             | Self::Handshake(_)
@@ -283,6 +283,7 @@ async fn connect_with_progress(
             policy: network.policy,
         });
     }
+    let attempt_deadline = OutboundAttemptDeadline::start(network.peer_connect_timeout);
     let preferred_transport = preferred_transport(
         address,
         network.encryption,
@@ -293,9 +294,10 @@ async fn connect_with_progress(
         .as_ref()
         .filter(|_| preferred_transport == PeerTransport::Utp)
     {
-        let stream = utp
-            .connect_with_timeout(address, network.peer_connect_timeout)
-            .await;
+        let utp_timeout = network
+            .utp_fallback_timeout
+            .min(attempt_deadline.remaining());
+        let stream = utp.connect_with_timeout(address, utp_timeout).await;
         if let Ok(stream) = stream {
             *utp_outcome = Some(UtpConnectOutcome::Connected);
             return connect_utp_with_progress(
@@ -305,6 +307,7 @@ async fn connect_with_progress(
                 hybrid_v2_hash,
                 advertise_extensions,
                 network,
+                attempt_deadline,
                 resources,
             )
             .await;
@@ -317,6 +320,7 @@ async fn connect_with_progress(
         hybrid_v2_hash,
         advertise_extensions,
         network,
+        attempt_deadline,
         resources,
     )
     .await
@@ -352,6 +356,7 @@ async fn connect_tcp_with_progress(
     hybrid_v2_hash: Option<[u8; 20]>,
     advertise_extensions: bool,
     network: NetworkConfig,
+    attempt_deadline: OutboundAttemptDeadline,
     resources: ConnectResources<'_>,
 ) -> Result<(PeerConnection, Handshake), PeerSocketError> {
     let ConnectResources {
@@ -362,11 +367,11 @@ async fn connect_tcp_with_progress(
         mse_dh,
     } = resources;
     let address = attempt.endpoint().address();
-    let mut stream = timeout(network.peer_connect_timeout, TcpStream::connect(address))
+    let mut stream = timeout_at(attempt_deadline.expires_at, TcpStream::connect(address))
         .await
         .map_err(|_| PeerSocketError::TimedOut {
             operation: "connect",
-            timeout: network.peer_connect_timeout,
+            timeout: attempt_deadline.timeout,
         })?
         .map_err(|source| PeerSocketError::Io {
             operation: "connect to peer",
@@ -390,6 +395,7 @@ async fn connect_tcp_with_progress(
         PeerEncryptionPolicy::Prefer => attempt.mse_endpoint() != MseEndpointState::PlainPreferred,
         PeerEncryptionPolicy::Required => true,
     };
+    let handshake_deadline = attempt_deadline.handshake(network.outgoing_handshake_timeout);
     let (handshake, protocol, io, mse_method, mse_endpoint_update) = if try_mse {
         let attempt = run_outgoing_mse(
             &mut stream,
@@ -397,7 +403,7 @@ async fn connect_tcp_with_progress(
             hybrid_v2_hash,
             local_handshake,
             OutgoingMseConfig {
-                io_timeout: network.peer_io_timeout,
+                deadline: handshake_deadline,
                 byte_metric_sink: byte_metric_sink.as_ref(),
                 mse_dh: &mse_dh,
                 policy: network.encryption,
@@ -430,7 +436,8 @@ async fn connect_tcp_with_progress(
             }
             Err(failure)
                 if network.encryption == PeerEncryptionPolicy::Prefer
-                    && failure.downgrade_eligible =>
+                    && failure.downgrade_eligible
+                    && !handshake_deadline.is_expired() =>
             {
                 record_mse_handshake(
                     mse_handshake_sink.as_ref(),
@@ -440,11 +447,11 @@ async fn connect_tcp_with_progress(
                     ),
                 );
                 drop(stream);
-                stream = timeout(network.peer_connect_timeout, TcpStream::connect(address))
+                stream = timeout_at(handshake_deadline.expires_at, TcpStream::connect(address))
                     .await
                     .map_err(|_| PeerSocketError::TimedOut {
                         operation: "connect",
-                        timeout: network.peer_connect_timeout,
+                        timeout: handshake_deadline.timeout,
                     })
                     .and_then(|result| {
                         result.map_err(|source| PeerSocketError::Io {
@@ -460,7 +467,7 @@ async fn connect_tcp_with_progress(
                     info_hash,
                     hybrid_v2_hash,
                     &local_handshake,
-                    network.peer_io_timeout,
+                    handshake_deadline,
                     byte_metric_sink.as_ref(),
                 )
                 .await
@@ -490,7 +497,7 @@ async fn connect_tcp_with_progress(
             info_hash,
             hybrid_v2_hash,
             &local_handshake,
-            network.peer_io_timeout,
+            handshake_deadline,
             byte_metric_sink.as_ref(),
         )
         .await;
@@ -545,6 +552,7 @@ async fn connect_utp_with_progress(
     hybrid_v2_hash: Option<[u8; 20]>,
     advertise_extensions: bool,
     network: NetworkConfig,
+    attempt_deadline: OutboundAttemptDeadline,
     resources: ConnectResources<'_>,
 ) -> Result<(PeerConnection, Handshake), PeerSocketError> {
     let ConnectResources {
@@ -568,6 +576,7 @@ async fn connect_utp_with_progress(
         hybrid_v2_hash,
         advertise_extensions,
         network,
+        attempt_deadline.handshake(network.outgoing_handshake_timeout),
         byte_metric_sink,
     )
     .await?;
@@ -602,9 +611,18 @@ pub(crate) async fn handshake_over_utp(
     advertise_extensions: bool,
     network: NetworkConfig,
 ) -> Result<(PeerIo, Handshake), PeerSocketError> {
-    handshake_over_utp_with_sink(stream, info_hash, None, advertise_extensions, network, None)
-        .await
-        .map(|(io, handshake, _)| (io, handshake))
+    let attempt_deadline = OutboundAttemptDeadline::start(network.peer_connect_timeout);
+    handshake_over_utp_with_sink(
+        stream,
+        info_hash,
+        None,
+        advertise_extensions,
+        network,
+        attempt_deadline.handshake(network.outgoing_handshake_timeout),
+        None,
+    )
+    .await
+    .map(|(io, handshake, _)| (io, handshake))
 }
 
 async fn handshake_over_utp_with_sink(
@@ -613,6 +631,7 @@ async fn handshake_over_utp_with_sink(
     hybrid_v2_hash: Option<[u8; 20]>,
     advertise_extensions: bool,
     network: NetworkConfig,
+    handshake_deadline: OutgoingHandshakeDeadline,
     byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
 ) -> Result<(PeerIo, Handshake, PeerProtocol), PeerSocketError> {
     let address = stream.peer_addr();
@@ -635,7 +654,7 @@ async fn handshake_over_utp_with_sink(
         info_hash,
         hybrid_v2_hash,
         &local_handshake,
-        network.peer_io_timeout,
+        handshake_deadline,
         byte_metric_sink.as_ref(),
     )
     .await?;
@@ -649,6 +668,45 @@ struct ConnectResources<'a> {
     mse_handshake_sink: Option<Arc<dyn MseHandshakeSink>>,
     budget_permit: Option<PeerBudgetPermit>,
     mse_dh: MseDhWorkOwner,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct OutboundAttemptDeadline {
+    expires_at: Instant,
+    timeout: Duration,
+}
+
+impl OutboundAttemptDeadline {
+    fn start(timeout: Duration) -> Self {
+        Self {
+            expires_at: Instant::now() + timeout,
+            timeout,
+        }
+    }
+
+    fn remaining(self) -> Duration {
+        self.expires_at.saturating_duration_since(Instant::now())
+    }
+
+    fn handshake(self, maximum: Duration) -> OutgoingHandshakeDeadline {
+        let timeout = maximum.min(self.remaining());
+        OutgoingHandshakeDeadline {
+            expires_at: (Instant::now() + timeout).min(self.expires_at),
+            timeout,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct OutgoingHandshakeDeadline {
+    expires_at: Instant,
+    timeout: Duration,
+}
+
+impl OutgoingHandshakeDeadline {
+    fn is_expired(self) -> bool {
+        Instant::now() >= self.expires_at
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -718,7 +776,7 @@ struct OutgoingMseAttempt {
 
 #[derive(Clone, Copy)]
 struct OutgoingMseConfig<'a> {
-    io_timeout: Duration,
+    deadline: OutgoingHandshakeDeadline,
     byte_metric_sink: Option<&'a Arc<dyn ByteMetricSink>>,
     mse_dh: &'a MseDhWorkOwner,
     policy: PeerEncryptionPolicy,
@@ -730,14 +788,14 @@ async fn run_outgoing_plain<S: AsyncRead + AsyncWrite + Unpin>(
     info_hash: [u8; 20],
     hybrid_v2_hash: Option<[u8; 20]>,
     local_handshake: &[u8; HANDSHAKE_LENGTH],
-    io_timeout: Duration,
+    deadline: OutgoingHandshakeDeadline,
     byte_metric_sink: Option<&Arc<dyn ByteMetricSink>>,
 ) -> Result<(Handshake, PeerProtocol), PeerSocketError> {
     write_all_recorded(
         stream,
         local_handshake,
-        Instant::now() + io_timeout,
-        io_timeout,
+        deadline.expires_at,
+        deadline.timeout,
         "handshake write",
         byte_metric_sink,
         true,
@@ -748,8 +806,8 @@ async fn run_outgoing_plain<S: AsyncRead + AsyncWrite + Unpin>(
     read_exact_recorded(
         stream,
         &mut remote_handshake,
-        Instant::now() + io_timeout,
-        io_timeout,
+        deadline.expires_at,
+        deadline.timeout,
         "handshake read",
         byte_metric_sink,
         true,
@@ -788,7 +846,7 @@ async fn run_outgoing_mse_inner(
     accounting: &mut MseHandshakeAccounting,
 ) -> Result<OutgoingMse, OutgoingMseFailure> {
     let OutgoingMseConfig {
-        io_timeout,
+        deadline,
         byte_metric_sink,
         mse_dh,
         rc4_only,
@@ -829,7 +887,6 @@ async fn run_outgoing_mse_inner(
         downgrade_eligible: false,
     })?;
     let mut remote_key_valid = false;
-    let handshake_deadline = Instant::now() + io_timeout;
     let mut network_buffer = [0_u8; NETWORK_READ_LENGTH];
     let mut buffered = 0;
     let mut consumed = 0;
@@ -841,8 +898,8 @@ async fn run_outgoing_mse_inner(
                     buffered = read_some_recorded(
                         stream,
                         &mut network_buffer,
-                        handshake_deadline,
-                        io_timeout,
+                        deadline.expires_at,
+                        deadline.timeout,
                         "handshake read",
                         byte_metric_sink,
                         Some(accounting),
@@ -866,12 +923,19 @@ async fn run_outgoing_mse_inner(
             MseStep::Action(MseAction::ComputePublicKey { private }) => {
                 accounting.exponentiation_started();
                 let (private, public) =
-                    mse_dh.compute_public_key(private).await.map_err(|error| {
-                        OutgoingMseFailure {
+                    timeout_at(deadline.expires_at, mse_dh.compute_public_key(private))
+                        .await
+                        .map_err(|_| OutgoingMseFailure {
+                            error: PeerSocketError::TimedOut {
+                                operation: "handshake compute",
+                                timeout: deadline.timeout,
+                            },
+                            downgrade_eligible: false,
+                        })?
+                        .map_err(|error| OutgoingMseFailure {
                             error: PeerSocketError::MseDh(error),
                             downgrade_eligible: false,
-                        }
-                    })?;
+                        })?;
                 handshake
                     .resume(MseResume::PublicKeyComputed { private, public })
                     .map_err(|error| OutgoingMseFailure {
@@ -884,13 +948,22 @@ async fn run_outgoing_mse_inner(
                 remote_public,
             }) => {
                 accounting.exponentiation_started();
-                let shared = mse_dh
-                    .compute_shared_secret(private, remote_public)
-                    .await
-                    .map_err(|error| OutgoingMseFailure {
-                        error: PeerSocketError::MseDh(error),
-                        downgrade_eligible: false,
-                    })?;
+                let shared = timeout_at(
+                    deadline.expires_at,
+                    mse_dh.compute_shared_secret(private, remote_public),
+                )
+                .await
+                .map_err(|_| OutgoingMseFailure {
+                    error: PeerSocketError::TimedOut {
+                        operation: "handshake compute",
+                        timeout: deadline.timeout,
+                    },
+                    downgrade_eligible: false,
+                })?
+                .map_err(|error| OutgoingMseFailure {
+                    error: PeerSocketError::MseDh(error),
+                    downgrade_eligible: false,
+                })?;
                 remote_key_valid = true;
                 handshake
                     .resume(MseResume::SharedSecretComputed(shared))
@@ -911,8 +984,8 @@ async fn run_outgoing_mse_inner(
                 write_all_recorded(
                     stream,
                     bytes.as_slice(),
-                    handshake_deadline,
-                    io_timeout,
+                    deadline.expires_at,
+                    deadline.timeout,
                     "handshake write",
                     byte_metric_sink,
                     false,
@@ -1747,7 +1820,7 @@ async fn wait_for_deadline(deadline: Option<Instant>) {
 mod tests {
     use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex};
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use rstorrent_protocol::mse::{
         MseAction, MseHandshake, MseMethod, MsePadding, MseResume, MseStep, compute_public_key,
@@ -2139,6 +2212,60 @@ mod tests {
         assert_eq!(
             connection.mse_endpoint_update(),
             Some(MseEndpointState::PlainPreferred)
+        );
+        server.await.expect("server join");
+    }
+
+    #[tokio::test]
+    async fn expired_mse_handshake_budget_does_not_open_plaintext_fallback_socket() {
+        const INFO_HASH: [u8; 20] = [0x57; 20];
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept MSE attempt");
+            let mut first_byte = [0; 1];
+            stream
+                .read_exact(&mut first_byte)
+                .await
+                .expect("read MSE prefix");
+            assert!(
+                timeout(Duration::from_millis(180), listener.accept())
+                    .await
+                    .is_err(),
+                "an expired handshake must not open a plaintext fallback socket"
+            );
+        });
+        let network = NetworkConfig::new(
+            NetworkPolicy::LoopbackOnly,
+            Duration::from_millis(500),
+            Duration::from_secs(5),
+        )
+        .with_outgoing_handshake_timeout(Duration::from_millis(75))
+        .with_encryption(PeerEncryptionPolicy::Prefer);
+        let sink = Arc::new(RecordingMseSink::default());
+        let started = Instant::now();
+        assert!(matches!(
+            connect_observed(
+                test_attempt_for(address),
+                INFO_HASH,
+                false,
+                network,
+                sink.clone(),
+            )
+            .await,
+            Err(PeerSocketError::TimedOut {
+                operation: "handshake read",
+                ..
+            })
+        ));
+        let elapsed = started.elapsed();
+        assert!(elapsed >= Duration::from_millis(55), "elapsed {elapsed:?}");
+        assert!(elapsed < Duration::from_millis(200), "elapsed {elapsed:?}");
+        let observation = sink.handshakes.lock().expect("observations")[0];
+        assert!(!observation.fallback_socket_used);
+        assert_eq!(
+            observation.outcome,
+            MseHandshakeOutcome::Failed(MseHandshakeFailure::TimedOut)
         );
         server.await.expect("server join");
     }
@@ -2869,6 +2996,7 @@ mod tests {
             max_open_files: 10_000,
         });
         let mut sockets = PeerSocketSet::with_budget(budget.clone());
+        let started = Instant::now();
         sockets
             .begin_dial(
                 attempt,
@@ -2878,7 +3006,8 @@ mod tests {
                     NetworkPolicy::LoopbackOnly,
                     Duration::from_millis(200),
                     Duration::from_secs(1),
-                ),
+                )
+                .with_utp_fallback_timeout(Duration::from_millis(50)),
                 PeerDialServices {
                     utp: Some(utp.handle()),
                     ..PeerDialServices::default()
@@ -2912,6 +3041,9 @@ mod tests {
             event => panic!("unexpected fallback event {event:?}"),
         };
         assert_eq!(connection.transport(), PeerTransport::Tcp);
+        let elapsed = started.elapsed();
+        assert!(elapsed >= Duration::from_millis(40), "elapsed {elapsed:?}");
+        assert!(elapsed < Duration::from_millis(200), "elapsed {elapsed:?}");
         assert_eq!(budget.snapshot().total_high_water, 1);
         assert!(utp.snapshot().datagrams_sent > 0);
         drop(connection);
@@ -2925,6 +3057,132 @@ mod tests {
         let terminal = utp.shutdown().await.expect("uTP shutdown");
         assert_eq!(terminal.active_connections, 0);
         udp.shutdown().await.expect("UDP shutdown");
+        server.await.expect("TCP server task");
+    }
+
+    #[tokio::test]
+    async fn utp_fallback_and_silent_tcp_handshake_share_one_attempt_deadline() {
+        const INFO_HASH: [u8; 20] = [0xd5; 20];
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind TCP");
+        let target = listener.local_addr().expect("TCP target");
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept TCP fallback");
+            let mut handshake = [0; HANDSHAKE_LENGTH];
+            stream
+                .read_exact(&mut handshake)
+                .await
+                .expect("read TCP handshake");
+            decode_handshake(&handshake, INFO_HASH).expect("decode TCP handshake");
+            tokio::time::sleep(Duration::from_millis(300)).await;
+        });
+        let socket = UdpSocket::bind("127.0.0.1:0")
+            .await
+            .expect("bind client UDP");
+        let (mut udp, _) = SessionUdpService::start(socket).expect("session UDP");
+        let utp = UtpService::start(&mut udp).expect("client uTP");
+        let attempt = test_attempt_for(target);
+        let mut sockets = PeerSocketSet::new();
+        let started = Instant::now();
+        sockets
+            .begin_dial(
+                attempt,
+                INFO_HASH,
+                false,
+                NetworkConfig::new(
+                    NetworkPolicy::LoopbackOnly,
+                    Duration::from_millis(140),
+                    Duration::from_secs(1),
+                )
+                .with_utp_fallback_timeout(Duration::from_millis(60))
+                .with_outgoing_handshake_timeout(Duration::from_secs(1)),
+                PeerDialServices {
+                    utp: Some(utp.handle()),
+                    ..PeerDialServices::default()
+                },
+            )
+            .expect("begin bounded dial");
+        assert!(matches!(
+            sockets.next_event().await.expect("TCP fallback phase"),
+            PeerSetEvent::DialPhase {
+                transport: PeerTransport::Tcp,
+                ..
+            }
+        ));
+        let result = match timeout(Duration::from_millis(400), sockets.next_event())
+            .await
+            .expect("total attempt deadline")
+            .expect("terminal dial event")
+        {
+            PeerSetEvent::DialCompleted {
+                utp_outcome,
+                result,
+                ..
+            } => {
+                assert_eq!(utp_outcome, Some(UtpConnectOutcome::Failed));
+                result
+            }
+            event => panic!("unexpected bounded dial event {event:?}"),
+        };
+        assert!(matches!(
+            *result,
+            Err(PeerSocketError::TimedOut {
+                operation: "handshake read",
+                ..
+            })
+        ));
+        let elapsed = started.elapsed();
+        assert!(elapsed >= Duration::from_millis(115), "elapsed {elapsed:?}");
+        assert!(elapsed < Duration::from_millis(260), "elapsed {elapsed:?}");
+        assert_eq!(utp.snapshot().active_connections, 0);
+        assert!(
+            sockets
+                .shutdown()
+                .await
+                .expect("socket shutdown")
+                .is_empty()
+        );
+        assert_eq!(
+            utp.shutdown()
+                .await
+                .expect("uTP shutdown")
+                .active_connections,
+            0
+        );
+        udp.shutdown().await.expect("UDP shutdown");
+        server.await.expect("TCP server task");
+    }
+
+    #[tokio::test]
+    async fn silent_plain_handshake_uses_sub_budget_not_established_peer_io_timeout() {
+        const INFO_HASH: [u8; 20] = [0xe6; 20];
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind TCP");
+        let address = listener.local_addr().expect("TCP address");
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept TCP");
+            let mut handshake = [0; HANDSHAKE_LENGTH];
+            stream
+                .read_exact(&mut handshake)
+                .await
+                .expect("read local handshake");
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        });
+        let network = NetworkConfig::new(
+            NetworkPolicy::LoopbackOnly,
+            Duration::from_millis(500),
+            Duration::from_secs(5),
+        )
+        .with_outgoing_handshake_timeout(Duration::from_millis(75));
+        let started = Instant::now();
+        assert!(matches!(
+            connect(test_attempt_for(address), INFO_HASH, false, network).await,
+            Err(PeerSocketError::TimedOut {
+                operation: "handshake read",
+                ..
+            })
+        ));
+        let elapsed = started.elapsed();
+        assert!(elapsed >= Duration::from_millis(55), "elapsed {elapsed:?}");
+        assert!(elapsed < Duration::from_millis(200), "elapsed {elapsed:?}");
         server.await.expect("TCP server task");
     }
 
@@ -2974,7 +3232,8 @@ mod tests {
             NetworkPolicy::LoopbackOnly,
             Duration::from_millis(100),
             Duration::from_secs(1),
-        );
+        )
+        .with_utp_fallback_timeout(Duration::from_millis(30));
 
         let first_candidate = PeerSelector
             .select(

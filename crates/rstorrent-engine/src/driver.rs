@@ -5,6 +5,7 @@ use std::fmt;
 use std::io;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -175,18 +176,26 @@ fn public_pex_extension_handshake() -> Vec<u8> {
 pub struct MetadataConnectionLimits {
     pub max_peers: usize,
     pub max_attempts_per_second: u32,
+    pub saturated_no_progress_grace: Duration,
 }
 
 impl MetadataConnectionLimits {
     pub const MAX_PEERS: usize = 200;
     pub const MAX_ATTEMPTS_PER_SECOND: u32 = 30;
+    pub const MAX_SATURATED_NO_PROGRESS_GRACE: Duration = Duration::from_secs(60);
     pub const DEFAULT: Self = Self::new(30, 10);
 
     pub const fn new(max_peers: usize, max_attempts_per_second: u32) -> Self {
         Self {
             max_peers,
             max_attempts_per_second,
+            saturated_no_progress_grace: Duration::from_secs(15),
         }
+    }
+
+    pub const fn with_saturated_no_progress_grace(mut self, grace: Duration) -> Self {
+        self.saturated_no_progress_grace = grace;
+        self
     }
 
     fn validate(self) -> Result<Self, DownloadError> {
@@ -208,6 +217,16 @@ impl MetadataConnectionLimits {
         if self.max_attempts_per_second > Self::MAX_ATTEMPTS_PER_SECOND {
             return Err(DownloadError::InvalidResourceLimit(
                 "metadata connection attempt rate exceeds the hard ceiling",
+            ));
+        }
+        if self.saturated_no_progress_grace.is_zero() {
+            return Err(DownloadError::InvalidResourceLimit(
+                "metadata saturated no-progress grace must be nonzero",
+            ));
+        }
+        if self.saturated_no_progress_grace > Self::MAX_SATURATED_NO_PROGRESS_GRACE {
+            return Err(DownloadError::InvalidResourceLimit(
+                "metadata saturated no-progress grace exceeds the hard ceiling",
             ));
         }
         Ok(self)
@@ -249,6 +268,30 @@ impl MetadataDialPacer {
 
 fn metadata_cohort_has_capacity(pending: usize, workers: usize, maximum: usize) -> bool {
     pending.saturating_add(workers) < maximum
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct MetadataWorkerTurnoverState<Id> {
+    attempt_id: Id,
+    connected_at: Duration,
+    turnover_requested: bool,
+    contributed: bool,
+}
+
+fn select_metadata_turnover_candidate<Id: Copy + Ord>(
+    workers: impl IntoIterator<Item = MetadataWorkerTurnoverState<Id>>,
+    now: Duration,
+    grace: Duration,
+) -> Option<Id> {
+    workers
+        .into_iter()
+        .filter(|worker| {
+            !worker.turnover_requested
+                && !worker.contributed
+                && now.saturating_sub(worker.connected_at) >= grace
+        })
+        .min_by_key(|worker| (worker.connected_at, worker.attempt_id))
+        .map(|worker| worker.attempt_id)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1169,6 +1212,16 @@ fn validate_network_config(config: NetworkConfig) -> Result<(), DownloadError> {
     if config.peer_connect_timeout.is_zero() {
         return Err(DownloadError::InvalidNetworkTimeout {
             operation: "peer connect",
+        });
+    }
+    if config.utp_fallback_timeout.is_zero() {
+        return Err(DownloadError::InvalidNetworkTimeout {
+            operation: "uTP fallback",
+        });
+    }
+    if config.outgoing_handshake_timeout.is_zero() {
+        return Err(DownloadError::InvalidNetworkTimeout {
+            operation: "outgoing handshake",
         });
     }
     if config.peer_io_timeout.is_zero() {
@@ -2308,7 +2361,16 @@ enum MetadataPeerResult {
     },
     Cancelled {
         connection: PeerConnection,
+        turnover: bool,
     },
+}
+
+struct MetadataWorkerControl {
+    attempt: DialAttempt,
+    cancellation: CancellationToken,
+    connected_at: Duration,
+    turnover_requested: bool,
+    turnover: Arc<AtomicBool>,
 }
 
 #[derive(Clone, Debug)]
@@ -2390,7 +2452,7 @@ impl MetadataPeerResult {
         match self {
             Self::Complete { connection, .. }
             | Self::Failed { connection, .. }
-            | Self::Cancelled { connection } => connection.attempt(),
+            | Self::Cancelled { connection, .. } => connection.attempt(),
         }
     }
 }
@@ -3480,8 +3542,7 @@ impl TorrentPeerCoordinator {
         let mut sockets = PeerSocketSet::with_owners(self.peer_budget.clone(), self.mse_dh.clone())
             .with_bandwidth(self.peers.bandwidth());
         let mut workers = JoinSet::new();
-        let mut worker_cancellations: BTreeMap<DialAttemptId, (DialAttempt, CancellationToken)> =
-            BTreeMap::new();
+        let mut worker_controls: BTreeMap<DialAttemptId, MetadataWorkerControl> = BTreeMap::new();
         let mut dial_pacer = MetadataDialPacer::new(limits.max_attempts_per_second);
         let mut discovery_failed_while_active = false;
         let metadata = Arc::new(Mutex::new(TorrentMetadataDownload::new(identity)));
@@ -3489,9 +3550,9 @@ impl TorrentPeerCoordinator {
         loop {
             let address_families = self.peers.address_family_policy();
             sockets.cancel_disallowed(address_families);
-            for (attempt, cancellation) in worker_cancellations.values() {
-                if !address_families.permits(attempt.endpoint().address().ip()) {
-                    cancellation.cancel();
+            for worker in worker_controls.values() {
+                if !address_families.permits(worker.attempt.endpoint().address().ip()) {
+                    worker.cancellation.cancel();
                 }
             }
             self.peers
@@ -3555,6 +3616,49 @@ impl TorrentPeerCoordinator {
                     return Err(download_peer_set_error(error));
                 }
                 dial_pacer.record_attempt(self.elapsed());
+            }
+
+            let now = self.elapsed();
+            let cohort_is_full = !metadata_cohort_has_capacity(
+                sockets.pending_len(),
+                workers.len(),
+                limits.max_peers,
+            );
+            let replacement_waiting = cohort_is_full
+                && dial_pacer.is_ready(now)
+                && self
+                    .select_candidate(PeerSelectionContext { now })
+                    .is_some();
+            let turnover_pending = worker_controls
+                .values()
+                .any(|worker| worker.turnover_requested);
+            if replacement_waiting && !turnover_pending {
+                let candidate = {
+                    let metadata = metadata
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    select_metadata_turnover_candidate(
+                        worker_controls
+                            .values()
+                            .map(|worker| MetadataWorkerTurnoverState {
+                                attempt_id: worker.attempt.id(),
+                                connected_at: worker.connected_at,
+                                turnover_requested: worker.turnover_requested,
+                                contributed: metadata
+                                    .received_blocks_for_peer(worker.attempt.id().get())
+                                    != 0,
+                            }),
+                        now,
+                        limits.saturated_no_progress_grace,
+                    )
+                };
+                if let Some(candidate) = candidate
+                    && let Some(worker) = worker_controls.get_mut(&candidate)
+                {
+                    worker.turnover_requested = true;
+                    worker.turnover.store(true, Ordering::Release);
+                    worker.cancellation.cancel();
+                }
             }
 
             self.control.observe_metadata_supervisor(
@@ -3634,7 +3738,7 @@ impl TorrentPeerCoordinator {
                         self,
                         &mut sockets,
                         &mut workers,
-                        &mut worker_cancellations,
+                        &mut worker_controls,
                     )
                     .await?;
                     return Err(DownloadError::Cancelled);
@@ -3657,8 +3761,17 @@ impl TorrentPeerCoordinator {
                             self.control
                                 .metadata_peer_connected(attempt, handshake.supports_extensions());
                             let cancellation = CancellationToken::new();
-                            worker_cancellations
-                                .insert(attempt.id(), (attempt, cancellation.clone()));
+                            let turnover = Arc::new(AtomicBool::new(false));
+                            worker_controls.insert(
+                                attempt.id(),
+                                MetadataWorkerControl {
+                                    attempt,
+                                    cancellation: cancellation.clone(),
+                                    connected_at: self.elapsed(),
+                                    turnover_requested: false,
+                                    turnover: turnover.clone(),
+                                },
+                            );
                             let control = self.control.clone();
                             let metadata = metadata.clone();
                             let admission_cancellation = connection.budget_cancellation();
@@ -3671,6 +3784,7 @@ impl TorrentPeerCoordinator {
                                     admission_cancellation,
                                     control,
                                     metadata,
+                                    turnover,
                                 )
                                 .await
                             });
@@ -3704,7 +3818,7 @@ impl TorrentPeerCoordinator {
                         self,
                         &mut sockets,
                         &mut workers,
-                        &mut worker_cancellations,
+                        &mut worker_controls,
                     )
                     .await?;
                     return Err(DownloadError::PeerTask(
@@ -3716,7 +3830,7 @@ impl TorrentPeerCoordinator {
                         self,
                         &mut sockets,
                         &mut workers,
-                        &mut worker_cancellations,
+                        &mut worker_controls,
                     )
                     .await?;
                     return Err(download_peer_set_error(error));
@@ -3728,12 +3842,12 @@ impl TorrentPeerCoordinator {
                         metainfo,
                     })) => {
                         let metainfo = *metainfo;
-                        worker_cancellations.remove(&connection.attempt().id());
+                        worker_controls.remove(&connection.attempt().id());
                         cleanup_metadata_attempts(
                             self,
                             &mut sockets,
                             &mut workers,
-                            &mut worker_cancellations,
+                            &mut worker_controls,
                         )
                         .await?;
                         self.connection = Some(connection);
@@ -3743,21 +3857,27 @@ impl TorrentPeerCoordinator {
                         return Ok((raw_info, metainfo));
                     }
                     Some(Ok(MetadataPeerResult::Failed { connection, error })) => {
-                        worker_cancellations.remove(&connection.attempt().id());
+                        worker_controls.remove(&connection.attempt().id());
                         let failure = peer_failure(&error);
                         self.connection_closed(connection.attempt(), Some(failure))?;
                         self.last_error = Some(error);
                     }
-                    Some(Ok(MetadataPeerResult::Cancelled { connection })) => {
-                        worker_cancellations.remove(&connection.attempt().id());
-                        self.connection_closed(connection.attempt(), None)?;
+                    Some(Ok(MetadataPeerResult::Cancelled {
+                        connection,
+                        turnover,
+                    })) => {
+                        worker_controls.remove(&connection.attempt().id());
+                        self.connection_closed(
+                            connection.attempt(),
+                            turnover.then_some(PeerFailure::Protocol),
+                        )?;
                     }
                     Some(Err(error)) => {
                         cleanup_metadata_attempts(
                             self,
                             &mut sockets,
                             &mut workers,
-                            &mut worker_cancellations,
+                            &mut worker_controls,
                         )
                         .await?;
                         return Err(DownloadError::PeerTask(error.to_string()));
@@ -3767,7 +3887,7 @@ impl TorrentPeerCoordinator {
                             self,
                             &mut sockets,
                             &mut workers,
-                            &mut worker_cancellations,
+                            &mut worker_controls,
                         )
                         .await?;
                         return Err(DownloadError::PeerTask(
@@ -3901,6 +4021,7 @@ async fn run_metadata_peer(
     admission_cancellation: Option<CancellationToken>,
     control: DownloadControl,
     metadata: Arc<Mutex<TorrentMetadataDownload>>,
+    turnover: Arc<AtomicBool>,
 ) -> MetadataPeerResult {
     if matches!(identity, FullInfoHash::V2(_)) {
         connection.set_protocol(PeerProtocol::V2);
@@ -3936,11 +4057,18 @@ async fn run_metadata_peer(
             let detail = error.to_string();
             control.metadata_peer_finished(attempt.id(), MetadataPeerStage::Failed, Some(&detail));
         }
-        None => control.metadata_peer_finished(
-            attempt.id(),
-            MetadataPeerStage::Cancelled,
-            Some("metadata attempt cancelled"),
-        ),
+        None => {
+            let detail = if turnover.load(Ordering::Acquire) {
+                "metadata peer replaced after saturated no-progress grace"
+            } else {
+                "metadata attempt cancelled"
+            };
+            control.metadata_peer_finished(
+                attempt.id(),
+                MetadataPeerStage::Cancelled,
+                Some(detail),
+            );
+        }
     }
     match result {
         Some(Ok((raw_info, metainfo))) => MetadataPeerResult::Complete {
@@ -3949,7 +4077,10 @@ async fn run_metadata_peer(
             metainfo: Box::new(metainfo),
         },
         Some(Err(error)) => MetadataPeerResult::Failed { connection, error },
-        None => MetadataPeerResult::Cancelled { connection },
+        None => MetadataPeerResult::Cancelled {
+            connection,
+            turnover: turnover.load(Ordering::Acquire),
+        },
     }
 }
 
@@ -3957,13 +4088,13 @@ async fn cleanup_metadata_attempts(
     peers: &mut TorrentPeerCoordinator,
     sockets: &mut PeerSocketSet,
     workers: &mut JoinSet<MetadataPeerResult>,
-    worker_cancellations: &mut BTreeMap<DialAttemptId, (DialAttempt, CancellationToken)>,
+    worker_controls: &mut BTreeMap<DialAttemptId, MetadataWorkerControl>,
 ) -> Result<(), DownloadError> {
     let mut first_error = None;
     for attempt in sockets
         .pending_attempts()
         .into_iter()
-        .chain(worker_cancellations.values().map(|(attempt, _)| *attempt))
+        .chain(worker_controls.values().map(|worker| worker.attempt))
     {
         if let Err(error) = peers.begin_disconnect(attempt, None)
             && first_error.is_none()
@@ -3971,8 +4102,8 @@ async fn cleanup_metadata_attempts(
             first_error = Some(error);
         }
     }
-    for (_, cancellation) in worker_cancellations.values() {
-        cancellation.cancel();
+    for worker in worker_controls.values() {
+        worker.cancellation.cancel();
     }
 
     match std::mem::take(sockets).shutdown().await {
@@ -3997,7 +4128,7 @@ async fn cleanup_metadata_attempts(
         match joined {
             Ok(result) => {
                 let attempt = result.attempt();
-                worker_cancellations.remove(&attempt.id());
+                worker_controls.remove(&attempt.id());
                 if let Err(error) = peers.connection_closed(attempt, None)
                     && first_error.is_none()
                 {
@@ -4010,8 +4141,8 @@ async fn cleanup_metadata_attempts(
             Err(_) => {}
         }
     }
-    for (_, (attempt, _)) in std::mem::take(worker_cancellations) {
-        if let Err(error) = peers.connection_closed(attempt, None)
+    for (_, worker) in std::mem::take(worker_controls) {
+        if let Err(error) = peers.connection_closed(worker.attempt, None)
             && first_error.is_none()
         {
             first_error = Some(error);
@@ -4035,7 +4166,7 @@ fn peer_failure(error: &DownloadError) -> PeerFailure {
             ..
         } => PeerFailure::Connect,
         DownloadError::PeerTimedOut {
-            operation: "handshake read" | "handshake write",
+            operation: "handshake read" | "handshake write" | "handshake compute",
             ..
         } => PeerFailure::Handshake,
         DownloadError::Handshake(_) => PeerFailure::Handshake,

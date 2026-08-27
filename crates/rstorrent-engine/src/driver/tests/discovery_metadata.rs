@@ -2768,6 +2768,191 @@ async fn metadata_default_cohort_is_paced_to_thirty_and_cancels_exactly() {
 }
 
 #[tokio::test]
+async fn saturated_metadata_cohort_replaces_one_zero_contributor_and_protects_progress() {
+    let payload = vec![0x6b; 1_700];
+    let info = single_file_info_with_piece_length(&payload, 1);
+    assert!(
+        info.len() > 2 * rstorrent_protocol::metadata::METADATA_BLOCK_LENGTH,
+        "fixture must span at least three metadata blocks"
+    );
+    let info_hash: [u8; 20] = Sha1::digest(&info).into();
+    let mut listeners = Vec::new();
+    for _ in 0..=MAX_METADATA_PEERS {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind turnover metadata peer");
+        listeners.push(listener);
+    }
+    listeners.sort_by_key(|listener| listener.local_addr().expect("metadata address"));
+    let useful_listener = listeners.pop().expect("useful listener");
+    let contributing_listener = listeners.remove(0);
+    let contributing_address = contributing_listener
+        .local_addr()
+        .expect("contributing address");
+    let useful_address = useful_listener.local_addr().expect("useful address");
+    let mut magnet = format!(
+        "magnet:?xt=urn:btih:{}&x.pe={contributing_address}",
+        hex(&info_hash)
+    );
+    let contributing_task = tokio::spawn(serve_one_block_then_idle_metadata_peer(
+        contributing_listener,
+        info.clone(),
+    ));
+    let mut idle_tasks = Vec::new();
+    for listener in listeners {
+        let address = listener.local_addr().expect("idle address");
+        magnet.push_str(&format!("&x.pe={address}"));
+        idle_tasks.push(tokio::spawn(serve_idle_metadata_peer(
+            listener,
+            info_hash,
+            info.len(),
+        )));
+    }
+    magnet.push_str(&format!("&x.pe={useful_address}"));
+    let useful_task = tokio::spawn(serve_metadata_bytes_after_delay_with_timeout(
+        useful_listener,
+        info_hash,
+        info.clone(),
+        Duration::ZERO,
+        Duration::from_secs(8),
+    ));
+    let parsed = Magnet::parse(&magnet).expect("parse turnover magnet");
+    let control = DownloadControl::new();
+    let mut peers = TorrentPeerCoordinator::from_magnet(
+        &parsed,
+        loopback_network(Duration::from_secs(6)),
+        control.clone(),
+        None,
+    )
+    .await
+    .expect("resolve turnover peers");
+    let limits = MetadataConnectionLimits::DEFAULT
+        .with_saturated_no_progress_grace(Duration::from_millis(250));
+
+    let acquisition = timeout(
+        Duration::from_secs(12),
+        peers.acquire_metadata(info_hash, limits),
+    )
+    .await
+    .unwrap_or_else(|_| {
+        panic!(
+            "saturated turnover completion bound: {:#?}",
+            control.diagnostic_snapshot().metadata
+        )
+    });
+    let (raw_info, _) = acquisition.expect("replacement candidate completes metadata");
+    assert_eq!(raw_info, info);
+    let snapshot = control.diagnostic_snapshot().metadata;
+    assert_eq!(snapshot.phase, MetadataAcquisitionPhase::Complete);
+    assert_eq!(snapshot.total_attempts, MAX_METADATA_PEERS + 1);
+    assert_eq!(snapshot.total_blocks_received, 3);
+    let replaced = snapshot
+        .recent_attempts
+        .iter()
+        .filter(|peer| {
+            peer.terminal_detail.as_deref()
+                == Some("metadata peer replaced after saturated no-progress grace")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(replaced.len(), 1);
+    assert_eq!(replaced[0].blocks_received, 0);
+    assert!(snapshot.recent_attempts.iter().any(|peer| {
+        peer.blocks_received == 1
+            && peer.terminal_detail.as_deref()
+                != Some("metadata peer replaced after saturated no-progress grace")
+    }));
+    assert!(
+        snapshot
+            .recent_attempts
+            .iter()
+            .any(|peer| { peer.stage == MetadataPeerStage::Complete && peer.blocks_received == 2 })
+    );
+    assert_eq!(snapshot.pending_dials, 0);
+    assert_eq!(snapshot.active_workers, 0);
+    assert!(snapshot.active_attempts.is_empty());
+
+    peers.close_current(None).expect("close metadata winner");
+    for task in idle_tasks
+        .into_iter()
+        .chain([contributing_task, useful_task])
+    {
+        timeout(Duration::from_secs(1), task)
+            .await
+            .expect("turnover fixture joined")
+            .expect("turnover fixture task");
+    }
+}
+
+#[tokio::test]
+async fn sparse_metadata_swarm_does_not_turn_over_without_a_replacement() {
+    let payload = b"sparse metadata turnover protection".to_vec();
+    let info = single_file_info(&payload);
+    let info_hash: [u8; 20] = Sha1::digest(&info).into();
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind sparse metadata peer");
+    let address = listener.local_addr().expect("sparse metadata address");
+    let peer_task = tokio::spawn(serve_idle_metadata_peer(listener, info_hash, info.len()));
+    let magnet = Magnet::parse(&format!(
+        "magnet:?xt=urn:btih:{}&x.pe={address}",
+        hex(&info_hash)
+    ))
+    .expect("parse sparse metadata magnet");
+    let control = DownloadControl::new();
+    let peers = TorrentPeerCoordinator::from_magnet(
+        &magnet,
+        loopback_network(Duration::from_secs(3)),
+        control.clone(),
+        None,
+    )
+    .await
+    .expect("resolve sparse metadata peer");
+    let limits = MetadataConnectionLimits::DEFAULT
+        .with_saturated_no_progress_grace(Duration::from_millis(100));
+    let task_control = control.clone();
+    let task = tokio::spawn(async move {
+        let mut peers = peers;
+        let result = peers.acquire_metadata(info_hash, limits).await;
+        (peers, result)
+    });
+
+    timeout(Duration::from_secs(1), async {
+        loop {
+            if control.diagnostic_snapshot().metadata.active_workers == 1 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("sparse metadata worker connects");
+    tokio::time::sleep(Duration::from_millis(350)).await;
+    let active = control.diagnostic_snapshot().metadata;
+    assert_eq!(active.total_attempts, 1);
+    assert_eq!(active.active_workers, 1);
+    assert!(active.recent_attempts.iter().all(|peer| {
+        peer.terminal_detail.as_deref()
+            != Some("metadata peer replaced after saturated no-progress grace")
+    }));
+
+    task_control.cancel();
+    let (peers, result) = timeout(Duration::from_secs(1), task)
+        .await
+        .expect("sparse cancellation joins")
+        .expect("sparse metadata task");
+    assert!(matches!(result, Err(DownloadError::Cancelled)));
+    drop(peers);
+    let terminal = control.diagnostic_snapshot().metadata;
+    assert_eq!(terminal.pending_dials, 0);
+    assert_eq!(terminal.active_workers, 0);
+    assert!(terminal.active_attempts.is_empty());
+    timeout(Duration::from_secs(1), peer_task)
+        .await
+        .expect("sparse peer observes closure")
+        .expect("sparse peer task");
+}
+
+#[tokio::test]
 async fn metadata_blocks_from_multiple_peers_complete_one_dictionary() {
     let payload = vec![0x5a; 1_700];
     let info = single_file_info_with_piece_length(&payload, 1);

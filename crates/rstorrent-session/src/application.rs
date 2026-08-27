@@ -511,6 +511,16 @@ impl ApplicationService {
                 "peer connect timeout must be nonzero".to_owned(),
             ));
         }
+        if config.network.utp_fallback_timeout.is_zero() {
+            return Err(ApplicationError::Configuration(
+                "uTP fallback timeout must be nonzero".to_owned(),
+            ));
+        }
+        if config.network.outgoing_handshake_timeout.is_zero() {
+            return Err(ApplicationError::Configuration(
+                "outgoing handshake timeout must be nonzero".to_owned(),
+            ));
+        }
         if config.network.peer_io_timeout.is_zero() {
             return Err(ApplicationError::Configuration(
                 "peer I/O timeout must be nonzero".to_owned(),

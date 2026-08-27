@@ -227,7 +227,13 @@ pub struct NetworkConfig {
     pub peer_exchange: bool,
     /// Restrict initiated MSE handshakes to RC4 payload encryption.
     pub mse_rc4_only: bool,
+    /// Total lifetime of one initiated transport and BitTorrent handshake.
     pub peer_connect_timeout: Duration,
+    /// Maximum time spent preferring uTP before falling back to TCP.
+    pub utp_fallback_timeout: Duration,
+    /// Maximum outgoing BitTorrent/MSE handshake time within the attempt.
+    pub outgoing_handshake_timeout: Duration,
+    /// Timeout for established peer reads and writes.
     pub peer_io_timeout: Duration,
     pub peer_id: [u8; 20],
     pub encryption: PeerEncryptionPolicy,
@@ -245,6 +251,8 @@ impl NetworkConfig {
             peer_exchange: true,
             mse_rc4_only: false,
             peer_connect_timeout,
+            utp_fallback_timeout: Duration::from_secs(3),
+            outgoing_handshake_timeout: Duration::from_secs(10),
             peer_io_timeout,
             peer_id: DEFAULT_PEER_ID,
             encryption: PeerEncryptionPolicy::Allow,
@@ -268,6 +276,16 @@ impl NetworkConfig {
 
     pub const fn with_mse_rc4_only(mut self, mse_rc4_only: bool) -> Self {
         self.mse_rc4_only = mse_rc4_only;
+        self
+    }
+
+    pub const fn with_utp_fallback_timeout(mut self, timeout: Duration) -> Self {
+        self.utp_fallback_timeout = timeout;
+        self
+    }
+
+    pub const fn with_outgoing_handshake_timeout(mut self, timeout: Duration) -> Self {
+        self.outgoing_handshake_timeout = timeout;
         self
     }
 
@@ -306,9 +324,29 @@ mod tests {
         );
         assert!(defaults.peer_exchange);
         assert!(!defaults.mse_rc4_only);
-        let matched = defaults.with_peer_exchange(false).with_mse_rc4_only(true);
+        assert_eq!(
+            defaults.utp_fallback_timeout,
+            std::time::Duration::from_secs(3)
+        );
+        assert_eq!(
+            defaults.outgoing_handshake_timeout,
+            std::time::Duration::from_secs(10)
+        );
+        let matched = defaults
+            .with_peer_exchange(false)
+            .with_mse_rc4_only(true)
+            .with_utp_fallback_timeout(std::time::Duration::from_millis(250))
+            .with_outgoing_handshake_timeout(std::time::Duration::from_millis(500));
         assert!(!matched.peer_exchange);
         assert!(matched.mse_rc4_only);
+        assert_eq!(
+            matched.utp_fallback_timeout,
+            std::time::Duration::from_millis(250)
+        );
+        assert_eq!(
+            matched.outgoing_handshake_timeout,
+            std::time::Duration::from_millis(500)
+        );
     }
 
     #[test]

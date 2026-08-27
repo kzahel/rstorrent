@@ -48,19 +48,20 @@ use super::{
     DownloadError, DownloadResourceLimits, MAX_CONCURRENT_TRACKER_OPERATIONS,
     MAX_DIAGNOSTIC_ERROR_LENGTH, MAX_METADATA_PEERS, MAX_RECENT_METADATA_ATTEMPTS,
     MagnetDownloadConfig, MetadataAcquisitionPhase, MetadataConnectionLimits, MetadataDialPacer,
-    MetadataPeerStage, PeerConnection, PreparedContentWrite, QueuedContentStorageCommand,
-    ResumableMagnetDownloadConfig, ResumableMetainfoDownloadConfig, ResumeArtifactState,
-    ResumedStorage, SwarmConfig, TorrentPeerCoordinator, TrackerManager, UdpTrackerAnnounce,
-    UdpTrackerExchange, UdpTrackerTiming, UdpTrackerTokenCache, announce_udp_tracker,
-    announce_udp_tracker_address, atomic_saturating_add, atomic_saturating_increment,
-    build_content_plan_window, coalesce_content_writes, collect_content_write_batch,
-    content_dial_slot_available, content_storage_job_limit, download_magnet,
-    download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
+    MetadataPeerStage, MetadataWorkerTurnoverState, PeerConnection, PreparedContentWrite,
+    QueuedContentStorageCommand, ResumableMagnetDownloadConfig, ResumableMetainfoDownloadConfig,
+    ResumeArtifactState, ResumedStorage, SwarmConfig, TorrentPeerCoordinator, TrackerManager,
+    UdpTrackerAnnounce, UdpTrackerExchange, UdpTrackerTiming, UdpTrackerTokenCache,
+    announce_udp_tracker, announce_udp_tracker_address, atomic_saturating_add,
+    atomic_saturating_increment, build_content_plan_window, coalesce_content_writes,
+    collect_content_write_batch, content_dial_slot_available, content_storage_job_limit,
+    download_magnet, download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
     download_magnet_with_control, download_verified_piece, download_verified_piece_with_control,
     dry_swarm_probe_available, execute_content_storage_verification,
     execute_content_storage_writes, full_recheck_managed_storage, metadata_cohort_has_capacity,
     next_peer_message, resume_magnet, resume_magnet_with_control, resume_metainfo_with_control,
-    retrying_dht_lookup, run_content_download, run_magnet_download_with_peers, send_message,
+    retrying_dht_lookup, run_content_download, run_magnet_download_with_peers,
+    select_metadata_turnover_candidate, send_message, validate_network_config,
     validate_v1_runtime_identity,
 };
 
@@ -1968,6 +1969,77 @@ async fn serve_idle_metadata_peer(
     }
 }
 
+async fn serve_one_block_then_idle_metadata_peer(listener: TcpListener, info: Vec<u8>) {
+    let (mut stream, _) = listener.accept().await.expect("accept metadata client");
+    let info_hash: [u8; 20] = Sha1::digest(&info).into();
+    let mut handshake_bytes = [0; HANDSHAKE_LENGTH];
+    stream
+        .read_exact(&mut handshake_bytes)
+        .await
+        .expect("read client handshake");
+    assert!(
+        decode_handshake(&handshake_bytes, info_hash)
+            .expect("client handshake identity")
+            .supports_extensions()
+    );
+    let mut reserved = [0; 8];
+    reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
+    stream
+        .write_all(&encode_handshake_with_reserved(
+            info_hash,
+            scripted_peer_id(&listener, *b"-RS-USEFUL-000000000"),
+            reserved,
+        ))
+        .await
+        .expect("send server handshake");
+    let mut peer = PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(8));
+    assert!(matches!(
+        next_peer_message(&mut peer).await,
+        Ok(PeerMessage::Extended { id: 0, .. })
+    ));
+    send_message(
+        &mut peer,
+        &PeerMessage::Extended {
+            id: 0,
+            payload: encode_extension_handshake(Some(info.len())),
+        },
+    )
+    .await
+    .expect("send metadata extension handshake");
+
+    let mut contributed = false;
+    loop {
+        match next_peer_message(&mut peer).await {
+            Ok(PeerMessage::Extended { id: 1, payload }) if !contributed => {
+                let MetadataMessage::Request { piece } =
+                    parse_metadata_message(&payload).expect("parse metadata request")
+                else {
+                    panic!("expected metadata request");
+                };
+                let piece = usize::try_from(piece).expect("nonnegative metadata piece");
+                let begin = piece * rstorrent_protocol::metadata::METADATA_BLOCK_LENGTH;
+                let end =
+                    (begin + rstorrent_protocol::metadata::METADATA_BLOCK_LENGTH).min(info.len());
+                send_message(
+                    &mut peer,
+                    &PeerMessage::Extended {
+                        id: 1,
+                        payload: encode_metadata_data(piece as u32, info.len(), &info[begin..end])
+                            .expect("encode metadata block"),
+                    },
+                )
+                .await
+                .expect("send one metadata block");
+                contributed = true;
+            }
+            Ok(PeerMessage::Extended { id: 1, .. } | PeerMessage::KeepAlive) => {}
+            Err(DownloadError::PeerClosed | DownloadError::PeerTimedOut { .. }) => break,
+            Ok(message) => panic!("unexpected contributing metadata message {message:?}"),
+            Err(error) => panic!("contributing metadata peer failed: {error}"),
+        }
+    }
+}
+
 async fn serve_partial_metadata_peer(
     listener: TcpListener,
     info: Vec<u8>,
@@ -2060,6 +2132,23 @@ async fn serve_metadata_bytes_after_delay(
     bytes: Vec<u8>,
     extension_delay: Duration,
 ) {
+    serve_metadata_bytes_after_delay_with_timeout(
+        listener,
+        info_hash,
+        bytes,
+        extension_delay,
+        Duration::from_secs(3),
+    )
+    .await;
+}
+
+async fn serve_metadata_bytes_after_delay_with_timeout(
+    listener: TcpListener,
+    info_hash: [u8; 20],
+    bytes: Vec<u8>,
+    extension_delay: Duration,
+    io_timeout: Duration,
+) {
     let (mut stream, _) = listener.accept().await.expect("accept metadata client");
     let mut handshake_bytes = [0; HANDSHAKE_LENGTH];
     stream
@@ -2081,7 +2170,7 @@ async fn serve_metadata_bytes_after_delay(
         ))
         .await
         .expect("send server handshake");
-    let mut peer = PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(3));
+    let mut peer = PeerConnection::for_test(test_dial_attempt(), stream, io_timeout);
     assert!(matches!(
         next_peer_message(&mut peer).await,
         Ok(PeerMessage::Extended { id: 0, .. })
