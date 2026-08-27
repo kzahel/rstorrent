@@ -264,12 +264,6 @@ async fn connect_with_progress(
     utp_outcome: &mut Option<UtpConnectOutcome>,
     resources: ConnectResources<'_>,
 ) -> Result<(PeerConnection, Handshake), PeerSocketError> {
-    let DialHandshake {
-        info_hash,
-        hybrid_v2_hash,
-        advertise_extensions,
-        ..
-    } = handshake;
     let address = attempt.endpoint().address();
     if !network.policy.allows(address) {
         return Err(PeerSocketError::NetworkPolicyDenied {
@@ -303,9 +297,7 @@ async fn connect_with_progress(
             return connect_utp_with_progress(
                 stream,
                 attempt,
-                info_hash,
-                hybrid_v2_hash,
-                advertise_extensions,
+                handshake,
                 network,
                 attempt_deadline,
                 resources,
@@ -314,16 +306,7 @@ async fn connect_with_progress(
         }
         *utp_outcome = Some(UtpConnectOutcome::Failed);
     }
-    connect_tcp_with_progress(
-        attempt,
-        info_hash,
-        hybrid_v2_hash,
-        advertise_extensions,
-        network,
-        attempt_deadline,
-        resources,
-    )
-    .await
+    connect_tcp_with_progress(attempt, handshake, network, attempt_deadline, resources).await
 }
 
 fn utp_dial_eligible(address: std::net::SocketAddr, encryption: PeerEncryptionPolicy) -> bool {
@@ -352,13 +335,17 @@ pub(crate) fn preferred_transport(
 
 async fn connect_tcp_with_progress(
     attempt: DialAttempt,
-    info_hash: [u8; 20],
-    hybrid_v2_hash: Option<[u8; 20]>,
-    advertise_extensions: bool,
+    handshake: DialHandshake,
     network: NetworkConfig,
     attempt_deadline: OutboundAttemptDeadline,
     resources: ConnectResources<'_>,
 ) -> Result<(PeerConnection, Handshake), PeerSocketError> {
+    let DialHandshake {
+        info_hash,
+        hybrid_v2_hash,
+        advertise_extensions,
+        ..
+    } = handshake;
     let ConnectResources {
         progress,
         byte_metric_sink,
@@ -548,13 +535,17 @@ async fn connect_tcp_with_progress(
 async fn connect_utp_with_progress(
     stream: UtpStream,
     attempt: DialAttempt,
-    info_hash: [u8; 20],
-    hybrid_v2_hash: Option<[u8; 20]>,
-    advertise_extensions: bool,
+    handshake: DialHandshake,
     network: NetworkConfig,
     attempt_deadline: OutboundAttemptDeadline,
     resources: ConnectResources<'_>,
 ) -> Result<(PeerConnection, Handshake), PeerSocketError> {
+    let DialHandshake {
+        info_hash,
+        hybrid_v2_hash,
+        advertise_extensions,
+        ..
+    } = handshake;
     let ConnectResources {
         progress,
         byte_metric_sink,

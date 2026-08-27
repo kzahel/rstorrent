@@ -2373,6 +2373,15 @@ struct MetadataWorkerControl {
     turnover: Arc<AtomicBool>,
 }
 
+struct MetadataWorkerRunContext {
+    identity: FullInfoHash,
+    cancellation: CancellationToken,
+    admission_cancellation: Option<CancellationToken>,
+    control: DownloadControl,
+    metadata: Arc<Mutex<TorrentMetadataDownload>>,
+    turnover: Arc<AtomicBool>,
+}
+
 #[derive(Clone, Debug)]
 enum AcquiredMetainfo {
     V1(Metainfo),
@@ -3779,12 +3788,14 @@ impl TorrentPeerCoordinator {
                                 run_metadata_peer(
                                     connection,
                                     handshake,
-                                    identity,
-                                    cancellation,
-                                    admission_cancellation,
-                                    control,
-                                    metadata,
-                                    turnover,
+                                    MetadataWorkerRunContext {
+                                        identity,
+                                        cancellation,
+                                        admission_cancellation,
+                                        control,
+                                        metadata,
+                                        turnover,
+                                    },
                                 )
                                 .await
                             });
@@ -4016,13 +4027,16 @@ fn configured_magnet_trackers(trackers: &[TrackerUrl]) -> Vec<TrackerConfig> {
 async fn run_metadata_peer(
     mut connection: PeerConnection,
     handshake: Handshake,
-    identity: FullInfoHash,
-    cancellation: CancellationToken,
-    admission_cancellation: Option<CancellationToken>,
-    control: DownloadControl,
-    metadata: Arc<Mutex<TorrentMetadataDownload>>,
-    turnover: Arc<AtomicBool>,
+    context: MetadataWorkerRunContext,
 ) -> MetadataPeerResult {
+    let MetadataWorkerRunContext {
+        identity,
+        cancellation,
+        admission_cancellation,
+        control,
+        metadata,
+        turnover,
+    } = context;
     if matches!(identity, FullInfoHash::V2(_)) {
         connection.set_protocol(PeerProtocol::V2);
     }
