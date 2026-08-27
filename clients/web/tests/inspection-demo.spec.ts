@@ -715,7 +715,7 @@ test("peer transfer limits stay operable across responsive layouts", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await openScenario(page, "healthy-download", 42_000);
+  await openScenario(page, "healthy-download", 42_000, true);
   await page.getByRole("tab", { name: "General" }).click();
 
   const details = page.getByRole("region", { name: "Torrent details" });
@@ -738,6 +738,9 @@ test("peer transfer limits stay operable across responsive layouts", async ({
   await upload.fill("48");
   await downloadUnlimited.uncheck();
   await download.fill("160");
+  await page.waitForTimeout(1_250);
+  await expect(downloadUnlimited).not.toBeChecked();
+  await expect(download).toHaveValue("160");
   await details.getByRole("button", { name: "Save torrent limits" }).click();
   await expect(
     details.getByText("Torrent peer transfer limits saved."),
@@ -772,6 +775,27 @@ test("peer transfer limits stay operable across responsive layouts", async ({
   );
   expect(violations).toEqual([]);
   await capture(page, "rstorrent-transfer-limits-phone.png");
+});
+
+test("global settings draft survives complete autoplay publications", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1_024, height: 800 });
+  await page.goto("/?demo=healthy-download&at=42000&autoplay=1");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Settings" });
+  await dialog.getByRole("tab", { name: "Connection & seeding" }).click();
+  const limit = dialog.getByRole("spinbutton", {
+    name: "Peer connection limit",
+  });
+  const save = dialog.getByRole("button", { name: "Save settings" });
+
+  await limit.fill("321");
+  await page.waitForTimeout(1_250);
+  await expect(limit).toHaveValue("321");
+  await save.click();
+  await expect(limit).toHaveValue("321");
+  await expect(save).toBeDisabled();
 });
 
 test("color themes follow or override system appearance and persist", async ({
@@ -1683,8 +1707,13 @@ test("full file catalog stays virtualized across wide compact and phone layouts"
   );
 });
 
-async function openScenario(page: Page, scenario: string, at: number) {
-  await page.goto(`/?demo=${scenario}&at=${at}&autoplay=0`);
+async function openScenario(
+  page: Page,
+  scenario: string,
+  at: number,
+  autoplay = false,
+) {
+  await page.goto(`/?demo=${scenario}&at=${at}&autoplay=${autoplay ? 1 : 0}`);
   await expect(page.getByText("RSTorrent", { exact: true })).toBeVisible();
   await expect(page.getByText("Demo data", { exact: true })).toBeVisible();
   await page

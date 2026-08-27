@@ -1,4 +1,4 @@
-import { useEffect, useRef, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import type { TorrentSettingsPatch, TransferRateLimit } from "../../api";
 import { useInspectionCommand, useInspectionStore } from "../context";
@@ -329,6 +329,7 @@ function TorrentRateLimits({
   const execute = useInspectionCommand();
   const durableRevision = useInspectionStore((state) => state.durableRevision);
   const transportPending = useRef(false);
+  const [acceptedMessage, setAcceptedMessage] = useState<string | null>(null);
   const authority = torrentRateDraft(torrent.transferLimits);
   const [draftState, dispatchDraft] = useSettingsDraft(
     torrent.id,
@@ -353,6 +354,7 @@ function TorrentRateLimits({
       return;
     }
     transportPending.current = true;
+    setAcceptedMessage(null);
     dispatchDraft({ type: "submit" });
     try {
       const result = await execute({
@@ -363,8 +365,10 @@ function TorrentRateLimits({
       if (result.resultingRevision === undefined) {
         throw new Error("Settings response did not include a durable revision.");
       }
+      setAcceptedMessage("Torrent peer transfer limits saved.");
       dispatchDraft({ type: "accept", revision: result.resultingRevision });
     } catch (error) {
+      setAcceptedMessage(null);
       dispatchDraft({
         type: "fail",
         message: error instanceof Error ? error.message : String(error),
@@ -373,6 +377,9 @@ function TorrentRateLimits({
       transportPending.current = false;
     }
   };
+  const status =
+    draftStatus(draftState, phase) ??
+    (phase === "pristine" ? acceptedMessage : null);
 
   return (
     <form className={styles.rateLimits} onSubmit={(event) => void submit(event)}>
@@ -430,8 +437,8 @@ function TorrentRateLimits({
         <button type="submit" disabled={patch === null || pending}>
           {pending ? "Saving…" : "Save torrent limits"}
         </button>
-        {draftStatus(draftState, phase) === null ? null : (
-          <output aria-live="polite">{draftStatus(draftState, phase)}</output>
+        {status === null ? null : (
+          <output aria-live="polite">{status}</output>
         )}
       </div>
     </form>

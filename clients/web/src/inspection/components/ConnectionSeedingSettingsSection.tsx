@@ -1,4 +1,4 @@
-import { useMemo, useRef, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 
 import type {
   AdvertisedPeerEndpointStatus,
@@ -79,6 +79,7 @@ export function ConnectionSeedingSettingsSection({
   );
   const draft = settingsDraftValue(draftState) ?? authority;
   const transportPending = useRef(false);
+  const [acceptedMessage, setAcceptedMessage] = useState<string | null>(null);
   const phase = settingsDraftPhase(draftState);
   const pending = phase === "submitting" || phase === "awaiting_view";
 
@@ -127,14 +128,17 @@ export function ConnectionSeedingSettingsSection({
       return;
     }
     transportPending.current = true;
+    setAcceptedMessage(null);
     dispatchDraft({ type: "submit" });
     try {
       const result = await onSave(patch);
       if (result.resultingRevision === undefined) {
         throw new Error("Settings response did not include a durable revision.");
       }
+      setAcceptedMessage("Settings accepted and applying.");
       dispatchDraft({ type: "accept", revision: result.resultingRevision });
     } catch (error) {
+      setAcceptedMessage(null);
       dispatchDraft({
         type: "fail",
         message: error instanceof Error ? error.message : String(error),
@@ -143,6 +147,9 @@ export function ConnectionSeedingSettingsSection({
       transportPending.current = false;
     }
   };
+  const status =
+    clientDraftStatus(draftState, phase) ??
+    (phase === "pristine" ? acceptedMessage : null);
 
   return (
     <fieldset className={styles.section}>
@@ -420,7 +427,7 @@ export function ConnectionSeedingSettingsSection({
             Cancel changes
           </button>
         </div>
-        {clientDraftStatus(draftState, phase) === null ? null : (
+        {status === null ? null : (
           <output
             className={
               phase === "failed" || phase === "conflict"
@@ -430,7 +437,7 @@ export function ConnectionSeedingSettingsSection({
             role={phase === "failed" || phase === "conflict" ? "alert" : "status"}
             aria-live="polite"
           >
-            {clientDraftStatus(draftState, phase)}
+            {status}
           </output>
         )}
       </form>

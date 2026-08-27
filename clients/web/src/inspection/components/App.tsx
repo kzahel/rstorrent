@@ -475,7 +475,7 @@ function AppContent({
           clientSettings={clientSettings}
           downloadsManageable={demo === null}
           showCrostiniStorageHelp={hostedProduct === "crostini"}
-          clientSettingsManageable={demo === null}
+          clientSettingsManageable
           notifications={notifications}
           power={power}
           webAuth={webAuth}

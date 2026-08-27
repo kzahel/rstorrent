@@ -1,5 +1,6 @@
 import type { InspectionApplication } from "../application";
 import type {
+  ClientSettings,
   SpeedHistoryView,
   SpeedMetric,
   SpeedRange,
@@ -54,6 +55,7 @@ export class DemoApplication implements InspectionApplication {
   private archived = new Set<string>();
   private removed = new Set<string>();
   private transferLimits = new Map<string, TorrentTransferLimits>();
+  private clientSettings: ClientSettings | null = null;
   private extraTorrentCount = 0;
   private commandLogs: LogRow[] = [];
   private snapshot: InspectionSnapshot;
@@ -218,9 +220,24 @@ export class DemoApplication implements InspectionApplication {
       case "choose_download_root":
       case "set_default_download_root":
       case "set_show_add_options":
-      case "update_client_settings":
       case "remove_download_root":
         return rejected("Download folder management is unavailable in demo scenarios");
+      case "update_client_settings":
+        this.clientSettings = {
+          ...(this.clientSettings ?? this.snapshot.clientSettings.configured),
+          ...command.patch,
+        };
+        this.addCommandLog(
+          "policy",
+          "Client settings changed in demo mode",
+          null,
+        );
+        this.advance(0);
+        return {
+          ...accepted("Connection and seeding settings saved"),
+          requestId: `demo-${this.revision}`,
+          resultingRevision: String(this.revision),
+        };
     }
   }
 
@@ -265,6 +282,7 @@ export class DemoApplication implements InspectionApplication {
         this.extraTorrentCount,
         this.commandLogs,
         this.transferLimits,
+        this.clientSettings,
       ),
       this.desiredViews,
     );
@@ -293,6 +311,7 @@ export class DemoApplication implements InspectionApplication {
     this.archived = new Set();
     this.removed = new Set();
     this.transferLimits = new Map();
+    this.clientSettings = null;
     this.extraTorrentCount = 0;
     this.commandLogs = [];
   }
@@ -598,6 +617,7 @@ function applyOverlays(
   extraTorrentCount: number,
   commandLogs: readonly LogRow[],
   transferLimits: ReadonlyMap<string, TorrentTransferLimits>,
+  clientSettings: ClientSettings | null,
 ): InspectionSnapshot {
   const torrents: Record<string, TorrentRow> = {};
   for (const id of source.torrentOrder) {
@@ -681,6 +701,10 @@ function applyOverlays(
     },
     torrentOrder,
     torrents,
+    clientSettings:
+      clientSettings === null
+        ? source.clientSettings
+        : { ...source.clientSettings, configured: clientSettings },
     peersByTorrent: Object.fromEntries(
       Object.entries(source.peersByTorrent).filter(([torrentId]) => !removed.has(torrentId)),
     ),
@@ -901,6 +925,7 @@ function diffSnapshots(
     revision: next.revision,
     durableRevision: next.durableRevision,
     session: next.session,
+    clientSettings: next.clientSettings,
     ...(next.demo === null ? {} : { demo: next.demo }),
     ...(torrentUpserts.length === 0 &&
     torrentRemoved.length === 0 &&
