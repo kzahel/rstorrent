@@ -390,6 +390,12 @@ The repository now proves these parts of this direction:
   and keeps configuration/profile/payload modes at `0600`/`0700`/`0700`.
   Firewall, router, TLS, DNS, unrelated user units, and existing lingering
   policy were untouched.
+- A 2026-08-27 phone white-page report exposed that hosted `index.html` had no
+  explicit cache contract across same-version repair. The mutable shell and
+  classic boot guard now use `no-store`, content-hashed assets are immutable,
+  and a visible loading/no-JavaScript/delayed-failure shell replaces silent
+  white startup. Exact phone-sized desktop Chrome and repaired-package service
+  evidence pass; the reporting phone's browser console was unavailable.
 
 The important remaining gaps are:
 

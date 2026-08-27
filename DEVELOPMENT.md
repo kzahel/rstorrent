@@ -399,6 +399,12 @@ The browser uses the same backend verifier for quiet startup/daily checks and
 visible manual results. It displays the exact shell command but cannot install
 a package or restart the service.
 
+Hosted `index.html` and the classic boot guard are intentionally `no-store`;
+content-hashed `/assets/*` files are immutable. Preserve that split across
+gateway or packaging changes: same-version repair may replace the shell and
+prune old hashed assets. The initial shell shows loading, disabled-JavaScript,
+or bounded module-start failure text rather than leaving a blank page.
+
 For a deliberately credential-free trusted home LAN, configure one exact
 non-loopback RFC 1918 address and its matching plain HTTP origin:
 

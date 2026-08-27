@@ -238,7 +238,7 @@ No reference source, fixture, or test data is copied.
 
 ## Implementation And Evidence
 
-The implementation landed as five reviewable commits:
+The initial implementation landed as five reviewable commits:
 
 - `f5feb13` records this tactical and temporarily selects it as **Now**;
 - `0b15f02` adds the strict signed manifest, bounded verifier/downloader/safe
@@ -252,8 +252,8 @@ The implementation landed as five reviewable commits:
 - `bea7477` creates and protects the non-browser profile root only after
   listener admission.
 
-The final x86_64 package constructed twice byte-identically and validated as
-19 files with 69,245,972 uncompressed bytes. The installed archive is
+The initial x86_64 package constructed twice byte-identically and validated as
+19 files with 69,245,972 uncompressed bytes. Its installed archive was
 `rstorrent-headless-0.1.0-linux-x86_64.tar.gz`, SHA-256
 `e90b3eb49a426ea52ce749928659f72491a5f5393dfb7348cf421c24acc31a3b`.
 The workstation has no ARM64 Rust target or cross-linker, so no current-source
@@ -293,6 +293,36 @@ website deployment occur, manual update checks may report that no production
 channel is reachable. Published artifact acceptance and physical Raspberry Pi
 service/update evidence are the next release operations, not claims of this
 tactical.
+
+### 2026-08-27 phone boot repair
+
+The first phone visit reached the exact LAN HTML but displayed a white page.
+The installed page and application connection rendered correctly in desktop
+Chrome at the phone's exact 456-by-1024 viewport, so the service, responsive
+layout, and live backend path were healthy. The hosted static response had no
+cache contract: a browser could retain mutable `index.html` across a
+same-version repair and then request content-hashed modules that the immutable
+release directory no longer contained. The phone's console was unavailable,
+so that client-side sequence is the bounded diagnosis rather than a claimed
+captured exception.
+
+Commit `34edc7e` closes the server-side failure class. Mutable `index.html` and
+the classic boot guard now use `Cache-Control: no-store`; content-hashed
+`/assets/*` responses use a one-year immutable policy. The HTML starts with a
+visible loading status, a no-JavaScript message, and an ES5-compatible classic
+guard that replaces the status with a reload instruction when module loading
+errors or does not complete within ten seconds. Gateway cache-policy tests,
+two boot-shell tests, web typecheck/build/CSP, and a 456-by-1024 exact-service
+Chrome capture pass. Commit `7bb7183` also makes installer output describe the
+configured health check rather than falsely calling `lan-none` readiness
+authenticated.
+
+The repaired final x86_64 package again constructs twice byte-identically. It
+validates as 20 files with 69,260,221 uncompressed bytes and SHA-256
+`fb390c41e88ea2e9743e6a743c22b68299975d3cbd6b30fade0c0587b2f41428`.
+Same-version repair restored the enabled running service; the exact index now
+returns `no-store`, its hashed module returns `immutable`, health and status
+remain correct, and `NRestarts` remains zero.
 
 ## Non-Goals And Next Boundary
 
