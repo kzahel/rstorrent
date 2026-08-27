@@ -975,6 +975,7 @@ impl GatewayServer {
                 );
             }
             router = router.fallback_service(ServeDir::new(&assets.root));
+            router = router.layer(middleware::from_fn(hosted_asset_cache_policy));
         }
         router = router.layer(middleware::from_fn_with_state(
             self.state.clone(),
@@ -992,6 +993,27 @@ impl GatewayServer {
         .await
         .map_err(GatewayError::Serve)
     }
+}
+
+async fn hosted_asset_cache_policy(request: Request, next: Next) -> Response {
+    let cache_control = match (request.method(), request.uri().path()) {
+        (&Method::GET | &Method::HEAD, "/" | "/index.html" | "/rstorrent-boot.js") => {
+            Some(HeaderValue::from_static("no-store"))
+        }
+        (&Method::GET | &Method::HEAD, path) if path.starts_with("/assets/") => Some(
+            HeaderValue::from_static("public, max-age=31536000, immutable"),
+        ),
+        _ => None,
+    };
+    let mut response = next.run(request).await;
+    if response.status().is_success()
+        && let Some(cache_control) = cache_control
+    {
+        response
+            .headers_mut()
+            .insert(header::CACHE_CONTROL, cache_control);
+    }
+    response
 }
 
 async fn require_host_and_basic_auth(
@@ -4305,8 +4327,11 @@ mod tests {
     async fn private_lan_none_requires_exact_host_and_http_websocket_origin() {
         let root = test_root("private-lan-none");
         let web_root = root.join("web");
-        std::fs::create_dir_all(&web_root).expect("create web root");
+        std::fs::create_dir_all(web_root.join("assets")).expect("create web root");
         std::fs::write(web_root.join("index.html"), b"private-lan-index").expect("write index");
+        std::fs::write(web_root.join("rstorrent-boot.js"), b"boot").expect("write boot script");
+        std::fs::write(web_root.join("assets/app-deadbeef.js"), b"asset")
+            .expect("write immutable asset");
         let service = test_service(&root).await;
         let reservation = std::net::TcpListener::bind("127.0.0.1:0").expect("reserve port");
         let port = reservation.local_addr().expect("reserved address").port();
@@ -4339,9 +4364,30 @@ mod tests {
         let task = tokio::spawn(server.serve(shutdown.clone()));
         let host = address.to_string();
 
-        assert_eq!(
-            raw_get_with_host(address, &host, "/").await.2,
-            b"private-lan-index"
+        let (status, headers, body) = raw_get_with_host(address, &host, "/").await;
+        assert_eq!(status, 200);
+        assert_eq!(body, b"private-lan-index");
+        assert!(
+            headers
+                .to_ascii_lowercase()
+                .contains("cache-control: no-store")
+        );
+        let (status, headers, body) = raw_get_with_host(address, &host, "/rstorrent-boot.js").await;
+        assert_eq!(status, 200);
+        assert_eq!(body, b"boot");
+        assert!(
+            headers
+                .to_ascii_lowercase()
+                .contains("cache-control: no-store")
+        );
+        let (status, headers, body) =
+            raw_get_with_host(address, &host, "/assets/app-deadbeef.js").await;
+        assert_eq!(status, 200);
+        assert_eq!(body, b"asset");
+        assert!(
+            headers
+                .to_ascii_lowercase()
+                .contains("cache-control: public, max-age=31536000, immutable")
         );
         assert_eq!(
             raw_get_with_host(address, "wrong.example", "/").await.0,
