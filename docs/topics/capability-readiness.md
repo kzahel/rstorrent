@@ -126,6 +126,16 @@ Linux/web/Android gate pass; the updated SwiftUI source still needs its
 macOS-only simulator/archive compile. Tactical `176` remains the sole **Now**
 until that stopping-condition gate closes.
 
+Explicit user direction subsequently yields Tacticals `176` and `158` to
+bounded dry-swarm recovery Tactical
+[`177`](../tactical/177-bounded-dry-swarm-recovery.md). The observed running
+swarm exhausted its ordinary three-attempt ceiling for every retained peer and
+had no eligible, dialing, connected, or payload-active alternative despite
+continuing discovery. Tactical `177` retains that ceiling while adding exact
+tracker-source rehabilitation plus one globally paced transient-failure probe
+only when no ordinary action remains. It is the sole **Now** until its bounded
+runtime and repository evidence closes.
+
 The updater tactical's client, production route, five-target signed hosted
 rehearsal, public `0.1.0`, `0.1.1`, and `0.1.2` releases, installed macOS arm64
 launch smoke, and exact macOS arm64 and Linux arm64 `0.1.0`-to-`0.1.1` updates
@@ -613,13 +623,16 @@ exactly.
 
 ### Now
 
-- **Tactical `176`: durable High file priority.** Implementation, compatible
-  schema-19 migration, ordinary weighted scheduling, generated contracts,
-  React, and Android dual-ABI/APK gates pass while Tactical `139` remains the
-  stronger transient overlay. Run the updated iOS SwiftUI presentation through
-  its macOS-only simulator/archive compile, then complete the slice.
+- **Tactical `177`: bounded dry-swarm recovery.** Preserve the normal
+  three-failure ceiling, add pinned-libtorrent-compatible tracker-source
+  rehabilitation, and reserve one slowly paced transient-failure content probe
+  only when connected, incoming, dialing, eligible, and normally backed-off
+  alternatives are all absent.
 
 ### Next
+
+- Return to **Tactical `176`** for its updated iOS SwiftUI simulator/archive
+  compile, the only remaining stopping-condition gate.
 
 - Resume **Tactical `158`** and close the clean Windows and Linux x86_64
   update/install evidence plus Windows firewall-consent characterization.

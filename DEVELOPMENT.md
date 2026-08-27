@@ -43,8 +43,12 @@ machine-control.
 ## Current Tactical State
 
 The authoritative **Now** is
-[`158-desktop-signed-packaging-and-updater.md`](docs/tactical/158-desktop-signed-packaging-and-updater.md).
-It has resumed with its signed-candidate and installed-update gates unchanged.
+[`177-bounded-dry-swarm-recovery.md`](docs/tactical/177-bounded-dry-swarm-recovery.md).
+It retains the ordinary peer failure ceiling while adding exact tracker-source
+rehabilitation and one slowly paced transient-failure content probe only after
+every ordinary connection action is exhausted. Tactical `176` retains only
+its macOS-hosted iOS compile gate, and Tactical `158` retains its signed-
+candidate and installed-update gates unchanged.
 Completed Tactical `170` supplies the configured ordinary-user Linux headless
 service: strict versioned root/listener/origin/auth configuration, one process
 and profile owner, a disabled-by-default systemd user unit, rollback-safe
