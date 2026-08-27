@@ -345,7 +345,7 @@ On native x86_64 Linux, build and validate the ordinary-user package with:
 source ~/.profile
 scripts/build-headless-package.sh
 scripts/validate-headless-package.sh \
-  target/headless/rstorrent-headless-0.1.0-linux-x86_64.tar.gz
+  target/headless/rstorrent-headless-0.1.1-linux-x86_64.tar.gz
 ```
 
 The same no-argument command on native ARM64 emits the `aarch64` archive. For
@@ -357,7 +357,7 @@ scripts/build-headless-package.sh \
   --architecture aarch64 \
   --binary-directory "$PWD/target/aarch64-unknown-linux-gnu/release"
 scripts/validate-headless-package.sh \
-  target/headless/rstorrent-headless-0.1.0-linux-aarch64.tar.gz
+  target/headless/rstorrent-headless-0.1.1-linux-aarch64.tar.gz
 ```
 
 Cross-host validation checks the complete archive and ELF architecture but
@@ -425,6 +425,55 @@ once per browser origin and keeps a compact `No auth` header status after it is
 dismissed. Clearing site data or changing the notice-key version presents the
 explanation again.
 
+For simultaneous trusted-LAN and Tailscale access, keep the direct LAN socket
+exact and add a second exact loopback backend for Tailscale Serve. Do not bind
+RSTorrent to `0.0.0.0` or directly to its Tailscale address. Back up the
+owner-protected version-1 configuration before replacing it with version 2:
+
+```toml
+version = 2
+profile_root = "/home/operator/.local/share/rstorrent-headless/profile"
+
+[[endpoints]]
+kind = "direct-lan"
+listen = "192.168.1.129:3030"
+public_origin = "http://192.168.1.129:3030"
+
+[[endpoints]]
+kind = "tailscale-serve"
+listen = "127.0.0.1:3031"
+public_origin = "https://server.tailnet-name.ts.net:8445"
+
+[[storage_roots]]
+id = "downloads"
+label = "Downloads"
+path = "/home/operator/Downloads/RSTorrent"
+
+[authentication]
+mode = "trusted-network-none"
+```
+
+Protect the file with mode `0600`, restart the user unit, verify its direct
+loopback health with the exact external Host, inspect the existing Serve
+configuration, and then add only the selected unused HTTPS port:
+
+```bash
+curl --fail --header 'Host: server.tailnet-name.ts.net:8445' \
+  http://127.0.0.1:3031/healthz
+tailscale serve status
+sudo tailscale serve --bg --https=8445 http://127.0.0.1:3031
+tailscale serve status
+```
+
+Tailscale Serve owns the tailnet listener, HTTPS certificate, and tailnet
+policy boundary; RSTorrent owns the exact loopback backend plus external Host
+and Origin checks. RSTorrent adds no login in this mode, so every tailnet
+identity permitted to reach the Serve route has full owner control. Do not
+enable Funnel. Preserve unrelated Serve routes, and treat ACL changes as a
+separate operator security decision. Version-1 configuration remains accepted
+for single-endpoint deployments and is the rollback path if the new endpoint
+cannot be admitted.
+
 The package deliberately does not change firewall policy. If UFW is active,
 an operator who accepts the entire selected LAN as trusted must add an exact
 source, destination, and port rule separately. The current workstation uses:
@@ -458,12 +507,14 @@ hosted mode expects an operator-owned HTTPS/WSS terminator and enforces the
 configured external Host and Origin itself. See
 [`runtime-configurations-and-headless-deployment.md`](docs/topics/runtime-configurations-and-headless-deployment.md)
 and Tacticals [`170`](docs/tactical/170-configured-linux-headless-service.md)
-and [`171`](docs/tactical/171-signed-headless-release-and-lan-service.md) for
-the fixed contract and evidence. The current workstation deployment is an
-enabled healthy user service at `http://192.168.1.129:3030/`, bound only to
-that selected Ethernet address. A persistent exact UFW rule now admits TCP
-3030 only from `192.168.1.0/24` to that address; no IPv6, public, router, or
-system-wide service change was made.
+and [`171`](docs/tactical/171-signed-headless-release-and-lan-service.md), plus
+[`174`](docs/tactical/174-exact-tailnet-headless-access.md), for the fixed
+contract and evidence. The current workstation deployment is one enabled
+healthy user service with the exact direct LAN listener at
+`http://192.168.1.129:3030/` and one loopback-only backend behind its exact
+Tailscale Serve HTTPS authority. A persistent exact UFW rule admits LAN TCP
+3030 only from `192.168.1.0/24` to that address; no IPv6, public, router,
+Funnel, ACL, or system-wide service change was made.
 
 ## Launching The Live Web UI
 

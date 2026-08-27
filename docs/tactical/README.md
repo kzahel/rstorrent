@@ -823,9 +823,10 @@ that scope and its cleanup or compatibility rules explicitly.
   affordances, and proves the complete Swarm defaults at 390- and 456-pixel
   phone widths without changing virtual row bounds or table interaction.
 - [`174-exact-tailnet-headless-access.md`](174-exact-tailnet-headless-access.md):
-  in progress; adds bounded explicit multi-endpoint hosting for the existing
+  complete; adds bounded explicit multi-endpoint hosting for the existing
   direct LAN authority plus one exact loopback Tailscale Serve HTTPS authority,
-  retaining one application owner and rejecting wildcard exposure.
+  retains one application owner and endpoint-correct media URLs, and proves
+  the installed LAN/tailnet service without wildcard, Funnel, or ACL changes.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

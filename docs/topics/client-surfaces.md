@@ -5,7 +5,9 @@ Topic: `client-surfaces`
 Status: Accepted and implemented across a browser-hosted web view, a Tauri
 desktop webview, Android Compose, and the maintained iOS SwiftUI client. The
 same mature browser presentation is also packaged by completed Tactical `170`
-for one configured Linux headless service.
+for one configured Linux headless service. Completed Tactical `174` attaches
+that one application owner to an exact LAN gateway and an exact loopback
+gateway behind Tailscale Serve without adding a second backend process.
 Completed
 Tactical
 [`143`](../tactical/143-dual-identity-and-persistence-foundation.md) makes
@@ -412,6 +414,18 @@ local-session and private-host Basic modes retain same-origin HTTP/WebSocket
 semantics, while the service owns the application/profile independently from
 every attached tab. It adds no extension transport or owner E2E remote claim.
 
+Completed Tactical
+[`174`](../tactical/174-exact-tailnet-headless-access.md) permits the same
+installed service to expose multiple explicit endpoint adapters around that
+one application owner. The current machine retains its exact LAN HTTP/WS
+authority and adds one exact loopback backend behind a tailnet-only Tailscale
+Serve HTTPS/WSS authority. Each gateway enforces its own exact Host and
+Origin, and media capability URLs use the origin through which they were
+created. The shared React client reports the credential-free network posture,
+shows its full-owner explanation once per browser origin, and retains
+`No auth` after dismissal. Tailnet ACL admission remains an operator boundary,
+not RSTorrent owner E2E authentication.
+
 Tactical `035` also adds an explicit unauthenticated development mode for
 local UI bring-up and headless evidence. It binds only loopback, requires one
 exact configured loopback Origin, retains resource checks, and isolates opaque
@@ -552,11 +566,11 @@ own correctness.
   preference and exactly one partial CPU wake lock for the same active state
   set while removing its Wi-Fi lock. iOS retains finite background work and
   exposes no misleading general keep-awake control.
-- The Linux headless process owns one application service, profile, gateway,
-  and engine independently from browser connections. Its systemd user unit
-  forwards stop to the adapter, whose cancellation path joins gateway and
-  application owners before exiting; no synthetic view is retained while
-  idle. Tactical
+- The Linux headless process owns one application service, profile, one or
+  more explicitly configured gateways, and engine independently from browser
+  connections. Its systemd user unit forwards stop to the adapter, whose
+  cancellation path joins every gateway and the application owner before
+  exiting; no synthetic view is retained while idle. Tactical
   [`171`](../tactical/171-signed-headless-release-and-lan-service.md) adds one
   serialized backend signed-release checker. Browser startup/daily checks are
   quiet on current or network failure, manual results are visible, and apply
@@ -600,6 +614,16 @@ RSTorrent then seeded the exact payload back to pinned libtorrent, and the
 service remained healthy while idle with zero gateway sessions. Joined
 restart, rollback-safe repair, preservation-safe uninstall, and exact cleanup
 also pass through the same production React/WebSocket surface.
+
+Tactical `174` adds an installed multi-endpoint presentation proof. One
+systemd user PID owns the exact LAN and loopback-proxy sockets around one
+application/media owner. Both the LAN HTTP/WS authority and the Tailscale
+Serve HTTPS/WSS authority pass health, API, application WebSocket, and real
+media-capability creation; the returned capability uses the serving
+authority's exact origin. A 456-by-1024 tailnet browser run loads without page
+errors, opens WSS, dismisses the network notice, and retains dismissal after
+reload. Wrong Host and cross-origin requests return `403`. A physical off-LAN
+phone retry is not yet claimed.
 
 Tactical `035` supplies that real-adapter evidence. The production-built web
 surface connects to a temporary loopback application and controlled
@@ -718,6 +742,12 @@ remote exposure, and Android streaming remain independent product decisions.
   machinery exists; no public `headless-v*` candidate or stable manifest has
   been promoted, and native Raspberry Pi service/update evidence remains
   absent.
+- The same service also supports one exact loopback endpoint behind an exact
+  Tailscale Serve HTTPS authority. This keeps the application off wildcard and
+  Tailscale interface binds, but it remains credential-free inside the
+  admitted tailnet policy: every reachable identity is an owner. It is not a
+  passphrase/device/relay remote-access claim, and physical off-LAN phone plus
+  native Raspberry Pi evidence remain absent.
 - The Tauri shell has basic macOS close-and-reopen behavior, provisional icon
   assets, ordinary local bundle configuration, implemented updater UI/
   lifecycle behavior, and hosted signed package evidence across macOS arm64/

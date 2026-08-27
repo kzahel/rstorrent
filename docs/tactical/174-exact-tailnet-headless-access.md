@@ -1,8 +1,8 @@
 # Tactical 174: Exact Tailnet Headless Access
 
-Status: **In progress.** Explicit maintainer direction on 2026-08-27
-temporarily yields desktop release Tactical `158` to this bounded headless
-deployment slice.
+Status: **Complete.** Explicit maintainer direction on 2026-08-27 temporarily
+yielded desktop release Tactical `158` to this bounded headless deployment
+slice. Tactical `158` has resumed as the sole **Now**.
 
 Topics: `runtime-configurations-and-headless-deployment`,
 `remote-access-authentication`, `client-surfaces`, `capability-readiness`
@@ -156,6 +156,82 @@ process handle enters the application contract or engine.
 - [`../topics/runtime-configurations-and-headless-deployment.md`](../topics/runtime-configurations-and-headless-deployment.md)
 - [`../topics/remote-access-authentication.md`](../topics/remote-access-authentication.md)
 - [`171-signed-headless-release-and-lan-service.md`](171-signed-headless-release-and-lan-service.md)
+
+## Implemented Result
+
+Commits `41a303c` and `3d0d97c` add package/configuration version `0.1.1`,
+strict version-2 multi-endpoint configuration, one shared application owner,
+endpoint-local gateway policy, endpoint-correct media capabilities, and the
+trusted-network React presentation. Commit `726c18b` also repairs a boundary
+bug exposed by the live campaign: WebSocket media calls now accept the
+application contract's canonical `t1-` plus 32 lowercase hexadecimal torrent
+ID rather than a retired 40-hex shape.
+
+Version-1 configurations retain their existing single-endpoint semantics.
+Version 2 accepts one through four explicit endpoints only for the
+credential-free trusted-network posture. `direct-lan` remains an exact RFC
+1918 listener/origin pair. `tailscale-serve` requires an exact IPv4 loopback
+listener plus an exact HTTPS `*.ts.net` public origin. All configured sockets
+bind before the profile/application opens, and every prepared gateway then
+attaches to the same application and media registry. Dropping or failing the
+aggregate serve future cancels every gateway before shared application
+shutdown.
+
+The installed current-machine configuration now has exactly these paths:
+
+```text
+192.168.1.129:3030                 direct LAN HTTP/WS
+127.0.0.1:3031                     loopback proxy backend only
+zblinux.<tailnet>.ts.net:8445      Tailscale Serve HTTPS/WSS
+```
+
+The exact tailnet suffix remains only in the owner-protected machine
+configuration rather than becoming repository inventory. That configuration
+and its version-1 recovery copy
+`~/.config/rstorrent/headless.toml.v1-before-tailnet` are both mode `0600`.
+One systemd user process owns both sockets. Tailscale Serve proxies only the
+dedicated HTTPS port to `127.0.0.1:3031`; the three pre-existing Serve routes
+remain unchanged, Funnel remains off, and no ACL, firewall, router, DNS, or
+unrelated unit was changed.
+
+The React client reports `network_none`, shows the full-owner network warning
+once per browser origin, persists dismissal under a distinct versioned key,
+and retains the compact `No auth` status. This is intentionally not product
+owner authentication: the tailnet access policy decides who can reach the
+route, and every admitted identity receives full RSTorrent owner control.
+
+## Validation Evidence
+
+- `cargo fmt --all -- --check`, strict workspace Clippy, and
+  `cargo test --workspace` pass. Focused gateway tests pass 43 tests and
+  focused headless tests pass 23 tests, including hostile endpoint parsing,
+  all-or-nothing bind, one shared owner, endpoint-local authority, and media
+  origin rewriting.
+- Web typecheck and the production same-origin Vite/CSP build pass. With the
+  repository's documented Node 25 web-storage compatibility flag, 44 files
+  and 292 tests pass with two opt-in tests skipped. Focused updater and
+  trusted-network notice/storage suites pass.
+- The native x86_64 archive constructs twice with exact SHA-256
+  `5adb37cad0af939c158a733880f97b5f13aba39f63bfccbc29dcc508aa69395f`.
+  It is 23,578,636 bytes and validates as 20 files with 69,405,239
+  uncompressed bytes. Installer/bootstrap shell tests and syntax checks pass.
+- Transactional `0.1.1` installation first preserved the live version-1 LAN
+  service. Migration and restart then admitted both endpoints. A final same-
+  version repair probed every configured endpoint and restored the service
+  only after both health checks passed.
+- Status and health agree on product `rstorrent-headless`, version `0.1.1`,
+  and trusted-network/no-auth exposure. The unit is enabled and active with
+  zero restarts; one PID owns only `192.168.1.129:3030` and
+  `127.0.0.1:3031`.
+- LAN and tailnet HTTPS static, health, API, and application-WebSocket paths
+  pass. A real WebSocket media call through each authority returns the same
+  bounded capability at that authority's own exact origin. Wrong Host and
+  cross-origin proxy requests return `403`.
+- A 456-by-1024 headless Chrome run through the tailnet HTTPS URL opens WSS
+  without page errors, renders the installed product, dismisses the network
+  notice, and retains that dismissal after reload while keeping `No auth`.
+  A physical off-LAN phone retry remains operator acceptance, not claimed
+  evidence.
 
 ## Stopping Condition
 

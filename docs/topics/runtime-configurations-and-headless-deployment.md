@@ -6,12 +6,15 @@ Status: Configured Linux headless-service Tactical
 [`170`](../tactical/170-configured-linux-headless-service.md) and signed
 headless release/trusted-LAN Tactical
 [`171`](../tactical/171-signed-headless-release-and-lan-service.md) completed
-on 2026-08-26. The ordinary-user package, strict configuration, systemd user
-unit, signed source release/update machinery, exact credential-free RFC 1918
-mode, and real x86_64 lifecycle/transfer and current-host LAN campaigns pass.
-The native ARM64 release job exists without a native ARM64 systemd claim.
-Production owner-remote authentication, relay delivery, promoted signed public
-headless artifacts, and system-wide service ownership do not exist yet.
+on 2026-08-26. Exact tailnet-access Tactical
+[`174`](../tactical/174-exact-tailnet-headless-access.md) completed on
+2026-08-27. The ordinary-user package, strict versioned configuration,
+systemd user unit, signed source release/update machinery, exact
+credential-free RFC 1918 and Tailscale Serve modes, and real x86_64
+lifecycle/transfer/current-host campaigns pass. The native ARM64 release job
+exists without a native ARM64 systemd claim. Production owner-remote
+authentication, relay delivery, promoted signed public headless artifacts,
+and system-wide service ownership do not exist yet.
 
 ## Purpose And Scope
 
@@ -229,7 +232,7 @@ combinations that look secure but are not.
 | Local browser | Exact loopback origin | Local-open or remembered browser sessions | Plain loopback HTTP/WS | Implemented |
 | Private reverse-proxy host | One explicit unicast backend address | Bounded Basic credential, with password from a secret file | Public HTTPS/WSS terminated by an operator-owned proxy | Implemented maintainer preview |
 | Trusted private LAN | One exact non-loopback RFC 1918 IPv4 authority | None; every reachable client has full owner control | Plain HTTP/WS with exact Host and Origin, no confidentiality | Implemented operator mode |
-| Trusted private overlay | Explicit VPN/tailnet address | Still requires an explicit accepted application-auth policy | Overlay encryption or HTTPS | Desired; not productized |
+| Trusted Tailscale overlay | Exact loopback backend plus one exact HTTPS `*.ts.net` authority | None; every identity admitted by tailnet policy has full owner control | Tailscale transport and Serve HTTPS/WSS | Implemented operator mode |
 | Owner remote access | Direct or relay-mediated host | Passphrase bootstrap plus eventual remembered-device identity | Authenticated end-to-end records; relay remains opaque | Direction recorded, not implemented |
 | Development-none | Ephemeral loopback only | None | Local test traffic only | Implemented development mode |
 
@@ -272,6 +275,17 @@ status. It is suitable only when the operator accepts the whole selected LAN
 as trusted; it must never be port-forwarded or treated as Internet,
 guest-Wi-Fi, or untrusted-overlay security.
 
+Tactical `174` adds a parallel, deliberately Tailscale-specific operator
+mode. RSTorrent does not bind its `100.64.0.0/10` address and does not bind a
+wildcard. It binds an exact loopback backend while Tailscale Serve owns one
+exact tailnet-only HTTPS/WSS authority, certificate, overlay transport, and
+tailnet admission. The RSTorrent gateway still enforces that external Host
+and Origin directly and never trusts forwarding headers. This mode has no
+RSTorrent credential or per-tailnet-identity role: every identity that the
+tailnet policy permits to reach the Serve route receives complete owner
+authority. That is an accepted trusted-network deployment, not the owner E2E
+remote protocol.
+
 RSTorrent does not currently terminate TLS itself. In-process TLS may be added
 later if it materially simplifies supported deployments, but it is not
 required for the first headless package because explicit bind/origin
@@ -307,15 +321,19 @@ growing parallel CLI, environment, and file vocabularies whose conflict rules
 cannot be explained. The current gateway CLI/environment behavior is
 substrate, not automatically the final stable operator contract.
 
-Tacticals `170` and `171` implement that first contract as one strict
-`rstorrent-headless-v1` TOML file. It requires an explicit profile, one through
-32 named path roots, exact IP address and nonzero port, exact public origin,
-and local-browser, Basic, or the exact `lan-none` matrix above. Basic secrets
-are read from a protected owner-only regular file; `lan-none` rejects every
-secret field. Unknown or duplicate keys, unsafe ownership or modes,
-overlapping protected paths, symlink roots, invalid listener/origin
-combinations, and incomplete package identity fail before the application
-opens. A missing configured payload mount remains absent and is reported
+Tacticals `170` and `171` implement the first contract as one strict
+version-1 TOML file. It requires an explicit profile, one through 32 named
+path roots, exact IP address and nonzero port, exact public origin, and
+local-browser, Basic, or the exact `lan-none` matrix above. Tactical `174`
+keeps that grammar compatible and adds version 2 with one through four
+explicit endpoints for `trusted-network-none`: exact RFC 1918
+`direct-lan` and exact loopback/HTTPS-`*.ts.net` `tailscale-serve` endpoints.
+Every endpoint must bind before the profile/application opens. Basic secrets
+remain read from a protected owner-only regular file; both no-auth modes
+reject every secret field. Unknown or duplicate keys, sockets, or origins;
+unsafe ownership or modes; overlapping protected paths; symlink roots;
+invalid listener/origin combinations; and incomplete package identity fail
+closed. A missing configured payload mount remains absent and is reported
 unavailable rather than being recreated. Non-browser profile roots are
 created owner-only after successful listener admission, so bind failure does
 not manufacture a new profile authority.
@@ -410,6 +428,15 @@ The repository now proves these parts of this direction:
   `No auth` header status; unavailable storage fails open by showing the notice.
   Focused storage/React tests and a phone-sized installed-service browser smoke
   pass.
+- Tactical `174` upgrades the installed package to `0.1.1` and adds one exact
+  loopback gateway behind a dedicated Tailscale Serve HTTPS authority while
+  preserving the exact LAN listener. One process/application/media owner
+  serves both routes. Endpoint-local Host/Origin rejection, real WebSocket
+  media calls with endpoint-correct capability origins, both configured
+  health probes during same-version repair, and a phone-sized tailnet HTTPS/
+  WSS browser smoke pass. Existing Serve routes, Funnel, ACLs, UFW, and router
+  policy remain unchanged. The version-1 config is retained as a protected
+  recovery copy.
 
 The important remaining gaps are:
 
@@ -419,7 +446,8 @@ The important remaining gaps are:
   unattended evidence;
 - true desktop startup with no created webview and later on-demand recreation;
 - persistent extension application control rather than one-shot launch;
-- productized private-overlay behavior;
+- generic private-overlay behavior and per-identity product authorization
+  beyond the implemented Tailscale trusted-network operator mode;
 - owner remote authentication, remembered devices, host identity, and direct
   versus relay delivery;
 - ratio/time seeding goals and seed admission/ranking policy; and
@@ -430,8 +458,10 @@ The important remaining gaps are:
 
 Completed Tacticals
 [`170`](../tactical/170-configured-linux-headless-service.md) and
-[`171`](../tactical/171-signed-headless-release-and-lan-service.md) supply the
-first bounded Linux headless deployment and its signed source update lane.
+[`171`](../tactical/171-signed-headless-release-and-lan-service.md), plus
+Tactical [`174`](../tactical/174-exact-tailnet-headless-access.md), supply the
+first bounded Linux headless deployment, signed source update lane, and exact
+LAN/tailnet presentation paths.
 The next headless release operation may publish/promote an exact reviewed
 `headless-v*` candidate; the next platform campaign should install it on a
 native Raspberry Pi or other ARM64 host and prove service, reboot/mount,

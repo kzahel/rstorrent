@@ -8,7 +8,9 @@ future remote feature, with username/passphrase login available from a new
 device without prior pairing or a central product account. No production
 listener, relay, password protocol, cryptographic library, platform key
 dependency, persistence schema or stable remote wire contract is authorized
-or implemented by this topic.
+or implemented by this topic. Completed Tactical `174` separately permits one
+trusted Tailscale operator deployment; tailnet admission is not the owner
+authentication designed here.
 
 ## Purpose And Scope
 
@@ -67,6 +69,18 @@ status. It has no confidentiality, caller identity, revocation, or defense
 against a compromised trusted-LAN device. The mode must not be forwarded or
 re-described as remote, overlay, guest-network, or Internet authentication.
 
+Completed Tactical
+[`174-exact-tailnet-headless-access.md`](../tactical/174-exact-tailnet-headless-access.md)
+adds a separate Tailscale-specific trusted-network posture, not progress
+toward the owner-remote protocol. RSTorrent binds an exact loopback backend;
+Tailscale Serve owns the exact tailnet-only HTTPS authority and tailnet access
+policy. RSTorrent still enforces exact Host/Origin and shows a one-time
+full-owner network notice, but it consumes no Tailscale identity and assigns
+no per-device role. Every identity that tailnet policy admits has full owner
+control. Revocation and segmentation therefore occur at the tailnet policy
+boundary, not in RSTorrent, and there is no passphrase, remembered-device,
+relay-blind E2E, or product host-identity claim.
+
 Tactical
 [`101-first-run-web-authentication.md`](../tactical/101-first-run-web-authentication.md)
 is the separate ordinary loopback product boundary. Its HttpOnly browser
@@ -84,9 +98,11 @@ encryption.
 
 [`http-file-serving-and-streaming.md`](http-file-serving-and-streaming.md)
 owns local verified-file capability URLs and future incomplete-file streaming.
-Its loopback capability is not sufficient for nonlocal access; any remote
-media route additionally requires the principal, authenticated encryption,
-host identity, and authorization selected here.
+Its capability alone is not sufficient for nonlocal access. Tactical `174`
+allows the exact capability route through its accepted Tailscale HTTPS
+authority under the same all-admitted-callers-are-owners operator posture.
+Any general product remote-media route still requires the principal,
+authenticated encryption, host identity, and authorization selected here.
 
 ## Product Outcome
 
