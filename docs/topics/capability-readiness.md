@@ -163,6 +163,15 @@ remain mandatory. All repository/web/Android gates pass; Tactical `179` is
 complete, and Tactical `176` resumes as the sole **Now** with only its existing
 macOS-only iOS compile gate.
 
+Explicit user direction then selects typed settings patch and draft-
+convergence Tactical
+[`180`](../tactical/180-typed-settings-patches-and-draft-convergence.md). It
+removes the unsupported whole-value and pair-specific settings commands
+without aliases or a version bridge, updates every first-party generated
+boundary, and makes web and Android settings edits survive complete live view
+updates through receipt/revision convergence. Tactical `180` is the sole
+**Now**; Tactical `176` retains its existing macOS-only iOS compile gate.
+
 The updater tactical's client, production route, five-target signed hosted
 rehearsal, public `0.1.0`, `0.1.1`, and `0.1.2` releases, installed macOS arm64
 launch smoke, and exact macOS arm64 and Linux arm64 `0.1.0`-to-`0.1.1` updates
@@ -658,13 +667,16 @@ exactly.
 
 ### Now
 
-- **Tactical `176`: durable High file priority.** Implementation, current-
-  schema persistence, ordinary weighted scheduling, generated contracts,
-  React, and Android dual-ABI/APK gates pass while Tactical `139` remains the
-  stronger transient overlay. Run the updated iOS SwiftUI presentation through
-  its macOS-only simulator/archive compile, then complete the slice.
+- **Tactical `180`: typed settings patches and draft convergence.** Replace
+  whole-value and forced-pair settings commands without compatibility aliases,
+  migrate every first-party boundary, and keep web/Android dirty and submitted
+  settings stable until the correlated receipt and authoritative view
+  converge. Complete rows and reset snapshots remain valid input.
 
 ### Next
+
+- Resume **Tactical `176`** only for its existing macOS-hosted iOS simulator/
+  archive compile; every other implementation and validation gate passes.
 
 - Resume **Tactical `158`** and close the clean Windows and Linux x86_64
   signed replacement/relaunch evidence plus Windows firewall-consent
@@ -677,15 +689,6 @@ exactly.
   torrent cohort without migrating `0.1.x` state.
 
 ### Later
-
-Decision-complete Tactical
-[`180`](../tactical/180-typed-settings-patches-and-draft-convergence.md) is
-ready after the current state/release queue. It replaces whole-value and
-pair-specific settings mutation with typed non-empty resource patches and
-gives web and Android editors explicit dirty, submitted, receipt, conflict,
-and authoritative-view convergence. Complete rows and reset snapshots remain
-the correctness baseline. Structural sharing, sparse field delivery, and
-response/view payload reduction require a separate measured follow-up.
 
 Completed cross-platform presubmit Tactical
 [`159`](../tactical/159-cross-platform-presubmit-ci.md) provides credential-free

@@ -1,8 +1,9 @@
 # Tactical 180: Typed Settings Patches And Draft Convergence
 
-Status: **Ready; queued in Later.** Tactical `176` remains the sole **Now**.
-This tactical must not begin concurrently with an unfinished settings/store or
-generated-contract change from the current queue.
+Status: **Active (2026-08-27); sole Now.** Explicit user direction selected
+this tactical after completed Tactical `179` and paused Tactical `176` at its
+existing macOS-only iOS compile gate. No other settings/store or generated-
+contract change may overlap this slice.
 
 Topics:
 [`settings-mutation-and-draft-consistency`](../topics/settings-mutation-and-draft-consistency.md),
@@ -150,10 +151,10 @@ mutation.
 Supersede `SetClientSettings` and `SetTorrentTransferLimits`. Update all
 first-party producers, fixtures, diagnostics, and tests in the same change;
 do not keep a compatibility-only alias for the unsupported disposable
-incubation contract. Keep the current envelope version only if the owning API
-and release topics still define it as an unfrozen internal baseline when work
-starts. If the first supported API baseline has been frozen by then, stop for
-direction on versioning rather than silently breaking it.
+incubation contract. Explicit user direction requires no alias, adapter,
+parallel endpoint, protocol-version bridge, or generated compatibility shape.
+The unfrozen internal v1 envelope remains current while its command union is
+replaced in place; the first supported API baseline has not been declared.
 
 The successful adapter result must expose at least the correlated request ID
 and resulting durable revision. It may reuse the current `ResponseEnvelope`;
@@ -368,10 +369,11 @@ declared bound or fixing an adjacent draft overwrite exposed by the mandatory
 stress cases is also in scope.
 
 Stop for direction if implementation evidence requires a stable API-version
-compatibility bridge, a new durable draft or per-resource revision model, a
-new dependency, a database migration beyond the post-Tactical-179 baseline,
-visible physical-device interaction not already authorized above, or a change
-to accepted runtime/product semantics outside settings mutation.
+compatibility promise despite the explicit unsupported-incubation policy, a
+new durable draft or per-resource revision model, a new dependency, a database
+migration beyond the post-Tactical-179 baseline, visible physical-device
+interaction not already authorized above, or a change to accepted runtime/
+product semantics outside settings mutation.
 
 ## Stopping Condition And Next Slice
 

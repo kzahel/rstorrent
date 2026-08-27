@@ -4,8 +4,9 @@ Topic: `settings-mutation-and-draft-consistency`
 
 Status: Direction accepted 2026-08-27. Tactical
 [`180`](../tactical/180-typed-settings-patches-and-draft-convergence.md) is
-decision-complete and queued in **Later**; it does not displace the single
-authoritative **Now**.
+active as the single authoritative **Now**. Explicit user direction removes
+the unsupported old settings command variants without aliases, adapters, or a
+version bridge.
 
 ## Purpose And Scope
 

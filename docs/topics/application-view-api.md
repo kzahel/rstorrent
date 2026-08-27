@@ -60,7 +60,7 @@ Tactical `049` completes the diagnostics specialization: hierarchical
 categories, structured bounded subjects and fields, capture interest,
 separate source/delivery/local loss semantics, and one ordered console over
 the existing view-set path.
-Planned Tactical
+Active Tactical
 [`180`](../tactical/180-typed-settings-patches-and-draft-convergence.md) keeps
 complete rows and fresh reset snapshots as valid authoritative input while
 making settings drafts survive unrelated live updates until a command receipt
@@ -742,6 +742,11 @@ The major API version appears in remote URLs and top-level envelopes. Within
 v1, fields may be added when optional or safely defaulted, but required fields
 cannot be removed, renamed, retyped, or silently change meaning. New closed
 control variants require capability negotiation or a major-version boundary.
+This compatibility rule begins at the first explicitly supported API baseline.
+The current `0.1.x` internal v1 command union is disposable incubation state:
+Tactical `180` replaces its old settings variants in place, updates every
+first-party producer and consumer together, and retains no compatibility
+alias or version bridge.
 
 JSON is the initial codec. Transport implementations hide encoding behind a
 codec boundary and pass decoded DTOs to the same reducer:
