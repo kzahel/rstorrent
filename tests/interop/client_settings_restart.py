@@ -44,7 +44,7 @@ OWNER = "0123456789abcdef0123456789abcdef"
 PAYLOAD_SIZE = 8 * 1024 * 1024
 PIECE_SIZE = 64 * 1024
 TRANSFER_TIMEOUT_SECONDS = 60
-HANDOVER_DOWNLOAD_RATE = 512 * 1024
+HANDOVER_DOWNLOAD_RATE = 256 * 1024
 
 
 def run_playwright(
@@ -283,11 +283,18 @@ def leech_from_rstorrent_across_handover(
     gateway_address: str,
     origin: str,
 ) -> tuple[str, dict[str, object]]:
-    session = create_outbound_only_session(HANDOVER_DOWNLOAD_RATE)
+    session = create_outbound_only_session(1)
     handle: lt.torrent_handle | None = None
     diagnostics: list[str] = []
     handover: dict[str, object] | None = None
+    last_reconnect = 0.0
     try:
+        session.apply_settings(
+            {
+                "alert_mask": int(lt.alert.category_t.all_categories),
+                "allow_multiple_connections_per_ip": True,
+            }
+        )
         output.mkdir(parents=True)
         parameters = lt.add_torrent_params()
         parameters.ti = fixture.torrent_info
@@ -304,21 +311,31 @@ def leech_from_rstorrent_across_handover(
                 raise ScenarioFailure(
                     f"libtorrent leech failed: {status.errc.message()}"
                 )
-            if handover is None and status.total_done >= PIECE_SIZE:
+            if handover is None and status.num_peers >= 1:
                 before_bytes = status.total_done
                 if status.is_seeding:
                     raise ScenarioFailure(
                         "libtorrent completed before the live handover: "
                         f"bytes={status.total_done}, peers={status.num_peers}"
                     )
+                handle.pause()
+                pause_deadline = time.monotonic() + 2
+                while not handle.status().paused and time.monotonic() < pause_deadline:
+                    time.sleep(0.01)
+                if not handle.status().paused:
+                    raise ScenarioFailure("libtorrent did not pause before handover")
                 set_fixed_settings(
                     gateway_address,
                     origin,
                     "client-settings-live-libtorrent-handover",
                     handover_port,
                 )
+                receipt_received_at = time.monotonic()
                 runtime = wait_for_effective_listener(
                     gateway_address, origin, handover_port
+                )
+                receipt_to_effective_view_millis = round(
+                    (time.monotonic() - receipt_received_at) * 1_000, 1
                 )
                 try:
                     with socket.create_connection(
@@ -333,6 +350,15 @@ def leech_from_rstorrent_across_handover(
                     ("127.0.0.1", handover_port), timeout=1
                 ):
                     pass
+                disconnect_deadline = time.monotonic() + 2
+                while (
+                    handle.status().num_peers != 0
+                    and time.monotonic() < disconnect_deadline
+                ):
+                    diagnostics.extend(
+                        alert.message() for alert in session.pop_alerts()
+                    )
+                    time.sleep(0.01)
                 after = handle.status()
                 if after.is_seeding:
                     raise ScenarioFailure(
@@ -340,6 +366,17 @@ def leech_from_rstorrent_across_handover(
                     )
                 if after.total_done < before_bytes:
                     raise ScenarioFailure("libtorrent payload counter moved backward")
+                session.apply_settings(
+                    {"download_rate_limit": HANDOVER_DOWNLOAD_RATE}
+                )
+                handle.resume()
+                resume_deadline = time.monotonic() + 2
+                while handle.status().paused and time.monotonic() < resume_deadline:
+                    time.sleep(0.01)
+                if handle.status().paused:
+                    raise ScenarioFailure("libtorrent did not resume after handover")
+                handle.connect_peer(("127.0.0.1", handover_port))
+                last_reconnect = time.monotonic()
                 handover = {
                     "old_port": listener_port,
                     "new_port": handover_port,
@@ -347,7 +384,17 @@ def leech_from_rstorrent_across_handover(
                     "bytes_after": after.total_done,
                     "peers_after": after.num_peers,
                     "transport_state": runtime.get("transport_application"),
+                    "receipt_to_effective_view_millis": (
+                        receipt_to_effective_view_millis
+                    ),
                 }
+            elif (
+                handover is not None
+                and status.num_peers == 0
+                and time.monotonic() - last_reconnect >= 1
+            ):
+                handle.connect_peer(("127.0.0.1", handover_port))
+                last_reconnect = time.monotonic()
             if status.is_seeding:
                 if handover is None:
                     raise ScenarioFailure(
@@ -518,10 +565,18 @@ def run() -> None:
             repository, origin, address, "configure", fixture, seed_port
         )
         observations.append(configured)
+        configured_port = reserve_loopback_port()
+        set_fixed_settings(
+            address,
+            origin,
+            "client-settings-fixed-for-restart",
+            configured_port,
+        )
+        wait_for_effective_listener(address, origin, configured_port)
         _, first_application = stop_and_observe(gateway)
         gateway = None
-        configured_port = configured.get("listenerPort")
-        if not isinstance(configured_port, int) or configured_port == 0:
+        configured_ui_port = configured.get("listenerPort")
+        if not isinstance(configured_ui_port, int) or configured_ui_port == 0:
             raise ScenarioFailure("settings did not start the listener live")
         assert_listener_metrics(first_application, configured_port)
         verify_payload(storage, ROOT_NAME, fixture.payload_hash)
@@ -538,7 +593,7 @@ def run() -> None:
         observations.append(active)
         active_port = active.get("listenerPort")
         if not isinstance(active_port, int) or active_port == 0:
-            raise ScenarioFailure("restarted automatic listener did not expose a port")
+            raise ScenarioFailure("restarted fixed listener did not expose a port")
         handover_port = reserve_loopback_port()
         if handover_port == active_port:
             raise ScenarioFailure("handover port unexpectedly matches active listener")
@@ -569,12 +624,20 @@ def run() -> None:
             repository, origin, address, "recover", fixture, seed_port
         )
         observations.append(recovered)
-        _, conflict_application = stop_and_observe(gateway)
-        gateway = None
         recovered_port = recovered.get("listenerPort")
         if not isinstance(recovered_port, int) or recovered_port == 0:
             raise ScenarioFailure("same-generation bind recovery lacks a listener")
-        assert_listener_metrics(conflict_application, recovered_port)
+        repaired_fixed_port = reserve_loopback_port()
+        set_fixed_settings(
+            address,
+            origin,
+            "client-settings-fixed-after-recovery",
+            repaired_fixed_port,
+        )
+        wait_for_effective_listener(address, origin, repaired_fixed_port)
+        _, conflict_application = stop_and_observe(gateway)
+        gateway = None
+        assert_listener_metrics(conflict_application, repaired_fixed_port)
         conflict_listener.close()
         conflict_listener = None
 
@@ -587,7 +650,7 @@ def run() -> None:
         observations.append(repaired)
         repaired_port = repaired.get("listenerPort")
         if not isinstance(repaired_port, int) or repaired_port == 0:
-            raise ScenarioFailure("repaired automatic listener did not expose a port")
+            raise ScenarioFailure("repaired fixed listener did not expose a port")
         _, repaired_application = stop_and_observe(gateway)
         gateway = None
         incoming = repaired_application.get("incoming")
@@ -601,7 +664,8 @@ def run() -> None:
             + json.dumps(
                 {
                     "configured": {
-                        "listener": "automatic_loopback",
+                        "ui_listener": "automatic",
+                        "restart_listener": "fixed_loopback",
                         "peer_connection_limit": 37,
                         "upload_slots": 1,
                     },

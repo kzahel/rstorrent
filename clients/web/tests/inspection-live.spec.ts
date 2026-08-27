@@ -58,12 +58,13 @@ test("client settings apply live, persist, and recover bind failure", async ({
   ).toBeVisible();
 
   if (clientSettingsPhase === "configure") {
-    const torrentRow = await addAndOpenInWorkbench(page, magnet!, torrentId!);
+    const torrentRow = await addAndOpenInWorkbench(page, magnet!);
     await expect(torrentRow).toContainText("complete", { timeout: 60_000 });
   }
 
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Settings" });
+  await dialog.getByRole("tab", { name: "Connection & seeding" }).click();
   const runtime = dialog.getByLabel("Current runtime state");
   await expect(dialog).toBeVisible();
 
@@ -81,13 +82,15 @@ test("client settings apply live, persist, and recover bind failure", async ({
     await expect(
       dialog.getByText("Settings accepted and applying."),
     ).toBeVisible();
-    await expect(runtime).toContainText(/all IPv4 interfaces at port \d+/);
+    await expect(runtime).toContainText(
+      /Effective listener policy: (?:automatic port|development-only loopback mode)\./,
+    );
     await expect(runtime).toContainText("Effective peer connection limit: 37.");
     await expect(runtime).toContainText("Effective payload upload slots: 1.");
     await expect(runtime).not.toContainText("Transport: applying");
   } else if (clientSettingsPhase === "observe") {
     await expect(
-      dialog.getByRole("radio", { name: /^Automatic port/ }),
+      dialog.getByRole("radio", { name: /^Fixed port/ }),
     ).toBeChecked();
     await expect(
       dialog.getByRole("spinbutton", { name: "Peer connection limit" }),
@@ -95,7 +98,9 @@ test("client settings apply live, persist, and recover bind failure", async ({
     await expect(
       dialog.getByRole("spinbutton", { name: "Payload upload slots" }),
     ).toHaveValue("1");
-    await expect(runtime).toContainText(/all IPv4 interfaces at port \d+/);
+    await expect(runtime).toContainText(
+      /Effective listener policy: (?:fixed port|development-only loopback port)/,
+    );
     await expect(runtime).toContainText("Effective peer connection limit: 37.");
     await expect(runtime).toContainText("Effective payload upload slots: 1.");
   } else if (clientSettingsPhase === "recover") {
@@ -111,7 +116,9 @@ test("client settings apply live, persist, and recover bind failure", async ({
     await expect(
       dialog.getByText("Settings accepted and applying."),
     ).toBeVisible();
-    await expect(runtime).toContainText(/all IPv4 interfaces at port \d+/);
+    await expect(runtime).toContainText(
+      /Effective listener policy: (?:automatic port|development-only loopback mode)\./,
+    );
     await expect(runtime).not.toContainText(/Transport: degraded/i);
     await expect(runtime).not.toContainText("Transport: applying");
   } else {
@@ -126,7 +133,10 @@ test("client settings apply live, persist, and recover bind failure", async ({
   );
   expect(violations).toEqual([]);
   const runtimeText = (await runtime.textContent()) ?? "";
-  const portMatch = /Listening on 127\.0\.0\.1:(\d+)/.exec(runtimeText);
+  const portMatch =
+    /(?:Listening on 127\.0\.0\.1:|Incoming TCP is using a development-only loopback listener at port |Incoming TCP is listening on all IPv4 interfaces at port )(\d+)/.exec(
+      runtimeText,
+    );
   console.log(
     `client_settings_live_milestone ${JSON.stringify({ phase: clientSettingsPhase, listenerPort: portMatch === null ? null : Number(portMatch[1]), axeViolations: violations.length })}`,
   );
@@ -480,7 +490,9 @@ test("paired application transport throughput", async ({ page }) => {
   await input.fill(magnet!);
   await input.press("Enter");
   await confirmDefaultAddOptions(page);
-  await expect(page.getByText("Torrent added", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Transfers" }).getByRole("status"),
+  ).toHaveText("Added");
   const row = transfers.locator(`[data-row-id="${torrentId!}"]`);
   await expect(row).toContainText(/complete/i, { timeout: 180_000 });
   const transferSeconds = (performance.now() - started) / 1_000;
@@ -510,7 +522,7 @@ test("live disk inspection observes pressure and exact recovery", async ({
   );
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(liveUrl());
-  const torrentRow = await addAndOpenInWorkbench(page, magnet!, torrentId!);
+  const torrentRow = await addAndOpenInWorkbench(page, magnet!);
   await page.getByRole("tab", { name: "Disk" }).click();
   const pieces = page.getByRole("grid", { name: "Active storage pieces" });
   await expect(page.getByLabel("Disk pressure Backpressured")).toBeVisible({
@@ -559,7 +571,7 @@ test("live piece inspection follows active work through verification", async ({
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(liveUrl());
   const startedAt = performance.now();
-  const torrentRow = await addAndOpenInWorkbench(page, magnet!, torrentId!);
+  const torrentRow = await addAndOpenInWorkbench(page, magnet!);
   await page.getByRole("tab", { name: "Pieces" }).click();
   const pieceMap = page.getByRole("img", { name: /pieces:/ });
   await expect(pieceMap).toBeVisible({ timeout: 20_000 });
@@ -644,7 +656,9 @@ test("live peer inspection follows a controlled verified transfer", async ({
   await torrentInput.fill(magnet!);
   await torrentInput.press("Enter");
   await confirmDefaultAddOptions(page);
-  await expect(page.getByText("Torrent added", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Transfers" }).getByRole("status"),
+  ).toHaveText("Added");
   await expect(torrentInput).toHaveValue("");
 
   const transferRow = transferGrid.locator(`[data-row-id="${torrentId!}"]`);
@@ -786,7 +800,9 @@ test("live metadata-only add and file selection", async ({ page }) => {
   await expect(startContent).toBeChecked();
   await startContent.uncheck();
   await addDialog.getByRole("button", { name: "Add torrent" }).click();
-  await expect(page.getByText("Torrent added", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Transfers" }).getByRole("status"),
+  ).toHaveText("Added");
 
   const transfers = page.getByRole("grid", { name: "Transfer queue" });
   const transferRow = transfers.locator(`[data-row-id="${torrentId!}"]`);
@@ -848,26 +864,57 @@ test("live metadata-only add and file selection", async ({ page }) => {
 async function addAndOpenInWorkbench(
   page: Page,
   liveMagnet: string,
-  liveTorrentId: string,
 ): Promise<Locator> {
   const primary = page.getByRole("navigation", { name: "Primary" });
   const transfers = page.getByRole("grid", { name: "Transfer queue" });
   await expect(primary).toBeVisible();
   await expect(transfers).toBeVisible();
+  const existingIds = new Set(
+    await transfers.locator("[role=row][data-row-id]").evaluateAll((rows) =>
+      rows.flatMap((row) => {
+        const id = row.getAttribute("data-row-id");
+        return id === null ? [] : [id];
+      }),
+    ),
+  );
   const input = page
     .getByRole("form", { name: "Add torrent" })
     .getByRole("textbox", { name: "Magnet link or torrent URL" });
   await input.fill(liveMagnet);
   await input.press("Enter");
   await confirmDefaultAddOptions(page);
-  await expect(page.getByText("Torrent added", { exact: true })).toBeVisible();
-  const transferRow = transfers.locator(`[data-row-id="${liveTorrentId}"]`);
-  await expect(transferRow).toBeVisible({ timeout: 10_000 });
+  await expect(
+    page.getByRole("region", { name: "Transfers" }).getByRole("status"),
+  ).toHaveText("Added");
+  let canonicalTorrentId: string | null = null;
+  await expect
+    .poll(
+      async () => {
+        const ids = await transfers
+          .locator("[role=row][data-row-id]")
+          .evaluateAll((rows) =>
+            rows.flatMap((row) => {
+              const id = row.getAttribute("data-row-id");
+              return id === null ? [] : [id];
+            }),
+          );
+        canonicalTorrentId = ids.find((id) => !existingIds.has(id)) ?? null;
+        return canonicalTorrentId;
+      },
+      { timeout: 10_000 },
+    )
+    .not.toBeNull();
+  if (canonicalTorrentId === null) {
+    throw new Error("added torrent did not expose a canonical row ID");
+  }
+  const transferRow = transfers.locator(
+    `[data-row-id="${canonicalTorrentId}"]`,
+  );
   await transferRow.click();
   await primary.getByRole("button", { name: "Workbench" }).click();
   const torrentRow = page
     .getByRole("grid", { name: "Torrent library" })
-    .locator(`[data-row-id="${liveTorrentId}"]`);
+    .locator(`[data-row-id="${canonicalTorrentId}"]`);
   await expect(torrentRow).toBeVisible({ timeout: 10_000 });
   await torrentRow.click();
   return torrentRow;
