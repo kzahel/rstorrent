@@ -79,6 +79,14 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`179-disposable-incubation-state-epoch.md`](179-disposable-incubation-state-epoch.md):
+  completed fresh schema-21 catalog epoch and removal of compatibility-only
+  DHT, desktop-shell, and browser-appearance readers while preserving the
+  bounded reset and external payload.
+- [`180-typed-settings-patches-and-draft-convergence.md`](180-typed-settings-patches-and-draft-convergence.md):
+  ready Later slice replacing whole/pair-specific settings mutation with typed
+  partial patches and giving web/Android editors revision-aware draft
+  convergence under complete live updates.
 - [`178-crostini-storage-guidance.md`](178-crostini-storage-guidance.md):
   Crostini-only Add and Downloads guidance for the fast Linux default and the
   explicit, slower ChromeOS **Share with Linux** alternative.

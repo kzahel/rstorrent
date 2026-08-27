@@ -60,6 +60,14 @@ Tactical `049` completes the diagnostics specialization: hierarchical
 categories, structured bounded subjects and fields, capture interest,
 separate source/delivery/local loss semantics, and one ordered console over
 the existing view-set path.
+Planned Tactical
+[`180`](../tactical/180-typed-settings-patches-and-draft-convergence.md) keeps
+complete rows and fresh reset snapshots as valid authoritative input while
+making settings drafts survive unrelated live updates until a command receipt
+and sufficiently new view converge. Its owning
+[`settings-mutation-and-draft-consistency`](settings-mutation-and-draft-consistency.md)
+topic keeps structural sharing, field masks, and snapshot/response payload
+reduction as a separate measured follow-up.
 Completed Tactical
 [`114`](../tactical/114-session-wide-concurrent-torrent-admission.md) extends
 the existing torrent and client-settings projections without adding a view

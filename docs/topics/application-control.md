@@ -122,6 +122,16 @@ replay, stale-revision, rollback, and convergence rules. Runtime application
 updates one stable session bandwidth owner without replacing peer, discovery,
 listener, or torrent generations.
 
+Accepted settings-mutation direction now supersedes those command shapes for
+future work. Tactical
+[`180`](../tactical/180-typed-settings-patches-and-draft-convergence.md) will
+replace them with typed non-empty resource patches: each transfer direction or
+client property may be supplied independently, while any properties supplied
+together validate and commit atomically. The owning
+[`settings-mutation-and-draft-consistency`](settings-mutation-and-draft-consistency.md)
+topic also defines receipt-to-view convergence and requires clients to retain
+dirty/submitted fields under repeated complete view values.
+
 Completed Tactical
 [`138`](../tactical/138-verified-http-file-serving.md) adds the read-only
 `create_media_url` semantic call for one torrent identity and file index. It

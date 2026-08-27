@@ -152,6 +152,17 @@ dialog label, cancel path, and exact Files-app context action while preserving
 the installed public binaries and restoring the original web tree. Tactical
 `178` is complete and Tactical `176` resumes as the sole **Now**.
 
+Explicit user direction subsequently yields Tacticals `176` and `158` to
+disposable-incubation state Tactical
+[`179`](../tactical/179-disposable-incubation-state-epoch.md). It establishes
+schema 21 as a fresh catalog epoch, resets every recognized schema `1..=20`,
+and removes compatibility-only readers for DHT snapshot v1, desktop-shell
+settings v1/v2, and browser appearance v1/v2. The existing bounded pre-task
+reset, fail-closed hostile-state handling, and external-payload preservation
+remain mandatory. All repository/web/Android gates pass; Tactical `179` is
+complete, and Tactical `176` resumes as the sole **Now** with only its existing
+macOS-only iOS compile gate.
+
 The updater tactical's client, production route, five-target signed hosted
 rehearsal, public `0.1.0`, `0.1.1`, and `0.1.2` releases, installed macOS arm64
 launch smoke, and exact macOS arm64 and Linux arm64 `0.1.0`-to-`0.1.1` updates
@@ -164,6 +175,14 @@ characterization remain open; installed Intel macOS testing is deliberately
 omitted. These gaps keep the tactical active. The tables below record current
 support, evidence, and highest-risk gaps; implementation history remains in
 the linked tacticals and focused topics.
+
+Maintainer direction on 2026-08-27 makes every `0.1.x` package and current
+platform preview disposable incubation output. Existing cross-version runs
+remain updater/package evidence, but no `0.1.x` torrent, setting, root,
+selection, verification, generated-API, updater-identity, or rollback
+retention is a support requirement. A fresh compatibility baseline begins only
+when a future version is explicitly declared the first supported beta or
+release.
 
 ## Purpose And Ownership
 
@@ -639,8 +658,8 @@ exactly.
 
 ### Now
 
-- **Tactical `176`: durable High file priority.** Implementation, compatible
-  schema-19 migration, ordinary weighted scheduling, generated contracts,
+- **Tactical `176`: durable High file priority.** Implementation, current-
+  schema persistence, ordinary weighted scheduling, generated contracts,
   React, and Android dual-ABI/APK gates pass while Tactical `139` remains the
   stronger transient overlay. Run the updated iOS SwiftUI presentation through
   its macOS-only simulator/archive compile, then complete the slice.
@@ -648,13 +667,25 @@ exactly.
 ### Next
 
 - Resume **Tactical `158`** and close the clean Windows and Linux x86_64
-  update/install evidence plus Windows firewall-consent characterization.
+  signed replacement/relaunch evidence plus Windows firewall-consent
+  characterization. Prove clean launch or bounded reset and payload safety,
+  not retention of disposable `0.1.x` application state.
 
-- Freeze the application identities, first supported persistence baseline,
-  changelog, privacy/support presentation, and repeatable beta torrent cohort
-  around the first release candidate.
+- Declare the future first supported version and freeze its fresh application
+  identities and persistence/API baseline only from that version forward.
+  Complete changelog, privacy/support presentation, and the repeatable beta
+  torrent cohort without migrating `0.1.x` state.
 
 ### Later
+
+Decision-complete Tactical
+[`180`](../tactical/180-typed-settings-patches-and-draft-convergence.md) is
+ready after the current state/release queue. It replaces whole-value and
+pair-specific settings mutation with typed non-empty resource patches and
+gives web and Android editors explicit dirty, submitted, receipt, conflict,
+and authoritative-view convergence. Complete rows and reset snapshots remain
+the correctness baseline. Structural sharing, sparse field delivery, and
+response/view payload reduction require a separate measured follow-up.
 
 Completed cross-platform presubmit Tactical
 [`159`](../tactical/159-cross-platform-presubmit-ci.md) provides credential-free
@@ -756,7 +787,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | BEP 9 metadata download | Implemented | deterministic, runtime, interop, live | One bounded torrent owner assembles blocks across up to eight workers, accepts an authoritative piece-zero size up to 30 MiB, verifies exact SHA-1 and/or SHA-256 from typed identities, rejects a discovered format conflict, reconciles only authenticated pre-content hybrid owners, and recovers from expiry, rejection, and hash failure. Pinned libtorrent transfers the exact 31,457,280-byte maximum profile and pure-v2/hybrid info-only metadata in both roles. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Bounded metadata upload | Implemented | deterministic, runtime, interop | The diagnostic server remains metadata-only; the application listener shares immutable registration-owned v1, pure-v2, or hybrid metadata across bounded incoming peers and serves every requested 16-KiB block of valid local metadata up to the 64-MiB profile. Hybrid v1 and v2 routes share the same owner and source bytes. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
 | Product add from a `.torrent` file | Implemented | deterministic, runtime, interop, web, Tauri, AVD | One atomic 64-MiB byte operation preserves exact source, operational info and tracker tiers across restart through HTTP, WebSocket, raw Tauri IPC, and native adapters. V1 and the strict complete-source pure-v2 and hybrid subsets pass. Empty Add opens the shared single-file chooser, reuses root/start options, sends selection `all`, and requires no caller digest or secure context. | [`application-control`](application-control.md) |
-| Opaque torrent ownership and protocol identity foundation | Implemented | deterministic, persistence, runtime, interop, web, AVD | Schema 19, full v1/v2 alias values, versioned wire-key lookup, owner/fingerprint-bound have and part state, retained exact sources, generated clients, and both Android ABIs pass. Production pure-v2 and hybrid source/magnet rows retain the full 32-byte v2 identity while versioned tracker, DHT, handshake, and MSE paths use the appropriate typed key. Atomic provisional hybrid reconciliation leaves one row with two aliases and needs no schema migration. | [`bittorrent-v2-and-hybrid`](bittorrent-v2-and-hybrid.md), [`143`](../tactical/143-dual-identity-and-persistence-foundation.md), [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md), [`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md), [`156`](../tactical/156-hybrid-dual-swarm-runtime-closure.md) |
+| Opaque torrent ownership and protocol identity foundation | Implemented | deterministic, persistence, runtime, interop, web, AVD | Schema 19 established full v1/v2 alias values, versioned wire-key lookup, owner/fingerprint-bound have and part state, retained exact sources, generated clients, and both Android ABIs. Tactical `179` carries that current shape into fresh schema 21 while resetting every recognized prior catalog. Production pure-v2 and hybrid source/magnet rows retain the full 32-byte v2 identity while versioned tracker, DHT, handshake, and MSE paths use the appropriate typed key. Atomic provisional hybrid reconciliation leaves one row with two aliases. | [`bittorrent-v2-and-hybrid`](bittorrent-v2-and-hybrid.md), [`143`](../tactical/143-dual-identity-and-persistence-foundation.md), [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md), [`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md), [`156`](../tactical/156-hybrid-dual-swarm-runtime-closure.md) |
 | v2 and hybrid metadata, hashing, and transfer | Partial | deterministic, runtime, interop, web, Tauri, Android build, AVD, iOS build | Exact-byte models, aligned file-local geometry, complete and volatile sparse hash knowledge, SHA-256 Merkle verification, selective path/SAF storage, restart/recheck, publication, leaf repair, upload, seeding, standard peer transfer, and versioned tracker/DHT/TCP/uTP/MSE routing pass for pure-v2 source/magnet input and strict hybrid source/single-/dual-topic magnet input. Hybrid payload requires both SHA-1 and SHA-256, internal padding is synthesized, and one owner serves direct-v2 plus negotiated/declined v1 routes. Both pinned-libtorrent roles/entry lanes, browser, Tauri, Android SAF, iOS archive, bounded-resource, and cleanup evidence pass. Creation, arbitrary Merkle base layers, durable incomplete sparse hashes, broader historical layouts, and public reliability remain absent. | [`bittorrent-v2-and-hybrid`](bittorrent-v2-and-hybrid.md), [`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md), [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md), [`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md), [`156`](../tactical/156-hybrid-dual-swarm-runtime-closure.md), [`protocol-support`](protocol-support.md) |
 
 ### Discovery
@@ -807,7 +838,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Capability | State | Evidence | Highest-risk limit | Owner |
 | --- | --- | --- | --- | --- |
 | SHA-1 piece verification before have state | Implemented | deterministic, runtime, interop | Failure resets only the attempted v1 piece and preserves unrelated verified state. | [`download-correctness`](download-correctness.md) |
-| Multi-file mapping and selective files | Implemented | deterministic, persistence, runtime, interop, web, Android build | Path and dynamic-SAF High/Normal/Skip routing, sparse schema-20 priority persistence with schema-19 in-place migration, lazy part storage, boundary materialization, metadata-only intake, weighted picker and v2 hash ordering, and live generation-preserving updates pass. Low and raw numeric priority controls remain absent. | [`client-persistence`](client-persistence.md), [`download-correctness`](download-correctness.md), [`android-saf-storage`](android-saf-storage.md) |
+| Multi-file mapping and selective files | Implemented | deterministic, persistence, runtime, interop, web, Android build | Path and dynamic-SAF High/Normal/Skip routing, sparse current-schema priority persistence, lazy part storage, boundary materialization, metadata-only intake, weighted picker and v2 hash ordering, and live generation-preserving updates pass. Tactical `176`'s historical schema-19 retention migration is superseded by Tactical `179`'s fresh schema-21 epoch and recognized-incubation reset. Low and raw numeric priority controls remain absent. | [`client-persistence`](client-persistence.md), [`download-correctness`](download-correctness.md), [`android-saf-storage`](android-saf-storage.md) |
 | Cross-file, skipped-file, and padding storage | Implemented | deterministic, runtime, interop, web | Lazy part creation, retained lowered destinations, route-epoch promotion/demotion, exact verified-span export, uncertain boundary-piece invalidation, and empty-part cleanup pass; BEP 47 symlinks are deliberately rejected. | [`client-persistence`](client-persistence.md) |
 | Path-backed staging and publication | Implemented | deterministic, runtime, interop | Explicit file/tree topology, hash-owned internal artifacts, durable publishing intent, atomic no-replace rename, namespace sync, crash reconciliation, and fail-closed removal pass. Disk-space policy, relocation, and broader filesystem/provider coverage remain incomplete. | [`client-persistence`](client-persistence.md), [`download-roots`](download-roots.md) |
 | Bounded asynchronous content storage | Implemented | deterministic, runtime, interop, live, physical | Payload sync and batched SQLite checkpoints use a separate bounded joined owner; immutable positional writes and fixed-buffer per-span hashes execute with independent session totals, root/torrent fairness, explicit generation joins, a 1 MiB intake watermark, and the shared 40-handle pool. Controlled TCP plaintext/RC4 throughput exceeds pinned libtorrent across 256 KiB--16 MiB pieces; multi-torrent/root isolation and physical Android concurrency pass. Broader provider/root performance remains open. | [`storage-throughput-architecture`](storage-throughput-architecture.md), [`performance-and-live-evidence`](performance-and-live-evidence.md) |

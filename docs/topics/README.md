@@ -91,6 +91,9 @@ Topics own the current truth for a continuing concern. Tactical docs under
 - [`application-control.md`](application-control.md): shared semantic commands,
   responses, snapshots, revisions, and the boundary between in-process
   application control and future transports.
+- [`settings-mutation-and-draft-consistency.md`](settings-mutation-and-draft-consistency.md):
+  typed partial settings updates, atomic merge/validation, command-to-view
+  convergence, and client draft ownership under complete live updates.
 - [`application-view-api.md`](application-view-api.md): leased view sets,
   named snapshots and diffs, cursor recovery, polling and streaming delivery,
   generated TypeScript/schema, and provisional remote routes.
