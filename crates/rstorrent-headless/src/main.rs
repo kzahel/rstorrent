@@ -116,7 +116,7 @@ fn install(bundle: &Path) -> Result<(), rstorrent_headless::runtime::HeadlessErr
         );
     }
     if outcome.restored_running {
-        println!("The previously running user service passed authenticated health.");
+        println!("The previously running user service passed its configured health check.");
     } else {
         println!("Installation did not start or enable the user service.");
         println!("1. Copy and edit the protected example:");
