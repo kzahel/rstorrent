@@ -1779,6 +1779,14 @@ fn valid_cursor(value: &str) -> bool {
         && value.bytes().all(|byte| byte.is_ascii_digit())
 }
 
+fn valid_torrent_id(value: &str) -> bool {
+    value.len() == 35
+        && value.starts_with("t1-")
+        && value[3..]
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+}
+
 fn valid_application_call(call: &ApplicationCall) -> bool {
     match call {
         ApplicationCall::UpdateViewSet { view_set_id, .. }
@@ -1786,7 +1794,7 @@ fn valid_application_call(call: &ApplicationCall) -> bool {
         ApplicationCall::CreateMediaUrl {
             torrent_id,
             file_index: _,
-        } => torrent_id.len() == 40 && torrent_id.bytes().all(|byte| byte.is_ascii_hexdigit()),
+        } => valid_torrent_id(torrent_id),
         ApplicationCall::Dispatch { .. } | ApplicationCall::OpenViewSet { .. } => true,
     }
 }
@@ -1863,7 +1871,7 @@ mod tests {
     use super::{
         ApplicationClientFrame, ApplicationConnectionErrorCode, ApplicationConnectionRegistry,
         CLIENT_INSTANCE_ID_BYTES, MAX_PENDING_CALLS, insert_pending, valid_client_instance_id,
-        valid_cursor, valid_identifier,
+        valid_cursor, valid_identifier, valid_torrent_id,
     };
     use std::collections::BTreeSet;
     use tokio_util::sync::CancellationToken;
@@ -1882,6 +1890,9 @@ mod tests {
         assert!(valid_cursor("0"));
         assert!(valid_cursor("42"));
         assert!(!valid_cursor("01"));
+        assert!(valid_torrent_id("t1-000102030405060708090a0b0c0d0e0f"));
+        assert!(!valid_torrent_id("t1-000102030405060708090A0B0C0D0E0F"));
+        assert!(!valid_torrent_id(&"0".repeat(40)));
     }
 
     #[test]
