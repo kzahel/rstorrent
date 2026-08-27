@@ -388,6 +388,23 @@ describe("inspection application", () => {
     expect(
       within(grid).getAllByText(/TRK|DHT|TRACKER/i).length,
     ).toBeGreaterThan(0);
+    expect(
+      within(grid).getByRole("columnheader", { name: "Downloaded" }),
+    ).toBeVisible();
+    expect(
+      within(grid).getByRole("columnheader", { name: "Uploaded" }),
+    ).toBeVisible();
+    expect(within(grid).getByText("512 MB")).toBeVisible();
+    expect(within(grid).getByText("32.0 MB")).toBeVisible();
+
+    await user.click(
+      within(grid).getByRole("button", { name: "Explain Downloaded" }),
+    );
+    expect(
+      screen.getByRole("dialog", { name: "Downloaded column help" }),
+    ).toHaveTextContent(
+      "Useful payload received from this peer across every connection retained by this Swarm record",
+    );
   });
 
   it("drives an ordered diagnostic console with separate capture controls", async () => {

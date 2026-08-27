@@ -934,6 +934,12 @@ describe("LiveApplication", () => {
       if (update.type === "snapshot") snapshots.push(update.snapshot);
     });
     expect(snapshots.at(-1)?.swarmByTorrent[TORRENT_ID]?.order).toEqual(["1"]);
+    expect(
+      snapshots.at(-1)?.swarmByTorrent[TORRENT_ID]?.rows["1"],
+    ).toMatchObject({
+      payloadDownloadedBytes: "9007199254740993",
+      payloadUploadedBytes: "4503599627370497",
+    });
 
     client.expireViewSet();
     await waitUntil(() => client.openCount === 2);
@@ -1270,6 +1276,12 @@ function swarmPeer(generation: number) {
     last_connected_age_millis: null,
     last_failure: null,
     last_failure_age_millis: null,
+    payload_downloaded_bytes: (
+      9_007_199_254_740_992n + BigInt(generation)
+    ).toString(),
+    payload_uploaded_bytes: (
+      4_503_599_627_370_496n + BigInt(generation)
+    ).toString(),
     trust_points: 0,
     hash_failures: 0,
     valid_pieces: 0,

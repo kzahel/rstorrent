@@ -1254,6 +1254,8 @@ function mapSwarmPeer(peer: SwarmPeerView): SwarmRow {
     lastConnectedAgeMs: safeNullableNumber(peer.last_connected_age_millis),
     lastFailure: peer.last_failure,
     lastFailureAgeMs: safeNullableNumber(peer.last_failure_age_millis),
+    payloadDownloadedBytes: peer.payload_downloaded_bytes,
+    payloadUploadedBytes: peer.payload_uploaded_bytes,
     trustPoints: peer.trust_points,
     hashFailures: peer.hash_failures,
     validPieces: peer.valid_pieces,

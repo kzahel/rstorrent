@@ -2157,6 +2157,8 @@ function validateSwarmPeerView(value: unknown, owningTorrent: string): void {
   boolean(peer.connectable, "swarm peer connectable");
   decimal(peer.first_observed_age_millis, "swarm peer first observed age");
   decimal(peer.last_observed_age_millis, "swarm peer last observed age");
+  decimal(peer.payload_downloaded_bytes, "swarm peer downloaded payload");
+  decimal(peer.payload_uploaded_bytes, "swarm peer uploaded payload");
   [
     "retry_in_millis",
     "last_dial_age_millis",

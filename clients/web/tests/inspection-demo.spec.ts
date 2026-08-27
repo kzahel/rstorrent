@@ -1073,6 +1073,8 @@ test("swarm lifecycle remains readable and accessible across layouts", async ({
     "Sources",
     "Last seen",
     "Retry",
+    "Downloaded",
+    "Uploaded",
     "Dials",
     "Fails",
     "Trust",

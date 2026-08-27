@@ -1,11 +1,13 @@
 import { useMemo } from "react";
 
 import { useInspectionStore } from "../context";
+import type { DataUnits } from "../appearance";
+import { formatExactBytes } from "../format";
 import type { SwarmRow, SwarmSet, ViewMaterialization } from "../model";
 import { VirtualTable, type VirtualColumn } from "./VirtualTable";
 import styles from "./SwarmTable.module.css";
 
-const COLUMNS: readonly VirtualColumn<SwarmRow>[] = [
+const columns = (dataUnits: DataUnits): readonly VirtualColumn<SwarmRow>[] => [
   {
     id: "state",
     label: "State",
@@ -73,6 +75,40 @@ const COLUMNS: readonly VirtualColumn<SwarmRow>[] = [
     sortKind: "number",
     sortValue: (row) => row.retryInMs,
     render: (row) => formatDuration(row.retryInMs),
+  },
+  {
+    id: "downloaded",
+    label: "Downloaded",
+    width: 104,
+    align: "right",
+    sortable: true,
+    sortKind: "decimal",
+    sortValue: (row) => row.payloadDownloadedBytes,
+    headerHelp: (
+      <p>
+        Useful payload received from this peer across every connection retained
+        by this Swarm record. It resets when the engine restarts or the record
+        is evicted.
+      </p>
+    ),
+    render: (row) => formatExactBytes(row.payloadDownloadedBytes, dataUnits),
+  },
+  {
+    id: "uploaded",
+    label: "Uploaded",
+    width: 104,
+    align: "right",
+    sortable: true,
+    sortKind: "decimal",
+    sortValue: (row) => row.payloadUploadedBytes,
+    headerHelp: (
+      <p>
+        Payload sent to this peer across every connection retained by this
+        Swarm record. It excludes protocol traffic and resets with the engine
+        or record.
+      </p>
+    ),
+    render: (row) => formatExactBytes(row.payloadUploadedBytes, dataUnits),
   },
   {
     id: "attempts",
@@ -159,6 +195,8 @@ const COLUMNS: readonly VirtualColumn<SwarmRow>[] = [
 ];
 
 export function SwarmTable({ torrentId }: { readonly torrentId: string }) {
+  const dataUnits = useInspectionStore((state) => state.presentation.dataUnits);
+  const displayColumns = useMemo(() => columns(dataUnits), [dataUnits]);
   const swarm = useInspectionStore((state) => state.swarmByTorrent[torrentId]);
   const materialization = useInspectionStore((state) => state.viewStatus.swarm);
   const interfaceSize = useInspectionStore(
@@ -180,7 +218,7 @@ export function SwarmTable({ torrentId }: { readonly torrentId: string }) {
         label="Known swarm peers"
         rows={rows}
         getRowId={(row) => row.recordId}
-        columns={COLUMNS}
+        columns={displayColumns}
         interfaceSize={interfaceSize}
         emptyMessage={swarmEmptyMessage(materialization, swarm?.state)}
         initialSort={{ columnId: "state", direction: "asc" }}

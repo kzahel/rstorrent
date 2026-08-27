@@ -1317,6 +1317,20 @@ function buildSwarmSet(torrentId: string, count: number, seconds: number): Swarm
       lastConnectedAgeMs: state === "connected" ? index * 91 : null,
       lastFailure: failed ? (index % 2 === 0 ? "connect" : "handshake") : null,
       lastFailureAgeMs: failed ? index * 83 : null,
+      payloadDownloadedBytes: String(
+        state === "backed_off"
+          ? 512_000_000
+          : state === "connected"
+            ? 320_000_000
+            : index * 1_250_000,
+      ),
+      payloadUploadedBytes: String(
+        state === "backed_off"
+          ? 32_000_000
+          : state === "connected"
+            ? 18_000_000
+            : index * 125_000,
+      ),
       trustPoints: state === "banned" ? -7 : index % 5,
       hashFailures: state === "banned" ? 3 : 0,
       validPieces: index % 43,

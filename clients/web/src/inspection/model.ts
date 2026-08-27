@@ -277,6 +277,8 @@ export interface SwarmRow {
   readonly lastConnectedAgeMs: number | null;
   readonly lastFailure: PeerDisconnectReason | null;
   readonly lastFailureAgeMs: number | null;
+  readonly payloadDownloadedBytes: string;
+  readonly payloadUploadedBytes: string;
   readonly trustPoints: number;
   readonly hashFailures: number;
   readonly validPieces: number;

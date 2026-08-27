@@ -399,9 +399,14 @@ describe("swarm view validation", () => {
       /record maximum must be an integer in range/,
     );
     const inconsistent = swarmBatch();
-    inconsistent.updates[0]!.snapshot.counts.eligible = 1;
+    inconsistent.updates[0]!.snapshot.counts.connected = 1;
     expect(() => decodeUpdateBatch(JSON.stringify(inconsistent))).toThrow(
       /counts are inconsistent/,
+    );
+    const malformed = swarmBatch();
+    malformed.updates[0]!.snapshot.peers[0]!.payload_downloaded_bytes = "rounded";
+    expect(() => decodeUpdateBatch(JSON.stringify(malformed))).toThrow(
+      /downloaded payload must be a bounded canonical decimal/,
     );
   });
 });
@@ -1019,8 +1024,8 @@ function swarmBatch() {
           captured_millis: "1000",
           maximum_records: 1000,
           counts: {
-            total: 0,
-            eligible: 0,
+            total: 1,
+            eligible: 1,
             not_connectable: 0,
             dialing: 0,
             connected: 0,
@@ -1028,7 +1033,32 @@ function swarmBatch() {
             failure_limited: 0,
             banned: 0,
           },
-          peers: [],
+          peers: [
+            {
+              peer_record_id: "1",
+              torrent_id: TEST_TORRENT_ID,
+              endpoint: "127.0.0.1:6881",
+              sources: ["tracker" as const],
+              state: "eligible" as const,
+              connectable: true,
+              first_observed_age_millis: "5000",
+              last_observed_age_millis: "100",
+              retry_in_millis: null,
+              dial_attempts: 1,
+              consecutive_failures: 0,
+              total_failures: 0,
+              last_dial_age_millis: "1000",
+              last_connected_age_millis: null,
+              last_failure: null,
+              last_failure_age_millis: null,
+              payload_downloaded_bytes: "9007199254740993",
+              payload_uploaded_bytes: "4503599627370497",
+              trust_points: 0,
+              hash_failures: 0,
+              valid_pieces: 0,
+              on_parole: false,
+            },
+          ],
         },
       },
     ],

@@ -535,6 +535,8 @@ describe("view-set reducer", () => {
       last_connected_age_millis: null,
       last_failure: "connect" as const,
       last_failure_age_millis: "900",
+      payload_downloaded_bytes: "9007199254740993",
+      payload_uploaded_bytes: "4503599627370497",
       trust_points: 0,
       hash_failures: 0,
       valid_pieces: 0,
@@ -571,7 +573,14 @@ describe("view-set reducer", () => {
     expect(state.views.swarm).toMatchObject({
       type: "swarm",
       counts: { total: 1, backed_off: 1 },
-      peers: [{ peer_record_id: "7", sources: ["tracker", "dht"] }],
+      peers: [
+        {
+          peer_record_id: "7",
+          sources: ["tracker", "dht"],
+          payload_downloaded_bytes: "9007199254740993",
+          payload_uploaded_bytes: "4503599627370497",
+        },
+      ],
     });
 
     state = reduceUpdateBatch(
