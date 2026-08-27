@@ -627,6 +627,28 @@ impl TorrentPeerHandle {
         self.publish(true, true)
     }
 
+    pub(crate) fn finalize_incoming_upload(
+        &self,
+        attachment: IncomingPeerAttachment,
+        payload_bytes: u64,
+        payload_rate: u64,
+    ) -> Result<(), TorrentPeerError> {
+        self.with_state(|state| {
+            let peer = state.runtime.observation(attachment.connection_id).ok_or(
+                PeerRuntimeError::UnknownConnection(attachment.connection_id),
+            )?;
+            if peer.record_id != Some(attachment.record_id) {
+                return Err(PeerRuntimeError::UnknownConnection(attachment.connection_id).into());
+            }
+            state.runtime.finalize_upload_transfer(
+                attachment.connection_id,
+                payload_bytes,
+                payload_rate,
+            )?;
+            Ok(())
+        })
+    }
+
     pub fn remove_incoming(
         &self,
         attachment: IncomingPeerAttachment,

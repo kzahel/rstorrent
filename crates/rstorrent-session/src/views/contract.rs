@@ -1257,6 +1257,8 @@ pub struct SwarmPeerView {
     pub last_connected_age_millis: Option<String>,
     pub last_failure: Option<PeerDisconnectReason>,
     pub last_failure_age_millis: Option<String>,
+    pub payload_downloaded_bytes: String,
+    pub payload_uploaded_bytes: String,
     pub trust_points: i8,
     pub hash_failures: u8,
     pub valid_pieces: u32,

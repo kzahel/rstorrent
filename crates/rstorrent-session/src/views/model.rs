@@ -587,6 +587,8 @@ pub(super) fn swarm_model(
                             .last_disconnected_at
                             .map(|at| duration_millis_string(captured_at.saturating_sub(at)))
                     }),
+                    payload_downloaded_bytes: record.transfers.payload_downloaded_bytes.to_string(),
+                    payload_uploaded_bytes: record.transfers.payload_uploaded_bytes.to_string(),
                     trust_points: record.integrity.trust_points,
                     hash_failures: record.integrity.hash_failures,
                     valid_pieces: record.integrity.valid_pieces,

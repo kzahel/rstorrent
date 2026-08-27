@@ -233,7 +233,7 @@ export type SwarmCountsView = { total: number, eligible: number, not_connectable
 
 export type SwarmPeerState = "eligible" | "not_connectable" | "dialing" | "connected" | "backed_off" | "failure_limited" | "banned";
 
-export type SwarmPeerView = { peer_record_id: string, torrent_id: string, endpoint: string, sources: Array<PeerSourceView>, state: SwarmPeerState, connectable: boolean, first_observed_age_millis: string, last_observed_age_millis: string, retry_in_millis: string | null, dial_attempts: number, consecutive_failures: number, total_failures: number, last_dial_age_millis: string | null, last_connected_age_millis: string | null, last_failure: PeerDisconnectReason | null, last_failure_age_millis: string | null, trust_points: number, hash_failures: number, valid_pieces: number, on_parole: boolean, };
+export type SwarmPeerView = { peer_record_id: string, torrent_id: string, endpoint: string, sources: Array<PeerSourceView>, state: SwarmPeerState, connectable: boolean, first_observed_age_millis: string, last_observed_age_millis: string, retry_in_millis: string | null, dial_attempts: number, consecutive_failures: number, total_failures: number, last_dial_age_millis: string | null, last_connected_age_millis: string | null, last_failure: PeerDisconnectReason | null, last_failure_age_millis: string | null, payload_downloaded_bytes: string, payload_uploaded_bytes: string, trust_points: number, hash_failures: number, valid_pieces: number, on_parole: boolean, };
 
 export type FileSelectionView = "wanted" | "skipped";
 

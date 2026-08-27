@@ -5312,6 +5312,12 @@
         "on_parole": {
           "type": "boolean"
         },
+        "payload_downloaded_bytes": {
+          "type": "string"
+        },
+        "payload_uploaded_bytes": {
+          "type": "string"
+        },
         "peer_record_id": {
           "type": "string"
         },
@@ -5363,6 +5369,8 @@
         "dial_attempts",
         "consecutive_failures",
         "total_failures",
+        "payload_downloaded_bytes",
+        "payload_uploaded_bytes",
         "trust_points",
         "hash_failures",
         "valid_pieces",

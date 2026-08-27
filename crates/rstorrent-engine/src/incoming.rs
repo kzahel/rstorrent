@@ -1041,6 +1041,14 @@ impl IncomingPeerAttachmentGuard {
         }
     }
 
+    fn finalize_upload(&self, traffic: UploadTrafficSnapshot) {
+        let _ = self.peers.finalize_incoming_upload(
+            self.attachment,
+            traffic.payload_bytes,
+            traffic.payload_rate_bytes,
+        );
+    }
+
     fn remove(mut self) {
         self.begin_disconnect(self.failure);
         if self
@@ -3266,6 +3274,9 @@ async fn run_incoming_peer(
         (termination, Ok(())) => termination,
         (_, Err(_)) => PeerTermination::Closed,
     };
+    runtime
+        .attachment
+        .finalize_upload(runtime.peer_upload.snapshot());
     runtime
         .attachment
         .begin_disconnect(termination.peer_failure());

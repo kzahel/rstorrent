@@ -403,6 +403,22 @@ impl PeerRuntime {
         Ok(())
     }
 
+    pub(crate) fn finalize_upload_transfer(
+        &mut self,
+        connection: ConnectionId,
+        payload_bytes: u64,
+        payload_rate: u64,
+    ) -> Result<(), PeerRuntimeError> {
+        let peer = self.connection_mut(connection)?;
+        let upload = peer
+            .upload
+            .as_mut()
+            .ok_or(PeerRuntimeError::UnknownConnection(connection))?;
+        upload.payload_bytes = payload_bytes;
+        upload.payload_rate = payload_rate;
+        Ok(())
+    }
+
     pub(crate) fn set_metadata_extension(
         &mut self,
         connection: ConnectionId,

@@ -14751,6 +14751,14 @@ mod tests {
         assert_eq!(connected_swarm_peer.sources, [PeerSourceView::Incoming]);
         assert_eq!(connected_swarm_peer.state, SwarmPeerState::Connected);
         assert!(!connected_swarm_peer.connectable);
+        assert_eq!(connected_swarm_peer.payload_downloaded_bytes, "0");
+        assert!(
+            connected_swarm_peer
+                .payload_uploaded_bytes
+                .parse::<u64>()
+                .expect("exact live Swarm upload total")
+                >= 3
+        );
 
         let handover_port = available_port_on(Ipv4Addr::LOCALHOST)
             .await
@@ -14852,6 +14860,8 @@ mod tests {
         .expect("closed incoming peer remains as non-connectable swarm history");
         assert_eq!(closed_swarm_peer.sources, [PeerSourceView::Incoming]);
         assert!(!closed_swarm_peer.connectable);
+        assert_eq!(closed_swarm_peer.payload_downloaded_bytes, "0");
+        assert_eq!(closed_swarm_peer.payload_uploaded_bytes, "7");
 
         let zero_slots = ClientSettings {
             upload_slots: 0,
