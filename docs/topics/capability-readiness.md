@@ -105,6 +105,16 @@ mutation. Its deterministic, installed-service, package-repair, exact-route,
 WSS/media, and phone-sized browser evidence now passes without changing any
 existing Serve route or ACL. Tactical `158` has resumed as the sole **Now**.
 
+Explicit maintainer direction later on 2026-08-27 temporarily yields Tactical
+`158` to retained Swarm transfer-total Tactical
+[`175`](../tactical/175-retained-swarm-peer-transfer-totals.md). This bounded
+slice makes exact useful payload downloaded from and uploaded to each retained
+peer record visible through disconnect, backoff, and reconnect. It does not
+change peer selection, retry policy, persistence, or the current stalled
+torrent's runtime behavior. Tactical `175` is the sole **Now** while its
+engine, generated-contract, React, Android-build, and installed-service gates
+run.
+
 The updater tactical's client, production route, five-target signed hosted
 rehearsal, public `0.1.0`, `0.1.1`, and `0.1.2` releases, installed macOS arm64
 launch smoke, and exact macOS arm64 and Linux arm64 `0.1.0`-to-`0.1.1` updates
@@ -593,13 +603,16 @@ exactly.
 ### Now
 
 - **Tactical
-  [`158`](../tactical/158-desktop-signed-packaging-and-updater.md): desktop
-  signed packaging and updater adoption.** Close the clean Windows and Linux
-  x86_64 update/install evidence plus Windows firewall-consent
-  characterization. Installed Intel macOS remains deliberately omitted.
+  [`175`](../tactical/175-retained-swarm-peer-transfer-totals.md): retained
+  Swarm peer transfer totals.** Carry exact useful payload download/upload
+  contribution across live, disconnected, backed-off, and reconnected peer
+  generations without changing peer policy or adding durable history.
 
 ### Next
 
+- Resume Tactical `158` and close the clean Windows and Linux x86_64
+  update/install evidence plus Windows firewall-consent characterization.
+  Installed Intel macOS remains deliberately omitted.
 - Freeze the application identities, first supported persistence baseline,
   changelog, privacy/support presentation, and repeatable beta torrent cohort
   around the first release candidate.

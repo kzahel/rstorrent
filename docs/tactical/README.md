@@ -827,6 +827,10 @@ that scope and its cleanup or compatibility rules explicitly.
   direct LAN authority plus one exact loopback Tailscale Serve HTTPS authority,
   retains one application owner and endpoint-correct media URLs, and proves
   the installed LAN/tailnet service without wildcard, Funnel, or ACL changes.
+- [`175-retained-swarm-peer-transfer-totals.md`](175-retained-swarm-peer-transfer-totals.md):
+  in progress; adds exact useful payload download/upload contribution to every
+  retained Swarm record across active connections, backoff, disconnect, and
+  reconnect without changing peer policy or adding durable history.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
