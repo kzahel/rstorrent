@@ -632,20 +632,19 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Current engine-campaign action: complete paced metadata connection-cohort
-Tactical [`181`](../tactical/181-paced-metadata-connection-cohort.md). Source
-inspection shows pinned libtorrent counts half-open work against its 200-
-connection session limit but gives metadata acquisition normal torrent peer
-admission rather than a separate eight-peer cap. RSTorrent will retain exact
-global accounting, expand its combined metadata dial/worker cohort to 30, and
-space accepted dials at a configurable no-burst default of ten per second.
-Explicit maintainer direction temporarily yields durable High file-priority
-Tactical [`176`](../tactical/176-durable-high-file-priority.md); its only
-remaining gate is still the unavailable macOS-hosted iOS simulator/archive
-compile. Completed Tactical `179` retains the pre-task, crash-convergent,
-payload-preserving reset while removing old catalog and DHT readers.
-Decision-complete measurement Tactical `153` remains ready without competing
-with this explicit user priority.
+Current engine-campaign action: close durable High file-priority Tactical
+[`176`](../tactical/176-durable-high-file-priority.md) with the macOS-only iOS
+simulator/archive compile. Its bounded High/Normal/Skip implementation, fresh
+schema-21 persistence, weighted ordinary piece activation, independent
+stronger Tactical `139` streaming overlay, and every available Linux, web, and
+Android gate already pass. Completed Tactical
+[`181`](../tactical/181-paced-metadata-connection-cohort.md) retains exact
+global connection accounting while expanding the combined metadata
+dial/worker cohort to 30 and spacing accepted attempts at a configurable
+no-burst default of ten per second. Completed Tactical `179` retains the
+pre-task, crash-convergent, payload-preserving reset while removing old catalog
+and DHT readers. Decision-complete measurement Tactical `153` remains ready
+without competing with this explicit user priority.
 Completed Tactical `155` closes Stage 4 through hash scheduling, candidate
 verification, reconstruction, repair, service, first-party platforms, and
 two-role interoperability. Completed Tactical `156` closes Stage 5 through

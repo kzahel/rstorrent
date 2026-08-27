@@ -145,7 +145,7 @@ transient-failure record. Torrent-wide admission then waits 5, 10, 20, 40, and
 at most 60 minutes; an admitted handshake resets it. Definite protocol,
 identity, integrity, ban, and address-policy exclusions remain absolute.
 
-Active Tactical
+Completed Tactical
 [`181`](../tactical/181-paced-metadata-connection-cohort.md) closes a distinct
 metadata-startup bottleneck observed on 2026-08-27. The running service knew
 hundreds of peer records from a source-rich swarm, but metadata acquisition
@@ -153,9 +153,12 @@ could evaluate only eight combined pending and connected workers; none of the
 eight visible initiating attempts connected or contributed payload. Pinned
 libtorrent instead gives `downloading_metadata` normal torrent peer admission,
 counts half-open work against its 200-connection session limit, and defaults
-to 30-attempt startup breadth. RSTorrent will keep exact global accounting,
-bound the combined metadata cohort at 30, and pace accepted dials without
-burst at a configurable default of ten per second.
+to 30-attempt startup breadth. RSTorrent now keeps exact global accounting,
+bounds the combined metadata cohort at 30, and spaces accepted dials without
+burst at a configurable default of ten per second. A scripted 30/31 run reaches
+exactly 30 live permits, leaves candidate 31 eligible, and cancels back to zero
+tasks and permits. Fast failure, timeout chatter, reject, workspace,
+pinned-libtorrent loopback, and maintained Android dual-ABI gates pass.
 
 ## Scope
 

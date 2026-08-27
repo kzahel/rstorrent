@@ -1,8 +1,10 @@
 # Tactical 181: Paced Metadata Connection Cohort
 
-Status: **Active (2026-08-27).** Explicit maintainer direction temporarily
-yields Tactical `176`'s unavailable macOS-only gate to this bounded engine
-repair. Source inspection is complete; implementation and validation remain.
+Status: **Complete (2026-08-27).** Metadata acquisition now owns a validated
+30-peer combined dial/worker cohort and spaces accepted attempts at a
+configurable no-burst default of ten per second. Pure, scripted, workspace,
+pinned-libtorrent loopback, and maintained Android dual-ABI gates pass.
+Tactical `176` resumes as the sole **Now** with its existing macOS-only gate.
 
 Topics: [`peer-lifecycle`](../topics/peer-lifecycle.md),
 [`performance-and-live-evidence`](../topics/performance-and-live-evidence.md),
@@ -102,7 +104,7 @@ oracle. No source, fixture, or test data is copied.
   `simulation/test_swarm.cpp` connect-timeout cases retain bounded failure
   paths.
 
-RSTorrent's current owner is
+Before this tactical, RSTorrent's owner was
 `crates/rstorrent-engine/src/driver.rs::acquire_metadata_inner`. Its constant
 `MAX_METADATA_PEERS = 8` bounds `PeerSocketSet::pending_len() + JoinSet::len()`.
 `PeerSocketSet` obtains a session `PeerBudget` permit before socket work, so
@@ -260,4 +262,59 @@ different connection owner.
 
 ## Implementation And Evidence
 
-Pending implementation.
+`MetadataConnectionLimits` now carries `max_peers` and
+`max_attempts_per_second` inside `DownloadResourceLimits`. Desktop and Android
+both select `30/10`; validation rejects zero, more than 200 peers, or more
+than 30 attempts per second before networking. The common application metadata
+path passes its platform profile into the engine, while standalone diagnostic
+metadata helpers retain the desktop default. No generated application command,
+view, persistence, or user setting changed.
+
+`MetadataDialPacer` is a task-free monotonic deadline. Its first attempt is
+immediately eligible. An accepted `PeerSocketSet` dial moves the deadline from
+the actual start instant by the ceiling-divided interval; denial, candidate
+absence, or synchronous socket-set rejection does not spend it. A delayed wake
+therefore cannot accumulate tokens or start a catch-up group. The existing
+supervisor sleep wakes at the earlier of its maintenance cadence and pacing
+deadline; no timer task, semaphore, channel, or parallel owner was added.
+
+The supervisor applies the configured limit to the sum of pending sockets and
+joined metadata workers. A focused scripted run reached exactly 30 active
+attempts in 2.93 seconds, retained candidate 31 as eligible, and observed the
+shared `PeerBudget` at exactly 30 total and high-water permits. Cancellation
+joined the engine owner, closed every admitted remote socket, left the 31st
+fixture unaccepted, and returned pending dials, active workers, active attempts,
+and live peer permits to zero. Pure tests prove exact 30/31 arithmetic, 100 ms
+default spacing, 33,333,334 ns maximum-rate spacing, and no delayed-wake burst.
+
+Paced fast failure exposed one shape-changing transition during implementation:
+after a metadata-incapable peer failed before the next pacing deadline, the
+cohort could be temporarily empty even though another known candidate was
+eligible. The old empty-cohort path surfaced the last peer error as terminal.
+The supervisor now distinguishes an eligible candidate waiting for admission
+from an exhausted registry and sleeps to the pacing deadline. Focused cases
+then pass for 30 metadata-incapable peers, 30 progress-timeout chatter peers,
+30 explicit rejectors, later useful completion, and exact cleanup.
+
+Closure validation on 2026-08-27 passes:
+
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace -- -D warnings`;
+- `cargo test --workspace`, including the feature-unified engine run with 589
+  passed and 11 declared opt-in/maximum tests ignored, and the session run with
+  260 passed and two declared ignored;
+- `uv run --project tests/interop --locked python
+  tests/interop/magnet_metadata.py`: pinned libtorrent `2.0.13.0` served the
+  exact 26,686-byte/two-block dictionary to RSTorrent, which verified three of
+  three pieces and the 40,000-byte payload in 0.299 seconds; RSTorrent then
+  served the same raw dictionary back to libtorrent in two requests in 0.080
+  seconds, with exact hashes and temporary-root cleanup; and
+- `clients/android/build.sh`: locked x86_64 and arm64-v8a release Rust builds,
+  Kotlin UniFFI generation, debug APK assembly, and JVM unit tests pass. The
+  pre-existing Android deprecation warnings are unrelated.
+
+No public swarm, external machine, emulator, physical device, installed
+service, user profile, or release was touched. Existing connect, uTP fallback,
+handshake, and peer-I/O timeouts remain unchanged. A shorter uTP-only attempt
+deadline remains a separate source-first measurement if future diagnostics
+show it still owns metadata startup latency.

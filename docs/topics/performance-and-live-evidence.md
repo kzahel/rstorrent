@@ -670,6 +670,33 @@ RSTorrent run used exactly two requests and two accepted blocks, with zero
 hash and cleanup failures. This before/after result is the causal evidence for
 the pacing change.
 
+### Paced Metadata Connection Cohort: 2026-08-27
+
+Tactical `181` addresses a later source-rich product observation without
+promoting changing-swarm timing to a threshold. The running service had
+hundreds of peer records and a tracker reporting more than 300 seeders, but
+its metadata owner could evaluate only eight combined pending and connected
+workers. None of the eight attempts visible in the initiating sample connected
+or contributed payload; three failed and five were canceled after a later peer
+completed the dictionary.
+
+Pinned libtorrent source confirms `downloading_metadata` uses ordinary torrent
+peer admission, half-open work counts against the default 200-session
+connection limit, and the reference offers 30-attempt startup breadth.
+RSTorrent now retains global accounting while bounding metadata at 30 combined
+pending/connected peers and spacing accepted attempts at a conservative
+no-burst default of ten per second. A deterministic saturation run reaches an
+exact 30 connection-permit high water in 2.93 seconds, leaves candidate 31
+eligible, and cancels every engine owner and permit to zero.
+
+The retained loopback `magnet_metadata.py` gate passes against pinned
+libtorrent `2.0.13.0`: RSTorrent receives the exact 26,686-byte two-block
+dictionary, verifies and publishes three pieces and 40,000 payload bytes in
+0.299 seconds, then serves the byte-identical dictionary back to libtorrent in
+two requests in 0.080 seconds. Both directions verify identity/content and
+clean their temporary roots. These are controlled correctness timings, not a
+public-swarm latency claim. No new public traffic was run for this tactical.
+
 ### First Full-Download Comparator Evidence: 2026-07-31
 
 A controlled loopback fixture first ran both exact adapters against one

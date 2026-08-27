@@ -80,9 +80,10 @@ that scope and its cleanup or compatibility rules explicitly.
 ## Current Tacticals
 
 - [`181-paced-metadata-connection-cohort.md`](181-paced-metadata-connection-cohort.md):
-  active expansion of the combined metadata dial/worker cohort to 30 with a
+  completed expansion of the combined metadata dial/worker cohort to 30 with a
   configurable no-burst default of ten new connection attempts per second,
-  beneath unchanged fair and session-global admission.
+  beneath unchanged fair and session-global admission, including Android
+  dual-ABI and pinned-libtorrent loopback evidence.
 - [`179-disposable-incubation-state-epoch.md`](179-disposable-incubation-state-epoch.md):
   completed fresh schema-21 catalog epoch and removal of compatibility-only
   DHT, desktop-shell, and browser-appearance readers while preserving the
