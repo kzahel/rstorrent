@@ -43,9 +43,13 @@ machine-control.
 ## Current Tactical State
 
 The authoritative **Now** is
-[`176-durable-high-file-priority.md`](docs/tactical/176-durable-high-file-priority.md).
-Its semantic model, fresh schema-21 persistence, and every Linux/web/Android
-gate pass; only the macOS-hosted iOS simulator/archive compile remains.
+[`181-paced-metadata-connection-cohort.md`](docs/tactical/181-paced-metadata-connection-cohort.md).
+It expands metadata acquisition from eight combined dial/worker slots to 30
+while spacing new connection attempts at a configurable no-burst default of
+ten per second beneath unchanged fair and session-global limits. Tactical
+`176` retains its completed semantic model, fresh schema-21 persistence, and
+Linux/web/Android gates; its macOS-hosted iOS simulator/archive compile resumes
+after this bounded engine repair.
 Completed Tactical `179` resets recognized schemas 1 through 20 and removes
 compatibility-only DHT, desktop-shell, and browser-appearance readers while
 preserving external payload. Completed Tactical `177` retains the

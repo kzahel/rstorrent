@@ -145,6 +145,18 @@ transient-failure record. Torrent-wide admission then waits 5, 10, 20, 40, and
 at most 60 minutes; an admitted handshake resets it. Definite protocol,
 identity, integrity, ban, and address-policy exclusions remain absolute.
 
+Active Tactical
+[`181`](../tactical/181-paced-metadata-connection-cohort.md) closes a distinct
+metadata-startup bottleneck observed on 2026-08-27. The running service knew
+hundreds of peer records from a source-rich swarm, but metadata acquisition
+could evaluate only eight combined pending and connected workers; none of the
+eight visible initiating attempts connected or contributed payload. Pinned
+libtorrent instead gives `downloading_metadata` normal torrent peer admission,
+counts half-open work against its 200-connection session limit, and defaults
+to 30-attempt startup breadth. RSTorrent will keep exact global accounting,
+bound the combined metadata cohort at 30, and pace accepted dials without
+burst at a configurable default of ten per second.
+
 ## Scope
 
 This topic owns the torrent-engine vocabulary and invariants for peer

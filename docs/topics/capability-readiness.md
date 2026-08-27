@@ -675,10 +675,16 @@ exactly.
 
 ### Now
 
-- Resume **Tactical `176`** only for its existing macOS-hosted iOS simulator/
-  archive compile; every implementation and other validation gate passes.
+- Complete **Tactical `181`**: expand metadata acquisition from eight combined
+  dial/worker slots to 30 while pacing new connection attempts at a
+  configurable no-burst default of ten per second beneath unchanged fair and
+  session-global connection admission. Explicit maintainer direction on
+  2026-08-27 temporarily yields Tactical `176`'s unavailable macOS-only gate.
 
 ### Next
+
+- Resume **Tactical `176`** only for its existing macOS-hosted iOS simulator/
+  archive compile; every implementation and other validation gate passes.
 
 - Resume **Tactical `158`** and close the clean Windows and Linux x86_64
   signed replacement/relaunch evidence plus Windows firewall-consent
