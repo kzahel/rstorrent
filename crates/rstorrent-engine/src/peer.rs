@@ -711,6 +711,10 @@ impl PeerRegistry {
             record.sources.insert(observation.source);
             record.connectable |= observation.connectable;
             record.last_observed_at = now;
+            if observation.source == PeerSource::Tracker && record.history.consecutive_failures != 0
+            {
+                record.history.consecutive_failures -= 1;
+            }
             if observation.utp_advertised
                 && record.history.utp_endpoint != UtpEndpointState::Confirmed
             {
@@ -1358,6 +1362,98 @@ mod tests {
         assert!(record.sources().contains(PeerSource::Tracker));
         assert_eq!(record.sources().len(), 2);
         assert_eq!(registry.len(), 1);
+    }
+
+    #[test]
+    fn tracker_refresh_rehabilitates_one_failure_without_erasing_history() {
+        let mut registry = PeerRegistry::new(config(1)).expect("registry");
+        let endpoint = endpoint(6_881);
+        let record_id = registry
+            .observe(
+                PeerObservation::dialable(endpoint, PeerSource::Tracker),
+                Duration::ZERO,
+            )
+            .expect("tracker observation")
+            .record_id;
+
+        for (dial_at, fail_at) in [(0, 0), (10, 10), (30, 30)] {
+            let context = PeerSelectionContext {
+                now: Duration::from_secs(dial_at),
+            };
+            let candidate = PeerSelector
+                .select(&registry, context)
+                .expect("ordinary candidate before failure ceiling");
+            let attempt = registry.begin_dial(candidate, context).expect("begin dial");
+            registry
+                .dial_failed(attempt, Duration::from_secs(fail_at), PeerFailure::Connect)
+                .expect("record connect failure");
+        }
+
+        let before_refresh = PeerSelectionContext {
+            now: Duration::from_secs(40),
+        };
+        assert_eq!(
+            PeerSelector.eligibility(
+                registry.get(record_id).expect("failed record"),
+                before_refresh,
+                registry.config(),
+            ),
+            DialEligibility::FailureLimit {
+                failures: 3,
+                maximum: 3,
+            }
+        );
+
+        registry
+            .observe(
+                PeerObservation::dialable(endpoint, PeerSource::Dht),
+                before_refresh.now,
+            )
+            .expect("DHT refresh");
+        assert_eq!(
+            registry
+                .get(record_id)
+                .expect("DHT-refreshed record")
+                .history()
+                .consecutive_failures,
+            3
+        );
+
+        registry
+            .observe(
+                PeerObservation::dialable(endpoint, PeerSource::Tracker),
+                before_refresh.now,
+            )
+            .expect("trusted tracker refresh");
+        let history = registry
+            .get(record_id)
+            .expect("tracker-refreshed record")
+            .history();
+        assert_eq!(history.total_failures, 3);
+        assert_eq!(history.consecutive_failures, 2);
+        assert_eq!(history.last_failure, Some(PeerFailure::Connect));
+        assert_eq!(history.retry_at, Some(Duration::from_secs(60)));
+        assert_eq!(
+            PeerSelector.eligibility(
+                registry.get(record_id).expect("backed-off record"),
+                before_refresh,
+                registry.config(),
+            ),
+            DialEligibility::Backoff {
+                retry_at: Duration::from_secs(60),
+            }
+        );
+        assert!(PeerSelector.select(&registry, before_refresh).is_none());
+        assert!(
+            PeerSelector
+                .select(
+                    &registry,
+                    PeerSelectionContext {
+                        now: Duration::from_secs(60),
+                    },
+                )
+                .is_some()
+        );
     }
 
     #[test]

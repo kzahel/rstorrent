@@ -236,6 +236,17 @@ content path; pause/failure/shutdown clean up exactly; proportional repository
 and Android engine gates pass; and every owning topic records the landed
 behavior and remaining limits.
 
+## Implementation Evidence
+
+Stage 1 is complete. `PeerRegistry::observe` now applies the pinned
+libtorrent-compatible one-step rehabilitation only to an existing exact
+tracker observation. The deterministic transition reaches the ordinary
+three-failure ceiling through real attempt identities, proves DHT refresh is
+inert, preserves all cumulative and deadline history across tracker refresh,
+reports ordinary backoff until the original deadline, and then exposes one
+ordinary candidate. Repository formatting and the focused `rstorrent-engine`
+tracker-rehabilitation test pass.
+
 ## Non-Goals
 
 - Removing or raising the ordinary failure ceiling, releasing all failed peers,
