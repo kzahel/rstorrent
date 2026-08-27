@@ -19,6 +19,10 @@ an accessible removal dialog whose managed-data option is unchecked by
 default. The docked detail inspector is now bounded and resizable by pointer,
 touch, or keyboard. Tactical `041` adds the first live Files surface, exact
 sorting, persistent table columns and widths, and a 4,096-row named scenario.
+Completed Tactical
+[`173`](../tactical/173-mobile-web-table-horizontal-scrolling.md) makes those
+configured columns authoritative at every viewport width and restores trusted
+touch horizontal scrolling across every shared table.
 Tactical `043` adds the responsive live Trackers table, local deadline
 countdowns, and a permanent tracker-recovery scenario. Tacticals `044`--`045`
 add the global Disk pipeline and selected-torrent bounded Canvas Pieces
@@ -665,7 +669,12 @@ Column visibility, widths, sort, and live-sort preference persist per table in
 a versioned browser-local setting. Resize separators work by pointer and
 keyboard. Wide, compact, and phone evidence keeps the active tab visible,
 closes the phone drawer fully, and leaves horizontal scrolling available for
-explicit extra columns. Serious and critical axe findings are empty.
+configured columns. Tactical `173` removes the former viewport-threshold
+filter that contradicted this contract: a checked column now renders at every
+width, while unchecked optional columns remain absent. Two-axis touch panning,
+contained horizontal overscroll, and directional edge fades make the complete
+configured set reachable without compressing columns or expanding the virtual
+row window. Serious and critical axe findings are empty.
 
 Tactical `047` adds wide Compact, Standard, and Spacious geometry assertions,
 reload persistence, desktop and phone Settings-sheet focus containment, and
@@ -698,9 +707,10 @@ Rate and retains Workbench's existing ETA column. The live adapter preserves
 exact decimal strings, the formatter uses `BigInt`, only estimates participate
 in decimal sorting, and typed unavailable/warming/stalled states remain
 distinct accessible `—`/`∞` values. The production-preview browser case
-covers all four states, Compact mode, the phone-width visibility rule, titles,
-accessible names, and no serious or critical axe findings. Vitest passes 214
-tests with the two existing opt-in skips.
+covers all four states, Compact mode, titles, accessible names, and no serious
+or critical axe findings. Tactical `173` supersedes its phone-only removal:
+ETA remains configured and rendered in the horizontally scrollable table at
+narrow widths. Vitest passes 214 tests with the two existing opt-in skips.
 
 Tactical `106` adds pure Decimal/Binary, idle, disconnect, active-download,
 upload-only, and unavailable-direction title coverage. React proves mounted

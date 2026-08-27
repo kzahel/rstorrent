@@ -6,6 +6,41 @@
   min-height: 9rem;
 }
 
+.container::before,
+.container::after {
+  position: absolute;
+  z-index: 4;
+  top: var(--ui-table-toolbar-height);
+  bottom: 0;
+  width: 1rem;
+  opacity: 0;
+  pointer-events: none;
+  content: "";
+}
+
+.container::before {
+  left: 0;
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--surface-primary) 86%, transparent),
+    transparent
+  );
+}
+
+.container::after {
+  right: 0;
+  background: linear-gradient(
+    to left,
+    color-mix(in srgb, var(--surface-primary) 86%, transparent),
+    transparent
+  );
+}
+
+.container[data-overflow-left="true"]::before,
+.container[data-overflow-right="true"]::after {
+  opacity: 1;
+}
+
 .contextMenuTrigger {
   position: absolute;
   width: 1px;
@@ -20,9 +55,11 @@
   height: auto;
   min-height: 9rem;
   overflow: auto;
+  overscroll-behavior-x: contain;
   outline: none;
   background: var(--surface-primary);
   scrollbar-color: var(--border-strong) transparent;
+  touch-action: pan-x pan-y;
 }
 
 .viewport:focus-within {

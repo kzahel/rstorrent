@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 const screenshotDirectory = process.env.RSTORRENT_SCREENSHOT_DIR;
 
@@ -456,10 +456,17 @@ test("typed torrent ETA stays explicit across responsive surfaces", async ({
   ).toEqual([]);
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(transfers.getByRole("columnheader", { name: "ETA" })).toHaveCount(
-    0,
-  );
+  await expect(
+    transfers.getByRole("columnheader", { name: "ETA" }),
+  ).toHaveCount(1);
   await expect(transfers.getByRole("columnheader", { name: "Name" })).toBeVisible();
+  await expect
+    .poll(() =>
+      transfers.evaluate(
+        (element) => element.scrollWidth > element.clientWidth,
+      ),
+    )
+    .toBe(true);
   expect(
     (await new AxeBuilder({ page }).analyze()).violations.filter(
       (violation) =>
@@ -1060,6 +1067,81 @@ test("swarm lifecycle remains readable and accessible across layouts", async ({
   await expect(
     page.getByRole("button", { name: "Torrents", exact: true }),
   ).toBeVisible();
+  const expectedColumns = [
+    "State",
+    "Address",
+    "Sources",
+    "Last seen",
+    "Retry",
+    "Dials",
+    "Fails",
+    "Trust",
+    "Parole",
+  ];
+  const columns = page.getByRole("button", { name: "Columns" }).last();
+  await columns.click();
+  const columnDialog = page.getByRole("dialog", {
+    name: "Table column settings",
+  });
+  for (const name of expectedColumns) {
+    await expect(
+      columnDialog.getByRole("checkbox", { name }),
+    ).toBeChecked();
+  }
+  await page.keyboard.press("Escape");
+  await expect(columnDialog).not.toBeVisible();
+
+  for (const width of [390, 456]) {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 1024 });
+    await expect(swarm).toBeVisible();
+    await expect
+      .poll(() =>
+        swarm.getByRole("columnheader").evaluateAll((headers) =>
+          headers.map((header) => header.getAttribute("aria-label")),
+        ),
+      )
+      .toEqual(expectedColumns);
+    await swarm.evaluate((element) => {
+      element.scrollLeft = 0;
+      element.dispatchEvent(new Event("scroll"));
+    });
+    await expect
+      .poll(() =>
+        swarm.evaluate((element) => ({
+          clientWidth: element.clientWidth,
+          scrollWidth: element.scrollWidth,
+        })),
+      )
+      .toMatchObject({ clientWidth: width });
+    expect(
+      await swarm.evaluate(
+        (element) => element.scrollWidth > element.clientWidth,
+      ),
+    ).toBe(true);
+    const tableContainer = swarm.locator("..");
+    await expect(tableContainer).toHaveAttribute("data-overflow-left", "false");
+    await expect(tableContainer).toHaveAttribute("data-overflow-right", "true");
+
+    await swipeTableLeft(page, swarm);
+    await expect
+      .poll(() => swarm.evaluate((element) => element.scrollLeft))
+      .toBeGreaterThan(0);
+    await expect(tableContainer).toHaveAttribute("data-overflow-left", "true");
+
+    await swarm.evaluate((element) => {
+      element.scrollLeft = element.scrollWidth;
+      element.dispatchEvent(new Event("scroll"));
+    });
+    await expect(tableContainer).toHaveAttribute("data-overflow-right", "false");
+    const finalColumnBounds = await swarm
+      .getByRole("columnheader", { name: "Parole" })
+      .boundingBox();
+    expect(finalColumnBounds).not.toBeNull();
+    expect(finalColumnBounds!.x).toBeGreaterThanOrEqual(0);
+    expect(finalColumnBounds!.x + finalColumnBounds!.width).toBeLessThanOrEqual(
+      width,
+    );
+  }
   violations = (await new AxeBuilder({ page }).analyze()).violations.filter(
     (violation) =>
       violation.impact === "serious" || violation.impact === "critical",
@@ -1607,6 +1689,40 @@ async function openScenario(page: Page, scenario: string, at: number) {
     .getByRole("navigation", { name: "Primary" })
     .getByRole("button", { name: "Workbench" })
     .click();
+}
+
+async function swipeTableLeft(page: Page, table: Locator) {
+  const bounds = await table.boundingBox();
+  expect(bounds).not.toBeNull();
+  const startX = Math.round(bounds!.x + bounds!.width - 36);
+  const endX = Math.round(bounds!.x + 36);
+  const y = Math.round(
+    Math.min(bounds!.y + 100, bounds!.y + bounds!.height - 24),
+  );
+  const session = await page.context().newCDPSession(page);
+  try {
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ x: startX, y }],
+    });
+    for (let step = 1; step <= 6; step += 1) {
+      await session.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: [
+          {
+            x: Math.round(startX + ((endX - startX) * step) / 6),
+            y,
+          },
+        ],
+      });
+    }
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchEnd",
+      touchPoints: [],
+    });
+  } finally {
+    await session.detach();
+  }
 }
 
 async function setDataUnits(page: Page, label: "Decimal" | "Binary") {

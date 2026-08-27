@@ -817,6 +817,11 @@ that scope and its cleanup or compatibility rules explicitly.
   complete; carries bounded magnet `dn` as a distinct provisional source
   label through current-schema restart and first-party torrent-list
   presentation, with verified metainfo retaining authority.
+- [`173-mobile-web-table-horizontal-scrolling.md`](173-mobile-web-table-horizontal-scrolling.md):
+  complete; makes configured-visible columns authoritative at every width,
+  restores trusted two-axis touch scrolling with directional continuation
+  affordances, and proves the complete Swarm defaults at 390- and 456-pixel
+  phone widths without changing virtual row bounds or table interaction.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

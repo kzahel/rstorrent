@@ -137,6 +137,11 @@ highlight state; the Add control retains focus for repeated intake.
 Range and select-all resolve against the complete logical row model after the
 current filter and sort, not source insertion order or the virtual DOM window.
 
+Configured-visible columns likewise remain rendered independently of the
+virtual row window and viewport width. A narrow viewport scrolls horizontally
+through that complete configured set; responsive layout does not silently
+remove a checked column or change row selection, focus, or action scope.
+
 Stable identity preserves selected and current rows through sorting and live
 updates. Disappearing selected rows are pruned. If current disappears while
 other selected rows remain, one of those rows becomes current; if none remain,

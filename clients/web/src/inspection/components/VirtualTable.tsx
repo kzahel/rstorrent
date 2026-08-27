@@ -4,10 +4,12 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type Dispatch,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  type SetStateAction,
   type UIEvent,
 } from "react";
 
@@ -30,7 +32,6 @@ export interface VirtualColumn<Row> {
   readonly minimumWidth?: number;
   readonly maximumWidth?: number;
   readonly defaultVisible?: boolean;
-  readonly minimumViewport?: number;
   readonly align?: "left" | "right" | "center";
   readonly sortable?: boolean;
   readonly sortValue?: (row: Row) => string | number | null;
@@ -80,6 +81,11 @@ interface SortState {
   readonly direction: "asc" | "desc";
 }
 
+interface HorizontalOverflow {
+  readonly left: boolean;
+  readonly right: boolean;
+}
+
 const TABLE_CONFIG_VERSION = 1;
 
 export function VirtualTable<Row>({
@@ -108,6 +114,11 @@ export function VirtualTable<Row>({
   const contextTriggerRef = useRef<HTMLButtonElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportSize, setViewportSize] = useState({ width: 960, height: 360 });
+  const [horizontalOverflow, setHorizontalOverflow] =
+    useState<HorizontalOverflow>({
+      left: false,
+      right: false,
+    });
   const [focusIndex, setFocusIndex] = useState(0);
   const [sort, setSort] = useState<SortState | null>(initialSort ?? null);
   const [liveSort, setLiveSort] = useState(false);
@@ -173,6 +184,7 @@ export function VirtualTable<Row>({
         width: element.clientWidth || 960,
         height: element.clientHeight || 360,
       });
+      updateHorizontalOverflow(element, setHorizontalOverflow);
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -183,17 +195,12 @@ export function VirtualTable<Row>({
   const visibleColumns = useMemo(
     () =>
       columns
-        .filter(
-          (column) =>
-            !hiddenColumns.has(column.id) &&
-            (column.minimumViewport === undefined ||
-              viewportSize.width >= column.minimumViewport),
-        )
+        .filter((column) => !hiddenColumns.has(column.id))
         .map((column) => ({
           ...column,
           width: columnWidths[column.id] ?? column.width,
         })),
-    [columnWidths, columns, hiddenColumns, viewportSize.width],
+    [columnWidths, columns, hiddenColumns],
   );
   const sortedRows = useMemo(() => {
     if (sort === null) return rows;
@@ -286,8 +293,15 @@ export function VirtualTable<Row>({
     minWidth: `${minimumWidth}px`,
   } satisfies CSSProperties;
 
+  useEffect(() => {
+    const element = viewportRef.current;
+    if (element === null) return;
+    updateHorizontalOverflow(element, setHorizontalOverflow);
+  }, [minimumWidth, tableId, viewportSize.width]);
+
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
     setScrollTop(event.currentTarget.scrollTop);
+    updateHorizontalOverflow(event.currentTarget, setHorizontalOverflow);
     if (longPressRef.current !== null) {
       globalThis.clearTimeout(longPressRef.current.timer);
       longPressRef.current = null;
@@ -607,7 +621,12 @@ export function VirtualTable<Row>({
   };
 
   return (
-    <div className={styles.container} style={tableStyle}>
+    <div
+      className={styles.container}
+      style={tableStyle}
+      data-overflow-left={horizontalOverflow.left}
+      data-overflow-right={horizontalOverflow.right}
+    >
       <div className={styles.toolbar}>
         <span>
           {sortedRows.length.toLocaleString()} rows
@@ -1059,6 +1078,22 @@ export function VirtualTable<Row>({
         </ActionMenuTrigger>
       )}
     </div>
+  );
+}
+
+function updateHorizontalOverflow(
+  element: HTMLElement,
+  setOverflow: Dispatch<SetStateAction<HorizontalOverflow>>,
+): void {
+  const maximum = Math.max(0, element.scrollWidth - element.clientWidth);
+  const next = {
+    left: element.scrollLeft > 1,
+    right: element.scrollLeft < maximum - 1,
+  };
+  setOverflow((current) =>
+    current.left === next.left && current.right === next.right
+      ? current
+      : next,
   );
 }
 
