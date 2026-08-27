@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::store::StoreError;
-use crate::store_schema::{PREVIOUS_COMPATIBLE_SCHEMA_VERSION, SCHEMA_VERSION};
+use crate::store_schema::SCHEMA_VERSION;
 
 pub(crate) const DATABASE_FILENAME: &str = "session.db";
 const WAL_FILENAME: &str = "session.db-wal";
@@ -133,14 +133,6 @@ pub(crate) fn prepare_catalog(profile_root: &Path) -> Result<CatalogPreparation,
         }
         return Ok(CatalogPreparation::Current);
     }
-    if version == PREVIOUS_COMPATIBLE_SCHEMA_VERSION {
-        if let Some(previous) = marker_version {
-            validate_committed_report(&database_path, previous)?;
-            remove_fixed_file(&shm_path, SHM_FILENAME)?;
-            sync_directory(profile_root)?;
-        }
-        return Ok(CatalogPreparation::Current);
-    }
     if version == 0 {
         return Err(StoreError::UnsafeProfileFile {
             basename: DATABASE_FILENAME,
@@ -161,21 +153,25 @@ pub(crate) fn prepare_catalog(profile_root: &Path) -> Result<CatalogPreparation,
     }
 
     if let Some(previous) = marker_version {
-        if previous != version {
-            return Err(StoreError::UnsafeProfileFile {
-                basename: SHM_FILENAME,
-                reason: "reset marker disagrees with the remaining catalog".to_owned(),
+        if previous == version {
+            ensure_absent(&wal_path, WAL_FILENAME)?;
+            remove_fixed_file(&database_path, DATABASE_FILENAME)?;
+            sync_directory(profile_root)?;
+            return Ok(CatalogPreparation::Create {
+                reset_report: Some(ProfileResetReport::for_version(version)),
             });
         }
+
+        // An older binary may have committed its fresh catalog and crashed
+        // before removing the reset marker. Validate that completed reset
+        // before beginning the newly required epoch replacement.
+        validate_committed_report(&database_path, previous)?;
         ensure_absent(&wal_path, WAL_FILENAME)?;
-        remove_fixed_file(&database_path, DATABASE_FILENAME)?;
+        remove_fixed_file(&shm_path, SHM_FILENAME)?;
         sync_directory(profile_root)?;
-        return Ok(CatalogPreparation::Create {
-            reset_report: Some(ProfileResetReport::for_version(version)),
-        });
     }
 
-    exclusively_validate_legacy(&database_path, version)?;
+    exclusively_validate_reset_source(&database_path, version)?;
     remove_fixed_file_if_present(&wal_path, WAL_FILENAME)?;
     remove_fixed_file_if_present(&shm_path, SHM_FILENAME)?;
     sync_directory(profile_root)?;
@@ -211,7 +207,10 @@ fn inspect_user_version(database_path: &Path) -> Result<i64, StoreError> {
         .map_err(profile_sqlite_error)
 }
 
-fn exclusively_validate_legacy(database_path: &Path, expected: i64) -> Result<(), StoreError> {
+fn exclusively_validate_reset_source(
+    database_path: &Path,
+    expected: i64,
+) -> Result<(), StoreError> {
     let connection = Connection::open_with_flags(
         database_path,
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -478,6 +477,32 @@ mod tests {
         ));
         assert!(!current_root.join(SHM_FILENAME).exists());
         fs::remove_dir_all(current_root).expect("remove current root");
+
+        let prior_root = root("prior-committed-marker");
+        let connection =
+            Connection::open(prior_root.join(DATABASE_FILENAME)).expect("prior catalog");
+        connection
+            .execute_batch(
+                "CREATE TABLE profile_reset_report (
+                    singleton INTEGER PRIMARY KEY,
+                    previous_schema_version INTEGER NOT NULL
+                 );
+                 INSERT INTO profile_reset_report VALUES (1, 18);
+                 PRAGMA user_version = 19;",
+            )
+            .expect("represent prior committed epoch");
+        drop(connection);
+        write_reset_marker(&prior_root.join(SHM_FILENAME), 18).expect("older recovery marker");
+        let CatalogPreparation::Create { reset_report } =
+            prepare_catalog(&prior_root).expect("finish prior reset and begin current reset")
+        else {
+            panic!("prior committed catalog must reset again");
+        };
+        assert_eq!(
+            reset_report.expect("reset report").previous_schema_version,
+            19
+        );
+        fs::remove_dir_all(prior_root).expect("remove prior root");
     }
 
     #[test]

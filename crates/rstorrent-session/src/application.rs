@@ -719,7 +719,7 @@ impl ApplicationService {
                 category::LIFECYCLE_SESSION,
                 "profile_catalog_reset",
                 None,
-                "Pre-release session catalog was reset for the identity format epoch",
+                "Disposable incubation session catalog was reset to the current format epoch",
                 &[
                     ("previous_schema", &previous_schema_version),
                     ("discarded", &discarded_categories),

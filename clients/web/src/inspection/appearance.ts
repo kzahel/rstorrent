@@ -41,8 +41,6 @@ export const INTERFACE_METRICS: Readonly<
 export const APPEARANCE_STORAGE_KEY = "rstorrent.presentation.appearance";
 
 const APPEARANCE_VERSION = 3;
-const SIZE_ONLY_APPEARANCE_VERSION = 1;
-const THEMED_APPEARANCE_VERSION = 2;
 
 type ReadableStorage = Pick<Storage, "getItem">;
 type WritableStorage = Pick<Storage, "setItem">;
@@ -75,26 +73,6 @@ export function loadAppearancePreferences(
       readonly colorTheme?: unknown;
       readonly dataUnits?: unknown;
     };
-    if (value.version === SIZE_ONLY_APPEARANCE_VERSION) {
-      return {
-        interfaceSize: isInterfaceSize(value.interfaceSize)
-          ? value.interfaceSize
-          : DEFAULT_INTERFACE_SIZE,
-        colorTheme: DEFAULT_COLOR_THEME,
-        dataUnits: DEFAULT_DATA_UNITS,
-      };
-    }
-    if (value.version === THEMED_APPEARANCE_VERSION) {
-      return {
-        interfaceSize: isInterfaceSize(value.interfaceSize)
-          ? value.interfaceSize
-          : DEFAULT_INTERFACE_SIZE,
-        colorTheme: isColorTheme(value.colorTheme)
-          ? value.colorTheme
-          : DEFAULT_COLOR_THEME,
-        dataUnits: DEFAULT_DATA_UNITS,
-      };
-    }
     if (value.version !== APPEARANCE_VERSION) {
       return defaultAppearancePreferences();
     }

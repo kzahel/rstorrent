@@ -561,7 +561,10 @@ own correctness.
   background operation, persists that shell policy independently from the
   profile, restores the existing window from the tray or a second launch, and
   joins service/media shutdown before close, tray Quit, or updater restart can
-  terminate the process.
+  terminate the process. Tactical
+  [`179`](../tactical/179-disposable-incubation-state-epoch.md) retains only
+  the current version-3 shell settings reader; version 1, version 2, malformed,
+  oversized, and unknown records atomically repair to current defaults.
 - Completed Tactical
   [`164`](../tactical/164-desktop-completion-and-attention-notifications.md)
   adds a Tauri-only native Rust owner for edge-triggered completion and

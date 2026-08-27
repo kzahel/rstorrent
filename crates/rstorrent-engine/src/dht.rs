@@ -23,7 +23,6 @@ use crate::network::{AddressFamily, NetworkPolicy, is_valid_outbound_address};
 use crate::{ByteMetric, ByteMetricSink, SessionUdpHandle, SessionUdpService, SessionUdpTransport};
 
 pub const DHT_SNAPSHOT_VERSION: u32 = 2;
-pub const LEGACY_DHT_SNAPSHOT_VERSION: u32 = 1;
 pub const MAX_PERSISTED_NODES_PER_FAMILY: usize = 64;
 pub const MAX_PERSISTED_IDENTITIES_PER_FAMILY: usize = 8;
 pub const MAX_ACTIVE_TRANSACTIONS: usize = 256;
@@ -96,7 +95,6 @@ pub struct DhtIdentity {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DhtSnapshot {
     pub version: u32,
-    pub legacy_node_id: Option<NodeId>,
     pub identities_v4: Vec<DhtIdentity>,
     pub identities_v6: Vec<DhtIdentity>,
     pub nodes_v4: Vec<NodeContact>,
@@ -105,21 +103,8 @@ pub struct DhtSnapshot {
 
 impl DhtSnapshot {
     pub fn validate(mut self) -> Result<Self, DhtError> {
-        match self.version {
-            LEGACY_DHT_SNAPSHOT_VERSION => {
-                if self
-                    .legacy_node_id
-                    .is_none_or(|node_id| node_id == NodeId::ZERO)
-                {
-                    return Err(DhtError::InvalidSnapshot("missing legacy node ID"));
-                }
-                self.identities_v4.clear();
-                self.identities_v6.clear();
-            }
-            DHT_SNAPSHOT_VERSION => {
-                self.legacy_node_id = None;
-            }
-            version => return Err(DhtError::UnsupportedSnapshotVersion(version)),
+        if self.version != DHT_SNAPSHOT_VERSION {
+            return Err(DhtError::UnsupportedSnapshotVersion(self.version));
         }
         if self.nodes_v4.len() > MAX_PERSISTED_NODES_PER_FAMILY
             || self.nodes_v6.len() > MAX_PERSISTED_NODES_PER_FAMILY
@@ -531,23 +516,17 @@ impl DhtService {
                     .unwrap_or_default(),
             ),
         ]);
-        let legacy_node_id = snapshot
-            .as_ref()
-            .filter(|snapshot| snapshot.version == LEGACY_DHT_SNAPSHOT_VERSION)
-            .and_then(|snapshot| snapshot.legacy_node_id);
         for family in [AddressFamily::Ipv4, AddressFamily::Ipv6] {
             let Some(local_address) = transport.local_address_for(family) else {
                 continue;
             };
             let family_bootstrap = bootstrap.families.get(&family).cloned().unwrap_or_default();
             let node = DhtNode::new(
-                family,
                 local_address,
                 identity_hints
                     .get(&family)
                     .map(Vec::as_slice)
                     .unwrap_or(&[]),
-                legacy_node_id,
                 family_bootstrap,
                 now,
             );
@@ -1168,18 +1147,14 @@ struct DhtNode {
 
 impl DhtNode {
     fn new(
-        family: AddressFamily,
         local_address: SocketAddr,
         identities: &[DhtIdentity],
-        legacy_node_id: Option<NodeId>,
         bootstrap: FamilyBootstrap,
         now: Instant,
     ) -> Result<Self, DhtError> {
         let identity = select_identity(identities, local_address.ip());
-        let legacy = legacy_node_id.filter(|_| family == AddressFamily::Ipv4);
         let node_id = identity
             .map(|identity| identity.node_id)
-            .or(legacy)
             .unwrap_or(generate_bep42_id(
                 dht_ip(local_address.ip()),
                 random_bytes()?,
@@ -1187,7 +1162,7 @@ impl DhtNode {
         let identities = identity
             .cloned()
             .or_else(|| {
-                (legacy.is_none() && !local_address.ip().is_unspecified()).then_some(DhtIdentity {
+                (!local_address.ip().is_unspecified()).then_some(DhtIdentity {
                     address: local_address.ip(),
                     node_id,
                 })
@@ -2536,7 +2511,7 @@ impl Actor {
             .get(&family)
             .cloned()
             .unwrap_or_default();
-        let node = DhtNode::new(family, local_address, &identities, None, bootstrap, now)?;
+        let node = DhtNode::new(local_address, &identities, bootstrap, now)?;
         self.identity_hints.insert(family, node.identities.clone());
         self.nodes.insert(family, node);
         self.bootstrap_family(family).await
@@ -2829,7 +2804,6 @@ impl Actor {
         let elapsed = self.started.elapsed().as_secs();
         DhtSnapshot {
             version: DHT_SNAPSHOT_VERSION,
-            legacy_node_id: None,
             identities_v4: self
                 .identity_hints
                 .get(&AddressFamily::Ipv4)
@@ -3909,8 +3883,7 @@ mod tests {
         config.query_timeout = Duration::from_millis(100);
         config.lookup_timeout = Duration::from_secs(1);
         config.initial_snapshot = Some(DhtSnapshot {
-            version: LEGACY_DHT_SNAPSHOT_VERSION,
-            legacy_node_id: Some(NodeId([1; 20])),
+            version: DHT_SNAPSHOT_VERSION,
             identities_v4: Vec::new(),
             identities_v6: Vec::new(),
             nodes_v4: vec![NodeContact {
@@ -4036,7 +4009,6 @@ mod tests {
     fn snapshot_validation_bounds_and_filters_contacts() {
         let snapshot = DhtSnapshot {
             version: DHT_SNAPSHOT_VERSION,
-            legacy_node_id: None,
             identities_v4: vec![DhtIdentity {
                 address: IpAddr::V4(Ipv4Addr::LOCALHOST),
                 node_id: NodeId([1; 20]),
@@ -4053,11 +4025,11 @@ mod tests {
         assert_eq!(snapshot.nodes_v4.len(), 1);
         assert!(matches!(
             DhtSnapshot {
-                version: 99,
+                version: 1,
                 ..snapshot
             }
             .validate(),
-            Err(DhtError::UnsupportedSnapshotVersion(99))
+            Err(DhtError::UnsupportedSnapshotVersion(1))
         ));
     }
 
@@ -4085,29 +4057,23 @@ mod tests {
             None
         );
 
-        let legacy = NodeId([1; 20]);
         let now = Instant::now();
         let ipv4 = DhtNode::new(
-            AddressFamily::Ipv4,
-            SocketAddr::from((Ipv4Addr::LOCALHOST, 1)),
-            &[],
-            Some(legacy),
+            SocketAddr::new(v4.address, 1),
+            std::slice::from_ref(&v4),
             FamilyBootstrap::default(),
             now,
         )
         .unwrap();
         let ipv6 = DhtNode::new(
-            AddressFamily::Ipv6,
             SocketAddr::from((Ipv6Addr::LOCALHOST, 1)),
             &[],
-            Some(legacy),
             FamilyBootstrap::default(),
             now,
         )
         .unwrap();
-        assert_eq!(ipv4.node_id, legacy);
-        assert_ne!(ipv6.node_id, legacy);
-        assert!(ipv4.identities.is_empty());
+        assert_eq!(ipv4.node_id, v4.node_id);
+        assert_eq!(ipv4.identities, vec![v4]);
         assert_eq!(ipv6.identities[0].address, IpAddr::V6(Ipv6Addr::LOCALHOST));
     }
 }

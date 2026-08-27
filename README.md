@@ -98,15 +98,22 @@ and [long-term product vision](docs/vision.md).
 
 ## Incubation Compatibility Policy
 
-Public desktop `0.1.0` and `0.1.1` releases now create real installations and
-persisted user state, so the former unreleased freedom to discard provisional
-contracts has ended for that release line. Changes must account for supported
-upgrade paths, including database and state migrations, protocol and API
-versioning, coexistence or rollback where appropriate, and safe handling of
-older installations. Development-only Android/iOS identities and explicitly
-ephemeral test profiles may still be recreated within their documented
-boundaries. This compatibility requirement does not relax RSTorrent's
-interoperability obligations to external BitTorrent peers and protocols.
+All public desktop `0.1.x` packages and current mobile, ChromeOS Linux, and
+headless previews are unsupported incubation builds. Their application-owned
+state, persistence formats, generated application contracts, identifiers, and
+update continuity remain disposable until a future version is explicitly
+declared the first supported beta or release. `0.2.0` is a possible boundary,
+not a selected or promised version.
+
+Incubation changes do not need compatibility readers or migrations solely to
+preserve an older preview. They must still handle incompatible state safely:
+recognized obsolete application-private state may follow a bounded documented
+reset, while malformed, ambiguous, busy, or future state fails closed. No
+automatic reset may delete a user-selected payload root or published content,
+and old state cannot establish verified-content authority. Package signing,
+update authenticity, and interoperability with external BitTorrent peers and
+protocols remain correctness requirements rather than compatibility promises
+to an incubation build.
 
 ## Engineering Character
 

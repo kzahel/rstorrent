@@ -250,6 +250,12 @@ A clean or recoverable shutdown persists only bounded durable hints:
   incompatible state; and
 - only additional fields proven necessary by the tactical's restart tests.
 
+Tactical [`179`](../tactical/179-disposable-incubation-state-epoch.md) removes
+the snapshot-version-1 reader and its single IPv4 legacy node ID. Only current
+version 2 opens: it stores bounded address-keyed identities for each family
+and bounded warm contacts. Version 1 and unknown versions reject to the
+existing cold-bootstrap path rather than migrating identity material.
+
 Persisted nodes return as untrusted bootstrap candidates. They must be
 revalidated before becoming good routing entries. Do not persist transaction
 IDs, tokens, in-flight traversals, returned torrent peers, task state, or

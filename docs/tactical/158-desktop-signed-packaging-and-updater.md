@@ -7,7 +7,7 @@ headless release and trusted-LAN Tactical
 bootstrap at exact commit `788e953d1ed578c238beccbbc224907b0d9dc95c`.
 Its source gate, five signed package jobs, and publication finalizer pass, and
 the exact public arm64 DMG passes a bounded macOS launch/native-host spot
-check. Clean strengthened Windows update evidence and installed Linux x86_64
+check. Clean signed Windows update evidence and installed Linux x86_64
 remain open, so this tactical is not complete.
 Those gates remain intact.
 Cross-platform sleep-inhibition Tactical
@@ -50,12 +50,14 @@ Tactical `164` adds native completion/attention notifications before this
 tactical's `0.1.2` candidate. Completed Tactical `165` also
 adds desktop active-work sleep inhibition; its available Windows behavior run
 was arm64, so the signed `0.1.2` x86_64 installed campaign must repeat the
-native assertion matrix while exercising the strengthened real-torrent update state. An
+native assertion matrix while exercising signed replacement, clean launch or
+bounded reset, and payload safety. An
 exact-head unsigned preflight now passes native Windows x86_64 tests, package
 construction, clean installation, fresh-default startup, firewall-consent
 characterization, lifecycle/update presentation, and the native active-work
 sleep-inhibition matrix. The next signed x86_64 candidate still repeats that
-matrix while proving package trust and the strengthened real-torrent update.
+matrix while proving package trust and the declared disposable-incubation
+boundary.
 
 Topics: `beta-release-readiness`, `client-surfaces`,
 `product-state-and-feedback`, `product-surfaces-and-migration`,
@@ -78,13 +80,15 @@ owns its route, per-app key, versions, release tags, packages, UI, lifecycle,
 release workflow, and acceptance evidence. The shared server owns compatible
 multi-product routing and GitHub release aggregation.
 
-The finished slice produces signed installable desktop beta candidates for
-macOS, Windows, and Linux plus an explicit user-approved in-app update path for
-self-replacing packages. It proves a real older signed build updating through
-the production route and relaunching into an exact newer build on every
-supported updater target. Configuration, source tests, signatures, and
-generated `latest.json` are necessary but do not alone satisfy the stopping
-condition.
+The finished slice produces signed installable desktop incubation candidates
+for macOS, Windows, and Linux plus an explicit user-approved in-app update path
+for self-replacing packages. It proves a real older signed build updating
+through the production route and relaunching into an exact newer build on
+every supported updater target. Every `0.1.x` build remains disposable
+incubation output: this proves package replacement, trust, reset safety, and
+launch, not old application-state compatibility. Configuration, source tests,
+signatures, and generated `latest.json` are necessary but do not alone
+satisfy the stopping condition.
 
 ## Product Contract
 
@@ -193,12 +197,12 @@ This tactical owns:
    for any existing client;
 7. least-privileged install/uninstall and package-channel behavior; and
 8. exact older-to-newer installed testbed evidence on macOS arm64, Windows
-   x86_64, and Linux x86_64/arm64. Before update, each campaign must retain an
-   incomplete torrent with a configured download root, nontrivial file
-   selection, queue order/state, and tray background preference. After
-   replacement/relaunch it must verify exact version/build identity, the exact
-   retained configuration and state, resumed transfer, independently exact
-   published content, and cleanup. macOS x86_64 remains an explicit maintained
+   x86_64, and Linux x86_64/arm64. Each campaign verifies explicit approval,
+   replacement/relaunch, exact version/build identity, package trust, clean
+   current-profile startup or the declared bounded reset, preservation of a
+   payload-root sentinel, and cleanup. It does not require retention of
+   `0.1.x` torrents, roots, settings, selection, verification state, updater
+   identity, or rollback. macOS x86_64 remains an explicit maintained
    package/route whose installed test is deliberately omitted by maintainer
    direction.
 
@@ -217,12 +221,11 @@ The tactical stops only when:
 - browser/demo builds contain no updater behavior, while the Tauri product
   passes the full visible state, schedule, timeout, deduplication, package
   policy, error, progress, install, and relaunch tests;
-- an older public signed installer on each planned installed-testbed target
-  checks through the production route while the exact configured root,
-  selection, incomplete payload, queue state, and tray preference exist,
-  installs, relaunches, reports the exact new version and frontend/native build
-  identity, preserves those facts, resumes, and publishes independently exact
-  content, with the deliberate macOS x86_64 omission recorded; and
+- an older public signed incubation installer on each planned
+  installed-testbed target checks through the production route, installs,
+  relaunches, reports the exact new version and frontend/native build identity,
+  follows the declared clean/reset path without deleting a payload-root
+  sentinel, and records the deliberate macOS x86_64 omission; and
 - privacy/support docs, release checklist, focused topics, and a versioned
   acceptance record contain the actual evidence and known limits.
 
@@ -301,12 +304,11 @@ must not leave an updater task or partial product-state write owner alive.
    boundaries, draft artifact matrix, signing, notarization, checksums, and
    fail-closed finalizer.
 6. **Installed evidence.** Run exact old-to-new production-route campaigns on
-   macOS arm64, Windows x86_64, and Linux x86_64/arm64 with an incomplete
-   selected-file download, configured root, queue state, and tray preference
-   already present. Verify exact state retention, resumed transfer, and exact
-   content after replacement/relaunch before any beta readiness claim. Retain
-   macOS x86_64 package/route checks while recording its installed campaign as
-   deliberately omitted.
+   macOS arm64, Windows x86_64, and Linux x86_64/arm64. Verify package trust,
+   exact replacement/relaunch, clean startup or bounded reset, payload-root
+   sentinel preservation, and cleanup. Do not require retention of disposable
+   `0.1.x` application state. Retain macOS x86_64 package/route checks while
+   recording its installed campaign as deliberately omitted.
 
 ## Reference Record
 
@@ -500,7 +502,8 @@ window and retained exactly one process.
 
 This closes the exact-head unsigned native x86_64 behavior preflight, but it
 is not Authenticode evidence, notification repetition, or the required newer
-signed older-to-newer update with strengthened real-torrent state. Cleanup
+signed older-to-newer package update with disposable-state/reset safety.
+Cleanup
 used joined Quit and silent uninstall, removed the transferred installer,
 test root/profile, and firewall rules, and left zero RSTorrent processes or
 power requests. The host artifact and captures were removed, the disposable
@@ -543,8 +546,9 @@ rotating or recovering a long-lived updater private key, creating or
 publishing another release, or mutating external testbeds. Those actions are
 required gates, not implied by this tactical.
 
-The next beta-readiness slice after this tactical freezes the remaining
-application identities, persistence baseline, changelog, privacy/support
-presentation, diagnostics export, and common beta torrent cohort. Mobile store
-distribution remains an independent later campaign in
-`beta-release-readiness`.
+The next beta-readiness slice after this tactical chooses the future first
+supported version and freezes its fresh application identities and persistence
+baseline from that point forward, with no migration from `0.1.x`. It also owns
+the changelog, privacy/support presentation, diagnostics export, and common
+beta torrent cohort. Mobile store distribution remains an independent later
+campaign in `beta-release-readiness`.

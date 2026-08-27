@@ -1,9 +1,18 @@
 # Changelog
 
-All notable desktop beta changes are recorded here. RSTorrent follows stable
-three-component versions, and desktop release tags use `desktop-v<version>`.
+All notable desktop incubation changes are recorded here. RSTorrent follows
+three-component versions, and desktop release tags use
+`desktop-v<version>`.
 
 ## [Unreleased]
+
+- Clarify that every `0.1.x` package is an unsupported incubation build. Its
+  application-owned state and application contracts may be reset or replaced;
+  no compatibility baseline begins until a future version is explicitly
+  declared the first supported beta or release.
+- Start a fresh schema-21 session catalog, resetting recognized schemas 1
+  through 20 without touching user payload, and remove old DHT, desktop-shell,
+  and browser-appearance compatibility readers.
 
 ## [0.1.2] - 2026-08-26
 
@@ -31,12 +40,13 @@ three-component versions, and desktop release tags use `desktop-v<version>`.
 ## [0.1.1] - 2026-08-23
 
 - Updater-validation release with no engine, protocol, or persistence changes.
-- Retains the `0.1.0` application identity, updater trust root, production
-  route, and compatible application state.
+- Reused the `0.1.0` application identity, updater trust root, production
+  route, and application state as updater-validation evidence, without making
+  that incubation state a supported compatibility baseline.
 
 ## [0.1.0] - 2026-08-23
 
-- First signed incubation-beta desktop packages for macOS, Windows, and Linux.
+- First signed incubation desktop packages for macOS, Windows, and Linux.
 - First-party Rust BitTorrent engine embedded directly in the desktop app.
 - Shared React Library, Transfers, and Workbench product interface.
 - Explicit, signed in-app updates for supported self-replacing packages.

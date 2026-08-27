@@ -44,8 +44,11 @@ machine-control.
 
 The authoritative **Now** is
 [`176-durable-high-file-priority.md`](docs/tactical/176-durable-high-file-priority.md).
-Its semantic model and every Linux/web/Android gate pass; only the macOS-hosted
-iOS simulator/archive compile remains. Completed Tactical `177` retains the
+Its semantic model, fresh schema-21 persistence, and every Linux/web/Android
+gate pass; only the macOS-hosted iOS simulator/archive compile remains.
+Completed Tactical `179` resets recognized schemas 1 through 20 and removes
+compatibility-only DHT, desktop-shell, and browser-appearance readers while
+preserving external payload. Completed Tactical `177` retains the
 ordinary peer failure ceiling while adding exact tracker-source rehabilitation
 and one slowly paced transient-failure content probe only after every ordinary
 connection action is exhausted. Tactical `158` retains its signed-candidate

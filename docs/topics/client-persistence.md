@@ -23,10 +23,13 @@ shell-owned application-config `desktop-shell.json` with a 4 KiB input bound,
 atomic replacement, conservative reset, and default-on background policy.
 Completed Tacticals `164` and `165` advance its closed schema through versions
 2 and 3 with default-on desktop notification and active-work sleep-inhibition
-preferences while preserving exact older values. These shell policies apply
-before and across profile services; they are not torrent state, storage
-locators, client settings, updater identity, or future installation-wide
-`product.db` state.
+preferences. Tactical
+[`179`](../tactical/179-disposable-incubation-state-epoch.md) removes the
+version-1 and version-2 readers: only version 3 now opens, while older,
+malformed, oversized, and unknown records atomically repair to current
+defaults. These shell policies apply before and across profile services; they
+are not torrent state, storage locators, client settings, updater identity, or
+future installation-wide `product.db` state.
 
 Tactical `063` now makes the existing sparse file-selection rows a live
 transactional control and separates paused start-content intent from metadata
@@ -209,20 +212,23 @@ formats together. Completed Tactical
 [`143`](../tactical/143-dual-identity-and-persistence-foundation.md) made that
 first replacement: a schema-19 fresh catalog, opaque owner IDs, full protocol
 aliases, version-2 have and part-file identity, and a reset of recognized
-schema `1..=18` profile databases. RSTorrent is unreleased, so it
-does not preserve existing development catalog rows or carry compatibility
-readers solely for the old v1 shape. The new format remains versioned and
+schema `1..=18` profile databases. Public `0.1.x` packages are unsupported
+incubation builds, so they do not require compatibility readers or migrations
+solely to preserve an older preview. Every format remains versioned and
 fail-closed. The reset targets only `session.db` and its SQLite sidecars;
 user-selected roots, old partial artifacts, and published payload remain
 untouched and are never adopted as verified state.
 
-Completed Tactical
-[`176`](../tactical/176-durable-high-file-priority.md) advances the catalog to
-schema 20 with one additive sparse `file_priorities` table. Schema 19 migrates
-transactionally in place and retains torrents, roots, settings, sources,
-identities, selection, and verification state. Only sorted High overrides are
-stored; Normal remains implicit for wanted files, Skip remains the existing
-binary selection authority, and a file cannot be both High and skipped.
+Tactical [`176`](../tactical/176-durable-high-file-priority.md) introduced one
+additive sparse `file_priorities` table in schema 20. Only sorted High
+overrides are stored; Normal remains implicit for wanted files, Skip remains
+the existing binary selection authority, and a file cannot be both High and
+skipped. Its schema-19-to-20 retention migration passed at implementation
+time. Tactical
+[`179`](../tactical/179-disposable-incubation-state-epoch.md) supersedes that
+reader with a fresh schema-21 epoch containing the same current priority
+table. Every recognized schema `1..=20` now takes the bounded full-catalog
+reset and retains no application-owned profile state.
 
 Completed Tactical
 [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) reuses
@@ -243,8 +249,8 @@ volatile. Incomplete restart withdraws candidate have until hashes are
 refetched and bytes reverify; complete selected files may reconstruct their
 tree locally against the durable file root. Info-only completed magnets can
 therefore restore incoming metadata/hash/payload service without pretending a
-complete outer source exists. No migration is needed for the unreleased
-catalog.
+complete outer source exists. No migration is needed for the disposable
+incubation catalog.
 
 Completed Tactical
 [`156`](../tactical/156-hybrid-dual-swarm-runtime-closure.md) also keeps schema
@@ -282,7 +288,7 @@ Completed desktop-notification Tactical
 [`164`](../tactical/164-desktop-completion-and-attention-notifications.md)
 applies that boundary without changing profile persistence: the Tauri Rust
 adapter consumes authoritative in-process torrent-list state and owns native
-display, while its three installation-wide preferences migrate only the
+display, while its three installation-wide preferences live only in the
 bounded desktop shell settings file. Notification edges, delivery history,
 and raw error text do not enter `session.db`, `product.db`, or torrent rows.
 Completed sleep-inhibition Tactical
@@ -766,12 +772,11 @@ successful mutation unreadable after upgrade.
   SQLite; cloud and positively identified provider roots remain disabled.
 - File sizes, timestamps, sparse allocation, case sensitivity, and identity
   tokens are platform-specific restart evidence, not universal content proof.
-- Within the currently supported v1 schema lineage, newer applications migrate
-  older schemas transactionally and an older application refuses a newer
-  unsupported schema rather than guessing or attempting an automatic
-  downgrade. The accepted v2/hybrid campaign may deliberately end that
-  pre-release lineage and reset application-owned development torrent state
-  instead of migrating it.
+- Within the `0.1.x` incubation line, a newer application may migrate a
+  recognized older schema when useful, but has no obligation to do so. It may
+  instead apply the bounded application-private reset contract. An older
+  application refuses a newer unsupported schema rather than guessing or
+  attempting an automatic downgrade.
 - Backup and restore remap unresolved storage roots explicitly and never
   silently reinterpret a locator from another operating system.
 - Corrupt or unsupported durable state cannot establish verified metadata,
@@ -779,14 +784,17 @@ successful mutation unreadable after upgrade.
 
 ## Known Gaps And Open Decisions
 
-- Freeze the first externally supported beta schema/state baseline and prove
-  oldest-supported-to-current upgrade, interrupted migration, corrupt/newer
-  schema, and rollback behavior. The current development-only reset freedom
-  ends for a lane when its first beta ships; the release gate lives in
+- When a future version is explicitly declared the first supported beta or
+  release, freeze its fresh schema/state baseline and the forward/rollback
+  policy that begins there. No migration from `0.1.x` incubation state is
+  required. Prove recognized-incubation reset, interrupted reset,
+  corrupt/ambiguous/busy/future state, root loss, and payload preservation.
+  The disposable-state freedom ends only at that explicit support boundary;
+  the release gate lives in
   [`beta-release-readiness.md`](beta-release-readiness.md).
 - Backup, export, restore, and later schema policy after the accepted
-  v2/hybrid clean-state reset; compatibility migration of current unreleased
-  development torrents is explicitly not required.
+  v2/hybrid clean-state reset; compatibility migration of current `0.1.x`
+  incubation torrents is explicitly not required.
 - The installation-level profile registry format, whether it shares
   `product.db`, and whether the first product exposes more than its
   automatically created profile.

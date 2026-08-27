@@ -525,10 +525,13 @@ Bounded dry-swarm recovery Tactical
 [`177`](../tactical/177-bounded-dry-swarm-recovery.md) is complete with exact
 tracker-source rehabilitation, one capped transient-failure content probe,
 scripted fourth-attempt verified completion, full workspace gates, and both
-maintained Android native builds. Durable High file-priority Tactical `176`
-resumes as the product/engine **Now** with only its unavailable-on-Linux iOS
-simulator/archive compile before completion; release/updater Tactical `158`
-remains next.
+maintained Android native builds. Disposable-incubation state Tactical
+[`179`](../tactical/179-disposable-incubation-state-epoch.md) is complete with
+the fresh schema-21 epoch, compatibility-reader removal, full repository/web
+gates, and both maintained Android native builds. Durable High file-priority
+Tactical `176` resumes as the product/engine **Now** with only its unavailable-
+on-Linux iOS simulator/archive compile before completion; release/updater
+Tactical `158` remains after `176`.
 Tacticals `142`, `145`, and `150` complete the uTP performance campaign at the
 maintainer-selected evidence stop. Completed Tactical `143` installs the
 v1-preserving opaque torrent owner, typed protocol aliases, schema-19 fresh
@@ -631,11 +634,13 @@ separate control-transport investigation is explicitly authorized.
 
 Current engine-campaign action: close durable High file-priority Tactical
 [`176`](../tactical/176-durable-high-file-priority.md) with the macOS-only iOS
-simulator/archive compile. Its bounded High/Normal/Skip implementation,
-compatible persistence, weighted ordinary piece activation, independent
+simulator/archive compile. Its bounded High/Normal/Skip implementation, fresh
+schema-21 persistence, weighted ordinary piece activation, independent
 stronger Tactical `139` streaming overlay, and every available Linux, web, and
-Android gate already pass. Decision-complete measurement Tactical `153`
-remains ready without competing with this explicit user priority.
+Android gate already pass. Completed Tactical `179` retains the pre-task,
+crash-convergent, payload-preserving reset while removing old catalog and DHT
+readers. Decision-complete measurement Tactical `153` remains ready without
+competing with this explicit user priority.
 Completed Tactical `155` closes Stage 4 through hash scheduling, candidate
 verification, reconstruction, repair, service, first-party platforms, and
 two-role interoperability. Completed Tactical `156` closes Stage 5 through

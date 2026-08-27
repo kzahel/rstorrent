@@ -137,11 +137,12 @@ may silently share one protocol identity; an alias collision is an explicit
 conflict that must fail closed or enter a separately designed reconciliation
 path.
 
-### Resettable persistence before release
+### Resettable persistence during incubation
 
-RSTorrent is unreleased. Compatibility with existing development databases,
-have-state files, part-file headers, torrent rows, and cached source records is
-not an implementation constraint for this campaign.
+RSTorrent's public `0.1.x` artifacts are unsupported incubation builds.
+Compatibility with their databases, have-state files, part-file headers,
+torrent rows, and cached source records is not an implementation constraint
+for this campaign.
 
 Future v2 tacticals may replace those formats together, bump their versions,
 and use a deliberate clean-state reset instead of carrying dual readers,

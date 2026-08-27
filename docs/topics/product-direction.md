@@ -74,6 +74,24 @@ Rust engine and refreshed product surface. Legacy-state migration is best
 effort and scoped later. The incubation beta remains independent and does not
 begin with migration or parity obligations.
 
+### Disposable incubation line
+
+Explicit maintainer direction on 2026-08-27 declares every `0.1.x` desktop
+package and current mobile, ChromeOS Linux, and headless preview disposable.
+Public availability alone does not create a supported persistence, generated
+application API, identifier, rollback, or update-continuity promise. A future
+version must be explicitly declared the first supported beta or release before
+such a baseline exists; `0.2.0` is a possible version, not a frozen choice.
+
+Current identifiers, signing keys, and routes may remain in operation because
+they are useful and secure, but preserving an older incubation installation is
+not an acceptance requirement. Recognized obsolete application-private state
+may reset under a bounded documented policy; malformed, ambiguous, busy, or
+future state fails closed. No reset may delete user-selected payload roots or
+published content, and no old record can establish verified-content
+authority. External BitTorrent interoperability, package authenticity, and
+these safety boundaries remain mandatory.
+
 ### First-party engine and clients
 
 The torrent engine is authored in this repository. libtorrent, librqbit, and

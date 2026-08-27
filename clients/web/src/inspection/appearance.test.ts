@@ -27,59 +27,17 @@ describe("appearance preferences", () => {
     });
   });
 
-  it("migrates valid version-1 interface sizes to Auto and Decimal", () => {
-    for (const interfaceSize of ["compact", "standard", "spacious"] as const) {
-      expect(
-        loadAppearancePreferences(
-          stored(JSON.stringify({ version: 1, interfaceSize })),
-        ),
-      ).toEqual({ interfaceSize, colorTheme: "auto", dataUnits: "decimal" });
+  it("resets prior appearance versions to current defaults", () => {
+    for (const value of [
+      { version: 1, interfaceSize: "compact" },
+      { version: 2, interfaceSize: "spacious", colorTheme: "dark" },
+    ]) {
+      expect(loadAppearancePreferences(stored(JSON.stringify(value)))).toEqual({
+        interfaceSize: "standard",
+        colorTheme: "auto",
+        dataUnits: "decimal",
+      });
     }
-  });
-
-  it("migrates every valid version-2 size and theme to Decimal", () => {
-    for (const interfaceSize of ["compact", "standard", "spacious"] as const) {
-      for (const colorTheme of ["auto", "light", "dark"] as const) {
-        expect(
-          loadAppearancePreferences(
-            stored(JSON.stringify({ version: 2, interfaceSize, colorTheme })),
-          ),
-        ).toEqual({ interfaceSize, colorTheme, dataUnits: "decimal" });
-      }
-    }
-  });
-
-  it("validates version-2 fields independently during migration", () => {
-    expect(
-      loadAppearancePreferences(
-        stored(
-          JSON.stringify({
-            version: 2,
-            interfaceSize: "huge",
-            colorTheme: "dark",
-          }),
-        ),
-      ),
-    ).toEqual({
-      interfaceSize: "standard",
-      colorTheme: "dark",
-      dataUnits: "decimal",
-    });
-    expect(
-      loadAppearancePreferences(
-        stored(
-          JSON.stringify({
-            version: 2,
-            interfaceSize: "compact",
-            colorTheme: "sepia",
-          }),
-        ),
-      ),
-    ).toEqual({
-      interfaceSize: "compact",
-      colorTheme: "auto",
-      dataUnits: "decimal",
-    });
   });
 
   it("round trips every accepted appearance combination", () => {

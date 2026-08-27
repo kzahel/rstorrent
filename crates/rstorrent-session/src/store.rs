@@ -46,8 +46,8 @@ use crate::settings::{
     read_client_settings, replace_client_settings,
 };
 use crate::store_schema::{
-    DHT_TABLES_SQL, DOWNLOAD_QUEUE_INDEX_SQL, FILE_PRIORITIES_TABLE_SQL,
-    PREVIOUS_COMPATIBLE_SCHEMA_VERSION, REMOVAL_TABLE_SQL, SCHEMA_VERSION, SOURCE_TABLES_SQL,
+    DHT_TABLES_SQL, DOWNLOAD_QUEUE_INDEX_SQL, FILE_PRIORITIES_TABLE_SQL, REMOVAL_TABLE_SQL,
+    SCHEMA_VERSION, SOURCE_TABLES_SQL,
 };
 
 const MAX_RECEIPTS: i64 = 1024;
@@ -450,7 +450,7 @@ impl SessionStore {
 
         if let Some(maximum_bytes) = ephemeral_maximum_bytes {
             configure_ephemeral_connection(&connection, maximum_bytes)?;
-            create_or_validate_schema_20(
+            create_or_validate_schema_21(
                 &mut connection,
                 profile_id,
                 initial_client_settings,
@@ -463,7 +463,7 @@ impl SessionStore {
             match preparation {
                 CatalogPreparation::Current => {
                     configure_durable_connection(&connection)?;
-                    create_or_validate_schema_20(
+                    create_or_validate_schema_21(
                         &mut connection,
                         profile_id,
                         initial_client_settings,
@@ -472,7 +472,7 @@ impl SessionStore {
                 }
                 CatalogPreparation::Create { reset_report } => {
                     connection.pragma_update(None, "synchronous", "FULL")?;
-                    create_or_validate_schema_20(
+                    create_or_validate_schema_21(
                         &mut connection,
                         profile_id,
                         initial_client_settings,
@@ -680,20 +680,16 @@ impl SessionStore {
         let state = self
             .connection
             .query_row(
-                "SELECT format_version, node_id FROM dht_state WHERE singleton = 1",
+                "SELECT format_version FROM dht_state WHERE singleton = 1",
                 [],
-                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?)),
+                |row| row.get::<_, i64>(0),
             )
             .optional()?;
-        let Some((version, node_id)) = state else {
+        let Some(version) = state else {
             return Ok(None);
         };
         let version = u32::try_from(version)
             .map_err(|_| StoreError::DurableState("invalid DHT format version".to_owned()))?;
-        let node_id =
-            NodeId(node_id.try_into().map_err(|_| {
-                StoreError::DurableState("invalid persisted DHT node ID".to_owned())
-            })?);
         let mut statement = self.connection.prepare(
             "SELECT family, node_id, address, port
              FROM dht_nodes ORDER BY family, sample_order",
@@ -793,7 +789,6 @@ impl SessionStore {
         }
         DhtSnapshot {
             version,
-            legacy_node_id: (version == 1).then_some(node_id),
             identities_v4,
             identities_v6,
             nodes_v4,
@@ -813,24 +808,8 @@ impl SessionStore {
         transaction.execute("DELETE FROM dht_nodes", [])?;
         transaction.execute("DELETE FROM dht_state", [])?;
         transaction.execute(
-            "INSERT INTO dht_state(singleton, format_version, node_id)
-             VALUES (1, ?1, ?2)",
-            params![
-                i64::from(snapshot.version),
-                snapshot
-                    .legacy_node_id
-                    .or_else(|| snapshot
-                        .identities_v4
-                        .first()
-                        .map(|identity| identity.node_id))
-                    .or_else(|| snapshot
-                        .identities_v6
-                        .first()
-                        .map(|identity| identity.node_id))
-                    .unwrap_or(NodeId([1; 20]))
-                    .0
-                    .as_slice()
-            ],
+            "INSERT INTO dht_state(singleton, format_version) VALUES (1, ?1)",
+            [i64::from(snapshot.version)],
         )?;
         for (family, identities) in [
             (4_i64, snapshot.identities_v4.clone()),
@@ -2767,22 +2746,15 @@ fn pragma_u64(connection: &Connection, pragma: &str) -> Result<u64, StoreError> 
     u64::try_from(value).map_err(|_| StoreError::DurableState(format!("negative SQLite {pragma}")))
 }
 
-fn create_or_validate_schema_20(
+fn create_or_validate_schema_21(
     connection: &mut Connection,
     profile_id: &str,
     initial_client_settings: &ClientSettings,
     reset_report: Option<&ProfileResetReport>,
 ) -> Result<(), StoreError> {
     let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
-    if version == PREVIOUS_COMPATIBLE_SCHEMA_VERSION {
-        let transaction = connection.transaction()?;
-        transaction.execute_batch(FILE_PRIORITIES_TABLE_SQL)?;
-        transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
-        transaction.commit()?;
-        return validate_schema_20(connection, profile_id);
-    }
     if version != 0 {
-        return validate_schema_20(connection, profile_id);
+        return validate_schema_21(connection, profile_id);
     }
     let transaction = connection.transaction()?;
     transaction.execute_batch(
@@ -2794,7 +2766,7 @@ fn create_or_validate_schema_20(
          CREATE TABLE profile_reset_report (
             singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
             previous_schema_version INTEGER NOT NULL CHECK (
-                previous_schema_version BETWEEN 1 AND 18
+                previous_schema_version BETWEEN 1 AND 20
             ),
             discarded_categories_json TEXT NOT NULL CHECK (
                 length(discarded_categories_json) BETWEEN 2 AND 1024
@@ -2969,10 +2941,10 @@ fn create_or_validate_schema_20(
     transaction.execute_batch(FILE_PRIORITIES_TABLE_SQL)?;
     transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     transaction.commit()?;
-    validate_schema_20(connection, profile_id)
+    validate_schema_21(connection, profile_id)
 }
 
-fn validate_schema_20(connection: &Connection, profile_id: &str) -> Result<(), StoreError> {
+fn validate_schema_21(connection: &Connection, profile_id: &str) -> Result<(), StoreError> {
     let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version != SCHEMA_VERSION {
         return Err(StoreError::UnsupportedSchema {
@@ -7935,53 +7907,74 @@ mod tests {
     }
 
     #[test]
-    fn schema_nineteen_migrates_in_place_without_losing_profile_state() {
-        let root = test_root("schema-19-to-20");
-        let configured = configured_root(&root);
-        let mut store =
-            SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
-        let added = store
-            .handle_durable(&add_request("migration-owner"))
-            .expect("add retained owner");
-        let torrent_id = added_torrent_id(&added);
-        let revision = store.revision().expect("retained revision");
-        let database_path = store.database_path().expect("database path").to_owned();
-        drop(store);
+    fn schemas_nineteen_and_twenty_reset_without_retaining_profile_state() {
+        for previous_version in [19_i64, 20_i64] {
+            let root = test_root(&format!("schema-{previous_version}-to-21"));
+            let configured = configured_root(&root);
+            let mut store = SessionStore::open(&root, "default", std::slice::from_ref(&configured))
+                .expect("open current profile");
+            store
+                .handle_durable(&add_request("discarded-owner"))
+                .expect("add disposable owner");
+            assert_eq!(
+                store.snapshot().expect("populated snapshot").torrents.len(),
+                1
+            );
+            let database_path = store.database_path().expect("database path").to_owned();
+            drop(store);
 
-        let connection = Connection::open(&database_path).expect("open schema 20 directly");
-        connection
-            .execute_batch("DROP TABLE file_priorities; PRAGMA user_version = 19;")
-            .expect("reconstruct exact schema 19 delta");
-        drop(connection);
+            let connection = Connection::open(&database_path).expect("open prior catalog");
+            if previous_version == 19 {
+                connection
+                    .execute_batch("DROP TABLE file_priorities;")
+                    .expect("reconstruct schema 19 delta");
+            }
+            connection
+                .pragma_update(None, "user_version", previous_version)
+                .expect("set prior schema version");
+            drop(connection);
 
-        let reopened = SessionStore::open(&root, "default", &[configured]).expect("migrate");
-        assert_eq!(reopened.revision().expect("migrated revision"), revision);
-        assert_eq!(
-            reopened
-                .load_resume(&torrent_id)
-                .expect("retained torrent")
-                .torrent_id
-                .to_string(),
-            torrent_id
-        );
-        assert_eq!(
-            reopened
-                .connection
-                .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
-                .expect("migrated schema version"),
-            SCHEMA_VERSION
-        );
-        assert_eq!(
-            reopened
-                .connection
-                .query_row("SELECT count(*) FROM file_priorities", [], |row| {
-                    row.get::<_, i64>(0)
-                })
-                .expect("new priority table"),
-            0
-        );
-        drop(reopened);
-        fs::remove_dir_all(root).expect("remove test profile");
+            let payload = root.join("payload").join("sentinel");
+            fs::create_dir_all(payload.parent().expect("payload parent"))
+                .expect("create payload root");
+            fs::write(&payload, b"untouched").expect("payload sentinel");
+
+            let reopened = SessionStore::open(&root, "default", &[configured])
+                .expect("reset disposable profile");
+            assert_eq!(reopened.revision().expect("fresh revision"), 0);
+            assert!(
+                reopened
+                    .snapshot()
+                    .expect("fresh snapshot")
+                    .torrents
+                    .is_empty()
+            );
+            let report = reopened
+                .pending_profile_reset_report()
+                .expect("read reset report")
+                .expect("reset report");
+            assert_eq!(report.previous_schema_version, previous_version);
+            assert!(!report.external_payload_modified);
+            assert_eq!(fs::read(&payload).expect("payload survives"), b"untouched");
+            assert_eq!(
+                reopened
+                    .connection
+                    .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+                    .expect("current schema version"),
+                SCHEMA_VERSION
+            );
+            assert_eq!(
+                reopened
+                    .connection
+                    .query_row("SELECT count(*) FROM file_priorities", [], |row| {
+                        row.get::<_, i64>(0)
+                    })
+                    .expect("fresh priority table"),
+                0
+            );
+            drop(reopened);
+            fs::remove_dir_all(root).expect("remove test profile");
+        }
     }
 
     #[test]
@@ -8235,7 +8228,6 @@ mod tests {
         assert_eq!(store.load_dht_snapshot().expect("empty state"), None);
         let snapshot = DhtSnapshot {
             version: DHT_SNAPSHOT_VERSION,
-            legacy_node_id: None,
             identities_v4: vec![DhtIdentity {
                 address: IpAddr::V4(Ipv4Addr::LOCALHOST),
                 node_id: NodeId([1; 20]),

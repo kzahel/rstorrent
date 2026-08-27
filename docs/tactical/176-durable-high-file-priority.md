@@ -1,11 +1,12 @@
 # Tactical 176: Durable High File Priority
 
-Status: **Implementation complete; iOS host validation pending.** Explicit
-user direction on 2026-08-27 temporarily yields desktop release Tactical `158`
-to this bounded engine/product slice. All Linux-hosted repository, web, and
-Android gates pass; this Linux host has neither Xcode nor Swift, so the updated
-iOS SwiftUI presentation has not received its required simulator/archive
-compile yet.
+Status: **Implementation complete; iOS host validation pending.** Completed
+disposable-incubation state Tactical
+[`179`](179-disposable-incubation-state-epoch.md) replaces the historical
+schema migration with fresh schema-21 persistence and returns this slice to the
+sole **Now**. All Linux-hosted repository, web, and Android gates pass; this
+Linux host has neither Xcode nor Swift, so the updated iOS SwiftUI presentation
+still needs its required simulator/archive compile.
 
 Topics: `oracle-driven-engine-campaign`, `capability-readiness`,
 `download-correctness`, `client-persistence`, `application-control`,
@@ -19,8 +20,9 @@ completed availability-picker Tactical
 rarest-first activation; completed incomplete-streaming Tactical
 [`139`](139-incomplete-file-streaming-demand.md) supplies the independent
 transient current/ahead urgency overlay; schema-19 Tactical
-[`143`](143-dual-identity-and-persistence-foundation.md) supplies the first
-public-incubation compatibility baseline.
+[`143`](143-dual-identity-and-persistence-foundation.md) supplies the bounded
+pre-task reset and opaque-owner foundation. Tactical `179` owns the later
+fresh schema-21 epoch.
 
 ## Motivation And Decision
 
@@ -64,10 +66,10 @@ need.
    picker rank in the active generation without stopping storage, cancelling
    requests, invalidating verified data, changing route epoch, or restarting
    the torrent. Skip transitions retain Tactical `063` reconciliation.
-4. **HFP-004 restart.** High files persist in a bounded schema-20 table and
-   reach resume/start before the picker is constructed. Schema 19 migrates in
-   place without discarding torrents, settings, roots, sources, identities, or
-   verification state.
+4. **HFP-004 restart.** High files persist in the bounded current-schema table
+   and reach resume/start before the picker is constructed. Tactical `179`
+   supersedes the original schema-19 retention migration with a fresh
+   schema-21 catalog and recognized-incubation reset.
 5. **HFP-005 command transitions.** Setting High ensures the file is wanted;
    setting Normal ensures wanted and removes High; setting Skip removes High
    and applies the existing skipped route. Repeating the same semantic command
@@ -218,9 +220,9 @@ clients. Protocol code does not depend on SQLite, async runtime, serde, or UI.
 - Streaming current/ahead continues before ordinary picker activation and
   retains all Tactical `139` demand, peer, duplicate, rate, and lifecycle
   ceilings.
-- Schema 19 to 20 migration is additive and transactional. Older pre-public
-  schemas retain Tactical `143`'s explicit reset policy; future/unknown schemas
-  still fail closed.
+- Schema 21 includes the sparse priority table in a fresh catalog. Recognized
+  incubation schemas `1..=20` use Tactical `179`'s bounded full-catalog reset;
+  future/unknown schemas still fail closed.
 
 ## Implementation And Validation Sequence
 
@@ -228,9 +230,10 @@ clients. Protocol code does not depend on SQLite, async runtime, serde, or UI.
    focused ordering/streaming-composition tests.
 2. Carry sparse High indices through startup/resume and live updates, with a
    priority-only fast path distinct from storage selection reconciliation.
-3. Add schema-20 additive persistence and schema-19 in-place migration; cover
-   atomic transitions, idempotence, restart, invalid state, and retained
-   catalog data.
+3. Add sparse priority persistence and cover atomic transitions, idempotence,
+   restart, and invalid state. The original schema-20 implementation included
+   a schema-19 retention migration; Tactical `179` later replaces it with the
+   fresh schema-21 epoch.
 4. Extend Files and torrent snapshots, regenerate TypeScript/schema/UniFFI,
    and update web, Android Compose, and iOS presentation/actions.
 5. Run focused deterministic/runtime tests, then formatting, warning-denying
@@ -241,9 +244,9 @@ clients. Protocol code does not depend on SQLite, async runtime, serde, or UI.
 
 ## Implementation And Evidence
 
-The semantic model is implemented end to end. Schema 20 stores only bounded
-sparse High overrides and migrates schema 19 transactionally. Resume and live
-application updates carry both selection and High state. Layout derives the
+The semantic model is implemented end to end. The current schema stores only
+bounded sparse High overrides. Resume and live application updates carry both
+selection and High state. Layout derives the
 maximum overlapping priority, and the ordinary picker plus v2 hash scheduler
 use High/Normal order without cancelling accepted work. Files snapshots and
 the generated contract expose the three values; React/Tauri, Android Compose,
@@ -255,18 +258,19 @@ The deterministic evidence covers:
 - weighted rarity/priority ordering and live picker mutation;
 - v2 hash-need priority and live mutation;
 - current/ahead streaming order over an ordinary High piece;
-- durable transition/idempotence/restart and schema-19 retention migration;
+- durable transition/idempotence/restart; the historical schema-19 retention
+  migration passed before Tactical `179` superseded it with fresh reset;
 - live application High and Skip changes without peer-generation replacement;
 - truthful paged Files projection and web High/Normal/Skip actions; and
 - Android generated binding consumption and Compose compilation.
 
-Validation run on 2026-08-27:
+Original implementation validation run on 2026-08-27:
 
 - `cargo fmt --all` and `cargo clippy --workspace -- -D warnings` pass;
 - `cargo test --workspace` passes with only the repository's declared ignored
   opt-in/live/maximum tests;
 - focused High, streaming-composition, live-application, durable-transition,
-  schema-migration, and Files-projection tests pass;
+  then-current schema-migration, and Files-projection tests pass;
 - `npm run generate --prefix clients/web`, `npm run typecheck --prefix
   clients/web`, and `NODE_OPTIONS=--no-webstorage npm run test --prefix
   clients/web` pass; the web suite reports 292 passed and two skipped;
@@ -278,11 +282,12 @@ Validation run on 2026-08-27:
 
 ## Stopping Condition
 
-This tactical completes when HFP-001 through HFP-008 pass, schema 19 migrates
-without data loss, all first-party generated boundaries build, web/Android/iOS
-present the truthful three-value model, streaming remains an independently
-bounded higher-urgency overlay, declared repository gates pass, and the
-readiness/campaign/persistence/client records describe the landed behavior.
+This tactical completes when HFP-001 through HFP-008 pass, current-schema High
+priority survives restart, all first-party generated boundaries build,
+web/Android/iOS present the truthful three-value model, streaming remains an
+independently bounded higher-urgency overlay, declared repository gates pass,
+and the readiness/campaign/persistence/client records describe the landed
+behavior. Tactical `179` independently owns the recognized-incubation reset.
 
 ## Non-Goals
 

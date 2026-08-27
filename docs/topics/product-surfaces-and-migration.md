@@ -450,10 +450,13 @@ already the established KDE client name.
 Maintainer direction on 2026-08-22 selects RSTorrent as the public product name
 for the foreseeable release line, beginning with the incubation beta.
 Direction on 2026-08-23 selects
-`com.jstorrent.rstorrent` as its desktop identifier. A later graduation should
-not discard JSTorrent's installed application or extension audience merely to
-make the engine rewrite visible, but that future concern does not make current
-RSTorrent clients provisional identities.
+`com.jstorrent.rstorrent` as its current desktop identifier. A later
+graduation should not discard JSTorrent's installed application or extension
+audience merely to make the engine rewrite visible. Maintainer direction on
+2026-08-27 nevertheless makes every `0.1.x` identifier and installation
+disposable incubation state rather than a compatibility obligation for the
+first supported release. The current value remains the operational default;
+changing it still requires an explicit product decision.
 
 ## Existing Distribution And Coexistence
 

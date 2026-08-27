@@ -7,8 +7,6 @@ use serde::{Deserialize, Serialize};
 
 const SETTINGS_FILE_NAME: &str = "desktop-shell.json";
 const SETTINGS_VERSION: u32 = 3;
-const NOTIFICATION_SETTINGS_VERSION: u32 = 2;
-const LEGACY_SETTINGS_VERSION: u32 = 1;
 const MAX_SETTINGS_BYTES: usize = 4 * 1024;
 
 const SHUTDOWN_RUNNING: u8 = 0;
@@ -73,28 +71,6 @@ struct SettingsVersion {
     version: u32,
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct LegacyDesktopShellSettings {
-    #[serde(rename = "version")]
-    _version: u32,
-    run_in_background: bool,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct NotificationDesktopShellSettings {
-    #[serde(rename = "version")]
-    _version: u32,
-    run_in_background: bool,
-    notifications: DesktopNotificationSettings,
-}
-
-enum ReadDesktopShellSettings {
-    Current(DesktopShellSettings),
-    Migrated(DesktopShellSettings),
-}
-
 pub(crate) struct LoadedDesktopShellSettings {
     pub(crate) path: PathBuf,
     pub(crate) settings: DesktopShellSettings,
@@ -104,24 +80,11 @@ pub(crate) struct LoadedDesktopShellSettings {
 pub(crate) fn load_desktop_shell_settings(config_dir: &Path) -> LoadedDesktopShellSettings {
     let path = config_dir.join(SETTINGS_FILE_NAME);
     match read_desktop_shell_settings(&path) {
-        Ok(Some(ReadDesktopShellSettings::Current(settings))) => LoadedDesktopShellSettings {
+        Ok(Some(settings)) => LoadedDesktopShellSettings {
             path,
             settings,
             diagnostic: None,
         },
-        Ok(Some(ReadDesktopShellSettings::Migrated(settings))) => {
-            let diagnostic = match write_desktop_shell_settings(&path, settings) {
-                Ok(()) => "older desktop shell settings were migrated to version 3".to_owned(),
-                Err(error) => format!(
-                    "older desktop shell settings are active but could not be migrated: {error}"
-                ),
-            };
-            LoadedDesktopShellSettings {
-                path,
-                settings,
-                diagnostic: Some(diagnostic),
-            }
-        }
         Ok(None) => repair_with_defaults(path, "settings were missing"),
         Err(error) => repair_with_defaults(path, &error),
     }
@@ -178,7 +141,7 @@ fn repair_with_defaults(path: PathBuf, reason: &str) -> LoadedDesktopShellSettin
     }
 }
 
-fn read_desktop_shell_settings(path: &Path) -> Result<Option<ReadDesktopShellSettings>, String> {
+fn read_desktop_shell_settings(path: &Path) -> Result<Option<DesktopShellSettings>, String> {
     let file = match File::open(path) {
         Ok(file) => file,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -193,38 +156,12 @@ fn read_desktop_shell_settings(path: &Path) -> Result<Option<ReadDesktopShellSet
     }
     let version: SettingsVersion =
         serde_json::from_slice(&bytes).map_err(|_| "settings were malformed".to_owned())?;
-    match version.version {
-        SETTINGS_VERSION => {
-            let settings: DesktopShellSettings =
-                serde_json::from_slice(&bytes).map_err(|_| "settings were malformed".to_owned())?;
-            Ok(Some(ReadDesktopShellSettings::Current(settings)))
-        }
-        NOTIFICATION_SETTINGS_VERSION => {
-            let previous: NotificationDesktopShellSettings =
-                serde_json::from_slice(&bytes).map_err(|_| "settings were malformed".to_owned())?;
-            Ok(Some(ReadDesktopShellSettings::Migrated(
-                DesktopShellSettings {
-                    version: SETTINGS_VERSION,
-                    run_in_background: previous.run_in_background,
-                    notifications: previous.notifications,
-                    power: DesktopPowerSettings::default(),
-                },
-            )))
-        }
-        LEGACY_SETTINGS_VERSION => {
-            let legacy: LegacyDesktopShellSettings =
-                serde_json::from_slice(&bytes).map_err(|_| "settings were malformed".to_owned())?;
-            Ok(Some(ReadDesktopShellSettings::Migrated(
-                DesktopShellSettings {
-                    version: SETTINGS_VERSION,
-                    run_in_background: legacy.run_in_background,
-                    notifications: DesktopNotificationSettings::default(),
-                    power: DesktopPowerSettings::default(),
-                },
-            )))
-        }
-        _ => Err("settings used an unsupported version".to_owned()),
+    if version.version != SETTINGS_VERSION {
+        return Err("settings used an unsupported version".to_owned());
     }
+    let settings: DesktopShellSettings =
+        serde_json::from_slice(&bytes).map_err(|_| "settings were malformed".to_owned())?;
+    Ok(Some(settings))
 }
 
 fn write_desktop_shell_settings(path: &Path, settings: DesktopShellSettings) -> Result<(), String> {
@@ -347,48 +284,30 @@ mod tests {
     }
 
     #[test]
-    fn prior_versions_migrate_exact_choices_and_new_defaults() {
-        let temporary = tempfile::tempdir().expect("temporary settings directory");
-        let path = temporary.path().join("desktop-shell.json");
-        std::fs::write(&path, br#"{"version":1,"run_in_background":false}"#)
-            .expect("write version one settings");
+    fn prior_versions_repair_to_current_defaults() {
+        for (version, contents) in [
+            (1, br#"{"version":1,"run_in_background":false}"#.as_slice()),
+            (
+                2,
+                br#"{"version":2,"run_in_background":false,"notifications":{"notify_download_complete":false,"notify_needs_attention":true,"notify_while_focused":false}}"#.as_slice(),
+            ),
+        ] {
+            let temporary = tempfile::tempdir().expect("temporary settings directory");
+            let path = temporary.path().join("desktop-shell.json");
+            std::fs::write(&path, contents).expect("write prior settings");
 
-        let migrated = load_desktop_shell_settings(temporary.path());
-        assert!(!migrated.settings.run_in_background);
-        assert_eq!(
-            migrated.settings.notifications,
-            DesktopNotificationSettings::default()
-        );
-        assert_eq!(migrated.settings.power, DesktopPowerSettings::default());
-        assert!(migrated.diagnostic.is_some());
+            let repaired = load_desktop_shell_settings(temporary.path());
+            assert_eq!(
+                repaired.settings,
+                DesktopShellSettings::default(),
+                "version {version}"
+            );
+            assert!(repaired.diagnostic.is_some(), "version {version}");
 
-        let reopened = load_desktop_shell_settings(temporary.path());
-        assert_eq!(reopened.settings, migrated.settings);
-        assert!(reopened.diagnostic.is_none());
-
-        let version_two = tempfile::tempdir().expect("version two settings directory");
-        let path = version_two.path().join("desktop-shell.json");
-        std::fs::write(
-            &path,
-            br#"{"version":2,"run_in_background":false,"notifications":{"notify_download_complete":false,"notify_needs_attention":true,"notify_while_focused":false}}"#,
-        )
-        .expect("write version two settings");
-        let migrated = load_desktop_shell_settings(version_two.path());
-        assert!(!migrated.settings.run_in_background);
-        assert_eq!(
-            migrated.settings.notifications,
-            DesktopNotificationSettings {
-                notify_download_complete: false,
-                notify_needs_attention: true,
-                notify_while_focused: false,
-            }
-        );
-        assert_eq!(migrated.settings.power, DesktopPowerSettings::default());
-        assert!(migrated.diagnostic.is_some());
-        assert_eq!(
-            load_desktop_shell_settings(version_two.path()).settings,
-            migrated.settings
-        );
+            let reopened = load_desktop_shell_settings(temporary.path());
+            assert_eq!(reopened.settings, DesktopShellSettings::default());
+            assert!(reopened.diagnostic.is_none());
+        }
     }
 
     #[test]

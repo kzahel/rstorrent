@@ -562,9 +562,9 @@ density but not illegibly small icons, while coarse-pointer controls retain
 
 Tactical `050` extends that same versioned appearance owner instead of adding a
 competing setting. Version 2 persists Interface size with **Color theme** as
-Auto, Light, or Dark; version-1 sizes migrate intact with Auto. Auto follows
-live `prefers-color-scheme` changes in CSS, while explicit choices override the
-system. The validated root attribute is installed before the inspection
+Auto, Light, or Dark; at landing, version-1 sizes migrated intact with Auto.
+Auto follows live `prefers-color-scheme` changes in CSS, while explicit choices
+override the system. The validated root attribute is installed before the inspection
 bundle's dynamic React import and synchronized from presentation state after
 live changes. The since-retired direct-DOM UI retained its Dark-only browser
 declaration and did not interpret the React appearance record while both entry
@@ -572,9 +572,11 @@ paths still existed.
 
 Tactical `099` extends that browser-local appearance owner with **Data
 units**. Decimal powers of 1000 with `kB`, `MB`, and `GB` are the fresh and
-migration default; explicit Binary preserves powers of 1024 with `KiB`, `MiB`,
-and `GiB`. Version 3 preserves valid size/theme fields from both prior record
-versions and persists all three fields together. The choice now covers every
+then-migration default; explicit Binary preserves powers of 1024 with `KiB`,
+`MiB`, and `GiB`. Version 3 persists all three fields together. Tactical
+[`179`](../tactical/179-disposable-incubation-state-epoch.md) makes version 3
+the only accepted record: versions 1 and 2 now return current Standard, Auto,
+and Decimal defaults rather than preserving old fields. The choice now covers every
 generic shared React byte and rate display, including exact integer-string
 counters and Speed chart labels. Raw application values, sorting,
 calculations, chart geometry, and literal IEC text describing exact engine or
@@ -710,8 +712,10 @@ dark scan also moved the demo strip and primary action from hard-coded light
 colors to palette-specific semantic tokens after exposing contrast failures.
 
 Tactical `099` adds exact Decimal/Binary threshold and arbitrary-precision
-formatter tests, version-1/version-2 migration and denied-storage coverage,
-and complete-record component persistence. Its 20-scenario headless browser
+formatter tests, its then-current version-1/version-2 migration and denied-
+storage coverage, and complete-record component persistence. Tactical `179`
+replaces the migration cases with exact old-version default-reset coverage.
+Its 20-scenario headless browser
 run exercises live switching across Library, Transfers, General, Files, Disk,
 DHT, and Speed; retains raw row order and canvas geometry; covers desktop and
 phone Settings; preserves technical IEC copy; and reports no serious or

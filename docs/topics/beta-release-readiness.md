@@ -2,7 +2,7 @@
 
 Topic: `beta-release-readiness`
 
-Status: **Active as of 2026-08-26.** RSTorrent desktop `0.1.0` is the first
+Status: **Active as of 2026-08-27.** RSTorrent desktop `0.1.0` is the first
 public signed incubation release and `0.1.1` is its first updater-validation
 release. Public `0.1.2` is the first signed candidate carrying the completed
 desktop repairs and native bootstrap. Public ChromeOS Linux preview
@@ -114,6 +114,20 @@ download sleep inhibition the next beta usability slice; Tactical `165` owns
 desktop and Android settings/behavior plus iOS inapplicability before
 returning signed-package ownership to Tactical `158`. That slice is complete.
 
+Explicit maintainer direction on 2026-08-27 declares all `0.1.x` packages and
+current platform previews unsupported incubation builds with disposable
+application-owned state and contracts. They remain valid package, signing,
+updater, and product-behavior fixtures, but they are not a persistence or
+rollback baseline. A future version must be explicitly declared the first
+supported beta or release before compatibility obligations begin; `0.2.0` is
+only a possible version, not a selected one.
+Explicit user direction immediately activated disposable-incubation state
+Tactical [`179`](../tactical/179-disposable-incubation-state-epoch.md). It is
+complete with a fresh schema-21 catalog and removal of compatibility-only
+state readers while retaining bounded reset and external-payload safety.
+Tactical `176` resumes as the sole **Now**; signed release Tactical `158`
+follows it.
+
 ## Scope And Release Definition
 
 This topic answers whether a build is ready to be handed to people outside the
@@ -134,10 +148,11 @@ claims. Platform and UI truth remains in
 [`client-surfaces.md`](client-surfaces.md). This topic classifies those facts
 for release rather than duplicating their design.
 
-**Beta** means a versioned, signed build intentionally offered to external
-testers with a documented supported platform and upgrade path. A local debug
-APK, unsigned Apple archive, `tauri dev` window, website build, or headless web
-host is not a beta release.
+**Supported beta** means a versioned, signed build explicitly declared for
+external testers with a documented supported platform and compatibility
+boundary. Public availability, a local debug APK, unsigned Apple archive,
+`tauri dev` window, website build, or headless web host does not make an
+incubation build a supported beta.
 
 Beta is a program with independent lanes. Desktop beta is not blocked on App
 Store review, and mobile beta is not implied by a desktop tag:
@@ -173,11 +188,19 @@ workflow may create a draft release, but only a final validation job may make
 it public. Tags, publication, store submission, and production-route changes
 remain explicit maintainer actions.
 
-Until the first external beta, development data may be reset rather than
-migrated. The first published build freezes its application identifiers,
-updater key, update route, and a supported persistence/schema baseline. Every
-later build must either migrate that baseline transactionally or fail closed
-without corrupting or silently reinterpreting user state.
+Every `0.1.x` package and current platform preview may reset or replace
+application-owned state rather than migrate it. Current application
+identifiers, updater keys, and routes are operational values, not a promise
+that an older incubation installation remains supported. Recognized obsolete
+state may use a bounded documented reset; malformed, ambiguous, busy, or future
+state fails closed. Reset never includes user-selected payload roots or
+published content and never converts old records into verified authority.
+
+The first version explicitly declared the supported beta or release freezes
+its fresh application identifiers, updater trust, route, and persistence/API
+baseline from that point forward. It has no migration obligation to any
+earlier incubation build. Later supported versions must follow the
+compatibility and rollback policy declared with that baseline.
 
 ## Shared Beta Blockers
 
@@ -194,11 +217,13 @@ without corrupting or silently reinterpreting user state.
   are later scope; released RSTorrent routes and clients do not silently change
   identity.
 - [ ] **REL-002 — Freeze application identifiers.** Desktop currently uses
-  the accepted `com.jstorrent.rstorrent`, and release validation rejects drift.
+  the accepted operational `com.jstorrent.rstorrent`, and release validation
+  rejects accidental drift.
   Android still uses the unreleased `org.rstorrent.bootstrap`, and iOS uses
   `org.rstorrent.ios.dev`. Incubation clients do not inherit an existing
-  JSTorrent application/store identity; the shared gate remains open for those
-  mobile lanes.
+  JSTorrent application/store identity, and no `0.1.x` value constrains the
+  future supported release. The shared gate remains open for those mobile
+  lanes and for explicit reconfirmation at each lane's support boundary.
 - [ ] **REL-003 — Establish one release version source and bump procedure.**
   Desktop web, Cargo, and Tauri metadata currently agree at `0.1.2`; Android
   and iOS use independent provisional values. Release validation must reject
@@ -206,10 +231,12 @@ without corrupting or silently reinterpreting user state.
 - [x] **REL-004 — Add a changelog and release-note policy.** `CHANGELOG.md` and
   the desktop release runbook require supported behavior, known limitations,
   data reset/migration, and security/privacy changes for each release.
-- [ ] **REL-005 — Freeze the first supported persistence baseline.** Exercise
-  upgrade from the oldest supported beta database and application-owned files,
-  including crash during migration, corrupt/newer schema, root loss, and
-  rollback policy.
+- [ ] **REL-005 — Declare the first supported persistence baseline.** Choose
+  the first explicitly supported version and freeze only its fresh database
+  and application-owned formats. No `0.1.x` migration is required. Exercise
+  fresh creation, recognized-incubation reset, interrupted reset,
+  corrupt/ambiguous/busy/future state, root loss, payload preservation, and the
+  forward/rollback policy that begins with that release.
 - [ ] **REL-006 — Define support, privacy, and legal presentation.** Ship
   license/notices, a privacy statement for network behavior and any update
   installation ID, support/report instructions, and a safe diagnostics export
@@ -307,6 +334,10 @@ without corrupting or silently reinterpreting user state.
   installed cold/visible/hidden magnet and file activation, cancellation,
   bounded failures, duplicate handling, tray Quit, uninstall, and exact
   inherited-state restoration.
+  Incubation update acceptance does not require retaining `0.1.x` torrents,
+  settings, roots, selection, verification state, or updater identity; it must
+  prove signed replacement, clean launch or bounded reset, and preservation of
+  user-selected payload content.
 - [ ] **QA-004 — Establish a crash/support loop.** Users need an accessible
   version/build identity, copyable bounded diagnostics, known-issues link, and
   a report path. Automatic crash or analytics upload is not required for beta.
@@ -332,7 +363,7 @@ without corrupting or silently reinterpreting user state.
   under an automatic-loopback profile. Public `0.1.2` now contains the
   fresh-default and native root setup/repair changes and passes signed package
   validation, but its clean Windows installed update does not yet. Linux x86_64,
-  uninstall, retained-state, and broader clean-machine evidence remain
+  uninstall, reset safety, and broader clean-machine evidence remain
   required; Intel Mac installed testing is deliberately omitted.
 - [x] **DESK-002 — Sign and notarize tagged builds.** Use the existing shared
   publisher Developer ID/notarization and Windows Azure signing setup. Missing
@@ -487,18 +518,18 @@ is still pending and is not the compatibility oracle.
   [`desktop-v0.1.2`](../evidence/desktop-v0.1.2.md). Production-route and
   installed cross-version validation remain part of `UPD-005` rather than
   being inferred from publication.
-- [ ] **UPD-005 — Prove a real cross-version update.** On each supported
-  desktop testbed, install an exact older public signed build, check through
-  the production route while an incomplete torrent, configured download root,
-  nontrivial file selection, queue order/state, and tray background preference
-  exist. Download/install/relaunch, verify new application version/build
-  identity and exact retention of those facts, resume the transfer, and
-  independently verify exact published content. macOS arm64 and Linux arm64
-  now pass updater mechanics from exact
+- [ ] **UPD-005 — Prove a real cross-version package update.** On each
+  supported desktop testbed, use an exact older public signed incubation build
+  to check through the production route, explicitly approve replacement,
+  relaunch, and verify the exact newer version/build and package trust. Old
+  `0.1.x` torrents, settings, roots, selection, verification state, updater
+  identity, and rollback are not retained-state requirements. If the newer
+  build rejects its application-private state, it must take the declared
+  bounded reset or fail-closed path while leaving user-selected payload
+  content untouched and launching cleanly afterward. macOS arm64 and Linux
+  arm64 now pass updater mechanics from exact
   public `0.1.0` to `0.1.1`, including explicit approval, replacement,
   relaunch, current-version checking, and private installation-ID continuity.
-  Those earlier campaigns did not exercise the required real torrent state and
-  therefore do not close this strengthened row.
   Windows x86_64 proves the same updater mechanics and Authenticode continuity
   under an automatic-loopback profile, but must repeat from a fresh default
   profile after `DESK-006`. Linux x86_64 remains open. Intel macOS installed
@@ -506,8 +537,9 @@ is still pending and is not the compatibility oracle.
   tests alone are the only x86_64 macOS claim.
 - [ ] **UPD-006 — Document update privacy and recovery.** Explain the random
   resettable installation ID, private server logging, automatic schedule,
-  manual retry/download path, rollback expectations, and behavior when an
-  update or metadata service fails.
+  manual retry/download path, the absence of incubation rollback/state
+  compatibility, and behavior when an update, reset, or metadata service
+  fails.
 
 ## Android/ChromeOS Beta Checklist
 
@@ -524,9 +556,10 @@ is still pending and is not the compatibility oracle.
   signing through protected CI/store credentials, version code/name checks,
   minification/resource rules, mapping retention, and artifact inspection.
 - [ ] **AND-004 — Qualify the closed-testing channel.** Install from the store
-  on representative Android and ChromeOS devices, update from an older build,
-  complete the cohort, recover foreground/background transitions, repair a
-  revoked root, open content, and remove/uninstall cleanly.
+  on representative Android and ChromeOS devices, prove store replacement from
+  a disposable older fixture without requiring state retention, complete the
+  cohort from fresh current state, recover foreground/background transitions,
+  repair a revoked root, open content, and remove/uninstall cleanly.
 - [ ] **AND-005 — Complete store and platform declarations.** Data safety,
   privacy, foreground service, notification, local-network/network behavior,
   content rating, listing text/screenshots, and support link must match actual
@@ -558,9 +591,11 @@ is still pending and is not the compatibility oracle.
 - [ ] **IOS-004 — Automate a signed archive/export.** Use protected Apple
   credentials/profiles outside the repository, validate archive contents, and
   upload the exact reviewed build to TestFlight.
-- [ ] **IOS-005 — Prove TestFlight upgrade and lifecycle.** Install an older
-  beta, update through TestFlight, validate retained state/roots and schema,
-  run phone/iPad cohort cases, and record finite-background limitations.
+- [ ] **IOS-005 — Prove TestFlight replacement and lifecycle.** Install a
+  disposable older fixture, replace it through TestFlight without requiring
+  state retention, validate clean current state or bounded reset plus payload
+  safety, run phone/iPad cohort cases, and record finite-background
+  limitations. Compatibility begins only with the explicitly supported build.
 - [ ] **IOS-006 — Make storage bridging Swift 6 concurrency-clean.** Current
   archives warn that asynchronous `NSLock` and `DispatchGroup.wait` calls in
   `PlatformStorageBridge` become errors in Swift 6 language mode. Replace them
@@ -622,7 +657,7 @@ no single optional BEP is mandatory.
    Windows x86_64/Linux arm64 proof pass. File/magnet handoff remains outside
    that completed slice and is now owned by Tactical `163`; autostart stays
    deferred.
-4. **Now — Tactical `158`: desktop signed packaging and updater adoption.**
+4. **Paused — Tactical `158`: desktop signed packaging and updater adoption.**
    The product-owned `desktop-update-v1` client, signed package workflow,
    release validation, per-app key, public configuration, production route,
    five-platform hosted rehearsal, three tagged publications, one installed
@@ -634,11 +669,12 @@ no single optional BEP is mandatory.
    setup; completed Tacticals `163`--`165` add external intake, notifications,
    and active-work sleep inhibition. Public `0.1.2` now carries those repairs,
    and its signed package matrix plus bounded macOS arm64 launch/native-host
-   spot check pass. Repeat clean Windows from the default with the strengthened
-   `UPD-005` state, characterize firewall consent, and run Linux x86_64. Intel
+   spot check pass. Repeat clean Windows from the default under the revised
+   disposable-state `UPD-005` contract, characterize firewall consent, and
+   run Linux x86_64. Intel
    macOS installed testing is deliberately omitted. Explicit maintainer
     direction temporarily yielded this item to now-complete Tacticals `169`,
-    `170`, and `171`. Its open gates remain unchanged and have resumed.
+    `170`, `171`, and now `179`. Its open gates remain unchanged.
 5. **Complete — Tactical `163`: desktop external torrent intake.** The
    bounded shell/UI implementation, package gates, and installed Linux arm64,
    Windows x86_64-application, and macOS arm64 cold/visible/tray-hidden/
@@ -660,29 +696,39 @@ no single optional BEP is mandatory.
 9. **Complete — Tactical `161`: packaged desktop folder picker.** The native
    parented Windows picker, self-contained packaged Linux picker, stable root
    boundary, and installed Windows cancel/select/repair/restart evidence pass.
-10. **Next — application identity and upgrade baseline.** Freeze package IDs,
-   persistence compatibility, changelog, privacy/support, diagnostics export,
-   and a repeatable cohort before any public installer.
-11. **Later — platform release campaigns.** Close desktop, Android closed-
-   testing, and iOS TestFlight gates independently with real older-to-newer
-   installed evidence.
-12. **Later — Tactical `153`.** Wired-LAN uTP scalability remains valuable
+10. **Complete — Tactical `179`: disposable incubation state epoch.** The
+   fresh schema-21 catalog resets every recognized schema 1 through 20 before
+   startup. DHT-v1, desktop-settings-v1/v2, and browser-appearance-v1/v2
+   readers are gone; current-format validation, crash convergence, fail-closed
+   hostile/future handling, and external payload remain exact.
+11. **Now — Tactical `176`: durable High file priority.** Return only for the
+   outstanding macOS-hosted iOS simulator/archive compile. The implementation
+   and every available Linux/web/Android gate already pass.
+12. **Next — supported-release boundary.** Keep all `0.1.x` and current
+   previews explicitly disposable, then choose and declare the first supported
+   version with a fresh persistence/API baseline. No migration from incubation
+   state is required. Complete its changelog, privacy/support, diagnostics
+   export, and repeatable cohort before making that support claim.
+13. **Later — platform release campaigns.** Close desktop, Android closed-
+   testing, and iOS TestFlight gates independently with real signed
+   replacement evidence under the disposable-incubation policy.
+14. **Later — Tactical `153`.** Wired-LAN uTP scalability remains valuable
    engine evidence but no longer displaces the explicit beta-readiness
    campaign.
-13. **Complete — Tactical `167`: ChromeOS Crostini bundled web launcher.** The
+15. **Complete — Tactical `167`: ChromeOS Crostini bundled web launcher.** The
     bundled Rust backend and React UI, static user service, registered Linux
     Launcher, and exact beta-extension handoff pass source gates and the
     available warm, twice-stopped-VM, detachable-transfer, preservation, and
     purge matrix on the physical Chromebook. The conditional full reboot was
     unavailable because no approved profile-login credential exists; signed
     public packages remain later breadth. Tactical `158` resumes as **Now**.
-14. **Complete — Tactical `168`: platform-aware extension launcher.** ChromeOS
+16. **Complete — Tactical `168`: platform-aware extension launcher.** ChromeOS
     omits the irrelevant desktop-native flow and presents the exact published
     JSTorrent Android listing beside ChromeOS Linux; desktop platforms retain
     only desktop behavior. The deterministic reviewed `0.3.0` package and
     physical ChromeOS chooser, exact Play destination, and warm Crostini
     handoff pass without new permissions or availability claims.
-15. **Complete — Tactical `169`: hosted Crostini bootstrap and release.** The
+17. **Complete — Tactical `169`: hosted Crostini bootstrap and release.** The
     pinned updater-key one-command installer, strict signed manifest, native
     x86_64/ARM64 `crostini-v*` workflow, release runbook, deterministic failure
     corpus, and exact non-public x86_64 physical package repair/failure matrix
@@ -691,7 +737,7 @@ no single optional BEP is mandatory.
     every signed public artifact, and passed the exact website install,
     Launcher, and stop/relaunch flow on physical x86_64. Physical native
     ARM64, full reboot, suspend, and installed update/rollback remain open.
-16. **Complete — Tactical `170`: configured Linux headless service.** One
+18. **Complete — Tactical `170`: configured Linux headless service.** One
     ordinary-user Rust application owner, exact React assets, strict durable
     root/listener/origin/Basic secret-file configuration, and a disabled-by-
     default systemd user unit pass deterministic and real x86_64 Linux gates.
@@ -699,7 +745,7 @@ no single optional BEP is mandatory.
     reachability, joined restart, rollback-safe repair, uninstall preservation,
     and exact cleanup pass. x86_64/ARM64 packages construct byte-identically;
     native ARM64 systemd and public distribution remain unclaimed.
-17. **Complete — Tactical `171`: signed headless release and trusted-LAN
+19. **Complete — Tactical `171`: signed headless release and trusted-LAN
     service.** A strict signed two-architecture `headless-v*` lane, verified
     bootstrap, operator-approved CLI/browser update discovery and apply,
     exact RFC 1918 `lan-none` admission with truthful full-control UI, and an

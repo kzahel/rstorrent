@@ -1,7 +1,6 @@
-//! SQLite schema facts for the fresh dual-identity catalog epoch.
+//! SQLite schema facts for the current disposable-incubation catalog epoch.
 
-pub(crate) const SCHEMA_VERSION: i64 = 20;
-pub(crate) const PREVIOUS_COMPATIBLE_SCHEMA_VERSION: i64 = 19;
+pub(crate) const SCHEMA_VERSION: i64 = 21;
 
 pub(crate) const FILE_PRIORITIES_TABLE_SQL: &str = "CREATE TABLE file_priorities (
         torrent_id BLOB NOT NULL CHECK (
@@ -15,8 +14,7 @@ pub(crate) const FILE_PRIORITIES_TABLE_SQL: &str = "CREATE TABLE file_priorities
 
 pub(crate) const DHT_TABLES_SQL: &str = "CREATE TABLE dht_state (
         singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-        format_version INTEGER NOT NULL CHECK (format_version > 0),
-        node_id BLOB NOT NULL CHECK (length(node_id) = 20)
+        format_version INTEGER NOT NULL CHECK (format_version > 0)
      );
      CREATE TABLE dht_nodes (
         family INTEGER NOT NULL CHECK (family IN (4, 6)),
