@@ -1,8 +1,9 @@
 # Tactical 182: Bounded Outbound Attempt And Metadata Turnover
 
-Status: **Active (2026-08-27).** This tactical temporarily becomes the sole
-**Now** by explicit maintainer direction. Tactical `176` retains only its
-unchanged macOS-hosted iOS simulator/archive compile and resumes afterward.
+Status: **Complete (2026-08-27).** Commits `8cd2582` and `15828ca` implement
+the bounded attempt lifetime and saturated metadata turnover. Tactical `176`
+has resumed as the sole **Now** with only its unchanged macOS-hosted iOS
+simulator/archive compile remaining.
 
 Topics: [`libtorrent-policy-alignment`](../topics/libtorrent-policy-alignment.md),
 [`peer-lifecycle`](../topics/peer-lifecycle.md),
@@ -53,9 +54,10 @@ worker's 60-second general progress timeout.
    seconds and never extends the attempt deadline. Established peer reads and
    writes retain the existing 60-second peer-I/O timeout.
 4. **AT-004, encryption fallback:** MSE negotiation and the one permitted
-   fresh-socket plaintext fallback remain within the same attempt lifetime;
-   DH work, socket ownership, registry generation, and connection permit
-   terminate exactly on timeout or cancellation.
+   fresh-socket plaintext fallback remain within the same attempt lifetime.
+   Timeout releases the socket, registry generation, and connection permit;
+   already-running non-cancellable DH computation remains under the existing
+   four-job session owner and is joined at session shutdown.
 5. **MT-001, saturated replacement:** with 30 connected zero-contribution
    metadata workers and candidate 31 eligible, the oldest worker becomes
    replaceable after 15 seconds. Only one replacement is requested at a time,
@@ -234,6 +236,67 @@ TorrentMetadataDownload (task-free accepted-block contributor facts)
 | Platform | focused and workspace Rust gates plus maintained Android arm64-v8a and x86_64 native builds |
 | Live public | not authorized; the 2026-08-27 observation remains motivation rather than a performance claim |
 
+## Implemented Result
+
+- `NetworkConfig::peer_connect_timeout` is now one absolute deadline across
+  preferred uTP, TCP, MSE/plain negotiation, fallback, and the outgoing
+  BitTorrent handshake. The defaults are 15 seconds total, three seconds for
+  preferred-uTP fallback, ten seconds maximum for the outgoing handshake, and
+  the unchanged 60 seconds for established peer I/O. New duration values are
+  nonzero-validated by both engine and application-service entry points.
+- Preferred-uTP timeout still cancels and joins its transport worker before
+  TCP starts. Plain and MSE paths share one clamped handshake deadline, and
+  an expired MSE path cannot open the plaintext fallback socket. A timed-out
+  attempt releases its socket, registry generation, and single peer-budget
+  permit. CPU-only DH work cannot be preempted safely after `spawn_blocking`
+  starts; the attempt stops awaiting it, while the existing session owner
+  retains its unchanged maximum of four jobs and joins it on shutdown.
+- `TorrentMetadataDownload` exposes only deterministic accepted-block counts
+  by attempt. The supervisor owns connection age and selects the oldest
+  expired zero-contribution worker only when the combined cohort is exactly
+  full, another registry candidate is eligible, the no-burst pacer is ready,
+  and no prior turnover is pending.
+- Turnover cancels exactly one worker, joins it, records
+  `metadata peer replaced after saturated no-progress grace`, and applies the
+  ordinary protocol-failure backoff before the existing paced refill. A
+  contributing worker is protected, and a sparse one-peer swarm remains
+  connected beyond the shortened test grace until ordinary cancellation.
+- The implementation adds no public setting, task, semaphore, connection
+  slot, or retained peer record. Maximum metadata ownership remains 30
+  combined dials/workers, the session connection owner remains 200, accepted
+  starts remain ten per second, and only one turnover may be outstanding.
+
+## Evidence And Resource Accounting
+
+- Focused pure/runtime tests prove duration defaults and rejection, absolute
+  deadline clamping, cumulative uTP/TCP/silent-handshake timing, the ten-second
+  handshake sub-budget, expired-MSE no-fallback behavior, contributor queries,
+  deterministic oldest-worker selection, saturated 30/31 turnover, useful-peer
+  protection, sparse no-churn, and terminal zero pending dials/workers.
+- The saturated fixture admits exactly 31 lifetime attempts, replaces exactly
+  one of 29 idle zero-contribution workers, protects the one-block contributor,
+  receives the remaining two blocks from candidate 31, and ends with zero
+  active attempts. The unchanged cohort high water is 30 and only one
+  replacement request is live. The sparse fixture retains one worker for 350
+  milliseconds with a 100-millisecond grace and no waiting candidate, then
+  cancellation joins it to zero.
+- `cargo fmt --all -- --check`, `cargo clippy --workspace -- -D warnings`, and
+  the final `cargo test --workspace` pass. The final feature-unified engine
+  suite reports 596 passed and 11 ignored; the session suite reports 260
+  passed and two ignored. One earlier parallel workspace run encountered the
+  pre-existing exact-port availability assertion; its isolated rerun, full
+  session rerun, and final workspace rerun all pass.
+- `uv run --project tests/interop --locked python
+  tests/interop/magnet_metadata.py` passes against pinned libtorrent
+  `2.0.13.0`: RSTorrent verifies the exact 26,686-byte, two-block metadata and
+  40,000-byte, three-piece payload in 0.311 seconds, then serves two exact
+  metadata requests back in the same loopback run. Cleanup is exact. This is
+  controlled correctness timing, not a public-swarm latency result.
+- `clients/android/build.sh` passes release native builds for x86_64 and
+  arm64-v8a, generated Kotlin bindings, the debug APK, and JVM unit tests.
+  Existing Android deprecation warnings are unchanged. No emulator, device,
+  or public-network run was performed.
+
 ## Non-Goals And Next-Slice Boundary
 
 - a session-global dial pacer, libtorrent's immediate 30-attempt connect boost,
@@ -267,4 +330,3 @@ Stop for a product-visible setting or API, a new dependency, a changed
 persistence/compatibility contract, destructive data action, external/public
 execution, a default outside these bounds, or evidence that requires a
 different connection owner.
-

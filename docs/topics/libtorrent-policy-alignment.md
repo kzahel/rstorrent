@@ -6,7 +6,9 @@ Status: **Active.** The initial cross-policy audit was recorded on 2026-08-27
 against pinned Rasterbar libtorrent `2.0.13` at
 `7d7fc38fac61177fa5e02148f791b2f65250b09d`. Tactical
 [`182`](../tactical/182-bounded-outbound-attempt-and-metadata-turnover.md) is
-the active source-first implementation of `LPA-001` and `LPA-002`.
+complete and aligns `LPA-001` while closing `LPA-002` with a conservative
+RSTorrent-specific saturated-cohort adaptation. Tactical `176` is again the
+sole **Now**; this topic remains the durable comparison ledger.
 
 ## Scope
 
@@ -105,7 +107,7 @@ not claim identical internal state or every adjacent transition.
 | Storage file pool | 40 | 40 | Exact ordinary default. |
 | Ordinary peer failure ceiling | 3 | 3 | Exact default ceiling. |
 | Reconnect base | 60 s | 60 s | Shared base; exact failure-scaled eligibility remains a transition-level comparison. |
-| Peer TCP connect phase | 15 s | 15 s | Same configured number, but RSTorrent may apply additional sequential phase deadlines as recorded below. |
+| Outbound attempt / handshake | 15 s total / 10 s cap | 15 s connecting / 10 s handshake | Observable lifetime aligned; RSTorrent's three-second preferred-uTP fallback remains sequential within the one total deadline. |
 | Incoming BitTorrent handshake | 10 s | 10 s | Exact ordinary default. |
 | Peer activity/inactivity | 120 s / 600 s | 120 s / 600 s | Closely aligned long-lived incoming policy. |
 | Initial/max requests per peer | 4 / 500 | 4 / 500 | Adopted request-window endpoints with independent feedback state. |
@@ -131,51 +133,50 @@ change after tests and resource measurements.
 
 ### LPA-001: Whole Outbound Attempt Lifetime
 
-Priority: **High; strongest next startup candidate.**
+Disposition: **Completed by Tactical `182`.**
 
-RSTorrent currently gives a preferred uTP connection up to 15 seconds. On
-failure it tries TCP within the same attempt with another 15-second connect
-deadline, then uses the 60-second peer I/O deadline for the outgoing
-BitTorrent handshake. Because these are phase-local deadlines, an accepted
-attempt can occupy one peer-budget permit for much longer than the displayed
-15-second connect value; the worst sequencing can approach 90 seconds before
-the BitTorrent handshake completes.
+RSTorrent now gives one accepted outbound attempt a single absolute 15-second
+deadline across preferred uTP, TCP, MSE/plain negotiation, permitted fallback,
+and the outgoing BitTorrent handshake. Preferred uTP gets at most three
+seconds before cancellation and joined fallback; the handshake gets at most
+ten seconds or the smaller remaining lifetime. Established peer I/O retains
+its separate 60-second timeout.
 
 Pinned libtorrent uses `peer_connect_timeout = 15` while the peer remains in
 its connecting state. Its uTP transport starts with a three-second timeout and
 two configured SYN retransmissions; it does not implement RSTorrent's exact
 sequential uTP-then-TCP attempt shape.
 
-Recommended investigation:
+Landed ownership and evidence:
 
-- make 15 seconds a total outbound transport-plus-BitTorrent-handshake budget
-  rather than a fresh allowance for each phase;
-- inspect a bounded roughly three-second uTP-to-TCP fallback or hedge point
-  without misrepresenting libtorrent's three-second value as a total uTP
-  lifetime;
-- retain one attempt, peer-budget permit, registry generation, cancellation,
-  and terminal observation across the policy; and
-- prove black-holed uTP, slow successful uTP, silent TCP accept, late TCP
-  success, MSE preference/fallback, cancellation, and Android behavior.
+- one attempt retains one peer-budget permit and registry generation; timeout
+  releases both, and uTP still cancels and joins before TCP begins;
+- MSE and its one plaintext fallback share the handshake deadline, so expiry
+  cannot open another socket. Already-running CPU-only DH work remains bounded
+  to four by the existing session owner and joins at session shutdown; and
+- cumulative real-socket timing, silent handshake, expired-MSE no-fallback,
+  full workspace, pinned loopback interoperability, and both maintained
+  Android ABI builds pass.
 
 ### LPA-002: Saturated Metadata-Worker Turnover
 
-Priority: **High; directly adjacent to Tactical `181`.**
+Disposition: **Completed by Tactical `182` as an intentional adaptation.**
 
 RSTorrent already makes an unanswered metadata block eligible elsewhere after
 three seconds. A connected peer that contributes no accepted metadata can
-nevertheless occupy one of the hard 30 combined cohort slots until the common
-60-second metadata-progress deadline expires. Pinned libtorrent has the same
-three-second block reassignment shape, but no separate 30-worker metadata
-ceiling beneath its ordinary torrent and 200-session connection admission.
+still use its ordinary 60-second progress deadline in a sparse swarm. When all
+30 combined slots are occupied, however, the supervisor may now replace the
+oldest connected zero-contribution worker after 15 seconds only if another
+candidate is eligible, the ten-per-second pacer is ready, and no replacement
+is already pending. Accepted unique metadata blocks protect a worker; wire
+chatter, duplicates, and rejections do not count.
 
-A conservative RSTorrent adaptation should consider replacing a
-zero-contribution metadata worker after roughly 10--15 seconds **only** when
-all 30 slots are occupied and another eligible candidate is waiting. A sparse
-swarm with no replacement should retain the existing longer deadline. Any
-design must distinguish accepted metadata progress from unrelated peer-wire
-chatter and avoid repeatedly evicting a slow peer that is actually
-contributing.
+The scripted 30/31 case performs exactly one replacement, preserves the
+one-block contributor, completes the remaining two blocks from candidate 31,
+and drains pending dials, active workers, and attempts to zero. A separate
+sparse case outlives the shortened test grace without churn. The adaptation
+does not increase the 30-peer cohort or 200-connection session budget and has
+no direct pinned-libtorrent equivalent.
 
 ### LPA-003: Session-Wide Dial Rate
 
@@ -320,13 +321,12 @@ A public-swarm observation may identify a problem and a repeated controlled
 cohort may support a policy choice. One changing swarm does not establish the
 new default by itself.
 
-## Active Tactical Boundary
+## Completed Tactical Boundary
 
 Tactical
 [`182`](../tactical/182-bounded-outbound-attempt-and-metadata-turnover.md)
-implements a bounded **outbound attempt deadline and metadata cohort
-turnover** slice covering `LPA-001` and the tightly related `LPA-002`
-transition. It stops when:
+completed a bounded **outbound attempt deadline and metadata cohort turnover**
+slice covering `LPA-001` and the tightly related `LPA-002` transition:
 
 - one explicit total attempt budget bounds uTP selection/fallback, TCP
   connection, plaintext/MSE negotiation, and the BitTorrent handshake;
@@ -340,7 +340,8 @@ transition. It stops when:
 - desktop/workspace gates plus Android arm64-v8a and x86_64 builds pass with
   recorded resource high waters.
 
-The tactical is the sole **Now** while active. On completion, this topic must
-record the landed timing/turnover behavior and the ordinary queue restores
-Tactical `176`; this living topic remains a ledger rather than a competing
-backlog.
+The exact source dossier, scripted evidence, resource accounting, controlled
+interop, and Android gates are retained in the tactical. Tactical `176` has
+resumed as the sole **Now**. `LPA-003`, a session-global no-burst dial owner,
+remains the strongest unimplemented connection-policy candidate, but requires
+a separate tactical and does not compete with the current queue.

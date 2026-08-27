@@ -697,6 +697,22 @@ two requests in 0.080 seconds. Both directions verify identity/content and
 clean their temporary roots. These are controlled correctness timings, not a
 public-swarm latency claim. No new public traffic was run for this tactical.
 
+Completed Tactical `182` then removes sequential timeout multiplication
+without widening the cohort. One absolute 15-second outbound-attempt lifetime
+contains a three-second preferred-uTP fallback and ten-second outgoing
+handshake sub-budget. A deterministic saturated case admits 31 lifetime
+attempts through the unchanged 30-slot owner, replaces exactly one oldest
+zero-contribution worker, protects the contributing worker, and ends with
+zero pending dials, workers, and active attempts. A sparse case retains one
+idle worker beyond its shortened grace when no replacement waits.
+
+The retained pinned-libtorrent `2.0.13.0` loopback gate passes again:
+RSTorrent verifies the exact 26,686-byte two-block dictionary and 40,000-byte
+three-piece payload in 0.311 seconds and serves two exact metadata requests
+back in the same run. Android x86_64 and arm64-v8a builds also pass. These
+remain controlled correctness and resource-shape observations; Tactical `182`
+ran no public traffic and makes no changing-swarm latency claim.
+
 ### First Full-Download Comparator Evidence: 2026-07-31
 
 A controlled loopback fixture first ran both exact adapters against one

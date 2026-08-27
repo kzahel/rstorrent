@@ -160,14 +160,17 @@ exactly 30 live permits, leaves candidate 31 eligible, and cancels back to zero
 tasks and permits. Fast failure, timeout chatter, reject, workspace,
 pinned-libtorrent loopback, and maintained Android dual-ABI gates pass.
 
-Active Tactical
+Completed Tactical
 [`182`](../tactical/182-bounded-outbound-attempt-and-metadata-turnover.md)
 now bounds all sequential transport and outgoing-handshake phases to one
 15-second attempt lifetime. It also adds conservative one-at-a-time turnover
 of an oldest zero-contribution metadata worker only when the combined 30-peer
 cohort is full, another eligible candidate waits, and the existing no-burst
-pacer permits refill. It does not raise connection breadth or churn a sparse
-swarm.
+pacer permits refill. The saturated 30/31 fixture replaces exactly one idle
+worker, protects an accepted-block contributor, completes from candidate 31,
+and drains to zero. A separate sparse fixture outlives the shortened grace
+without churn. The peer cohort, session connection budget, and task owners do
+not grow.
 
 ## Scope
 
