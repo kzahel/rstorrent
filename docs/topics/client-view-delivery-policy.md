@@ -4,13 +4,16 @@ Topic: `client-view-delivery-policy`
 
 Status: The semantic application-view contract already accepts a per-view
 `min_interval_millis`, and the live client already requests only the
-projections implied by current navigation. The production web/Tauri adapter
-currently hardcodes 100 ms for Library, Summary, Peers, Pieces, Disk and
-Diagnostics and 250 ms for Files and Trackers. There is no user-selectable
-delivery profile, visibility-driven downshift, global bandwidth budget, or
-cadence-specific performance gate. Changing only a delivery interval also
-causes an unnecessary fresh snapshot today. This topic records the client
-policy required before those controls are implemented.
+projections implied by current navigation. Production browser delivery uses
+one WebSocket and does not support an automatic polling fallback. The web/
+Tauri adapter currently hardcodes 100 ms for Library, Summary, Peers, Pieces,
+Disk and Diagnostics and 250 ms for Files and Trackers. There is no
+user-selectable delivery profile, visibility-driven downshift, global
+bandwidth budget, or cadence-specific performance gate. Changing only a
+delivery interval also causes an unnecessary fresh snapshot today. Active
+Tactical [`183`](../tactical/183-production-websocket-ui-bandwidth-baseline.md)
+measures the current production WebSocket baseline before any of those
+controls or wire-shape optimizations are selected.
 
 ## Purpose And Scope
 
@@ -37,8 +40,10 @@ presentation and paint scheduling.
 [`performance-and-live-evidence.md`](performance-and-live-evidence.md) owns
 hardware-specific throughput and observer-cost measurement.
 
-This topic does not select WebSocket framing, a binary codec, compression,
-relay authentication, or a public remote protocol. Those mechanisms must
+This topic does not select a binary codec, compression, relay authentication,
+or a public remote protocol. Ordinary remote browser control requires
+WebSocket; a network that blocks it is unsupported rather than a reason to
+add an automatic HTTP fallback or hybrid polling lane. Those mechanisms must
 preserve the policy recorded here rather than becoming competing cadence
 authorities. Their accepted connection and multiplexing direction is recorded
 in [`application-connection-architecture.md`](application-connection-architecture.md).
@@ -119,6 +124,22 @@ views. It may retain the Library, the selected Summary and one selected detail
 on a wide Workbench surface; phone and collection-only surfaces retain less.
 That behavior remains the first resource-control layer.
 
+That selection is projection-granular, not viewport-row-granular. The Library
+still represents every torrent, a changed collection entry still carries one
+complete `TorrentView`, Files and Trackers request a catalog page of up to
+1,024 rows independently from virtualized DOM rows, and Peers/Swarm may each
+represent up to 1,000 records. The always-visible session transfer rates also
+retain one one-second speed-history view. Browser virtualization reduces DOM
+work but does not itself reduce application bytes.
+
+Diagnostics consume no application-connection bandwidth unless Logs is the
+selected detail. Once selected, the default capture is Normal, `info+`, and
+all torrents. The capture profile and pinned torrent scope alter server
+interest, while the displayed severity, category, search, and current-torrent
+scope are local filters. Entering Logs may therefore receive matching retained
+history that the current display subsequently hides. Tactical `183` measures
+that transition separately from the ongoing Normal feed.
+
 A low-bandwidth policy should not merely send every possible projection more
 slowly. It should normally:
 
@@ -179,13 +200,14 @@ recovers from a new epoch and coherent snapshots. Delivery preference and
 semantic desired views may be retained as client presentation policy; view
 set identifiers, cursors and materialized engine state remain volatile.
 
-## Transport Independence
+## Adapter Consistency
 
-Pull, long-poll, in-process stream, future browser WebSocket and future relay
-delivery must consume identical `UpdateBatch` values and acknowledge the same
-applied cursor. A transport may multiplex many view sets and commands on one
-connection, but it cannot invent another subscription model, sampling rule or
-loss behavior.
+The ordinary browser WebSocket, explicit loopback diagnostic pull/long-poll,
+in-process Tauri stream, and any future relay delivery must consume identical
+`UpdateBatch` values and acknowledge the same applied cursor. A transport may
+multiplex many view sets and commands on one connection, but it cannot invent
+another subscription model, sampling rule or loss behavior. HTTP is not an
+automatic fallback for an ordinary or remote browser session.
 
 Semantic cadence should be enforced before transport encoding so JSON, future
 binary encoding and relay delivery observe the same policy. Transport
@@ -217,6 +239,12 @@ view combinations and serialized bytes. It proves that observer selection and
 consumer behavior are measurable, but it does not yet compare server-enforced
 delivery intervals, hidden-client policy or remote transport byte rates.
 
+Tactical `060` supplies one narrow production-browser observation: a
+one-torrent General-view transfer carried 20,102 encoded WebSocket view-batch
+bytes in 24 batches over 2.815 seconds, approximately 7.1 KiB/s of view-batch
+payload. That short high-speed loopback case is transport evidence, not a
+representative idle, selected-detail, or cellular baseline.
+
 Completed Tactical
 [`180`](../tactical/180-typed-settings-patches-and-draft-convergence.md)
 confirms that unchanged global client settings are already omitted from an
@@ -245,25 +273,25 @@ selected-detail and adversarial all-view cases:
   and
 - reconnect at the last applied cursor plus lease-expiry snapshot recovery.
 
-Run the matrix through HTTP long polling and Tauri streaming initially, then
-through any WebSocket or relay adapter before claiming transport equivalence.
-Named hardware profiles should carry generous calibrated floors or ratios;
-noisy hosted CI may use deterministic byte, batch, continuity and reset gates
-instead of a narrow wall-clock throughput threshold.
+Use the production WebSocket for the first remote-bandwidth matrix. HTTP long
+polling remains an explicit loopback diagnostic comparison and is not required
+for a product baseline or fallback claim. Tauri and native clients require
+separate adapter-cost evidence only when their in-process encoding becomes a
+measured concern. Named hardware profiles should carry generous calibrated
+floors or ratios; noisy hosted CI may use deterministic byte, batch,
+continuity and reset gates instead of a narrow wall-clock throughput threshold.
 
 ## Recommended Next Work
 
-Create one bounded tactical that:
+Complete Tactical `183` first. It measures exact production WebSocket
+application payload, transition bursts, steady bytes, view attribution, ACKs,
+and resets for representative current navigation, including Normal Logs.
 
-1. introduces a typed client delivery preference separate from semantic
-   `DesiredInspectionViews`;
-2. maps preference, visible projection and lifecycle to effective intervals;
-3. updates interval-only `ViewSpec` changes without a replacement snapshot;
-4. implements foreground/background transition and persisted user preference;
-5. selects and tests an explicit post-command responsiveness rule;
-6. adds cadence rows to the Tactical `057` observer harness; and
-7. records calibrated product defaults only after measuring bytes, resets,
-   throughput and convergence latency.
-
-Do not select a binary codec, add a general remote service, or redesign view
-patches merely to implement this policy.
+Use that evidence to choose one subsequent optimization tactical. Plausible
+owners remain server-side Diagnostic filtering/default scope, sparse volatile
+torrent-row patches, smaller viewport/page projections, or background view
+release. Do not bundle all four, select a codec, expose raw intervals, add a
+general remote service, or implement a bandwidth budget before the baseline
+identifies the dominant source. A later delivery-profile tactical may then
+calibrate named cadence/lifecycle policy and interval-only updates against the
+retained baseline.

@@ -180,6 +180,15 @@ could inspect but not compile the regenerated Swift boundary; Tactical `176`
 therefore resumes as the sole **Now** for its unchanged macOS-only iOS
 simulator/archive gate. Tactical `158` remains next.
 
+Explicit user direction subsequently temporarily yields Tactical `176` to
+production WebSocket UI bandwidth-baseline Tactical
+[`183`](../tactical/183-production-websocket-ui-bandwidth-baseline.md). This
+measurement-only slice records transition and steady application bytes for
+the current interest-selected production React views, including default Normal
+Diagnostics, before choosing a delivery or wire optimization. It adds no
+polling fallback, product telemetry, delivery policy, or API optimization.
+Tactical `176` retains only its unchanged macOS-hosted iOS compile gate.
+
 The updater tactical's client, production route, five-target signed hosted
 rehearsal, public `0.1.0`, `0.1.1`, and `0.1.2` releases, installed macOS arm64
 launch smoke, and exact macOS arm64 and Linux arm64 `0.1.0`-to-`0.1.1` updates
@@ -675,10 +684,14 @@ exactly.
 
 ### Now
 
-- Resume **Tactical `176`** only for its existing macOS-hosted iOS simulator/
-  archive compile; every implementation and other validation gate passes.
+- Execute **Tactical `183`**: measure the current production React UI over one
+  WebSocket, separating initial/transition bytes from steady selected-view
+  traffic and ranking the next optimization from evidence.
 
 ### Next
+
+- Resume **Tactical `176`** only for its existing macOS-hosted iOS simulator/
+  archive compile; every implementation and other validation gate passes.
 
 - Resume **Tactical `158`** and close the clean Windows and Linux x86_64
   signed replacement/relaunch evidence plus Windows firewall-consent

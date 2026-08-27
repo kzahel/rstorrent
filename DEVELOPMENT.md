@@ -42,9 +42,11 @@ machine-control.
 
 ## Current Tactical State
 
-The authoritative **Now** is
-[`176-durable-high-file-priority.md`](docs/tactical/176-durable-high-file-priority.md),
-with only its unchanged macOS-hosted iOS simulator/archive compile remaining.
+The authoritative **Now** is the measurement-only
+[`183-production-websocket-ui-bandwidth-baseline.md`](docs/tactical/183-production-websocket-ui-bandwidth-baseline.md).
+It records production React/WebSocket transition and steady bytes before any
+delivery or wire-shape optimization. Tactical `176` retains only its unchanged
+macOS-hosted iOS simulator/archive compile gate and resumes afterward.
 Completed Tactical `182` bounds preferred-uTP/TCP/MSE/plain handshake work to
 one 15-second outbound-attempt lifetime and conservatively turns over a
 zero-contribution metadata worker only when the 30-peer cohort is saturated
