@@ -446,11 +446,29 @@ enum ResumableDownloadConfig {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PlatformRemovalNamespace {
+    None,
+    Legacy,
+    Staging,
+    Publishing,
+    Published,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PlatformRemovalPath {
+    pub components: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PlatformRemovalPlan {
     pub operation_id: String,
     pub torrent_id: String,
     pub storage_root: String,
     pub name: String,
+    pub namespace: PlatformRemovalNamespace,
+    pub tree: bool,
+    pub files: Vec<PlatformRemovalPath>,
+    pub directories: Vec<PlatformRemovalPath>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2620,11 +2638,18 @@ impl ApplicationService {
         if transition.revoke_access {
             self.storage_file_pool.invalidate_storage(&torrent_id);
         }
+        let namespace = platform_removal_namespace(&removal);
+        let manifest =
+            managed_payload_manifest(&content, namespace == PlatformRemovalNamespace::Legacy)?;
         Ok(PlatformRemovalPlan {
             operation_id: removal.operation_id,
             torrent_id,
             storage_root: removal.storage_root,
             name: content.name().to_owned(),
+            namespace,
+            tree: manifest.tree,
+            files: manifest.files,
+            directories: manifest.directories,
         })
     }
 
@@ -2859,14 +2884,24 @@ impl ApplicationService {
                         if transition.revoke_access {
                             self.storage_file_pool.invalidate_storage(torrent_id);
                         }
-                        let publication_shape = match self
-                            .load_resume_conservative(torrent_id)
-                            .and_then(|resume| {
-                                parse_resume_content(&resume).map_err(|error| {
-                                    ApplicationError::Configuration(error.to_string())
-                                })
-                            }) {
-                            Ok(content) => PublicationShape::from_content(&content),
+                        let manifest =
+                            match self
+                                .load_resume_conservative(torrent_id)
+                                .and_then(|resume| {
+                                    parse_resume_content(&resume).map_err(|error| {
+                                        ApplicationError::Configuration(error.to_string())
+                                    })
+                                }) {
+                                Ok(content) => managed_payload_manifest(
+                                    &content,
+                                    removal.managed_artifacts == ManagedArtifactState::Legacy,
+                                ),
+                                Err(error) => {
+                                    return self.fail_removal(&removal, &error.to_string());
+                                }
+                            };
+                        let manifest = match manifest {
+                            Ok(manifest) => manifest,
                             Err(error) => return self.fail_removal(&removal, &error.to_string()),
                         };
                         let owned_torrent_id = torrent_id.to_owned();
@@ -2876,7 +2911,7 @@ impl ApplicationService {
                                 &root,
                                 &owned_torrent_id,
                                 publication_name.as_deref(),
-                                publication_shape,
+                                &manifest,
                                 removal.storage_state,
                                 removal.managed_artifacts,
                             )
@@ -4097,25 +4132,90 @@ impl Drop for ApplicationService {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ManagedPayloadManifest {
+    tree: bool,
+    files: Vec<PlatformRemovalPath>,
+    directories: Vec<PlatformRemovalPath>,
+}
+
+#[derive(Debug)]
+struct PreparedManagedPayloadRemoval {
+    files: Vec<PathBuf>,
+    directories: Vec<PathBuf>,
+}
+
+fn managed_payload_manifest(
+    content: &TorrentContent,
+    force_tree: bool,
+) -> Result<ManagedPayloadManifest, ApplicationError> {
+    let layout = PublishedArtifactLayout::from_content(content)
+        .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+    let tree = force_tree || layout.shape == PublicationShape::Tree;
+    let files = layout
+        .files
+        .into_iter()
+        .filter(|file| !file.padding)
+        .map(|file| PlatformRemovalPath {
+            components: if tree { file.components } else { Vec::new() },
+        })
+        .collect::<Vec<_>>();
+    let mut directories = BTreeSet::new();
+    if tree {
+        directories.insert(Vec::new());
+        for file in &files {
+            for length in 1..file.components.len() {
+                directories.insert(file.components[..length].to_vec());
+            }
+        }
+    }
+    let mut directories = directories
+        .into_iter()
+        .map(|components| PlatformRemovalPath { components })
+        .collect::<Vec<_>>();
+    directories.sort_by(|left, right| {
+        right
+            .components
+            .len()
+            .cmp(&left.components.len())
+            .then_with(|| left.components.cmp(&right.components))
+    });
+    Ok(ManagedPayloadManifest {
+        tree,
+        files,
+        directories,
+    })
+}
+
+fn platform_removal_namespace(removal: &RemovalRecord) -> PlatformRemovalNamespace {
+    match removal.managed_artifacts {
+        ManagedArtifactState::None => PlatformRemovalNamespace::None,
+        ManagedArtifactState::Legacy => PlatformRemovalNamespace::Legacy,
+        ManagedArtifactState::Staging if removal.storage_state == StorageState::Prepared => {
+            PlatformRemovalNamespace::Publishing
+        }
+        ManagedArtifactState::Staging => PlatformRemovalNamespace::Staging,
+        ManagedArtifactState::Published => PlatformRemovalNamespace::Published,
+    }
+}
+
 fn delete_path_artifacts(
     root: &Path,
     torrent_id: &str,
     publication_name: Option<&str>,
-    publication_shape: PublicationShape,
+    manifest: &ManagedPayloadManifest,
     storage_state: StorageState,
     managed_artifacts: ManagedArtifactState,
 ) -> Result<(), ApplicationError> {
-    match managed_artifacts {
-        ManagedArtifactState::None => {}
+    let (namespaces, part) = match managed_artifacts {
+        ManagedArtifactState::None => return Ok(()),
         ManagedArtifactState::Legacy => {
             let output = root.join(torrent_id);
             let staging = rstorrent_engine::selective_staging_path(&output)
                 .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
             let part = rstorrent_engine::selective_part_path(&output)
                 .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
-            remove_managed_artifact(&output, PublicationShape::Tree)?;
-            remove_managed_artifact(&staging, PublicationShape::Tree)?;
-            remove_managed_file(&part)?;
+            (vec![output, staging], part)
         }
         ManagedArtifactState::Staging | ManagedArtifactState::Published => {
             let publication_name = publication_name.ok_or_else(|| {
@@ -4140,12 +4240,12 @@ fn delete_path_artifacts(
                     "managed publication has both staging and final artifacts".to_owned(),
                 ));
             }
-            match (storage_state, managed_artifacts) {
+            let namespace = match (storage_state, managed_artifacts) {
                 (StorageState::Prepared, ManagedArtifactState::Staging) => {
                     if output_exists {
-                        remove_managed_artifact(&paths.output, publication_shape)?;
+                        paths.output
                     } else {
-                        remove_managed_artifact(&paths.staging, publication_shape)?;
+                        paths.staging
                     }
                 }
                 (StorageState::Published, ManagedArtifactState::Published) => {
@@ -4154,31 +4254,42 @@ fn delete_path_artifacts(
                             "published managed storage has only a staging artifact".to_owned(),
                         ));
                     }
-                    remove_managed_artifact(&paths.output, publication_shape)?;
+                    paths.output
                 }
-                (_, ManagedArtifactState::Staging) => {
-                    remove_managed_artifact(&paths.staging, publication_shape)?;
-                }
-                (_, ManagedArtifactState::Published) => {
-                    remove_managed_artifact(&paths.output, publication_shape)?;
-                }
+                (_, ManagedArtifactState::Staging) => paths.staging,
+                (_, ManagedArtifactState::Published) => paths.output,
                 (_, ManagedArtifactState::None | ManagedArtifactState::Legacy) => {
                     unreachable!("managed artifact state was matched above")
                 }
-            }
-            remove_managed_file(&paths.part)?;
+            };
+            (vec![namespace], paths.part)
         }
+    };
+
+    let prepared_payloads = namespaces
+        .iter()
+        .map(|namespace| preflight_managed_payload(namespace, manifest))
+        .collect::<Result<Vec<_>, _>>()?;
+    let prepared_part = preflight_managed_file(&part)?;
+    for payload in prepared_payloads.into_iter().flatten() {
+        remove_preflighted_payload(payload)?;
+    }
+    if let Some(part) = prepared_part {
+        std::fs::remove_file(part).map_err(|source| ApplicationError::Io {
+            operation: "remove managed torrent part file",
+            source,
+        })?;
     }
     Ok(())
 }
 
-fn remove_managed_artifact(
-    path: &Path,
-    publication_shape: PublicationShape,
-) -> Result<(), ApplicationError> {
-    let metadata = match std::fs::symlink_metadata(path) {
+fn preflight_managed_payload(
+    namespace: &Path,
+    manifest: &ManagedPayloadManifest,
+) -> Result<Option<PreparedManagedPayloadRemoval>, ApplicationError> {
+    let metadata = match std::fs::symlink_metadata(namespace) {
         Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(source) => {
             return Err(ApplicationError::Io {
                 operation: "inspect managed torrent directory",
@@ -4187,36 +4298,156 @@ fn remove_managed_artifact(
         }
     };
     if metadata.file_type().is_symlink()
-        || match publication_shape {
-            PublicationShape::File => !metadata.is_file(),
-            PublicationShape::Tree => !metadata.is_dir(),
+        || if manifest.tree {
+            !metadata.is_dir()
+        } else {
+            !metadata.is_file()
         }
     {
         return Err(ApplicationError::Configuration(format!(
             "managed torrent artifact has an unexpected type: {}",
+            namespace.display()
+        )));
+    }
+    if !manifest.tree {
+        return Ok(Some(PreparedManagedPayloadRemoval {
+            files: vec![namespace.to_path_buf()],
+            directories: Vec::new(),
+        }));
+    }
+    let mut exact_files = Vec::new();
+    for file in &manifest.files {
+        if let Some(path) = validate_exact_payload_file(namespace, &file.components)? {
+            exact_files.push(path);
+        }
+    }
+    let directories = manifest
+        .directories
+        .iter()
+        .map(|directory| {
+            directory
+                .components
+                .iter()
+                .fold(namespace.to_path_buf(), |path, component| {
+                    path.join(component)
+                })
+        })
+        .collect();
+    Ok(Some(PreparedManagedPayloadRemoval {
+        files: exact_files,
+        directories,
+    }))
+}
+
+fn remove_preflighted_payload(
+    prepared: PreparedManagedPayloadRemoval,
+) -> Result<(), ApplicationError> {
+    for path in prepared.files {
+        std::fs::remove_file(path).map_err(|source| ApplicationError::Io {
+            operation: "remove managed payload file",
+            source,
+        })?;
+    }
+    for directory in prepared.directories {
+        remove_empty_payload_directory(&directory)?;
+    }
+    Ok(())
+}
+
+fn resolve_expected_payload_path(
+    namespace: &Path,
+    components: &[String],
+) -> Result<Option<PathBuf>, ApplicationError> {
+    let mut path = namespace.to_path_buf();
+    for (index, component) in components.iter().enumerate() {
+        path.push(component);
+        if index + 1 == components.len() {
+            break;
+        }
+        match std::fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
+            Ok(_) => {
+                return Err(ApplicationError::Configuration(format!(
+                    "managed payload parent has an unexpected type: {}",
+                    path.display()
+                )));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(source) => {
+                return Err(ApplicationError::Io {
+                    operation: "inspect managed payload parent",
+                    source,
+                });
+            }
+        }
+    }
+    Ok(Some(path))
+}
+
+fn validate_exact_payload_file(
+    namespace: &Path,
+    components: &[String],
+) -> Result<Option<PathBuf>, ApplicationError> {
+    let Some(path) = resolve_expected_payload_path(namespace, components)? else {
+        return Ok(None);
+    };
+    let metadata = match std::fs::symlink_metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(source) => {
+            return Err(ApplicationError::Io {
+                operation: "inspect managed payload file",
+                source,
+            });
+        }
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(ApplicationError::Configuration(format!(
+            "managed payload file has an unexpected type: {}",
             path.display()
         )));
     }
-    match publication_shape {
-        PublicationShape::File => {
-            std::fs::remove_file(path).map_err(|source| ApplicationError::Io {
-                operation: "remove managed torrent file",
+    Ok(Some(path))
+}
+
+fn remove_empty_payload_directory(path: &Path) -> Result<(), ApplicationError> {
+    let metadata = match std::fs::symlink_metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(source) => {
+            return Err(ApplicationError::Io {
+                operation: "inspect managed payload directory",
                 source,
-            })
+            });
         }
-        PublicationShape::Tree => {
-            std::fs::remove_dir_all(path).map_err(|source| ApplicationError::Io {
-                operation: "remove managed torrent directory",
-                source,
-            })
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(ApplicationError::Configuration(format!(
+            "managed payload directory has an unexpected type: {}",
+            path.display()
+        )));
+    }
+    match std::fs::remove_dir(path) {
+        Ok(()) => Ok(()),
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::DirectoryNotEmpty
+            ) =>
+        {
+            Ok(())
         }
+        Err(source) => Err(ApplicationError::Io {
+            operation: "remove empty managed payload directory",
+            source,
+        }),
     }
 }
 
-fn remove_managed_file(path: &Path) -> Result<(), ApplicationError> {
+fn preflight_managed_file(path: &Path) -> Result<Option<PathBuf>, ApplicationError> {
     let metadata = match std::fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(source) => {
             return Err(ApplicationError::Io {
                 operation: "inspect managed torrent part file",
@@ -4226,14 +4457,11 @@ fn remove_managed_file(path: &Path) -> Result<(), ApplicationError> {
     };
     if metadata.file_type().is_symlink() || !metadata.is_file() {
         return Err(ApplicationError::Configuration(format!(
-            "managed part-file path is a directory: {}",
+            "managed part-file path has an unexpected type: {}",
             path.display()
         )));
     }
-    std::fs::remove_file(path).map_err(|source| ApplicationError::Io {
-        operation: "remove managed torrent part file",
-        source,
-    })
+    Ok(Some(path.to_path_buf()))
 }
 
 async fn reconcile_completed_seed(
@@ -4794,7 +5022,13 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
             .map_err(|error| error.to_string())
     }
 
-    fn storage_discovered(&self, storage: ResumedStorage) -> Result<u64, String> {
+    fn storage_discovered(
+        &self,
+        storage: ResumedStorage,
+        expected_files: usize,
+        present_files: usize,
+        oversized_files: usize,
+    ) -> Result<u64, String> {
         let storage_state = match storage {
             ResumedStorage::Created => {
                 return Err("new storage cannot be committed as discovered".to_owned());
@@ -4813,6 +5047,9 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
             .lock()
             .map_err(|_| "recheck generation lock is poisoned".to_owned())? = Some(generation);
         self.refresh()?;
+        let expected_files = expected_files.to_string();
+        let present_files = present_files.to_string();
+        let oversized_files = oversized_files.to_string();
         self.views
             .record_diagnostic(
                 DiagnosticSeverity::Info,
@@ -4820,7 +5057,11 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
                 "storage_discovered",
                 Some(&self.torrent_id),
                 "Existing torrent storage discovered; managed content recheck started",
-                &[],
+                &[
+                    ("expected_files", expected_files.as_str()),
+                    ("present_files", present_files.as_str()),
+                    ("oversized_files", oversized_files.as_str()),
+                ],
             )
             .map_err(|error| error.to_string())?;
         Ok(generation)
@@ -6259,9 +6500,9 @@ mod tests {
     use rstorrent_engine::{
         ByteMetric, ByteMetricSink, CheckerPhase, DEFAULT_PEER_ID, DownloadError, NetworkConfig,
         NetworkPolicy, PathPublicationStage, PeerBudgetDirection, PlatformStorageFailure,
-        PlatformStorageFailureKind, PlatformStorageOperation, PublicationShape, StorageFileKey,
-        StorageFileLocator, StorageFileReference, StorageFileRole, StorageObjectKind,
-        StorageObservation, TorrentId, platform_storage_channel, torrent_storage_paths,
+        PlatformStorageFailureKind, PlatformStorageOperation, StorageFileKey, StorageFileLocator,
+        StorageFileReference, StorageFileRole, StorageObjectKind, StorageObservation, TorrentId,
+        platform_storage_channel, torrent_storage_paths,
     };
     use rstorrent_protocol::content::TorrentContentProjection;
     use rstorrent_protocol::dht::{
@@ -6286,8 +6527,9 @@ mod tests {
     use tokio::net::{TcpListener, TcpStream, UdpSocket};
 
     use super::{
-        ApplicationConfig, ApplicationService, ManagedArtifactState, PathRootStartupPolicy,
-        delete_path_artifacts, handle_task_outcome, magnet_runtime_identity, runtime_identity,
+        ApplicationConfig, ApplicationService, ManagedArtifactState, ManagedPayloadManifest,
+        PathRootStartupPolicy, PlatformRemovalPath, delete_path_artifacts, handle_task_outcome,
+        magnet_runtime_identity, runtime_identity,
     };
     use crate::{
         AddTorrentBytesRequest, ApplicationCall, ApplicationCallResult, CONTROL_VERSION,
@@ -6312,6 +6554,44 @@ mod tests {
             "rstorrent-application-{label}-{}-{sequence}",
             std::process::id()
         ))
+    }
+
+    fn tree_cleanup_manifest(files: &[&[&str]]) -> ManagedPayloadManifest {
+        let files = files
+            .iter()
+            .map(|components| PlatformRemovalPath {
+                components: components
+                    .iter()
+                    .map(|component| (*component).to_owned())
+                    .collect(),
+            })
+            .collect::<Vec<_>>();
+        let mut directories = BTreeSet::from([Vec::new()]);
+        for file in &files {
+            for length in 1..file.components.len() {
+                directories.insert(file.components[..length].to_vec());
+            }
+        }
+        let mut directories = directories
+            .into_iter()
+            .map(|components| PlatformRemovalPath { components })
+            .collect::<Vec<_>>();
+        directories.sort_by_key(|directory| std::cmp::Reverse(directory.components.len()));
+        ManagedPayloadManifest {
+            tree: true,
+            files,
+            directories,
+        }
+    }
+
+    fn file_cleanup_manifest() -> ManagedPayloadManifest {
+        ManagedPayloadManifest {
+            tree: false,
+            files: vec![PlatformRemovalPath {
+                components: Vec::new(),
+            }],
+            directories: Vec::new(),
+        }
     }
 
     fn default_config(root: &Path) -> ApplicationConfig {
@@ -13542,7 +13822,7 @@ mod tests {
             &payload,
             torrent_id,
             Some("named"),
-            PublicationShape::Tree,
+            &tree_cleanup_manifest(&[&["partial"]]),
             StorageState::Staging,
             ManagedArtifactState::Staging,
         )
@@ -13581,7 +13861,7 @@ mod tests {
                 &payload,
                 torrent_id,
                 Some("named"),
-                PublicationShape::Tree,
+                &tree_cleanup_manifest(&[&["payload"]]),
                 StorageState::Prepared,
                 ManagedArtifactState::Staging,
             )
@@ -13607,7 +13887,7 @@ mod tests {
             &payload,
             torrent_id,
             Some("named"),
-            PublicationShape::Tree,
+            &tree_cleanup_manifest(&[&["payload"]]),
             StorageState::Prepared,
             ManagedArtifactState::Staging,
         )
@@ -13632,7 +13912,7 @@ mod tests {
             &payload,
             torrent_id,
             Some("named.bin"),
-            PublicationShape::File,
+            &file_cleanup_manifest(),
             StorageState::Published,
             ManagedArtifactState::Published,
         )
@@ -13661,7 +13941,7 @@ mod tests {
             &payload,
             torrent_id,
             Some("named"),
-            PublicationShape::Tree,
+            &tree_cleanup_manifest(&[&["payload"]]),
             StorageState::Staging,
             ManagedArtifactState::Staging,
         )
@@ -13679,6 +13959,97 @@ mod tests {
             b"foreign"
         );
         fs::remove_file(staging).expect("remove fixture symlink");
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn managed_cleanup_preflights_every_expected_leaf_before_mutation() {
+        use std::os::unix::fs::symlink;
+
+        let root = test_root("cleanup-expected-symlink");
+        let payload = root.join("payload");
+        let outside = root.join("outside.bin");
+        let torrent_id = "t1-000102030405060708090a0b0c0d0e0f";
+        let staging = payload.join(format!(".{torrent_id}.rstorrent-staging"));
+        fs::create_dir_all(&staging).expect("create staging tree");
+        fs::write(staging.join("first.bin"), b"owned first").expect("write first payload");
+        fs::write(&outside, b"foreign").expect("write outside payload");
+        symlink(&outside, staging.join("linked.bin")).expect("create expected-path symlink");
+
+        let error = delete_path_artifacts(
+            &payload,
+            torrent_id,
+            Some("named"),
+            &tree_cleanup_manifest(&[&["first.bin"], &["linked.bin"]]),
+            StorageState::Staging,
+            ManagedArtifactState::Staging,
+        )
+        .expect_err("expected-path symlink must fail before deletion");
+
+        assert!(error.to_string().contains("unexpected type"));
+        assert_eq!(
+            fs::read(staging.join("first.bin")).expect("first expected file remains"),
+            b"owned first"
+        );
+        assert_eq!(
+            fs::read(&outside).expect("outside file remains"),
+            b"foreign"
+        );
+        assert!(
+            fs::symlink_metadata(staging.join("linked.bin"))
+                .expect("expected symlink remains")
+                .file_type()
+                .is_symlink()
+        );
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn legacy_cleanup_preflights_both_namespaces_and_part_before_mutation() {
+        use std::os::unix::fs::symlink;
+
+        let root = test_root("cleanup-legacy-preflight");
+        let payload = root.join("payload");
+        let outside = root.join("outside.bin");
+        let torrent_id = "t1-000102030405060708090a0b0c0d0e0f";
+        let output = payload.join(torrent_id);
+        let staging = payload.join(format!(".{torrent_id}.rstorrent-staging"));
+        let part = payload.join(format!(".{torrent_id}.rstorrent-parts"));
+        fs::create_dir_all(&output).expect("create legacy final tree");
+        fs::create_dir_all(&staging).expect("create legacy staging tree");
+        fs::write(output.join("payload.bin"), b"owned final").expect("write final payload");
+        fs::write(staging.join("payload.bin"), b"owned staging").expect("write staging payload");
+        fs::write(&outside, b"foreign").expect("write foreign payload");
+        symlink(&outside, &part).expect("replace part with symlink");
+
+        let error = delete_path_artifacts(
+            &payload,
+            torrent_id,
+            Some("ignored"),
+            &tree_cleanup_manifest(&[&["payload.bin"]]),
+            StorageState::Published,
+            ManagedArtifactState::Legacy,
+        )
+        .expect_err("all legacy targets must be preflighted before deletion");
+
+        assert!(error.to_string().contains("part-file"));
+        assert_eq!(
+            fs::read(output.join("payload.bin")).unwrap(),
+            b"owned final"
+        );
+        assert_eq!(
+            fs::read(staging.join("payload.bin")).unwrap(),
+            b"owned staging"
+        );
+        assert_eq!(fs::read(&outside).unwrap(), b"foreign");
+        assert!(
+            fs::symlink_metadata(&part)
+                .expect("part symlink remains")
+                .file_type()
+                .is_symlink()
+        );
         fs::remove_dir_all(root).expect("remove test root");
     }
 
@@ -14676,9 +15047,7 @@ mod tests {
         let root = test_root("storage-repair");
         let configuration = config(&root);
         let payload = b"data";
-        let mut raw_info =
-            b"d5:filesld6:lengthi4e4:pathl4:testeee4:name4:root12:piece lengthi4e6:pieces20:"
-                .to_vec();
+        let mut raw_info = b"d5:filesld6:lengthi4e4:pathl6:season7:episodeeee4:name4:root12:piece lengthi4e6:pieces20:".to_vec();
         raw_info.extend_from_slice(&Sha1::digest(payload));
         raw_info.push(b'e');
         let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
@@ -14705,7 +15074,11 @@ mod tests {
         fs::create_dir_all(&incomplete_output).expect("create incomplete output");
         fs::write(incomplete_output.join("preserve"), b"user artifact")
             .expect("write preserved artifact");
-        fs::write(incomplete_output.join("test"), payload).expect("write existing payload");
+        fs::create_dir(incomplete_output.join("season")).expect("create existing season");
+        fs::write(incomplete_output.join("season/episode"), payload)
+            .expect("write existing payload");
+        fs::write(incomplete_output.join("season/notes"), b"episode notes")
+            .expect("write unrelated nested file");
 
         let mut service = ApplicationService::open(configuration)
             .await
@@ -14730,6 +15103,29 @@ mod tests {
         assert_eq!(
             fs::read(incomplete_output.join("preserve"))
                 .expect("read preserved incomplete artifact"),
+            b"user artifact"
+        );
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "remove-adopted-tree".to_owned(),
+                expected_revision: None,
+                command: Command::RemoveTorrent {
+                    torrent_id,
+                    data: RemovalDataPolicy::DeleteManaged,
+                },
+            })
+            .await
+            .expect("remove adopted tree");
+        assert!(!incomplete_output.join("season/episode").exists());
+        assert_eq!(
+            fs::read(incomplete_output.join("season/notes"))
+                .expect("preserve unrelated nested content after removal"),
+            b"episode notes"
+        );
+        assert_eq!(
+            fs::read(incomplete_output.join("preserve"))
+                .expect("preserve unrelated destination content after removal"),
             b"user artifact"
         );
         service.shutdown().await.expect("shutdown");

@@ -496,7 +496,13 @@ struct MagnetMetadataRuntimeConfig {
 pub trait DownloadCheckpointSink: Send + Sync {
     fn metadata_verified(&self, raw_info: &[u8]) -> Result<(), String>;
     fn storage_prepared(&self, storage: ResumedStorage) -> Result<(), String>;
-    fn storage_discovered(&self, storage: ResumedStorage) -> Result<u64, String> {
+    fn storage_discovered(
+        &self,
+        storage: ResumedStorage,
+        _expected_files: usize,
+        _present_files: usize,
+        _oversized_files: usize,
+    ) -> Result<u64, String> {
         self.storage_prepared(storage)?;
         self.recheck_started()
     }
@@ -9222,10 +9228,19 @@ async fn run_selective_download(
     let discovered_recheck_generation =
         if let (Some(resume), Some(resumed)) = (&resume, resumed_storage) {
             if resume.artifact_expectation.is_discovery() && resumed != ResumedStorage::Created {
+                let discovery = storage
+                    .inspect_discovered_payload()
+                    .await
+                    .map_err(DownloadError::SelectiveStorage)?;
                 Some(
                     resume
                         .checkpoints
-                        .storage_discovered(resumed)
+                        .storage_discovered(
+                            resumed,
+                            discovery.expected_files,
+                            discovery.present_files,
+                            discovery.oversized_files,
+                        )
                         .map_err(DownloadError::Checkpoint)?,
                 )
             } else {

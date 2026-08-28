@@ -23,8 +23,8 @@ use rstorrent_protocol::identity::V1InfoHash;
 use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo};
 use rstorrent_session::{
     AddTorrentBytesRequest, ApplicationConfig, ApplicationService, ConfiguredStorageRoot,
-    PlatformRemovalPlan, RequestEnvelope, ResponseEnvelope, SubscriptionSpec, ViewSubscription,
-    ViewUpdate,
+    PlatformRemovalNamespace, PlatformRemovalPlan, RequestEnvelope, ResponseEnvelope,
+    SubscriptionSpec, ViewSubscription, ViewUpdate,
 };
 use sha1::{Digest, Sha1};
 use tokio::sync::Mutex as AsyncMutex;
@@ -775,11 +775,29 @@ pub struct SafStoragePlan {
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
+pub struct SafRemovalPath {
+    pub components: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, uniffi::Enum)]
+pub enum SafRemovalNamespace {
+    None,
+    Legacy,
+    Staging,
+    Publishing,
+    Published,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
 pub struct SafRemovalPlan {
     pub operation_id: String,
     pub torrent_id: String,
     pub storage_root: String,
     pub name: String,
+    pub namespace: SafRemovalNamespace,
+    pub tree: bool,
+    pub files: Vec<SafRemovalPath>,
+    pub directories: Vec<SafRemovalPath>,
 }
 
 fn map_saf_removal_plan(plan: PlatformRemovalPlan) -> SafRemovalPlan {
@@ -788,6 +806,28 @@ fn map_saf_removal_plan(plan: PlatformRemovalPlan) -> SafRemovalPlan {
         torrent_id: plan.torrent_id,
         storage_root: plan.storage_root,
         name: plan.name,
+        namespace: match plan.namespace {
+            PlatformRemovalNamespace::None => SafRemovalNamespace::None,
+            PlatformRemovalNamespace::Legacy => SafRemovalNamespace::Legacy,
+            PlatformRemovalNamespace::Staging => SafRemovalNamespace::Staging,
+            PlatformRemovalNamespace::Publishing => SafRemovalNamespace::Publishing,
+            PlatformRemovalNamespace::Published => SafRemovalNamespace::Published,
+        },
+        tree: plan.tree,
+        files: plan
+            .files
+            .into_iter()
+            .map(|path| SafRemovalPath {
+                components: path.components,
+            })
+            .collect(),
+        directories: plan
+            .directories
+            .into_iter()
+            .map(|path| SafRemovalPath {
+                components: path.components,
+            })
+            .collect(),
     }
 }
 
@@ -1702,6 +1742,29 @@ mod tests {
     use std::sync::mpsc;
 
     use super::*;
+
+    #[test]
+    fn maps_exact_platform_removal_manifest() {
+        let plan = map_saf_removal_plan(PlatformRemovalPlan {
+            operation_id: "remove-1".to_owned(),
+            torrent_id: "t1-owner".to_owned(),
+            storage_root: "downloads".to_owned(),
+            name: "show".to_owned(),
+            namespace: PlatformRemovalNamespace::Published,
+            tree: true,
+            files: vec![rstorrent_session::PlatformRemovalPath {
+                components: vec!["Season 01".to_owned(), "Episode 01.mkv".to_owned()],
+            }],
+            directories: vec![rstorrent_session::PlatformRemovalPath {
+                components: vec!["Season 01".to_owned()],
+            }],
+        });
+
+        assert_eq!(plan.namespace, SafRemovalNamespace::Published);
+        assert!(plan.tree);
+        assert_eq!(plan.files[0].components, ["Season 01", "Episode 01.mkv"]);
+        assert_eq!(plan.directories[0].components, ["Season 01"]);
+    }
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 

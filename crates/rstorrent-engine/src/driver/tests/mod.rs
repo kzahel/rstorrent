@@ -158,6 +158,7 @@ fn v1_runtime_identity_rejects_mismatched_and_v2_keys() {
 struct RecordingCheckpointSink {
     batches: Mutex<Vec<Vec<usize>>>,
     rechecks: Mutex<Vec<Vec<bool>>>,
+    discoveries: Mutex<Vec<(ResumedStorage, usize, usize, usize)>>,
     failure: Mutex<Option<String>>,
 }
 
@@ -166,6 +167,7 @@ impl RecordingCheckpointSink {
         Self {
             batches: Mutex::new(Vec::new()),
             rechecks: Mutex::new(Vec::new()),
+            discoveries: Mutex::new(Vec::new()),
             failure: Mutex::new(Some(detail.to_owned())),
         }
     }
@@ -183,6 +185,13 @@ impl RecordingCheckpointSink {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
     }
+
+    fn discoveries(&self) -> Vec<(ResumedStorage, usize, usize, usize)> {
+        self.discoveries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
 }
 
 impl super::DownloadCheckpointSink for RecordingCheckpointSink {
@@ -192,6 +201,20 @@ impl super::DownloadCheckpointSink for RecordingCheckpointSink {
 
     fn storage_prepared(&self, _storage: super::ResumedStorage) -> Result<(), String> {
         Ok(())
+    }
+
+    fn storage_discovered(
+        &self,
+        storage: super::ResumedStorage,
+        expected_files: usize,
+        present_files: usize,
+        oversized_files: usize,
+    ) -> Result<u64, String> {
+        self.discoveries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push((storage, expected_files, present_files, oversized_files));
+        self.recheck_started()
     }
 
     fn recheck_started(&self) -> Result<u64, String> {

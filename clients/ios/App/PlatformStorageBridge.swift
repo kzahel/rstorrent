@@ -95,21 +95,94 @@ final class PlatformStorageBridge: @unchecked Sendable {
         }
         let root = try RootAccess.resolveBookmark(record.bookmarkData)
         try RootAccess.withSecurityScope(root) {
-            for name in Self.managedArtifactNames(
-                torrentID: plan.torrentId,
-                publishedName: plan.name
-            ) {
-                let target = try Self.storageTarget(root: root, components: [name])
-                try withCoordinatedWriting(at: target, options: .forDeleting) {
-                    coordinatedTarget in
-                    do {
-                        try FileManager.default.removeItem(at: coordinatedTarget)
-                    } catch let error as CocoaError where
-                        error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile
-                    {
-                        return
-                    }
+            let staging = try Self.storageTarget(
+                root: root,
+                components: [".\(plan.torrentId).rstorrent-staging"]
+            )
+            let published = try Self.storageTarget(root: root, components: [plan.name])
+            let namespaces: [URL]
+            let hasManagedArtifacts: Bool
+            switch plan.namespace {
+            case .none:
+                namespaces = []
+                hasManagedArtifacts = false
+            case .legacy:
+                namespaces = [
+                    try Self.storageTarget(
+                        root: root,
+                        components: [plan.torrentId]
+                    ),
+                    staging,
+                ]
+                hasManagedArtifacts = true
+            case .staging:
+                namespaces = [staging]
+                hasManagedArtifacts = true
+            case .publishing:
+                let stagingKind = try Self.storageItemKind(at: staging)
+                let publishedKind = try Self.storageItemKind(at: published)
+                guard stagingKind == nil || publishedKind == nil else {
+                    throw NamespaceTransitionError.bothPublicationSidesExist
                 }
+                namespaces = [publishedKind == nil ? staging : published]
+                hasManagedArtifacts = true
+            case .published:
+                guard try Self.storageItemKind(at: staging) == nil else {
+                    throw NamespaceTransitionError.publishedHasStagingArtifact
+                }
+                namespaces = [published]
+                hasManagedArtifacts = true
+            }
+            let part = try Self.storageTarget(
+                root: root,
+                components: [".\(plan.torrentId).rstorrent-parts"]
+            )
+            if hasManagedArtifacts,
+                let partKind = try Self.storageItemKind(at: part),
+                partKind != .file
+            {
+                throw NamespaceTransitionError.removalTargetHasWrongKind
+            }
+            var payloadFiles: [URL] = []
+            var payloadDirectories: [URL] = []
+            for namespace in namespaces {
+                guard let namespaceKind = try Self.storageItemKind(at: namespace) else {
+                    continue
+                }
+                guard namespaceKind == (plan.tree ? .directory : .file) else {
+                    throw NamespaceTransitionError.removalTargetHasWrongKind
+                }
+                if plan.tree {
+                    for path in plan.files {
+                        if let target = try Self.resolveRemovalTarget(
+                            namespace: namespace,
+                            components: path.components,
+                            leafKind: .file
+                        ) {
+                            payloadFiles.append(target)
+                        }
+                    }
+                    for path in plan.directories {
+                        if let target = try Self.resolveRemovalTarget(
+                            namespace: namespace,
+                            components: path.components,
+                            leafKind: .directory
+                        ) {
+                            payloadDirectories.append(target)
+                        }
+                    }
+                } else {
+                    payloadFiles.append(namespace)
+                }
+            }
+            for file in payloadFiles {
+                try removeExactFile(file)
+            }
+            if hasManagedArtifacts && try Self.storageItemKind(at: part) != nil {
+                try removeExactFile(part)
+            }
+            for directory in payloadDirectories {
+                try removeEmptyDirectory(directory)
             }
         }
     }
@@ -164,12 +237,22 @@ final class PlatformStorageBridge: @unchecked Sendable {
         }
     }
 
-    static func managedArtifactNames(torrentID: String, publishedName: String) -> [String] {
-        [
-            publishedName,
-            ".\(torrentID).rstorrent-staging",
-            ".\(torrentID).rstorrent-parts",
-        ]
+    private func removeExactFile(_ target: URL) throws {
+        try withCoordinatedWriting(at: target, options: .forDeleting) { coordinatedTarget in
+            let status = coordinatedTarget.path.withCString { unlink($0) }
+            guard status == 0 || errno == ENOENT else {
+                throw POSIXFailure(operation: "remove managed torrent file", code: errno)
+            }
+        }
+    }
+
+    private func removeEmptyDirectory(_ target: URL) throws {
+        try withCoordinatedWriting(at: target, options: .forDeleting) { coordinatedTarget in
+            let status = coordinatedTarget.path.withCString { rmdir($0) }
+            guard status == 0 || errno == ENOENT || errno == ENOTEMPTY else {
+                throw POSIXFailure(operation: "remove empty managed torrent directory", code: errno)
+            }
+        }
     }
 
     private var workersActiveCount: Int {
@@ -414,6 +497,45 @@ final class PlatformStorageBridge: @unchecked Sendable {
             throw RootAccessError.coordinationAccessorDidNotRun
         }
         if let accessorError { throw accessorError }
+    }
+
+    private static func storageItemKind(at target: URL) throws -> StorageItemKind? {
+        do {
+            let values = try target.resourceValues(
+                forKeys: [.isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey]
+            )
+            if values.isSymbolicLink == true { return .other }
+            if values.isRegularFile == true { return .file }
+            if values.isDirectory == true { return .directory }
+            return .other
+        } catch let error as CocoaError where
+            error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile
+        {
+            return nil
+        }
+    }
+
+    private static func resolveRemovalTarget(
+        namespace: URL,
+        components: [String],
+        leafKind: StorageItemKind
+    ) throws -> URL? {
+        var target = namespace
+        if components.isEmpty {
+            guard try storageItemKind(at: target) == leafKind else {
+                throw NamespaceTransitionError.removalTargetHasWrongKind
+            }
+            return target
+        }
+        for (index, component) in components.enumerated() {
+            target = try storageTarget(root: target, components: [component])
+            guard let kind = try storageItemKind(at: target) else { return nil }
+            let expected = index + 1 == components.count ? leafKind : .directory
+            guard kind == expected else {
+                throw NamespaceTransitionError.removalTargetHasWrongKind
+            }
+        }
+        return target
     }
 
     static func storageTarget(root: URL, components: [String]) throws -> URL {
@@ -666,10 +788,18 @@ private struct POSIXFailure: Error, LocalizedError {
     }
 }
 
+private enum StorageItemKind: Equatable {
+    case file
+    case directory
+    case other
+}
+
 private enum NamespaceTransitionError: Error, LocalizedError {
     case bothPublicationSidesExist
     case coordinatedTargetChanged
     case stagingMissing
+    case publishedHasStagingArtifact
+    case removalTargetHasWrongKind
     case unregisteredRoot(String)
     case shareTargetIsNotFile
     case shareTargetLengthChanged
@@ -682,6 +812,10 @@ private enum NamespaceTransitionError: Error, LocalizedError {
             return "file coordination changed the requested storage target"
         case .stagingMissing:
             return "torrent staging output is absent"
+        case .publishedHasStagingArtifact:
+            return "published torrent storage also has a staging artifact"
+        case .removalTargetHasWrongKind:
+            return "managed torrent removal target has an unexpected type"
         case .unregisteredRoot(let rootID):
             return "storage root \(rootID) is not registered with the platform bridge"
         case .shareTargetIsNotFile:

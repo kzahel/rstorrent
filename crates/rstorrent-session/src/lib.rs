@@ -33,8 +33,8 @@ mod views;
 
 pub use application::{
     ApplicationConfig, ApplicationError, ApplicationPersistence, ApplicationService,
-    PathRootStartupPolicy, PlatformPublicationPlan, PlatformPublishedFilePlan, PlatformRemovalPlan,
-    application_error_response,
+    PathRootStartupPolicy, PlatformPublicationPlan, PlatformPublishedFilePlan,
+    PlatformRemovalNamespace, PlatformRemovalPath, PlatformRemovalPlan, application_error_response,
 };
 pub use application_connection::{
     AcknowledgedViewStream, AcknowledgedViewStreamError, ApplicationCall, ApplicationCallError,

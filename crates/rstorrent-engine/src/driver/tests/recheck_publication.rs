@@ -591,7 +591,9 @@ async fn unowned_publication_is_discovered_and_fully_rechecked() {
         .expect("create discovery root");
     let paths = torrent_storage_paths_for_metainfo(&root, &metainfo, test_torrent_id())
         .expect("plan discovery storage");
-    tokio::fs::write(&paths.output, &payload)
+    let mut oversized = payload.clone();
+    oversized.extend_from_slice(b"unrelated suffix");
+    tokio::fs::write(&paths.output, &oversized)
         .await
         .expect("write oversized existing publication");
     let layout = TorrentLayout::from_metainfo(&metainfo);
@@ -640,7 +642,14 @@ async fn unowned_publication_is_discovered_and_fully_rechecked() {
         checkpoints.rechecks(),
         vec![vec![true; layout.piece_count()]]
     );
-    assert_eq!(tokio::fs::read(&paths.output).await.unwrap(), payload);
+    assert_eq!(
+        checkpoints.discoveries(),
+        vec![(ResumedStorage::Published, 1, 1, 1)]
+    );
+    let stored = tokio::fs::read(&paths.output).await.unwrap();
+    assert_eq!(stored.len(), oversized.len());
+    assert!(stored.starts_with(&payload));
+    assert!(stored.ends_with(b"unrelated suffix"));
     assert!(
         activity
             .events

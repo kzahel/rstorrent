@@ -16,8 +16,9 @@ use rstorrent_engine::{
 };
 use rstorrent_session::{
     AddTorrentBytesRequest, ApplicationConfig, ApplicationService, ConfiguredStorageRoot,
-    PlatformPublicationPlan, PlatformPublishedFilePlan, PlatformRemovalPlan, RequestEnvelope,
-    ResponseEnvelope, StorageRootAvailability, SubscriptionSpec, ViewSubscription, ViewUpdate,
+    PlatformPublicationPlan, PlatformPublishedFilePlan, PlatformRemovalNamespace,
+    PlatformRemovalPlan, RequestEnvelope, ResponseEnvelope, StorageRootAvailability,
+    SubscriptionSpec, ViewSubscription, ViewUpdate,
 };
 use rustix::fs::{CWD, RenameFlags, renameat_with};
 use sha1::{Digest, Sha1};
@@ -177,11 +178,29 @@ pub struct IosPreparedFile {
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
+pub struct IosRemovalPath {
+    pub components: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, uniffi::Enum)]
+pub enum IosRemovalNamespace {
+    None,
+    Legacy,
+    Staging,
+    Publishing,
+    Published,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
 pub struct IosRemovalPlan {
     pub operation_id: String,
     pub torrent_id: String,
     pub storage_root: String,
     pub name: String,
+    pub namespace: IosRemovalNamespace,
+    pub tree: bool,
+    pub files: Vec<IosRemovalPath>,
+    pub directories: Vec<IosRemovalPath>,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -907,6 +926,28 @@ fn map_removal_plan(plan: PlatformRemovalPlan) -> IosRemovalPlan {
         torrent_id: plan.torrent_id,
         storage_root: plan.storage_root,
         name: plan.name,
+        namespace: match plan.namespace {
+            PlatformRemovalNamespace::None => IosRemovalNamespace::None,
+            PlatformRemovalNamespace::Legacy => IosRemovalNamespace::Legacy,
+            PlatformRemovalNamespace::Staging => IosRemovalNamespace::Staging,
+            PlatformRemovalNamespace::Publishing => IosRemovalNamespace::Publishing,
+            PlatformRemovalNamespace::Published => IosRemovalNamespace::Published,
+        },
+        tree: plan.tree,
+        files: plan
+            .files
+            .into_iter()
+            .map(|path| IosRemovalPath {
+                components: path.components,
+            })
+            .collect(),
+        directories: plan
+            .directories
+            .into_iter()
+            .map(|path| IosRemovalPath {
+                components: path.components,
+            })
+            .collect(),
     }
 }
 
@@ -975,6 +1016,29 @@ fn hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn maps_exact_platform_removal_manifest() {
+        let plan = map_removal_plan(PlatformRemovalPlan {
+            operation_id: "remove-1".to_owned(),
+            torrent_id: "t1-owner".to_owned(),
+            storage_root: "downloads".to_owned(),
+            name: "show".to_owned(),
+            namespace: PlatformRemovalNamespace::Published,
+            tree: true,
+            files: vec![rstorrent_session::PlatformRemovalPath {
+                components: vec!["Season 01".to_owned(), "Episode 01.mkv".to_owned()],
+            }],
+            directories: vec![rstorrent_session::PlatformRemovalPath {
+                components: vec!["Season 01".to_owned()],
+            }],
+        });
+
+        assert_eq!(plan.namespace, IosRemovalNamespace::Published);
+        assert!(plan.tree);
+        assert_eq!(plan.files[0].components, ["Season 01", "Episode 01.mkv"]);
+        assert_eq!(plan.directories[0].components, ["Season 01"]);
+    }
 
     #[test]
     fn validates_bounded_mixed_roots_and_ios_pool_limit() {

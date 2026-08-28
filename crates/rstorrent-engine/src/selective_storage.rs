@@ -53,6 +53,13 @@ pub struct FastResumeValidation {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct StorageDiscoverySummary {
+    pub expected_files: usize,
+    pub present_files: usize,
+    pub oversized_files: usize,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct SelectiveWriteStats {
     pub wanted_bytes: usize,
     pub skipped_bytes: usize,
@@ -786,10 +793,7 @@ impl RetainedFileSource {
                         source,
                     })?
                     .len();
-                if actual == *expected_length
-                    || (!matches!(access, StorageFileAccess::ReadWriteCreate)
-                        && actual > *expected_length)
-                {
+                if actual >= *expected_length {
                     return Ok(file);
                 }
                 if matches!(access, StorageFileAccess::ReadWriteCreate) {
@@ -1531,6 +1535,52 @@ fn rename_noreplace_blocking(source: &Path, destination: &Path) -> Result<(), io
 }
 
 impl SelectiveStorage {
+    pub(crate) async fn inspect_discovered_payload(
+        &self,
+    ) -> Result<StorageDiscoverySummary, SelectiveStorageError> {
+        let mut summary = StorageDiscoverySummary::default();
+        for (file_index, metainfo_file) in self.layout.files().iter().enumerate() {
+            if metainfo_file.padding {
+                continue;
+            }
+            summary.expected_files += 1;
+            let source = self.files[file_index]
+                .as_ref()
+                .map(|file| &file.source)
+                .or_else(|| self.skipped_sources[file_index].as_ref());
+            let Some(source) = source else { continue };
+            let RetainedFileSource::Dynamic { reference, .. } = source else {
+                return Err(SelectiveStorageError::InvalidStorageOperation(
+                    "discovered payload uses fixed descriptors",
+                ));
+            };
+            let observation =
+                reference
+                    .observe()
+                    .await
+                    .map_err(|error| SelectiveStorageError::Io {
+                        operation: "observe discovered payload source",
+                        source: io::Error::other(error),
+                    })?;
+            if !observation.exists {
+                continue;
+            }
+            if observation.kind != Some(StorageObjectKind::File) {
+                return Err(SelectiveStorageError::UnexpectedFileType {
+                    path: PathBuf::from(metainfo_file.path.join("/")),
+                });
+            }
+            summary.present_files += 1;
+            if observation
+                .length
+                .is_some_and(|length| length > metainfo_file.length)
+            {
+                summary.oversized_files += 1;
+            }
+        }
+        Ok(summary)
+    }
+
     pub async fn create_content(
         output_root: PathBuf,
         artifact_identity: TorrentArtifactIdentity,
@@ -3719,9 +3769,7 @@ impl SelectiveStorage {
                 }
                 Err(error) => return Err(error),
             };
-            if actual > metainfo_file.length {
-                file.acquire(StorageFileAccess::ReadWriteCreate).await?;
-            } else if actual < metainfo_file.length {
+            if actual < metainfo_file.length {
                 return Err(SelectiveStorageError::UnexpectedFileLength {
                     file_index,
                     expected: metainfo_file.length,
@@ -7374,7 +7422,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn published_recheck_accepts_read_only_exact_data_and_normalizes_oversize() {
+    async fn published_recheck_accepts_exact_data_and_preserves_oversize() {
         let root = test_path("published-geometry");
         tokio::fs::create_dir(&root).await.expect("create root");
         let metainfo = single_file_fixture();
@@ -7426,7 +7474,7 @@ mod tests {
             .expect("remove exact read-only fixture");
         let mut oversized = bytes.clone();
         oversized.extend_from_slice(b"ignored suffix");
-        tokio::fs::write(&paths.output, oversized)
+        tokio::fs::write(&paths.output, &oversized)
             .await
             .expect("extend published file");
         let (mut oversized, resumed) = SelectiveStorage::resume_with_paths_expected(
@@ -7452,19 +7500,19 @@ mod tests {
         oversized
             .finish_published()
             .await
-            .expect("normalize oversized managed file after check");
+            .expect("finish oversized managed file without mutation");
         assert_eq!(
             tokio::fs::metadata(&paths.output)
                 .await
-                .expect("normalized metadata")
+                .expect("oversized metadata")
                 .len(),
-            metainfo.total_length
+            u64::try_from(bytes.len() + b"ignored suffix".len()).expect("bounded fixture")
         );
         assert_eq!(
             tokio::fs::read(&paths.output)
                 .await
-                .expect("normalized bytes"),
-            bytes
+                .expect("oversized bytes"),
+            [bytes.as_slice(), b"ignored suffix"].concat()
         );
         tokio::fs::remove_dir_all(root).await.expect("remove root");
     }
