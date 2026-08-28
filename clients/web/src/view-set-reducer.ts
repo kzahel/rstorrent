@@ -179,6 +179,8 @@ function cloneSnapshot(snapshot: ViewSnapshot): ViewSnapshot {
       };
     case "files":
       return { ...snapshot, files: [...snapshot.files] };
+    case "media":
+      return { ...snapshot, items: [...snapshot.items] };
     case "trackers":
       return { ...snapshot, trackers: [...snapshot.trackers] };
     case "diagnostics":
@@ -376,6 +378,21 @@ function applyPatch(snapshot: ViewSnapshot, patch: ViewPatch): ViewSnapshot {
         filesystem_content_base: snapshot.filesystem_content_base,
         page: snapshot.page,
         files: [...files.values()],
+      };
+    }
+    case "media": {
+      if (snapshot.type !== "media") throw new Error("unreachable");
+      const items = new Map(
+        snapshot.items.map((item) => [item.media_id, item]),
+      );
+      for (const mediaId of patch.removed) items.delete(mediaId);
+      for (const item of patch.upsert) items.set(item.media_id, item);
+      return {
+        type: "media",
+        torrent_id: patch.torrent_id,
+        state: snapshot.state,
+        total_non_padding_files: snapshot.total_non_padding_files,
+        items: [...items.values()],
       };
     }
     case "trackers": {

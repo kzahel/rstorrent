@@ -4199,6 +4199,14 @@
       ],
       "type": "string"
     },
+    "MediaCatalogState": {
+      "enum": [
+        "metadata_pending",
+        "available",
+        "torrent_missing"
+      ],
+      "type": "string"
+    },
     "MediaFileAvailability": {
       "enum": [
         "available",
@@ -4215,6 +4223,113 @@
         "resource_limit"
       ],
       "type": "string"
+    },
+    "MediaItemView": {
+      "properties": {
+        "done_bytes": {
+          "type": "string"
+        },
+        "extension": {
+          "type": "string"
+        },
+        "file_index": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "length_bytes": {
+          "type": "string"
+        },
+        "media_availability": {
+          "$ref": "#/$defs/MediaFileAvailability"
+        },
+        "media_id": {
+          "type": "string"
+        },
+        "path": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "role": {
+          "$ref": "#/$defs/MediaRoleView"
+        },
+        "selection": {
+          "$ref": "#/$defs/FileSelectionView"
+        },
+        "verified_bytes": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "media_id",
+        "file_index",
+        "path",
+        "extension",
+        "length_bytes",
+        "selection",
+        "done_bytes",
+        "verified_bytes",
+        "media_availability",
+        "role"
+      ],
+      "type": "object"
+    },
+    "MediaRoleView": {
+      "oneOf": [
+        {
+          "properties": {
+            "ending_episode_number": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "episode_number": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "season_number": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "series_title_hint": {
+              "type": "string"
+            },
+            "type": {
+              "const": "episode",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "series_title_hint",
+            "season_number",
+            "episode_number"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "unclassified_video",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "MediaUrlOutcome": {
       "oneOf": [
@@ -8240,6 +8355,37 @@
               "type": "string"
             },
             "type": {
+              "const": "media",
+              "type": "string"
+            },
+            "upsert": {
+              "items": {
+                "$ref": "#/$defs/MediaItemView"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id",
+            "upsert",
+            "removed"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "removed": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
+              "type": "string"
+            },
+            "type": {
               "const": "trackers",
               "type": "string"
             },
@@ -8765,6 +8911,40 @@
         },
         {
           "properties": {
+            "items": {
+              "items": {
+                "$ref": "#/$defs/MediaItemView"
+              },
+              "type": "array"
+            },
+            "state": {
+              "$ref": "#/$defs/MediaCatalogState"
+            },
+            "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
+              "type": "string"
+            },
+            "total_non_padding_files": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "media",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id",
+            "state",
+            "total_non_padding_files",
+            "items"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
             "page": {
               "$ref": "#/$defs/CatalogPageView"
             },
@@ -9109,6 +9289,33 @@
             },
             "type": {
               "const": "torrent_files",
+              "type": "string"
+            },
+            "view_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "view_id",
+            "torrent_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "delivery": {
+              "$ref": "#/$defs/ViewDeliveryPolicy",
+              "default": {
+                "min_interval_millis": 0
+              }
+            },
+            "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
+              "type": "string"
+            },
+            "type": {
+              "const": "torrent_media",
               "type": "string"
             },
             "view_id": {

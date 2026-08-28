@@ -9,6 +9,7 @@ use crate::diagnostics::{
     MAX_DIAGNOSTIC_PATCH_BYTES, MAX_DIAGNOSTIC_PATCH_EVENTS, patch_encoded_len,
 };
 use crate::file_views::FileViewChange;
+use crate::media_catalog_views::MediaItemView;
 use crate::settings::{ClientSettingsRuntimeView, StorageSettingsSnapshot};
 use crate::tracker_views::{TrackerView, TrackerViewModel};
 
@@ -150,6 +151,44 @@ pub(super) fn patch_for(
                 _ => None,
             }
         }
+        (ViewSelector::Torrent { torrent_id }, ViewProjection::Media) => {
+            let old = previous
+                .get(torrent_id)
+                .and_then(|model| model.files.as_ref());
+            let next = current
+                .get(torrent_id)
+                .and_then(|model| model.files.as_ref());
+            match (old, next) {
+                (Some(old), Some(next)) if old.patchable_catalog_matches(next) => {
+                    let old = old
+                        .media_rows()
+                        .into_iter()
+                        .map(|item| (item.media_id.clone(), item))
+                        .collect::<BTreeMap<_, _>>();
+                    let next = next
+                        .media_rows()
+                        .into_iter()
+                        .map(|item| (item.media_id.clone(), item))
+                        .collect::<BTreeMap<_, _>>();
+                    let upsert = next
+                        .iter()
+                        .filter(|(id, item)| old.get(*id) != Some(*item))
+                        .map(|(_, item)| item.clone())
+                        .collect::<Vec<_>>();
+                    let removed = old
+                        .keys()
+                        .filter(|id| !next.contains_key(*id))
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    (!upsert.is_empty() || !removed.is_empty()).then(|| ViewPatch::Media {
+                        torrent_id: torrent_id.clone(),
+                        upsert,
+                        removed,
+                    })
+                }
+                _ => None,
+            }
+        }
         (ViewSelector::Torrent { torrent_id }, ViewProjection::Trackers) => {
             let page = spec
                 .catalog_page
@@ -175,6 +214,7 @@ pub(super) fn patch_for(
             | ViewProjection::Peers
             | ViewProjection::Swarm
             | ViewProjection::Files
+            | ViewProjection::Media
             | ViewProjection::Trackers,
         ) => None,
         (
@@ -206,11 +246,15 @@ pub(super) fn projection_requires_snapshot(
     {
         return previous.contains_key(torrent_id) != current.contains_key(torrent_id);
     }
-    let (ViewSelector::Torrent { torrent_id }, ViewProjection::Files) =
-        (&spec.selector, spec.projection)
-    else {
+    let ViewSelector::Torrent { torrent_id } = &spec.selector else {
         return false;
     };
+    if !matches!(
+        spec.projection,
+        ViewProjection::Files | ViewProjection::Media
+    ) {
+        return false;
+    }
     match (previous.get(torrent_id), current.get(torrent_id)) {
         (None, None) => false,
         (Some(old), Some(next)) => match (&old.files, &next.files) {
@@ -262,6 +306,7 @@ pub(super) fn targeted_activity_patch(
     previous_active: &BTreeMap<u32, ActivePiece>,
     next_active: &BTreeMap<u32, ActivePiece>,
     file_changes: &[FileViewChange],
+    media_upsert: &[MediaItemView],
 ) -> Option<ViewPatch> {
     match (&spec.selector, spec.projection) {
         (ViewSelector::TorrentList, ViewProjection::Summary) => {
@@ -320,6 +365,16 @@ pub(super) fn targeted_activity_patch(
                 removed: Vec::new(),
             })
         }
+        (
+            ViewSelector::Torrent {
+                torrent_id: selected,
+            },
+            ViewProjection::Media,
+        ) if selected == torrent_id && !media_upsert.is_empty() => Some(ViewPatch::Media {
+            torrent_id: torrent_id.to_owned(),
+            upsert: media_upsert.to_vec(),
+            removed: Vec::new(),
+        }),
         _ => None,
     }
 }
@@ -968,6 +1023,37 @@ pub(crate) fn coalesce_patch(current: &mut ViewPatch, next: &ViewPatch) -> bool 
             let mut removed_ids = removed.drain(..).collect::<std::collections::BTreeSet<_>>();
             for tracker in next_upsert {
                 removed_ids.remove(&tracker.tracker_id);
+            }
+            removed_ids.extend(next_removed.iter().cloned());
+            *upsert = values.into_values().collect();
+            *removed = removed_ids.into_iter().collect();
+            true
+        }
+        (
+            ViewPatch::Media {
+                torrent_id,
+                upsert,
+                removed,
+            },
+            ViewPatch::Media {
+                torrent_id: next_id,
+                upsert: next_upsert,
+                removed: next_removed,
+            },
+        ) if torrent_id == next_id => {
+            let mut values = upsert
+                .drain(..)
+                .map(|item| (item.media_id.clone(), item))
+                .collect::<BTreeMap<_, _>>();
+            for id in next_removed {
+                values.remove(id);
+            }
+            for item in next_upsert {
+                values.insert(item.media_id.clone(), item.clone());
+            }
+            let mut removed_ids = removed.drain(..).collect::<BTreeSet<_>>();
+            for item in next_upsert {
+                removed_ids.remove(&item.media_id);
             }
             removed_ids.extend(next_removed.iter().cloned());
             *upsert = values.into_values().collect();

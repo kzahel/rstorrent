@@ -31,7 +31,10 @@ import org.rstorrent.session.uniffi.HttpsServerAuthenticationPolicy
 import org.rstorrent.session.uniffi.Ipv6PinholeStatus
 import org.rstorrent.session.uniffi.ListenerPolicy
 import org.rstorrent.session.uniffi.ListenerStatus
+import org.rstorrent.session.uniffi.MediaCatalogState
 import org.rstorrent.session.uniffi.MediaFileAvailability
+import org.rstorrent.session.uniffi.MediaItemView
+import org.rstorrent.session.uniffi.MediaRoleView
 import org.rstorrent.session.uniffi.PortMappingPolicy
 import org.rstorrent.session.uniffi.PortMappingStatus
 import org.rstorrent.session.uniffi.ProgressAssessment
@@ -749,6 +752,47 @@ class ProductStateReducerTest {
     }
 
     @Test
+    fun mediaCatalogSnapshotsAndPatchesFeedTheProductState() {
+        val first = media("0", 0U, "0")
+        val verified = media("0", 0U, "1024")
+        val initial =
+            ProductStateReducer.reduce(
+                ProductState(),
+                update(
+                    "1",
+                    "0",
+                    "1",
+                    ViewUpdatePayload.Snapshot(
+                        ViewSnapshot.Media(
+                            TORRENT_ID,
+                            MediaCatalogState.AVAILABLE,
+                            2U,
+                            listOf(first),
+                        ),
+                    ),
+                ),
+            )
+        val patched =
+            ProductStateReducer.reduce(
+                initial,
+                update(
+                    "2",
+                    "1",
+                    "2",
+                    ViewUpdatePayload.Patch(
+                        ViewPatch.Media(TORRENT_ID, listOf(verified), emptyList()),
+                    ),
+                ),
+            )
+
+        assertEquals(
+            "1024",
+            patched.media.getValue(TORRENT_ID).items.getValue("0").verifiedBytes,
+        )
+        assertEquals(2U, patched.media.getValue(TORRENT_ID).totalNonPaddingFiles)
+    }
+
+    @Test
     fun libraryFiltersUseOperationalStateAndSortingIsStable() {
         val queued =
             torrent("queued", TorrentState.PAUSED).copy(
@@ -831,6 +875,29 @@ class ProductStateReducerTest {
             doneBytes = "0",
             verifiedBytes = "0",
             mediaAvailability = MediaFileAvailability.UNVERIFIED,
+        )
+
+    private fun media(
+        id: String,
+        index: UInt,
+        verifiedBytes: String,
+    ): MediaItemView =
+        MediaItemView(
+            mediaId = id,
+            fileIndex = index,
+            path = listOf("Show.Name.S01E02.mkv"),
+            extension = "mkv",
+            lengthBytes = "1024",
+            selection = FileSelectionView.NORMAL,
+            doneBytes = verifiedBytes,
+            verifiedBytes = verifiedBytes,
+            mediaAvailability =
+                if (verifiedBytes == "1024") {
+                    MediaFileAvailability.AVAILABLE
+                } else {
+                    MediaFileAvailability.UNVERIFIED
+                },
+            role = MediaRoleView.Episode("Show Name", 1U, 2U, null),
         )
 
     private fun clientSettings(

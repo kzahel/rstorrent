@@ -4002,6 +4002,7 @@ dependencies = [
  "base64 0.22.1",
  "getrandom 0.3.4",
  "rstorrent-engine",
+ "rstorrent-media-catalog",
  "rstorrent-protocol",
  "rusqlite",
  "schemars 1.2.2",

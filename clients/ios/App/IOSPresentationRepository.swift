@@ -38,6 +38,7 @@ final class IOSPresentationRepository: ObservableObject {
     @Published private(set) var storage: StorageSettingsSnapshot?
     @Published private(set) var error: String?
     @Published private(set) var files: [String: [FileView]] = [:]
+    @Published private(set) var media: [String: [MediaItemView]] = [:]
     @Published private(set) var trackers: [String: [TrackerView]] = [:]
     @Published private(set) var peers: [String: [PeerView]] = [:]
     @Published private(set) var pieces: [String: IOSPieceActivity] = [:]
@@ -195,6 +196,8 @@ final class IOSPresentationRepository: ObservableObject {
             preparations[torrentID] = preparation
         case .files(let torrentID, _, _, _, let files):
             self.files[torrentID] = files.sorted { $0.fileIndex < $1.fileIndex }
+        case .media(let torrentID, _, _, let items):
+            media[torrentID] = items.sorted { $0.fileIndex < $1.fileIndex }
         case .trackers(let torrentID, _, _, let trackers):
             self.trackers[torrentID] = trackers.sorted(by: Self.trackerOrder)
         case .peers(let torrentID, let peers):
@@ -255,6 +258,13 @@ final class IOSPresentationRepository: ObservableObject {
                 values[update.fileId] = try Self.apply(update, to: current)
             }
             files[torrentID] = values.values.sorted { $0.fileIndex < $1.fileIndex }
+        case .media(let torrentID, let upsert, let removed):
+            var values = Dictionary(
+                uniqueKeysWithValues: media[torrentID, default: []].map { ($0.mediaId, $0) }
+            )
+            removed.forEach { values.removeValue(forKey: $0) }
+            upsert.forEach { values[$0.mediaId] = $0 }
+            media[torrentID] = values.values.sorted { $0.fileIndex < $1.fileIndex }
         case .trackers(let torrentID, let upsert, let removed):
             var values = Dictionary(
                 uniqueKeysWithValues: trackers[torrentID, default: []].map { ($0.trackerId, $0) }

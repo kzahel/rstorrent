@@ -26,16 +26,16 @@ use rstorrent_session::{
     FileSelectionView, FileView, HttpsServerAuthenticationPolicy, IndexRange,
     IntegrityPreparationPhaseView, IntegrityPreparationView, Ipv6PinholeFailureStage,
     Ipv6PinholeStatus, ListenerBindFailureReason, ListenerPolicy, ListenerStatus,
-    MagnetExportResult, MagnetExportSource, MediaFileAvailability, MediaUrlOutcome,
-    MediaUrlResponse, MetadataAcquisitionPhaseView, MetadataAcquisitionView, OpenViewSetOptions,
-    OpenViewSetRequest, OpenViewSetResponse, PeerDirection, PeerDisconnectReason,
-    PeerFieldCapabilities, PeerFieldUpdate, PeerFlagView, PeerLifecycle, PeerMseMethodView,
-    PeerRequestPhase, PeerRole, PeerRowUpdate, PeerSourceView, PeerTransportKind, PeerView,
-    PortMappingFailureStage, PortMappingMechanism, PortMappingPolicy, PortMappingStatus,
-    ProgressAction, ProgressAssessment, ProgressDisposition, ProgressPhase, ProgressReason,
-    RemovalDataPolicy, RemovalState, RequestEnvelope, ResetReason, ResponseEnvelope,
-    ResponseOutcome, ServiceSnapshot, SessionCurrentRatesView, SessionUdpStatus, SpeedCurrentRate,
-    SpeedHistoryAppend, SpeedHistoryView, SpeedMetric, SpeedMetricAvailability,
+    MagnetExportResult, MagnetExportSource, MediaCatalogState, MediaFileAvailability,
+    MediaItemView, MediaRoleView, MediaUrlOutcome, MediaUrlResponse, MetadataAcquisitionPhaseView,
+    MetadataAcquisitionView, OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse,
+    PeerDirection, PeerDisconnectReason, PeerFieldCapabilities, PeerFieldUpdate, PeerFlagView,
+    PeerLifecycle, PeerMseMethodView, PeerRequestPhase, PeerRole, PeerRowUpdate, PeerSourceView,
+    PeerTransportKind, PeerView, PortMappingFailureStage, PortMappingMechanism, PortMappingPolicy,
+    PortMappingStatus, ProgressAction, ProgressAssessment, ProgressDisposition, ProgressPhase,
+    ProgressReason, RemovalDataPolicy, RemovalState, RequestEnvelope, ResetReason,
+    ResponseEnvelope, ResponseOutcome, ServiceSnapshot, SessionCurrentRatesView, SessionUdpStatus,
+    SpeedCurrentRate, SpeedHistoryAppend, SpeedHistoryView, SpeedMetric, SpeedMetricAvailability,
     SpeedPersistenceState, SpeedRange, SpeedSeriesAppend, SpeedSeriesView, StorageRootAvailability,
     StorageRootSnapshot, StorageSettingsSnapshot, StorageState, SubscriptionSpec,
     SwarmCatalogState, SwarmCountsView, SwarmPeerState, SwarmPeerView, TorrentEtaView,
@@ -234,6 +234,9 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<FileView>(&mut declarations)?;
     append::<FileFieldUpdate>(&mut declarations)?;
     append::<FileRowUpdate>(&mut declarations)?;
+    append::<MediaCatalogState>(&mut declarations)?;
+    append::<MediaRoleView>(&mut declarations)?;
+    append::<MediaItemView>(&mut declarations)?;
     append::<TrackerCatalogState>(&mut declarations)?;
     append::<TrackerTransportView>(&mut declarations)?;
     append::<TrackerSecurityView>(&mut declarations)?;

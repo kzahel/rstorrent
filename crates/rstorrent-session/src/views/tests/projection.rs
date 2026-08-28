@@ -394,6 +394,87 @@ fn one_piece_boundary_fixture() -> Metainfo {
     }
 }
 
+fn media_projection_fixture() -> Metainfo {
+    Metainfo {
+        info_hash: [3; 20],
+        piece_hashes: vec![[4; 20]],
+        piece_length: 16,
+        total_length: 16,
+        name: "Show Name".to_owned(),
+        private: false,
+        mode: MetainfoMode::MultiFile,
+        files: vec![
+            MetainfoFile {
+                path: vec!["Show.Name.S01E02.mkv".to_owned()],
+                length: 8,
+                offset: 0,
+                padding: false,
+            },
+            MetainfoFile {
+                path: vec!["notes.txt".to_owned()],
+                length: 8,
+                offset: 8,
+                padding: false,
+            },
+        ],
+    }
+}
+
+#[tokio::test]
+async fn media_projection_filters_rows_and_patches_verified_availability() {
+    let files = FileProgressModel::new_with_media(
+        &media_projection_fixture(),
+        &[],
+        &[],
+        None,
+        crate::MediaFileAvailability::Available,
+    )
+    .expect("media files");
+    let hub = ViewHub::new(&snapshot(0, 1)).expect("hub");
+    hub.replace_durable(&snapshot(1, 1), &eta_durable(Some(files), 16, 0))
+        .expect("install files");
+    let subscription = hub
+        .subscribe(SubscriptionSpec {
+            selector: ViewSelector::Torrent {
+                torrent_id: TORRENT_ID.to_owned(),
+            },
+            projection: ViewProjection::Media,
+            delivery: DeliveryPolicy {
+                min_interval_millis: 0,
+                max_queue_bytes: 64 * 1024,
+            },
+            diagnostics: None,
+            catalog_page: None,
+        })
+        .expect("media subscription");
+    let initial = subscription.next_update().await.expect("media snapshot");
+    assert!(matches!(
+        initial.payload,
+        ViewUpdatePayload::Snapshot {
+            snapshot: ViewSnapshot::Media {
+                total_non_padding_files: 2,
+                ref items,
+                ..
+            }
+        } if items.len() == 1
+            && items[0].file_index == 0
+            && items[0].verified_bytes == "0"
+    ));
+
+    hub.record_pieces_durable(TORRENT_ID, &[0], 2)
+        .expect("verify media piece");
+    let update = subscription.next_update().await.expect("media patch");
+    assert!(matches!(
+        update.payload,
+        ViewUpdatePayload::Patch {
+            patch: ViewPatch::Media { ref upsert, ref removed, .. }
+        } if removed.is_empty()
+            && upsert.len() == 1
+            && upsert[0].verified_bytes == "8"
+            && upsert[0].media_availability == crate::MediaFileAvailability::Available
+    ));
+}
+
 #[test]
 fn torrent_eta_projects_exact_work_and_generation_accounting() {
     let hub = ViewHub::new(&snapshot(0, 4)).expect("hub");

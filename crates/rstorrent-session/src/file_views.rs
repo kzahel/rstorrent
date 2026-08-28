@@ -15,6 +15,7 @@ use rstorrent_protocol::storage_layout::{
 };
 
 use crate::MediaFileAvailability;
+use crate::media_catalog_views::{DerivedMediaCatalog, MediaItemView};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
@@ -60,6 +61,7 @@ pub(crate) struct FileViewChange {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct FileCatalog {
     layout: ContentLayout,
+    media: DerivedMediaCatalog,
     selection: FileSelection,
     high_priority_files: BTreeSet<usize>,
     filesystem_content_base: Option<String>,
@@ -169,6 +171,7 @@ impl FileProgressModel {
         media_availability: MediaFileAvailability,
     ) -> Result<Self, FileProgressError> {
         let layout = ContentLayout::from_content(content);
+        let media = DerivedMediaCatalog::from_layout(&layout);
         let skipped = skipped
             .iter()
             .map(|index| usize::try_from(*index).map_err(|_| FileProgressError::FileIndexOverflow))
@@ -185,6 +188,7 @@ impl FileProgressModel {
         let mut model = Self {
             catalog: Arc::new(FileCatalog {
                 layout,
+                media,
                 selection,
                 high_priority_files,
                 filesystem_content_base,
@@ -247,6 +251,31 @@ impl FileProgressModel {
 
     pub(crate) fn count(&self) -> usize {
         self.catalog.layout.files().len()
+    }
+
+    pub(crate) fn non_padding_count(&self) -> usize {
+        self.catalog
+            .layout
+            .files()
+            .iter()
+            .filter(|file| !file.padding)
+            .count()
+    }
+
+    pub(crate) fn media_rows(&self) -> Vec<MediaItemView> {
+        self.catalog
+            .media
+            .entries()
+            .iter()
+            .map(|entry| entry.view(self.row(entry.file_index())))
+            .collect()
+    }
+
+    pub(crate) fn media_row(&self, file_index: usize) -> Option<MediaItemView> {
+        self.catalog
+            .media
+            .entry(file_index)
+            .map(|entry| entry.view(self.row(file_index)))
     }
 
     pub(crate) fn row(&self, index: usize) -> FileView {
@@ -633,6 +662,42 @@ mod tests {
             .collect()
     }
 
+    fn media_fixture() -> Metainfo {
+        let paths = [
+            vec!["Show.Name.S01E02.mkv".to_owned()],
+            vec!["Show.Name.S01E01.mp4".to_owned()],
+            vec!["extras".to_owned(), "notes.txt".to_owned()],
+            vec![".pad".to_owned(), "1".to_owned()],
+        ];
+        let lengths = [16, 16, 8, 8];
+        let mut offset = 0;
+        let files = paths
+            .into_iter()
+            .zip(lengths)
+            .enumerate()
+            .map(|(index, (path, length))| {
+                let file = MetainfoFile {
+                    path,
+                    length,
+                    offset,
+                    padding: index == 3,
+                };
+                offset += length;
+                file
+            })
+            .collect();
+        Metainfo {
+            info_hash: [5; 20],
+            piece_hashes: vec![[6; 20]; 3],
+            piece_length: 16,
+            total_length: 48,
+            name: "Show Name".to_owned(),
+            private: false,
+            mode: MetainfoMode::MultiFile,
+            files,
+        }
+    }
+
     #[test]
     fn catalog_preserves_geometry_selection_and_padding() {
         let content = TorrentContent::from_v1_metainfo(fixture());
@@ -663,6 +728,39 @@ mod tests {
             MediaFileAvailability::NotPublished
         );
         assert_eq!(model.filesystem_content_base(), Some("/tmp/content"));
+    }
+
+    #[test]
+    fn media_catalog_is_filtered_and_retains_exact_file_state() {
+        let mut model = FileProgressModel::new_with_media(
+            &media_fixture(),
+            &[1],
+            &[],
+            None,
+            MediaFileAvailability::Available,
+        )
+        .expect("media model");
+        assert_eq!(model.non_padding_count(), 3);
+
+        let items = model.media_rows();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].file_index, 0);
+        assert_eq!(items[0].extension, "mkv");
+        assert_eq!(items[1].selection, FileSelectionView::Skipped);
+        assert!(matches!(
+            items[0].role,
+            crate::MediaRoleView::Episode {
+                season_number: 1,
+                episode_number: 2,
+                ..
+            }
+        ));
+
+        model.piece_verified(0).expect("verified episode");
+        let item = model.media_row(0).expect("first media item");
+        assert_eq!(item.verified_bytes, "16");
+        assert_eq!(item.media_availability, MediaFileAvailability::Available);
+        assert!(model.media_row(2).is_none());
     }
 
     #[test]

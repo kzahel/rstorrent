@@ -14,6 +14,7 @@ use ts_rs::TS;
 use crate::control::{RemovalState, StorageState, TorrentProtocolIdentities, TorrentState};
 use crate::diagnostics::{DiagnosticEvent, DiagnosticFilter, DiagnosticRetention};
 use crate::file_views::{FileCatalogState, FileView};
+use crate::media_catalog_views::{MediaCatalogState, MediaItemView};
 use crate::settings::{ClientSettingsRuntimeView, StorageSettingsSnapshot, TorrentTransferLimits};
 use crate::speed::{
     SessionCurrentRatesView, SpeedHistoryAppend, SpeedHistoryView, SpeedMetric, SpeedRange,
@@ -152,6 +153,7 @@ impl Default for ApiHello {
                 "torrent_peers".to_owned(),
                 "torrent_swarm".to_owned(),
                 "torrent_files".to_owned(),
+                "torrent_media".to_owned(),
                 "torrent_trackers".to_owned(),
                 "session_disk".to_owned(),
                 "session_dht".to_owned(),
@@ -256,6 +258,13 @@ pub enum ViewSpec {
         #[serde(default)]
         delivery: ViewDeliveryPolicy,
     },
+    TorrentMedia {
+        view_id: String,
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
+        torrent_id: String,
+        #[serde(default)]
+        delivery: ViewDeliveryPolicy,
+    },
     TorrentTrackers {
         view_id: String,
         #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
@@ -291,6 +300,7 @@ impl ViewSpec {
             | Self::TorrentPeers { view_id, .. }
             | Self::TorrentSwarm { view_id, .. }
             | Self::TorrentFiles { view_id, .. }
+            | Self::TorrentMedia { view_id, .. }
             | Self::TorrentTrackers { view_id, .. }
             | Self::Diagnostics { view_id, .. } => view_id,
         }
@@ -309,6 +319,7 @@ impl ViewSpec {
             | Self::TorrentPeers { delivery, .. }
             | Self::TorrentSwarm { delivery, .. }
             | Self::TorrentFiles { delivery, .. }
+            | Self::TorrentMedia { delivery, .. }
             | Self::TorrentTrackers { delivery, .. }
             | Self::Diagnostics { delivery, .. } => *delivery,
         }
@@ -392,6 +403,14 @@ impl ViewSpec {
                 ViewProjection::Files,
                 None,
                 Some(page.unwrap_or_default()),
+            ),
+            Self::TorrentMedia { torrent_id, .. } => (
+                ViewSelector::Torrent {
+                    torrent_id: torrent_id.clone(),
+                },
+                ViewProjection::Media,
+                None,
+                None,
             ),
             Self::TorrentTrackers {
                 torrent_id, page, ..
@@ -605,6 +624,7 @@ pub enum ViewProjection {
     Peers,
     Swarm,
     Files,
+    Media,
     Trackers,
     Diagnostics,
 }
@@ -1486,6 +1506,13 @@ pub enum ViewSnapshot {
         page: CatalogPageView,
         files: Vec<FileView>,
     },
+    Media {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
+        torrent_id: String,
+        state: MediaCatalogState,
+        total_non_padding_files: u32,
+        items: Vec<MediaItemView>,
+    },
     Trackers {
         #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
@@ -1569,6 +1596,12 @@ pub enum ViewPatch {
         torrent_id: String,
         upsert: Vec<FileView>,
         updates: Vec<FileRowUpdate>,
+        removed: Vec<String>,
+    },
+    Media {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
+        torrent_id: String,
+        upsert: Vec<MediaItemView>,
         removed: Vec<String>,
     },
     Trackers {

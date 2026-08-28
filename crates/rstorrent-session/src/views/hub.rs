@@ -27,6 +27,7 @@ use crate::diagnostics::{
     DiagnosticSeverity, DiagnosticStore, diagnostic_matches, interest_matches,
 };
 use crate::file_views::{FileCatalogState, FileProgressModel, FileViewChange};
+use crate::media_catalog_views::{MediaCatalogState, MediaItemView};
 use crate::settings::{
     ActiveDownloadsClampReason, AdvertisedPeerEndpointStatus, ClientSettingsApplicationState,
     ClientSettingsDegradedReason, ClientSettingsRuntimeView, Ipv6PinholeStatus,
@@ -742,6 +743,16 @@ impl ViewHub {
         let next_view = model.view.clone();
         let next_verified = model.verified.clone();
         let next_active = model.active.clone();
+        let media_upsert = model.files.as_ref().map_or_else(Vec::new, |files| {
+            file_changes
+                .iter()
+                .filter_map(|change| {
+                    usize::try_from(change.current.file_index)
+                        .ok()
+                        .and_then(|index| files.media_row(index))
+                })
+                .collect()
+        });
         let publish_result = hub.publish_activity_changes(
             torrent_id,
             &previous_view,
@@ -751,6 +762,7 @@ impl ViewHub {
             &previous_active,
             &next_active,
             &file_changes,
+            &media_upsert,
         );
         publish_result?;
         eta_result
@@ -963,6 +975,7 @@ impl ViewHub {
                 &previous_active,
                 &next_active,
                 &[],
+                &[],
             )?;
         }
         Ok(())
@@ -1037,6 +1050,17 @@ impl ViewHub {
         let next_view = next.view.clone();
         let next_verified = next.verified.clone();
         let next_active = next.active.clone();
+        let file_changes = file_changes.into_values().collect::<Vec<_>>();
+        let media_upsert = next.files.as_ref().map_or_else(Vec::new, |files| {
+            file_changes
+                .iter()
+                .filter_map(|change| {
+                    usize::try_from(change.current.file_index)
+                        .ok()
+                        .and_then(|index| files.media_row(index))
+                })
+                .collect()
+        });
         *model = next;
         hub.revision = revision;
         hub.publish_activity_changes(
@@ -1047,7 +1071,8 @@ impl ViewHub {
             &next_verified,
             &previous_active,
             &next_active,
-            &file_changes.into_values().collect::<Vec<_>>(),
+            &file_changes,
+            &media_upsert,
         )
     }
 
@@ -1498,6 +1523,32 @@ impl HubState {
                     },
                 }
             }
+            (ViewSelector::Torrent { torrent_id }, ViewProjection::Media) => {
+                match self.torrents.get(torrent_id) {
+                    Some(torrent) => ViewSnapshot::Media {
+                        torrent_id: torrent_id.clone(),
+                        state: if torrent.files.is_some() {
+                            MediaCatalogState::Available
+                        } else {
+                            MediaCatalogState::MetadataPending
+                        },
+                        total_non_padding_files: torrent.files.as_ref().map_or(0, |files| {
+                            u32::try_from(files.non_padding_count())
+                                .expect("file count was validated at construction")
+                        }),
+                        items: torrent
+                            .files
+                            .as_ref()
+                            .map_or_else(Vec::new, FileProgressModel::media_rows),
+                    },
+                    None => ViewSnapshot::Media {
+                        torrent_id: torrent_id.clone(),
+                        state: MediaCatalogState::TorrentMissing,
+                        total_non_padding_files: 0,
+                        items: Vec::new(),
+                    },
+                }
+            }
             (ViewSelector::Torrent { torrent_id }, ViewProjection::Trackers) => {
                 let page = spec
                     .catalog_page
@@ -1537,6 +1588,7 @@ impl HubState {
                 | ViewProjection::Peers
                 | ViewProjection::Swarm
                 | ViewProjection::Files
+                | ViewProjection::Media
                 | ViewProjection::Trackers,
             ) => {
                 unreachable!("invalid projection is rejected before snapshot construction")
@@ -1704,6 +1756,7 @@ impl HubState {
         previous_active: &BTreeMap<u32, ActivePiece>,
         next_active: &BTreeMap<u32, ActivePiece>,
         file_changes: &[FileViewChange],
+        media_upsert: &[MediaItemView],
     ) -> Result<(), SubscriptionError> {
         let revision = self.revision;
         self.subscribers.retain(|_, weak| weak.strong_count() != 0);
@@ -1723,6 +1776,7 @@ impl HubState {
                 previous_active,
                 next_active,
                 file_changes,
+                media_upsert,
             ) {
                 subscriber.enqueue_patch(revision, patch)?;
             }
@@ -1742,6 +1796,7 @@ impl HubState {
                     previous_active,
                     next_active,
                     file_changes,
+                    media_upsert,
                 ) {
                     view_set.enqueue_patch(spec.view_id(), patch, revision)?;
                 }

@@ -12,6 +12,7 @@ uniffi = ["dep:uniffi"]
 [dependencies]
 base64 = { workspace = true }
 rstorrent-engine = { path = "../rstorrent-engine" }
+rstorrent-media-catalog = { path = "../rstorrent-media-catalog" }
 rstorrent-protocol = { path = "../rstorrent-protocol" }
 getrandom = { workspace = true }
 rusqlite = { workspace = true }

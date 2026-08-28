@@ -534,6 +534,69 @@ describe("view-set reducer", () => {
     });
   });
 
+  it("applies complete keyed media rows without losing catalog metadata", () => {
+    const first = {
+      media_id: "0",
+      file_index: 0,
+      path: ["Show.Name.S01E02.mkv"],
+      extension: "mkv",
+      length_bytes: "32768",
+      selection: "normal" as const,
+      done_bytes: "16384",
+      verified_bytes: "0",
+      media_availability: "unverified" as const,
+      role: {
+        type: "episode" as const,
+        series_title_hint: "Show Name",
+        season_number: 1,
+        episode_number: 2,
+        ending_episode_number: null,
+      },
+    };
+    let state = reduceUpdateBatch(
+      undefined,
+      batch("0", "1", [
+        {
+          type: "snapshot",
+          view_id: "media",
+          snapshot: {
+            type: "media",
+            torrent_id: torrentId,
+            state: "available",
+            total_non_padding_files: 3,
+            items: [first],
+          },
+        },
+      ]),
+    );
+    state = reduceUpdateBatch(
+      state,
+      batch("1", "2", [
+        {
+          type: "patch",
+          view_id: "media",
+          patch: {
+            type: "media",
+            torrent_id: torrentId,
+            upsert: [{
+              ...first,
+              done_bytes: "32768",
+              verified_bytes: "32768",
+              media_availability: "available",
+            }],
+            removed: [],
+          },
+        },
+      ]),
+    );
+    expect(state.views.media).toMatchObject({
+      type: "media",
+      state: "available",
+      total_non_padding_files: 3,
+      items: [{ media_id: "0", verified_bytes: "32768" }],
+    });
+  });
+
   it("replaces disk pipeline state and applies keyed piece changes", () => {
     const pipeline = diskPipeline("normal");
     const first = diskPiece("torrent-a:3:1", 3, "receiving");

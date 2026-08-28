@@ -1000,6 +1000,29 @@ function validateViewSnapshot(value: unknown): void {
       }
       break;
     }
+    case "media": {
+      torrentId(snapshot.torrent_id);
+      const state = oneOf(snapshot.state, "media catalog state", [
+        "metadata_pending",
+        "available",
+        "torrent_missing",
+      ]);
+      const totalFiles = boundedInteger(
+        snapshot.total_non_padding_files,
+        "non-padding file count",
+        0,
+        MAX_FILE_CATALOG,
+      );
+      const items = array(snapshot.items, "media items");
+      if (items.length > totalFiles) {
+        throw new ContractError("media item count exceeds the file catalog");
+      }
+      items.forEach(validateMediaItemView);
+      if (state !== "available" && (items.length !== 0 || totalFiles !== 0)) {
+        throw new ContractError("unavailable media catalog contains rows");
+      }
+      break;
+    }
     case "trackers": {
       torrentId(snapshot.torrent_id);
       oneOf(snapshot.state, "tracker catalog state", [
@@ -1201,6 +1224,25 @@ function validateViewPatch(value: unknown): void {
         patch.removed,
         "file_id",
         "file",
+      );
+      break;
+    }
+    case "media": {
+      torrentId(patch.torrent_id);
+      const upserts = array(patch.upsert, "media upserts");
+      if (upserts.length > MAX_FILE_CATALOG) {
+        throw new ContractError("media patch exceeds its row bound");
+      }
+      upserts.forEach(validateMediaItemView);
+      array(patch.removed, "media removals").forEach((mediaId) =>
+        decimal(mediaId, "media ID"),
+      );
+      validateDisjointRowOperations(
+        patch.upsert,
+        [],
+        patch.removed,
+        "media_id",
+        "media",
       );
       break;
     }
@@ -2235,6 +2277,56 @@ export function validateFileView(value: unknown): void {
   const verified = BigInt(string(file.verified_bytes, "file verified bytes"));
   if (verified > done || done > length) {
     throw new ContractError("file progress counters are inconsistent");
+  }
+}
+
+function validateMediaItemView(value: unknown): void {
+  const item = asRecord(value, "media item");
+  decimal(item.media_id, "media ID");
+  boundedInteger(item.file_index, "media file index", 0, MAX_FILE_CATALOG - 1);
+  const path = array(item.path, "media path");
+  if (path.length === 0 || path.length > 4_096) {
+    throw new ContractError("media path component count is invalid");
+  }
+  let renderedPathBytes = 0;
+  path.forEach((component) => {
+    const pathComponent = boundedString(component, "media path component", 240);
+    renderedPathBytes += new TextEncoder().encode(pathComponent).byteLength + 1;
+  });
+  if (renderedPathBytes > 4_096) {
+    throw new ContractError("rendered media path exceeds its row bound");
+  }
+  const extension = boundedString(item.extension, "media extension", 16);
+  if (!/^[a-z0-9]+$/.test(extension)) {
+    throw new ContractError("media extension is invalid");
+  }
+  decimal(item.length_bytes, "media length");
+  oneOf(item.selection, "media selection", ["normal", "high", "skipped"]);
+  decimal(item.done_bytes, "media done bytes");
+  decimal(item.verified_bytes, "media verified bytes");
+  oneOf(item.media_availability, "media availability", [
+    "not_published",
+    "unverified",
+    "streamable",
+    "available",
+    "padding",
+  ]);
+  const length = BigInt(string(item.length_bytes, "media length"));
+  const done = BigInt(string(item.done_bytes, "media done bytes"));
+  const verified = BigInt(string(item.verified_bytes, "media verified bytes"));
+  if (verified > done || done > length) {
+    throw new ContractError("media progress counters are inconsistent");
+  }
+  const role = asRecord(item.role, "media role");
+  const roleType = oneOf(role.type, "media role type", [
+    "episode",
+    "unclassified_video",
+  ]);
+  if (roleType === "episode") {
+    boundedString(role.series_title_hint, "series title hint", 4_096);
+    boundedInteger(role.season_number, "season number", 0, 65_535);
+    boundedInteger(role.episode_number, "episode number", 0, 65_535);
+    optionalInteger(role.ending_episode_number, "ending episode number", 65_535);
   }
 }
 

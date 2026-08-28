@@ -241,6 +241,7 @@ pub(crate) fn validate_spec(spec: &SubscriptionSpec) -> Result<(), SubscriptionE
                 | ViewProjection::Peers
                 | ViewProjection::Swarm
                 | ViewProjection::Files
+                | ViewProjection::Media
                 | ViewProjection::Trackers
         )
     {

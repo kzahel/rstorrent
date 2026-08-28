@@ -1140,6 +1140,18 @@ function snapshotFor(
           ],
         },
       };
+    case "torrent_media":
+      return {
+        type: "snapshot",
+        view_id: view.view_id,
+        snapshot: {
+          type: "media",
+          torrent_id: TORRENT_ID,
+          state: "available",
+          total_non_padding_files: 1,
+          items: [],
+        },
+      };
     case "torrent_trackers":
       return {
         type: "snapshot",

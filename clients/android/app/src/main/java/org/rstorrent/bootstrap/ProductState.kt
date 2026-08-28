@@ -14,6 +14,8 @@ import org.rstorrent.session.uniffi.FileFieldUpdate
 import org.rstorrent.session.uniffi.FileRowUpdate
 import org.rstorrent.session.uniffi.FileView
 import org.rstorrent.session.uniffi.IndexRange
+import org.rstorrent.session.uniffi.MediaCatalogState
+import org.rstorrent.session.uniffi.MediaItemView
 import org.rstorrent.session.uniffi.PeerView
 import org.rstorrent.session.uniffi.PeerFieldUpdate
 import org.rstorrent.session.uniffi.PeerRowUpdate
@@ -56,6 +58,12 @@ data class TrackerCatalogViewState(
     val trackers: Map<String, TrackerView>,
 )
 
+data class MediaCatalogViewState(
+    val state: MediaCatalogState,
+    val totalNonPaddingFiles: UInt,
+    val items: Map<String, MediaItemView>,
+)
+
 data class SwarmViewState(
     val state: SwarmCatalogState,
     val capturedMillis: String,
@@ -86,6 +94,7 @@ data class ProductState(
         SettingsDraftState(),
     val pieces: Map<String, PieceActivityState> = emptyMap(),
     val files: Map<String, FileCatalogViewState> = emptyMap(),
+    val media: Map<String, MediaCatalogViewState> = emptyMap(),
     val trackers: Map<String, TrackerCatalogViewState> = emptyMap(),
     val peers: Map<String, Map<String, PeerView>> = emptyMap(),
     val swarms: Map<String, SwarmViewState> = emptyMap(),
@@ -261,6 +270,19 @@ internal object ProductStateReducer {
                                         snapshot.filesystemContentBase,
                                         snapshot.page,
                                         snapshot.files.associateBy(FileView::fileId),
+                                    )
+                            ),
+                )
+            is ViewSnapshot.Media ->
+                state.copy(
+                    media =
+                        state.media +
+                            (
+                                snapshot.torrentId to
+                                    MediaCatalogViewState(
+                                        snapshot.state,
+                                        snapshot.totalNonPaddingFiles,
+                                        snapshot.items.associateBy(MediaItemView::mediaId),
                                     )
                             ),
                 )
@@ -473,6 +495,13 @@ internal object ProductStateReducer {
                     files[update.fileId] = applyFileUpdate(file, update)
                 }
                 state.copy(files = state.files + (patch.torrentId to current.copy(files = files)))
+            }
+            is ViewPatch.Media -> {
+                val current = state.media[patch.torrentId] ?: return state
+                val items = current.items.toMutableMap()
+                patch.removed.forEach(items::remove)
+                patch.upsert.forEach { items[it.mediaId] = it }
+                state.copy(media = state.media + (patch.torrentId to current.copy(items = items)))
             }
             is ViewPatch.Trackers -> {
                 val current = state.trackers[patch.torrentId] ?: return state
