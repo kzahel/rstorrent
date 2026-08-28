@@ -2,7 +2,7 @@
 
 Topic: `storage-throughput-architecture`
 
-Status: Active Tactical
+Status: Completed Tactical
 [`188`](../tactical/188-existing-payload-adoption-and-recheck.md) reuses the
 existing complete checker, independent hash execution, shared storage permits,
 and session-wide handle/request ceilings for discovered bytes. It adds no

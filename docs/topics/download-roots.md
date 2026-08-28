@@ -2,7 +2,7 @@
 
 Topic: `download-roots`
 
-Status: Active Tactical
+Status: Completed Tactical
 [`188`](../tactical/188-existing-payload-adoption-and-recheck.md) replaces a
 fresh-row destination collision with automatic metainfo-exact discovery and
 the common complete checker. Discovered bytes remain unverified until hashing

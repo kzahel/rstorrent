@@ -2,7 +2,7 @@
 
 Topic: `application-control`
 
-Status: Active Tactical
+Status: Completed Tactical
 [`188`](../tactical/188-existing-payload-adoption-and-recheck.md) makes
 existing-payload discovery a transparent consequence of starting a verified
 torrent without durable storage ownership. It adds no command, setting, path

@@ -633,19 +633,18 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Current campaign action: explicit user direction on 2026-08-28 temporarily
-yields durable High file-priority Tactical `176` to existing-payload adoption
-and recheck Tactical
-[`188`](../tactical/188-existing-payload-adoption-and-recheck.md) as the sole
-**Now**. The active slice follows the pinned libtorrent default when metainfo
-storage exists without resume authority: discover exact torrent artifacts,
-commit ownership together with pending verification, and enter the common
-complete checker. RSTorrent deliberately retains stricter expected-path
-symlink rejection, its staging/part/publication generations, and no product
-verification-bypass flag. Managed removal becomes metainfo-exact across path
-and platform storage so adopting a torrent never grants authority over
-unrelated descendants. Tactical `176` retains only its unchanged macOS-only
-iOS simulator/archive compile gate.
+Current campaign action: existing-payload adoption and recheck Tactical
+[`188`](../tactical/188-existing-payload-adoption-and-recheck.md) is complete.
+It follows the pinned libtorrent default when metainfo storage exists without
+resume authority: discover exact torrent artifacts, commit ownership together
+with pending verification, and enter the common complete checker. RSTorrent
+deliberately retains stricter expected-path symlink rejection, its
+staging/part/publication generations, and no product verification-bypass flag.
+Managed removal is now metainfo-exact across path and platform storage, so
+adopting a torrent never grants authority over unrelated descendants. Its
+controlled oracle, repository, Android, package, and local-service evidence
+passes. Tactical `176` resumes as the sole **Now** with only its unchanged
+macOS-only iOS simulator/archive compile gate.
 Completed Tactical
 [`182`](../tactical/182-bounded-outbound-attempt-and-metadata-turnover.md)
 makes 15 seconds one total preferred-uTP/TCP/MSE/plain-handshake attempt

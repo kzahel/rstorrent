@@ -80,7 +80,7 @@ that scope and its cleanup or compatibility rules explicitly.
 ## Current Tacticals
 
 - [`188-existing-payload-adoption-and-recheck.md`](188-existing-payload-adoption-and-recheck.md):
-  active; replaces fresh-row destination collisions with automatic
+  complete; replaces fresh-row destination collisions with automatic
   metainfo-exact discovery and the common complete checker, atomically fences
   discovered ownership behind a pending verification generation, and makes
   path/SAF removal preserve unrelated content.

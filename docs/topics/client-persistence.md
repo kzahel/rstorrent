@@ -2,7 +2,7 @@
 
 Topic: `client-persistence`
 
-Status: Active Tactical
+Status: Completed Tactical
 [`188`](../tactical/188-existing-payload-adoption-and-recheck.md) changes no
 schema. It adds one transaction that converts unowned discovered storage into
 the exact staging/published state while advancing `verification_requested`,

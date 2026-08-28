@@ -2,12 +2,12 @@
 
 Topic: `android-saf-storage`
 
-Status: Active Tactical
+Status: Completed Tactical
 [`188`](../tactical/188-existing-payload-adoption-and-recheck.md) applies the
 shared no-resume discovery/full-check decision to local platform-capability
 storage and replaces recursive managed cleanup with an exact payload/empty-
 parent plan. Android SAF generated boundaries, provider behavior, builds,
-cancellation, and resource bounds are completion gates. Tactical
+cancellation, and resource bounds passed. Tactical
 [`067`](../tactical/067-dynamic-platform-file-acquisition.md) implements
 dynamic capability acquisition, one 40-descriptor session pool shared by path
 and SAF storage, live Normal/Skip platform support, lazy payload/part

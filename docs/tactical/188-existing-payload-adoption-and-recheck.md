@@ -1,8 +1,11 @@
 # Tactical 188: Existing Payload Adoption And Recheck
 
-Status: **Active.** Explicit user direction on 2026-08-28 temporarily yields
-durable High file-priority Tactical `176` to this storage-correctness slice.
-Tactical `176` retains only its unchanged macOS-hosted iOS compile gate.
+Status: **Complete on 2026-08-28.** Existing path and platform-capability
+payloads now enter the common full checker, adopted ownership is crash-fenced,
+and managed removal preserves unrelated content. All declared Linux-hosted,
+web, Android, controlled-oracle, package, and local-service gates pass.
+Tactical `176` resumes as the sole **Now** with only its unchanged
+macOS-hosted iOS compile gate.
 
 Topics: `download-roots`, `client-persistence`, `application-control`,
 `android-saf-storage`, `storage-throughput-architecture`,
@@ -45,6 +48,39 @@ never recursively delete an adopted publication root.
 No catalog schema change, compatibility reader, migration, profile reset,
 thumbnail work, media-classification change, or new user setting is part of
 this tactical.
+
+## Completion Result
+
+The implementation landed in five logical commits:
+
+- `fb7783f` accepted this tactical, recorded the exact libtorrent and
+  JSTorrent source-first result, and temporarily selected it as **Now**;
+- `a735441` added bounded artifact discovery, atomically adopted discovered
+  ownership with a pending verification generation, and routed it through the
+  common full checker;
+- `9f81b23` made path, Android SAF, and iOS platform-capability cleanup
+  metainfo-exact while preserving unrelated descendants and oversized
+  suffixes;
+- `f08d7e7` completed the workspace cleanup lint exposed by the broader
+  validation gate; and
+- `905fda9` extended the controlled pinned-libtorrent harness to exercise the
+  actual no-state re-add path for single-file, one-entry-tree, and cross-file
+  piece layouts.
+
+Fresh adds still use hidden staging and atomic publication without an
+unnecessary hash pass. A fresh row that observes an exact final, staging, or
+validated v1/hybrid part artifact instead commits its discovered ownership
+and a pending verification generation in one SQLite transaction. The common
+checker alone establishes piece authority; matching pieces survive and only
+missing, short, or corrupt pieces become download work.
+
+This matches libtorrent 2.0.13's default add-without-resume outcome: existing
+metainfo-listed data triggers a full check, good pieces survive, and oversized
+suffixes are not truncated. RSTorrent intentionally differs by exposing no
+verification-bypass flag, rejecting expected-path symlinks and special
+objects, treating simultaneous final and staging generations as ambiguous,
+and assigning a new opaque catalog owner on re-add while retaining the same
+protocol identity.
 
 ## Stopping Condition
 
@@ -286,7 +322,41 @@ pending.
   existing Big Buck Bunny destination entering Checking and converging without
   payload deletion or an `output already exists` repair
 
+## Recorded Evidence
+
+The completed slice passed:
+
+- focused engine, session-store, application, fake-platform, cleanup, crash-
+  ordering, oversized-file, ambiguity, and hostile-path tests;
+- `cargo fmt --all -- --check`, `cargo clippy --workspace -- -D warnings`, and
+  `cargo test --workspace`;
+- `npm run typecheck --prefix clients/web` and
+  `npm run test --prefix clients/web`;
+- `clients/android/build.sh`, including regenerated Kotlin UniFFI, both
+  maintained release ABIs, debug APK assembly, and unit tests, followed by
+  `lintDebug`, `testDebugUnitTest`, and `assembleDebugAndroidTest`;
+- `cargo test -p rstorrent-android`, `cargo test -p rstorrent-ios`, and
+  `cargo check -p rstorrent-session -p rstorrent-android -p rstorrent-ios`.
+  This Linux host cannot execute Swift/Xcode compilation, and this tactical
+  makes no new iOS presentation or physical-device claim;
+- the retained controlled pinned-libtorrent topology comparison for
+  single-file and one-entry-tree layouts, each retaining two of three pieces
+  and repairing one 32 KiB piece, plus a cross-file layout retaining one of
+  three pieces and repairing two 32 KiB pieces. In both engines the 24-byte
+  oversized suffix survived where applicable; and
+- `scripts/build-headless-package.sh` plus independent package validation of
+  20 files and 76,575,942 extracted bytes. The installed binary exactly
+  matched the release build, the enabled service restarted cleanly, and both
+  direct-LAN and Tailscale health endpoints passed.
+
+The local-service acceptance used the user's preserved Big Buck Bunny tree.
+The pre-fix quarantined catalog row was removed with `Keep data`; its locally
+retained metainfo was uploaded without a public metadata fetch. The new opaque
+owner adopted the existing final namespace, completed verification generation
+1/1 across all 1,055 pieces, and reached `complete`/`published` with no error.
+SHA-256 hashes of the subtitle, MP4, and poster were identical before and
+after the re-add. No payload was deleted or restored for this observation.
+
 Public swarm traffic, payload restoration beyond the user's re-add action,
 release publication, schema migration, and physical-device mutation are not
 implicitly authorized by this tactical.
-
