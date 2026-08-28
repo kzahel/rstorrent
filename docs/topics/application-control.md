@@ -496,9 +496,12 @@ ephemeral mode.
 [`../tactical/018-inspectable-metadata-acquisition.md`](../tactical/018-inspectable-metadata-acquisition.md)
 adds a coherent read-only engine diagnostic snapshot through `DownloadControl`.
 It contains the bounded peer registry and active/recent BEP 9 attempts needed
-by headless investigations. It is not yet projected into the application
-snapshot, generated web/Kotlin contracts, or product UI; that later projection
-should select stable fields rather than expose engine internals accidentally.
+by headless investigations. Completed Tactical
+[`187`](../tactical/187-compact-metadata-acquisition-progress.md) deliberately
+does not expose that diagnostic structure. Instead, a separate selected-only
+application view projects stable current metadata scalars and a bounded packed
+block map, plus a coarse v2/hybrid integrity-preparation state. No endpoint,
+attempt history, metadata payload, or application command was added.
 
 The implemented subscription and client direction is recorded in
 [`client-surfaces.md`](client-surfaces.md) and

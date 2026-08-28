@@ -843,6 +843,12 @@ remote exposure, and Android streaming remain independent product decisions.
   unrelated detail projections. iOS still has no Speed presentation or
   interest, although its maintained reducer accepts both independent contract
   shapes exactly.
+- Completed Tactical `187` adds one selected `torrent_preparation` contract.
+  The shared React General view requests it only while visible and presents a
+  bounded BEP 9 Canvas plus a separate coarse v2/hybrid hash-preparation card.
+  Android and iOS explicitly reduce the generated optional record so their
+  boundaries remain exhaustive, but add no Compose or SwiftUI presentation;
+  native presentation remains a separate product decision.
 - Diagnostics currently cover application lifecycle, discovery exhaustion,
   network restriction, tracker policy rejection, metadata, storage, piece,
   integrity, and terminal MSE handshake edges, including role, captured policy,

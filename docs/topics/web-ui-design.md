@@ -26,8 +26,15 @@ touch horizontal scrolling across every shared table.
 Tactical `043` adds the responsive live Trackers table, local deadline
 countdowns, and a permanent tracker-recovery scenario. Tacticals `044`--`045`
 add the global Disk pipeline and selected-torrent bounded Canvas Pieces
-overview, including responsive and large-torrent fixtures. Tactical `047` adds
-the global Settings sheet and versioned Compact, Standard, and Spacious
+overview, including responsive and large-torrent fixtures. Completed Tactical
+[`187`](../tactical/187-compact-metadata-acquisition-progress.md) adds a
+smaller selected-only General card using the same bounded-Canvas principle for
+BEP 9 metadata blocks: native progress semantics, a text legend, and scalar
+peer/request/retry facts without one DOM element per block. V1, v2, and hybrid
+share that map; a separate v2/hybrid integrity card reports active or waiting
+and counts without inventing percent. Wide and phone browser assertions plus
+visual inspection cover the permanent stalled-metadata demo. Tactical `047`
+adds the global Settings sheet and versioned Compact, Standard, and Spacious
 interface sizes, makes readable Standard the default, and keeps virtual-table
 geometry coherent with presentation sizing. Tactical `048` replaces the
 legacy Tauri entry with the same React inspection application using

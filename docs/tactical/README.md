@@ -80,9 +80,9 @@ that scope and its cleanup or compatibility rules explicitly.
 ## Current Tacticals
 
 - [`187-compact-metadata-acquisition-progress.md`](187-compact-metadata-acquisition-progress.md):
-  accepted and in progress as the sole **Now**; adds one selected-torrent,
-  packed BEP 9 block map for v1/v2/hybrid metadata plus a separate coarse BEP
-  52 integrity-preparation phase and accessible React General presentation.
+  complete; adds one selected-torrent packed BEP 9 block map for v1/v2/hybrid
+  metadata plus a separate coarse BEP 52 integrity-preparation phase,
+  generated first-party reducers, and accessible React General presentation.
 - [`186-current-rates-and-incremental-speed-history.md`](186-current-rates-and-incremental-speed-history.md):
   complete; separates tiny latest-value current rates from interest-selected
   graph history, makes completed graph buckets exact cursor-validated

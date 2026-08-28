@@ -33,6 +33,13 @@ Merkle base layers, durable incomplete sparse-tree state, broader historical
 hybrid layouts, and public-swarm reliability remain absent.
 HTTPS now defaults to authenticated desktop/Android platform trust; one
 explicit hidden compatibility policy remains encrypted but unauthenticated.
+Completed Tactical
+[`187`](../tactical/187-compact-metadata-acquisition-progress.md) changes no
+wire behavior or conformance claim. It observes the same torrent-owned BEP 9
+block state for v1, pure-v2, and hybrid magnets through a selected-only packed
+product view capped at 480 raw bytes. Subsequent pure-v2/hybrid BEP 52 hash
+preparation is separately observable only as acquiring or waiting plus bounded
+range/request counts; those counts are not claimed as linear completion.
 Tactical [`111`](../tactical/111-mse-peer-stream-encryption.md)'s implemented
 slice additionally supports the de facto MSE/PE protocol over TCP in both
 directions under a bounded four-value session policy. Its claim is peer

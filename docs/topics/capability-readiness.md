@@ -255,6 +255,17 @@ hybrid metadata into an accessible React General card. Pure-v2 and hybrid BEP
 without an invented percentage. Tactical `187` is the sole **Now**; Tactical
 `176` retains only its unchanged macOS-hosted iOS compile gate.
 
+Tactical `187` is complete. The engine now emits current generation-fenced
+BEP 9 state as four two-bit blocks per byte, and one interest-selected
+`torrent_preparation` view carries at most 480 raw/640 base64 map bytes plus
+bounded scalars. General renders one accessible Canvas and text legend for v1,
+v2, and hybrid metadata; v2/hybrid Merkle preparation remains a separate
+active/waiting record without an invented percentage. Generated web and
+UniFFI contracts, semantic validation, all first-party reducers, wide/phone
+browser evidence, Android dual-ABI/APK/unit gates, Linux-available Apple
+boundary checks, and full workspace/web gates pass. Tactical `176` resumes as
+the sole **Now** with only its unchanged macOS-hosted iOS compile gate.
+
 The updater tactical's client, production route, five-target signed hosted
 rehearsal, public `0.1.0`, `0.1.1`, and `0.1.2` releases, installed macOS arm64
 launch smoke, and exact macOS arm64 and Linux arm64 `0.1.0`-to-`0.1.1` updates
@@ -750,15 +761,10 @@ exactly.
 
 ### Now
 
-- Complete **Tactical `187`** end to end: compact selected-torrent BEP 9
-  metadata progress for v1/v2/hybrid plus separate truthful v2/hybrid hash
-  preparation, generated boundaries, React General presentation, and
-  proportional platform evidence.
-
-### Next
-
 - Complete **Tactical `176`**'s remaining macOS-hosted iOS simulator/archive
   compile gate for durable High/Normal/Skip file priority.
+
+### Next
 
 - Resume **Tactical `158`** and close the clean Windows and Linux x86_64
   signed replacement/relaunch evidence plus Windows firewall-consent

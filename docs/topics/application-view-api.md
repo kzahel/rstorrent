@@ -831,6 +831,27 @@ current-rate consumer receives no graph state.
 Unsupported views must report unsupported or unavailable explicitly rather
 than fabricate empty data.
 
+## Selected Torrent Preparation
+
+Completed Tactical
+[`187`](../tactical/187-compact-metadata-acquisition-progress.md) adds
+`torrent_preparation` as an interest-selected latest-value projection separate
+from Library and selected Summary rows. Its generation-fenced optional value
+contains either current BEP 9 acquisition state or coarse BEP 52 integrity
+preparation. Metadata uses a canonical padded-base64 two-bit map with exact
+block count, size, received-byte, padding, and reserved-state validation. The
+existing 30 MiB/16 KiB geometry caps it at 1,920 blocks, 480 raw bytes, and 640
+base64 characters. Integrity preparation carries only acquiring/waiting,
+needed range count, and active requests; it defines no percent.
+
+General alone requests this view. Existing view-set leases, queue accounting,
+cursor acknowledgement, coalescing, reset snapshots, and reconnect recovery
+remain the only delivery mechanisms. Metadata verification, terminal task
+cleanup, alias removal, or generation replacement clears or fences the value.
+Android and iOS reduce the generated optional state without adding native
+presentation; React decodes it only after the shared semantic validator has
+proved the packed geometry.
+
 ## Implemented Foundation
 
 Tactical `033` establishes these concrete v1 choices:

@@ -1,8 +1,9 @@
 # Tactical 187: Compact Metadata Acquisition Progress
 
-Status: **Accepted; implementation in progress on 2026-08-28.** Explicit user
-direction temporarily yields Tactical `176`'s unavailable macOS-only compile
-gate to this bounded end-to-end product slice.
+Status: **Complete on 2026-08-28.** The compact selected projection, React
+General presentation, every Linux-available first-party boundary, and the
+declared repository gates pass. Tactical `176` resumes as the sole **Now**
+with its unchanged macOS-only compile gate.
 
 Topics:
 [`application-control`](../topics/application-control.md),
@@ -31,6 +32,35 @@ Pure-v2 and hybrid torrents may subsequently need BEP 52 piece or leaf hashes.
 That work is a separate integrity-preparation phase with a truthful coarse
 active/waiting state and counts, not a percentage derived from unrelated hash
 ranges. The ordinary torrent summary must not call that time payload transfer.
+
+## Completion Result
+
+The implementation landed in five logical commits:
+
+- `ce40a5e` accepted this tactical and temporarily selected it as **Now**;
+- `b8f4ea8` added pure packed metadata observations plus deduplicated,
+  generation-tagged metadata and integrity-preparation engine activity;
+- `cc20211` added the selected `torrent_preparation` view, generated
+  TypeScript/schema/UniFFI boundaries, semantic web validation, and explicit
+  web, Android, and iOS reducers;
+- `66d813f` added the accessible General cards, exact Canvas block rendering,
+  responsive demo/browser evidence, and the mobile hidden-drawer repair; and
+- `e54b487` made the pre-existing App test storage fixture explicit under Node
+  25 before the complete web suite passed.
+
+`TorrentMetadataDownload` remains the sole owner of current BEP 9 block
+state. The engine emits bounded observations rather than metadata bytes or
+per-peer histories. `ViewHub` generation-fences and retains that state only
+for the selected projection. JSON carries at most 640 canonical base64
+characters for the 480-byte maximum packed map. Leaving General removes the
+view, and metadata verification clears the card instead of retaining a false
+100% state.
+
+Pure-v1, pure-v2, and hybrid magnets all use this same BEP 9 map. Only v2 and
+hybrid content can then expose the separate BEP 52 integrity-preparation
+record. It reports acquiring versus waiting plus bounded range/request
+counts; the contract, React component, and tests deliberately provide no
+percentage or hash bitmap.
 
 ## Stable Scenarios
 
@@ -236,6 +266,35 @@ not a stopping gate. Existing pinned-libtorrent BEP 9, pure-v2, and hybrid
 interop tests are included proportionally if covered by the workspace suite.
 No visible client, emulator, physical device, public network, package, or
 release is launched without separate direction.
+
+## Recorded Evidence
+
+The completed slice passed:
+
+- focused protocol, engine, and application projection tests for compact
+  packing, maximum geometry, reset, deduplication, generation fencing,
+  metadata completion, and coarse integrity transitions;
+- `cargo fmt --all -- --check`, `cargo clippy --workspace -- -D warnings`, and
+  `cargo test --workspace`, including existing controlled pure-v2 and hybrid
+  runtime coverage;
+- `npm run generate --prefix clients/web` with no generated drift,
+  `npm run typecheck --prefix clients/web`, all 326 web tests (324 passed and
+  two intentional skips), and the production/CSP build;
+- the headless Chrome case `metadata preparation stays compact and accessible
+  across widths`, including one Canvas, fewer than 1,500 DOM elements, no
+  horizontal overflow, and visually inspected 1,180x760 and 390x844 General
+  captures;
+- `clients/android/build.sh`: both maintained release ABIs, generated Kotlin
+  bindings, debug APK assembly, and Android unit tests; and
+- `cargo build -p rstorrent-ios --release` plus generated Swift inspection
+  confirming the optional `TorrentPreparationView` snapshot and patch enum
+  cases consumed by `IOSPresentationRepository`.
+
+This Linux host cannot execute Xcode, Swift tests, simulator, or archive
+builds. That is not a Tactical `187` stopping gate because native presentation
+is a non-goal and the generated Swift boundary was inspected; Tactical `176`
+continues to own its independent macOS-only compile requirement. The temporary
+browser captures and failed-run traces were removed after inspection.
 
 ## Non-Goals
 
