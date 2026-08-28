@@ -249,7 +249,7 @@ jobs:
             echo "- Workflow: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             echo "- Commit: \`${GITHUB_SHA}\`"
             echo '- Native x86_64 and ARM64 package builds and version checks passed.'
-            echo '- Exact package/manifest/signature hashes are attached as `SHA256SUMS`.'
+            echo "- Exact package/manifest/signature hashes are attached as \`SHA256SUMS\`."
             echo '- Physical Chromebook acceptance is recorded separately and is not implied by CI.'
           } > "$RUNNER_TEMP/crostini-release-body.md"
           gh release create "$GITHUB_REF_NAME" \
