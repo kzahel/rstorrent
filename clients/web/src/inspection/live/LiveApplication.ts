@@ -17,6 +17,7 @@ import {
   type StorageSettingsSnapshot,
   type SwarmPeerView,
   type TorrentState,
+  type TorrentPreparationView,
   type TorrentView,
   type TrackerView,
   type ViewSnapshot,
@@ -47,6 +48,7 @@ import type {
   PieceMapSet,
   SpeedInspectionView,
   TorrentCheckingProgress,
+  TorrentPreparation,
   TorrentRow,
   TrackerRow,
   TrackerSet,
@@ -57,6 +59,7 @@ import { mapPieceActivity, type MappedPieceActivity } from "./pieces";
 
 const LIBRARY_VIEW_ID = "library";
 const SUMMARY_VIEW_ID = "torrent-summary";
+const PREPARATION_VIEW_ID = "torrent-preparation";
 const PEERS_VIEW_ID = "torrent-peers";
 const SWARM_VIEW_ID = "torrent-swarm";
 const FILES_VIEW_ID = "torrent-files";
@@ -594,6 +597,18 @@ export class LiveApplication implements InspectionApplication {
       });
     }
     if (
+      views.detail === "general" &&
+      views.torrentId !== null &&
+      capabilities.has("torrent_preparation")
+    ) {
+      specs.push({
+        type: "torrent_preparation",
+        view_id: PREPARATION_VIEW_ID,
+        torrent_id: views.torrentId,
+        delivery: { min_interval_millis: 100 },
+      });
+    }
+    if (
       views.detail === "peers" &&
       views.torrentId !== null &&
       capabilities.has("torrent_peers")
@@ -811,6 +826,11 @@ function mapViewState(
 ): InspectionSnapshot {
   const library = projection(state, LIBRARY_VIEW_ID, "torrent_list");
   const summary = projection(state, SUMMARY_VIEW_ID, "torrent");
+  const preparation = projection(
+    state,
+    PREPARATION_VIEW_ID,
+    "torrent_preparation",
+  );
   const peers = projection(state, PEERS_VIEW_ID, "peers");
   const swarm = projection(state, SWARM_VIEW_ID, "swarm");
   const files = projection(state, FILES_VIEW_ID, "files");
@@ -832,7 +852,13 @@ function mapViewState(
     }
   }
   if (summary?.torrent !== null && summary?.torrent !== undefined) {
-    torrentRows.set(summary.torrent.torrent_id, mapTorrent(summary.torrent));
+    const torrent = mapTorrent(summary.torrent);
+    torrentRows.set(
+      summary.torrent.torrent_id,
+      preparation?.torrent_id === summary.torrent.torrent_id
+        ? { ...torrent, preparation: mapPreparation(preparation.preparation) }
+        : torrent,
+    );
   }
   const peerSet = peers === null ? null : mapPeers(peers.peers);
   const logs = diagnostics?.events.map(mapLog) ?? [];
@@ -1183,6 +1209,43 @@ function mapTorrent(torrent: TorrentView): TorrentRow {
     protocolIdentities: torrent.protocol_identities,
     error: torrent.error ?? null,
     progressReason: torrent.progress.reason.replaceAll("_", " "),
+  };
+}
+
+function mapPreparation(
+  preparation: TorrentPreparationView | null,
+): TorrentPreparation | null {
+  if (preparation === null) return null;
+  const metadata = preparation.metadata ?? null;
+  return {
+    generation: preparation.generation,
+    metadata:
+      metadata === null
+        ? null
+        : {
+            phase: metadata.phase,
+            totalSizeBytes:
+              metadata.total_size_bytes === undefined ||
+              metadata.total_size_bytes === null
+                ? null
+                : safeNumber(metadata.total_size_bytes),
+            receivedBytes: safeNumber(metadata.received_bytes),
+            blockCount: metadata.block_count,
+            blockStates: Uint8Array.from(atob(metadata.block_states), (byte) =>
+              byte.charCodeAt(0),
+            ),
+            activePeers: metadata.active_peers,
+            requestsInFlight: metadata.requests_in_flight,
+            hashRetries: metadata.hash_retries,
+          },
+    integrity:
+      preparation.integrity === undefined || preparation.integrity === null
+        ? null
+        : {
+            phase: preparation.integrity.phase,
+            neededHashRanges: preparation.integrity.needed_hash_ranges,
+            activeRequests: preparation.integrity.active_requests,
+          },
   };
 }
 

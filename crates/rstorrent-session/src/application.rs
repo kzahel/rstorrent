@@ -5073,6 +5073,28 @@ fn piece_diagnostic_context(
 
 impl DownloadActivitySink for ViewActivitySink {
     fn record(&self, event: DownloadActivityEvent) {
+        if let DownloadActivityEvent::MetadataAcquisitionProgress(progress) = &event {
+            let _ = self.views.record_metadata_preparation(
+                &self.torrent_id,
+                self.eta_generation,
+                progress,
+            );
+            return;
+        }
+        if matches!(event, DownloadActivityEvent::MetadataAcquisitionFinished) {
+            let _ = self
+                .views
+                .finish_metadata_preparation(&self.torrent_id, self.eta_generation);
+            return;
+        }
+        if let DownloadActivityEvent::IntegrityPreparation(progress) = &event {
+            let _ = self.views.record_integrity_preparation(
+                &self.torrent_id,
+                self.eta_generation,
+                *progress,
+            );
+            return;
+        }
         if let DownloadActivityEvent::PathPublicationStage(stage) = &event {
             if self.publication_delay_stage == Some(*stage) && !self.publication_delay.is_zero() {
                 eprintln!("publication_gate={}", publication_stage_name(*stage));
@@ -5282,7 +5304,9 @@ impl ViewActivitySink {
         match event {
             DownloadActivityEvent::MetadataAcquisitionProgress(_)
             | DownloadActivityEvent::MetadataAcquisitionFinished
-            | DownloadActivityEvent::IntegrityPreparation(_) => {}
+            | DownloadActivityEvent::IntegrityPreparation(_) => {
+                unreachable!("preparation projections are handled before diagnostics")
+            }
             DownloadActivityEvent::MetadataVerified {
                 total_length,
                 piece_length,

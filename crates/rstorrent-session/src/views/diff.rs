@@ -69,6 +69,18 @@ pub(super) fn patch_for(
             let next = current.get(torrent_id).map(|model| &model.view);
             selected_torrent_patch(old, next)
         }
+        (ViewSelector::Torrent { torrent_id }, ViewProjection::Preparation) => {
+            let old = previous
+                .get(torrent_id)
+                .and_then(|model| model.preparation.as_ref());
+            let next = current
+                .get(torrent_id)
+                .and_then(|model| model.preparation.as_ref());
+            (old != next).then(|| ViewPatch::TorrentPreparation {
+                torrent_id: torrent_id.clone(),
+                preparation: next.cloned(),
+            })
+        }
         (ViewSelector::Torrent { torrent_id }, ViewProjection::PieceActivity) => {
             let old = previous.get(torrent_id);
             let next = current.get(torrent_id);
@@ -159,6 +171,7 @@ pub(super) fn patch_for(
         (
             ViewSelector::TorrentList,
             ViewProjection::PieceActivity
+            | ViewProjection::Preparation
             | ViewProjection::Peers
             | ViewProjection::Swarm
             | ViewProjection::Files
@@ -706,6 +719,19 @@ pub(crate) fn coalesce_patch(current: &mut ViewPatch, next: &ViewPatch) -> bool 
                 TorrentViewChange::Update { update: current } => current.merge(update).is_ok(),
             },
         },
+        (
+            ViewPatch::TorrentPreparation {
+                torrent_id,
+                preparation,
+            },
+            ViewPatch::TorrentPreparation {
+                torrent_id: next_id,
+                preparation: next_preparation,
+            },
+        ) if torrent_id == next_id => {
+            *preparation = next_preparation.clone();
+            true
+        }
         (
             ViewPatch::PieceActivity {
                 torrent_id,

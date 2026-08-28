@@ -7,7 +7,8 @@ pub(super) use rstorrent_engine::peer::{
 };
 pub(super) use rstorrent_engine::{
     CheckerPhase, CheckerProgress, DiskCheckpointStage, DiskPieceRuntimeSnapshot, DiskPieceStage,
-    DiskPressure, DiskRuntimeSnapshot, TrackerNextAction, TrackerRuntimeRecordSnapshot,
+    DiskPressure, DiskRuntimeSnapshot, IntegrityPreparationPhase, IntegrityPreparationProgress,
+    MetadataAcquisitionProgress, TrackerNextAction, TrackerRuntimeRecordSnapshot,
     TrackerRuntimeSnapshot, TrackerRuntimeStatus, TrackerSource, TrackerTransport,
 };
 

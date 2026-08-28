@@ -17,8 +17,8 @@ use tokio_util::sync::CancellationToken;
 
 use rstorrent_engine::peer::PeerRegistrySnapshot;
 use rstorrent_engine::{
-    CheckerProgress, DiskPieceRuntimeSnapshot, DiskRuntimeSnapshot, PeerConnectionObservation,
-    TrackerRuntimeSnapshot,
+    CheckerProgress, DiskPieceRuntimeSnapshot, DiskRuntimeSnapshot, IntegrityPreparationProgress,
+    MetadataAcquisitionProgress, PeerConnectionObservation, TrackerRuntimeSnapshot,
 };
 
 use crate::control::{ServiceSnapshot, StorageState, TorrentState};
@@ -423,6 +423,7 @@ impl ViewHub {
                 model.view.payload_download_rate_bytes =
                     old.view.payload_download_rate_bytes.clone();
                 model.view.checking = old.view.checking.clone();
+                model.preparation = old.preparation.clone();
                 model.progress_inputs = old.progress_inputs;
                 model.view.progress = assess_progress(torrent, model.progress_inputs);
                 model.view.operational_state = operational_state(torrent, model.progress_inputs);
@@ -757,6 +758,74 @@ impl ViewHub {
             .map_err(|error| SubscriptionError::Internal(error.to_string()))
     }
 
+    pub(crate) fn record_metadata_preparation(
+        &self,
+        torrent_id: &str,
+        generation: Option<u64>,
+        progress: &MetadataAcquisitionProgress,
+    ) -> Result<(), SubscriptionError> {
+        let Some(generation) = generation else {
+            return Ok(());
+        };
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        let previous = hub.torrents.clone();
+        let Some(model) = hub.torrents.get_mut(torrent_id) else {
+            return Ok(());
+        };
+        if !model.apply_metadata_preparation(generation, progress) {
+            return Ok(());
+        }
+        hub.publish_changes(&previous, None, None)
+    }
+
+    pub(crate) fn finish_metadata_preparation(
+        &self,
+        torrent_id: &str,
+        generation: Option<u64>,
+    ) -> Result<(), SubscriptionError> {
+        let Some(generation) = generation else {
+            return Ok(());
+        };
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        let previous = hub.torrents.clone();
+        let Some(model) = hub.torrents.get_mut(torrent_id) else {
+            return Ok(());
+        };
+        if !model.finish_metadata_preparation(generation) {
+            return Ok(());
+        }
+        hub.publish_changes(&previous, None, None)
+    }
+
+    pub(crate) fn record_integrity_preparation(
+        &self,
+        torrent_id: &str,
+        generation: Option<u64>,
+        progress: IntegrityPreparationProgress,
+    ) -> Result<(), SubscriptionError> {
+        let Some(generation) = generation else {
+            return Ok(());
+        };
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        let previous = hub.torrents.clone();
+        let Some(model) = hub.torrents.get_mut(torrent_id) else {
+            return Ok(());
+        };
+        if !model.apply_integrity_preparation(generation, progress) {
+            return Ok(());
+        }
+        hub.publish_changes(&previous, None, None)
+    }
+
     pub(crate) fn reserve_eta_generation(
         &self,
         torrent_id: &str,
@@ -784,18 +853,18 @@ impl ViewHub {
             .inner
             .lock()
             .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        let previous = hub.torrents.clone();
         let Some(model) = hub.torrents.get_mut(torrent_id) else {
             return Ok(());
         };
-        let previous = model.view.clone();
         if !model.eta.activate_generation(generation, now) {
             return Err(SubscriptionError::Internal(format!(
                 "torrent {torrent_id} ETA generation {generation} is stale"
             )));
         }
+        model.reset_preparation();
         model.eta.apply_to_view(&mut model.view);
-        let current = model.view.clone();
-        hub.publish_torrent_view_changes(&[(torrent_id.to_owned(), previous, current)])
+        hub.publish_changes(&previous, None, None)
     }
 
     pub(crate) fn deactivate_eta_generation(
@@ -807,16 +876,16 @@ impl ViewHub {
             .inner
             .lock()
             .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        let previous = hub.torrents.clone();
         let Some(model) = hub.torrents.get_mut(torrent_id) else {
             return Ok(());
         };
-        let previous = model.view.clone();
         if !model.eta.deactivate_generation(generation) {
             return Ok(());
         }
+        model.clear_preparation(generation);
         model.eta.apply_to_view(&mut model.view);
-        let current = model.view.clone();
-        hub.publish_torrent_view_changes(&[(torrent_id.to_owned(), previous, current)])
+        hub.publish_changes(&previous, None, None)
     }
 
     pub(crate) fn record_eta_tick(&self, now: Instant) -> Result<(), SubscriptionError> {
@@ -1321,6 +1390,15 @@ impl HubState {
                         .map(|torrent| torrent.view.clone()),
                 }
             }
+            (ViewSelector::Torrent { torrent_id }, ViewProjection::Preparation) => {
+                ViewSnapshot::TorrentPreparation {
+                    torrent_id: torrent_id.clone(),
+                    preparation: self
+                        .torrents
+                        .get(torrent_id)
+                        .and_then(|torrent| torrent.preparation.clone()),
+                }
+            }
             (ViewSelector::Torrent { torrent_id }, ViewProjection::PieceActivity) => {
                 let torrent = self.torrents.get(torrent_id);
                 ViewSnapshot::PieceActivity {
@@ -1452,6 +1530,7 @@ impl HubState {
             (
                 ViewSelector::TorrentList,
                 ViewProjection::PieceActivity
+                | ViewProjection::Preparation
                 | ViewProjection::Dht
                 | ViewProjection::CurrentRates
                 | ViewProjection::SpeedHistory

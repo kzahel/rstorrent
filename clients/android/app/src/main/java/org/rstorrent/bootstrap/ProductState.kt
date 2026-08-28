@@ -29,6 +29,7 @@ import org.rstorrent.session.uniffi.TrackerView
 import org.rstorrent.session.uniffi.TorrentView
 import org.rstorrent.session.uniffi.TorrentFieldUpdate
 import org.rstorrent.session.uniffi.TorrentRowUpdate
+import org.rstorrent.session.uniffi.TorrentPreparationView
 import org.rstorrent.session.uniffi.TorrentViewChange
 import org.rstorrent.session.uniffi.ViewPatch
 import org.rstorrent.session.uniffi.ViewSnapshot
@@ -76,6 +77,7 @@ data class ProductState(
     val preventSleepDuringActiveDownloads: Boolean = true,
     val selectedTorrent: String? = null,
     val torrents: Map<String, TorrentView> = emptyMap(),
+    val preparations: Map<String, TorrentPreparationView> = emptyMap(),
     val storage: StorageSettingsSnapshot? = null,
     val clientSettings: ClientSettingsRuntimeView? = null,
     internal val clientSettingsDraft: SettingsDraftState<ClientSettingsField> =
@@ -201,6 +203,12 @@ internal object ProductStateReducer {
                             ),
                     )
                 }
+            }
+            is ViewSnapshot.TorrentPreparation -> {
+                val preparations = state.preparations.toMutableMap()
+                snapshot.preparation?.let { preparations[snapshot.torrentId] = it }
+                    ?: preparations.remove(snapshot.torrentId)
+                state.copy(preparations = preparations)
             }
             is ViewSnapshot.PieceActivity ->
                 state.copy(
@@ -365,6 +373,12 @@ internal object ProductStateReducer {
                         )
                     }
                 }
+            }
+            is ViewPatch.TorrentPreparation -> {
+                val preparations = state.preparations.toMutableMap()
+                patch.preparation?.let { preparations[patch.torrentId] = it }
+                    ?: preparations.remove(patch.torrentId)
+                state.copy(preparations = preparations)
             }
             is ViewPatch.PieceActivity -> {
                 var verified = state.pieces[patch.torrentId]?.verified.orEmpty()

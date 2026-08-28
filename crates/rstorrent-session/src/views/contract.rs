@@ -148,6 +148,7 @@ impl Default for ApiHello {
             capabilities: vec![
                 "torrent_list".to_owned(),
                 "torrent_summary".to_owned(),
+                "torrent_preparation".to_owned(),
                 "torrent_peers".to_owned(),
                 "torrent_swarm".to_owned(),
                 "torrent_files".to_owned(),
@@ -189,6 +190,13 @@ pub enum ViewSpec {
         delivery: ViewDeliveryPolicy,
     },
     TorrentSummary {
+        view_id: String,
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
+        torrent_id: String,
+        #[serde(default)]
+        delivery: ViewDeliveryPolicy,
+    },
+    TorrentPreparation {
         view_id: String,
         #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
@@ -274,6 +282,7 @@ impl ViewSpec {
         match self {
             Self::TorrentList { view_id, .. }
             | Self::TorrentSummary { view_id, .. }
+            | Self::TorrentPreparation { view_id, .. }
             | Self::PieceActivity { view_id, .. }
             | Self::SessionDisk { view_id, .. }
             | Self::SessionDht { view_id, .. }
@@ -291,6 +300,7 @@ impl ViewSpec {
         match self {
             Self::TorrentList { delivery, .. }
             | Self::TorrentSummary { delivery, .. }
+            | Self::TorrentPreparation { delivery, .. }
             | Self::PieceActivity { delivery, .. }
             | Self::SessionDisk { delivery, .. }
             | Self::SessionDht { delivery, .. }
@@ -317,6 +327,14 @@ impl ViewSpec {
                     torrent_id: torrent_id.clone(),
                 },
                 ViewProjection::Summary,
+                None,
+                None,
+            ),
+            Self::TorrentPreparation { torrent_id, .. } => (
+                ViewSelector::Torrent {
+                    torrent_id: torrent_id.clone(),
+                },
+                ViewProjection::Preparation,
                 None,
                 None,
             ),
@@ -578,6 +596,7 @@ pub enum ViewSelector {
 #[serde(rename_all = "snake_case")]
 pub enum ViewProjection {
     Summary,
+    Preparation,
     PieceActivity,
     Disk,
     Dht,
@@ -733,6 +752,7 @@ pub enum ProgressReason {
     AcquiringMetadata,
     PreparingStorage,
     WaitingForStorage,
+    PreparingIntegrity,
     TransferringPieces,
     VerifyingPieces,
     WaitingForPublication,
@@ -793,6 +813,54 @@ pub struct CheckingProgressView {
     pub oldest_active_job_age_millis: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum MetadataAcquisitionPhaseView {
+    Discovering,
+    Downloading,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct MetadataAcquisitionView {
+    pub phase: MetadataAcquisitionPhaseView,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_size_bytes: Option<String>,
+    pub received_bytes: String,
+    pub block_count: u32,
+    pub block_states: String,
+    pub active_peers: u32,
+    pub requests_in_flight: u32,
+    pub hash_retries: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum IntegrityPreparationPhaseView {
+    Acquiring,
+    WaitingForPeer,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct IntegrityPreparationView {
+    pub phase: IntegrityPreparationPhaseView,
+    pub needed_hash_ranges: u32,
+    pub active_requests: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct TorrentPreparationView {
+    pub generation: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<MetadataAcquisitionView>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub integrity: Option<IntegrityPreparationView>,
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ProgressInputs {
     pub task_active: bool,
@@ -802,6 +870,7 @@ pub struct ProgressInputs {
     pub discovery_active: bool,
     pub discovery_retry_scheduled: bool,
     pub dht_enabled: bool,
+    pub integrity_preparation_active: Option<bool>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -1370,6 +1439,11 @@ pub enum ViewSnapshot {
     Torrent {
         torrent: Option<TorrentView>,
     },
+    TorrentPreparation {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
+        torrent_id: String,
+        preparation: Option<TorrentPreparationView>,
+    },
     PieceActivity {
         #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
@@ -1443,6 +1517,11 @@ pub enum ViewPatch {
     },
     Torrent {
         change: TorrentViewChange,
+    },
+    TorrentPreparation {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
+        torrent_id: String,
+        preparation: Option<TorrentPreparationView>,
     },
     PieceActivity {
         #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]

@@ -76,6 +76,10 @@ impl Default for TorrentEtaModel {
 }
 
 impl TorrentEtaModel {
+    pub(super) fn owns_generation(&self, generation: u64) -> bool {
+        self.reserved_generation == Some(generation) || self.active_generation == Some(generation)
+    }
+
     pub(super) fn reserve_generation(&mut self) -> Result<u64, TorrentEtaError> {
         if self.active_generation.is_some() {
             return Err(TorrentEtaError::GenerationAlreadyOwned);

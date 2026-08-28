@@ -54,6 +54,7 @@ class FakeLiveClient implements ApplicationViewClient {
       capabilities: [
         "torrent_list",
         "torrent_summary",
+        "torrent_preparation",
         "torrent_peers",
         "torrent_swarm",
         "torrent_files",
@@ -384,7 +385,15 @@ describe("LiveApplication", () => {
     pending.metadata_available = false;
     pending.piece_count = 0;
     pending.verified_piece_count = 0;
-    const application = await LiveApplication.open(new FakeLiveClient(pending));
+    const application = await LiveApplication.open(new FakeLiveClient(pending), {
+      initialViews: {
+        library: true,
+        torrentId: TORRENT_ID,
+        detail: "general",
+        logCapture: null,
+        speed: null,
+      },
+    });
     const snapshots: InspectionSnapshot[] = [];
     application.subscribe((update) => {
       if (update.type === "snapshot") snapshots.push(update.snapshot);
@@ -393,6 +402,22 @@ describe("LiveApplication", () => {
     expect(snapshots.at(-1)?.torrents[TORRENT_ID]?.name).toBe(
       "Waiting for metadata",
     );
+    expect(snapshots.at(-1)?.torrents[TORRENT_ID]?.preparation).toMatchObject({
+      generation: "1",
+      metadata: {
+        phase: "downloading",
+        totalSizeBytes: 32_771,
+        receivedBytes: 16_384,
+        blockCount: 3,
+        activePeers: 2,
+        requestsInFlight: 2,
+        hashRetries: 1,
+      },
+      integrity: null,
+    });
+    expect(
+      snapshots.at(-1)?.torrents[TORRENT_ID]?.preparation?.metadata?.blockStates,
+    ).toEqual(Uint8Array.of(0x16));
     await application.close();
   });
 
@@ -853,6 +878,7 @@ describe("LiveApplication", () => {
     expect(client.updates.at(-1)?.views.map((view) => view.type)).toEqual([
       "torrent_list",
       "torrent_summary",
+      "torrent_preparation",
       "session_current_rates",
     ]);
     expect(snapshots.at(-1)?.filesByTorrent).toEqual({});
@@ -1027,6 +1053,31 @@ function snapshotFor(
         type: "snapshot",
         view_id: view.view_id,
         snapshot: { type: "torrent", torrent: torrentView },
+      };
+    case "torrent_preparation":
+      return {
+        type: "snapshot",
+        view_id: view.view_id,
+        snapshot: {
+          type: "torrent_preparation",
+          torrent_id: TORRENT_ID,
+          preparation: torrentView.metadata_available
+            ? null
+            : {
+                generation: String(generation),
+                metadata: {
+                  phase: "downloading",
+                  total_size_bytes: "32771",
+                  received_bytes: "16384",
+                  block_count: 3,
+                  block_states: "Fg==",
+                  active_peers: 2,
+                  requests_in_flight: 2,
+                  hash_retries: 1,
+                },
+                integrity: null,
+              },
+        },
       };
     case "torrent_peers":
       return {

@@ -34,6 +34,7 @@ enum IOSPresentationError: Error, LocalizedError {
 @MainActor
 final class IOSPresentationRepository: ObservableObject {
     @Published private(set) var torrents: [TorrentView] = []
+    @Published private(set) var preparations: [String: TorrentPreparationView] = [:]
     @Published private(set) var storage: StorageSettingsSnapshot?
     @Published private(set) var error: String?
     @Published private(set) var files: [String: [FileView]] = [:]
@@ -190,6 +191,8 @@ final class IOSPresentationRepository: ObservableObject {
         case .torrent(let torrent):
             guard let torrent else { return }
             replaceTorrent(torrent)
+        case .torrentPreparation(let torrentID, let preparation):
+            preparations[torrentID] = preparation
         case .files(let torrentID, _, _, _, let files):
             self.files[torrentID] = files.sorted { $0.fileIndex < $1.fileIndex }
         case .trackers(let torrentID, _, _, let trackers):
@@ -237,6 +240,8 @@ final class IOSPresentationRepository: ObservableObject {
                 }
                 replaceTorrent(try Self.apply(update, to: current))
             }
+        case .torrentPreparation(let torrentID, let preparation):
+            preparations[torrentID] = preparation
         case .files(let torrentID, let upsert, let updates, let removed):
             var values = Dictionary(
                 uniqueKeysWithValues: files[torrentID, default: []].map { ($0.fileId, $0) }

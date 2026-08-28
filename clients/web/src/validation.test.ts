@@ -625,6 +625,32 @@ describe("piece activity validation", () => {
   });
 });
 
+describe("torrent preparation validation", () => {
+  it("accepts compact block state and rejects inconsistent or reserved geometry", () => {
+    const batch = preparationBatch();
+    expect(decodeUpdateBatch(JSON.stringify(batch)).updates).toHaveLength(1);
+
+    const inconsistentBytes = preparationBatch();
+    inconsistentBytes.updates[0]!.snapshot.preparation.metadata.received_bytes =
+      "16385";
+    expect(() => decodeUpdateBatch(JSON.stringify(inconsistentBytes))).toThrow(
+      /byte count disagrees/,
+    );
+
+    const reservedState = preparationBatch();
+    reservedState.updates[0]!.snapshot.preparation.metadata.block_states = "Fw==";
+    expect(() => decodeUpdateBatch(JSON.stringify(reservedState))).toThrow(
+      /reserved value/,
+    );
+
+    const dirtyPadding = preparationBatch();
+    dirtyPadding.updates[0]!.snapshot.preparation.metadata.block_states = "Vg==";
+    expect(() => decodeUpdateBatch(JSON.stringify(dirtyPadding))).toThrow(
+      /padding is not zero/,
+    );
+  });
+});
+
 describe("diagnostic validation", () => {
   it("accepts structured records and rejects invalid hierarchy and typed values", () => {
     const batch = diagnosticBatch();
@@ -639,6 +665,39 @@ describe("diagnostic validation", () => {
     );
   });
 });
+
+function preparationBatch() {
+  return {
+    api_version: 1,
+    view_set_id: "vs_000102030405060708090a0b0c0d0e0f",
+    epoch: "1",
+    base_cursor: "0",
+    cursor: "1",
+    durable_revision: "1",
+    updates: [{
+      type: "snapshot" as const,
+      view_id: "torrent-preparation",
+      snapshot: {
+        type: "torrent_preparation" as const,
+        torrent_id: TEST_TORRENT_ID,
+        preparation: {
+          generation: "3",
+          metadata: {
+            phase: "downloading" as const,
+            total_size_bytes: "32771",
+            received_bytes: "16384",
+            block_count: 3,
+            block_states: "Fg==",
+            active_peers: 2,
+            requests_in_flight: 2,
+            hash_retries: 1,
+          },
+          integrity: null,
+        },
+      },
+    }],
+  };
+}
 
 function diagnosticBatch() {
   return {

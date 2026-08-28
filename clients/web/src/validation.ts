@@ -60,6 +60,9 @@ const MAX_DHT_LOOKUP_CANDIDATES = 256;
 const MAX_DHT_LOOKUP_PEERS = 200;
 const MAX_DIAGNOSTIC_EVENTS = 2_048;
 const MAX_DIAGNOSTIC_PATCH_EVENTS = 128;
+const MAX_METADATA_BYTES = 30 * 1024 * 1024;
+const METADATA_BLOCK_BYTES = 16 * 1024;
+const MAX_METADATA_BLOCKS = MAX_METADATA_BYTES / METADATA_BLOCK_BYTES;
 const MAX_U32 = 4_294_967_295;
 const DECIMAL = /^(0|[1-9][0-9]*)$/;
 const IDENTIFIER = /^[A-Za-z0-9._-]{1,128}$/;
@@ -759,6 +762,118 @@ function validateDhtInspection(value: unknown): void {
   }
 }
 
+function validateTorrentPreparation(value: unknown): void {
+  if (value === null) return;
+  const preparation = asRecord(value, "torrent preparation");
+  decimal(preparation.generation, "preparation generation");
+  const metadata = preparation.metadata;
+  const integrity = preparation.integrity;
+  if ((metadata === undefined || metadata === null) &&
+      (integrity === undefined || integrity === null)) {
+    throw new ContractError("torrent preparation has no active phase");
+  }
+
+  if (metadata !== undefined && metadata !== null) {
+    const current = asRecord(metadata, "metadata acquisition");
+    const phase = oneOf(current.phase, "metadata acquisition phase", [
+      "discovering",
+      "downloading",
+    ]);
+    const receivedBytes = Number(decimal(current.received_bytes, "metadata received bytes"));
+    if (!Number.isSafeInteger(receivedBytes) || receivedBytes > MAX_METADATA_BYTES) {
+      throw new ContractError("metadata received bytes exceed their bound");
+    }
+    const blockCount = boundedInteger(
+      current.block_count,
+      "metadata block count",
+      0,
+      MAX_METADATA_BLOCKS,
+    );
+    boundedInteger(current.active_peers, "active metadata peers", 0, 200);
+    boundedInteger(current.requests_in_flight, "metadata requests in flight", 0, 400);
+    boundedInteger(current.hash_retries, "metadata hash retries", 0, MAX_U32);
+    const encoded = boundedString(current.block_states, "metadata block states", 640);
+    if (encoded.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)) {
+      throw new ContractError("metadata block states are not padded base64");
+    }
+    let binary: string;
+    try {
+      binary = atob(encoded);
+    } catch {
+      throw new ContractError("metadata block states are not valid base64");
+    }
+    if (btoa(binary) !== encoded || binary.length !== Math.ceil(blockCount / 4)) {
+      throw new ContractError("metadata block states have invalid canonical geometry");
+    }
+
+    const totalValue = current.total_size_bytes;
+    if (totalValue === undefined || totalValue === null) {
+      if (
+        phase !== "discovering" ||
+        receivedBytes !== 0 ||
+        blockCount !== 0 ||
+        binary.length !== 0
+      ) {
+        throw new ContractError("unknown metadata geometry contains invented progress");
+      }
+    } else {
+      const totalBytes = Number(decimal(totalValue, "metadata total size"));
+      if (
+        !Number.isSafeInteger(totalBytes) ||
+        totalBytes < 1 ||
+        totalBytes > MAX_METADATA_BYTES ||
+        phase !== "downloading" ||
+        blockCount !== Math.ceil(totalBytes / METADATA_BLOCK_BYTES)
+      ) {
+        throw new ContractError("metadata total and block geometry disagree");
+      }
+      let countedBytes = 0;
+      for (let index = 0; index < binary.length * 4; index += 1) {
+        const byte = binary.charCodeAt(Math.floor(index / 4));
+        const state = (byte >> ((index % 4) * 2)) & 0b11;
+        if (index >= blockCount) {
+          if (state !== 0) {
+            throw new ContractError("metadata block-state padding is not zero");
+          }
+        } else if (state === 0b11) {
+          throw new ContractError("metadata block state uses a reserved value");
+        } else if (state === 0b10) {
+          countedBytes += Math.min(
+            METADATA_BLOCK_BYTES,
+            totalBytes - index * METADATA_BLOCK_BYTES,
+          );
+        }
+      }
+      if (countedBytes !== receivedBytes) {
+        throw new ContractError("metadata byte count disagrees with received blocks");
+      }
+    }
+  }
+
+  if (integrity !== undefined && integrity !== null) {
+    const current = asRecord(integrity, "integrity preparation");
+    const phase = oneOf(current.phase, "integrity preparation phase", [
+      "acquiring",
+      "waiting_for_peer",
+    ]);
+    const needed = boundedInteger(
+      current.needed_hash_ranges,
+      "needed hash ranges",
+      1,
+      MAX_U32,
+    );
+    const active = boundedInteger(
+      current.active_requests,
+      "active hash requests",
+      0,
+      MAX_U32,
+    );
+    if (needed === 0 || (phase === "acquiring" ? active === 0 : active !== 0)) {
+      throw new ContractError("integrity preparation phase and requests disagree");
+    }
+  }
+}
+
 function validateViewSnapshot(value: unknown): void {
   const snapshot = asRecord(value, "view snapshot");
   if (snapshot.type === "torrent_list") {
@@ -774,6 +889,10 @@ function validateViewSnapshot(value: unknown): void {
       break;
     case "torrent":
       if (snapshot.torrent !== null) validateTorrentView(snapshot.torrent);
+      break;
+    case "torrent_preparation":
+      torrentId(snapshot.torrent_id);
+      validateTorrentPreparation(snapshot.preparation);
       break;
     case "piece_activity": {
       torrentId(snapshot.torrent_id);
@@ -947,6 +1066,10 @@ function validateViewPatch(value: unknown): void {
       }
       break;
     }
+    case "torrent_preparation":
+      torrentId(patch.torrent_id);
+      validateTorrentPreparation(patch.preparation);
+      break;
     case "piece_activity": {
       torrentId(patch.torrent_id);
       const pieceCount = boundedInteger(

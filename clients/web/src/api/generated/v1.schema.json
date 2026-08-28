@@ -3704,6 +3704,36 @@
       ],
       "type": "object"
     },
+    "IntegrityPreparationPhaseView": {
+      "enum": [
+        "acquiring",
+        "waiting_for_peer"
+      ],
+      "type": "string"
+    },
+    "IntegrityPreparationView": {
+      "properties": {
+        "active_requests": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "needed_hash_ranges": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "phase": {
+          "$ref": "#/$defs/IntegrityPreparationPhaseView"
+        }
+      },
+      "required": [
+        "phase",
+        "needed_hash_ranges",
+        "active_requests"
+      ],
+      "type": "object"
+    },
     "Ipv6PinholeFailureStage": {
       "enum": [
         "discovery",
@@ -4249,6 +4279,62 @@
         "torrent_id",
         "file_index",
         "outcome"
+      ],
+      "type": "object"
+    },
+    "MetadataAcquisitionPhaseView": {
+      "enum": [
+        "discovering",
+        "downloading"
+      ],
+      "type": "string"
+    },
+    "MetadataAcquisitionView": {
+      "properties": {
+        "active_peers": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "block_count": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "block_states": {
+          "type": "string"
+        },
+        "hash_retries": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "phase": {
+          "$ref": "#/$defs/MetadataAcquisitionPhaseView"
+        },
+        "received_bytes": {
+          "type": "string"
+        },
+        "requests_in_flight": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total_size_bytes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "phase",
+        "received_bytes",
+        "block_count",
+        "block_states",
+        "active_peers",
+        "requests_in_flight",
+        "hash_retries"
       ],
       "type": "object"
     },
@@ -5707,6 +5793,7 @@
         "acquiring_metadata",
         "preparing_storage",
         "waiting_for_storage",
+        "preparing_integrity",
         "transferring_pieces",
         "verifying_pieces",
         "waiting_for_publication",
@@ -6994,6 +7081,37 @@
       ],
       "type": "string"
     },
+    "TorrentPreparationView": {
+      "properties": {
+        "generation": {
+          "type": "string"
+        },
+        "integrity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IntegrityPreparationView"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metadata": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MetadataAcquisitionView"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "generation"
+      ],
+      "type": "object"
+    },
     "TorrentProtocolIdentities": {
       "minProperties": 1,
       "properties": {
@@ -7823,6 +7941,33 @@
         },
         {
           "properties": {
+            "preparation": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TorrentPreparationView"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
+              "type": "string"
+            },
+            "type": {
+              "const": "torrent_preparation",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
             "active_removed": {
               "items": {
                 "type": "string"
@@ -8381,6 +8526,33 @@
         },
         {
           "properties": {
+            "preparation": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TorrentPreparationView"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
+              "type": "string"
+            },
+            "type": {
+              "const": "torrent_preparation",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
             "active": {
               "items": {
                 "$ref": "#/$defs/ActivePiece"
@@ -8686,6 +8858,33 @@
             },
             "type": {
               "const": "torrent_summary",
+              "type": "string"
+            },
+            "view_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "view_id",
+            "torrent_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "delivery": {
+              "$ref": "#/$defs/ViewDeliveryPolicy",
+              "default": {
+                "min_interval_millis": 0
+              }
+            },
+            "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
+              "type": "string"
+            },
+            "type": {
+              "const": "torrent_preparation",
               "type": "string"
             },
             "view_id": {

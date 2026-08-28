@@ -24,27 +24,29 @@ use rstorrent_session::{
     EffectiveListenerSettings, EncryptionPolicy, ErrorCode, ErrorResponse, FileCatalogState,
     FileFieldUpdate, FileIndexRange, FilePriority, FileRowUpdate, FileSelectionIntent,
     FileSelectionView, FileView, HttpsServerAuthenticationPolicy, IndexRange,
-    Ipv6PinholeFailureStage, Ipv6PinholeStatus, ListenerBindFailureReason, ListenerPolicy,
-    ListenerStatus, MagnetExportResult, MagnetExportSource, MediaFileAvailability, MediaUrlOutcome,
-    MediaUrlResponse, OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse, PeerDirection,
-    PeerDisconnectReason, PeerFieldCapabilities, PeerFieldUpdate, PeerFlagView, PeerLifecycle,
-    PeerMseMethodView, PeerRequestPhase, PeerRole, PeerRowUpdate, PeerSourceView,
-    PeerTransportKind, PeerView, PortMappingFailureStage, PortMappingMechanism, PortMappingPolicy,
-    PortMappingStatus, ProgressAction, ProgressAssessment, ProgressDisposition, ProgressPhase,
-    ProgressReason, RemovalDataPolicy, RemovalState, RequestEnvelope, ResetReason,
-    ResponseEnvelope, ResponseOutcome, ServiceSnapshot, SessionCurrentRatesView, SessionUdpStatus,
-    SpeedCurrentRate, SpeedHistoryAppend, SpeedHistoryView, SpeedMetric, SpeedMetricAvailability,
+    IntegrityPreparationPhaseView, IntegrityPreparationView, Ipv6PinholeFailureStage,
+    Ipv6PinholeStatus, ListenerBindFailureReason, ListenerPolicy, ListenerStatus,
+    MagnetExportResult, MagnetExportSource, MediaFileAvailability, MediaUrlOutcome,
+    MediaUrlResponse, MetadataAcquisitionPhaseView, MetadataAcquisitionView, OpenViewSetOptions,
+    OpenViewSetRequest, OpenViewSetResponse, PeerDirection, PeerDisconnectReason,
+    PeerFieldCapabilities, PeerFieldUpdate, PeerFlagView, PeerLifecycle, PeerMseMethodView,
+    PeerRequestPhase, PeerRole, PeerRowUpdate, PeerSourceView, PeerTransportKind, PeerView,
+    PortMappingFailureStage, PortMappingMechanism, PortMappingPolicy, PortMappingStatus,
+    ProgressAction, ProgressAssessment, ProgressDisposition, ProgressPhase, ProgressReason,
+    RemovalDataPolicy, RemovalState, RequestEnvelope, ResetReason, ResponseEnvelope,
+    ResponseOutcome, ServiceSnapshot, SessionCurrentRatesView, SessionUdpStatus, SpeedCurrentRate,
+    SpeedHistoryAppend, SpeedHistoryView, SpeedMetric, SpeedMetricAvailability,
     SpeedPersistenceState, SpeedRange, SpeedSeriesAppend, SpeedSeriesView, StorageRootAvailability,
     StorageRootSnapshot, StorageSettingsSnapshot, StorageState, SubscriptionSpec,
     SwarmCatalogState, SwarmCountsView, SwarmPeerState, SwarmPeerView, TorrentEtaView,
-    TorrentFieldUpdate, TorrentOperationalState, TorrentProtocolIdentities, TorrentRowUpdate,
-    TorrentSettingsPatch, TorrentSnapshot, TorrentState, TorrentTransferLimits, TorrentView,
-    TorrentViewChange, TrackerAnnounceEventView, TrackerCatalogState, TrackerConnectionFamilyView,
-    TrackerNextActionView, TrackerSecurityView, TrackerSourceView, TrackerStatusView,
-    TrackerTransportView, TrackerView, TransferRateLimit, TransportAddressFamily,
-    TransportFamilyRuntimeView, UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy, ViewPatch,
-    ViewProjection, ViewSelector, ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdate,
-    ViewUpdatePayload,
+    TorrentFieldUpdate, TorrentOperationalState, TorrentPreparationView, TorrentProtocolIdentities,
+    TorrentRowUpdate, TorrentSettingsPatch, TorrentSnapshot, TorrentState, TorrentTransferLimits,
+    TorrentView, TorrentViewChange, TrackerAnnounceEventView, TrackerCatalogState,
+    TrackerConnectionFamilyView, TrackerNextActionView, TrackerSecurityView, TrackerSourceView,
+    TrackerStatusView, TrackerTransportView, TrackerView, TransferRateLimit,
+    TransportAddressFamily, TransportFamilyRuntimeView, UpdateBatch, UpdateViewSetRequest,
+    ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector, ViewSetUpdate, ViewSnapshot,
+    ViewSpec, ViewUpdate, ViewUpdatePayload,
 };
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -199,6 +201,11 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<TorrentEtaView>(&mut declarations)?;
     append::<CheckingPhaseView>(&mut declarations)?;
     append::<CheckingProgressView>(&mut declarations)?;
+    append::<MetadataAcquisitionPhaseView>(&mut declarations)?;
+    append::<MetadataAcquisitionView>(&mut declarations)?;
+    append::<IntegrityPreparationPhaseView>(&mut declarations)?;
+    append::<IntegrityPreparationView>(&mut declarations)?;
+    append::<TorrentPreparationView>(&mut declarations)?;
     append::<TorrentOperationalState>(&mut declarations)?;
     append::<TorrentView>(&mut declarations)?;
     append::<TorrentFieldUpdate>(&mut declarations)?;

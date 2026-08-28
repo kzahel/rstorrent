@@ -176,6 +176,29 @@ export interface TorrentCheckingProgress {
   readonly oldestActiveJobAgeMs: number | null;
 }
 
+export interface MetadataAcquisitionProgress {
+  readonly phase: "discovering" | "downloading";
+  readonly totalSizeBytes: number | null;
+  readonly receivedBytes: number;
+  readonly blockCount: number;
+  readonly blockStates: Uint8Array;
+  readonly activePeers: number;
+  readonly requestsInFlight: number;
+  readonly hashRetries: number;
+}
+
+export interface IntegrityPreparationProgress {
+  readonly phase: "acquiring" | "waiting_for_peer";
+  readonly neededHashRanges: number;
+  readonly activeRequests: number;
+}
+
+export interface TorrentPreparation {
+  readonly generation: string;
+  readonly metadata: MetadataAcquisitionProgress | null;
+  readonly integrity: IntegrityPreparationProgress | null;
+}
+
 export interface TorrentRow {
   readonly id: string;
   readonly name: string;
@@ -209,6 +232,7 @@ export interface TorrentRow {
   };
   readonly error: string | null;
   readonly progressReason: string;
+  readonly preparation?: TorrentPreparation | null;
 }
 
 export interface PeerRow {

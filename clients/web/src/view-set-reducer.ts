@@ -137,6 +137,8 @@ function cloneSnapshot(snapshot: ViewSnapshot): ViewSnapshot {
       };
     case "torrent":
       return { ...snapshot };
+    case "torrent_preparation":
+      return structuredClone(snapshot);
     case "piece_activity":
       return {
         ...snapshot,
@@ -229,6 +231,17 @@ function applyPatch(snapshot: ViewSnapshot, patch: ViewPatch): ViewSnapshot {
       return {
         type: "torrent",
         torrent: applyTorrentUpdate(snapshot.torrent, patch.change.update),
+      };
+    }
+    case "torrent_preparation": {
+      if (snapshot.type !== "torrent_preparation") throw new Error("unreachable");
+      if (snapshot.torrent_id !== patch.torrent_id) {
+        throw new ViewSetContinuityError("preparation torrent identity mismatch");
+      }
+      return {
+        type: "torrent_preparation",
+        torrent_id: patch.torrent_id,
+        preparation: structuredClone(patch.preparation),
       };
     }
     case "piece_activity": {

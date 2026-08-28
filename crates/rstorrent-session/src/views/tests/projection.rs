@@ -26,6 +26,154 @@ fn current_torrent(hub: &ViewHub) -> crate::TorrentView {
         .clone()
 }
 
+fn preparation_spec() -> SubscriptionSpec {
+    SubscriptionSpec {
+        selector: ViewSelector::Torrent {
+            torrent_id: TORRENT_ID.to_owned(),
+        },
+        projection: ViewProjection::Preparation,
+        delivery: DeliveryPolicy {
+            min_interval_millis: 0,
+            max_queue_bytes: 4 * 1024,
+        },
+        diagnostics: None,
+        catalog_page: None,
+    }
+}
+
+#[tokio::test]
+async fn preparation_projection_is_compact_generation_fenced_and_separate_from_summary() {
+    let hub = ViewHub::new(&snapshot(0, 4)).expect("hub");
+    let generation = hub.reserve_eta_generation(TORRENT_ID).expect("reserve");
+    hub.activate_eta_generation(TORRENT_ID, generation, Instant::now())
+        .expect("activate");
+    let subscription = hub.subscribe(preparation_spec()).expect("subscribe");
+    assert!(matches!(
+        subscription
+            .next_update()
+            .await
+            .expect("initial preparation")
+            .payload,
+        ViewUpdatePayload::Snapshot {
+            snapshot: ViewSnapshot::TorrentPreparation {
+                preparation: None,
+                ..
+            }
+        }
+    ));
+
+    hub.record_metadata_preparation(
+        TORRENT_ID,
+        Some(generation),
+        &MetadataAcquisitionProgress {
+            total_size: Some(32_771),
+            received_bytes: 16_384,
+            block_count: 3,
+            packed_block_states: vec![0b0001_0110],
+            active_peers: 2,
+            requests_in_flight: 1,
+            hash_failures: 1,
+        },
+    )
+    .expect("metadata progress");
+    let metadata = subscription.next_update().await.expect("metadata patch");
+    let ViewUpdatePayload::Patch {
+        patch:
+            ViewPatch::TorrentPreparation {
+                preparation: Some(preparation),
+                ..
+            },
+    } = metadata.payload
+    else {
+        panic!("expected preparation patch");
+    };
+    let metadata = preparation.metadata.expect("metadata state");
+    assert_eq!(metadata.total_size_bytes.as_deref(), Some("32771"));
+    assert_eq!(metadata.received_bytes, "16384");
+    assert_eq!(metadata.block_count, 3);
+    assert_eq!(metadata.block_states, "Fg==");
+
+    hub.record_integrity_preparation(
+        TORRENT_ID,
+        Some(generation),
+        IntegrityPreparationProgress {
+            phase: IntegrityPreparationPhase::WaitingForPeer,
+            needed_hash_ranges: 2,
+            active_requests: 0,
+        },
+    )
+    .expect("waiting for hashes");
+    subscription.next_update().await.expect("integrity patch");
+    assert_eq!(
+        current_torrent(&hub).progress.reason,
+        ProgressReason::PreparingIntegrity
+    );
+    assert_eq!(
+        current_torrent(&hub).progress.disposition,
+        ProgressDisposition::Waiting
+    );
+
+    hub.finish_metadata_preparation(TORRENT_ID, Some(generation))
+        .expect("finish metadata");
+    let finished = subscription.next_update().await.expect("metadata cleared");
+    let ViewUpdatePayload::Patch {
+        patch:
+            ViewPatch::TorrentPreparation {
+                preparation: Some(preparation),
+                ..
+            },
+    } = finished.payload
+    else {
+        panic!("expected retained integrity preparation");
+    };
+    assert!(preparation.metadata.is_none());
+    assert!(preparation.integrity.is_some());
+
+    hub.record_integrity_preparation(
+        TORRENT_ID,
+        Some(generation),
+        IntegrityPreparationProgress {
+            phase: IntegrityPreparationPhase::Ready,
+            needed_hash_ranges: 0,
+            active_requests: 0,
+        },
+    )
+    .expect("hashes ready");
+    let ready = subscription.next_update().await.expect("ready patch");
+    assert!(matches!(
+        ready.payload,
+        ViewUpdatePayload::Patch {
+            patch: ViewPatch::TorrentPreparation {
+                preparation: None,
+                ..
+            }
+        }
+    ));
+    assert_eq!(
+        current_torrent(&hub).progress.reason,
+        ProgressReason::TransferringPieces
+    );
+
+    hub.deactivate_eta_generation(TORRENT_ID, generation)
+        .expect("deactivate");
+    hub.record_metadata_preparation(
+        TORRENT_ID,
+        Some(generation),
+        &MetadataAcquisitionProgress::default(),
+    )
+    .expect("ignore stale metadata");
+    assert!(
+        hub.inner
+            .lock()
+            .expect("hub")
+            .torrents
+            .get(TORRENT_ID)
+            .expect("torrent")
+            .preparation
+            .is_none()
+    );
+}
+
 #[test]
 fn operational_state_and_queue_position_are_authoritative() {
     let mut queued = snapshot(0, 1);

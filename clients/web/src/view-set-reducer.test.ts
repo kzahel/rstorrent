@@ -195,6 +195,76 @@ describe("view-set reducer", () => {
     ).toBeUndefined();
   });
 
+  it("replaces selected preparation atomically and enforces torrent identity", () => {
+    let state = reduceUpdateBatch(
+      undefined,
+      batch("0", "1", [{
+        type: "snapshot",
+        view_id: "preparation",
+        snapshot: {
+          type: "torrent_preparation",
+          torrent_id: torrentId,
+          preparation: {
+            generation: "4",
+            metadata: {
+              phase: "downloading",
+              total_size_bytes: "32771",
+              received_bytes: "16384",
+              block_count: 3,
+              block_states: "Fg==",
+              active_peers: 1,
+              requests_in_flight: 2,
+              hash_retries: 0,
+            },
+            integrity: null,
+          },
+        },
+      }]),
+    );
+    state = reduceUpdateBatch(
+      state,
+      batch("1", "2", [{
+        type: "patch",
+        view_id: "preparation",
+        patch: {
+          type: "torrent_preparation",
+          torrent_id: torrentId,
+          preparation: {
+            generation: "4",
+            metadata: null,
+            integrity: {
+              phase: "waiting_for_peer",
+              needed_hash_ranges: 3,
+              active_requests: 0,
+            },
+          },
+        },
+      }]),
+    );
+    expect(state.views.preparation).toMatchObject({
+      preparation: {
+        generation: "4",
+        metadata: null,
+        integrity: { phase: "waiting_for_peer", needed_hash_ranges: 3 },
+      },
+    });
+
+    expect(() =>
+      reduceUpdateBatch(
+        state,
+        batch("2", "3", [{
+          type: "patch",
+          view_id: "preparation",
+          patch: {
+            type: "torrent_preparation",
+            torrent_id: "t1-11111111111111111111111111111111",
+            preparation: null,
+          },
+        }]),
+      )
+    ).toThrow(/preparation torrent identity mismatch/);
+  });
+
   it("rejects sparse updates without a base row or with duplicate fields", () => {
     const state = reduceUpdateBatch(
       undefined,

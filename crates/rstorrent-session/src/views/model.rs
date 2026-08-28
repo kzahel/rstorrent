@@ -6,12 +6,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 use rstorrent_engine::peer::{
     DialEligibility, PeerFailure, PeerRegistrySnapshot, PeerSource, PeerSources,
 };
 use rstorrent_engine::{
     CheckerPhase, CheckerProgress, DiskCheckpointStage, DiskPieceRuntimeSnapshot, DiskPieceStage,
-    DiskPressure, DiskRuntimeSnapshot, PeerConnectionDirection, PeerConnectionLifecycle,
+    DiskPressure, DiskRuntimeSnapshot, IntegrityPreparationPhase, IntegrityPreparationProgress,
+    MetadataAcquisitionProgress, PeerConnectionDirection, PeerConnectionLifecycle,
     PeerConnectionObservation, PeerConnectionRole, PeerRequestWindowPhase, PeerTransport,
     PeerUploadGrant,
 };
@@ -29,12 +32,13 @@ use super::{
     ActivePiece, ActivePieceStageView, CapabilityStatus, CheckingPhaseView, CheckingProgressView,
     DhtAddressFamilyView, DhtBucketView, DhtFamilyInspectionView, DhtInspectionView,
     DhtLifecycleView, DhtNetworkPolicyView, DiskCheckpointStageView, DiskPieceStageView,
-    DiskPieceView, DiskPipelineView, DiskPressureView, IndexRange, PeerDirection,
+    DiskPieceView, DiskPipelineView, DiskPressureView, IndexRange, IntegrityPreparationPhaseView,
+    IntegrityPreparationView, MetadataAcquisitionPhaseView, MetadataAcquisitionView, PeerDirection,
     PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView, PeerLifecycle, PeerMseMethodView,
     PeerRequestPhase, PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction,
     ProgressAssessment, ProgressDisposition, ProgressInputs, ProgressPhase, ProgressReason,
     SubscriptionError, SwarmCatalogState, SwarmCountsView, SwarmPeerState, SwarmPeerView,
-    TorrentEtaView, TorrentOperationalState, TorrentView,
+    TorrentEtaView, TorrentOperationalState, TorrentPreparationView, TorrentView,
 };
 
 impl DhtInspectionView {
@@ -116,8 +120,8 @@ pub fn assess_progress(snapshot: &TorrentSnapshot, inputs: ProgressInputs) -> Pr
     use ProgressPhase::{Discovery, Publication, Storage, Transfer, Verification};
     use ProgressReason::{
         AcquiringMetadata, Complete, DiscoveringPeers, Failed, NeedsRepair, NetworkDisabled,
-        NoEnabledDiscoverySource, Paused, PreparingStorage, TransferringPieces, VerifyingPieces,
-        WaitingForDiscovery, WaitingForPublication, WaitingForStorage,
+        NoEnabledDiscoverySource, Paused, PreparingIntegrity, PreparingStorage, TransferringPieces,
+        VerifyingPieces, WaitingForDiscovery, WaitingForPublication, WaitingForStorage,
     };
 
     match snapshot.state {
@@ -169,11 +173,19 @@ pub fn assess_progress(snapshot: &TorrentSnapshot, inputs: ProgressInputs) -> Pr
             reason: VerifyingPieces,
             actions: Vec::new(),
         },
-        TorrentState::Downloading => ProgressAssessment {
-            disposition: if inputs.task_active { Active } else { Waiting },
-            phase: Transfer,
-            reason: TransferringPieces,
-            actions: Vec::new(),
+        TorrentState::Downloading => match inputs.integrity_preparation_active {
+            Some(active) => ProgressAssessment {
+                disposition: if active { Active } else { Waiting },
+                phase: Verification,
+                reason: PreparingIntegrity,
+                actions: Vec::new(),
+            },
+            None => ProgressAssessment {
+                disposition: if inputs.task_active { Active } else { Waiting },
+                phase: Transfer,
+                reason: TransferringPieces,
+                actions: Vec::new(),
+            },
         },
         TorrentState::AwaitingMetadata if inputs.network_disabled => ProgressAssessment {
             disposition: Blocked,
@@ -629,6 +641,7 @@ pub(super) fn swarm_model(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct TorrentModel {
     pub(super) view: TorrentView,
+    pub(super) preparation: Option<TorrentPreparationView>,
     pub(super) eta: TorrentEtaModel,
     pub(super) snapshot: TorrentSnapshot,
     pub(super) progress_inputs: ProgressInputs,
@@ -728,6 +741,7 @@ impl TorrentModel {
                 error: snapshot.error.clone(),
             },
             eta: TorrentEtaModel::default(),
+            preparation: None,
             snapshot: snapshot.clone(),
             progress_inputs,
             verified: Vec::new(),
@@ -737,6 +751,131 @@ impl TorrentModel {
             files: None,
             trackers: TrackerViewModel::default(),
         }
+    }
+
+    pub(super) fn apply_metadata_preparation(
+        &mut self,
+        generation: u64,
+        progress: &MetadataAcquisitionProgress,
+    ) -> bool {
+        if !self.eta.owns_generation(generation) {
+            return false;
+        }
+        let preparation = self
+            .preparation
+            .get_or_insert_with(|| TorrentPreparationView {
+                generation: generation.to_string(),
+                metadata: None,
+                integrity: None,
+            });
+        if preparation.generation != generation.to_string() {
+            return false;
+        }
+        preparation.metadata = Some(MetadataAcquisitionView {
+            phase: if progress.total_size.is_some() {
+                MetadataAcquisitionPhaseView::Downloading
+            } else {
+                MetadataAcquisitionPhaseView::Discovering
+            },
+            total_size_bytes: progress.total_size.map(|size| size.to_string()),
+            received_bytes: progress.received_bytes.to_string(),
+            block_count: bounded_u32(progress.block_count),
+            block_states: STANDARD.encode(&progress.packed_block_states),
+            active_peers: bounded_u32(progress.active_peers),
+            requests_in_flight: bounded_u32(progress.requests_in_flight),
+            hash_retries: bounded_u32(progress.hash_failures),
+        });
+        true
+    }
+
+    pub(super) fn finish_metadata_preparation(&mut self, generation: u64) -> bool {
+        if !self.eta.owns_generation(generation) {
+            return false;
+        }
+        let Some(preparation) = self.preparation.as_mut() else {
+            return false;
+        };
+        if preparation.generation != generation.to_string() {
+            return false;
+        }
+        preparation.metadata = None;
+        if preparation.integrity.is_none() {
+            self.preparation = None;
+        }
+        true
+    }
+
+    pub(super) fn apply_integrity_preparation(
+        &mut self,
+        generation: u64,
+        progress: IntegrityPreparationProgress,
+    ) -> bool {
+        if !self.eta.owns_generation(generation) {
+            return false;
+        }
+        self.progress_inputs.integrity_preparation_active = match progress.phase {
+            IntegrityPreparationPhase::Ready => None,
+            IntegrityPreparationPhase::Acquiring => Some(true),
+            IntegrityPreparationPhase::WaitingForPeer => Some(false),
+        };
+        match progress.phase {
+            IntegrityPreparationPhase::Ready => {
+                if let Some(preparation) = self.preparation.as_mut() {
+                    if preparation.generation != generation.to_string() {
+                        return false;
+                    }
+                    preparation.integrity = None;
+                    if preparation.metadata.is_none() {
+                        self.preparation = None;
+                    }
+                }
+            }
+            IntegrityPreparationPhase::Acquiring | IntegrityPreparationPhase::WaitingForPeer => {
+                let preparation = self
+                    .preparation
+                    .get_or_insert_with(|| TorrentPreparationView {
+                        generation: generation.to_string(),
+                        metadata: None,
+                        integrity: None,
+                    });
+                if preparation.generation != generation.to_string() {
+                    return false;
+                }
+                preparation.integrity = Some(IntegrityPreparationView {
+                    phase: match progress.phase {
+                        IntegrityPreparationPhase::Acquiring => {
+                            IntegrityPreparationPhaseView::Acquiring
+                        }
+                        IntegrityPreparationPhase::WaitingForPeer => {
+                            IntegrityPreparationPhaseView::WaitingForPeer
+                        }
+                        IntegrityPreparationPhase::Ready => unreachable!("handled above"),
+                    },
+                    needed_hash_ranges: bounded_u32(progress.needed_hash_ranges),
+                    active_requests: bounded_u32(progress.active_requests),
+                });
+            }
+        }
+        self.view.progress = assess_progress(&self.snapshot, self.progress_inputs);
+        true
+    }
+
+    pub(super) fn clear_preparation(&mut self, generation: u64) {
+        if self
+            .preparation
+            .as_ref()
+            .is_some_and(|preparation| preparation.generation == generation.to_string())
+        {
+            self.preparation = None;
+        }
+        self.progress_inputs.integrity_preparation_active = None;
+        self.view.progress = assess_progress(&self.snapshot, self.progress_inputs);
+    }
+
+    pub(super) fn reset_preparation(&mut self) {
+        self.preparation = None;
+        self.progress_inputs.integrity_preparation_active = None;
+        self.view.progress = assess_progress(&self.snapshot, self.progress_inputs);
     }
 
     pub(super) fn apply_checker_progress(&mut self, progress: &CheckerProgress) {
