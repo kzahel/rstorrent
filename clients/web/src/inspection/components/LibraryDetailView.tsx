@@ -290,6 +290,8 @@ function VirtualCatalog({
             key={`${entry.kind}:${entry.row.id}`}
             entry={entry}
             dataUnits={dataUnits}
+            position={first + offset + 1}
+            setSize={rows.length}
             style={{ transform: `translateY(${(first + offset) * rowHeight}px)` }}
           />
         ))}
@@ -301,10 +303,14 @@ function VirtualCatalog({
 function CatalogRowView({
   entry,
   dataUnits,
+  position,
+  setSize,
   style,
 }: {
   readonly entry: CatalogRow;
   readonly dataUnits: "decimal" | "binary";
+  readonly position: number;
+  readonly setSize: number;
   readonly style: CSSProperties;
 }) {
   const row = entry.row;
@@ -318,7 +324,13 @@ function CatalogRowView({
         ? "Not downloaded"
         : "Partially downloaded";
   return (
-    <article className={styles.row} style={style} role="listitem">
+    <article
+      className={styles.row}
+      style={style}
+      role="listitem"
+      aria-posinset={position}
+      aria-setsize={setSize}
+    >
       <span className={styles.type} aria-hidden="true">
         {entry.kind === "media" ? "▶" : row.extension.slice(0, 3).toUpperCase() || "FILE"}
       </span>

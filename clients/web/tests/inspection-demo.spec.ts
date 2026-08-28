@@ -198,7 +198,11 @@ test("Library media detail sorts episodes and adapts to phone", async ({
     name: "Recognized video files",
   });
   await expect(largeMedia).toBeVisible();
-  const mountedRows = await largeMedia.getByRole("listitem").count();
+  const largeMediaRows = largeMedia.getByRole("listitem");
+  const mountedRows = await largeMediaRows.count();
+  const recognizedRows = Number(
+    await largeMediaRows.first().getAttribute("aria-setsize"),
+  );
   const scaleMetrics = await page.evaluate(() => {
     const measuredPerformance = performance as Performance & {
       memory?: { usedJSHeapSize: number };
@@ -208,10 +212,11 @@ test("Library media detail sorts episodes and adapts to phone", async ({
       usedJsHeapBytes: measuredPerformance.memory?.usedJSHeapSize ?? null,
     };
   });
+  expect(recognizedRows).toBe(3_003);
   expect(mountedRows).toBeLessThanOrEqual(20);
   expect(scaleMetrics.domElements).toBeLessThan(1_500);
   console.log(
-    `media_scale_metrics ${JSON.stringify({ mountedRows, ...scaleMetrics })}`,
+    `media_scale_metrics ${JSON.stringify({ recognizedRows, mountedRows, ...scaleMetrics })}`,
   );
 });
 
