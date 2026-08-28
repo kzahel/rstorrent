@@ -12,9 +12,9 @@ use rstorrent_engine::{
     DownloadControl, DownloadError, DownloadProgress, DownloadResourceLimits, MagnetDownloadConfig,
     MseDhWorkOwner, NetworkConfig, NetworkPolicy, PeerBudget, PeerEncryptionPolicy,
     PeerEncryptionPolicyHandle, PreparedFileHash, ResumableMetainfoDownloadConfig,
-    ResumeArtifactState, ResumeValidationIntent, ResumedStorage, TorrentId, TorrentIdentityContext,
-    TorrentPeerHandle, download_magnet_with_control, download_verified_piece_with_control,
-    resume_metainfo_with_control,
+    ResumeArtifactExpectation, ResumeArtifactState, ResumeValidationIntent, ResumedStorage,
+    TorrentId, TorrentIdentityContext, TorrentPeerHandle, download_magnet_with_control,
+    download_verified_piece_with_control, resume_metainfo_with_control,
 };
 use rstorrent_protocol::content::{TorrentContent, TorrentContentProjection};
 use rstorrent_protocol::identity::V1InfoHash;
@@ -267,7 +267,9 @@ async fn main() -> ExitCode {
                             skip_files: config.skip_files,
                             high_priority_files: Vec::new(),
                             verified_pieces: vec![false; piece_count],
-                            artifact_state: ResumeArtifactState::None,
+                            artifact_expectation: ResumeArtifactExpectation::Exact(
+                                ResumeArtifactState::None,
+                            ),
                             resume_validation: ResumeValidationIntent::Full,
                             download_missing: true,
                             dht: None,

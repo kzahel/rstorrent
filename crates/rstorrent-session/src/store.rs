@@ -1906,6 +1906,84 @@ impl SessionStore {
         Ok(revision)
     }
 
+    pub(crate) fn adopt_storage_for_recheck(
+        &mut self,
+        torrent_id: &str,
+        storage_state: StorageState,
+    ) -> Result<(u64, u64), StoreError> {
+        let payload_state = match storage_state {
+            StorageState::Staging => PayloadState::WorkOwned,
+            StorageState::Published => PayloadState::FinalOwned,
+            _ => {
+                return Err(StoreError::DurableState(
+                    "storage adoption requires staging or published ownership".to_owned(),
+                ));
+            }
+        };
+        let torrent_id = decode_torrent_id(torrent_id)
+            .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
+        let transaction = self.connection.transaction()?;
+        let (current_payload_state, requested, completed) = transaction
+            .query_row(
+                "SELECT payload_state, verification_requested, verification_completed
+                 FROM torrents WHERE torrent_id = ?1 AND raw_info IS NOT NULL
+                       AND have_state IS NOT NULL",
+                [torrent_id.as_bytes()],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
+                    ))
+                },
+            )
+            .optional()?
+            .ok_or_else(|| {
+                StoreError::DurableState(
+                    "storage adoption requires verified metadata and have state".to_owned(),
+                )
+            })?;
+        let current_payload_state = PayloadState::parse(&current_payload_state)
+            .ok_or_else(|| StoreError::DurableState("invalid payload state".to_owned()))?;
+        if current_payload_state != PayloadState::Absent {
+            return Err(StoreError::DurableState(
+                "storage adoption requires unowned payload state".to_owned(),
+            ));
+        }
+        let next_requested = if requested == completed {
+            requested.checked_add(1).ok_or_else(|| {
+                StoreError::DurableState("verification generation overflow".to_owned())
+            })?
+        } else {
+            requested
+        };
+        let revision = increment_revision(&transaction)?;
+        let revision_sql = sql_revision(revision)?;
+        let updated = transaction.execute(
+            "UPDATE torrents
+             SET error = NULL, payload_state = ?2,
+                 verification_requested = ?3, updated_revision = ?4
+             WHERE torrent_id = ?1 AND payload_state = 'absent'
+                   AND raw_info IS NOT NULL AND have_state IS NOT NULL",
+            params![
+                torrent_id.as_bytes(),
+                payload_state.as_str(),
+                next_requested,
+                revision_sql,
+            ],
+        )?;
+        if updated != 1 {
+            return Err(StoreError::DurableState(
+                "storage adoption lost unowned payload authority".to_owned(),
+            ));
+        }
+        transaction.commit()?;
+        let generation = u64::try_from(next_requested).map_err(|_| {
+            StoreError::DurableState("verification generation is invalid".to_owned())
+        })?;
+        Ok((revision, generation))
+    }
+
     pub fn mark_publication_prepared(&mut self, torrent_id: &str) -> Result<u64, StoreError> {
         let torrent_id = decode_torrent_id(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
@@ -8849,6 +8927,69 @@ mod tests {
                 .is_none()
         );
         drop(store);
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
+    fn discovered_storage_atomically_owns_and_requests_recheck() {
+        let root = test_root("adopt-storage-recheck");
+        let configured = configured_root(&root);
+        let mut store =
+            SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
+        let raw_info =
+            b"d6:lengthi4e4:name4:test12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
+        let torrent_id: [u8; 20] = Sha1::digest(raw_info).into();
+        let torrent_id = crate::control::encode_info_hash(torrent_id);
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "add-adopted-storage".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!("magnet:?xt=urn:btih:{torrent_id}"),
+                    storage_root: "downloads".to_owned(),
+                    start_content: true,
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("add source");
+        let torrent_id = only_torrent_id(&store);
+        store
+            .record_metadata(&torrent_id, raw_info)
+            .expect("record metadata");
+        let before = store.load_resume(&torrent_id).expect("load unowned row");
+        assert_eq!(before.storage_state, StorageState::None);
+        assert!(!before.verification.is_pending());
+
+        let (revision, generation) = store
+            .adopt_storage_for_recheck(&torrent_id, StorageState::Published)
+            .expect("atomically adopt publication");
+        let adopted = store.load_resume(&torrent_id).expect("load adopted row");
+        assert_eq!(adopted.state, TorrentState::Checking);
+        assert_eq!(adopted.storage_state, StorageState::Published);
+        assert_eq!(adopted.managed_artifacts, ManagedArtifactState::Published);
+        assert!(adopted.verification.is_pending());
+        assert_eq!(adopted.verification.requested(), generation);
+        assert_eq!(store.revision().expect("adoption revision"), revision);
+        assert!(matches!(
+            store.adopt_storage_for_recheck(&torrent_id, StorageState::Published),
+            Err(StoreError::DurableState(_))
+        ));
+        drop(store);
+
+        let mut reopened =
+            SessionStore::open(&root, "default", &[configured]).expect("reopen adopted store");
+        let restarted = reopened.load_resume(&torrent_id).expect("load restart row");
+        assert_eq!(restarted.state, TorrentState::Checking);
+        assert_eq!(restarted.verification.requested(), generation);
+        assert!(restarted.verification.is_pending());
+        assert_eq!(
+            reopened
+                .begin_recheck_with_generation(&torrent_id)
+                .expect("join pending adoption recheck"),
+            (revision, generation)
+        );
+        drop(reopened);
         fs::remove_dir_all(root).expect("remove test profile");
     }
 

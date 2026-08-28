@@ -13,11 +13,12 @@ use rstorrent_engine::{
     DownloadConfig, DownloadControl, DownloadDiagnosticSnapshot, DownloadError, DownloadReport,
     DownloadResourceLimits, MseDhWorkOwner, NetworkConfig, NetworkPolicy, PeerBudget,
     PeerBudgetConfig, PeerConnectionLifecycle, PeerConnectionObservation, PeerEncryptionPolicy,
-    PeerEncryptionPolicyHandle, PeerTransport, ResumableMagnetDownloadConfig, ResumeArtifactState,
-    ResumeValidationIntent, ResumedStorage, SessionUdpService, SessionUdpSnapshot, TorrentId,
-    TorrentIdentityContext, TorrentPeerActivitySink, TorrentPeerHandle, TrackerConfig,
-    TrackerEndpoint, TrackerSource, UtpService, UtpServiceSnapshot, UtpTerminalEvidence,
-    download_verified_piece_with_peer_state, resume_magnet_with_control, select_global_ipv6,
+    PeerEncryptionPolicyHandle, PeerTransport, ResumableMagnetDownloadConfig,
+    ResumeArtifactExpectation, ResumeArtifactState, ResumeValidationIntent, ResumedStorage,
+    SessionUdpService, SessionUdpSnapshot, TorrentId, TorrentIdentityContext,
+    TorrentPeerActivitySink, TorrentPeerHandle, TrackerConfig, TrackerEndpoint, TrackerSource,
+    UtpService, UtpServiceSnapshot, UtpTerminalEvidence, download_verified_piece_with_peer_state,
+    resume_magnet_with_control, select_global_ipv6,
 };
 use rstorrent_protocol::identity::V1InfoHash;
 use rstorrent_protocol::magnet::{Magnet, UdpTrackerUrl};
@@ -1908,7 +1909,7 @@ async fn run(config: Config) -> ProbeResult {
             high_priority_files: Vec::new(),
             verified_info: prepared.verified_info,
             verified_pieces: Vec::new(),
-            artifact_state: ResumeArtifactState::None,
+            artifact_expectation: ResumeArtifactExpectation::Exact(ResumeArtifactState::None),
             resume_validation: ResumeValidationIntent::FastEligible,
             download_missing: true,
             dht: live_udp

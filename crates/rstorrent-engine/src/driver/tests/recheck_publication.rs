@@ -2,7 +2,7 @@ use super::*;
 use crate::driver::AppliedFileSelection;
 use crate::{
     FileSelectionUpdate, IncomingPeerService, IncomingPeerServiceConfig, IncomingTcpBootstrap,
-    PeerBudget, ResumeValidationIntent, TorrentPeerHandle,
+    PeerBudget, ResumeValidationIntent, ResumeValidationRejectReason, TorrentPeerHandle,
 };
 use rstorrent_protocol::content::{TorrentContentProjection, TorrentIntegrity};
 use rstorrent_protocol::merkle::{file_root_from_data, piece_root_from_data};
@@ -131,7 +131,7 @@ async fn pure_v2_complete_source_download_rechecks_and_reopens_without_part_file
                 skip_files: vec![0],
                 high_priority_files: Vec::new(),
                 verified_pieces: vec![false; 3],
-                artifact_state: ResumeArtifactState::None,
+                artifact_expectation: ResumeArtifactExpectation::Exact(ResumeArtifactState::None),
                 resume_validation: ResumeValidationIntent::Full,
                 download_missing: true,
                 dht: None,
@@ -181,7 +181,7 @@ async fn pure_v2_complete_source_download_rechecks_and_reopens_without_part_file
             skip_files: vec![0],
             high_priority_files: Vec::new(),
             verified_pieces: vec![false, true, true],
-            artifact_state: ResumeArtifactState::Published,
+            artifact_expectation: ResumeArtifactExpectation::Exact(ResumeArtifactState::Published),
             resume_validation: ResumeValidationIntent::Full,
             download_missing: false,
             dht: None,
@@ -219,7 +219,9 @@ async fn pure_v2_complete_source_download_rechecks_and_reopens_without_part_file
                 high_priority_files: Vec::new(),
                 verified_info: Some(info_only),
                 verified_pieces: vec![false, true, true],
-                artifact_state: ResumeArtifactState::Published,
+                artifact_expectation: ResumeArtifactExpectation::Exact(
+                    ResumeArtifactState::Published,
+                ),
                 resume_validation: ResumeValidationIntent::FastEligible,
                 download_missing: true,
                 dht: None,
@@ -460,7 +462,7 @@ async fn full_recheck_recovers_synced_single_file_with_empty_have() {
             high_priority_files: Vec::new(),
             verified_info: Some(raw_info),
             verified_pieces: vec![false; layout.piece_count()],
-            artifact_state: ResumeArtifactState::Staging,
+            artifact_expectation: ResumeArtifactExpectation::Exact(ResumeArtifactState::Staging),
             resume_validation: ResumeValidationIntent::Full,
             download_missing: true,
             dht: None,
@@ -538,7 +540,7 @@ async fn fast_resume_accepts_complete_publication_without_checker_or_hashing() {
             high_priority_files: Vec::new(),
             verified_info: Some(raw_info),
             verified_pieces: vec![true; layout.piece_count()],
-            artifact_state: ResumeArtifactState::Published,
+            artifact_expectation: ResumeArtifactExpectation::Exact(ResumeArtifactState::Published),
             resume_validation: ResumeValidationIntent::FastEligible,
             download_missing: true,
             dht: None,
@@ -574,6 +576,88 @@ async fn fast_resume_accepts_complete_publication_without_checker_or_hashing() {
         )));
     }
     tokio::fs::remove_dir_all(root).await.expect("remove root");
+}
+
+#[tokio::test]
+async fn unowned_publication_is_discovered_and_fully_rechecked() {
+    let payload = (0..(2 * MIN_PAYLOAD_ALLOWANCE + 731))
+        .map(|index| ((index * 41 + index / 13) & 0xff) as u8)
+        .collect::<Vec<_>>();
+    let raw_info = single_file_info_with_piece_length(&payload, MIN_PAYLOAD_ALLOWANCE);
+    let metainfo = Metainfo::from_info_bytes(&raw_info).expect("discovery metainfo");
+    let root = test_path("discover-complete-publication");
+    tokio::fs::create_dir(&root)
+        .await
+        .expect("create discovery root");
+    let paths = torrent_storage_paths_for_metainfo(&root, &metainfo, test_torrent_id())
+        .expect("plan discovery storage");
+    tokio::fs::write(&paths.output, &payload)
+        .await
+        .expect("write oversized existing publication");
+    let layout = TorrentLayout::from_metainfo(&metainfo);
+    let checkpoints = Arc::new(RecordingCheckpointSink::default());
+    let activity = Arc::new(RecordingActivitySink::default());
+    let control = DownloadControl::new();
+    control.set_activity_sink(activity.clone());
+    let unused_peer = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind unused discovery peer");
+    let peer_address = unused_peer.local_addr().expect("unused peer address");
+
+    let report = resume_magnet_with_control(
+        ResumableMagnetDownloadConfig {
+            identity: test_identity(metainfo.info_hash),
+            magnet: format!(
+                "magnet:?xt=urn:btih:{}&x.pe={peer_address}",
+                hex(&metainfo.info_hash)
+            ),
+            storage_root: root.clone(),
+            network: loopback_network(Duration::from_secs(1)),
+            peer_budget: PeerBudget::system_default(),
+            mse_dh: crate::MseDhWorkOwner::new(),
+            encryption: crate::PeerEncryptionPolicyHandle::default(),
+            torrent_peers: None,
+            resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
+            skip_files: Vec::new(),
+            high_priority_files: Vec::new(),
+            verified_info: Some(raw_info),
+            verified_pieces: vec![false; layout.piece_count()],
+            artifact_expectation: ResumeArtifactExpectation::Discover,
+            resume_validation: ResumeValidationIntent::FastEligible,
+            download_missing: true,
+            dht: None,
+            trackers: Some(Vec::new()),
+        },
+        checkpoints.clone(),
+        control,
+    )
+    .await
+    .expect("discover and check existing publication");
+
+    assert_eq!(report.bytes_written, 0);
+    assert_eq!(report.verified_piece_count, layout.piece_count());
+    assert_eq!(
+        checkpoints.rechecks(),
+        vec![vec![true; layout.piece_count()]]
+    );
+    assert_eq!(tokio::fs::read(&paths.output).await.unwrap(), payload);
+    assert!(
+        activity
+            .events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .iter()
+            .any(|event| matches!(
+                event,
+                DownloadActivityEvent::FastResumeRejected {
+                    reason: ResumeValidationRejectReason::PendingVerification,
+                    ..
+                }
+            ))
+    );
+    tokio::fs::remove_dir_all(root)
+        .await
+        .expect("remove discovery fixture");
 }
 
 #[tokio::test]
@@ -620,7 +704,7 @@ async fn cancelling_platform_fast_resume_drops_observation_without_admission() {
             high_priority_files: Vec::new(),
             verified_info: Some(raw_info),
             verified_pieces: vec![true; layout.piece_count()],
-            artifact_state: ResumeArtifactState::Published,
+            artifact_expectation: ResumeArtifactExpectation::Exact(ResumeArtifactState::Published),
             resume_validation: ResumeValidationIntent::FastEligible,
             download_missing: true,
             dht: None,
@@ -1034,7 +1118,7 @@ async fn full_recheck_clears_stale_have_and_redownloads_only_corrupt_piece() {
             high_priority_files: Vec::new(),
             verified_info: Some(raw_info),
             verified_pieces: vec![true; layout.piece_count()],
-            artifact_state: ResumeArtifactState::Staging,
+            artifact_expectation: ResumeArtifactExpectation::Exact(ResumeArtifactState::Staging),
             resume_validation: ResumeValidationIntent::Full,
             download_missing: true,
             dht: None,
@@ -1132,7 +1216,7 @@ async fn outgoing_connection_uploads_verified_piece_before_torrent_completion() 
             high_priority_files: Vec::new(),
             verified_info: Some(raw_info),
             verified_pieces: vec![true, false],
-            artifact_state: ResumeArtifactState::Staging,
+            artifact_expectation: ResumeArtifactExpectation::Exact(ResumeArtifactState::Staging),
             resume_validation: ResumeValidationIntent::Full,
             download_missing: true,
             dht: None,
@@ -1248,7 +1332,7 @@ async fn accepted_connection_uploads_and_downloads_before_torrent_completion() {
             high_priority_files: Vec::new(),
             verified_info: Some(raw_info),
             verified_pieces: vec![true, false],
-            artifact_state: ResumeArtifactState::Staging,
+            artifact_expectation: ResumeArtifactExpectation::Exact(ResumeArtifactState::Staging),
             resume_validation: ResumeValidationIntent::Full,
             download_missing: true,
             dht: None,
@@ -1373,7 +1457,7 @@ async fn incoming_contributor_survives_disconnect_until_delayed_hash_finishes() 
             high_priority_files: Vec::new(),
             verified_info: Some(raw_info),
             verified_pieces: vec![false],
-            artifact_state: ResumeArtifactState::None,
+            artifact_expectation: ResumeArtifactExpectation::Exact(ResumeArtifactState::None),
             resume_validation: ResumeValidationIntent::Full,
             download_missing: true,
             dht: None,
@@ -1504,7 +1588,7 @@ async fn active_upload_read_failure_retracts_route_and_stops_generation() {
             high_priority_files: Vec::new(),
             verified_info: Some(raw_info),
             verified_pieces: vec![true, false],
-            artifact_state: ResumeArtifactState::Staging,
+            artifact_expectation: ResumeArtifactExpectation::Exact(ResumeArtifactState::Staging),
             resume_validation: ResumeValidationIntent::Full,
             download_missing: true,
             dht: None,
@@ -1681,7 +1765,7 @@ async fn cancelling_full_recheck_stops_admission_and_joins_bounded_hashes() {
             high_priority_files: Vec::new(),
             verified_info: Some(raw_info),
             verified_pieces: vec![false; layout.piece_count()],
-            artifact_state: ResumeArtifactState::Staging,
+            artifact_expectation: ResumeArtifactExpectation::Exact(ResumeArtifactState::Staging),
             resume_validation: ResumeValidationIntent::Full,
             download_missing: true,
             dht: None,
@@ -1768,7 +1852,9 @@ async fn publishing_intent_recovers_both_sides_of_atomic_rename() {
                 high_priority_files: Vec::new(),
                 verified_info: Some(raw_info.clone()),
                 verified_pieces: vec![false; layout.piece_count()],
-                artifact_state: ResumeArtifactState::Staging,
+                artifact_expectation: ResumeArtifactExpectation::Exact(
+                    ResumeArtifactState::Staging,
+                ),
                 resume_validation: ResumeValidationIntent::Full,
                 download_missing: true,
                 dht: None,
@@ -1815,7 +1901,9 @@ async fn publishing_intent_recovers_both_sides_of_atomic_rename() {
                 high_priority_files: Vec::new(),
                 verified_info: Some(raw_info.clone()),
                 verified_pieces: vec![false; layout.piece_count()],
-                artifact_state: ResumeArtifactState::Publishing,
+                artifact_expectation: ResumeArtifactExpectation::Exact(
+                    ResumeArtifactState::Publishing,
+                ),
                 resume_validation: ResumeValidationIntent::Full,
                 download_missing: true,
                 dht: None,

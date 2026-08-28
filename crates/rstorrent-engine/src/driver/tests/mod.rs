@@ -39,6 +39,8 @@ use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::{Barrier, Notify, Semaphore, mpsc, oneshot};
 use tokio::time::{sleep, timeout};
 
+use crate::ResumeArtifactState;
+
 use super::{
     CHECKPOINT_MAX_DIRTY_BYTES, CLIENT_PEER_ID, CONTENT_STORAGE_HASH_CONCURRENCY,
     CONTENT_STORAGE_WRITE_BATCH_BLOCKS, CONTENT_STORAGE_WRITE_BATCH_BYTES,
@@ -51,7 +53,7 @@ use super::{
     MAX_RECENT_METADATA_ATTEMPTS, MagnetDownloadConfig, MetadataAcquisitionPhase,
     MetadataAcquisitionProgress, MetadataConnectionLimits, MetadataDialPacer, MetadataPeerStage,
     MetadataWorkerTurnoverState, PeerConnection, PreparedContentWrite, QueuedContentStorageCommand,
-    ResumableMagnetDownloadConfig, ResumableMetainfoDownloadConfig, ResumeArtifactState,
+    ResumableMagnetDownloadConfig, ResumableMetainfoDownloadConfig, ResumeArtifactExpectation,
     ResumedStorage, SwarmConfig, TorrentPeerCoordinator, TrackerManager, UdpTrackerAnnounce,
     UdpTrackerExchange, UdpTrackerTiming, UdpTrackerTokenCache, announce_udp_tracker,
     announce_udp_tracker_address, atomic_saturating_add, atomic_saturating_increment,

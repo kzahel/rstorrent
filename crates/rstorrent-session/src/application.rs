@@ -20,13 +20,13 @@ use rstorrent_engine::{
     NamespaceTransitionOutcome, NetworkConfig, NetworkPolicy, PathPublicationStage,
     PeerEncryptionPolicy, PeerTransportPolicy, PlatformStorageClient, PlatformStorageFailureKind,
     PlatformStorageSpec, PreparedFileHash, PublicationShape, PublishedArtifactLayout,
-    ResumableMagnetDownloadConfig, ResumableMetainfoDownloadConfig, ResumeArtifactState,
-    ResumeValidationIntent, ResumedStorage, SelectiveStorageError, SessionDownloadResourceSnapshot,
-    SessionDownloadResources, SessionSocketError, SessionUdpError, StorageFileKey,
-    StorageFileLocator, StorageFilePool, StorageFilePoolSnapshot, StorageFileReference,
-    StorageFileRole, StorageObjectKind, TorrentId, TorrentIdentityContext, TorrentPrivacy,
-    TrackerConfig, TrackerEndpoint, TrackerSource, TrackerTransport, VerifiedFileError,
-    VerifiedFileReader, decide_namespace_transition,
+    ResumableMagnetDownloadConfig, ResumableMetainfoDownloadConfig, ResumeArtifactExpectation,
+    ResumeArtifactState, ResumeValidationIntent, ResumedStorage, SelectiveStorageError,
+    SessionDownloadResourceSnapshot, SessionDownloadResources, SessionSocketError, SessionUdpError,
+    StorageFileKey, StorageFileLocator, StorageFilePool, StorageFilePoolSnapshot,
+    StorageFileReference, StorageFileRole, StorageObjectKind, TorrentId, TorrentIdentityContext,
+    TorrentPrivacy, TrackerConfig, TrackerEndpoint, TrackerSource, TrackerTransport,
+    VerifiedFileError, VerifiedFileReader, decide_namespace_transition,
     download_magnet_metadata_with_external_discovery, resume_magnet_with_control,
     resume_metainfo_with_control, torrent_storage_paths, verify_prepared_platform_content_files,
 };
@@ -3270,7 +3270,7 @@ impl ApplicationService {
                             high_priority_files,
                             verified_info: Some(raw_info),
                             verified_pieces: Vec::new(),
-                            artifact_state: ResumeArtifactState::None,
+                            artifact_expectation: ResumeArtifactExpectation::Discover,
                             resume_validation: ResumeValidationIntent::FastEligible,
                             download_missing: true,
                             dht: None,
@@ -3298,28 +3298,6 @@ impl ApplicationService {
             StorageRootLocation::Path(root) => root.clone(),
             StorageRootLocation::PlatformCapability => PathBuf::new(),
         };
-        if !platform_root && resume.storage_state == StorageState::None && resume.raw_info.is_some()
-        {
-            let content = parse_resume_content(&resume)
-                .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
-            let paths = torrent_storage_paths(&root_path, content.name(), resume.torrent_id)
-                .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
-            let collision = [
-                ("output", paths.output),
-                ("staging output", paths.staging),
-                ("part file", paths.part),
-            ]
-            .into_iter()
-            .find(|(_, path)| std::fs::symlink_metadata(path).is_ok());
-            if let Some((artifact, path)) = collision {
-                self.store_mut()?.mark_needs_repair(
-                    torrent_id,
-                    &format!("{artifact} already exists: {}", path.display()),
-                )?;
-                self.refresh_views()?;
-                return Ok(());
-            }
-        }
         if resume.raw_info.is_none() && !resume.desired_running {
             let checkpoints = Arc::new(StoreCheckpointSink {
                 store: self.store.clone(),
@@ -3390,6 +3368,12 @@ impl ApplicationService {
             .as_ref()
             .map_or_else(Vec::new, |have| have.pieces().to_vec());
         let artifact_state = resume_artifact_state(&resume)?;
+        let artifact_expectation =
+            if resume.payload_state == crate::durable_state::PayloadState::Absent {
+                ResumeArtifactExpectation::Discover
+            } else {
+                ResumeArtifactExpectation::Exact(artifact_state)
+            };
         let resume_validation = if resume.verification.is_pending() {
             ResumeValidationIntent::Full
         } else {
@@ -3447,7 +3431,7 @@ impl ApplicationService {
                 skip_files,
                 high_priority_files,
                 verified_pieces,
-                artifact_state,
+                artifact_expectation,
                 resume_validation,
                 download_missing: resume.desired_running,
                 dht: None,
@@ -3469,7 +3453,7 @@ impl ApplicationService {
                 high_priority_files,
                 verified_info: resume.raw_info,
                 verified_pieces,
-                artifact_state,
+                artifact_expectation,
                 resume_validation,
                 download_missing: resume.desired_running,
                 dht: None,
@@ -4808,6 +4792,38 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
                 &[],
             )
             .map_err(|error| error.to_string())
+    }
+
+    fn storage_discovered(&self, storage: ResumedStorage) -> Result<u64, String> {
+        let storage_state = match storage {
+            ResumedStorage::Created => {
+                return Err("new storage cannot be committed as discovered".to_owned());
+            }
+            ResumedStorage::Staging => StorageState::Staging,
+            ResumedStorage::Published => StorageState::Published,
+        };
+        let generation = self.store().and_then(|mut store| {
+            store
+                .adopt_storage_for_recheck(&self.torrent_id, storage_state)
+                .map(|(_, generation)| generation)
+                .map_err(|error| error.to_string())
+        })?;
+        *self
+            .recheck_generation
+            .lock()
+            .map_err(|_| "recheck generation lock is poisoned".to_owned())? = Some(generation);
+        self.refresh()?;
+        self.views
+            .record_diagnostic(
+                DiagnosticSeverity::Info,
+                category::INTEGRITY_HASH,
+                "storage_discovered",
+                Some(&self.torrent_id),
+                "Existing torrent storage discovered; managed content recheck started",
+                &[],
+            )
+            .map_err(|error| error.to_string())?;
+        Ok(generation)
     }
 
     fn recheck_started(&self) -> Result<u64, String> {
@@ -11846,6 +11862,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn unowned_existing_publication_is_adopted_and_checked() {
+        let root = test_root("existing-publication-adoption");
+        let configuration = config(&root);
+        let payload = (0..32_768)
+            .map(|offset| ((offset * 23 + offset / 17) & 0xff) as u8)
+            .collect::<Vec<_>>();
+        let raw_info = single_file_info("existing.bin", &payload, 16_384);
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        let torrent_id = super::encode_info_hash(info_hash);
+        let mut store = SessionStore::open(
+            configuration
+                .durable_profile_root()
+                .expect("durable profile root"),
+            &configuration.profile_id,
+            &configuration.storage_roots,
+        )
+        .expect("open setup store");
+        let torrent_id = add_store_torrent(&mut store, "add-existing", &torrent_id);
+        store
+            .record_metadata(&torrent_id, &raw_info)
+            .expect("record existing metadata");
+        drop(store);
+        let output = root.join("payload/existing.bin");
+        fs::create_dir_all(output.parent().expect("payload parent")).expect("create payload root");
+        fs::write(&output, &payload).expect("write existing publication");
+
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("open application with existing publication");
+        wait_for_torrent_state(
+            &mut service,
+            &torrent_id,
+            TorrentState::Complete,
+            "existing-publication-adoption",
+        )
+        .await;
+        let resume = service
+            .store_mut()
+            .expect("store")
+            .load_resume(&torrent_id)
+            .expect("load adopted resume");
+        assert_eq!(resume.storage_state, StorageState::Published);
+        assert_eq!(resume.managed_artifacts, ManagedArtifactState::Published);
+        assert_eq!(resume.have.expect("adopted have").pieces(), &[true, true]);
+        assert_eq!(resume.verification.requested(), 1);
+        assert_eq!(resume.verification.completed(), 1);
+        assert_eq!(fs::read(&output).expect("read adopted output"), payload);
+
+        service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
     async fn complete_startup_and_force_recheck_rebuild_have_without_network() {
         let root = test_root("complete-force-recheck");
         let configuration = config(&root);
@@ -14602,11 +14672,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn incomplete_storage_artifacts_enter_repair_without_overwrite() {
+    async fn unowned_existing_tree_rechecks_and_ignores_unrelated_file() {
         let root = test_root("storage-repair");
         let configuration = config(&root);
-        let raw_info = b"d5:filesld6:lengthi4e4:pathl4:testeee4:name4:root12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
-        let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
+        let payload = b"data";
+        let mut raw_info =
+            b"d5:filesld6:lengthi4e4:pathl4:testeee4:name4:root12:piece lengthi4e6:pieces20:"
+                .to_vec();
+        raw_info.extend_from_slice(&Sha1::digest(payload));
+        raw_info.push(b'e');
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
         let torrent_id = super::encode_info_hash(info_hash);
         let configured_root = configuration.storage_roots[0].clone();
         let mut store = SessionStore::open(
@@ -14619,7 +14694,7 @@ mod tests {
         .expect("open store");
         let torrent_id = add_store_torrent(&mut store, "add", &torrent_id);
         store
-            .record_metadata(&torrent_id, raw_info)
+            .record_metadata(&torrent_id, &raw_info)
             .expect("record metadata");
         drop(store);
 
@@ -14630,61 +14705,39 @@ mod tests {
         fs::create_dir_all(&incomplete_output).expect("create incomplete output");
         fs::write(incomplete_output.join("preserve"), b"user artifact")
             .expect("write preserved artifact");
+        fs::write(incomplete_output.join("test"), payload).expect("write existing payload");
 
         let mut service = ApplicationService::open(configuration)
             .await
             .expect("open service with incomplete storage");
-        let mut state = None;
-        let mut error = None;
-        for sequence in 0..100 {
-            tokio::task::yield_now().await;
-            let response = service
-                .dispatch(RequestEnvelope {
-                    version: CONTROL_VERSION,
-                    request_id: format!("snapshot-{sequence}"),
-                    expected_revision: None,
-                    command: Command::Snapshot,
-                })
-                .await
-                .expect("snapshot");
-            let ResponseOutcome::Success { snapshot } = response.outcome else {
-                panic!("snapshot should succeed");
-            };
-            state = Some(snapshot.torrents[0].state);
-            error = snapshot.torrents[0].error.clone();
-            if state == Some(TorrentState::NeedsRepair) {
-                break;
-            }
-        }
-        assert_eq!(state, Some(TorrentState::NeedsRepair));
-        assert!(
-            error
-                .as_deref()
-                .is_some_and(|error| error.contains("output already exists"))
-        );
+        wait_for_torrent_state(
+            &mut service,
+            &torrent_id,
+            TorrentState::Complete,
+            "existing-tree-payload",
+        )
+        .await;
+        let resume = service
+            .store_mut()
+            .expect("store")
+            .load_resume(&torrent_id)
+            .expect("load adopted partial tree");
+        assert_eq!(resume.storage_state, StorageState::Published);
+        assert_eq!(resume.managed_artifacts, ManagedArtifactState::Published);
+        assert_eq!(resume.have.expect("adopted have").pieces(), &[true]);
+        assert_eq!(resume.verification.requested(), 1);
+        assert_eq!(resume.verification.completed(), 1);
         assert_eq!(
             fs::read(incomplete_output.join("preserve"))
                 .expect("read preserved incomplete artifact"),
             b"user artifact"
         );
-        service
-            .dispatch(RequestEnvelope {
-                version: CONTROL_VERSION,
-                request_id: "remove-conflicted-torrent".to_owned(),
-                expected_revision: None,
-                command: Command::RemoveTorrent {
-                    torrent_id,
-                    data: RemovalDataPolicy::DeleteManaged,
-                },
-            })
-            .await
-            .expect("remove conflicted torrent");
+        service.shutdown().await.expect("shutdown");
         assert_eq!(
             fs::read(incomplete_output.join("preserve"))
-                .expect("preserve unowned conflicting destination"),
+                .expect("preserve unrelated destination content"),
             b"user artifact"
         );
-        service.shutdown().await.expect("shutdown");
         drop(service);
         fs::remove_dir_all(root).expect("remove test root");
     }

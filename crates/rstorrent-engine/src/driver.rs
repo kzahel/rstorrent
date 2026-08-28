@@ -84,10 +84,10 @@ use crate::resume_validation::{
     ResumeAdmissionOutcome, ResumeStorageEvidence, ResumeValidationIntent, decide_resume_admission,
 };
 use crate::selective_storage::{
-    ComputedPieceHash, DescriptorStorage, PreparedFileHash, ResumeArtifactState, ResumedStorage,
-    SelectiveStorage, SelectiveStorageError, TorrentArtifactIdentity, VERIFICATION_CHUNK_LENGTH,
-    remove_selective_part_if_present, remove_selective_staging_if_present,
-    validate_publication_name,
+    ComputedPieceHash, DescriptorStorage, PreparedFileHash, ResumeArtifactExpectation,
+    ResumedStorage, SelectiveStorage, SelectiveStorageError, TorrentArtifactIdentity,
+    VERIFICATION_CHUNK_LENGTH, remove_selective_part_if_present,
+    remove_selective_staging_if_present, validate_publication_name,
 };
 use crate::streaming::{
     MAX_STREAMING_CANDIDATE_INSPECTIONS, StreamingCandidateCursor, StreamingDemandSnapshot,
@@ -441,7 +441,7 @@ pub struct ResumableMagnetDownloadConfig {
     pub high_priority_files: Vec<usize>,
     pub verified_info: Option<Vec<u8>>,
     pub verified_pieces: Vec<bool>,
-    pub artifact_state: ResumeArtifactState,
+    pub artifact_expectation: ResumeArtifactExpectation,
     pub resume_validation: ResumeValidationIntent,
     pub download_missing: bool,
     pub dht: Option<DhtHandle>,
@@ -467,7 +467,7 @@ pub struct ResumableMetainfoDownloadConfig {
     pub skip_files: Vec<usize>,
     pub high_priority_files: Vec<usize>,
     pub verified_pieces: Vec<bool>,
-    pub artifact_state: ResumeArtifactState,
+    pub artifact_expectation: ResumeArtifactExpectation,
     pub resume_validation: ResumeValidationIntent,
     pub download_missing: bool,
     pub dht: Option<DhtHandle>,
@@ -496,6 +496,10 @@ struct MagnetMetadataRuntimeConfig {
 pub trait DownloadCheckpointSink: Send + Sync {
     fn metadata_verified(&self, raw_info: &[u8]) -> Result<(), String>;
     fn storage_prepared(&self, storage: ResumedStorage) -> Result<(), String>;
+    fn storage_discovered(&self, storage: ResumedStorage) -> Result<u64, String> {
+        self.storage_prepared(storage)?;
+        self.recheck_started()
+    }
     fn recheck_started(&self) -> Result<u64, String>;
     fn have_rechecked(&self, verified_pieces: &[bool]) -> Result<(), String>;
     fn pieces_invalidated(&self, piece_indices: &[usize]) -> Result<(), String>;
@@ -4373,7 +4377,7 @@ struct ResumeContext {
     verified_pieces: Vec<bool>,
     checkpoints: Arc<dyn DownloadCheckpointSink>,
     initialize_descriptors: bool,
-    artifact_state: ResumeArtifactState,
+    artifact_expectation: ResumeArtifactExpectation,
     validation: ResumeValidationIntent,
     download_missing: bool,
 }
@@ -4393,7 +4397,7 @@ async fn run_resumable_magnet_download(
         raw_info: config.verified_info.map(Arc::from),
         verified_pieces: config.verified_pieces,
         checkpoints: checkpoints.clone(),
-        artifact_state: config.artifact_state,
+        artifact_expectation: config.artifact_expectation,
         validation: config.resume_validation,
         download_missing: config.download_missing,
         initialize_descriptors: descriptors
@@ -4622,7 +4626,7 @@ async fn run_resumable_metainfo_download(
         verified_pieces: config.verified_pieces,
         checkpoints,
         initialize_descriptors: false,
-        artifact_state: config.artifact_state,
+        artifact_expectation: config.artifact_expectation,
         validation: config.resume_validation,
         download_missing: config.download_missing,
     };
@@ -9086,12 +9090,6 @@ async fn run_selective_download(
         )
         .await
         .map_err(DownloadError::SelectiveStorage)?;
-        if let Some(resume) = &resume {
-            resume
-                .checkpoints
-                .storage_prepared(resumed)
-                .map_err(DownloadError::Checkpoint)?;
-        }
         (storage, Some(resumed))
     } else {
         match (descriptors, &resume) {
@@ -9127,7 +9125,7 @@ async fn run_selective_download(
                             &config.skip_files,
                             verified_pieces.clone(),
                             pool,
-                            Some(resume.artifact_state),
+                            resume.artifact_expectation.expected(),
                         )
                         .await
                     }
@@ -9138,16 +9136,12 @@ async fn run_selective_download(
                             content,
                             &config.skip_files,
                             verified_pieces.clone(),
-                            Some(resume.artifact_state),
+                            resume.artifact_expectation.expected(),
                         )
                         .await
                     }
                 }
                 .map_err(DownloadError::SelectiveStorage)?;
-                resume
-                    .checkpoints
-                    .storage_prepared(resumed)
-                    .map_err(DownloadError::Checkpoint)?;
                 (storage, Some(resumed))
             }
             (None, None) => {
@@ -9221,14 +9215,29 @@ async fn run_selective_download(
                 } else {
                     ResumedStorage::Staging
                 };
-                resume
-                    .checkpoints
-                    .storage_prepared(resumed)
-                    .map_err(DownloadError::Checkpoint)?;
                 (storage, Some(resumed))
             }
         }
     };
+    let discovered_recheck_generation =
+        if let (Some(resume), Some(resumed)) = (&resume, resumed_storage) {
+            if resume.artifact_expectation.is_discovery() && resumed != ResumedStorage::Created {
+                Some(
+                    resume
+                        .checkpoints
+                        .storage_discovered(resumed)
+                        .map_err(DownloadError::Checkpoint)?,
+                )
+            } else {
+                resume
+                    .checkpoints
+                    .storage_prepared(resumed)
+                    .map_err(DownloadError::Checkpoint)?;
+                None
+            }
+        } else {
+            None
+        };
     drop(storage_creation);
 
     reconstruct_complete_selected_v2_piece_layers(
@@ -9247,7 +9256,13 @@ async fn run_selective_download(
     };
     if let (Some(resume), Some(resumed)) = (&resume, resumed_storage) {
         let validation_started = Instant::now();
-        let validation = if resume.validation == ResumeValidationIntent::FastEligible {
+        let validation_intent =
+            if resume.artifact_expectation.is_discovery() && resumed != ResumedStorage::Created {
+                ResumeValidationIntent::Full
+            } else {
+                resume.validation
+            };
+        let validation = if validation_intent == ResumeValidationIntent::FastEligible {
             Some(tokio::select! {
                 validation = storage.validate_fast_resume(resumed) => {
                     validation.map_err(DownloadError::SelectiveStorage)?
@@ -9258,7 +9273,7 @@ async fn run_selective_download(
             None
         };
         let outcome = decide_resume_admission(
-            resume.validation,
+            validation_intent,
             validation
                 .as_ref()
                 .map_or(ResumeStorageEvidence::Matches, |result| result.evidence),
@@ -9301,10 +9316,13 @@ async fn run_selective_download(
         // Accepted state keeps the committed bitmap as runtime authority.
         // Every other reachable outcome enters the existing checker.
         if outcome != ResumeAdmissionOutcome::Accepted {
-            let generation = resume
-                .checkpoints
-                .recheck_started()
-                .map_err(DownloadError::Checkpoint)?;
+            let generation = match discovered_recheck_generation {
+                Some(generation) => generation,
+                None => resume
+                    .checkpoints
+                    .recheck_started()
+                    .map_err(DownloadError::Checkpoint)?,
+            };
             let ResumeAdmissionOutcome::NeedsFullCheck(reason) = outcome else {
                 unreachable!("non-checking outcomes return before checker admission");
             };

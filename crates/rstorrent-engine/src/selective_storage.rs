@@ -35,6 +35,7 @@ use crate::storage_file_pool::{
     DEFAULT_STORAGE_FILE_LIMIT, PlatformStorageFailure, PlatformStorageFailureKind,
     PlatformStorageTarget, StorageFileAccess, StorageFileKey, StorageFileLease, StorageFileLocator,
     StorageFilePool, StorageFilePoolError, StorageFileReference, StorageFileRole,
+    StorageObjectKind,
 };
 
 pub const VERIFICATION_CHUNK_LENGTH: usize = 16 * 1024;
@@ -335,6 +336,25 @@ pub enum ResumedStorage {
 }
 
 pub type ResumeArtifactState = NamespaceState;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ResumeArtifactExpectation {
+    Discover,
+    Exact(ResumeArtifactState),
+}
+
+impl ResumeArtifactExpectation {
+    pub const fn expected(self) -> Option<ResumeArtifactState> {
+        match self {
+            Self::Discover => None,
+            Self::Exact(state) => Some(state),
+        }
+    }
+
+    pub const fn is_discovery(self) -> bool {
+        matches!(self, Self::Discover)
+    }
+}
 
 #[derive(Debug)]
 pub enum SelectiveStorageError {
@@ -1330,6 +1350,38 @@ async fn validate_publication_artifact(
         })?
 }
 
+async fn validate_expected_parent_chain(
+    root: &Path,
+    components: &[String],
+    validated: &mut BTreeSet<PathBuf>,
+) -> Result<(), SelectiveStorageError> {
+    let mut parent = root.to_path_buf();
+    for component in components.iter().take(components.len().saturating_sub(1)) {
+        parent.push(component);
+        if validated.contains(&parent) {
+            continue;
+        }
+        match tokio::fs::symlink_metadata(&parent).await {
+            Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {
+                validated.insert(parent.clone());
+            }
+            Ok(_) => {
+                return Err(SelectiveStorageError::UnexpectedFileType {
+                    path: parent.clone(),
+                });
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(source) => {
+                return Err(SelectiveStorageError::Io {
+                    operation: "inspect expected payload parent",
+                    source,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
 fn inspect_publication_artifact(
     root: &Path,
     shape: PublicationShape,
@@ -1770,10 +1822,99 @@ impl SelectiveStorage {
                 piece_index: verified.len(),
             });
         }
-        if spec.managed {
+        let (spec, resumed, discovered_part) = if spec.managed {
+            let resumed = if spec.published {
+                ResumedStorage::Published
+            } else {
+                ResumedStorage::Staging
+            };
+            (spec, resumed, false)
+        } else {
+            let final_spec = PlatformStorageSpec {
+                namespace_generation: 1,
+                managed: true,
+                published: true,
+                ..spec.clone()
+            };
+            let staging_spec = PlatformStorageSpec {
+                namespace_generation: 0,
+                managed: true,
+                published: false,
+                ..spec.clone()
+            };
+            let final_observation =
+                platform_storage_reference(&final_spec, StorageFileRole::Namespace, Vec::new())
+                    .observe()
+                    .await
+                    .map_err(|error| SelectiveStorageError::Io {
+                        operation: "observe discoverable platform publication",
+                        source: io::Error::other(error),
+                    })?;
+            let staging_observation =
+                platform_storage_reference(&staging_spec, StorageFileRole::Namespace, Vec::new())
+                    .observe()
+                    .await
+                    .map_err(|error| SelectiveStorageError::Io {
+                        operation: "observe discoverable platform staging",
+                        source: io::Error::other(error),
+                    })?;
+            let part_observation =
+                platform_storage_reference(&staging_spec, StorageFileRole::Part, Vec::new())
+                    .observe()
+                    .await
+                    .map_err(|error| SelectiveStorageError::Io {
+                        operation: "observe discoverable platform part file",
+                        source: io::Error::other(error),
+                    })?;
+            if final_observation.exists && staging_observation.exists {
+                return Err(SelectiveStorageError::IncompleteResumeArtifacts);
+            }
+            let expected_namespace_kind = match publication_shape {
+                PublicationShape::File => StorageObjectKind::File,
+                PublicationShape::Tree => StorageObjectKind::Directory,
+            };
+            if final_observation.exists && final_observation.kind != Some(expected_namespace_kind) {
+                return Err(SelectiveStorageError::UnexpectedFileType {
+                    path: PathBuf::from(&final_spec.publication_name),
+                });
+            }
+            if staging_observation.exists
+                && staging_observation.kind != Some(expected_namespace_kind)
+            {
+                return Err(SelectiveStorageError::UnexpectedFileType {
+                    path: PathBuf::from(format!(".{}.rstorrent-staging", staging_spec.storage_id)),
+                });
+            }
+            if part_observation.exists && part_observation.kind != Some(StorageObjectKind::File) {
+                return Err(SelectiveStorageError::UnexpectedFileType {
+                    path: PathBuf::from(format!(".{}.rstorrent-parts", staging_spec.storage_id)),
+                });
+            }
+            if layout.format() == MetainfoFormat::V2 && part_observation.exists {
+                return Err(SelectiveStorageError::InvalidStorageOperation(
+                    "v2 content cannot resume a part artifact",
+                ));
+            }
+            if final_observation.exists {
+                (
+                    final_spec,
+                    ResumedStorage::Published,
+                    part_observation.exists,
+                )
+            } else if staging_observation.exists || part_observation.exists {
+                (
+                    staging_spec,
+                    ResumedStorage::Staging,
+                    part_observation.exists,
+                )
+            } else {
+                (spec, ResumedStorage::Created, false)
+            }
+        };
+        if resumed != ResumedStorage::Created {
             spec.pool.invalidate_storage(&spec.storage_id);
         }
-        let resuming = spec.managed;
+        let resuming = resumed != ResumedStorage::Created;
         let mut files = Vec::with_capacity(layout.files().len());
         let mut skipped_sources = Vec::with_capacity(layout.files().len());
         for (file_index, metainfo_file) in layout.files().iter().enumerate() {
@@ -1808,14 +1949,10 @@ impl SelectiveStorage {
         let part_reference = platform_storage_reference(&spec, StorageFileRole::Part, Vec::new());
         let identity = artifact_identity.part_file(&layout);
         let piece_count = layout.piece_count();
-        let resumed = if spec.managed {
-            if spec.published {
-                ResumedStorage::Published
-            } else {
-                ResumedStorage::Staging
-            }
+        let part_file = if discovered_part {
+            Some(PartFile::open_with_reference(part_reference.clone(), None, identity).await?)
         } else {
-            ResumedStorage::Created
+            None
         };
         Ok((
             Self {
@@ -1830,7 +1967,7 @@ impl SelectiveStorage {
                 selection,
                 files,
                 skipped_sources,
-                part_file: None,
+                part_file,
                 part_checkpoint_handle: None,
                 pending_promotions: Vec::new(),
                 route_epoch: 0,
@@ -2191,6 +2328,7 @@ impl SelectiveStorage {
         let staging_exists =
             path_exists(&staging_root, "inspect resumable selected staging").await?;
         let part_exists = path_exists(&part_path, "inspect resumable part file").await?;
+        let discovering = expected_artifacts.is_none();
         if layout.format() == MetainfoFormat::V2 && part_exists {
             return Err(SelectiveStorageError::InvalidStorageOperation(
                 "v2 content cannot resume a part artifact",
@@ -2269,12 +2407,15 @@ impl SelectiveStorage {
                     path: artifact_root.clone(),
                 });
             }
-            validate_publication_artifact(artifact_root, publication_shape).await?;
+            if !discovering {
+                validate_publication_artifact(artifact_root, publication_shape).await?;
+            }
         }
 
         let mut files = Vec::with_capacity(layout.files().len());
         let mut skipped_sources = Vec::with_capacity(layout.files().len());
         let mut pending_promotions = Vec::new();
+        let mut validated_parents = BTreeSet::new();
         for (file_index, metainfo_file) in layout.files().iter().enumerate() {
             if metainfo_file.padding {
                 files.push(None);
@@ -2288,6 +2429,14 @@ impl SelectiveStorage {
                 file_index,
                 layout.files().len(),
             )?;
+            if discovering && publication_shape == PublicationShape::Tree {
+                validate_expected_parent_chain(
+                    artifact_root,
+                    &metainfo_file.path,
+                    &mut validated_parents,
+                )
+                .await?;
+            }
             match tokio::fs::symlink_metadata(&path).await {
                 Ok(metadata) => {
                     if !metadata.is_file() || metadata.file_type().is_symlink() {
@@ -4962,7 +5111,13 @@ fn platform_storage_reference(
     components: Vec<String>,
 ) -> StorageFileReference {
     let path = match role {
-        StorageFileRole::Namespace => vec![spec.publication_name.clone()],
+        StorageFileRole::Namespace => {
+            if spec.published {
+                vec![spec.publication_name.clone()]
+            } else {
+                vec![format!(".{}.rstorrent-staging", spec.storage_id)]
+            }
+        }
         StorageFileRole::Payload(_) => {
             let namespace = if spec.published {
                 spec.publication_name.clone()
@@ -6675,8 +6830,14 @@ mod tests {
             .expect("restore platform selected length");
         let resumed_selection = storage.selection.clone();
         drop(storage);
+        let discovered = PlatformStorageSpec {
+            namespace_generation: 0,
+            managed: false,
+            published: false,
+            ..published.clone()
+        };
         let (mut resumed, resumed_state) = SelectiveStorage::create_with_platform(
-            published.clone(),
+            discovered,
             test_artifact_identity(),
             &metainfo,
             layout.clone(),
