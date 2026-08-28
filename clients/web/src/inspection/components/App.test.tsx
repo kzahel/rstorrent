@@ -11,7 +11,15 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { createRef } from "react";
 
 import type { ClientSettingsRuntimeView } from "../../api";
@@ -60,6 +68,12 @@ import type {
 import { App } from "./App";
 import { RemoveTorrentDialog } from "./RemoveTorrentDialog";
 
+const storedValues = new Map<string, string>();
+const originalLocalStorage = Object.getOwnPropertyDescriptor(
+  globalThis,
+  "localStorage",
+);
+
 beforeAll(() => {
   globalThis.ResizeObserver = class {
     observe() {}
@@ -82,6 +96,22 @@ beforeAll(() => {
         stroke: vi.fn(),
       }) as unknown as CanvasRenderingContext2D,
   );
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: {
+      clear: () => storedValues.clear(),
+      getItem: (key: string) => storedValues.get(key) ?? null,
+      setItem: (key: string, value: string) => storedValues.set(key, value),
+    } satisfies Pick<Storage, "clear" | "getItem" | "setItem">,
+  });
+});
+
+afterAll(() => {
+  if (originalLocalStorage === undefined) {
+    Reflect.deleteProperty(globalThis, "localStorage");
+  } else {
+    Object.defineProperty(globalThis, "localStorage", originalLocalStorage);
+  }
 });
 
 const controllers: InspectionController[] = [];
