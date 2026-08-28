@@ -633,12 +633,14 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Current engine-campaign action: finish durable High file-priority Tactical
-[`176`](../tactical/176-durable-high-file-priority.md), which retains only its
-unchanged macOS-only iOS simulator/archive compile. Its
-bounded High/Normal/Skip implementation, fresh schema-21 persistence, weighted
-ordinary piece activation, independent stronger Tactical `139` streaming
-overlay, and every available Linux, web, and Android gate already pass.
+Current engine-campaign action: execute compact metadata-acquisition progress
+Tactical
+[`187`](../tactical/187-compact-metadata-acquisition-progress.md) end to end.
+It reuses the bounded torrent-owned BEP 9 and authenticated BEP 52 owners,
+projects one compact generation-fenced selected-torrent map, and keeps v2 or
+hybrid hash preparation separately coarse rather than inventing a percentage.
+Durable High file-priority Tactical `176` retains only its unchanged macOS-only
+iOS simulator/archive compile and resumes after `187`.
 Completed Tactical
 [`182`](../tactical/182-bounded-outbound-attempt-and-metadata-turnover.md)
 makes 15 seconds one total preferred-uTP/TCP/MSE/plain-handshake attempt

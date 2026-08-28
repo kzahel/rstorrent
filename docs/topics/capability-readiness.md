@@ -246,6 +246,15 @@ server payload from 783,539 to 454,581 bytes (-41.98%) and idle Transfers from
 progress from 1% to 20%. Tactical `176` resumes as the sole **Now** with only
 its unchanged macOS-hosted iOS compile gate.
 
+Explicit user direction subsequently temporarily yields Tactical `176` to
+compact metadata-acquisition progress Tactical
+[`187`](../tactical/187-compact-metadata-acquisition-progress.md). The bounded
+slice carries one selected-torrent packed BEP 9 block map for v1, v2, and
+hybrid metadata into an accessible React General card. Pure-v2 and hybrid BEP
+52 hash acquisition remains a separate coarse active/waiting preparation phase
+without an invented percentage. Tactical `187` is the sole **Now**; Tactical
+`176` retains only its unchanged macOS-hosted iOS compile gate.
+
 The updater tactical's client, production route, five-target signed hosted
 rehearsal, public `0.1.0`, `0.1.1`, and `0.1.2` releases, installed macOS arm64
 launch smoke, and exact macOS arm64 and Linux arm64 `0.1.0`-to-`0.1.1` updates
@@ -741,10 +750,15 @@ exactly.
 
 ### Now
 
-- Complete **Tactical `176`**'s remaining macOS-hosted iOS simulator/archive
-  compile gate for durable High/Normal/Skip file priority.
+- Complete **Tactical `187`** end to end: compact selected-torrent BEP 9
+  metadata progress for v1/v2/hybrid plus separate truthful v2/hybrid hash
+  preparation, generated boundaries, React General presentation, and
+  proportional platform evidence.
 
 ### Next
+
+- Complete **Tactical `176`**'s remaining macOS-hosted iOS simulator/archive
+  compile gate for durable High/Normal/Skip file priority.
 
 - Resume **Tactical `158`** and close the clean Windows and Linux x86_64
   signed replacement/relaunch evidence plus Windows firewall-consent
