@@ -1,6 +1,8 @@
-# Tactical 072: Derived Media Catalog And Workbench Media Tab
+# Tactical 072: Derived Media Catalog And Library Torrent Detail
 
-Status: Draft on 2026-08-04. Implementation is not yet authorized.
+Status: Active on 2026-08-28 by explicit user direction. Tactical `176`
+retains only its unchanged macOS-hosted iOS compile gate while this slice is
+the sole **Now**.
 
 Topics: `application-interface-direction`, `application-view-api`,
 `web-ui-design`, `desktop-inspection-surface`, `client-surfaces`
@@ -14,23 +16,24 @@ multi-episode torrent remains difficult to browse as media: release filenames
 sort poorly as plain text, non-media sidecars dominate the list, and the
 application has no typed episode semantics to reuse in its eventual Library.
 
-Add a runtime-independent `rstorrent-media` crate that deterministically
+Add a runtime-independent `rstorrent-media-catalog` crate that deterministically
 classifies recognized video paths and extracts conservative television episode
 hints. The application view owner retains one rebuildable derived media catalog
 per torrent, joins it with the existing authoritative file progress, and
 exposes a separately leased `torrent_media` projection. The shared React
-application adds a read-only Media tab immediately before Files and renders the
-recognized videos as responsive, virtualized cards ordered by typed episode
-semantics.
+application makes a Library-card activation open a content-focused torrent
+detail. That detail defaults to a responsive virtualized media list ordered by
+typed episode semantics, retains an explicit All files escape hatch, and keeps
+the source torrent's Workbench handoff secondary.
 
 This slice establishes media identity and a truthful first presentation. It
-does not generate thumbnails, probe file contents, expose file bytes, claim
-playability, enrich filenames from an external service, change download
-scheduling, or replace the current torrent-backed Library.
+does not generate thumbnails, probe file contents, add playback presentation,
+enrich filenames from an external service, change download scheduling, or
+replace the current torrent-backed Library collection.
 
 ## Stable Scenarios
 
-- Before magnet metadata is verified, the selected torrent's Media tab says
+- Before magnet metadata is verified, the selected Library detail says
   that media information is waiting for metadata. It is not an empty catalog.
 - A torrent containing `Sample Show/Season 01/Sample.Show.S01E02.mkv` and
   `Sample.Show.S01E10.mkv` presents episode 2 before episode 10 even when
@@ -44,25 +47,32 @@ scheduling, or replace the current torrent-backed Library.
 - A recognized video whose filename does not parse as an episode still appears
   under its exact filename after episode-classified items.
 - `.nfo`, checksums, images, subtitles, padding, directories represented only
-  by path components, and other unrecognized files do not produce Media cards.
+  by path components, and other unrecognized files do not produce Media rows.
   Their continued presence in Files is unchanged.
 - Uppercase and mixed-case recognized extensions classify identically.
-- Cards show exact filename/path context, size, Normal or Skip selection, and
-  existing Done and Verified progress. Boundary-piece bytes retain the same
-  meaning as Files; Media never upgrades them into playback readiness.
+- Rows show exact filename/path context, size, High, Normal, or Skip selection,
+  existing Done and Verified progress, and the existing media-availability
+  state. Boundary-piece bytes retain the same meaning as Files; Media never
+  upgrades them into playback readiness.
 - A torrent with verified metadata and no recognized video shows the genuine
   empty state `No recognized video files`.
-- Switching between Media and Files leases only the visible projection, evicts
-  the removed projection after its ordered removal update, and preserves the
-  active Workbench torrent and tab preference.
+- Activating a Library card opens its detail immediately rather than merely
+  drawing a selected outline. Back, Escape, and browser history return to the
+  same Library category and retained scroll position; focus returns to the
+  originating card when it still exists.
+- A detail with recognized video defaults to Media. A detail with no recognized
+  video falls back truthfully to All files. The explicit Media and All files
+  choices lease only the visible projection and preserve the active torrent.
+- Removing the open torrent or leaving Library closes the detail without a
+  stale title, rows, history target, or hidden view lease.
 - Suspension, view-set expiry, transport reset, and application restart rebuild
-  a coherent Media snapshot without stale or duplicated cards.
+  a coherent Media snapshot without stale or duplicated rows.
 - The legal 4,096-file catalog remains bounded in Rust, encoded delivery,
   reducer work, browser memory, and visible DOM size.
 
 ## Scope
 
-- Add a small pure `rstorrent-media` workspace crate with closed
+- Add a small pure `rstorrent-media-catalog` workspace crate with closed
   classification values, a versioned deterministic classifier, and no runtime,
   storage, protocol, serialization, or platform dependencies.
 - Add `regex` as the crate's one direct third-party dependency, using the
@@ -80,13 +90,20 @@ scheduling, or replace the current torrent-backed Library.
   view-set specification, snapshot, keyed complete-row patch, generated
   TypeScript/schema and UniFFI bridge types, strict browser validation, and
   reducer/store materialization.
-- Reuse the existing file-progress authority for length, selection, Done, and
-  Verified values. Classification must not create a second progress tracker.
-- Add Media immediately before Files in the Workbench detail tabs and request
-  the projection only while Media is visible.
+- Reuse the existing file-progress authority for length, selection, Done,
+  Verified, and media availability. Classification must not create a second
+  progress or availability tracker.
+- Add ephemeral Library-detail navigation with same-document browser history,
+  explicit Back and Escape behavior, deterministic selection/removal repair,
+  focus restoration, and retained collection scroll.
+- Request `torrent_media` only while a Library detail's Media view is visible;
+  switch to the existing `torrent_files` projection only while All files is
+  visible. Keep Workbench detail leasing and tab state unchanged.
 - Add a deterministic named demo catalog and a responsive, accessible,
-  virtualized card grid with numeric episode ordering and stable file-index
-  ties.
+  virtualized list with numeric episode ordering, stable file-index ties, a
+  wide summary/list arrangement, and stacked compact/phone rows.
+- Reduce the phone Library collection's generated-placeholder footprint to a
+  compact landscape tile without claiming that it is artwork.
 - Add pure, contract, reducer, component, headless browser, scale, and
   controlled live evidence; regenerate checked-in contracts and update the
   owning topics with the actual result.
@@ -95,30 +112,32 @@ scheduling, or replace the current torrent-backed Library.
 
 - Thumbnail generation, thumbnail persistence, artwork download, poster or
   backdrop presentation, color extraction, or a server-side thumbnail cache.
-- An HTTP byte-range server, capability URL, direct file handle, local path
-  handoff, media probing, duration, dimensions, codecs, container support, or
-  browser-playability detection.
+- Changes to the completed HTTP byte-range server, capability URL, direct file
+  handle, local path handoff, media probing, duration, dimensions, codecs,
+  container support, or browser-playability detection.
 - A Play, Open, Reveal, Watch, watched-state, resume-position, or media-file
-  selection action from a card.
-- Streaming, playback-oriented piece priority, incomplete-file range waits,
-  media prefetch, or changes to peer, scheduler, storage, or integrity owners.
+  selection action from a Library detail row.
+- Changes to streaming, playback-oriented piece priority, incomplete-file
+  range waits, media prefetch, peer, scheduler, storage, or integrity owners.
 - External metadata lookup, TMDB integration, normalized external identity,
   movie matching, episode names, user corrections, privacy policy, accounts,
   or cross-device media state.
-- Replacing or enriching the current torrent-backed top-level Library. A later
-  tactical may aggregate the same semantic media identity across torrents.
+- Replacing or aggregating the current torrent-backed top-level Library
+  collection. This slice enriches only one explicitly opened source torrent;
+  a later tactical may aggregate semantic media items across torrents.
 - Audio, image, ebook, archive, subtitle, or sidecar catalog presentation. The
   first classifier emits video candidates only.
 - Persistent derived-classification rows, a media database, migration, or a
   stable public remote-media contract.
-- Android Compose Media UI, a visible Tauri run, public-swarm traffic, or
-  physical-device testing.
+- Android Compose Media UI, a router dependency, durable URL/deep-link
+  compatibility, a visible Tauri run, public-swarm traffic, or physical-device
+  testing.
 - Copying PlaysVideo or JSTorrent source, tests, fixtures, persistence schemas,
   extension lists, CSS, or playback architecture mechanically.
 
 ## Vocabulary And Semantic Boundary
 
-- **Media classifier** is the pure `rstorrent-media` function that maps one
+- **Media classifier** is the pure `rstorrent-media-catalog` function that maps one
   bounded relative path to either a recognized video classification or no
   media item.
 - **Media classification** is the rebuildable result for one torrent file. It
@@ -168,16 +187,21 @@ torrent facts consumed.
 ### PlaysVideo product reference
 
 Local PlaysVideo revision
-`5c9e538e850eec53e871eda9fa24e93e2c548ad4` is the primary behavior reference:
+`710323343f07487ba228165eab127174d949b4e4` is the primary behavior reference.
+The older revision recorded by the draft is not present in the maintained
+checkout, so activation re-audited the exact current source rather than
+silently relying on the stale identifier:
 
 - `app/src/folder-provider.ts` gates catalog intake through a conservative,
   case-insensitive video-extension set before parsing metadata.
 - `app/src/media-metadata.ts` recognizes named and bare `SxxEyy` and `NxM`
   episode forms, multi-episode endings, season-folder fallback, release-tag
-  boundaries, and title cleanup.
-- `tests/unit/app-media-metadata.test.ts` covers ordinary episodes, release
-  tags, `720p` false positives, multi-episode forms, parent fallback, `1x02`,
-  and movie-title parsing.
+  boundaries, title cleanup, and later movie/provider identity that remains
+  out of scope here.
+- `tests/unit/app-media-metadata.test.ts` covers named episodes, release tags,
+  parent fallback, `1x02`, and movie-title parsing. RSTorrent's independently
+  authored corpus additionally covers the draft's multi-episode, resolution
+  false-positive, numeric-bound, Unicode, and malformed cases.
 - `app/src/catalog-groups.ts` orders television entries by numeric season and
   episode with filename as the final tie.
 - `app/src/db.ts` demonstrates the useful distinction among stable local row
@@ -210,11 +234,17 @@ topology, playback session, popup, HTTP stream, or file-action behavior.
 
 ### Regex dependency posture
 
-Add `regex` as a direct workspace dependency for `rstorrent-media`; the current
-lock already resolves `regex 1.13.1` transitively. Fixed patterns are compiled
-once in lazy process state. The crate's linear-time matching and RSTorrent's
-existing path/file bounds avoid backtracking-driven hostile-input work. No
-pattern is constructed from metainfo content.
+Add `regex` as a direct workspace dependency for `rstorrent-media-catalog`;
+the current lock already resolves `regex 1.13.1` transitively. Fixed patterns
+are compiled once in lazy process state. The crate's linear-time matching and
+RSTorrent's existing path/file bounds avoid backtracking-driven hostile-input
+work. No pattern is constructed from metainfo content.
+
+The draft's original `rstorrent-media` crate name is no longer available:
+completed Tacticals `138` and `139` use it for the Axum/Tokio HTTP media server,
+and that crate depends outward on `rstorrent-session`. Keeping the classifier
+in a new runtime-independent crate avoids a dependency cycle and prevents
+socket/runtime types from owning deterministic filename semantics.
 
 The direct dependency and independently authored tests are authorized by this
 tactical when implementation is activated. Any additional parsing,
@@ -285,7 +315,7 @@ sample, deduplicate releases, or select a preferred version.
 
 ```text
 verified immutable metainfo
-  -> rstorrent-media classification, at most once per retained torrent
+  -> rstorrent-media-catalog classification, at most once per retained torrent
   -> Arc<DerivedMediaCatalog> owned by the application ViewHub TorrentModel
 
 FileProgressModel authoritative rows
@@ -298,13 +328,13 @@ ViewSpec::TorrentMedia interest
   -> snapshot / coalesced keyed patches / removal / reset
   -> generated client reducer
   -> Zustand mediaByTorrent
-  -> MediaCardGrid
+  -> LibraryTorrentDetail / VirtualMediaList
 ```
 
-`rstorrent-media` owns no cache, task, global torrent registry, database, file
-handle, metainfo parser, or view DTO. Its fixed compiled regex values are
-process-static implementation detail; classification itself is an ordinary
-pure function.
+`rstorrent-media-catalog` owns no cache, task, global torrent registry,
+database, file handle, metainfo parser, or view DTO. Its fixed compiled regex
+values are process-static implementation detail; classification itself is an
+ordinary pure function.
 
 The application `TorrentModel` owns one immutable catalog, shared by reference,
 beside its existing `FileProgressModel`. The catalog contains only recognized
@@ -347,15 +377,17 @@ MediaItemView {
     path: Vec<String>,
     extension: String,                // lowercase, without the leading dot
     length_bytes: decimal u64 string,
-    selection: wanted | skipped,
+    selection: high | normal | skipped,
     done_bytes: decimal u64 string,
     verified_bytes: decimal u64 string,
+    media_availability: MediaFileAvailability,
     role: MediaRoleView,
 }
 
 ViewSnapshot::Media {
     torrent_id: String,
     state: MediaCatalogState,
+    total_non_padding_files: u32,
     items: Vec<MediaItemView>,
 }
 
@@ -371,12 +403,14 @@ the file-index string used by the existing Files projection. Its globally
 stable interpretation is the pair `(torrent_id, file_index)`. A later Library
 projection may carry both parts on each row without changing that identity.
 
-`metadata_pending` and `torrent_missing` contain no items. `available` may be
-empty and then means that verified metainfo contains no recognized video.
-Every emitted item maps to one non-padding File row with the same index,
-path, length, selection, Done, and Verified values. Missing required file
-state is an internal error rather than a fabricated zero or silently omitted
-recognized item.
+`metadata_pending` and `torrent_missing` contain no items and report zero total
+files. `available` may be empty and then means that verified metainfo contains
+no recognized video; `total_non_padding_files` still lets the client explain
+and enter the All files fallback without leasing Files speculatively. Every
+emitted item maps to one non-padding File row with the same index, path,
+length, selection, Done, Verified, and media-availability values. Missing
+required file state is an internal error rather than a fabricated zero or
+silently omitted recognized item.
 
 The metadata-pending to available transition, classifier-version/catalog
 replacement, and torrent appearance/disappearance require a coherent fresh
@@ -388,8 +422,9 @@ removal wins over an earlier pending upsert.
 Decimal byte strings retain the canonical validation and exact comparison
 rules already established by Files. The browser additionally validates unique
 IDs/indexes, lowercase recognized extension, selection presence, Done and
-Verified not exceeding length, episode-number relationships, and the role's
-closed field combinations.
+Verified not exceeding length, the closed media-availability value, episode-
+number relationships, total-file bounds, and the role's closed field
+combinations.
 
 ## Resource Bounds And Failure Policy
 
@@ -413,7 +448,7 @@ closed field combinations.
   per subscriber, view set, durable refresh, or progress update. Record the
   4,096-file retained-byte high water and classification duration in debug
   evidence without turning them into release performance claims.
-- The card grid must render visible rows plus bounded overscan. A 4,096-item
+- The media list must render visible rows plus bounded overscan. A 4,096-item
   scenario must keep visible DOM count independent of logical item count and
   report browser heap and long-task observations proportionately to Tactical
   041.
@@ -423,13 +458,23 @@ closed field combinations.
 
 ## Frontend Presentation Contract
 
-Add Media immediately before Files in the existing tab order. Media is
-torrent-scoped, read-only, and uses its own `media` desired-detail value,
-`viewStatus.media`, `mediaByTorrent` materialization, and named view ID. Only
-the visible Media tab requests `torrent_media`; it does not request Files as a
-hidden implementation dependency.
+Library has two ephemeral substates: collection and one torrent detail.
+Activating a collection card establishes the shared current torrent and opens
+that source's detail in one action. The detail is torrent-scoped and read-only,
+with explicit Back and Open in Workbench actions. Returning preserves the
+Library category and virtual-grid scroll offset. Escape and an owned same-
+document browser-history entry perform the same Back transition. Leaving
+Library or removing the target closes the detail and releases its projection.
+No route dependency, durable deep link, or persisted open torrent is added.
 
-The initial card displays:
+The detail has Media and All files choices. Media is the automatic initial
+choice when at least one recognized video exists. An available empty media
+catalog automatically and truthfully falls back to All files while saying that
+no recognized videos were found. Only visible Media requests `torrent_media`;
+only visible All files requests the existing `torrent_files`. Workbench keeps
+its independent active detail tab and projection rules.
+
+The initial media row displays:
 
 - a formatted episode badge such as `S01E02` or `S01E02–E03` when typed hints
   exist;
@@ -437,15 +482,20 @@ The initial card displays:
   label;
 - the exact filename as the primary label and folder path as bounded secondary
   context;
-- formatted size and selection (`Normal` or `Skip`); and
+- formatted size and selection (`High`, `Normal`, or `Skip`);
 - one truthful progress treatment that exposes both Done and Verified values
-  to sighted and assistive-technology users.
+  to sighted and assistive-technology users; and
+- `Downloaded` only when the existing per-file availability and full verified
+  count establish complete offline content. Other states remain downloading,
+  checking, skipped, or unavailable rather than inheriting torrent-wide
+  completion.
 
-No poster-shaped empty frame, generated artwork, Play icon, hover action,
-pointer cursor, readiness badge, duration, resolution, codec, or watched state
-appears. Cards are list content rather than buttons. Text truncation retains
-the complete bounded value through accessible naming or native title where
-needed.
+No poster-shaped empty frame, generated artwork, Play icon, row action,
+duration, resolution, codec, or watched state appears. Rows are list content
+rather than buttons. Text truncation retains the complete bounded value through
+accessible naming or native title where needed. The existing collection
+initial/gradient remains explicitly generated placeholder art; phone reduces
+it to a small landscape tile rather than devoting most of a card to it.
 
 Frontend ordering is stable and presentation-owned:
 
@@ -462,10 +512,13 @@ Typed episode numbers, not display strings, drive ordering. Sorting does not
 mutate backend order or claim array position as application truth. A future
 Library can apply a different grouping without reparsing filenames.
 
-Wide and compact layouts use a multi-column virtualized grid; phone uses one
-column and the existing Workbench list-to-detail/back behavior. Interface size,
-Light/Dark/Auto, reduced motion, zoom, long filenames, mixed Unicode, and
-keyboard/assistive navigation retain the existing presentation requirements.
+Wide detail uses a bounded summary column beside the virtualized media/file
+list. Compact and phone detail stack the same summary above one list; phone
+rows collapse table-like fields into a label/status line plus bounded filename,
+folder, size, and progress. No horizontal scrolling is required for the
+default Media view. Interface size, Light/Dark/Auto, reduced motion, zoom, long
+filenames, mixed Unicode, focus restoration, and keyboard/assistive navigation
+retain the existing presentation requirements.
 
 ## Shape-Changing Edge Cases
 
@@ -490,7 +543,8 @@ keyboard/assistive navigation retain the existing presentation requirements.
 - no recognized media, one item, all 4,096 files recognized, and a mixture in
   which only one row is media;
 - unsupported older server, malformed new role fields, disconnected/stale
-  view, queue reset, lease recovery, tab switch, and torrent switch; and
+  view, queue reset, lease recovery, Media/All files switch, and torrent
+  switch; and
 - a classifier failure must remain isolated from torrent lifecycle and Files.
 
 ## Implementation Stages And Intermediate Gates
@@ -508,18 +562,20 @@ keyboard/assistive navigation retain the existing presentation requirements.
    coalesced keyed patches, reset/removal behavior, generated artifacts, strict
    semantic validation, and snapshot-size evidence. Rust and contract tests
    gate frontend work.
-4. **Pure web model.** Add desired interest, reducer/store materialization,
-   ordered removal/eviction, mapping cache, and the stable typed comparator.
-   Gate on Vitest without React or a server.
-5. **Media presentation.** Add the tab, responsive virtual card grid, honest
-   states, permanent named scenario, and accessibility/scale coverage. Keep
-   every visual element read-only and free of playback/artwork claims.
+4. **Pure web model.** Add desired Library-detail interest, reducer/store
+   materialization, ordered removal/eviction, navigation repair, and the stable
+   typed comparator. Gate on Vitest without React or a server.
+5. **Library detail presentation.** Add card-to-detail activation, Back/history/
+   focus behavior, Media/All files leasing, responsive virtual rows, honest
+   states, compact phone collection placeholders, a permanent named scenario,
+   and accessibility/scale coverage. Keep every visual element read-only and
+   free of playback/artwork claims.
 6. **Controlled live proof.** Drive the production web build against a
    controlled multi-file libtorrent seed containing ordered/misordered episode
    names, an unclassified video, and non-media sidecars. Observe metadata
-   pending, catalog arrival, numeric order, progress, completion, tab eviction,
-   lease recovery, exact final payloads, and joined cleanup without a visible
-   client.
+   pending, catalog arrival, numeric order, progress, completion, detail/filter
+   eviction, lease recovery, exact final payloads, and joined cleanup without a
+   visible client.
 7. **Closure.** Run proportional Rust/web/Tauri/Android generated-contract
    gates, record exact duration/size/memory/DOM evidence, update owning topics
    and the tactical index, remove temporary artifacts, and commit only files in
@@ -532,9 +588,9 @@ keyboard/assistive navigation retain the existing presentation requirements.
 | Pure classifier | Extension gate, all named/bare/multi-episode forms, false-positive release tags, parent fallback, Unicode/title cleanup, numeric bounds, deterministic output, and 4,096-path execution |
 | Application model | One catalog allocation per retained torrent/metainfo, reuse across refresh/progress/selection/view interest, removal/restart rebuild, exact file-progress join, and isolated classifier/join failure |
 | Contract | Metadata-pending/available/empty/missing snapshots, unique bounded rows, recognized-only contents, keyed coalescing/removal, non-media no-op patches, reset/lease recovery, generated types/schema/validators, and 16 MiB bound |
-| Web model | Strict semantic rejection, exact decimal mapping, typed stable episode sort, keyed reducer, tab-specific leasing, ordered eviction, unsupported/stale/reset recovery, and no Files dependency |
-| Presentation | Read-only card content, honest empty/loading/error states, wide/compact/phone layout, themes/interface sizes, long/Unicode names, progress accessibility, keyboard flow, bounded DOM, and empty serious/critical Axe findings |
-| Controlled live | Headless metadata-to-completion catalog with episodes, unclassified video and sidecars; exact ordering/progress, tab eviction, lease recovery, payload equality, and joined cleanup |
+| Web model | Strict semantic rejection, exact decimal mapping, typed stable episode sort, keyed reducer, detail/filter-specific leasing, ordered eviction, unsupported/stale/reset recovery, and no hidden Files dependency |
+| Presentation | Card-to-detail activation, Back/history/focus restoration, Media/All files choice, read-only row content, honest empty/loading/error states, wide/compact/phone layout, themes/interface sizes, long/Unicode names, progress accessibility, bounded DOM, and empty serious/critical Axe findings |
+| Controlled live | Headless metadata-to-completion catalog with episodes, unclassified video and sidecars; exact ordering/progress, detail/filter eviction, lease recovery, payload equality, and joined cleanup |
 | Platform/repository | Generated-contract drift check, Rust formatting, warning-denying workspace Clippy, workspace tests, web typecheck/tests/build/CSP/Playwright, and proportional Tauri plus Android/UniFFI compilation |
 
 No public network, visible application, emulator, physical device, HTTP media
@@ -547,34 +603,36 @@ bytes and contains no copied media.
 This slice is complete when verified metainfo produces one cached,
 runtime-independent derived video catalog without touching torrent-engine
 semantics; the separately leased generated `torrent_media` view carries exact
-typed episode hints and existing file progress; the Workbench Media tab shows
-only recognized videos in numeric episode order through an accessible bounded
-card grid; metadata, empty, stale, reset, and recovery states are truthful; the
+typed episode hints and existing file progress/availability; Library card
+activation opens a responsive content detail whose default Media list shows
+only recognized videos in numeric episode order and whose explicit All files
+fallback leases the existing file view; Back/history/focus, metadata, empty,
+stale, reset, removal, and recovery states are truthful; the
 controlled headless proof and proportional repository/platform gates pass;
 actual evidence is recorded in this tactical and the owning topics; and no
-thumbnail, playback, HTTP byte-range, external metadata, Library aggregation,
-or persistent media state has landed.
+thumbnail, playback UI, HTTP/server change, external metadata, Library-wide
+media aggregation, or persistent media state has landed.
 
 ## Escalation Contract
 
-This document is a draft and does not itself authorize implementation. Once
-the maintainer activates it, ordinary module extraction, the new pure crate,
-the direct `regex` dependency, exact internal names, generated-contract
-changes, immutable-cache integration, deterministic fixtures, demo data,
-responsive card styling, test-harness extension, same-boundary bug fixes, and
-conservative tightening of declared limits are in scope.
+Explicit user direction activated this document. Ordinary module extraction,
+the new pure crate, the direct `regex` dependency, exact internal names,
+generated-contract changes, immutable-cache integration, same-document detail
+history, deterministic fixtures, demo data, responsive list/collection styling,
+test-harness extension, same-boundary bug fixes, and conservative tightening
+of declared limits are in scope.
 
 Stop for direction if evidence requires persistent media rows, a classifier
 that probes payload bytes, movie/provider identity policy, a different
 extension set with meaningful compatibility implications, server-side sorting
 or pagination, a dependency beyond `regex`, a new application command, a file
-data plane or HTTP listener, thumbnails, playback, scheduling changes, Library
-replacement, Android presentation, public traffic, or visible/physical client
-work.
+data plane or HTTP-listener change, thumbnails, playback presentation,
+scheduling changes, Library-wide item aggregation, Android presentation,
+public traffic, or visible/physical client work.
 
 ## Next Boundary
 
-After this slice, use real card/catalog evidence to choose one independent
-follow-up: aggregate derived items into the top-level Library, expose a bounded
-verified HTTP range capability, or generate and cache thumbnails in each
-client. None is implied by completing the initial catalog and tab.
+After this slice, use real detail/catalog evidence to choose one independent
+follow-up: aggregate derived items directly into the top-level Library, connect
+existing verified media capabilities to playback presentation, or generate and
+cache thumbnails in each client. None is implied by completing the detail.

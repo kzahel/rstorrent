@@ -83,14 +83,21 @@ that scope and its cleanup or compatibility rules explicitly.
   complete; adds one selected-torrent packed BEP 9 block map for v1/v2/hybrid
   metadata plus a separate coarse BEP 52 integrity-preparation phase,
   generated first-party reducers, and accessible React General presentation.
+- [`072-derived-media-catalog.md`](072-derived-media-catalog.md): active as the
+  sole **Now**; adds a pure deterministic video/episode classifier, one
+  rebuildable application catalog, a separately leased media projection, and
+  a responsive Library torrent detail with an explicit All files fallback.
+  Thumbnails, artwork, playback presentation, persistence, and Library-wide
+  media aggregation remain deferred.
 - [`186-current-rates-and-incremental-speed-history.md`](186-current-rates-and-incremental-speed-history.md):
   complete; separates tiny latest-value current rates from interest-selected
   graph history, makes completed graph buckets exact cursor-validated
   coalescible appends, and cuts the preceding server-payload residual 41.98%
   without choosing a binary codec.
 - [`176-durable-high-file-priority.md`](176-durable-high-file-priority.md):
-  resumed as the sole **Now**; only its remaining macOS-hosted iOS
-  simulator/archive compile gate remains.
+  retains only its remaining macOS-hosted iOS simulator/archive compile gate
+  while explicit user direction temporarily gives Tactical `072` the sole
+  **Now**.
 - [`185-typed-sparse-hot-view-patches.md`](185-typed-sparse-hot-view-patches.md):
   complete; replaces measured repeated Torrent, File, Peer, and active-piece
   rows with closed typed field deltas across every first-party reducer and
@@ -397,10 +404,8 @@ that scope and its cleanup or compatibility rules explicitly.
 - [`071-copy-magnet-link.md`](071-copy-magnet-link.md): complete; adds a
   singleton-selection More action that copies a canonical v1 magnet from the
   projected info hash with truthful clipboard feedback and accessible focus.
-- [`072-derived-media-catalog.md`](072-derived-media-catalog.md): draft; adds a
-  pure deterministic video/episode classifier, one rebuildable application
-  catalog, a separately leased media projection, and a read-only virtualized
-  Workbench Media tab without thumbnails or playback.
+- [`072-derived-media-catalog.md`](072-derived-media-catalog.md): listed above
+  as the active sole **Now**.
 - [`073-unified-storage-and-complete-recheck.md`](073-unified-storage-and-complete-recheck.md):
   complete; removes the single-file storage fork, gives every v1 torrent one
   durable resume/publication path, and adds bounded full managed-storage and

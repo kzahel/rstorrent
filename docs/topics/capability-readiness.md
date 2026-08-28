@@ -266,6 +266,17 @@ browser evidence, Android dual-ABI/APK/unit gates, Linux-available Apple
 boundary checks, and full workspace/web gates pass. Tactical `176` resumes as
 the sole **Now** with only its unchanged macOS-hosted iOS compile gate.
 
+Explicit user direction on 2026-08-28 temporarily yields Tactical `176` to
+Library torrent-detail Tactical
+[`072`](../tactical/072-derived-media-catalog.md). The activated revision keeps
+the existing torrent-backed Library collection, adds one separately leased
+derived video/episode catalog for an explicitly opened source, and makes card
+activation enter a responsive Media/All files detail with exact per-file
+progress and availability. Thumbnails, artwork, playback presentation,
+Library-wide item aggregation, persistence, and engine behavior remain outside
+the slice. Tactical `072` is the sole **Now**; Tactical `176` retains only its
+unchanged macOS-hosted iOS compile gate.
+
 The updater tactical's client, production route, five-target signed hosted
 rehearsal, public `0.1.0`, `0.1.1`, and `0.1.2` releases, installed macOS arm64
 launch smoke, and exact macOS arm64 and Linux arm64 `0.1.0`-to-`0.1.1` updates

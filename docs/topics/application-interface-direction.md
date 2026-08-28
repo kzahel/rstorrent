@@ -8,8 +8,10 @@ Transfers, and Workbench are distinct responsive top-level destinations.
 Workbench preserves the dense inspection surface as a first-class interface;
 Transfers is the fresh-install default; and browser-local state restores the
 last destination and each destination's filter. Library currently presents
-truthful torrent-backed content sources only. Media catalog, metadata,
-artwork, and playback behavior remain unimplemented.
+truthful torrent-backed content sources only. Explicit user direction on
+2026-08-28 activates Tactical `072` to add a derived media catalog and one
+responsive torrent detail without thumbnails, external metadata, playback
+presentation, persistence, or Library-wide media aggregation.
 
 ## Purpose And Scope
 
@@ -58,11 +60,11 @@ added, ready to play, watched, and unwatched. It does not relabel torrent
 status filters as a media library.
 
 The mockup is directional, not evidence that playback is ready. RSTorrent does
-not yet own a media catalog, metadata/artwork acquisition, watched history,
-playback-oriented scheduling, or the future verified-range HTTP playback data
-plane described in [`client-surfaces.md`](client-surfaces.md). The product must
-not display content as playable until the responsible owner can establish that
-truthfully.
+not yet own a derived media catalog, metadata/artwork acquisition, watched
+history, or playback presentation. The verified-range HTTP data plane now
+exists as recorded in
+[`http-file-serving-and-streaming.md`](http-file-serving-and-streaming.md), but
+its existence alone does not make a Library row a truthful Play action.
 
 Tactical `055` therefore starts with All content, Recently added, Available
 offline, and Downloading filters derived only from torrent summary facts. Its
