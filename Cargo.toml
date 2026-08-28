@@ -8,6 +8,7 @@ members = [
     "crates/rstorrent-headless",
     "crates/rstorrent-ios",
     "crates/rstorrent-media",
+    "crates/rstorrent-media-catalog",
     "crates/rstorrent-native-host",
     "crates/rstorrent-platform",
     "crates/rstorrent-protocol",
@@ -34,6 +35,7 @@ getrandom = "0.3.4"
 minisign-verify = "0.2.5"
 quick-xml = "0.41.0"
 reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "stream"] }
+regex = "1.13.1"
 rustls = { version = "0.23.43", default-features = false }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
