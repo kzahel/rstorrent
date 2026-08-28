@@ -39,6 +39,16 @@ import org.rstorrent.session.uniffi.ProgressDisposition
 import org.rstorrent.session.uniffi.ProgressPhase
 import org.rstorrent.session.uniffi.ProgressReason
 import org.rstorrent.session.uniffi.SessionUdpStatus
+import org.rstorrent.session.uniffi.SessionCurrentRatesView
+import org.rstorrent.session.uniffi.SpeedCurrentRate
+import org.rstorrent.session.uniffi.SpeedHistoryAppend
+import org.rstorrent.session.uniffi.SpeedHistoryView
+import org.rstorrent.session.uniffi.SpeedMetric
+import org.rstorrent.session.uniffi.SpeedMetricAvailability
+import org.rstorrent.session.uniffi.SpeedPersistenceState
+import org.rstorrent.session.uniffi.SpeedRange
+import org.rstorrent.session.uniffi.SpeedSeriesAppend
+import org.rstorrent.session.uniffi.SpeedSeriesView
 import org.rstorrent.session.uniffi.StorageState
 import org.rstorrent.session.uniffi.StorageSettingsSnapshot
 import org.rstorrent.session.uniffi.SubscriptionSpec
@@ -391,6 +401,101 @@ class ProductStateReducerTest {
             )
         assertEquals(listOf("7", "8"), reduced.diagnostics.map { it.sequence })
         assertEquals("3", reduced.diagnosticSourceEvicted)
+    }
+
+    @Test
+    fun currentRatesReplaceIndependentlyOfSpeedHistory() {
+        val snapshot =
+            update(
+                "1",
+                "0",
+                "1",
+                ViewUpdatePayload.Snapshot(
+                    ViewSnapshot.SessionCurrentRates(
+                        SessionCurrentRatesView(
+                            "1000",
+                            listOf(SpeedCurrentRate(SpeedMetric.PAYLOAD_RECEIVED, "10")),
+                        ),
+                    ),
+                ),
+            )
+        val patch =
+            update(
+                "2",
+                "1",
+                "2",
+                ViewUpdatePayload.Patch(
+                    ViewPatch.SessionCurrentRates(
+                        SessionCurrentRatesView(
+                            "1100",
+                            listOf(SpeedCurrentRate(SpeedMetric.PAYLOAD_RECEIVED, "25")),
+                        ),
+                    ),
+                ),
+            )
+
+        val reduced = ProductStateReducer.reduce(ProductStateReducer.reduce(ProductState(), snapshot), patch)
+
+        assertEquals("1100", reduced.currentRates?.capturedMillis)
+        assertEquals("25", reduced.currentRates?.rates?.single()?.bytes)
+        assertEquals(null, reduced.speed)
+    }
+
+    @Test
+    fun speedHistoryAppendPreservesEveryCompletedBucketAndRejectsGaps() {
+        val snapshot =
+            update(
+                "1",
+                "0",
+                "1",
+                ViewUpdatePayload.Snapshot(ViewSnapshot.SessionSpeedHistory(speedHistory())),
+            )
+        val initial = ProductStateReducer.reduce(ProductState(), snapshot)
+        val append =
+            SpeedHistoryAppend(
+                capturedMillis = "400",
+                historyEpoch = "history-1",
+                baseCompleteThroughMillis = "200",
+                startMillis = "100",
+                completeThroughMillis = "400",
+                persistence = null,
+                series =
+                    listOf(
+                        SpeedSeriesAppend(
+                            SpeedMetric.PAYLOAD_RECEIVED,
+                            listOf("30", null),
+                        ),
+                    ),
+            )
+        val reduced =
+            ProductStateReducer.reduce(
+                initial,
+                update(
+                    "2",
+                    "1",
+                    "2",
+                    ViewUpdatePayload.Patch(ViewPatch.SessionSpeedHistory(append)),
+                ),
+            )
+
+        assertEquals(listOf("20", "30", "30", null), reduced.speed?.series?.single()?.values)
+        assertEquals("400", reduced.speed?.completeThroughMillis)
+
+        assertThrows(ViewContinuityException::class.java) {
+            ProductStateReducer.reduce(
+                initial,
+                update(
+                    "2",
+                    "1",
+                    "2",
+                    ViewUpdatePayload.Patch(
+                        ViewPatch.SessionSpeedHistory(
+                            append.copy(baseCompleteThroughMillis = "100"),
+                        ),
+                    ),
+                ),
+            )
+        }
     }
 
     @Test
@@ -802,6 +907,29 @@ class ProductStateReducerTest {
             throttleWaitMicros = "0",
             throttleWaitHighWaterMicros = "0",
             currentBurstCreditBytes = "0",
+        )
+
+    private fun speedHistory() =
+        SpeedHistoryView(
+            capturedMillis = "250",
+            historyEpoch = "history-1",
+            range = SpeedRange.SECONDS30,
+            bucketMillis = "100",
+            startMillis = "0",
+            completeThroughMillis = "200",
+            live = true,
+            persistence = SpeedPersistenceState.HEALTHY,
+            series =
+                listOf(
+                    SpeedSeriesView(
+                        SpeedMetric.PAYLOAD_RECEIVED,
+                        listOf("10", null, "20", "30"),
+                    ),
+                ),
+            catalog =
+                listOf(
+                    SpeedMetricAvailability(SpeedMetric.PAYLOAD_RECEIVED, true, null),
+                ),
         )
 
     private fun update(

@@ -1,7 +1,6 @@
 import type { InspectionApplication } from "../application";
 import type {
   ClientSettings,
-  SpeedHistoryView,
   SpeedMetric,
   SpeedRange,
   TorrentTransferLimits,
@@ -21,6 +20,7 @@ import type {
   SwarmRow,
   SwarmSet,
   PieceMapSet,
+  SpeedInspectionView,
   TorrentRow,
   TrackerRow,
 } from "../model";
@@ -516,9 +516,9 @@ const DEMO_SPEED_RANGES: Readonly<
 };
 
 function materializeDemoSpeed(
-  source: SpeedHistoryView | null,
+  source: SpeedInspectionView | null,
   selection: DesiredInspectionViews["speed"],
-): SpeedHistoryView | null {
+): SpeedInspectionView | null {
   if (source === null) return null;
   const range = selection?.range ?? source.range;
   const metrics = selection?.metrics ?? source.series.map((series) => series.metric);

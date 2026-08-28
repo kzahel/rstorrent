@@ -5885,6 +5885,24 @@
       ],
       "type": "object"
     },
+    "SessionCurrentRatesView": {
+      "properties": {
+        "captured_millis": {
+          "type": "string"
+        },
+        "rates": {
+          "items": {
+            "$ref": "#/$defs/SpeedCurrentRate"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "captured_millis",
+        "rates"
+      ],
+      "type": "object"
+    },
     "SessionUdpStatus": {
       "oneOf": [
         {
@@ -5948,6 +5966,50 @@
       ],
       "type": "object"
     },
+    "SpeedHistoryAppend": {
+      "properties": {
+        "base_complete_through_millis": {
+          "type": "string"
+        },
+        "captured_millis": {
+          "type": "string"
+        },
+        "complete_through_millis": {
+          "type": "string"
+        },
+        "history_epoch": {
+          "type": "string"
+        },
+        "persistence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SpeedPersistenceState"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "series": {
+          "items": {
+            "$ref": "#/$defs/SpeedSeriesAppend"
+          },
+          "type": "array"
+        },
+        "start_millis": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "captured_millis",
+        "history_epoch",
+        "base_complete_through_millis",
+        "start_millis",
+        "complete_through_millis",
+        "series"
+      ],
+      "type": "object"
+    },
     "SpeedHistoryView": {
       "properties": {
         "bucket_millis": {
@@ -5964,12 +6026,6 @@
         },
         "complete_through_millis": {
           "type": "string"
-        },
-        "current": {
-          "items": {
-            "$ref": "#/$defs/SpeedCurrentRate"
-          },
-          "type": "array"
         },
         "history_epoch": {
           "type": "string"
@@ -6002,7 +6058,6 @@
         "complete_through_millis",
         "live",
         "persistence",
-        "current",
         "series",
         "catalog"
       ],
@@ -6072,14 +6127,29 @@
       ],
       "type": "string"
     },
+    "SpeedSeriesAppend": {
+      "properties": {
+        "metric": {
+          "$ref": "#/$defs/SpeedMetric"
+        },
+        "values": {
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "metric",
+        "values"
+      ],
+      "type": "object"
+    },
     "SpeedSeriesView": {
       "properties": {
-        "current_rate_bytes": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
         "metric": {
           "$ref": "#/$defs/SpeedMetric"
         },
@@ -7857,17 +7927,33 @@
         },
         {
           "properties": {
-            "history": {
-              "$ref": "#/$defs/SpeedHistoryView"
+            "rates": {
+              "$ref": "#/$defs/SessionCurrentRatesView"
             },
             "type": {
-              "const": "session_speed",
+              "const": "session_current_rates",
               "type": "string"
             }
           },
           "required": [
             "type",
-            "history"
+            "rates"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "append": {
+              "$ref": "#/$defs/SpeedHistoryAppend"
+            },
+            "type": {
+              "const": "session_speed_history",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "append"
           ],
           "type": "object"
         },
@@ -8371,11 +8457,27 @@
         },
         {
           "properties": {
+            "rates": {
+              "$ref": "#/$defs/SessionCurrentRatesView"
+            },
+            "type": {
+              "const": "session_current_rates",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "rates"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
             "history": {
               "$ref": "#/$defs/SpeedHistoryView"
             },
             "type": {
-              "const": "session_speed",
+              "const": "session_speed_history",
               "type": "string"
             }
           },
@@ -8682,11 +8784,40 @@
               },
               "type": "array"
             },
+            "type": {
+              "const": "session_current_rates",
+              "type": "string"
+            },
+            "view_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "view_id",
+            "metrics"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "delivery": {
+              "$ref": "#/$defs/ViewDeliveryPolicy",
+              "default": {
+                "min_interval_millis": 0
+              }
+            },
+            "metrics": {
+              "items": {
+                "$ref": "#/$defs/SpeedMetric"
+              },
+              "type": "array"
+            },
             "range": {
               "$ref": "#/$defs/SpeedRange"
             },
             "type": {
-              "const": "session_speed",
+              "const": "session_speed_history",
               "type": "string"
             },
             "view_id": {

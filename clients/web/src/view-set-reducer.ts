@@ -8,6 +8,8 @@ import type {
   OpenViewSetResponse,
   PeerRowUpdate,
   PeerView,
+  SpeedHistoryAppend,
+  SpeedHistoryView,
   TorrentRowUpdate,
   TorrentView,
   UpdateBatch,
@@ -152,7 +154,15 @@ function cloneSnapshot(snapshot: ViewSnapshot): ViewSnapshot {
         ...snapshot,
         inspection: cloneDhtInspection(snapshot.inspection),
       };
-    case "session_speed":
+    case "session_current_rates":
+      return {
+        ...snapshot,
+        rates: {
+          ...snapshot.rates,
+          rates: snapshot.rates.rates.map((entry) => ({ ...entry })),
+        },
+      };
+    case "session_speed_history":
       return {
         ...snapshot,
         history: cloneSpeedHistory(snapshot.history),
@@ -269,11 +279,21 @@ function applyPatch(snapshot: ViewSnapshot, patch: ViewPatch): ViewSnapshot {
         type: "session_dht",
         inspection: cloneDhtInspection(patch.inspection),
       };
-    case "session_speed":
+    case "session_current_rates":
       return {
-        type: "session_speed",
-        history: cloneSpeedHistory(patch.history),
+        type: "session_current_rates",
+        rates: {
+          ...patch.rates,
+          rates: patch.rates.rates.map((entry) => ({ ...entry })),
+        },
       };
+    case "session_speed_history": {
+      if (snapshot.type !== "session_speed_history") throw new Error("unreachable");
+      return {
+        type: "session_speed_history",
+        history: applySpeedHistoryAppend(snapshot.history, patch.append),
+      };
+    }
     case "peers": {
       if (snapshot.type !== "peers") throw new Error("unreachable");
       const peers = new Map(
@@ -539,14 +559,67 @@ function cloneDhtInspection(
 }
 
 function cloneSpeedHistory(
-  history: Extract<ViewSnapshot, { type: "session_speed" }>["history"],
-): Extract<ViewSnapshot, { type: "session_speed" }>["history"] {
+  history: Extract<ViewSnapshot, { type: "session_speed_history" }>["history"],
+): Extract<ViewSnapshot, { type: "session_speed_history" }>["history"] {
   return {
     ...history,
-    current: history.current.map((entry) => ({ ...entry })),
     series: history.series.map((series) => ({
       ...series,
       values: [...series.values],
+    })),
+    catalog: history.catalog.map((entry) => ({ ...entry })),
+  };
+}
+
+function applySpeedHistoryAppend(
+  history: SpeedHistoryView,
+  append: SpeedHistoryAppend,
+): SpeedHistoryView {
+  if (
+    history.history_epoch !== append.history_epoch ||
+    history.complete_through_millis !== append.base_complete_through_millis
+  ) {
+    throw new ViewSetContinuityError("speed history append does not continue its position");
+  }
+  const bucket = BigInt(history.bucket_millis);
+  const base = BigInt(append.base_complete_through_millis);
+  const through = BigInt(append.complete_through_millis);
+  if (bucket === 0n || through < base || (through - base) % bucket !== 0n) {
+    throw new ViewSetContinuityError("speed history append range is invalid");
+  }
+  const count = Number((through - base) / bucket);
+  const window = history.series[0]?.values.length ?? 0;
+  const expectedStart = through > bucket * BigInt(Math.max(0, window - 1))
+    ? through - bucket * BigInt(Math.max(0, window - 1))
+    : 0n;
+  if (
+    count > window ||
+    BigInt(append.start_millis) !== expectedStart ||
+    (count === 0 && (append.persistence == null || append.series.length !== 0)) ||
+    (count !== 0 && append.series.length !== history.series.length)
+  ) {
+    throw new ViewSetContinuityError("speed history append shape is invalid");
+  }
+  if (
+    count !== 0 &&
+    history.series.some((series, index) => {
+      const update = append.series[index];
+      return update?.metric !== series.metric || update.values.length !== count;
+    })
+  ) {
+    throw new ViewSetContinuityError("speed history append series are incompatible");
+  }
+  return {
+    ...history,
+    captured_millis: append.captured_millis,
+    start_millis: append.start_millis,
+    complete_through_millis: append.complete_through_millis,
+    persistence: append.persistence ?? history.persistence,
+    series: history.series.map((series, index) => ({
+      ...series,
+      values: count === 0
+        ? [...series.values]
+        : [...series.values.slice(count), ...append.series[index]!.values],
     })),
     catalog: history.catalog.map((entry) => ({ ...entry })),
   };

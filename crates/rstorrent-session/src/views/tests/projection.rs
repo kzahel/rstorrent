@@ -546,13 +546,28 @@ async fn dht_view_replaces_and_coalesces_one_complete_observation() {
 }
 
 #[test]
-fn speed_clock_uses_the_fastest_interested_live_range() {
+fn speed_clock_uses_the_fastest_current_or_history_interest() {
     let hub = ViewHub::new(&snapshot(0, 4)).expect("hub");
     assert_eq!(hub.speed_tick_interval(), None);
+    let current = hub
+        .subscribe(SubscriptionSpec {
+            selector: ViewSelector::SessionCurrentRates {
+                metrics: vec![SpeedMetric::PayloadReceived],
+            },
+            projection: ViewProjection::CurrentRates,
+            delivery: DeliveryPolicy {
+                min_interval_millis: 750,
+                max_queue_bytes: 64 * 1024,
+            },
+            diagnostics: None,
+            catalog_page: None,
+        })
+        .expect("current-rate subscription");
+    assert_eq!(hub.speed_tick_interval(), Some(Duration::from_millis(750)));
     let historical = hub
         .subscribe(speed_spec(SpeedRange::Hours24))
         .expect("historical subscription");
-    assert_eq!(hub.speed_tick_interval(), None);
+    assert_eq!(hub.speed_tick_interval(), Some(Duration::from_millis(750)));
     let short = hub
         .subscribe(speed_spec(SpeedRange::Minutes2))
         .expect("short subscription");
@@ -565,6 +580,8 @@ fn speed_clock_uses_the_fastest_interested_live_range() {
     assert_eq!(hub.speed_tick_interval(), Some(Duration::from_millis(500)));
     drop(short);
     drop(historical);
+    assert_eq!(hub.speed_tick_interval(), Some(Duration::from_millis(750)));
+    drop(current);
     assert_eq!(hub.speed_tick_interval(), None);
 }
 

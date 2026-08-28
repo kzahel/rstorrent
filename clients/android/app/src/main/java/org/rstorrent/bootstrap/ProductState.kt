@@ -17,6 +17,8 @@ import org.rstorrent.session.uniffi.IndexRange
 import org.rstorrent.session.uniffi.PeerView
 import org.rstorrent.session.uniffi.PeerFieldUpdate
 import org.rstorrent.session.uniffi.PeerRowUpdate
+import org.rstorrent.session.uniffi.SessionCurrentRatesView
+import org.rstorrent.session.uniffi.SpeedHistoryAppend
 import org.rstorrent.session.uniffi.SpeedHistoryView
 import org.rstorrent.session.uniffi.StorageSettingsSnapshot
 import org.rstorrent.session.uniffi.SwarmCatalogState
@@ -87,6 +89,7 @@ data class ProductState(
     val swarms: Map<String, SwarmViewState> = emptyMap(),
     val disk: DiskViewState? = null,
     val dht: DhtInspectionView? = null,
+    val currentRates: SessionCurrentRatesView? = null,
     val speed: SpeedHistoryView? = null,
     val diagnostics: List<DiagnosticEvent> = emptyList(),
     val diagnosticSourceEvicted: String = "0",
@@ -237,7 +240,8 @@ internal object ProductStateReducer {
                     disk = DiskViewState(snapshot.pipeline, snapshot.pieces.associateBy(DiskPieceView::rowId)),
                 )
             is ViewSnapshot.SessionDht -> state.copy(dht = snapshot.inspection)
-            is ViewSnapshot.SessionSpeed -> state.copy(speed = snapshot.history)
+            is ViewSnapshot.SessionCurrentRates -> state.copy(currentRates = snapshot.rates)
+            is ViewSnapshot.SessionSpeedHistory -> state.copy(speed = snapshot.history)
             is ViewSnapshot.Files ->
                 state.copy(
                     files =
@@ -434,7 +438,15 @@ internal object ProductStateReducer {
                 state.copy(disk = DiskViewState(patch.pipeline, pieces))
             }
             is ViewPatch.SessionDht -> state.copy(dht = patch.inspection)
-            is ViewPatch.SessionSpeed -> state.copy(speed = patch.history)
+            is ViewPatch.SessionCurrentRates -> state.copy(currentRates = patch.rates)
+            is ViewPatch.SessionSpeedHistory ->
+                state.copy(
+                    speed = applySpeedHistoryAppend(
+                        state.speed
+                            ?: throw ViewContinuityException("speed append has no snapshot"),
+                        patch.append,
+                    ),
+                )
             is ViewPatch.Files -> {
                 val current = state.files[patch.torrentId] ?: return state
                 val files = current.files.toMutableMap()
@@ -480,6 +492,69 @@ internal object ProductStateReducer {
         if (fields.isEmpty() || fields.map { it::class }.toSet().size != fields.size) {
             throw ViewContinuityException("$label update has empty or duplicate fields")
         }
+    }
+
+    private fun applySpeedHistoryAppend(
+        history: SpeedHistoryView,
+        append: SpeedHistoryAppend,
+    ): SpeedHistoryView {
+        if (
+            history.historyEpoch != append.historyEpoch ||
+            history.completeThroughMillis != append.baseCompleteThroughMillis
+        ) {
+            throw ViewContinuityException("speed append does not continue its history")
+        }
+        val bucket = history.bucketMillis.toULongOrNull()
+            ?: throw ViewContinuityException("speed history bucket is invalid")
+        val base = append.baseCompleteThroughMillis.toULongOrNull()
+            ?: throw ViewContinuityException("speed append base is invalid")
+        val through = append.completeThroughMillis.toULongOrNull()
+            ?: throw ViewContinuityException("speed append position is invalid")
+        if (bucket == 0UL || through < base || (through - base) % bucket != 0UL) {
+            throw ViewContinuityException("speed append range is invalid")
+        }
+        val countLong = (through - base) / bucket
+        if (countLong > Int.MAX_VALUE.toULong()) {
+            throw ViewContinuityException("speed append is too large")
+        }
+        val count = countLong.toInt()
+        val window = history.series.firstOrNull()?.values?.size ?: 0
+        val historySpan = bucket * (window - 1).coerceAtLeast(0).toULong()
+        val expectedStart = if (through > historySpan) through - historySpan else 0UL
+        if (
+            count > window ||
+            append.startMillis.toULongOrNull() != expectedStart ||
+            (count == 0 && (append.persistence == null || append.series.isNotEmpty())) ||
+            (count != 0 && append.series.size != history.series.size)
+        ) {
+            throw ViewContinuityException("speed append shape is invalid")
+        }
+        if (
+            count != 0 && history.series.indices.any { index ->
+                val current = history.series[index]
+                val update = append.series[index]
+                current.metric != update.metric || update.values.size != count
+            }
+        ) {
+            throw ViewContinuityException("speed append series are incompatible")
+        }
+        return history.copy(
+            capturedMillis = append.capturedMillis,
+            startMillis = append.startMillis,
+            completeThroughMillis = append.completeThroughMillis,
+            persistence = append.persistence ?: history.persistence,
+            series =
+                history.series.mapIndexed { index, series ->
+                    series.copy(
+                        values =
+                            if (count == 0) {
+                                series.values.toList()
+                            } else {
+                                series.values.drop(count) + append.series[index].values
+                            },
+                    )
+                },
+        )
     }
 
     private fun applyTorrentUpdate(

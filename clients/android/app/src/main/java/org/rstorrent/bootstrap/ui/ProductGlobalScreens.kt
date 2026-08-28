@@ -35,12 +35,14 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.rstorrent.session.uniffi.DhtInspectionView
+import org.rstorrent.session.uniffi.SessionCurrentRatesView
 import org.rstorrent.session.uniffi.SpeedHistoryView
 import org.rstorrent.session.uniffi.SpeedSeriesView
 
 @Composable
 internal fun SpeedScreen(
     history: SpeedHistoryView?,
+    currentRates: SessionCurrentRatesView?,
     onBack: () -> Unit,
 ) {
     ProductRouteScaffold("Speed", onBack) {
@@ -57,7 +59,10 @@ internal fun SpeedScreen(
                     )
                 }
             }
-            items(history.series, key = { it.metric.name }) { series -> SpeedSeriesCard(series) }
+            val rates = currentRates?.rates?.associate { it.metric to it.bytes }.orEmpty()
+            items(history.series, key = { it.metric.name }) { series ->
+                SpeedSeriesCard(series, rates[series.metric])
+            }
             item("scope") {
                 RouteMessage(
                     "This screen follows engine payload, wire, write, and verification rates. " +
@@ -69,13 +74,16 @@ internal fun SpeedScreen(
 }
 
 @Composable
-private fun SpeedSeriesCard(series: SpeedSeriesView) {
+private fun SpeedSeriesCard(
+    series: SpeedSeriesView,
+    currentRate: String?,
+) {
     val values = series.values.map { it?.toULongOrNull()?.toFloat() ?: 0f }
     Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
         Column(Modifier.padding(12.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(series.metric.name.lowercase().replace('_', ' '), fontWeight = FontWeight.Medium)
-                Text(formatRate(series.currentRateBytes))
+                Text(formatRate(currentRate))
             }
             Spacer(Modifier.height(8.dp))
             Sparkline(values, Modifier.fillMaxWidth().height(72.dp), MaterialTheme.colorScheme.primary)

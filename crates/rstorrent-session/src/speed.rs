@@ -185,7 +185,6 @@ impl SpeedRange {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct SpeedSeriesView {
     pub metric: SpeedMetric,
-    pub current_rate_bytes: Option<String>,
     pub values: Vec<Option<String>>,
 }
 
@@ -203,6 +202,13 @@ pub struct SpeedMetricAvailability {
 pub struct SpeedCurrentRate {
     pub metric: SpeedMetric,
     pub bytes: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct SessionCurrentRatesView {
+    pub captured_millis: String,
+    pub rates: Vec<SpeedCurrentRate>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -224,9 +230,416 @@ pub struct SpeedHistoryView {
     pub complete_through_millis: String,
     pub live: bool,
     pub persistence: SpeedPersistenceState,
-    pub current: Vec<SpeedCurrentRate>,
     pub series: Vec<SpeedSeriesView>,
     pub catalog: Vec<SpeedMetricAvailability>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct SpeedSeriesAppend {
+    pub metric: SpeedMetric,
+    pub values: Vec<Option<String>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct SpeedHistoryAppend {
+    pub captured_millis: String,
+    pub history_epoch: String,
+    pub base_complete_through_millis: String,
+    pub start_millis: String,
+    pub complete_through_millis: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub persistence: Option<SpeedPersistenceState>,
+    pub series: Vec<SpeedSeriesAppend>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SpeedHistoryAppendError {
+    InvalidDecimal,
+    IncompatibleHistory,
+    InvalidRange,
+    InvalidSeries,
+}
+
+impl fmt::Display for SpeedHistoryAppendError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let message = match self {
+            Self::InvalidDecimal => "speed history position is not a canonical decimal",
+            Self::IncompatibleHistory => "speed history shape is incompatible",
+            Self::InvalidRange => "speed history append range is invalid",
+            Self::InvalidSeries => "speed history append series are invalid",
+        };
+        formatter.write_str(message)
+    }
+}
+
+impl Error for SpeedHistoryAppendError {}
+
+#[derive(Clone, Debug)]
+pub(crate) struct SpeedHistoryPosition {
+    history_epoch: String,
+    range: SpeedRange,
+    bucket_millis: String,
+    complete_through_millis: String,
+    live: bool,
+    persistence: SpeedPersistenceState,
+    metrics: Vec<SpeedMetric>,
+    point_count: usize,
+    catalog: Vec<SpeedMetricAvailability>,
+}
+
+impl SpeedHistoryPosition {
+    pub(crate) fn from_view(history: &SpeedHistoryView) -> Result<Self, SpeedHistoryAppendError> {
+        validate_history(history)?;
+        Ok(Self {
+            history_epoch: history.history_epoch.clone(),
+            range: history.range,
+            bucket_millis: history.bucket_millis.clone(),
+            complete_through_millis: history.complete_through_millis.clone(),
+            live: history.live,
+            persistence: history.persistence,
+            metrics: history.series.iter().map(|series| series.metric).collect(),
+            point_count: history.series[0].values.len(),
+            catalog: history.catalog.clone(),
+        })
+    }
+
+    pub(crate) fn append_to(
+        &mut self,
+        current: &SpeedHistoryView,
+    ) -> Result<Option<SpeedHistoryAppend>, SpeedHistoryAppendError> {
+        validate_history(current)?;
+        if self.history_epoch != current.history_epoch
+            || self.range != current.range
+            || self.bucket_millis != current.bucket_millis
+            || self.live != current.live
+            || self.catalog != current.catalog
+            || self.point_count != current.series[0].values.len()
+            || self.metrics
+                != current
+                    .series
+                    .iter()
+                    .map(|series| series.metric)
+                    .collect::<Vec<_>>()
+        {
+            return Err(SpeedHistoryAppendError::IncompatibleHistory);
+        }
+        let bucket_millis = canonical_u64(&current.bucket_millis)?;
+        let previous_through = canonical_u64(&self.complete_through_millis)?;
+        let current_through = canonical_u64(&current.complete_through_millis)?;
+        let elapsed = current_through
+            .checked_sub(previous_through)
+            .ok_or(SpeedHistoryAppendError::InvalidRange)?;
+        if elapsed % bucket_millis != 0 {
+            return Err(SpeedHistoryAppendError::InvalidRange);
+        }
+        let appended = usize::try_from(elapsed / bucket_millis)
+            .map_err(|_| SpeedHistoryAppendError::InvalidRange)?;
+        if appended > self.point_count {
+            return Err(SpeedHistoryAppendError::InvalidRange);
+        }
+        let persistence = (self.persistence != current.persistence).then_some(current.persistence);
+        if appended == 0 && persistence.is_none() {
+            return Ok(None);
+        }
+        let series = if appended == 0 {
+            Vec::new()
+        } else {
+            current
+                .series
+                .iter()
+                .map(|series| SpeedSeriesAppend {
+                    metric: series.metric,
+                    values: series.values[series.values.len() - appended..].to_vec(),
+                })
+                .collect()
+        };
+        let append = SpeedHistoryAppend {
+            captured_millis: current.captured_millis.clone(),
+            history_epoch: current.history_epoch.clone(),
+            base_complete_through_millis: self.complete_through_millis.clone(),
+            start_millis: current.start_millis.clone(),
+            complete_through_millis: current.complete_through_millis.clone(),
+            persistence,
+            series,
+        };
+        self.complete_through_millis = current.complete_through_millis.clone();
+        self.persistence = current.persistence;
+        Ok(Some(append))
+    }
+}
+
+impl SpeedHistoryView {
+    pub fn append_since(
+        previous: &Self,
+        current: &Self,
+    ) -> Result<Option<SpeedHistoryAppend>, SpeedHistoryAppendError> {
+        let mut position = SpeedHistoryPosition::from_view(previous)?;
+        position.append_to(current)
+    }
+
+    pub fn apply_append(
+        &mut self,
+        append: &SpeedHistoryAppend,
+    ) -> Result<(), SpeedHistoryAppendError> {
+        validate_history(self)?;
+        if self.history_epoch != append.history_epoch
+            || self.complete_through_millis != append.base_complete_through_millis
+        {
+            return Err(SpeedHistoryAppendError::IncompatibleHistory);
+        }
+        canonical_u64(&append.captured_millis)?;
+        let bucket_millis = canonical_u64(&self.bucket_millis)?;
+        let previous_through = canonical_u64(&append.base_complete_through_millis)?;
+        let current_through = canonical_u64(&append.complete_through_millis)?;
+        canonical_u64(&append.start_millis)?;
+        let elapsed = current_through
+            .checked_sub(previous_through)
+            .ok_or(SpeedHistoryAppendError::InvalidRange)?;
+        if elapsed % bucket_millis != 0 {
+            return Err(SpeedHistoryAppendError::InvalidRange);
+        }
+        let appended = usize::try_from(elapsed / bucket_millis)
+            .map_err(|_| SpeedHistoryAppendError::InvalidRange)?;
+        let value_count = append_value_count(&append.series)?;
+        if value_count != appended {
+            return Err(SpeedHistoryAppendError::InvalidSeries);
+        }
+        let window = self.series.first().map_or(0, |series| series.values.len());
+        let expected_start = current_through
+            .saturating_sub(bucket_millis.saturating_mul(window.saturating_sub(1) as u64));
+        if appended > window
+            || (appended == 0 && append.persistence.is_none())
+            || (appended != 0 && append.series.len() != self.series.len())
+            || canonical_u64(&append.start_millis)? != expected_start
+        {
+            return Err(SpeedHistoryAppendError::InvalidRange);
+        }
+        if appended != 0
+            && self
+                .series
+                .iter()
+                .zip(&append.series)
+                .any(|(current, next)| {
+                    current.metric != next.metric || next.values.len() != appended
+                })
+        {
+            return Err(SpeedHistoryAppendError::InvalidSeries);
+        }
+        for (series, update) in self.series.iter_mut().zip(&append.series) {
+            series.values.drain(..appended);
+            series.values.extend(update.values.iter().cloned());
+        }
+        self.captured_millis = append.captured_millis.clone();
+        self.start_millis = append.start_millis.clone();
+        self.complete_through_millis = append.complete_through_millis.clone();
+        if let Some(persistence) = append.persistence {
+            self.persistence = persistence;
+        }
+        Ok(())
+    }
+}
+
+impl SpeedHistoryAppend {
+    pub fn merge(&mut self, next: &Self) -> Result<(), SpeedHistoryAppendError> {
+        validate_append_metadata(self)?;
+        validate_append_metadata(next)?;
+        if self.history_epoch != next.history_epoch
+            || self.complete_through_millis != next.base_complete_through_millis
+        {
+            return Err(SpeedHistoryAppendError::IncompatibleHistory);
+        }
+        let current_count = append_value_count(&self.series)?;
+        let next_count = append_value_count(&next.series)?;
+        let current_step = append_step_millis(self, current_count)?;
+        let next_step = append_step_millis(next, next_count)?;
+        if (current_count == 0 && self.persistence.is_none())
+            || (next_count == 0 && next.persistence.is_none())
+            || (current_step.is_some() && next_step.is_some() && current_step != next_step)
+            || (current_count != 0
+                && next_count != 0
+                && (self.series.len() != next.series.len()
+                    || self
+                        .series
+                        .iter()
+                        .zip(&next.series)
+                        .any(|(left, right)| left.metric != right.metric)))
+        {
+            return Err(SpeedHistoryAppendError::InvalidSeries);
+        }
+        if let Some(step) = next_step.or(current_step) {
+            let merged_count = current_count
+                .checked_add(next_count)
+                .ok_or(SpeedHistoryAppendError::InvalidRange)?;
+            if merged_count > append_window_count(next, step)? {
+                return Err(SpeedHistoryAppendError::InvalidRange);
+            }
+        }
+        if current_count == 0 && next_count != 0 {
+            self.series = next.series.clone();
+        } else if current_count != 0 && next_count != 0 {
+            for (current, next) in self.series.iter_mut().zip(&next.series) {
+                current.values.extend(next.values.iter().cloned());
+            }
+        }
+        self.captured_millis = next.captured_millis.clone();
+        self.start_millis = next.start_millis.clone();
+        self.complete_through_millis = next.complete_through_millis.clone();
+        if next.persistence.is_some() {
+            self.persistence = next.persistence;
+        }
+        Ok(())
+    }
+}
+
+fn append_window_count(
+    append: &SpeedHistoryAppend,
+    step_millis: u64,
+) -> Result<usize, SpeedHistoryAppendError> {
+    let start = canonical_u64(&append.start_millis)?;
+    let through = canonical_u64(&append.complete_through_millis)?;
+    let span = through
+        .checked_sub(start)
+        .ok_or(SpeedHistoryAppendError::InvalidRange)?;
+    if step_millis == 0 || span % step_millis != 0 {
+        return Err(SpeedHistoryAppendError::InvalidRange);
+    }
+    usize::try_from(span / step_millis)
+        .ok()
+        .and_then(|count| count.checked_add(1))
+        .ok_or(SpeedHistoryAppendError::InvalidRange)
+}
+
+fn append_step_millis(
+    append: &SpeedHistoryAppend,
+    count: usize,
+) -> Result<Option<u64>, SpeedHistoryAppendError> {
+    let base = canonical_u64(&append.base_complete_through_millis)?;
+    let through = canonical_u64(&append.complete_through_millis)?;
+    let elapsed = through
+        .checked_sub(base)
+        .ok_or(SpeedHistoryAppendError::InvalidRange)?;
+    if count == 0 {
+        return if elapsed == 0 {
+            Ok(None)
+        } else {
+            Err(SpeedHistoryAppendError::InvalidRange)
+        };
+    }
+    let count = u64::try_from(count).map_err(|_| SpeedHistoryAppendError::InvalidRange)?;
+    if elapsed == 0 || elapsed % count != 0 {
+        return Err(SpeedHistoryAppendError::InvalidRange);
+    }
+    Ok(Some(elapsed / count))
+}
+
+fn append_value_count(series: &[SpeedSeriesAppend]) -> Result<usize, SpeedHistoryAppendError> {
+    let Some(first) = series.first() else {
+        return Ok(0);
+    };
+    let metrics = series
+        .iter()
+        .map(|entry| entry.metric)
+        .collect::<BTreeSet<_>>();
+    if first.values.is_empty()
+        || series.len() > MAX_SPEED_SERIES
+        || metrics.len() != series.len()
+        || metrics
+            .iter()
+            .any(|metric| !SpeedMetric::AVAILABLE.contains(metric))
+        || series
+            .iter()
+            .any(|entry| entry.values.len() != first.values.len())
+    {
+        return Err(SpeedHistoryAppendError::InvalidSeries);
+    }
+    for sample in series.iter().flat_map(|entry| &entry.values).flatten() {
+        canonical_u64(sample)?;
+    }
+    Ok(first.values.len())
+}
+
+fn validate_append_metadata(append: &SpeedHistoryAppend) -> Result<(), SpeedHistoryAppendError> {
+    if append.history_epoch.is_empty() || append.history_epoch.len() > 128 {
+        return Err(SpeedHistoryAppendError::IncompatibleHistory);
+    }
+    canonical_u64(&append.captured_millis)?;
+    canonical_u64(&append.base_complete_through_millis)?;
+    canonical_u64(&append.start_millis)?;
+    canonical_u64(&append.complete_through_millis)?;
+    Ok(())
+}
+
+fn validate_history(history: &SpeedHistoryView) -> Result<(), SpeedHistoryAppendError> {
+    let tier = history.range.tier();
+    let metrics = history
+        .series
+        .iter()
+        .map(|series| series.metric)
+        .collect::<BTreeSet<_>>();
+    let catalog_metrics = history
+        .catalog
+        .iter()
+        .map(|entry| entry.metric)
+        .collect::<BTreeSet<_>>();
+    if history.history_epoch.is_empty()
+        || history.history_epoch.len() > 128
+        || history.series.is_empty()
+        || history.series.len() > MAX_SPEED_SERIES
+        || metrics.len() != history.series.len()
+        || metrics
+            .iter()
+            .any(|metric| !SpeedMetric::AVAILABLE.contains(metric))
+        || history
+            .series
+            .iter()
+            .any(|series| series.values.len() != tier.count)
+        || history
+            .series
+            .windows(2)
+            .any(|pair| pair[0].values.len() != pair[1].values.len())
+        || history.catalog.len() > SpeedMetric::AVAILABLE.len()
+        || catalog_metrics.len() != history.catalog.len()
+        || catalog_metrics
+            .iter()
+            .any(|metric| !SpeedMetric::AVAILABLE.contains(metric))
+    {
+        return Err(SpeedHistoryAppendError::InvalidSeries);
+    }
+    for sample in history
+        .series
+        .iter()
+        .flat_map(|series| &series.values)
+        .flatten()
+    {
+        canonical_u64(sample)?;
+    }
+    canonical_u64(&history.captured_millis)?;
+    let bucket_millis = canonical_u64(&history.bucket_millis)?;
+    if bucket_millis != tier.bucket_millis || history.live != history.range.is_live() {
+        return Err(SpeedHistoryAppendError::InvalidRange);
+    }
+    let start = canonical_u64(&history.start_millis)?;
+    let through = canonical_u64(&history.complete_through_millis)?;
+    let expected_start =
+        through.saturating_sub(bucket_millis.saturating_mul(tier.count.saturating_sub(1) as u64));
+    if start != expected_start {
+        return Err(SpeedHistoryAppendError::InvalidRange);
+    }
+    Ok(())
+}
+
+fn canonical_u64(value: &str) -> Result<u64, SpeedHistoryAppendError> {
+    if value.is_empty()
+        || (value.len() > 1 && value.starts_with('0'))
+        || !value.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return Err(SpeedHistoryAppendError::InvalidDecimal);
+    }
+    value
+        .parse()
+        .map_err(|_| SpeedHistoryAppendError::InvalidDecimal)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -506,9 +919,6 @@ impl SessionRateHistory {
                     .collect();
                 Some(SpeedSeriesView {
                     metric: *metric,
-                    current_rate_bytes: self
-                        .current_rate(*metric, now_millis)
-                        .map(|bytes| bytes.to_string()),
                     values,
                 })
             })
@@ -526,17 +936,28 @@ impl SessionRateHistory {
             } else {
                 SpeedPersistenceState::Healthy
             },
-            current: SpeedMetric::AVAILABLE
-                .into_iter()
+            series,
+            catalog: metric_catalog(),
+        }
+    }
+
+    pub(crate) fn current_rates(
+        &mut self,
+        metrics: &[SpeedMetric],
+        now_millis: u64,
+    ) -> SessionCurrentRatesView {
+        self.advance_to(now_millis);
+        SessionCurrentRatesView {
+            captured_millis: now_millis.to_string(),
+            rates: metrics
+                .iter()
                 .map(|metric| SpeedCurrentRate {
-                    metric,
+                    metric: *metric,
                     bytes: self
-                        .current_rate(metric, now_millis)
+                        .current_rate(*metric, now_millis)
                         .map(|bytes| bytes.to_string()),
                 })
                 .collect(),
-            series,
-            catalog: metric_catalog(),
         }
     }
 
@@ -1246,6 +1667,145 @@ mod tests {
     }
 
     #[test]
+    fn current_rates_include_only_requested_metrics() {
+        let mut history = SessionRateHistory::new();
+        let now = 1_000_000;
+        history.record_at(SpeedMetric::PayloadReceived, 1_024, now - 100);
+        history.record_at(SpeedMetric::PayloadUploaded, 2_048, now - 100);
+        let rates = history.current_rates(
+            &[SpeedMetric::PayloadUploaded, SpeedMetric::PayloadReceived],
+            now,
+        );
+        assert_eq!(rates.captured_millis, now.to_string());
+        assert_eq!(rates.rates.len(), 2);
+        assert_eq!(rates.rates[0].metric, SpeedMetric::PayloadUploaded);
+        assert_eq!(rates.rates[1].metric, SpeedMetric::PayloadReceived);
+    }
+
+    #[test]
+    fn history_appends_reconstruct_exact_complete_windows_and_merge() {
+        let mut history = SessionRateHistory::new();
+        let first_now = 1_000_000;
+        history.record_at(SpeedMetric::PayloadReceived, 100, first_now - 100);
+        history.record_at(SpeedMetric::PayloadUploaded, 50, first_now - 100);
+        let first = history.view(
+            SpeedRange::Seconds30,
+            &[SpeedMetric::PayloadReceived, SpeedMetric::PayloadUploaded],
+            first_now,
+        );
+
+        history.record_at(SpeedMetric::PayloadReceived, 200, first_now + 50);
+        let second = history.view(
+            SpeedRange::Seconds30,
+            &[SpeedMetric::PayloadReceived, SpeedMetric::PayloadUploaded],
+            first_now + 200,
+        );
+        let first_append = SpeedHistoryView::append_since(&first, &second)
+            .expect("compatible append")
+            .expect("completed buckets");
+        assert_eq!(first_append.series.len(), 2);
+        assert_eq!(first_append.series[0].values.len(), 2);
+
+        history.record_at(SpeedMetric::PayloadUploaded, 75, first_now + 250);
+        let third = history.view(
+            SpeedRange::Seconds30,
+            &[SpeedMetric::PayloadReceived, SpeedMetric::PayloadUploaded],
+            first_now + 400,
+        );
+        let second_append = SpeedHistoryView::append_since(&second, &third)
+            .expect("compatible append")
+            .expect("completed buckets");
+
+        let mut sequential = first.clone();
+        sequential
+            .apply_append(&first_append)
+            .expect("first append applies");
+        sequential
+            .apply_append(&second_append)
+            .expect("second append applies");
+        assert_eq!(sequential, third);
+
+        let mut merged = first_append;
+        merged.merge(&second_append).expect("appends merge");
+        let mut coalesced = first;
+        coalesced
+            .apply_append(&merged)
+            .expect("merged append applies");
+        assert_eq!(coalesced, third);
+    }
+
+    #[test]
+    fn history_append_rejects_wrong_base_shape_and_missing_points() {
+        let mut history = SessionRateHistory::new();
+        let now = 1_000_000;
+        let first = history.view(SpeedRange::Seconds30, &[SpeedMetric::PayloadReceived], now);
+        let second = history.view(
+            SpeedRange::Seconds30,
+            &[SpeedMetric::PayloadReceived],
+            now + 200,
+        );
+        let append = SpeedHistoryView::append_since(&first, &second)
+            .expect("compatible append")
+            .expect("completed buckets");
+
+        let mut wrong_base = first.clone();
+        wrong_base.complete_through_millis =
+            (canonical_u64(&wrong_base.complete_through_millis).expect("complete through") + 100)
+                .to_string();
+        wrong_base.start_millis =
+            (canonical_u64(&wrong_base.start_millis).expect("start") + 100).to_string();
+        assert_eq!(
+            wrong_base.apply_append(&append),
+            Err(SpeedHistoryAppendError::IncompatibleHistory)
+        );
+
+        let mut missing = append;
+        missing.series[0].values.pop();
+        assert_eq!(
+            first.clone().apply_append(&missing),
+            Err(SpeedHistoryAppendError::InvalidSeries)
+        );
+
+        let incompatible = history.view(
+            SpeedRange::Minutes2,
+            &[SpeedMetric::PayloadReceived],
+            now + 500,
+        );
+        assert_eq!(
+            SpeedHistoryView::append_since(&first, &incompatible),
+            Err(SpeedHistoryAppendError::IncompatibleHistory)
+        );
+    }
+
+    #[test]
+    fn history_merge_never_exceeds_the_selected_window() {
+        let mut history = SessionRateHistory::new();
+        let now = 1_000_000;
+        let first = history.view(SpeedRange::Seconds30, &[SpeedMetric::PayloadReceived], now);
+        let second = history.view(
+            SpeedRange::Seconds30,
+            &[SpeedMetric::PayloadReceived],
+            now + 20_000,
+        );
+        let third = history.view(
+            SpeedRange::Seconds30,
+            &[SpeedMetric::PayloadReceived],
+            now + 40_000,
+        );
+        let mut first_append = SpeedHistoryView::append_since(&first, &second)
+            .expect("compatible first append")
+            .expect("first completed buckets");
+        let second_append = SpeedHistoryView::append_since(&second, &third)
+            .expect("compatible second append")
+            .expect("second completed buckets");
+
+        assert_eq!(
+            first_append.merge(&second_append),
+            Err(SpeedHistoryAppendError::InvalidRange)
+        );
+    }
+
+    #[test]
     fn persistent_tiers_round_trip_in_separate_database() {
         let root = std::env::temp_dir().join(format!(
             "rstorrent-speed-{}-{}",
@@ -1429,17 +1989,9 @@ mod tests {
         let historical = history.view(SpeedRange::Hours24, &[SpeedMetric::PayloadReceived], now);
         assert_eq!(historical.series[0].values.last(), Some(&None));
 
-        let early = history.view(
-            SpeedRange::Seconds30,
-            &[SpeedMetric::PayloadReceived],
-            now + 500,
-        );
-        assert_eq!(early.series[0].current_rate_bytes, None);
-        let covered = history.view(
-            SpeedRange::Seconds30,
-            &[SpeedMetric::PayloadReceived],
-            now + 1_000,
-        );
-        assert_eq!(covered.series[0].current_rate_bytes.as_deref(), Some("0"));
+        let early = history.current_rates(&[SpeedMetric::PayloadReceived], now + 500);
+        assert_eq!(early.rates[0].bytes, None);
+        let covered = history.current_rates(&[SpeedMetric::PayloadReceived], now + 1_000);
+        assert_eq!(covered.rates[0].bytes.as_deref(), Some("0"));
     }
 }

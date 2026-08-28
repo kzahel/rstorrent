@@ -15,7 +15,9 @@ use crate::control::{RemovalState, StorageState, TorrentProtocolIdentities, Torr
 use crate::diagnostics::{DiagnosticEvent, DiagnosticFilter, DiagnosticRetention};
 use crate::file_views::{FileCatalogState, FileView};
 use crate::settings::{ClientSettingsRuntimeView, StorageSettingsSnapshot, TorrentTransferLimits};
-use crate::speed::{SpeedHistoryView, SpeedMetric, SpeedRange};
+use crate::speed::{
+    SessionCurrentRatesView, SpeedHistoryAppend, SpeedHistoryView, SpeedMetric, SpeedRange,
+};
 use crate::tracker_views::{TrackerCatalogState, TrackerView};
 
 use super::row_updates::{
@@ -152,7 +154,8 @@ impl Default for ApiHello {
                 "torrent_trackers".to_owned(),
                 "session_disk".to_owned(),
                 "session_dht".to_owned(),
-                "session_speed".to_owned(),
+                "session_current_rates".to_owned(),
+                "session_speed_history".to_owned(),
                 "piece_activity".to_owned(),
                 "diagnostics".to_owned(),
             ],
@@ -209,7 +212,13 @@ pub enum ViewSpec {
         #[serde(default)]
         delivery: ViewDeliveryPolicy,
     },
-    SessionSpeed {
+    SessionCurrentRates {
+        view_id: String,
+        metrics: Vec<SpeedMetric>,
+        #[serde(default)]
+        delivery: ViewDeliveryPolicy,
+    },
+    SessionSpeedHistory {
         view_id: String,
         range: SpeedRange,
         metrics: Vec<SpeedMetric>,
@@ -268,7 +277,8 @@ impl ViewSpec {
             | Self::PieceActivity { view_id, .. }
             | Self::SessionDisk { view_id, .. }
             | Self::SessionDht { view_id, .. }
-            | Self::SessionSpeed { view_id, .. }
+            | Self::SessionCurrentRates { view_id, .. }
+            | Self::SessionSpeedHistory { view_id, .. }
             | Self::TorrentPeers { view_id, .. }
             | Self::TorrentSwarm { view_id, .. }
             | Self::TorrentFiles { view_id, .. }
@@ -284,7 +294,8 @@ impl ViewSpec {
             | Self::PieceActivity { delivery, .. }
             | Self::SessionDisk { delivery, .. }
             | Self::SessionDht { delivery, .. }
-            | Self::SessionSpeed { delivery, .. }
+            | Self::SessionCurrentRates { delivery, .. }
+            | Self::SessionSpeedHistory { delivery, .. }
             | Self::TorrentPeers { delivery, .. }
             | Self::TorrentSwarm { delivery, .. }
             | Self::TorrentFiles { delivery, .. }
@@ -321,12 +332,20 @@ impl ViewSpec {
                 (ViewSelector::TorrentList, ViewProjection::Disk, None, None)
             }
             Self::SessionDht { .. } => (ViewSelector::SessionDht, ViewProjection::Dht, None, None),
-            Self::SessionSpeed { range, metrics, .. } => (
-                ViewSelector::SessionSpeed {
+            Self::SessionCurrentRates { metrics, .. } => (
+                ViewSelector::SessionCurrentRates {
+                    metrics: metrics.clone(),
+                },
+                ViewProjection::CurrentRates,
+                None,
+                None,
+            ),
+            Self::SessionSpeedHistory { range, metrics, .. } => (
+                ViewSelector::SessionSpeedHistory {
                     range: *range,
                     metrics: metrics.clone(),
                 },
-                ViewProjection::Speed,
+                ViewProjection::SpeedHistory,
                 None,
                 None,
             ),
@@ -545,7 +564,10 @@ pub enum ViewSelector {
         #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
     },
-    SessionSpeed {
+    SessionCurrentRates {
+        metrics: Vec<SpeedMetric>,
+    },
+    SessionSpeedHistory {
         range: SpeedRange,
         metrics: Vec<SpeedMetric>,
     },
@@ -559,7 +581,8 @@ pub enum ViewProjection {
     PieceActivity,
     Disk,
     Dht,
-    Speed,
+    CurrentRates,
+    SpeedHistory,
     Peers,
     Swarm,
     Files,
@@ -1361,7 +1384,10 @@ pub enum ViewSnapshot {
     SessionDht {
         inspection: DhtInspectionView,
     },
-    SessionSpeed {
+    SessionCurrentRates {
+        rates: SessionCurrentRatesView,
+    },
+    SessionSpeedHistory {
         history: SpeedHistoryView,
     },
     Peers {
@@ -1436,8 +1462,11 @@ pub enum ViewPatch {
     SessionDht {
         inspection: DhtInspectionView,
     },
-    SessionSpeed {
-        history: SpeedHistoryView,
+    SessionCurrentRates {
+        rates: SessionCurrentRatesView,
+    },
+    SessionSpeedHistory {
+        append: SpeedHistoryAppend,
     },
     Peers {
         #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]

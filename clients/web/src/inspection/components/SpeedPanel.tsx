@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { SpeedHistoryView, SpeedMetric, SpeedRange } from "../../api";
+import type { SpeedMetric, SpeedRange } from "../../api";
+import type { SpeedInspectionView } from "../model";
 import type { DataUnits } from "../appearance";
 import { useInspectionStore } from "../context";
 import { formatBytes, formatExactBytes } from "../format";
@@ -191,7 +192,7 @@ function SpeedCanvas({
   stale,
   dataUnits,
 }: {
-  history: SpeedHistoryView;
+  history: SpeedInspectionView;
   stale: boolean;
   dataUnits: DataUnits;
 }) {
@@ -316,7 +317,7 @@ function SpeedCanvas({
 
 function drawChart(
   canvas: HTMLCanvasElement | null,
-  history: SpeedHistoryView,
+  history: SpeedInspectionView,
   size: { width: number; height: number },
   phase: number,
   cursor: number | null,
@@ -478,7 +479,7 @@ function ExactSample({
   index,
   dataUnits,
 }: {
-  history: SpeedHistoryView;
+  history: SpeedInspectionView;
   index: number;
   dataUnits: DataUnits;
 }) {
@@ -508,7 +509,7 @@ function WindowSummaries({
   history,
   dataUnits,
 }: {
-  history: SpeedHistoryView;
+  history: SpeedInspectionView;
   dataUnits: DataUnits;
 }) {
   const bucketMillis = number(history.bucket_millis);
@@ -573,7 +574,7 @@ function TrafficBreakdown({
   current,
   dataUnits,
 }: {
-  history: SpeedHistoryView;
+  history: SpeedInspectionView;
   current: ReadonlyMap<SpeedMetric, number | null>;
   dataUnits: DataUnits;
 }) {
@@ -626,7 +627,7 @@ function TrafficBreakdown({
   );
 }
 
-function timeLabel(history: SpeedHistoryView, index: number): string {
+function timeLabel(history: SpeedInspectionView, index: number): string {
   const timestamp =
     number(history.start_millis) + index * number(history.bucket_millis);
   if (!history.live) {

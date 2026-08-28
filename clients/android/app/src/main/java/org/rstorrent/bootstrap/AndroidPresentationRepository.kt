@@ -37,7 +37,7 @@ internal class AndroidPresentationRepository(
     private lateinit var client: AndroidApplicationClient
     private var list: OwnedSubscription? = null
     private val detail = mutableListOf<OwnedSubscription>()
-    private var global: OwnedSubscription? = null
+    private val global = mutableListOf<OwnedSubscription>()
     private var diagnostics: OwnedSubscription? = null
     private var selectedTorrent: String? = null
     private var diagnosticProfile = DiagnosticProfile.NORMAL
@@ -144,12 +144,15 @@ internal class AndroidPresentationRepository(
         scope.launch {
             ownership.withLock {
                 if (request != globalRequest.get()) return@withLock
-                global?.close()
-                global =
+                closeAll(global)
+                global +=
                     when (presentation) {
-                        GlobalPresentation.NONE -> null
-                        GlobalPresentation.SPEED -> subscribe(speedSpec(), false)
-                        GlobalPresentation.DHT -> subscribe(dhtSpec(), false)
+                        GlobalPresentation.NONE -> emptyList()
+                        GlobalPresentation.SPEED ->
+                            listOf(currentRatesSpec(), speedHistorySpec()).map {
+                                subscribe(it, false)
+                            }
+                        GlobalPresentation.DHT -> listOf(subscribe(dhtSpec(), false))
                     }
             }
         }
@@ -182,8 +185,7 @@ internal class AndroidPresentationRepository(
             list?.close()
             list = null
             closeAll(detail)
-            global?.close()
-            global = null
+            closeAll(global)
             diagnostics?.close()
             diagnostics = null
         }
@@ -304,20 +306,29 @@ internal class AndroidPresentationRepository(
         CatalogPageRequest(offset, 1_024U),
     )
 
-    private fun speedSpec() =
+    private val speedMetrics =
+        listOf(
+            SpeedMetric.PAYLOAD_RECEIVED,
+            SpeedMetric.PAYLOAD_UPLOADED,
+            SpeedMetric.STAGED_WRITE,
+            SpeedMetric.PAYLOAD_VERIFIED,
+            SpeedMetric.PEER_WIRE_RECEIVED,
+            SpeedMetric.PEER_WIRE_SENT,
+        )
+
+    private fun currentRatesSpec() =
         SubscriptionSpec(
-            ViewSelector.SessionSpeed(
-                SpeedRange.MINUTES2,
-                listOf(
-                    SpeedMetric.PAYLOAD_RECEIVED,
-                    SpeedMetric.PAYLOAD_UPLOADED,
-                    SpeedMetric.STAGED_WRITE,
-                    SpeedMetric.PAYLOAD_VERIFIED,
-                    SpeedMetric.PEER_WIRE_RECEIVED,
-                    SpeedMetric.PEER_WIRE_SENT,
-                ),
-            ),
-            ViewProjection.SPEED,
+            ViewSelector.SessionCurrentRates(speedMetrics),
+            ViewProjection.CURRENT_RATES,
+            DeliveryPolicy(500U, 512U * 1024U),
+            null,
+            null,
+        )
+
+    private fun speedHistorySpec() =
+        SubscriptionSpec(
+            ViewSelector.SessionSpeedHistory(SpeedRange.MINUTES2, speedMetrics),
+            ViewProjection.SPEED_HISTORY,
             DeliveryPolicy(500U, 512U * 1024U),
             null,
             null,

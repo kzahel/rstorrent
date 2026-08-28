@@ -11,6 +11,7 @@ import type {
   SwarmRow,
   SwarmSet,
   PieceMapSet,
+  SpeedInspectionView,
   TorrentEta,
   TorrentCheckingProgress,
   TorrentRow,
@@ -474,7 +475,7 @@ function buildDhtInspection(
 function buildSpeedHistory(
   elapsedMs: number,
   scenarioId: DemoScenarioId,
-): SpeedHistoryView {
+): SpeedInspectionView {
   const count = 300;
   const bucketMillis = 100;
   const animatedElapsed = scenarioId === "speed-stale" ? 25_000 : elapsedMs;

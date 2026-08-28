@@ -168,11 +168,13 @@ pub(super) fn patch_for(
             _,
             ViewProjection::Disk
             | ViewProjection::Dht
-            | ViewProjection::Speed
+            | ViewProjection::CurrentRates
+            | ViewProjection::SpeedHistory
             | ViewProjection::Diagnostics,
         ) => None,
         (ViewSelector::SessionDht, _) => None,
-        (ViewSelector::SessionSpeed { .. }, _) => None,
+        (ViewSelector::SessionCurrentRates { .. }, _) => None,
+        (ViewSelector::SessionSpeedHistory { .. }, _) => None,
     }
 }
 
@@ -794,14 +796,18 @@ pub(crate) fn coalesce_patch(current: &mut ViewPatch, next: &ViewPatch) -> bool 
             true
         }
         (
-            ViewPatch::SessionSpeed { history },
-            ViewPatch::SessionSpeed {
-                history: next_history,
-            },
+            ViewPatch::SessionCurrentRates { rates },
+            ViewPatch::SessionCurrentRates { rates: next_rates },
         ) => {
-            *history = next_history.clone();
+            *rates = next_rates.clone();
             true
         }
+        (
+            ViewPatch::SessionSpeedHistory { append },
+            ViewPatch::SessionSpeedHistory {
+                append: next_append,
+            },
+        ) => append.merge(next_append).is_ok(),
         (
             ViewPatch::Peers {
                 torrent_id,

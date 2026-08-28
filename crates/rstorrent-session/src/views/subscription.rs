@@ -11,7 +11,7 @@ use tokio::sync::Notify;
 use tokio::time::Instant;
 
 use crate::diagnostics::valid_filter;
-use crate::speed::{MAX_SPEED_SERIES, SpeedMetric};
+use crate::speed::{MAX_SPEED_SERIES, SpeedHistoryPosition, SpeedMetric};
 
 use super::contract::{
     MAX_CATALOG_PAGE_ROWS, MAX_SUBSCRIPTION_INTERVAL_MILLIS, MAX_SUBSCRIPTION_QUEUE_BYTES,
@@ -42,6 +42,7 @@ pub(super) struct QueueState {
     pub(super) tail_revision: u64,
     pub(super) next_delivery: Instant,
     pub(super) needs_resync: bool,
+    pub(super) speed_history: Option<SpeedHistoryPosition>,
     pub(super) closed: bool,
 }
 
@@ -76,6 +77,43 @@ impl SubscriberInner {
         self.enqueue(revision, ViewUpdatePayload::Patch { patch }, false)
     }
 
+    pub(super) fn enqueue_speed_history(
+        &self,
+        revision: u64,
+        history: crate::SpeedHistoryView,
+    ) -> Result<(), SubscriptionError> {
+        let append = {
+            let mut queue = self
+                .queue
+                .lock()
+                .map_err(|_| SubscriptionError::Internal("queue lock is poisoned".to_owned()))?;
+            if queue.closed || queue.needs_resync {
+                return Ok(());
+            }
+            let Some(position) = queue.speed_history.as_mut() else {
+                drop(queue);
+                return self.replace_with_snapshot(
+                    revision,
+                    ViewSnapshot::SessionSpeedHistory { history },
+                );
+            };
+            match position.append_to(&history) {
+                Ok(append) => append,
+                Err(_) => {
+                    drop(queue);
+                    return self.replace_with_snapshot(
+                        revision,
+                        ViewSnapshot::SessionSpeedHistory { history },
+                    );
+                }
+            }
+        };
+        if let Some(append) = append {
+            self.enqueue_patch(revision, ViewPatch::SessionSpeedHistory { append })?;
+        }
+        Ok(())
+    }
+
     pub(super) fn replace_with_snapshot(
         &self,
         revision: u64,
@@ -91,6 +129,13 @@ impl SubscriberInner {
         queue.entries.clear();
         queue.queued_bytes = 0;
         queue.needs_resync = false;
+        queue.speed_history = match &snapshot {
+            ViewSnapshot::SessionSpeedHistory { history } => Some(
+                SpeedHistoryPosition::from_view(history)
+                    .map_err(|error| SubscriptionError::Internal(error.to_string()))?,
+            ),
+            _ => None,
+        };
         let update = make_update(
             self,
             &mut queue,
@@ -204,7 +249,10 @@ pub(crate) fn validate_spec(spec: &SubscriptionSpec) -> Result<(), SubscriptionE
     if matches!(spec.selector, ViewSelector::Torrent { .. })
         && matches!(
             spec.projection,
-            ViewProjection::Disk | ViewProjection::Dht | ViewProjection::Speed
+            ViewProjection::Disk
+                | ViewProjection::Dht
+                | ViewProjection::CurrentRates
+                | ViewProjection::SpeedHistory
         )
     {
         return Err(SubscriptionError::InvalidProjection);
@@ -214,14 +262,24 @@ pub(crate) fn validate_spec(spec: &SubscriptionSpec) -> Result<(), SubscriptionE
         (ViewSelector::SessionDht, _) | (_, ViewProjection::Dht) => {
             return Err(SubscriptionError::InvalidProjection);
         }
-        (ViewSelector::SessionSpeed { metrics, .. }, ViewProjection::Speed)
+        (ViewSelector::SessionCurrentRates { metrics }, ViewProjection::CurrentRates)
+            if !metrics.is_empty()
+                && metrics.len() <= SpeedMetric::AVAILABLE.len()
+                && metrics
+                    .iter()
+                    .all(|metric| SpeedMetric::AVAILABLE.contains(metric))
+                && metrics.iter().copied().collect::<BTreeSet<_>>().len() == metrics.len() => {}
+        (ViewSelector::SessionCurrentRates { .. }, _) | (_, ViewProjection::CurrentRates) => {
+            return Err(SubscriptionError::InvalidProjection);
+        }
+        (ViewSelector::SessionSpeedHistory { metrics, .. }, ViewProjection::SpeedHistory)
             if !metrics.is_empty()
                 && metrics.len() <= MAX_SPEED_SERIES
                 && metrics
                     .iter()
                     .all(|metric| SpeedMetric::AVAILABLE.contains(metric))
                 && metrics.iter().copied().collect::<BTreeSet<_>>().len() == metrics.len() => {}
-        (ViewSelector::SessionSpeed { .. }, _) | (_, ViewProjection::Speed) => {
+        (ViewSelector::SessionSpeedHistory { .. }, _) | (_, ViewProjection::SpeedHistory) => {
             return Err(SubscriptionError::InvalidProjection);
         }
         _ => {}

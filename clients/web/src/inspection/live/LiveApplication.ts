@@ -10,6 +10,7 @@ import {
   type PeerView,
   type RequestEnvelope,
   type ResponseEnvelope,
+  type SessionCurrentRatesView,
   type SpeedHistoryView,
   type SpeedMetric,
   type StorageRootSnapshot,
@@ -44,6 +45,7 @@ import type {
   SwarmRow,
   SwarmSet,
   PieceMapSet,
+  SpeedInspectionView,
   TorrentCheckingProgress,
   TorrentRow,
   TrackerRow,
@@ -571,6 +573,11 @@ export class LiveApplication implements InspectionApplication {
   private viewSpecs(views: DesiredInspectionViews): ViewSpec[] {
     const capabilities = this.capabilities();
     const specs: ViewSpec[] = [];
+    const selectedSpeedMetrics = views.speed?.metrics ?? [
+      "payload_received",
+      "staged_write",
+      "payload_verified",
+    ];
     if (views.library && capabilities.has("torrent_list")) {
       specs.push({
         type: "torrent_list",
@@ -660,17 +667,16 @@ export class LiveApplication implements InspectionApplication {
         delivery: { min_interval_millis: 500 },
       });
     }
-    if (views.detail === "speed" && capabilities.has("session_speed")) {
+    if (
+      views.detail === "speed" &&
+      capabilities.has("session_speed_history")
+    ) {
       const range = views.speed?.range ?? "seconds30";
       specs.push({
-        type: "session_speed",
+        type: "session_speed_history",
         view_id: SPEED_VIEW_ID,
         range,
-        metrics: [...(views.speed?.metrics ?? [
-          "payload_received",
-          "staged_write",
-          "payload_verified",
-        ])],
+        metrics: [...selectedSpeedMetrics],
         delivery: {
           min_interval_millis:
             range === "seconds30" ? 100 : range === "minutes2" ? 500 : 1_000,
@@ -699,12 +705,20 @@ export class LiveApplication implements InspectionApplication {
         delivery: { min_interval_millis: 100 },
       });
     }
-    if (capabilities.has("session_speed")) {
+    if (capabilities.has("session_current_rates")) {
+      const currentMetrics = new Set<SpeedMetric>([
+        "payload_received",
+        "payload_uploaded",
+      ]);
+      if (views.detail === "speed") {
+        currentMetrics.add("staged_write");
+        currentMetrics.add("payload_verified");
+        selectedSpeedMetrics.forEach((metric) => currentMetrics.add(metric));
+      }
       specs.push({
-        type: "session_speed",
+        type: "session_current_rates",
         view_id: SESSION_RATES_VIEW_ID,
-        range: "minutes10",
-        metrics: ["payload_received", "payload_uploaded"],
+        metrics: [...currentMetrics],
         delivery: { min_interval_millis: 1_000 },
       });
     }
@@ -804,11 +818,11 @@ function mapViewState(
   const pieces = projection(state, PIECES_VIEW_ID, "piece_activity");
   const disk = projection(state, DISK_VIEW_ID, "session_disk");
   const dht = projection(state, DHT_VIEW_ID, "session_dht");
-  const speed = projection(state, SPEED_VIEW_ID, "session_speed");
+  const speed = projection(state, SPEED_VIEW_ID, "session_speed_history");
   const sessionRates = projection(
     state,
     SESSION_RATES_VIEW_ID,
-    "session_speed",
+    "session_current_rates",
   );
   const diagnostics = projection(state, LOGS_VIEW_ID, "diagnostics");
   const torrentRows = new Map<string, TorrentRow>();
@@ -857,11 +871,11 @@ function mapViewState(
       : { [desired.torrentId]: pieceSet };
   const rows = [...torrentRows.values()];
   const speedDownloadRate = currentSpeedRate(
-    sessionRates?.history,
+    sessionRates?.rates,
     "payload_received",
   );
   const speedUploadRate = currentSpeedRate(
-    sessionRates?.history,
+    sessionRates?.rates,
     "payload_uploaded",
   );
   return {
@@ -892,7 +906,10 @@ function mapViewState(
     piecesByTorrent,
     disk: disk === null ? emptyDiskSet() : mapDisk(disk),
     dht: dht?.inspection ?? null,
-    speed: speed?.history ?? null,
+    speed:
+      speed === null
+        ? null
+        : mapSpeedHistory(speed.history, sessionRates?.rates),
     logs,
     logLoss: {
       sourceEvictedCount:
@@ -962,7 +979,7 @@ function mapViewState(
       ),
       speed: materialization(
         desired.detail === "speed",
-        capabilities.has("session_speed"),
+        capabilities.has("session_speed_history"),
         speed !== null,
         "Speed history is unavailable",
       ),
@@ -977,13 +994,28 @@ function mapViewState(
 }
 
 function currentSpeedRate(
-  history: SpeedHistoryView | undefined,
+  current: SessionCurrentRatesView | undefined,
   metric: SpeedMetric,
 ): number | null {
-  const value = history?.series.find(
-    (series) => series.metric === metric,
-  )?.current_rate_bytes;
+  const value = current?.rates.find((rate) => rate.metric === metric)?.bytes;
   return value === null || value === undefined ? null : safeNumber(value);
+}
+
+function mapSpeedHistory(
+  history: SpeedHistoryView,
+  current: SessionCurrentRatesView | undefined,
+): SpeedInspectionView {
+  const currentByMetric = new Map(
+    current?.rates.map((rate) => [rate.metric, rate.bytes] as const) ?? [],
+  );
+  return {
+    ...history,
+    current: current?.rates ?? [],
+    series: history.series.map((series) => ({
+      ...series,
+      current_rate_bytes: currentByMetric.get(series.metric) ?? null,
+    })),
+  };
 }
 
 function projection<T extends ViewSnapshot["type"]>(
@@ -1084,7 +1116,8 @@ function transitionSnapshot(
       ),
       speed: transitionStatus(
         desired.detail === "speed",
-        capabilities.has("session_speed"),
+        capabilities.has("session_speed_history") &&
+          capabilities.has("session_current_rates"),
         current.viewStatus.speed,
       ),
       logs: transitionStatus(

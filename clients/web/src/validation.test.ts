@@ -586,6 +586,32 @@ describe("DHT view validation", () => {
   });
 });
 
+describe("speed view validation", () => {
+  it("accepts exact range geometry and rejects mismatched or duplicated state", () => {
+    const batch = speedBatch();
+    expect(decodeUpdateBatch(JSON.stringify(batch)).updates).toHaveLength(2);
+
+    const mismatched = speedBatch();
+    const history = mismatched.updates[1]?.snapshot;
+    if (history?.type !== "session_speed_history") throw new Error("missing history");
+    history.history.bucket_millis = "500";
+    expect(() => decodeUpdateBatch(JSON.stringify(mismatched))).toThrow(
+      /geometry does not match/,
+    );
+
+    const duplicated = speedBatch();
+    const rates = duplicated.updates[0]?.snapshot;
+    if (rates?.type !== "session_current_rates") throw new Error("missing rates");
+    rates.rates.rates.push({
+      metric: "payload_received",
+      bytes: "20",
+    });
+    expect(() => decodeUpdateBatch(JSON.stringify(duplicated))).toThrow(
+      /metrics are duplicated/,
+    );
+  });
+});
+
 describe("piece activity validation", () => {
   it("accepts keyed attempts and rejects overlapping lifecycle ranges", () => {
     const batch = pieceBatch();
@@ -651,6 +677,52 @@ function diagnosticBatch() {
           retention: {
             source_evicted_count: "0",
             retained_from_sequence: "1",
+          },
+        },
+      },
+    ],
+  };
+}
+
+function speedBatch() {
+  return {
+    api_version: 1,
+    view_set_id: "vs_000102030405060708090a0b0c0d0e0f",
+    epoch: "1",
+    base_cursor: "0",
+    cursor: "1",
+    durable_revision: "1",
+    updates: [
+      {
+        type: "snapshot" as const,
+        view_id: "rates",
+        snapshot: {
+          type: "session_current_rates" as const,
+          rates: {
+            captured_millis: "30000",
+            rates: [{ metric: "payload_received" as const, bytes: "10" }],
+          },
+        },
+      },
+      {
+        type: "snapshot" as const,
+        view_id: "speed",
+        snapshot: {
+          type: "session_speed_history" as const,
+          history: {
+            captured_millis: "30000",
+            history_epoch: "history-1",
+            range: "seconds30" as const,
+            bucket_millis: "100",
+            start_millis: "0",
+            complete_through_millis: "29900",
+            live: true,
+            persistence: "healthy" as const,
+            series: [{
+              metric: "payload_received" as const,
+              values: Array.from({ length: 300 }, () => "0" as string | null),
+            }],
+            catalog: [{ metric: "payload_received" as const, available: true }],
           },
         },
       },

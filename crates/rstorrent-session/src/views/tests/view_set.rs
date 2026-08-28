@@ -5,7 +5,7 @@ use crate::{
     DiagnosticCategory, DiagnosticEvent, DiagnosticFilter, DiagnosticRetention, DiagnosticSeverity,
     FileCatalogState, FileSelectionView, FileView, MediaFileAvailability, ProgressAction,
     ProgressAssessment, ProgressDisposition, ProgressPhase, ProgressReason, ServiceSnapshot,
-    StorageState, TorrentSnapshot, TorrentState, TorrentView,
+    SpeedMetric, SpeedRange, StorageState, TorrentSnapshot, TorrentState, TorrentView,
 };
 use rstorrent_engine::peer::{PeerSource, PeerSources};
 use rstorrent_engine::swarm::ConnectionId;
@@ -502,6 +502,90 @@ fn compatible_patches_coalesce_per_view_across_interleaved_ids() {
             },
         } if view_id == "summary" && torrent.verified_piece_count == 2
     )));
+}
+
+#[test]
+fn speed_history_appends_coalesce_without_losing_completed_buckets() {
+    let now = Instant::now();
+    let captured = 1_000_000;
+    let mut rates = crate::speed::SessionRateHistory::new();
+    let first = rates.view(
+        SpeedRange::Seconds30,
+        &[SpeedMetric::PayloadReceived, SpeedMetric::PayloadUploaded],
+        captured,
+    );
+    let speed_spec = ViewSpec::SessionSpeedHistory {
+        view_id: "speed".to_owned(),
+        range: SpeedRange::Seconds30,
+        metrics: vec![SpeedMetric::PayloadReceived, SpeedMetric::PayloadUploaded],
+        delivery: ViewDeliveryPolicy {
+            min_interval_millis: 1_000,
+        },
+    };
+    let inner = ViewSetInner::new(
+        "vs_speed".to_owned(),
+        ViewSetOwner::trusted("owner"),
+        ViewSetInitialState {
+            revision: 7,
+            views: BTreeMap::from([("speed".to_owned(), speed_spec)]),
+            queue_bytes_limit: DEFAULT_VIEW_SET_QUEUE_BYTES,
+            snapshots: vec![ViewSetUpdate::Snapshot {
+                view_id: "speed".to_owned(),
+                snapshot: ViewSnapshot::SessionSpeedHistory {
+                    history: first.clone(),
+                },
+            }],
+            now,
+            lease: Duration::from_millis(VIEW_SET_LEASE_MILLIS),
+        },
+    )
+    .expect("speed view set");
+    assert!(matches!(
+        inner.poll_state(1, now).expect("acknowledge snapshot"),
+        PollState::Wait(None)
+    ));
+
+    rates.record_at(SpeedMetric::PayloadReceived, 100, captured + 50);
+    let second = rates.view(
+        SpeedRange::Seconds30,
+        &[SpeedMetric::PayloadReceived, SpeedMetric::PayloadUploaded],
+        captured + 200,
+    );
+    inner
+        .enqueue_speed_history("speed", second, 8)
+        .expect("first append");
+    rates.record_at(SpeedMetric::PayloadUploaded, 200, captured + 250);
+    let third = rates.view(
+        SpeedRange::Seconds30,
+        &[SpeedMetric::PayloadReceived, SpeedMetric::PayloadUploaded],
+        captured + 400,
+    );
+    inner
+        .enqueue_speed_history("speed", third.clone(), 9)
+        .expect("second append");
+
+    let batch = match inner
+        .poll_state(1, now + Duration::from_secs(1))
+        .expect("poll merged append")
+    {
+        PollState::Ready(batch) => batch,
+        _ => panic!("merged append missing"),
+    };
+    assert_eq!(batch.updates.len(), 1);
+    let ViewSetUpdate::Patch {
+        patch: ViewPatch::SessionSpeedHistory { append },
+        ..
+    } = &batch.updates[0]
+    else {
+        panic!("expected speed history append");
+    };
+    assert_eq!(append.series.len(), 2);
+    assert_eq!(append.series[0].values.len(), 4);
+    let mut reconstructed = first;
+    reconstructed
+        .apply_append(append)
+        .expect("merged append applies");
+    assert_eq!(reconstructed, third);
 }
 
 #[test]

@@ -79,11 +79,11 @@ pub(super) fn piece_spec(queue: u32) -> SubscriptionSpec {
 
 pub(super) fn speed_spec(range: SpeedRange) -> SubscriptionSpec {
     SubscriptionSpec {
-        selector: ViewSelector::SessionSpeed {
+        selector: ViewSelector::SessionSpeedHistory {
             range,
             metrics: vec![SpeedMetric::PayloadReceived],
         },
-        projection: ViewProjection::Speed,
+        projection: ViewProjection::SpeedHistory,
         delivery: DeliveryPolicy {
             min_interval_millis: 0,
             max_queue_bytes: 64 * 1024,

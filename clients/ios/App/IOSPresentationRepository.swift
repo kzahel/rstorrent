@@ -40,6 +40,8 @@ final class IOSPresentationRepository: ObservableObject {
     @Published private(set) var trackers: [String: [TrackerView]] = [:]
     @Published private(set) var peers: [String: [PeerView]] = [:]
     @Published private(set) var pieces: [String: IOSPieceActivity] = [:]
+    @Published private(set) var currentRates: SessionCurrentRatesView?
+    @Published private(set) var speed: SpeedHistoryView?
 
     private var positions: [String: IOSStreamPosition] = [:]
     private var task: Task<Void, Never>?
@@ -200,6 +202,10 @@ final class IOSPresentationRepository: ObservableObject {
                 verified: verified,
                 active: active
             )
+        case .sessionCurrentRates(let rates):
+            currentRates = rates
+        case .sessionSpeedHistory(let history):
+            speed = history
         default:
             return
         }
@@ -292,9 +298,74 @@ final class IOSPresentationRepository: ObservableObject {
                 verified: ranges,
                 active: active.values.sorted { $0.pieceIndex < $1.pieceIndex }
             )
+        case .sessionCurrentRates(let rates):
+            currentRates = rates
+        case .sessionSpeedHistory(let append):
+            guard let speed else { throw IOSPresentationError.discontinuity }
+            self.speed = try Self.apply(append, to: speed)
         default:
             return
         }
+    }
+
+    private static func apply(
+        _ append: SpeedHistoryAppend,
+        to history: SpeedHistoryView
+    ) throws -> SpeedHistoryView {
+        guard
+            history.historyEpoch == append.historyEpoch,
+            history.completeThroughMillis == append.baseCompleteThroughMillis,
+            let bucket = UInt64(history.bucketMillis),
+            bucket > 0,
+            let base = UInt64(append.baseCompleteThroughMillis),
+            let through = UInt64(append.completeThroughMillis),
+            through >= base,
+            (through - base) % bucket == 0
+        else {
+            throw IOSPresentationError.discontinuity
+        }
+        let countValue = (through - base) / bucket
+        let window = history.series.first?.values.count ?? 0
+        guard countValue <= UInt64(window) else {
+            throw IOSPresentationError.discontinuity
+        }
+        let count = Int(countValue)
+        let (historySpan, overflow) = bucket.multipliedReportingOverflow(
+            by: UInt64(max(0, window - 1))
+        )
+        let expectedStart = !overflow && through > historySpan ? through - historySpan : 0
+        let shapeIsValid = count == 0
+            ? append.persistence != nil && append.series.isEmpty
+            : append.series.count == history.series.count
+        guard
+            UInt64(append.startMillis) == expectedStart,
+            shapeIsValid
+        else {
+            throw IOSPresentationError.discontinuity
+        }
+        if count != 0 {
+            for index in history.series.indices {
+                guard
+                    history.series[index].metric == append.series[index].metric,
+                    append.series[index].values.count == count
+                else {
+                    throw IOSPresentationError.discontinuity
+                }
+            }
+        }
+        var next = history
+        next.capturedMillis = append.capturedMillis
+        next.startMillis = append.startMillis
+        next.completeThroughMillis = append.completeThroughMillis
+        if let persistence = append.persistence { next.persistence = persistence }
+        next.series = history.series.enumerated().map { index, series in
+            var updated = series
+            if count != 0 {
+                updated.values = Array(series.values.dropFirst(count)) + append.series[index].values
+            }
+            return updated
+        }
+        return next
     }
 
     private static func requireUnique<T>(

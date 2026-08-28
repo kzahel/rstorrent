@@ -12,7 +12,6 @@ import type {
   RequestEnvelope,
   ResponseEnvelope,
   SpeedHistoryView,
-  SpeedMetric,
   TorrentView,
   UpdateBatch,
   UpdateViewSetRequest,
@@ -60,7 +59,8 @@ class FakeLiveClient implements ApplicationViewClient {
         "torrent_files",
         "torrent_trackers",
         "session_dht",
-        "session_speed",
+        "session_current_rates",
+        "session_speed_history",
         "diagnostics",
       ],
       limits: {
@@ -315,9 +315,62 @@ describe("LiveApplication", () => {
       uploadRate: 2048,
     });
     expect(client.opens[0]?.views).toContainEqual({
-      type: "session_speed",
+      type: "session_current_rates",
       view_id: "session-rates",
-      range: "minutes10",
+      metrics: ["payload_received", "payload_uploaded"],
+      delivery: { min_interval_millis: 1_000 },
+    });
+    await application.close();
+  });
+
+  it("requests graph history only while the Speed detail is visible", async () => {
+    const client = new FakeLiveClient();
+    const application = await LiveApplication.open(client, {
+      initialViews: {
+        library: false,
+        torrentId: TORRENT_ID,
+        detail: "speed",
+        logCapture: null,
+        speed: {
+          range: "minutes2",
+          metrics: ["payload_received", "peer_wire_received"],
+        },
+      },
+    });
+
+    expect(client.opens[0]?.views).toContainEqual({
+      type: "session_speed_history",
+      view_id: "session-speed",
+      range: "minutes2",
+      metrics: ["payload_received", "peer_wire_received"],
+      delivery: { min_interval_millis: 500 },
+    });
+    expect(client.opens[0]?.views).toContainEqual({
+      type: "session_current_rates",
+      view_id: "session-rates",
+      metrics: [
+        "payload_received",
+        "payload_uploaded",
+        "staged_write",
+        "payload_verified",
+        "peer_wire_received",
+      ],
+      delivery: { min_interval_millis: 1_000 },
+    });
+
+    await application.setViews({
+      library: true,
+      torrentId: TORRENT_ID,
+      detail: "general",
+      logCapture: null,
+      speed: null,
+    });
+    expect(client.updates.at(-1)?.views.some(
+      (view) => view.type === "session_speed_history",
+    )).toBe(false);
+    expect(client.updates.at(-1)?.views).toContainEqual({
+      type: "session_current_rates",
+      view_id: "session-rates",
       metrics: ["payload_received", "payload_uploaded"],
       delivery: { min_interval_millis: 1_000 },
     });
@@ -722,7 +775,7 @@ describe("LiveApplication", () => {
     expect(client.updates.at(-1)?.views.map((view) => view.type)).toEqual([
       "torrent_summary",
       "torrent_swarm",
-      "session_speed",
+      "session_current_rates",
     ]);
     expect(snapshots.at(-1)?.viewStatus.swarm.status).toBe("loading");
 
@@ -735,7 +788,7 @@ describe("LiveApplication", () => {
     expect(client.updates.at(-1)?.views.map((view) => view.type)).toEqual([
       "torrent_summary",
       "diagnostics",
-      "session_speed",
+      "session_current_rates",
     ]);
     expect(
       client.updates.at(-1)?.views.find((view) => view.type === "diagnostics"),
@@ -800,7 +853,7 @@ describe("LiveApplication", () => {
     expect(client.updates.at(-1)?.views.map((view) => view.type)).toEqual([
       "torrent_list",
       "torrent_summary",
-      "session_speed",
+      "session_current_rates",
     ]);
     expect(snapshots.at(-1)?.filesByTorrent).toEqual({});
     await application.close();
@@ -1134,12 +1187,31 @@ function snapshotFor(
         view_id: view.view_id,
         snapshot: { type: "session_dht", inspection: dhtInspection() },
       };
-    case "session_speed":
+    case "session_current_rates":
       return {
         type: "snapshot",
         view_id: view.view_id,
         snapshot: {
-          type: "session_speed",
+          type: "session_current_rates",
+          rates: {
+            captured_millis: "1300",
+            rates: view.metrics.map((metric) => ({
+              metric,
+              bytes: metric === "payload_received"
+                ? "4096"
+                : metric === "payload_uploaded"
+                  ? "2048"
+                  : "0",
+            })),
+          },
+        },
+      };
+    case "session_speed_history":
+      return {
+        type: "snapshot",
+        view_id: view.view_id,
+        snapshot: {
+          type: "session_speed_history",
           history: speedHistory(view),
         },
       };
@@ -1220,12 +1292,8 @@ function dhtInspection(): DhtInspectionView {
 }
 
 function speedHistory(
-  view: Extract<ViewSpec, { type: "session_speed" }>,
+  view: Extract<ViewSpec, { type: "session_speed_history" }>,
 ): SpeedHistoryView {
-  const rates: Partial<Record<SpeedMetric, string>> = {
-    payload_received: "4096",
-    payload_uploaded: "2048",
-  };
   const bucketMillis = view.range === "seconds30" ? "100" : "2000";
   return {
     captured_millis: "1300",
@@ -1236,13 +1304,8 @@ function speedHistory(
     complete_through_millis: "1299",
     live: true,
     persistence: "healthy" as const,
-    current: view.metrics.map((metric) => ({
-      metric,
-      bytes: rates[metric] ?? "0",
-    })),
     series: view.metrics.map((metric) => ({
       metric,
-      current_rate_bytes: rates[metric] ?? "0",
       values: ["1024", "2048", "1024"],
     })),
     catalog: view.metrics.map((metric) => ({

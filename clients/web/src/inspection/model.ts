@@ -10,9 +10,11 @@ import type {
   PeerFlagView,
   PeerMseMethodView,
   PeerSourceView,
+  SpeedCurrentRate,
   SpeedHistoryView,
   SpeedMetric,
   SpeedRange,
+  SpeedSeriesView,
   SwarmCatalogState,
   SwarmCountsView,
   SwarmPeerState,
@@ -486,6 +488,15 @@ export interface PieceMapSet {
   readonly revision: number;
 }
 
+export interface SpeedInspectionSeries extends SpeedSeriesView {
+  readonly current_rate_bytes: string | null;
+}
+
+export interface SpeedInspectionView extends Omit<SpeedHistoryView, "series"> {
+  readonly current: readonly SpeedCurrentRate[];
+  readonly series: readonly SpeedInspectionSeries[];
+}
+
 export interface InspectionSnapshot {
   readonly revision: number;
   readonly durableRevision: string;
@@ -502,7 +513,7 @@ export interface InspectionSnapshot {
   readonly piecesByTorrent: Readonly<Record<string, PieceMapSet>>;
   readonly disk: DiskSet;
   readonly dht: DhtInspectionView | null;
-  readonly speed: SpeedHistoryView | null;
+  readonly speed: SpeedInspectionView | null;
   readonly logs: readonly LogRow[];
   readonly logLoss: LogLoss;
   readonly viewStatus: InspectionViewStatus;
@@ -551,7 +562,7 @@ export type InspectionUpdate =
       })[];
       readonly pieces?: Readonly<Record<string, PieceMapSet>>;
       readonly disk?: DiskSet;
-      readonly speed?: SpeedHistoryView;
+      readonly speed?: SpeedInspectionView;
       readonly logs?: {
         readonly append: readonly LogRow[];
         readonly sourceEvictedCount: number;

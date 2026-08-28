@@ -193,6 +193,7 @@ impl ViewHub {
                 tail_revision: hub.revision,
                 next_delivery: tokio::time::Instant::now(),
                 needs_resync: false,
+                speed_history: None,
                 closed: false,
             }),
             notify: Notify::new(),
@@ -215,14 +216,12 @@ impl ViewHub {
             .subscribers
             .values()
             .filter_map(Weak::upgrade)
-            .filter_map(|subscriber| {
-                if subscriber.spec.projection != ViewProjection::Speed {
-                    return None;
+            .filter_map(|subscriber| match &subscriber.spec.selector {
+                ViewSelector::SessionCurrentRates { .. } => {
+                    Some(u64::from(subscriber.spec.delivery.min_interval_millis).max(100))
                 }
-                match subscriber.spec.selector {
-                    ViewSelector::SessionSpeed { range, .. } => range.tick_millis(),
-                    _ => None,
-                }
+                ViewSelector::SessionSpeedHistory { range, .. } => range.tick_millis(),
+                _ => None,
             })
             .min();
         hub.retain_live_view_sets();
@@ -234,7 +233,12 @@ impl ViewHub {
                     specs
                         .iter()
                         .filter_map(|spec| match spec {
-                            crate::ViewSpec::SessionSpeed { range, .. } => range.tick_millis(),
+                            crate::ViewSpec::SessionCurrentRates { delivery, .. } => {
+                                Some(u64::from(delivery.min_interval_millis).max(100))
+                            }
+                            crate::ViewSpec::SessionSpeedHistory { range, .. } => {
+                                range.tick_millis()
+                            }
                             _ => None,
                         })
                         .min()
@@ -274,33 +278,53 @@ impl ViewHub {
             .filter_map(Weak::upgrade)
             .collect::<Vec<_>>();
         for subscriber in subscribers {
-            let ViewSelector::SessionSpeed { range, metrics } = &subscriber.spec.selector else {
-                continue;
-            };
-            let history = hub
-                .speed
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .view(*range, metrics, now_millis);
-            subscriber.enqueue_patch(revision, ViewPatch::SessionSpeed { history })?;
+            match &subscriber.spec.selector {
+                ViewSelector::SessionCurrentRates { metrics } => {
+                    let rates = hub
+                        .speed
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .current_rates(metrics, now_millis);
+                    subscriber.enqueue_patch(revision, ViewPatch::SessionCurrentRates { rates })?;
+                }
+                ViewSelector::SessionSpeedHistory { range, metrics } => {
+                    let history = hub
+                        .speed
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .view(*range, metrics, now_millis);
+                    subscriber.enqueue_speed_history(revision, history)?;
+                }
+                _ => {}
+            }
         }
         hub.retain_live_view_sets();
         let view_sets = hub.view_sets.values().cloned().collect::<Vec<_>>();
         for view_set in view_sets {
             for spec in view_set.view_specs()? {
-                let crate::ViewSpec::SessionSpeed { range, metrics, .. } = &spec else {
-                    continue;
-                };
-                let history = hub
-                    .speed
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner())
-                    .view(*range, metrics, now_millis);
-                view_set.enqueue_patch(
-                    spec.view_id(),
-                    ViewPatch::SessionSpeed { history },
-                    revision,
-                )?;
+                match &spec {
+                    crate::ViewSpec::SessionCurrentRates { metrics, .. } => {
+                        let rates = hub
+                            .speed
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner())
+                            .current_rates(metrics, now_millis);
+                        view_set.enqueue_patch(
+                            spec.view_id(),
+                            ViewPatch::SessionCurrentRates { rates },
+                            revision,
+                        )?;
+                    }
+                    crate::ViewSpec::SessionSpeedHistory { range, metrics, .. } => {
+                        let history = hub
+                            .speed
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner())
+                            .view(*range, metrics, now_millis);
+                        view_set.enqueue_speed_history(spec.view_id(), history, revision)?;
+                    }
+                    _ => {}
+                }
             }
         }
         Ok(())
@@ -1318,13 +1342,27 @@ impl HubState {
             (ViewSelector::SessionDht, ViewProjection::Dht) => ViewSnapshot::SessionDht {
                 inspection: self.dht.clone(),
             },
-            (ViewSelector::SessionSpeed { range, metrics }, ViewProjection::Speed) => {
+            (ViewSelector::SessionCurrentRates { metrics }, ViewProjection::CurrentRates) => {
                 let mut history = self
                     .speed
                     .lock()
                     .unwrap_or_else(|poisoned| poisoned.into_inner());
                 let now_millis = history.now_millis();
-                ViewSnapshot::SessionSpeed {
+                history.advance_to(now_millis);
+                ViewSnapshot::SessionCurrentRates {
+                    rates: history.current_rates(metrics, now_millis),
+                }
+            }
+            (
+                ViewSelector::SessionSpeedHistory { range, metrics },
+                ViewProjection::SpeedHistory,
+            ) => {
+                let mut history = self
+                    .speed
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                let now_millis = history.now_millis();
+                ViewSnapshot::SessionSpeedHistory {
                     history: history.view(*range, metrics, now_millis),
                 }
             }
@@ -1415,7 +1453,8 @@ impl HubState {
                 ViewSelector::TorrentList,
                 ViewProjection::PieceActivity
                 | ViewProjection::Dht
-                | ViewProjection::Speed
+                | ViewProjection::CurrentRates
+                | ViewProjection::SpeedHistory
                 | ViewProjection::Peers
                 | ViewProjection::Swarm
                 | ViewProjection::Files
@@ -1426,10 +1465,14 @@ impl HubState {
             (ViewSelector::Torrent { .. }, ViewProjection::Disk | ViewProjection::Dht) => {
                 unreachable!("invalid projection is rejected before snapshot construction")
             }
-            (ViewSelector::Torrent { .. }, ViewProjection::Speed) => {
+            (
+                ViewSelector::Torrent { .. },
+                ViewProjection::CurrentRates | ViewProjection::SpeedHistory,
+            ) => {
                 unreachable!("invalid projection is rejected before snapshot construction")
             }
-            (ViewSelector::SessionSpeed { .. }, _) => {
+            (ViewSelector::SessionCurrentRates { .. }, _)
+            | (ViewSelector::SessionSpeedHistory { .. }, _) => {
                 unreachable!("invalid projection is rejected before snapshot construction")
             }
             (ViewSelector::SessionDht, _) => {
@@ -1842,6 +1885,15 @@ impl HubState {
 }
 
 impl ViewSubscription {
+    #[cfg(test)]
+    pub(crate) fn enqueue_speed_history_for_testing(
+        &self,
+        revision: u64,
+        history: crate::SpeedHistoryView,
+    ) -> Result<(), SubscriptionError> {
+        self.inner.enqueue_speed_history(revision, history)
+    }
+
     pub fn stream_id(&self) -> String {
         self.inner.stream_id.to_string()
     }
@@ -1924,7 +1976,8 @@ fn selector_torrent_id(selector: &ViewSelector) -> Option<&str> {
     match selector {
         ViewSelector::TorrentList
         | ViewSelector::SessionDht
-        | ViewSelector::SessionSpeed { .. } => None,
+        | ViewSelector::SessionCurrentRates { .. }
+        | ViewSelector::SessionSpeedHistory { .. } => None,
         ViewSelector::Torrent { torrent_id } => Some(torrent_id),
     }
 }

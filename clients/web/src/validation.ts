@@ -799,7 +799,10 @@ function validateViewSnapshot(value: unknown): void {
     case "session_dht":
       validateDhtInspection(snapshot.inspection);
       break;
-    case "session_speed":
+    case "session_current_rates":
+      validateCurrentRates(snapshot.rates);
+      break;
+    case "session_speed_history":
       validateSpeedHistory(snapshot.history);
       break;
     case "peers": {
@@ -988,8 +991,11 @@ function validateViewPatch(value: unknown): void {
     case "session_dht":
       validateDhtInspection(patch.inspection);
       break;
-    case "session_speed":
-      validateSpeedHistory(patch.history);
+    case "session_current_rates":
+      validateCurrentRates(patch.rates);
+      break;
+    case "session_speed_history":
+      validateSpeedHistoryAppend(patch.append);
       break;
     case "peers": {
       const owningTorrent = string(patch.torrent_id, "peer-view torrent ID");
@@ -1196,11 +1202,21 @@ const SPEED_METRICS = [
   "payload_uploaded",
 ] as const;
 
+const SPEED_RANGE_GEOMETRY = {
+  seconds30: { bucketMillis: 100n, count: 300, live: true },
+  minutes2: { bucketMillis: 500n, count: 240, live: true },
+  minutes10: { bucketMillis: 2_000n, count: 300, live: true },
+  hour1: { bucketMillis: 10_000n, count: 360, live: true },
+  hours24: { bucketMillis: 60_000n, count: 1_440, live: false },
+  days30: { bucketMillis: 15n * 60_000n, count: 2_880, live: false },
+  years2: { bucketMillis: 24n * 60n * 60_000n, count: 730, live: false },
+} as const;
+
 function validateSpeedHistory(value: unknown): void {
   const history = asRecord(value, "speed history");
   decimal(history.captured_millis, "speed capture time");
   boundedString(history.history_epoch, "speed history epoch", 128);
-  oneOf(history.range, "speed range", [
+  const range = oneOf(history.range, "speed range", [
     "seconds30",
     "minutes2",
     "minutes10",
@@ -1209,22 +1225,28 @@ function validateSpeedHistory(value: unknown): void {
     "days30",
     "years2",
   ]);
-  decimal(history.bucket_millis, "speed bucket interval");
-  decimal(history.start_millis, "speed history start");
-  decimal(history.complete_through_millis, "speed complete-through time");
+  const bucketMillis = BigInt(decimal(history.bucket_millis, "speed bucket interval"));
+  const start = BigInt(decimal(history.start_millis, "speed history start"));
+  const completeThrough = BigInt(decimal(
+    history.complete_through_millis,
+    "speed complete-through time",
+  ));
+  const geometry = SPEED_RANGE_GEOMETRY[range];
+  const historySpan = bucketMillis * BigInt(geometry.count - 1);
+  const expectedStart = completeThrough > historySpan
+    ? completeThrough - historySpan
+    : 0n;
+  if (
+    bucketMillis !== geometry.bucketMillis ||
+    start !== expectedStart ||
+    history.live !== geometry.live
+  ) {
+    throw new ContractError("speed history geometry does not match its range");
+  }
   if (typeof history.live !== "boolean") {
     throw new ContractError("speed live flag is not boolean");
   }
   oneOf(history.persistence, "speed persistence state", ["healthy", "degraded"]);
-  const current = array(history.current, "speed current rates");
-  if (current.length > SPEED_METRICS.length) {
-    throw new ContractError("speed current rates exceed their bound");
-  }
-  for (const item of current) {
-    const rate = asRecord(item, "speed current rate");
-    oneOf(rate.metric, "speed metric", SPEED_METRICS);
-    if (rate.bytes !== null) decimal(rate.bytes, "speed current rate bytes");
-  }
   const series = array(history.series, "speed series");
   if (series.length === 0 || series.length > 8) {
     throw new ContractError("speed history requires 1..=8 series");
@@ -1236,12 +1258,9 @@ function validateSpeedHistory(value: unknown): void {
     const metric = oneOf(row.metric, "speed metric", SPEED_METRICS);
     if (selected.has(metric)) throw new ContractError("speed series are duplicated");
     selected.add(metric);
-    if (row.current_rate_bytes !== null) {
-      decimal(row.current_rate_bytes, "speed current rate");
-    }
     const values = array(row.values, "speed values");
     bucketCount ??= values.length;
-    if (values.length !== bucketCount || values.length > 2_880) {
+    if (values.length !== bucketCount || values.length !== geometry.count) {
       throw new ContractError("speed series lengths are inconsistent or unbounded");
     }
     values.forEach((sample) => {
@@ -1252,13 +1271,87 @@ function validateSpeedHistory(value: unknown): void {
   if (catalog.length > SPEED_METRICS.length) {
     throw new ContractError("speed metric catalog exceeds its bound");
   }
+  const catalogMetrics = new Set<string>();
   for (const item of catalog) {
     const entry = asRecord(item, "speed metric availability");
-    oneOf(entry.metric, "speed metric", SPEED_METRICS);
+    const metric = oneOf(entry.metric, "speed metric", SPEED_METRICS);
+    if (catalogMetrics.has(metric)) {
+      throw new ContractError("speed metric catalog is duplicated");
+    }
+    catalogMetrics.add(metric);
     if (typeof entry.available !== "boolean") {
       throw new ContractError("speed metric availability is not boolean");
     }
     optionalString(entry.reason, "speed metric unavailability reason", 256);
+  }
+}
+
+function validateCurrentRates(value: unknown): void {
+  const current = asRecord(value, "session current rates");
+  decimal(current.captured_millis, "current-rate capture time");
+  const rates = array(current.rates, "session current-rate values");
+  if (rates.length === 0 || rates.length > SPEED_METRICS.length) {
+    throw new ContractError("session current rates require bounded metrics");
+  }
+  const metrics = new Set<string>();
+  for (const item of rates) {
+    const rate = asRecord(item, "session current rate");
+    const metric = oneOf(rate.metric, "speed metric", SPEED_METRICS);
+    if (metrics.has(metric)) {
+      throw new ContractError("session current-rate metrics are duplicated");
+    }
+    metrics.add(metric);
+    if (rate.bytes !== null) decimal(rate.bytes, "session current-rate bytes");
+  }
+}
+
+function validateSpeedHistoryAppend(value: unknown): void {
+  const append = asRecord(value, "speed history append");
+  decimal(append.captured_millis, "speed append capture time");
+  boundedString(append.history_epoch, "speed history epoch", 128);
+  const base = BigInt(decimal(
+    append.base_complete_through_millis,
+    "speed append base position",
+  ));
+  decimal(append.start_millis, "speed append window start");
+  const through = BigInt(decimal(
+    append.complete_through_millis,
+    "speed append complete-through position",
+  ));
+  if (through < base) {
+    throw new ContractError("speed history append moves backwards");
+  }
+  const persistence = append.persistence;
+  if (persistence !== undefined && persistence !== null) {
+    oneOf(persistence, "speed persistence state", ["healthy", "degraded"]);
+  }
+  const series = array(append.series, "speed history append series");
+  if (series.length === 0) {
+    if (persistence === undefined || persistence === null || through !== base) {
+      throw new ContractError("empty speed append must change persistence only");
+    }
+    return;
+  }
+  if (series.length > 8 || through === base) {
+    throw new ContractError("speed history append series are invalid");
+  }
+  const metrics = new Set<string>();
+  let valueCount: number | null = null;
+  for (const item of series) {
+    const entry = asRecord(item, "speed history series append");
+    const metric = oneOf(entry.metric, "speed metric", SPEED_METRICS);
+    if (metrics.has(metric)) {
+      throw new ContractError("speed history append metrics are duplicated");
+    }
+    metrics.add(metric);
+    const values = array(entry.values, "speed history appended values");
+    valueCount ??= values.length;
+    if (values.length === 0 || values.length !== valueCount || values.length > 2_880) {
+      throw new ContractError("speed history append lengths are invalid");
+    }
+    values.forEach((sample) => {
+      if (sample !== null) decimal(sample, "speed appended bucket bytes");
+    });
   }
 }
 

@@ -335,3 +335,65 @@ fn diagnostic_patch_coalescing_respects_count_and_byte_bounds() {
     };
     assert!(!coalesce_patch(&mut byte_bounded, &next));
 }
+
+#[tokio::test]
+async fn direct_speed_subscription_coalesces_exact_contiguous_points() {
+    let hub = ViewHub::new(&snapshot(0, 1)).expect("hub");
+    let subscription = hub
+        .subscribe(speed_spec(SpeedRange::Seconds30))
+        .expect("speed subscription");
+    let initial = subscription.next_update().await.expect("speed snapshot");
+    let ViewUpdatePayload::Snapshot {
+        snapshot: ViewSnapshot::SessionSpeedHistory { history: first },
+    } = initial.payload
+    else {
+        panic!("expected speed history snapshot");
+    };
+    let second = shifted_history(&first, &[Some("10".to_owned()), None]);
+    let third = shifted_history(&second, &[Some("20".to_owned()), Some("30".to_owned())]);
+
+    subscription
+        .enqueue_speed_history_for_testing(1, second)
+        .expect("first append");
+    subscription
+        .enqueue_speed_history_for_testing(2, third.clone())
+        .expect("second append");
+
+    let update = subscription.next_update().await.expect("coalesced append");
+    let ViewUpdatePayload::Patch {
+        patch: ViewPatch::SessionSpeedHistory { append },
+    } = update.payload
+    else {
+        panic!("expected speed history append");
+    };
+    assert_eq!(append.series[0].values.len(), 4);
+    let mut reconstructed = first;
+    reconstructed
+        .apply_append(&append)
+        .expect("coalesced append applies");
+    assert_eq!(reconstructed, third);
+}
+
+fn shifted_history(
+    previous: &crate::SpeedHistoryView,
+    values: &[Option<String>],
+) -> crate::SpeedHistoryView {
+    let bucket = previous.bucket_millis.parse::<u64>().expect("bucket");
+    let through = previous
+        .complete_through_millis
+        .parse::<u64>()
+        .expect("complete through")
+        + bucket * values.len() as u64;
+    let window = previous.series[0].values.len();
+    let mut next = previous.clone();
+    next.captured_millis = through.saturating_add(bucket).to_string();
+    next.complete_through_millis = through.to_string();
+    next.start_millis = through
+        .saturating_sub(bucket * window.saturating_sub(1) as u64)
+        .to_string();
+    for series in &mut next.series {
+        series.values.drain(..values.len());
+        series.values.extend(values.iter().cloned());
+    }
+    next
+}

@@ -525,6 +525,116 @@ describe("view-set reducer", () => {
     expect(view.inspection.families[0]?.buckets[0]?.bucket_index).toBe(0);
   });
 
+  it("replaces current rates without carrying graph history", () => {
+    let state = reduceUpdateBatch(
+      undefined,
+      batch("0", "1", [{
+        type: "snapshot",
+        view_id: "rates",
+        snapshot: {
+          type: "session_current_rates",
+          rates: {
+            captured_millis: "1000",
+            rates: [{ metric: "payload_received", bytes: "10" }],
+          },
+        },
+      }]),
+    );
+    state = reduceUpdateBatch(state, batch("1", "2", [{
+      type: "patch",
+      view_id: "rates",
+      patch: {
+        type: "session_current_rates",
+        rates: {
+          captured_millis: "1100",
+          rates: [{ metric: "payload_received", bytes: "25" }],
+        },
+      },
+    }]));
+    expect(state.views.rates).toEqual({
+      type: "session_current_rates",
+      rates: {
+        captured_millis: "1100",
+        rates: [{ metric: "payload_received", bytes: "25" }],
+      },
+    });
+  });
+
+  it("applies every completed speed bucket from a coalesced append", () => {
+    let state = reduceUpdateBatch(
+      undefined,
+      batch("0", "1", [{
+        type: "snapshot",
+        view_id: "speed",
+        snapshot: speedSnapshot(),
+      }]),
+    );
+    state = reduceUpdateBatch(state, batch("1", "2", [{
+      type: "patch",
+      view_id: "speed",
+      patch: {
+        type: "session_speed_history",
+        append: {
+          captured_millis: "400",
+          history_epoch: "history-1",
+          base_complete_through_millis: "200",
+          start_millis: "100",
+          complete_through_millis: "400",
+          series: [{
+            metric: "payload_received",
+            values: ["30", null],
+          }],
+        },
+      },
+    }]));
+    expect(state.views.speed).toMatchObject({
+      type: "session_speed_history",
+      history: {
+        captured_millis: "400",
+        start_millis: "100",
+        complete_through_millis: "400",
+        series: [{ values: ["20", "30", "30", null] }],
+      },
+    });
+  });
+
+  it("rejects speed appends with a gap or incompatible shape", () => {
+    const state = reduceUpdateBatch(
+      undefined,
+      batch("0", "1", [{
+        type: "snapshot",
+        view_id: "speed",
+        snapshot: speedSnapshot(),
+      }]),
+    );
+    const append = {
+      captured_millis: "300",
+      history_epoch: "history-1",
+      base_complete_through_millis: "100",
+      start_millis: "0",
+      complete_through_millis: "300",
+      series: [{ metric: "payload_received" as const, values: ["30"] }],
+    };
+    expect(() => reduceUpdateBatch(state, batch("1", "2", [{
+      type: "patch",
+      view_id: "speed",
+      patch: { type: "session_speed_history", append },
+    }]))).toThrow(ViewSetContinuityError);
+
+    expect(() => reduceUpdateBatch(state, batch("1", "2", [{
+      type: "patch",
+      view_id: "speed",
+      patch: {
+        type: "session_speed_history",
+        append: {
+          ...append,
+          base_complete_through_millis: "200",
+          series: [{ metric: "payload_uploaded", values: ["30"] }],
+        },
+      },
+    }]))).toThrow(ViewSetContinuityError);
+  });
+
   it("applies compact verified changes and keyed active piece retries", () => {
     const first = activePiece(0, 1, "received");
     let state = reduceUpdateBatch(
@@ -890,6 +1000,27 @@ function diskPipeline(pressure: "normal" | "backpressured") {
     hash_service_max_micros: "0",
     pressure_transition_count: pressure === "backpressured" ? "1" : "0",
     backpressured_millis_total: "0",
+  };
+}
+
+function speedSnapshot() {
+  return {
+    type: "session_speed_history" as const,
+    history: {
+      captured_millis: "250",
+      history_epoch: "history-1",
+      range: "seconds30" as const,
+      bucket_millis: "100",
+      start_millis: "0",
+      complete_through_millis: "200",
+      live: true,
+      persistence: "healthy" as const,
+      series: [{
+        metric: "payload_received" as const,
+        values: ["10", null, "20", "30"],
+      }],
+      catalog: [{ metric: "payload_received" as const, available: true }],
+    },
   };
 }
 

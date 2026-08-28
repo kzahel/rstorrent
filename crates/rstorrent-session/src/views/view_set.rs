@@ -10,7 +10,7 @@ use super::contract::{
     UpdateViewSetRequest, ViewSetError, ViewSetOwner, ViewSetStats, ViewSetUpdate, ViewSpec,
 };
 use super::{ResetReason, ViewPatch, ViewSnapshot, coalesce_patch};
-use crate::speed::{MAX_SPEED_SERIES, SpeedMetric};
+use crate::speed::{MAX_SPEED_SERIES, SpeedHistoryPosition, SpeedMetric};
 use tokio::sync::Notify;
 static NEXT_VIEW_SET_EPOCH: AtomicU64 = AtomicU64::new(1);
 
@@ -35,6 +35,7 @@ struct ViewSetState {
     pending: VecDeque<QueuedViewSetUpdate>,
     pending_bytes: usize,
     last_delivered: BTreeMap<String, Instant>,
+    speed_histories: BTreeMap<String, SpeedHistoryPosition>,
     in_flight: Option<StoredBatch>,
     queue_high_water: usize,
     reset_count: u64,
@@ -99,6 +100,7 @@ impl ViewSetInner {
                 pending: VecDeque::new(),
                 pending_bytes: 0,
                 last_delivered: BTreeMap::new(),
+                speed_histories: BTreeMap::new(),
                 in_flight: None,
                 queue_high_water: 0,
                 reset_count: 0,
@@ -164,6 +166,7 @@ impl ViewSetInner {
             state.closed = true;
             state.pending.clear();
             state.pending_bytes = 0;
+            state.speed_histories.clear();
             state.in_flight = None;
         }
         self.notify.notify_waiters();
@@ -183,10 +186,17 @@ impl ViewSetInner {
         state
             .last_delivered
             .retain(|view_id, _| views.contains_key(view_id));
+        state.speed_histories.retain(|view_id, _| {
+            matches!(
+                views.get(view_id),
+                Some(ViewSpec::SessionSpeedHistory { .. })
+            )
+        });
         state.views = views;
         state.durable_revision = revision;
         state.last_client_activity = now;
         for update in updates {
+            record_speed_snapshot(&mut state, &update)?;
             enqueue_update(&mut state, update, now)?;
         }
         drop(state);
@@ -229,6 +239,84 @@ impl ViewSetInner {
         Ok(())
     }
 
+    pub(crate) fn enqueue_speed_history(
+        &self,
+        view_id: &str,
+        history: crate::SpeedHistoryView,
+        revision: u64,
+    ) -> Result<(), ViewSetError> {
+        let mut state = self.state()?;
+        if state.closed || state.reset_pending.is_some() {
+            return Ok(());
+        }
+        state.durable_revision = revision;
+        let now = Instant::now();
+        let ready_at = state
+            .views
+            .get(view_id)
+            .and_then(|spec| {
+                state.last_delivered.get(view_id).map(|last| {
+                    *last + Duration::from_millis(u64::from(spec.delivery().min_interval_millis))
+                })
+            })
+            .unwrap_or(now)
+            .max(now);
+        let append = match state.speed_histories.get_mut(view_id) {
+            Some(position) => match position.append_to(&history) {
+                Ok(append) => append,
+                Err(_) => {
+                    state.speed_histories.insert(
+                        view_id.to_owned(),
+                        SpeedHistoryPosition::from_view(&history)
+                            .map_err(|error| ViewSetError::Internal(error.to_string()))?,
+                    );
+                    enqueue_update(
+                        &mut state,
+                        ViewSetUpdate::Snapshot {
+                            view_id: view_id.to_owned(),
+                            snapshot: ViewSnapshot::SessionSpeedHistory { history },
+                        },
+                        now,
+                    )?;
+                    drop(state);
+                    self.notify.notify_waiters();
+                    return Ok(());
+                }
+            },
+            None => {
+                state.speed_histories.insert(
+                    view_id.to_owned(),
+                    SpeedHistoryPosition::from_view(&history)
+                        .map_err(|error| ViewSetError::Internal(error.to_string()))?,
+                );
+                enqueue_update(
+                    &mut state,
+                    ViewSetUpdate::Snapshot {
+                        view_id: view_id.to_owned(),
+                        snapshot: ViewSnapshot::SessionSpeedHistory { history },
+                    },
+                    now,
+                )?;
+                drop(state);
+                self.notify.notify_waiters();
+                return Ok(());
+            }
+        };
+        if let Some(append) = append {
+            enqueue_update(
+                &mut state,
+                ViewSetUpdate::Patch {
+                    view_id: view_id.to_owned(),
+                    patch: ViewPatch::SessionSpeedHistory { append },
+                },
+                ready_at,
+            )?;
+        }
+        drop(state);
+        self.notify.notify_waiters();
+        Ok(())
+    }
+
     pub(crate) fn enqueue_snapshot(
         &self,
         view_id: &str,
@@ -240,6 +328,13 @@ impl ViewSetInner {
             return Ok(());
         }
         state.durable_revision = revision;
+        record_speed_snapshot(
+            &mut state,
+            &ViewSetUpdate::Snapshot {
+                view_id: view_id.to_owned(),
+                snapshot: snapshot.clone(),
+            },
+        )?;
         enqueue_update(
             &mut state,
             ViewSetUpdate::Snapshot {
@@ -259,6 +354,9 @@ impl ViewSetInner {
         now: Instant,
     ) -> Result<(), ViewSetError> {
         let mut state = self.state()?;
+        for snapshot in &snapshots {
+            record_speed_snapshot(&mut state, snapshot)?;
+        }
         for snapshot in &snapshots {
             if let Some(view_id) = snapshot.view_id() {
                 state.last_delivered.insert(view_id.to_owned(), now);
@@ -385,6 +483,7 @@ impl ViewSetInner {
         state.pending.clear();
         state.pending_bytes = 0;
         state.last_delivered.clear();
+        state.speed_histories.clear();
         state.in_flight = None;
         state.reset_pending = None;
         state.reset_count = state.reset_count.saturating_add(1);
@@ -393,6 +492,9 @@ impl ViewSetInner {
             reason,
         }];
         updates.append(&mut snapshots);
+        for update in &updates {
+            record_speed_snapshot(&mut state, update)?;
+        }
         for update in &updates {
             if let Some(view_id) = update.view_id() {
                 state.last_delivered.insert(view_id.to_owned(), now);
@@ -473,7 +575,25 @@ fn validate_specs(views: &[ViewSpec]) -> Result<BTreeMap<String, ViewSpec>, View
                 maximum: MAX_VIEW_DELIVERY_INTERVAL_MILLIS,
             });
         }
-        if let ViewSpec::SessionSpeed { metrics, .. } = view {
+        if let ViewSpec::SessionCurrentRates { metrics, .. } = view {
+            let unique = metrics
+                .iter()
+                .copied()
+                .collect::<std::collections::BTreeSet<_>>();
+            if metrics.is_empty()
+                || metrics.len() > SpeedMetric::AVAILABLE.len()
+                || unique.len() != metrics.len()
+                || metrics
+                    .iter()
+                    .any(|metric| !SpeedMetric::AVAILABLE.contains(metric))
+            {
+                return Err(ViewSetError::InvalidView(format!(
+                    "session current rates require 1..={} distinct available metrics",
+                    SpeedMetric::AVAILABLE.len()
+                )));
+            }
+        }
+        if let ViewSpec::SessionSpeedHistory { metrics, .. } = view {
             let unique = metrics
                 .iter()
                 .copied()
@@ -486,7 +606,7 @@ fn validate_specs(views: &[ViewSpec]) -> Result<BTreeMap<String, ViewSpec>, View
                     .any(|metric| !SpeedMetric::AVAILABLE.contains(metric))
             {
                 return Err(ViewSetError::InvalidView(format!(
-                    "session speed requires 1..={MAX_SPEED_SERIES} distinct available metrics"
+                    "session speed history requires 1..={MAX_SPEED_SERIES} distinct available metrics"
                 )));
             }
         }
@@ -534,6 +654,29 @@ pub(crate) fn generate_view_set_id() -> Result<String, ViewSetError> {
             .map_err(|error| ViewSetError::Internal(error.to_string()))?;
     }
     Ok(output)
+}
+
+fn record_speed_snapshot(
+    state: &mut ViewSetState,
+    update: &ViewSetUpdate,
+) -> Result<(), ViewSetError> {
+    match update {
+        ViewSetUpdate::Snapshot {
+            view_id,
+            snapshot: ViewSnapshot::SessionSpeedHistory { history },
+        } => {
+            state.speed_histories.insert(
+                view_id.clone(),
+                SpeedHistoryPosition::from_view(history)
+                    .map_err(|error| ViewSetError::Internal(error.to_string()))?,
+            );
+        }
+        ViewSetUpdate::Snapshot { view_id, .. } | ViewSetUpdate::ViewRemoved { view_id } => {
+            state.speed_histories.remove(view_id);
+        }
+        ViewSetUpdate::Patch { .. } | ViewSetUpdate::ResetRequired { .. } => {}
+    }
+    Ok(())
 }
 
 fn enqueue_update(

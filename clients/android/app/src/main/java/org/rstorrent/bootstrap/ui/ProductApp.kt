@@ -243,7 +243,7 @@ private fun ProductNavHost(
                 service?.presentGlobal(GlobalPresentation.SPEED)
                 onDispose { service?.presentGlobal(GlobalPresentation.NONE) }
             }
-            SpeedScreen(state.speed, navController::popBackStack)
+            SpeedScreen(state.speed, state.currentRates, navController::popBackStack)
         }
         composable(ProductRoutes.DHT) {
             DisposableEffect(service) {

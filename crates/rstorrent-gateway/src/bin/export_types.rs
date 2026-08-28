@@ -32,18 +32,19 @@ use rstorrent_session::{
     PeerTransportKind, PeerView, PortMappingFailureStage, PortMappingMechanism, PortMappingPolicy,
     PortMappingStatus, ProgressAction, ProgressAssessment, ProgressDisposition, ProgressPhase,
     ProgressReason, RemovalDataPolicy, RemovalState, RequestEnvelope, ResetReason,
-    ResponseEnvelope, ResponseOutcome, ServiceSnapshot, SessionUdpStatus, SpeedCurrentRate,
-    SpeedHistoryView, SpeedMetric, SpeedMetricAvailability, SpeedPersistenceState, SpeedRange,
-    SpeedSeriesView, StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot,
-    StorageState, SubscriptionSpec, SwarmCatalogState, SwarmCountsView, SwarmPeerState,
-    SwarmPeerView, TorrentEtaView, TorrentFieldUpdate, TorrentOperationalState,
-    TorrentProtocolIdentities, TorrentRowUpdate, TorrentSettingsPatch, TorrentSnapshot,
-    TorrentState, TorrentTransferLimits, TorrentView, TorrentViewChange, TrackerAnnounceEventView,
-    TrackerCatalogState, TrackerConnectionFamilyView, TrackerNextActionView, TrackerSecurityView,
-    TrackerSourceView, TrackerStatusView, TrackerTransportView, TrackerView, TransferRateLimit,
-    TransportAddressFamily, TransportFamilyRuntimeView, UpdateBatch, UpdateViewSetRequest,
-    ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector, ViewSetUpdate, ViewSnapshot,
-    ViewSpec, ViewUpdate, ViewUpdatePayload,
+    ResponseEnvelope, ResponseOutcome, ServiceSnapshot, SessionCurrentRatesView, SessionUdpStatus,
+    SpeedCurrentRate, SpeedHistoryAppend, SpeedHistoryView, SpeedMetric, SpeedMetricAvailability,
+    SpeedPersistenceState, SpeedRange, SpeedSeriesAppend, SpeedSeriesView, StorageRootAvailability,
+    StorageRootSnapshot, StorageSettingsSnapshot, StorageState, SubscriptionSpec,
+    SwarmCatalogState, SwarmCountsView, SwarmPeerState, SwarmPeerView, TorrentEtaView,
+    TorrentFieldUpdate, TorrentOperationalState, TorrentProtocolIdentities, TorrentRowUpdate,
+    TorrentSettingsPatch, TorrentSnapshot, TorrentState, TorrentTransferLimits, TorrentView,
+    TorrentViewChange, TrackerAnnounceEventView, TrackerCatalogState, TrackerConnectionFamilyView,
+    TrackerNextActionView, TrackerSecurityView, TrackerSourceView, TrackerStatusView,
+    TrackerTransportView, TrackerView, TransferRateLimit, TransportAddressFamily,
+    TransportFamilyRuntimeView, UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy, ViewPatch,
+    ViewProjection, ViewSelector, ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdate,
+    ViewUpdatePayload,
 };
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -191,7 +192,10 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<SpeedSeriesView>(&mut declarations)?;
     append::<SpeedMetricAvailability>(&mut declarations)?;
     append::<SpeedCurrentRate>(&mut declarations)?;
+    append::<SessionCurrentRatesView>(&mut declarations)?;
     append::<SpeedHistoryView>(&mut declarations)?;
+    append::<SpeedSeriesAppend>(&mut declarations)?;
+    append::<SpeedHistoryAppend>(&mut declarations)?;
     append::<TorrentEtaView>(&mut declarations)?;
     append::<CheckingPhaseView>(&mut declarations)?;
     append::<CheckingProgressView>(&mut declarations)?;

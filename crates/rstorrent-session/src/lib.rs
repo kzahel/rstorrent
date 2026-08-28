@@ -79,8 +79,9 @@ pub use settings::{
     TorrentTransferLimits, TransferRateLimit, TransportAddressFamily, TransportFamilyRuntimeView,
 };
 pub use speed::{
-    SpeedCurrentRate, SpeedHistoryView, SpeedMetric, SpeedMetricAvailability,
-    SpeedPersistenceState, SpeedRange, SpeedSeriesView,
+    SessionCurrentRatesView, SpeedCurrentRate, SpeedHistoryAppend, SpeedHistoryAppendError,
+    SpeedHistoryView, SpeedMetric, SpeedMetricAvailability, SpeedPersistenceState, SpeedRange,
+    SpeedSeriesAppend, SpeedSeriesView,
 };
 pub use store::{
     ConfiguredStorageRoot, MAX_STORAGE_ROOT_LOCATOR_LENGTH, MAX_STORAGE_ROOTS, PreparedFileRecord,
