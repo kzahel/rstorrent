@@ -415,6 +415,7 @@ final class IOSPresentationRepository: ObservableObject {
             case .storageState(let value): next.storageState = value
             case .metadataAvailable(let value): next.metadataAvailable = value
             case .pieceCount(let value): next.pieceCount = value
+            case .totalSizeBytes(let value): next.totalSizeBytes = value
             case .verifiedPieceCount(let value): next.verifiedPieceCount = value
             case .requestedBytes(let value): next.requestedBytes = value
             case .receivedBytes(let value): next.receivedBytes = value
@@ -450,6 +451,7 @@ final class IOSPresentationRepository: ObservableObject {
         case .storageState: return 7
         case .metadataAvailable: return 8
         case .pieceCount: return 9
+        case .totalSizeBytes: return 28
         case .verifiedPieceCount: return 10
         case .requestedBytes: return 11
         case .receivedBytes: return 12

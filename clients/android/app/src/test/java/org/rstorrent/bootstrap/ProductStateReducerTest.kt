@@ -814,6 +814,7 @@ class ProductStateReducerTest {
                                         "first",
                                         listOf(
                                             TorrentFieldUpdate.DisplayName(null),
+                                            TorrentFieldUpdate.TotalSizeBytes(null),
                                             TorrentFieldUpdate.PayloadDownloadRateBytes("4096"),
                                         ),
                                     ),
@@ -827,6 +828,7 @@ class ProductStateReducerTest {
             )
 
         assertEquals(null, patched.torrents.getValue("first").displayName)
+        assertEquals(null, patched.torrents.getValue("first").totalSizeBytes)
         assertEquals("4096", patched.torrents.getValue("first").payloadDownloadRateBytes)
 
         assertThrows(ViewContinuityException::class.java) {
@@ -1188,6 +1190,7 @@ class ProductStateReducerTest {
             storageState = StorageState.STAGING,
             metadataAvailable = true,
             pieceCount = 100_000U,
+            totalSizeBytes = "1638400000",
             verifiedPieceCount = 65_536U,
             requestedBytes = "16384",
             receivedBytes = "16384",

@@ -6870,6 +6870,24 @@
         {
           "properties": {
             "field": {
+              "const": "total_size_bytes",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
               "const": "verified_piece_count",
               "type": "string"
             },
@@ -7555,6 +7573,12 @@
           "pattern": "^t1-[0-9a-f]{32}$",
           "type": "string"
         },
+        "total_size_bytes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "transfer_limits": {
           "$ref": "#/$defs/TorrentTransferLimits",
           "default": {
@@ -7580,6 +7604,7 @@
         "storage_state",
         "metadata_available",
         "piece_count",
+        "total_size_bytes",
         "verified_piece_count",
         "requested_bytes",
         "received_bytes",

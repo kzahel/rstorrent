@@ -790,6 +790,19 @@ metadata pending through six-media/eight-file catalog arrival and completion,
 view eviction/recovery, zero semantic HTTP calls, and joined cleanup against a
 controlled pinned-libtorrent peer.
 
+Completed Tactical
+[`189`](../tactical/189-library-playback-and-torrent-size.md) turns each Media
+play glyph into an accessible button whose enabled state comes from the typed
+availability row. An eligible activation dispatches the existing exact-file
+`open_file` action; browser popup reservation and capability navigation remain
+inside the live adapter. The same repair removes the adapter's hard-coded null
+torrent size and proves one authoritative 4.4 GB value across Library cards,
+Library detail, Transfers, and Workbench General. Focused React/live/reducer
+tests pass, as do the wide/phone Library browser case and accessibility scan.
+The complete Playwright run retains one separate Swarm horizontal-scroll
+indicator failure that passes in isolation; this slice makes no claim that the
+unrelated full suite is green.
+
 Tactical `083` adds deterministic empty/nonempty Add, pointer/keyboard chooser,
 cancel, advisory accept, same-file reset, default/chosen root, start-content,
 post-success preference, busy, size, read-failure, retry, and byte-intent

@@ -24,6 +24,7 @@ function torrent(verified: number): TorrentView {
     storage_state: verified === 3 ? "published" : "staging",
     metadata_available: true,
     piece_count: 3,
+    total_size_bytes: "49152",
     verified_piece_count: verified,
     requested_bytes: "16384",
     received_bytes: "16384",
@@ -161,6 +162,7 @@ describe("view-set reducer", () => {
               fields: [
                 { field: "display_name", value: null },
                 { field: "download_queue_position", value: 4 },
+                { field: "total_size_bytes", value: null },
               ],
             }],
             removed: [],
@@ -175,7 +177,10 @@ describe("view-set reducer", () => {
               change: "update",
               update: {
                 torrent_id: torrentId,
-                fields: [{ field: "display_name", value: "Verified" }],
+                fields: [
+                  { field: "display_name", value: "Verified" },
+                  { field: "total_size_bytes", value: "65536" },
+                ],
               },
             },
           },
@@ -183,10 +188,14 @@ describe("view-set reducer", () => {
       ]),
     );
     expect(state.views.library).toMatchObject({
-      torrents: [{ display_name: null, download_queue_position: 4 }],
+      torrents: [{
+        display_name: null,
+        download_queue_position: 4,
+        total_size_bytes: null,
+      }],
     });
     expect(state.views.summary).toMatchObject({
-      torrent: { display_name: "Verified" },
+      torrent: { display_name: "Verified", total_size_bytes: "65536" },
     });
     expect(
       state.views.summary!.type === "torrent"

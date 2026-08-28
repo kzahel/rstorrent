@@ -457,6 +457,7 @@ function applyTorrentUpdate(
       case "storage_state": next.storage_state = field.value; break;
       case "metadata_available": next.metadata_available = field.value; break;
       case "piece_count": next.piece_count = field.value; break;
+      case "total_size_bytes": next.total_size_bytes = field.value; break;
       case "verified_piece_count": next.verified_piece_count = field.value; break;
       case "requested_bytes": next.requested_bytes = field.value; break;
       case "received_bytes": next.received_bytes = field.value; break;

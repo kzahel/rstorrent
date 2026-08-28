@@ -107,6 +107,7 @@ semantic_fields!(
         StorageState => storage_state: StorageState,
         MetadataAvailable => metadata_available: bool,
         PieceCount => piece_count: u32,
+        TotalSizeBytes => total_size_bytes: Option<String>,
         VerifiedPieceCount => verified_piece_count: u32,
         RequestedBytes => requested_bytes: String,
         ReceivedBytes => received_bytes: String,
@@ -160,6 +161,7 @@ impl TorrentRowUpdate {
         changed!(StorageState, storage_state);
         changed!(MetadataAvailable, metadata_available);
         changed!(PieceCount, piece_count);
+        changed!(TotalSizeBytes, total_size_bytes);
         changed!(VerifiedPieceCount, verified_piece_count);
         changed!(RequestedBytes, requested_bytes);
         changed!(ReceivedBytes, received_bytes);
@@ -525,6 +527,7 @@ mod tests {
             storage_state: StorageState::Staging,
             metadata_available: false,
             piece_count: 1,
+            total_size_bytes: None,
             verified_piece_count: 0,
             requested_bytes: "0".to_owned(),
             received_bytes: "0".to_owned(),
@@ -570,6 +573,7 @@ mod tests {
         current.storage_state = StorageState::Published;
         current.metadata_available = true;
         current.piece_count = 4;
+        current.total_size_bytes = Some("32771".to_owned());
         current.verified_piece_count = 2;
         current.requested_bytes = "5".to_owned();
         current.received_bytes = "6".to_owned();
@@ -609,7 +613,7 @@ mod tests {
         current.error = Some("failure".to_owned());
 
         let update = TorrentRowUpdate::between(&previous, &current).expect("all fields changed");
-        assert_eq!(update.fields.len(), 28);
+        assert_eq!(update.fields.len(), 29);
         let mut applied = previous;
         update.apply(&mut applied).expect("apply");
         assert_eq!(applied, current);
@@ -619,6 +623,7 @@ mod tests {
         cleared.source_display_name = None;
         cleared.download_queue_position = None;
         cleared.configured_tracker_count = None;
+        cleared.total_size_bytes = None;
         cleared.required_payload_bytes = None;
         cleared.remaining_payload_bytes = None;
         cleared.checking = None;

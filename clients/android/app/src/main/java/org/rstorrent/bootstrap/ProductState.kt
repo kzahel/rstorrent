@@ -621,6 +621,7 @@ internal object ProductStateReducer {
                 is TorrentFieldUpdate.StorageState -> next.storageState = field.value
                 is TorrentFieldUpdate.MetadataAvailable -> next.metadataAvailable = field.value
                 is TorrentFieldUpdate.PieceCount -> next.pieceCount = field.value
+                is TorrentFieldUpdate.TotalSizeBytes -> next.totalSizeBytes = field.value
                 is TorrentFieldUpdate.VerifiedPieceCount -> next.verifiedPieceCount = field.value
                 is TorrentFieldUpdate.RequestedBytes -> next.requestedBytes = field.value
                 is TorrentFieldUpdate.ReceivedBytes -> next.receivedBytes = field.value

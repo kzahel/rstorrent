@@ -292,6 +292,7 @@ describe("LiveApplication", () => {
     expect(snapshots.at(-1)?.torrents[TORRENT_ID]).toMatchObject({
       operationalState: "downloading",
       queuePosition: null,
+      sizeBytes: 131072,
       requiredPayloadBytes: "131072",
       remainingPayloadBytes: "98304",
       etaDownloadRateBytes: "4096",
@@ -1489,6 +1490,7 @@ function torrent(): TorrentView {
     storage_state: "prepared",
     metadata_available: true,
     piece_count: 8,
+    total_size_bytes: "131072",
     verified_piece_count: 2,
     requested_bytes: "32768",
     received_bytes: "16384",

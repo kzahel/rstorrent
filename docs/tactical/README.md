@@ -79,6 +79,10 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`189-library-playback-and-torrent-size.md`](189-library-playback-and-torrent-size.md):
+  complete; connects eligible Library Media Play controls to the existing
+  ephemeral browser/Tauri media capability and carries exact torrent total
+  size through every first-party summary reducer and web size surface.
 - [`188-existing-payload-adoption-and-recheck.md`](188-existing-payload-adoption-and-recheck.md):
   complete; replaces fresh-row destination collisions with automatic
   metainfo-exact discovery and the common complete checker, atomically fences

@@ -1245,7 +1245,10 @@ function mapTorrent(torrent: TorrentView): TorrentRow {
     operationalState: torrent.operational_state,
     queuePosition: torrent.download_queue_position ?? null,
     transferLimits: torrent.transfer_limits,
-    sizeBytes: null,
+    sizeBytes:
+      torrent.total_size_bytes === null
+        ? null
+        : safeNumber(torrent.total_size_bytes),
     progress:
       pieceCount === 0 ? null : torrent.verified_piece_count / pieceCount,
     checking:

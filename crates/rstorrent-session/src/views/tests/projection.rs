@@ -433,6 +433,10 @@ async fn media_projection_filters_rows_and_patches_verified_availability() {
     let hub = ViewHub::new(&snapshot(0, 1)).expect("hub");
     hub.replace_durable(&snapshot(1, 1), &eta_durable(Some(files), 16, 0))
         .expect("install files");
+    assert_eq!(
+        current_torrent(&hub).total_size_bytes.as_deref(),
+        Some("16")
+    );
     let subscription = hub
         .subscribe(SubscriptionSpec {
             selector: ViewSelector::Torrent {

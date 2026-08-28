@@ -2034,6 +2034,7 @@ export function validateTorrentView(value: unknown): asserts value is TorrentVie
   validateTorrentTransferLimits(torrent.transfer_limits, "torrent transfer limits");
   boolean(torrent.metadata_available, "metadata available");
   boundedInteger(torrent.piece_count, "piece count", 0, MAX_U32);
+  nullableDecimal(torrent.total_size_bytes, "torrent total size");
   boundedInteger(
     torrent.verified_piece_count,
     "verified piece count",

@@ -39,6 +39,7 @@ fn torrent_view(id: &str, verified: u32) -> TorrentView {
         storage_state: StorageState::Staging,
         metadata_available: true,
         piece_count: 3,
+        total_size_bytes: Some("32771".to_owned()),
         verified_piece_count: verified,
         requested_bytes: "0".to_owned(),
         received_bytes: "0".to_owned(),

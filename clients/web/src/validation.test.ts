@@ -519,6 +519,20 @@ describe("torrent tracker-count validation", () => {
   });
 });
 
+describe("torrent total-size validation", () => {
+  it("accepts a nullable canonical decimal and rejects malformed size", () => {
+    const batch = torrentBatch("Verified torrent");
+    const torrent = batch.updates[0]!.snapshot.torrents[0]! as TorrentView;
+    expect(decodeUpdateBatch(JSON.stringify(batch)).updates).toHaveLength(1);
+    torrent.total_size_bytes = null;
+    expect(decodeUpdateBatch(JSON.stringify(batch)).updates).toHaveLength(1);
+    torrent.total_size_bytes = "01";
+    expect(() => decodeUpdateBatch(JSON.stringify(batch))).toThrow(
+      /torrent total size must be a bounded canonical decimal/,
+    );
+  });
+});
+
 describe("checker progress validation", () => {
   it("accepts exact work accounting and rejects inconsistent outcomes", () => {
     const batch = torrentBatch("Checking torrent");
@@ -1083,6 +1097,7 @@ function torrentBatch(displayName: string) {
               storage_state: "staging",
               metadata_available: true,
               piece_count: 1,
+              total_size_bytes: "65536",
               verified_piece_count: 0,
               requested_bytes: "0",
               received_bytes: "0",

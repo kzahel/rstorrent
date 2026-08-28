@@ -549,6 +549,7 @@ fn fixture_torrent(torrent_id: &str, verified: u32) -> TorrentView {
         },
         metadata_available: true,
         piece_count: 3,
+        total_size_bytes: Some("49152".to_owned()),
         verified_piece_count: verified,
         requested_bytes: "16384".to_owned(),
         received_bytes: "16384".to_owned(),

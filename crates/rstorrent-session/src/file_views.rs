@@ -253,6 +253,10 @@ impl FileProgressModel {
         self.catalog.layout.files().len()
     }
 
+    pub(crate) fn total_length(&self) -> u64 {
+        self.catalog.layout.total_length()
+    }
+
     pub(crate) fn non_padding_count(&self) -> usize {
         self.catalog
             .layout

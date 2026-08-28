@@ -1167,6 +1167,8 @@ pub struct TorrentView {
     pub storage_state: StorageState,
     pub metadata_available: bool,
     pub piece_count: u32,
+    #[schemars(required, schema_with = "required_nullable_string_schema")]
+    pub total_size_bytes: Option<String>,
     pub verified_piece_count: u32,
     pub requested_bytes: String,
     pub received_bytes: String,

@@ -179,6 +179,15 @@ view and retains exact shared file progress, priority, and availability.
 Android and iOS compile and exhaustively reduce the additive generated
 contract, but gain no Compose or SwiftUI presentation; thumbnails and playback
 remain separate cross-platform product decisions.
+Completed Tactical
+[`189`](../tactical/189-library-playback-and-torrent-size.md) makes the shared
+React Media glyph an accessible Play control for the already typed `available`
+and `streamable` rows. Browser keeps the existing opener-isolated tab and Tauri
+keeps its system opener behind the same `open_file` action. The same slice
+carries exact metadata-backed torrent total size through the generated summary
+contract and all first-party reducers so Library, Transfers, and Workbench no
+longer invent pending size after geometry exists. Android and iOS receive no
+new playback presentation, and no embedded player is implied.
 
 Tactical `081` adds adapter-level v1 `.torrent` byte intake through
 the ordinary browser WebSocket and raw in-process Tauri IPC, plus HTTP
@@ -776,14 +785,20 @@ reads, bounded incomplete-file scheduling, body/backpressure limits, and
 joined lifecycle ownership. File bytes flow between Rust storage and HTTP
 clients without crossing the UI contract. Embedded playback, stable sharing,
 remote exposure, and Android streaming remain independent product decisions.
+Completed Tactical `189` exposes that existing data plane as Library Media
+Play: a direct browser activation reserves an isolated tab before requesting
+the exact file capability, then browser-native media handling consumes the
+URL. This adds presentation only; capability eligibility, byte service,
+streaming demand, expiry, and revocation remain unchanged.
 
 ## Current Gaps
 
 - The React Library now has a rebuildable media-first torrent detail, but its
   top level remains torrent-backed. Library-wide item aggregation, durable
   media identity/organization, thumbnails or provider artwork, watched state,
-  and embedded playback remain separate product capabilities. Android and iOS
-  have no corresponding derived-media presentation.
+  and embedded in-application playback remain separate product capabilities.
+  Browser-native playback handoff exists for eligible Media rows; Android and
+  iOS have no corresponding derived-media presentation.
 
 - The loopback WebSocket gateway and configured private-host Basic service are
   not a production owner-remote-access design. RSTorrent has no built-in TLS,

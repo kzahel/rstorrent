@@ -7,7 +7,7 @@ import {
   type UIEvent,
 } from "react";
 
-import { useInspectionStore } from "../context";
+import { useInspectionCommand, useInspectionStore } from "../context";
 import { formatDecimalProgress, formatExactBytes } from "../format";
 import { episodeLabel, sortFileRows, sortMediaRows } from "../library-media";
 import type { FileRow, MediaRow, TorrentRow, ViewMaterialization } from "../model";
@@ -42,11 +42,28 @@ export function LibraryDetailView({
   );
   const mediaStatus = useInspectionStore((state) => state.viewStatus.media);
   const filesStatus = useInspectionStore((state) => state.viewStatus.files);
+  const demo = useInspectionStore((state) => state.demo);
+  const execute = useInspectionCommand();
   const autoFallback = useRef(torrent.id);
+  const playbackRequest = useRef(0);
+  const [playbackPendingFile, setPlaybackPendingFile] = useState<number | null>(
+    null,
+  );
+  const [playbackStatus, setPlaybackStatus] = useState("");
 
   useEffect(() => {
     autoFallback.current = torrent.id;
+    playbackRequest.current += 1;
+    setPlaybackPendingFile(null);
+    setPlaybackStatus("");
   }, [torrent.id]);
+
+  useEffect(
+    () => () => {
+      playbackRequest.current += 1;
+    },
+    [],
+  );
 
   useEffect(() => {
     if (
@@ -65,6 +82,43 @@ export function LibraryDetailView({
     selectMode(next);
   };
   const mediaCount = media?.order.length;
+  const playMedia = async (row: MediaRow) => {
+    if (
+      demo !== null ||
+      playbackPendingFile !== null ||
+      !isPlaybackEligible(row.mediaAvailability)
+    ) {
+      return;
+    }
+    const request = playbackRequest.current + 1;
+    playbackRequest.current = request;
+    setPlaybackPendingFile(row.fileIndex);
+    setPlaybackStatus("");
+    try {
+      const result = await execute({
+        type: "open_file",
+        torrentId: torrent.id,
+        fileIndex: row.fileIndex,
+      });
+      if (playbackRequest.current === request) {
+        setPlaybackStatus(
+          result.accepted
+            ? `Opening ${row.name} for playback`
+            : result.message,
+        );
+      }
+    } catch (error) {
+      if (playbackRequest.current === request) {
+        setPlaybackStatus(
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    } finally {
+      if (playbackRequest.current === request) {
+        setPlaybackPendingFile(null);
+      }
+    }
+  };
 
   return (
     <section className={styles.detail} aria-labelledby="library-detail-heading">
@@ -132,6 +186,11 @@ export function LibraryDetailView({
             >
               All files
             </button>
+            {playbackStatus === "" ? null : (
+              <output className={styles.commandStatus} aria-live="polite">
+                {playbackStatus}
+              </output>
+            )}
           </div>
           {mode === "media" ? (
             <MediaCatalog
@@ -142,6 +201,13 @@ export function LibraryDetailView({
               materialization={mediaStatus}
               layout={layout}
               dataUnits={dataUnits}
+              playbackPendingFile={playbackPendingFile}
+              playbackUnavailableReason={
+                demo === null
+                  ? undefined
+                  : "Playback is unavailable in demo scenarios."
+              }
+              onPlay={(row) => void playMedia(row)}
             />
           ) : (
             <FileCatalog
@@ -167,12 +233,18 @@ function MediaCatalog({
   materialization,
   layout,
   dataUnits,
+  playbackPendingFile,
+  playbackUnavailableReason,
+  onPlay,
 }: {
   readonly rows: readonly MediaRow[];
   readonly state: "metadata_pending" | "available" | "torrent_missing" | undefined;
   readonly materialization: ViewMaterialization;
   readonly layout: "wide" | "compact" | "phone";
   readonly dataUnits: "decimal" | "binary";
+  readonly playbackPendingFile: number | null;
+  readonly playbackUnavailableReason: string | undefined;
+  readonly onPlay: (row: MediaRow) => void;
 }) {
   if (materialization.status !== "ready") {
     return <CatalogMessage message={materializationMessage(materialization)} />;
@@ -193,6 +265,9 @@ function MediaCatalog({
       layout={layout}
       dataUnits={dataUnits}
       label="Recognized video files"
+      playbackPendingFile={playbackPendingFile}
+      playbackUnavailableReason={playbackUnavailableReason}
+      onPlay={onPlay}
     />
   );
 }
@@ -249,11 +324,17 @@ function VirtualCatalog({
   layout,
   dataUnits,
   label,
+  playbackPendingFile = null,
+  playbackUnavailableReason,
+  onPlay,
 }: {
   readonly rows: readonly CatalogRow[];
   readonly layout: "wide" | "compact" | "phone";
   readonly dataUnits: "decimal" | "binary";
   readonly label: string;
+  readonly playbackPendingFile?: number | null;
+  readonly playbackUnavailableReason?: string | undefined;
+  readonly onPlay?: ((row: MediaRow) => void) | undefined;
 }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -292,6 +373,9 @@ function VirtualCatalog({
             dataUnits={dataUnits}
             position={first + offset + 1}
             setSize={rows.length}
+            playbackPendingFile={playbackPendingFile}
+            playbackUnavailableReason={playbackUnavailableReason}
+            onPlay={onPlay}
             style={{ transform: `translateY(${(first + offset) * rowHeight}px)` }}
           />
         ))}
@@ -305,12 +389,18 @@ function CatalogRowView({
   dataUnits,
   position,
   setSize,
+  playbackPendingFile,
+  playbackUnavailableReason,
+  onPlay,
   style,
 }: {
   readonly entry: CatalogRow;
   readonly dataUnits: "decimal" | "binary";
   readonly position: number;
   readonly setSize: number;
+  readonly playbackPendingFile: number | null;
+  readonly playbackUnavailableReason?: string | undefined;
+  readonly onPlay?: ((row: MediaRow) => void) | undefined;
   readonly style: CSSProperties;
 }) {
   const row = entry.row;
@@ -323,6 +413,14 @@ function CatalogRowView({
       : row.doneBytes === "0"
         ? "Not downloaded"
         : "Partially downloaded";
+  const playbackReason =
+    entry.kind === "media"
+      ? playbackDisabledReason(
+          entry.row,
+          playbackPendingFile,
+          playbackUnavailableReason,
+        )
+      : undefined;
   return (
     <article
       className={styles.row}
@@ -331,9 +429,25 @@ function CatalogRowView({
       aria-posinset={position}
       aria-setsize={setSize}
     >
-      <span className={styles.type} aria-hidden="true">
-        {entry.kind === "media" ? "▶" : row.extension.slice(0, 3).toUpperCase() || "FILE"}
-      </span>
+      {entry.kind === "media" ? (
+        <button
+          type="button"
+          className={`${styles.type} ${styles.play}`}
+          aria-label={`Play ${row.name}`}
+          aria-description={playbackReason}
+          title={playbackReason}
+          disabled={playbackReason !== undefined}
+          onClick={() => onPlay?.(entry.row)}
+        >
+          <span aria-hidden="true">
+            {playbackPendingFile === entry.row.fileIndex ? "…" : "▶"}
+          </span>
+        </button>
+      ) : (
+        <span className={styles.type} aria-hidden="true">
+          {row.extension.slice(0, 3).toUpperCase() || "FILE"}
+        </span>
+      )}
       <span className={styles.identity}>
         <span className={styles.rowHeading}>
           {label === null ? null : <b>{label}</b>}
@@ -358,6 +472,24 @@ function CatalogRowView({
       </span>
     </article>
   );
+}
+
+function playbackDisabledReason(
+  row: MediaRow,
+  pendingFile: number | null,
+  unavailableReason?: string,
+): string | undefined {
+  if (unavailableReason !== undefined) return unavailableReason;
+  if (pendingFile === row.fileIndex) return "Opening this file for playback.";
+  if (pendingFile !== null) return "Another media file is opening.";
+  if (isPlaybackEligible(row.mediaAvailability)) return undefined;
+  return `Playback is unavailable: ${availabilityLabel(row.mediaAvailability).toLocaleLowerCase()}.`;
+}
+
+function isPlaybackEligible(
+  availability: MediaRow["mediaAvailability"],
+): boolean {
+  return availability === "available" || availability === "streamable";
 }
 
 function CatalogMessage({ message }: { readonly message: string }) {

@@ -1712,6 +1712,87 @@ describe("inspection application", () => {
     await waitFor(() => expect(restored).toHaveFocus());
   });
 
+  it("plays an eligible Library video through the existing file action", async () => {
+    const user = userEvent.setup();
+    const snapshot = buildScenarioSnapshot("media-library", 0, false, 1);
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot: { ...snapshot, demo: null },
+    });
+    renderApplication(application);
+
+    await user.click(screen.getByRole("button", { name: "Library" }));
+    await user.click(
+      screen.getByRole("button", {
+        name: "Open details for North Shore Stories · Seasons 1–2",
+      }),
+    );
+    const playable = await screen.findByRole("button", {
+      name: "Play North.Shore.Stories.S01E02.1080p.WEB-DL.mp4",
+    });
+    expect(playable).toBeEnabled();
+    const unavailable = screen.getByRole("button", {
+      name: "Play North.Shore.Stories.S01E07E08.mkv",
+    });
+    expect(unavailable).toBeDisabled();
+    expect(unavailable).toHaveAttribute(
+      "title",
+      "Playback is unavailable: not verified.",
+    );
+
+    await user.click(playable);
+    await waitFor(() =>
+      expect(application.commands.at(-1)).toEqual({
+        type: "open_file",
+        torrentId: snapshot.torrentOrder[0],
+        fileIndex: 2,
+      }),
+    );
+    expect(
+      screen.getByText(
+        "Opening North.Shore.Stories.S01E02.1080p.WEB-DL.mp4 for playback",
+      ),
+    ).toBeVisible();
+
+    application.rejectNextTorrentId = snapshot.torrentOrder[0];
+    await user.click(playable);
+    expect(await screen.findByText("rejected for test")).toBeVisible();
+    expect(playable).toBeEnabled();
+  });
+
+  it("renders one metadata-backed torrent size across product views", async () => {
+    const user = userEvent.setup();
+    const snapshot = buildScenarioSnapshot("media-library", 0, false, 1);
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot: { ...snapshot, demo: null },
+    });
+    renderApplication(application);
+
+    await user.click(screen.getByRole("button", { name: "Library" }));
+    const card = screen.getByRole("button", {
+      name: "Open details for North Shore Stories · Seasons 1–2",
+    });
+    expect(within(card).getByText("4.4 GB")).toBeVisible();
+    await user.click(card);
+    expect(screen.queryByText("Size pending")).not.toBeInTheDocument();
+    expect(screen.getAllByText("4.4 GB").length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole("button", { name: "Back to Library" }));
+    await user.click(screen.getByRole("button", { name: "Transfers" }));
+    expect(
+      within(screen.getByRole("grid", { name: "Transfer queue" })).getByText(
+        "4.4 GB",
+      ),
+    ).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(screen.getByRole("tab", { name: "General" }));
+    expect(
+      screen.getByText("Size", { selector: "dt" }).parentElement,
+    ).toHaveTextContent("4.4 GB");
+  });
+
   it("bounds the mounted media rows for a 4,096-file catalog", async () => {
     const user = userEvent.setup();
     renderScenario("file-progress", 24_000);

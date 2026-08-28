@@ -1084,6 +1084,16 @@ snapshot encodes to 1,901,592 bytes and occupies 1,901,762 bytes in the retained
 view-set envelope, below the existing 16 MiB snapshot ceiling. No classifier
 state is persisted and no payload bytes cross this interface.
 
+Completed Tactical
+[`189`](../tactical/189-library-playback-and-torrent-size.md) adds one
+`total_size_bytes` fact to the complete `TorrentView` summary rather than
+duplicating file-page or Media aggregation in clients. It is null before
+verified content geometry exists and otherwise equals the immutable content
+layout's exact total length as a decimal `u64` string, including padding. A
+metadata transition uses the closed typed `TotalSizeBytes` sparse field;
+TypeScript, Android, and Swift reducers apply it exhaustively. Playback itself
+reuses the existing semantic media call and adds no view field or payload byte.
+
 ## Live Trackers Extension
 
 Tactical `043` implements `torrent_trackers` as complete keyed rows derived

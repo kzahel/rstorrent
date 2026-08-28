@@ -721,6 +721,7 @@ impl TorrentModel {
                 storage_state: snapshot.storage_state,
                 metadata_available: snapshot.metadata_available,
                 piece_count: snapshot.piece_count,
+                total_size_bytes: None,
                 verified_piece_count: snapshot.verified_piece_count,
                 requested_bytes: "0".to_owned(),
                 received_bytes: "0".to_owned(),

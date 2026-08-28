@@ -468,6 +468,10 @@ impl ViewHub {
                 model.queue_checker(generation);
             }
             model.eta.apply_to_view(&mut model.view);
+            model.view.total_size_bytes = model
+                .files
+                .as_ref()
+                .map(|files| files.total_length().to_string());
             model.view.configured_tracker_count = Some(model.trackers.count());
             next.insert(torrent.torrent_id.clone(), model);
         }
