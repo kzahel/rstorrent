@@ -182,6 +182,7 @@ fn multi_view_inner(now: Instant) -> Arc<ViewSetInner> {
 fn library_patch(verified: u32) -> ViewPatch {
     ViewPatch::TorrentList {
         upsert: vec![torrent_view(TORRENT_ID, verified)],
+        updates: Vec::new(),
         removed: Vec::new(),
         storage: None,
         client_settings: None,
@@ -190,7 +191,9 @@ fn library_patch(verified: u32) -> ViewPatch {
 
 fn summary_patch(verified: u32) -> ViewPatch {
     ViewPatch::Torrent {
-        torrent: Some(torrent_view(TORRENT_ID, verified)),
+        change: TorrentViewChange::Replace {
+            torrent: Some(torrent_view(TORRENT_ID, verified)),
+        },
     }
 }
 
@@ -328,6 +331,7 @@ fn maximum_file_page_is_separate_from_steady_queue_pressure() {
                     verified_bytes: "0".to_owned(),
                     media_availability: MediaFileAvailability::Unverified,
                 }],
+                updates: Vec::new(),
                 removed: Vec::new(),
             },
             8,
@@ -355,6 +359,7 @@ fn replays_until_acknowledged_then_emits_accumulated_patch() {
             "library",
             ViewPatch::TorrentList {
                 upsert: vec![torrent_view("aa", 1)],
+                updates: Vec::new(),
                 removed: Vec::new(),
                 storage: None,
                 client_settings: None,
@@ -420,6 +425,7 @@ fn nonzero_delivery_interval_defers_accumulated_patch_without_a_task() {
             "library",
             ViewPatch::TorrentList {
                 upsert: vec![torrent_view("aa", 1)],
+                updates: Vec::new(),
                 removed: Vec::new(),
                 storage: None,
                 client_settings: None,
@@ -489,7 +495,11 @@ fn compatible_patches_coalesce_per_view_across_interleaved_ids() {
         update,
         ViewSetUpdate::Patch {
             view_id,
-            patch: ViewPatch::Torrent { torrent: Some(torrent) },
+            patch: ViewPatch::Torrent {
+                change: TorrentViewChange::Replace {
+                    torrent: Some(torrent),
+                },
+            },
         } if view_id == "summary" && torrent.verified_piece_count == 2
     )));
 }
@@ -899,7 +909,7 @@ async fn lease_reaper_closes_silent_set_and_wakes_long_poll() {
 }
 
 #[tokio::test]
-async fn peer_view_upserts_generations_and_removes_only_on_cleanup() {
+async fn peer_view_updates_generations_and_removes_only_on_cleanup() {
     let hub = ViewHub::new(&service_snapshot(0, 0)).expect("hub");
     let owner = ViewSetOwner::trusted("owner");
     let opened = hub
@@ -967,6 +977,15 @@ async fn peer_view_upserts_generations_and_removes_only_on_cleanup() {
             ]
             && removed.is_empty()
     ));
+    let mut projected_peer = match connecting.updates.as_slice() {
+        [
+            ViewSetUpdate::Patch {
+                patch: ViewPatch::Peers { upsert, .. },
+                ..
+            },
+        ] => upsert[0].clone(),
+        _ => panic!("expected connecting peer upsert"),
+    };
 
     peer.lifecycle = PeerConnectionLifecycle::Connected;
     peer.role = PeerConnectionRole::Content;
@@ -994,24 +1013,48 @@ async fn peer_view_upserts_generations_and_removes_only_on_cleanup() {
         .next_updates(&connecting.cursor, 0)
         .await
         .expect("connected patch");
-    assert!(matches!(
-        connected.updates.as_slice(),
-        [ViewSetUpdate::Patch {
-            patch: ViewPatch::Peers { upsert, removed, .. },
-            ..
-        }] if upsert.len() == 1
-            && upsert[0].client_name.as_deref() == Some("µTorrent 3.5.5")
-            && upsert[0].capabilities.client_name == crate::CapabilityStatus::Available
-            && upsert[0].mse_method == Some(crate::PeerMseMethodView::Rc4)
-            && upsert[0].peer_flags == [
-                crate::PeerFlagView::Incoming,
-                crate::PeerFlagView::Encrypted,
-                crate::PeerFlagView::DownloadChoked,
-                crate::PeerFlagView::ExtensionProtocol,
-                crate::PeerFlagView::Utp,
-            ]
-            && removed.is_empty()
-    ));
+    match connected.updates.as_slice() {
+        [
+            ViewSetUpdate::Patch {
+                patch:
+                    ViewPatch::Peers {
+                        upsert,
+                        updates,
+                        removed,
+                        ..
+                    },
+                ..
+            },
+        ] => {
+            assert!(upsert.is_empty());
+            assert!(removed.is_empty());
+            assert_eq!(updates.len(), 1);
+            updates[0].apply(&mut projected_peer).expect("peer update");
+        }
+        _ => panic!("expected connected peer update"),
+    }
+    assert_eq!(
+        projected_peer.client_name.as_deref(),
+        Some("µTorrent 3.5.5")
+    );
+    assert_eq!(
+        projected_peer.capabilities.client_name,
+        crate::CapabilityStatus::Available
+    );
+    assert_eq!(
+        projected_peer.mse_method,
+        Some(crate::PeerMseMethodView::Rc4)
+    );
+    assert_eq!(
+        projected_peer.peer_flags,
+        [
+            crate::PeerFlagView::Incoming,
+            crate::PeerFlagView::Encrypted,
+            crate::PeerFlagView::DownloadChoked,
+            crate::PeerFlagView::ExtensionProtocol,
+            crate::PeerFlagView::Utp,
+        ]
+    );
 
     peer.content = None;
     peer.local_endpoint = Some("127.0.0.1:6882".parse().expect("local endpoint"));
@@ -1032,37 +1075,76 @@ async fn peer_view_upserts_generations_and_removes_only_on_cleanup() {
         .next_updates(&connected.cursor, 0)
         .await
         .expect("upload patch");
-    assert!(matches!(
-        uploading.updates.as_slice(),
-        [ViewSetUpdate::Patch {
-            patch: ViewPatch::Peers { upsert, removed, .. },
-            ..
-        }] if upsert.len() == 1
-            && upsert[0].local_endpoint.as_deref() == Some("127.0.0.1:6882")
-            && upsert[0].supports_ut_metadata == Some(true)
-            && upsert[0].remote_interested == Some(true)
-            && upsert[0].local_choking == Some(false)
-            && upsert[0].payload_upload_rate_bytes.as_deref() == Some("8192")
-            && upsert[0].payload_uploaded_bytes.as_deref() == Some("16384")
-            && upsert[0].pending_requests == Some(3)
-            && upsert[0].queued_payload_bytes.as_deref() == Some("4608")
-            && upsert[0].connected_age_millis.as_deref() == Some("13")
-            && upsert[0].capabilities.local_endpoint == crate::CapabilityStatus::Available
-            && upsert[0].capabilities.ut_metadata == crate::CapabilityStatus::Available
-            && upsert[0].capabilities.interest_directions == crate::CapabilityStatus::Available
-            && upsert[0].capabilities.local_choke == crate::CapabilityStatus::Available
-            && upsert[0].capabilities.upload == crate::CapabilityStatus::Available
-            && upsert[0].peer_flags == [
-                crate::PeerFlagView::Incoming,
-                crate::PeerFlagView::Encrypted,
-                crate::PeerFlagView::UploadAllowed,
-                crate::PeerFlagView::ExtensionProtocol,
-                crate::PeerFlagView::MetadataExtension,
-                crate::PeerFlagView::Utp,
-                crate::PeerFlagView::OptimisticUnchoke,
-            ]
-            && removed.is_empty()
-    ));
+    match uploading.updates.as_slice() {
+        [
+            ViewSetUpdate::Patch {
+                patch:
+                    ViewPatch::Peers {
+                        upsert,
+                        updates,
+                        removed,
+                        ..
+                    },
+                ..
+            },
+        ] => {
+            assert!(upsert.is_empty());
+            assert!(removed.is_empty());
+            assert_eq!(updates.len(), 1);
+            updates[0].apply(&mut projected_peer).expect("peer update");
+        }
+        _ => panic!("expected uploading peer update"),
+    }
+    assert_eq!(
+        projected_peer.local_endpoint.as_deref(),
+        Some("127.0.0.1:6882")
+    );
+    assert_eq!(projected_peer.supports_ut_metadata, Some(true));
+    assert_eq!(projected_peer.remote_interested, Some(true));
+    assert_eq!(projected_peer.local_choking, Some(false));
+    assert_eq!(
+        projected_peer.payload_upload_rate_bytes.as_deref(),
+        Some("8192")
+    );
+    assert_eq!(
+        projected_peer.payload_uploaded_bytes.as_deref(),
+        Some("16384")
+    );
+    assert_eq!(projected_peer.pending_requests, Some(3));
+    assert_eq!(projected_peer.queued_payload_bytes.as_deref(), Some("4608"));
+    assert_eq!(projected_peer.connected_age_millis.as_deref(), Some("13"));
+    assert_eq!(
+        projected_peer.capabilities.local_endpoint,
+        crate::CapabilityStatus::Available
+    );
+    assert_eq!(
+        projected_peer.capabilities.ut_metadata,
+        crate::CapabilityStatus::Available
+    );
+    assert_eq!(
+        projected_peer.capabilities.interest_directions,
+        crate::CapabilityStatus::Available
+    );
+    assert_eq!(
+        projected_peer.capabilities.local_choke,
+        crate::CapabilityStatus::Available
+    );
+    assert_eq!(
+        projected_peer.capabilities.upload,
+        crate::CapabilityStatus::Available
+    );
+    assert_eq!(
+        projected_peer.peer_flags,
+        [
+            crate::PeerFlagView::Incoming,
+            crate::PeerFlagView::Encrypted,
+            crate::PeerFlagView::UploadAllowed,
+            crate::PeerFlagView::ExtensionProtocol,
+            crate::PeerFlagView::MetadataExtension,
+            crate::PeerFlagView::Utp,
+            crate::PeerFlagView::OptimisticUnchoke,
+        ]
+    );
 
     peer.lifecycle = PeerConnectionLifecycle::Disconnecting;
     peer.lifecycle_changed_at = Duration::from_millis(20);
@@ -1072,16 +1154,35 @@ async fn peer_view_upserts_generations_and_removes_only_on_cleanup() {
         .next_updates(&uploading.cursor, 0)
         .await
         .expect("disconnecting patch");
-    assert!(matches!(
-        disconnecting.updates.as_slice(),
-        [ViewSetUpdate::Patch {
-            patch: ViewPatch::Peers { upsert, removed, .. },
-            ..
-        }] if upsert.len() == 1
-            && upsert[0].lifecycle == crate::PeerLifecycle::Disconnecting
-            && upsert[0].peer_flags.contains(&crate::PeerFlagView::UploadAllowed)
-            && removed.is_empty()
-    ));
+    match disconnecting.updates.as_slice() {
+        [
+            ViewSetUpdate::Patch {
+                patch:
+                    ViewPatch::Peers {
+                        upsert,
+                        updates,
+                        removed,
+                        ..
+                    },
+                ..
+            },
+        ] => {
+            assert!(upsert.is_empty());
+            assert!(removed.is_empty());
+            assert_eq!(updates.len(), 1);
+            updates[0].apply(&mut projected_peer).expect("peer update");
+        }
+        _ => panic!("expected disconnecting peer update"),
+    }
+    assert_eq!(
+        projected_peer.lifecycle,
+        crate::PeerLifecycle::Disconnecting
+    );
+    assert!(
+        projected_peer
+            .peer_flags
+            .contains(&crate::PeerFlagView::UploadAllowed)
+    );
 
     hub.record_peer_connections(TORRENT_ID, Duration::from_millis(30), &[])
         .expect("remove row");

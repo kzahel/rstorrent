@@ -125,6 +125,135 @@ function batch(
 }
 
 describe("view-set reducer", () => {
+  it("applies typed torrent fields and distinguishes nullable clear from unchanged", () => {
+    const initialTorrent = { ...torrent(0), display_name: "Provisional" };
+    let state = reduceUpdateBatch(
+      undefined,
+      batch("0", "1", [
+        {
+          type: "snapshot",
+          view_id: "library",
+          snapshot: {
+            type: "torrent_list",
+            torrents: [initialTorrent],
+            storage: { roots: [], show_add_options: true },
+            client_settings: clientSettingsRuntimeFixture(),
+          },
+        },
+        {
+          type: "snapshot",
+          view_id: "summary",
+          snapshot: { type: "torrent", torrent: initialTorrent },
+        },
+      ]),
+    );
+    state = reduceUpdateBatch(
+      state,
+      batch("1", "2", [
+        {
+          type: "patch",
+          view_id: "library",
+          patch: {
+            type: "torrent_list",
+            upsert: [],
+            updates: [{
+              torrent_id: torrentId,
+              fields: [
+                { field: "display_name", value: null },
+                { field: "download_queue_position", value: 4 },
+              ],
+            }],
+            removed: [],
+          },
+        },
+        {
+          type: "patch",
+          view_id: "summary",
+          patch: {
+            type: "torrent",
+            change: {
+              change: "update",
+              update: {
+                torrent_id: torrentId,
+                fields: [{ field: "display_name", value: "Verified" }],
+              },
+            },
+          },
+        },
+      ]),
+    );
+    expect(state.views.library).toMatchObject({
+      torrents: [{ display_name: null, download_queue_position: 4 }],
+    });
+    expect(state.views.summary).toMatchObject({
+      torrent: { display_name: "Verified" },
+    });
+    expect(
+      state.views.summary!.type === "torrent"
+        ? state.views.summary!.torrent?.download_queue_position
+        : null,
+    ).toBeUndefined();
+  });
+
+  it("rejects sparse updates without a base row or with duplicate fields", () => {
+    const state = reduceUpdateBatch(
+      undefined,
+      batch("0", "1", [{
+        type: "snapshot",
+        view_id: "library",
+        snapshot: {
+          type: "torrent_list",
+          torrents: [],
+          storage: { roots: [], show_add_options: true },
+          client_settings: clientSettingsRuntimeFixture(),
+        },
+      }]),
+    );
+    expect(() => reduceUpdateBatch(state, batch("1", "2", [{
+      type: "patch",
+      view_id: "library",
+      patch: {
+        type: "torrent_list",
+        upsert: [],
+        updates: [{
+          torrent_id: torrentId,
+          fields: [{ field: "display_name", value: "Missing" }],
+        }],
+        removed: [],
+      },
+    }]))).toThrow(ViewSetContinuityError);
+
+    const established = reduceUpdateBatch(
+      undefined,
+      batch("0", "1", [{
+        type: "snapshot",
+        view_id: "library",
+        snapshot: {
+          type: "torrent_list",
+          torrents: [torrent(0)],
+          storage: { roots: [], show_add_options: true },
+          client_settings: clientSettingsRuntimeFixture(),
+        },
+      }]),
+    );
+    expect(() => reduceUpdateBatch(established, batch("1", "2", [{
+      type: "patch",
+      view_id: "library",
+      patch: {
+        type: "torrent_list",
+        upsert: [],
+        updates: [{
+          torrent_id: torrentId,
+          fields: [
+            { field: "display_name", value: "one" },
+            { field: "display_name", value: "two" },
+          ],
+        }],
+        removed: [],
+      },
+    }]))).toThrow(ViewSetContinuityError);
+  });
+
   it("applies storage settings independently of torrent rows", () => {
     let state = reduceUpdateBatch(
       undefined,
@@ -150,6 +279,7 @@ describe("view-set reducer", () => {
           patch: {
             type: "torrent_list",
             upsert: [],
+            updates: [],
             removed: [],
             storage: {
               roots: [
@@ -215,6 +345,7 @@ describe("view-set reducer", () => {
           patch: {
             type: "torrent_list",
             upsert: [],
+            updates: [],
             removed: [],
             client_settings: {
               ...clientSettingsRuntimeFixture(),
@@ -265,6 +396,7 @@ describe("view-set reducer", () => {
           patch: {
             type: "torrent_list",
             upsert: [{ ...torrent(0), display_name: "Verified torrent" }],
+            updates: [],
             removed: [],
           },
         },
@@ -318,6 +450,7 @@ describe("view-set reducer", () => {
             type: "files",
             torrent_id: torrentId,
             upsert: [{ ...first, done_bytes: "32768", verified_bytes: "16384" }],
+            updates: [],
             removed: [],
           },
         },
@@ -423,6 +556,7 @@ describe("view-set reducer", () => {
             verified: [{ start: 1, end_exclusive: 2 }],
             cleared: [],
             active_upsert: [activePiece(0, 2, "requested")],
+            active_updates: [],
             active_removed: [first.piece_id],
           },
         },
@@ -457,7 +591,7 @@ describe("view-set reducer", () => {
         {
           type: "patch",
           view_id: "library",
-          patch: { type: "torrent_list", upsert: [], removed: [torrentId] },
+          patch: { type: "torrent_list", upsert: [], updates: [], removed: [torrentId] },
         },
       ]),
     );
@@ -473,7 +607,7 @@ describe("view-set reducer", () => {
         {
           type: "patch",
           view_id: "library",
-          patch: { type: "torrent_list", upsert: [torrent(3)], removed: [] },
+          patch: { type: "torrent_list", upsert: [torrent(3)], updates: [], removed: [] },
         },
       ]),
     );
@@ -700,7 +834,7 @@ describe("view-set reducer", () => {
           {
             type: "patch",
             view_id: "missing",
-            patch: { type: "torrent_list", upsert: [], removed: [] },
+            patch: { type: "torrent_list", upsert: [], updates: [], removed: [] },
           },
         ]),
       ),

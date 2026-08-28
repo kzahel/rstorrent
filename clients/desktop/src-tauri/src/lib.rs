@@ -810,9 +810,25 @@ async fn run_power_owner(
                     ViewUpdatePayload::Patch {
                         patch:
                             ViewPatch::TorrentList {
-                                upsert, removed, ..
+                                upsert,
+                                updates,
+                                removed,
+                                ..
                             },
-                    } => policy.apply_patch(&upsert, &removed),
+                    } => match policy.apply_patch(&upsert, &updates, &removed) {
+                        Ok(required) => required,
+                        Err(()) => {
+                            let required = policy.reset();
+                            if let Err(error) = subscription.resync() {
+                                eprintln!(
+                                    "desktop power subscription could not resync after a sparse patch: {}",
+                                    bounded_diagnostic(error.to_string())
+                                );
+                                break;
+                            }
+                            required
+                        }
+                    },
                     ViewUpdatePayload::ResetRequired { .. } => {
                         let required = policy.reset();
                         if let Err(error) = subscription.resync() {
@@ -873,9 +889,25 @@ async fn run_notification_owner(
             ViewUpdatePayload::Patch {
                 patch:
                     ViewPatch::TorrentList {
-                        upsert, removed, ..
+                        upsert,
+                        updates,
+                        removed,
+                        ..
                     },
-            } => policy.apply_patch(&upsert, &removed),
+            } => match policy.apply_patch(&upsert, &updates, &removed) {
+                Ok(notifications) => notifications,
+                Err(()) => {
+                    policy.reset();
+                    if let Err(error) = subscription.resync() {
+                        eprintln!(
+                            "desktop notification subscription could not resync after a sparse patch: {}",
+                            bounded_diagnostic(error.to_string())
+                        );
+                        break;
+                    }
+                    Vec::new()
+                }
+            },
             ViewUpdatePayload::ResetRequired { .. } => {
                 policy.reset();
                 if let Err(error) = subscription.resync() {

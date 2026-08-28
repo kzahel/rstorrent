@@ -1,11 +1,25 @@
 import type {
+  ActivePiece,
+  ActivePieceUpdate,
   DiagnosticEvent,
+  FileRowUpdate,
+  FileView,
   IndexRange,
   OpenViewSetResponse,
+  PeerRowUpdate,
+  PeerView,
+  TorrentRowUpdate,
+  TorrentView,
   UpdateBatch,
   ViewPatch,
   ViewSnapshot,
 } from "./api";
+import {
+  validateActivePiece,
+  validateFileView,
+  validatePeerView,
+  validateTorrentView,
+} from "./validation";
 
 export interface ViewSetState {
   viewSetId: string;
@@ -178,6 +192,15 @@ function applyPatch(snapshot: ViewSnapshot, patch: ViewPatch): ViewSnapshot {
       for (const torrent of patch.upsert) {
         torrents.set(torrent.torrent_id, torrent);
       }
+      for (const update of patch.updates) {
+        const torrent = torrents.get(update.torrent_id);
+        if (torrent === undefined) {
+          throw new ViewSetContinuityError(
+            `torrent update for unknown row ${update.torrent_id}`,
+          );
+        }
+        torrents.set(update.torrent_id, applyTorrentUpdate(torrent, update));
+      }
       return {
         type: "torrent_list",
         torrents: [...torrents.values()],
@@ -185,8 +208,19 @@ function applyPatch(snapshot: ViewSnapshot, patch: ViewPatch): ViewSnapshot {
         client_settings: patch.client_settings ?? snapshot.client_settings,
       };
     }
-    case "torrent":
-      return { type: "torrent", torrent: patch.torrent };
+    case "torrent": {
+      if (patch.change.change === "replace") {
+        return { type: "torrent", torrent: patch.change.torrent };
+      }
+      if (snapshot.type !== "torrent") throw new Error("unreachable");
+      if (snapshot.torrent === null) {
+        throw new ViewSetContinuityError("torrent update has no selected row");
+      }
+      return {
+        type: "torrent",
+        torrent: applyTorrentUpdate(snapshot.torrent, patch.change.update),
+      };
+    }
     case "piece_activity": {
       if (snapshot.type !== "piece_activity") throw new Error("unreachable");
       let verified = snapshot.verified;
@@ -197,6 +231,18 @@ function applyPatch(snapshot: ViewSnapshot, patch: ViewPatch): ViewSnapshot {
       );
       for (const pieceId of patch.active_removed) active.delete(pieceId);
       for (const piece of patch.active_upsert) active.set(piece.piece_id, piece);
+      for (const update of patch.active_updates) {
+        const piece = active.get(update.piece_id);
+        if (piece === undefined) {
+          throw new ViewSetContinuityError(
+            `active-piece update for unknown row ${update.piece_id}`,
+          );
+        }
+        active.set(
+          update.piece_id,
+          applyActivePieceUpdate(piece, update, patch.piece_count),
+        );
+      }
       return {
         type: "piece_activity",
         torrent_id: patch.torrent_id,
@@ -235,6 +281,15 @@ function applyPatch(snapshot: ViewSnapshot, patch: ViewPatch): ViewSnapshot {
       );
       for (const connectionId of patch.removed) peers.delete(connectionId);
       for (const peer of patch.upsert) peers.set(peer.connection_id, peer);
+      for (const update of patch.updates) {
+        const peer = peers.get(update.connection_id);
+        if (peer === undefined) {
+          throw new ViewSetContinuityError(
+            `peer update for unknown row ${update.connection_id}`,
+          );
+        }
+        peers.set(update.connection_id, applyPeerUpdate(peer, update));
+      }
       return {
         type: "peers",
         torrent_id: patch.torrent_id,
@@ -272,6 +327,15 @@ function applyPatch(snapshot: ViewSnapshot, patch: ViewPatch): ViewSnapshot {
       );
       for (const fileId of patch.removed) files.delete(fileId);
       for (const file of patch.upsert) files.set(file.file_id, file);
+      for (const update of patch.updates) {
+        const file = files.get(update.file_id);
+        if (file === undefined) {
+          throw new ViewSetContinuityError(
+            `file update for unknown row ${update.file_id}`,
+          );
+        }
+        files.set(update.file_id, applyFileUpdate(file, update));
+      }
       return {
         type: "files",
         torrent_id: patch.torrent_id,
@@ -307,6 +371,158 @@ function applyPatch(snapshot: ViewSnapshot, patch: ViewPatch): ViewSnapshot {
       };
     }
   }
+}
+
+function requireUniqueFields(
+  fields: ReadonlyArray<{ readonly field: string }>,
+  row: string,
+): void {
+  if (fields.length === 0) {
+    throw new ViewSetContinuityError(`${row} update has no fields`);
+  }
+  const kinds = new Set(fields.map((field) => field.field));
+  if (kinds.size !== fields.length) {
+    throw new ViewSetContinuityError(`${row} update repeats a field`);
+  }
+}
+
+function applyTorrentUpdate(
+  torrent: TorrentView,
+  update: TorrentRowUpdate,
+): TorrentView {
+  if (torrent.torrent_id !== update.torrent_id) {
+    throw new ViewSetContinuityError("torrent update identity mismatch");
+  }
+  requireUniqueFields(update.fields, "torrent");
+  const next = structuredClone(torrent);
+  for (const field of update.fields) {
+    switch (field.field) {
+      case "protocol_identities": next.protocol_identities = field.value; break;
+      case "display_name": next.display_name = field.value; break;
+      case "source_display_name": next.source_display_name = field.value; break;
+      case "state": next.state = field.value; break;
+      case "operational_state": next.operational_state = field.value; break;
+      case "download_queue_position": next.download_queue_position = field.value; break;
+      case "transfer_limits": next.transfer_limits = field.value; break;
+      case "storage_state": next.storage_state = field.value; break;
+      case "metadata_available": next.metadata_available = field.value; break;
+      case "piece_count": next.piece_count = field.value; break;
+      case "verified_piece_count": next.verified_piece_count = field.value; break;
+      case "requested_bytes": next.requested_bytes = field.value; break;
+      case "received_bytes": next.received_bytes = field.value; break;
+      case "stored_bytes": next.stored_bytes = field.value; break;
+      case "active_peer_connections": next.active_peer_connections = field.value; break;
+      case "configured_tracker_count": next.configured_tracker_count = field.value; break;
+      case "payload_download_rate_bytes": next.payload_download_rate_bytes = field.value; break;
+      case "required_payload_bytes": next.required_payload_bytes = field.value; break;
+      case "remaining_payload_bytes": next.remaining_payload_bytes = field.value; break;
+      case "eta_payload_download_rate_bytes": next.eta_payload_download_rate_bytes = field.value; break;
+      case "eta": next.eta = field.value; break;
+      case "progress": next.progress = field.value; break;
+      case "checking": next.checking = field.value; break;
+      case "archived": next.archived = field.value; break;
+      case "removal_state": next.removal_state = field.value; break;
+      case "delete_managed_data_supported": next.delete_managed_data_supported = field.value; break;
+      case "force_recheck_available": next.force_recheck_available = field.value; break;
+      case "error": next.error = field.value; break;
+    }
+  }
+  validateTorrentView(next);
+  return next;
+}
+
+function applyFileUpdate(file: FileView, update: FileRowUpdate): FileView {
+  if (file.file_id !== update.file_id) {
+    throw new ViewSetContinuityError("file update identity mismatch");
+  }
+  requireUniqueFields(update.fields, "file");
+  const next = structuredClone(file);
+  for (const field of update.fields) {
+    switch (field.field) {
+      case "selection": next.selection = field.value; break;
+      case "done_bytes": next.done_bytes = field.value; break;
+      case "verified_bytes": next.verified_bytes = field.value; break;
+      case "media_availability": next.media_availability = field.value; break;
+    }
+  }
+  validateFileView(next);
+  return next;
+}
+
+function applyPeerUpdate(peer: PeerView, update: PeerRowUpdate): PeerView {
+  if (peer.connection_id !== update.connection_id) {
+    throw new ViewSetContinuityError("peer update identity mismatch");
+  }
+  requireUniqueFields(update.fields, "peer");
+  const next = structuredClone(peer);
+  for (const field of update.fields) {
+    switch (field.field) {
+      case "peer_record_id": next.peer_record_id = field.value; break;
+      case "direction": next.direction = field.value; break;
+      case "transport": next.transport = field.value; break;
+      case "lifecycle": next.lifecycle = field.value; break;
+      case "role": next.role = field.value; break;
+      case "peer_flags": next.peer_flags = field.value; break;
+      case "mse_method": next.mse_method = field.value; break;
+      case "lifecycle_age_millis": next.lifecycle_age_millis = field.value; break;
+      case "remote_endpoint": next.remote_endpoint = field.value; break;
+      case "local_endpoint": next.local_endpoint = field.value; break;
+      case "sources": next.sources = field.value; break;
+      case "peer_id": next.peer_id = field.value; break;
+      case "client_name": next.client_name = field.value; break;
+      case "supports_extensions": next.supports_extensions = field.value; break;
+      case "supports_ut_metadata": next.supports_ut_metadata = field.value; break;
+      case "local_interested": next.local_interested = field.value; break;
+      case "remote_interested": next.remote_interested = field.value; break;
+      case "remote_choking": next.remote_choking = field.value; break;
+      case "local_choking": next.local_choking = field.value; break;
+      case "available_piece_count": next.available_piece_count = field.value; break;
+      case "wanted_piece_count": next.wanted_piece_count = field.value; break;
+      case "payload_download_rate_bytes": next.payload_download_rate_bytes = field.value; break;
+      case "payload_downloaded_bytes": next.payload_downloaded_bytes = field.value; break;
+      case "protocol_download_rate_bytes": next.protocol_download_rate_bytes = field.value; break;
+      case "protocol_downloaded_bytes": next.protocol_downloaded_bytes = field.value; break;
+      case "payload_upload_rate_bytes": next.payload_upload_rate_bytes = field.value; break;
+      case "payload_uploaded_bytes": next.payload_uploaded_bytes = field.value; break;
+      case "pending_requests": next.pending_requests = field.value; break;
+      case "target_requests": next.target_requests = field.value; break;
+      case "queued_payload_bytes": next.queued_payload_bytes = field.value; break;
+      case "oldest_request_age_millis": next.oldest_request_age_millis = field.value; break;
+      case "request_timeout_millis": next.request_timeout_millis = field.value; break;
+      case "request_phase": next.request_phase = field.value; break;
+      case "connected_age_millis": next.connected_age_millis = field.value; break;
+      case "last_useful_age_millis": next.last_useful_age_millis = field.value; break;
+      case "last_payload_age_millis": next.last_payload_age_millis = field.value; break;
+      case "disconnect_reason": next.disconnect_reason = field.value; break;
+      case "capabilities": next.capabilities = field.value; break;
+    }
+  }
+  validatePeerView(next, next.torrent_id);
+  return next;
+}
+
+function applyActivePieceUpdate(
+  piece: ActivePiece,
+  update: ActivePieceUpdate,
+  pieceCount: number,
+): ActivePiece {
+  if (piece.piece_id !== update.piece_id) {
+    throw new ViewSetContinuityError("active-piece update identity mismatch");
+  }
+  requireUniqueFields(update.fields, "active-piece");
+  const next = structuredClone(piece);
+  for (const field of update.fields) {
+    switch (field.field) {
+      case "stage": next.stage = field.value; break;
+      case "requested": next.requested = field.value; break;
+      case "received": next.received = field.value; break;
+      case "stored": next.stored = field.value; break;
+      case "age_millis": next.age_millis = field.value; break;
+      case "error": next.error = field.value; break;
+    }
+  }
+  validateActivePiece(next, pieceCount);
+  return next;
 }
 
 function cloneDhtInspection(

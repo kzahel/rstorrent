@@ -917,7 +917,15 @@ function validateViewPatch(value: unknown): void {
   switch (string(patch.type, "view patch type")) {
     case "torrent_list":
       array(patch.upsert, "torrent upserts").forEach(validateTorrentView);
+      validateRowUpdates(patch.updates, "torrent", "torrent_id", torrentId, 28);
       array(patch.removed, "torrent removals").forEach(torrentId);
+      validateDisjointRowOperations(
+        patch.upsert,
+        patch.updates,
+        patch.removed,
+        "torrent_id",
+        "torrent",
+      );
       if (patch.storage !== undefined && patch.storage !== null) {
         validateStorageSettings(patch.storage);
       }
@@ -925,9 +933,17 @@ function validateViewPatch(value: unknown): void {
         validateClientSettingsRuntime(patch.client_settings);
       }
       break;
-    case "torrent":
-      if (patch.torrent !== null) validateTorrentView(patch.torrent);
+    case "torrent": {
+      const change = asRecord(patch.change, "selected torrent change");
+      if (change.change === "replace") {
+        if (change.torrent !== null) validateTorrentView(change.torrent);
+      } else if (change.change === "update") {
+        validateRowUpdate(change.update, "torrent", "torrent_id", torrentId, 28);
+      } else {
+        throw new ContractError("unknown selected torrent change");
+      }
       break;
+    }
     case "piece_activity": {
       torrentId(patch.torrent_id);
       const pieceCount = boundedInteger(
@@ -939,7 +955,22 @@ function validateViewPatch(value: unknown): void {
       validateRanges(patch.verified, pieceCount, "verified pieces");
       validateRanges(patch.cleared, pieceCount, "cleared pieces");
       validateActivePieces(patch.active_upsert, pieceCount, "active piece upserts");
+      validateRowUpdates(
+        patch.active_updates,
+        "active piece",
+        "piece_id",
+        (value) => boundedString(value, "active piece ID", 64),
+        6,
+        MAX_ACTIVE_PIECES,
+      );
       validatePieceIds(patch.active_removed, "active piece removals");
+      validateDisjointRowOperations(
+        patch.active_upsert,
+        patch.active_updates,
+        patch.active_removed,
+        "piece_id",
+        "active piece",
+      );
       break;
     }
     case "session_disk": {
@@ -968,8 +999,23 @@ function validateViewPatch(value: unknown): void {
         throw new ContractError("active peer patch exceeds its row bound");
       }
       upserts.forEach((peer) => validatePeerView(peer, owningTorrent));
+      validateRowUpdates(
+        patch.updates,
+        "peer",
+        "connection_id",
+        (value) => decimal(value, "peer connection ID"),
+        38,
+        MAX_ACTIVE_PEERS,
+      );
       array(patch.removed, "active peer removals").forEach((connection) =>
         decimal(connection, "peer connection ID"),
+      );
+      validateDisjointRowOperations(
+        patch.upsert,
+        patch.updates,
+        patch.removed,
+        "connection_id",
+        "peer",
       );
       break;
     }
@@ -1009,8 +1055,23 @@ function validateViewPatch(value: unknown): void {
         throw new ContractError("file patch exceeds its row bound");
       }
       upserts.forEach(validateFileView);
+      validateRowUpdates(
+        patch.updates,
+        "file",
+        "file_id",
+        (value) => decimal(value, "file ID"),
+        4,
+        MAX_CATALOG_PAGE_ROWS,
+      );
       array(patch.removed, "file removals").forEach((fileId) =>
         decimal(fileId, "file ID"),
+      );
+      validateDisjointRowOperations(
+        patch.upsert,
+        patch.updates,
+        patch.removed,
+        "file_id",
+        "file",
       );
       break;
     }
@@ -1038,6 +1099,79 @@ function validateViewPatch(value: unknown): void {
     default:
       throw new ContractError("unknown view patch type");
   }
+}
+
+function validateRowUpdates(
+  value: unknown,
+  label: string,
+  idField: string,
+  validateId: (value: unknown) => unknown,
+  maximumFields: number,
+  maximumRows = Number.MAX_SAFE_INTEGER,
+): void {
+  const updates = array(value, `${label} updates`);
+  if (updates.length > maximumRows) {
+    throw new ContractError(`${label} updates exceed their row bound`);
+  }
+  const identities = new Set<string>();
+  for (const update of updates) {
+    const row = validateRowUpdate(update, label, idField, validateId, maximumFields);
+    const identity = string(row[idField], `${label} update identity`);
+    if (identities.has(identity)) {
+      throw new ContractError(`${label} updates contain duplicate rows`);
+    }
+    identities.add(identity);
+  }
+}
+
+function validateRowUpdate(
+  value: unknown,
+  label: string,
+  idField: string,
+  validateId: (value: unknown) => unknown,
+  maximumFields: number,
+): Record<string, unknown> {
+  const update = asRecord(value, `${label} update`);
+  validateId(update[idField]);
+  const fields = array(update.fields, `${label} update fields`);
+  if (fields.length === 0 || fields.length > maximumFields) {
+    throw new ContractError(`${label} update field count is invalid`);
+  }
+  const kinds = new Set<string>();
+  for (const value of fields) {
+    const field = asRecord(value, `${label} update field`);
+    const kind = boundedString(field.field, `${label} update field kind`, 64);
+    if (kinds.has(kind)) {
+      throw new ContractError(`${label} update repeats field ${kind}`);
+    }
+    kinds.add(kind);
+  }
+  return update;
+}
+
+function validateDisjointRowOperations(
+  upsertValue: unknown,
+  updateValue: unknown,
+  removedValue: unknown,
+  idField: string,
+  label: string,
+): void {
+  const identities = new Set<string>();
+  const add = (identity: string) => {
+    if (identities.has(identity)) {
+      throw new ContractError(`${label} patch repeats a row operation`);
+    }
+    identities.add(identity);
+  };
+  array(upsertValue, `${label} upserts`).forEach((value) =>
+    add(string(asRecord(value, `${label} upsert`)[idField], `${label} identity`)),
+  );
+  array(updateValue, `${label} updates`).forEach((value) =>
+    add(string(asRecord(value, `${label} update`)[idField], `${label} identity`)),
+  );
+  array(removedValue, `${label} removals`).forEach((value) =>
+    add(string(value, `${label} identity`)),
+  );
 }
 
 const SPEED_METRICS = [
@@ -1618,7 +1752,7 @@ function validateStorageRoot(value: unknown): string {
   return rootId;
 }
 
-function validateTorrentView(value: unknown): asserts value is TorrentView {
+export function validateTorrentView(value: unknown): asserts value is TorrentView {
   const torrent = asRecord(value, "torrent view");
   torrentId(torrent.torrent_id);
   validateProtocolIdentities(torrent.protocol_identities);
@@ -1851,7 +1985,7 @@ function validateBandwidthRuntime(value: unknown): void {
   }
 }
 
-function validateFileView(value: unknown): void {
+export function validateFileView(value: unknown): void {
   const file = asRecord(value, "file view");
   decimal(file.file_id, "file ID");
   boundedInteger(file.file_index, "file index", 0, MAX_FILE_CATALOG - 1);
@@ -1990,7 +2124,7 @@ function validateTrackerView(value: unknown): void {
   optionalString(tracker.last_error, "tracker last error", 256);
 }
 
-function validatePeerView(value: unknown, owningTorrent: string): void {
+export function validatePeerView(value: unknown, owningTorrent: string): void {
   const peer = asRecord(value, "active peer");
   decimal(peer.connection_id, "peer connection ID");
   torrentId(peer.torrent_id);
@@ -2288,7 +2422,7 @@ function validateDiagnosticValue(value: unknown): void {
   }
 }
 
-function validateActivePiece(
+export function validateActivePiece(
   value: unknown,
   pieceCount: number,
 ): asserts value is ActivePiece {

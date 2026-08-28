@@ -26,7 +26,7 @@ use crate::diagnostics::{
     DiagnosticCategory, DiagnosticDraft, DiagnosticEvent, DiagnosticField, DiagnosticFilter,
     DiagnosticSeverity, DiagnosticStore, diagnostic_matches, interest_matches,
 };
-use crate::file_views::{FileCatalogState, FileProgressModel, FileView};
+use crate::file_views::{FileCatalogState, FileProgressModel, FileViewChange};
 use crate::settings::{
     ActiveDownloadsClampReason, AdvertisedPeerEndpointStatus, ClientSettingsApplicationState,
     ClientSettingsDegradedReason, ClientSettingsRuntimeView, Ipv6PinholeStatus,
@@ -710,7 +710,7 @@ impl ViewHub {
         if eta_result.is_err() {
             model.eta.fail_closed();
         }
-        let file_upsert = model
+        let file_changes = model
             .apply_activity(activity)
             .map_err(|error| SubscriptionError::Internal(error.to_string()))?;
         model.eta.apply_to_view(&mut model.view);
@@ -725,7 +725,7 @@ impl ViewHub {
             &next_verified,
             &previous_active,
             &next_active,
-            &file_upsert,
+            &file_changes,
         );
         publish_result?;
         eta_result
@@ -913,7 +913,7 @@ impl ViewHub {
         let previous_verified = model.verified.clone();
         let previous_active = model.active.clone();
         let mut next = model.clone();
-        let mut file_upsert = BTreeMap::new();
+        let mut file_changes = BTreeMap::new();
         for &piece_index in piece_indices {
             if piece_index >= next.view.piece_count {
                 return Err(SubscriptionError::Internal(format!(
@@ -923,11 +923,16 @@ impl ViewHub {
             }
             insert_range(&mut next.verified, piece_index, 1);
             if let Some(files) = next.files.as_mut() {
-                for file in files
+                for change in files
                     .piece_verified(piece_index)
                     .map_err(|error| SubscriptionError::Internal(error.to_string()))?
                 {
-                    file_upsert.insert(file.file_id.clone(), file);
+                    file_changes
+                        .entry(change.current.file_id.clone())
+                        .and_modify(|existing: &mut FileViewChange| {
+                            existing.current = change.current.clone();
+                        })
+                        .or_insert(change);
                 }
             }
         }
@@ -949,7 +954,7 @@ impl ViewHub {
             &next_verified,
             &previous_active,
             &next_active,
-            &file_upsert.into_values().collect::<Vec<_>>(),
+            &file_changes.into_values().collect::<Vec<_>>(),
         )
     }
 
@@ -1576,7 +1581,7 @@ impl HubState {
         next_verified: &[IndexRange],
         previous_active: &BTreeMap<u32, ActivePiece>,
         next_active: &BTreeMap<u32, ActivePiece>,
-        file_upsert: &[FileView],
+        file_changes: &[FileViewChange],
     ) -> Result<(), SubscriptionError> {
         let revision = self.revision;
         self.subscribers.retain(|_, weak| weak.strong_count() != 0);
@@ -1595,7 +1600,7 @@ impl HubState {
                 next_verified,
                 previous_active,
                 next_active,
-                file_upsert,
+                file_changes,
             ) {
                 subscriber.enqueue_patch(revision, patch)?;
             }
@@ -1614,7 +1619,7 @@ impl HubState {
                     next_verified,
                     previous_active,
                     next_active,
-                    file_upsert,
+                    file_changes,
                 ) {
                     view_set.enqueue_patch(spec.view_id(), patch, revision)?;
                 }

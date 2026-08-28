@@ -10,6 +10,7 @@ mod eta;
 mod hub;
 mod model;
 mod ranges;
+mod row_updates;
 mod subscription;
 mod view_set;
 
@@ -32,6 +33,10 @@ pub use contract::{
 pub(crate) use eta::TorrentEtaRuntime;
 pub(crate) use hub::ViewSetLeaseReaper;
 pub use hub::{ViewHub, ViewSet, ViewSubscription};
+pub use row_updates::{
+    ActivePieceFieldUpdate, ActivePieceUpdate, FileFieldUpdate, FileRowUpdate, PeerFieldUpdate,
+    PeerRowUpdate, RowUpdateError, TorrentFieldUpdate, TorrentRowUpdate, TorrentViewChange,
+};
 
 pub(crate) use contract::{
     DEFAULT_VIEW_SET_QUEUE_BYTES, VIEW_SET_LEASE_MILLIS, VIEW_SET_REAPER_INTERVAL_MILLIS,

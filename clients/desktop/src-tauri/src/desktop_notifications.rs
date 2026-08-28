@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 
-use rstorrent_session::{StorageState, TorrentState, TorrentView};
+use rstorrent_session::{StorageState, TorrentRowUpdate, TorrentState, TorrentView};
 
 const MAX_NOTIFICATION_NAME_CHARS: usize = 120;
 const MAX_RECENTLY_REMOVED_TORRENTS: usize = 256;
@@ -46,6 +46,7 @@ impl From<&TorrentView> for TorrentObservation {
 
 #[derive(Clone, Debug)]
 struct TrackedTorrent {
+    view: Option<TorrentView>,
     observation: TorrentObservation,
     completion_armed: bool,
     attention_active: bool,
@@ -62,12 +63,13 @@ impl DesktopNotificationPolicy {
     pub(crate) fn establish<'a>(&mut self, torrents: impl IntoIterator<Item = &'a TorrentView>) {
         self.torrents = torrents
             .into_iter()
-            .map(TorrentObservation::from)
-            .map(|observation| {
+            .map(|torrent| {
+                let observation = TorrentObservation::from(torrent);
                 let attention_active = needs_attention(&observation);
                 (
                     observation.torrent_id.clone(),
                     TrackedTorrent {
+                        view: Some(torrent.clone()),
                         observation,
                         completion_armed: false,
                         attention_active,
@@ -82,18 +84,37 @@ impl DesktopNotificationPolicy {
     pub(crate) fn apply_patch<'a>(
         &mut self,
         upsert: impl IntoIterator<Item = &'a TorrentView>,
+        updates: impl IntoIterator<Item = &'a TorrentRowUpdate>,
         removed: impl IntoIterator<Item = &'a String>,
-    ) -> Vec<DesktopNotification> {
+    ) -> Result<Vec<DesktopNotification>, ()> {
         if !self.established {
-            return Vec::new();
+            return Err(());
         }
         for torrent_id in removed {
             self.remove(torrent_id);
         }
-        upsert
+        let mut notifications = upsert
             .into_iter()
-            .filter_map(|torrent| self.apply_observation(TorrentObservation::from(torrent)))
-            .collect()
+            .filter_map(|torrent| self.apply_view(torrent.clone()))
+            .collect::<Vec<_>>();
+        for update in updates {
+            let Some(mut view) = self
+                .torrents
+                .get(&update.torrent_id)
+                .and_then(|tracked| tracked.view.clone())
+            else {
+                self.reset();
+                return Err(());
+            };
+            if update.apply(&mut view).is_err() {
+                self.reset();
+                return Err(());
+            }
+            if let Some(notification) = self.apply_view(view) {
+                notifications.push(notification);
+            }
+        }
+        Ok(notifications)
     }
 
     pub(crate) fn reset(&mut self) {
@@ -117,9 +138,23 @@ impl DesktopNotificationPolicy {
         self.recently_removed.push_back(torrent_id.to_owned());
     }
 
+    fn apply_view(&mut self, view: TorrentView) -> Option<DesktopNotification> {
+        let observation = TorrentObservation::from(&view);
+        self.apply_observation_with_view(observation, Some(view))
+    }
+
+    #[cfg(test)]
     fn apply_observation(
         &mut self,
         observation: TorrentObservation,
+    ) -> Option<DesktopNotification> {
+        self.apply_observation_with_view(observation, None)
+    }
+
+    fn apply_observation_with_view(
+        &mut self,
+        observation: TorrentObservation,
+        view: Option<TorrentView>,
     ) -> Option<DesktopNotification> {
         let Some(previous) = self.torrents.remove(&observation.torrent_id) else {
             let was_removed = self
@@ -143,6 +178,7 @@ impl DesktopNotificationPolicy {
             self.torrents.insert(
                 observation.torrent_id.clone(),
                 TrackedTorrent {
+                    view,
                     observation,
                     completion_armed: false,
                     attention_active,
@@ -169,6 +205,7 @@ impl DesktopNotificationPolicy {
         self.torrents.insert(
             observation.torrent_id.clone(),
             TrackedTorrent {
+                view,
                 observation: observation.clone(),
                 completion_armed,
                 attention_active,
@@ -283,6 +320,7 @@ mod tests {
         policy.torrents.insert(
             torrent.torrent_id.clone(),
             TrackedTorrent {
+                view: None,
                 attention_active: super::needs_attention(&torrent),
                 observation: torrent,
                 completion_armed: false,

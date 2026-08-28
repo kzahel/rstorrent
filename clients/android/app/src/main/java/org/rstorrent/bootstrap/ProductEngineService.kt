@@ -884,17 +884,19 @@ class ProductEngineService : Service() {
             dispatchAwait(Command.ForceRecheck(torrentId))
             withTimeout(10_000) {
                 var sawChecking = false
+                var productState = ProductState()
                 while (true) {
                     val update = subscription.nextUpdate() ?: error("torrent view closed")
                     val torrent =
-                        when (val payload = update.payload) {
-                            is ViewUpdatePayload.Snapshot ->
-                                (payload.snapshot as? ViewSnapshot.Torrent)?.torrent
-                            is ViewUpdatePayload.Patch ->
-                                (payload.patch as? ViewPatch.Torrent)?.torrent
+                        when (update.payload) {
                             is ViewUpdatePayload.ResetRequired -> {
                                 subscription.resync()
+                                productState = ProductState()
                                 null
+                            }
+                            else -> {
+                                productState = ProductStateReducer.reduce(productState, update)
+                                productState.torrents[torrentId]
                             }
                         }
                     when (torrent?.state) {

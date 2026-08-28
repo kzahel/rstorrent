@@ -43,8 +43,10 @@ import org.rstorrent.session.uniffi.StorageState
 import org.rstorrent.session.uniffi.StorageSettingsSnapshot
 import org.rstorrent.session.uniffi.SubscriptionSpec
 import org.rstorrent.session.uniffi.TorrentEtaView
+import org.rstorrent.session.uniffi.TorrentFieldUpdate
 import org.rstorrent.session.uniffi.TorrentOperationalState
 import org.rstorrent.session.uniffi.TorrentProtocolIdentities
+import org.rstorrent.session.uniffi.TorrentRowUpdate
 import org.rstorrent.session.uniffi.TorrentState
 import org.rstorrent.session.uniffi.TorrentTransferLimits
 import org.rstorrent.session.uniffi.TorrentView
@@ -434,6 +436,7 @@ class ProductStateReducerTest {
                             listOf(IndexRange(99_998U, 100_000U)),
                             listOf(IndexRange(65_535U, 65_536U)),
                             emptyList(),
+                            emptyList(),
                             listOf("90000:1"),
                         ),
                     ),
@@ -487,6 +490,7 @@ class ProductStateReducerTest {
                         ViewUpdatePayload.Patch(
                             ViewPatch.TorrentList(
                                 listOf(torrent("second", TorrentState.PAUSED)),
+                                emptyList(),
                                 listOf("first"),
                                 null,
                                 null,
@@ -505,7 +509,90 @@ class ProductStateReducerTest {
                     revision = "9",
                     payload =
                         ViewUpdatePayload.Patch(
-                            ViewPatch.TorrentList(emptyList(), emptyList(), null, null),
+                            ViewPatch.TorrentList(
+                                emptyList(),
+                                emptyList(),
+                                emptyList(),
+                                null,
+                                null,
+                            ),
+                        ),
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun sparseTorrentPatchesClearNullableFieldsAndRequireAnExistingRow() {
+        val initial =
+            ProductStateReducer.reduce(
+                ProductState(),
+                update(
+                    sequence = "1",
+                    baseRevision = "0",
+                    revision = "7",
+                    payload =
+                        ViewUpdatePayload.Snapshot(
+                            ViewSnapshot.TorrentList(
+                                listOf(torrent("first", TorrentState.DOWNLOADING)),
+                                storage(),
+                                clientSettings(),
+                            ),
+                        ),
+                ),
+            )
+        val patched =
+            ProductStateReducer.reduce(
+                initial,
+                update(
+                    sequence = "2",
+                    baseRevision = "7",
+                    revision = "8",
+                    payload =
+                        ViewUpdatePayload.Patch(
+                            ViewPatch.TorrentList(
+                                emptyList(),
+                                listOf(
+                                    TorrentRowUpdate(
+                                        "first",
+                                        listOf(
+                                            TorrentFieldUpdate.DisplayName(null),
+                                            TorrentFieldUpdate.PayloadDownloadRateBytes("4096"),
+                                        ),
+                                    ),
+                                ),
+                                emptyList(),
+                                null,
+                                null,
+                            ),
+                        ),
+                ),
+            )
+
+        assertEquals(null, patched.torrents.getValue("first").displayName)
+        assertEquals("4096", patched.torrents.getValue("first").payloadDownloadRateBytes)
+
+        assertThrows(ViewContinuityException::class.java) {
+            ProductStateReducer.reduce(
+                initial,
+                update(
+                    sequence = "2",
+                    baseRevision = "7",
+                    revision = "8",
+                    payload =
+                        ViewUpdatePayload.Patch(
+                            ViewPatch.TorrentList(
+                                emptyList(),
+                                listOf(
+                                    TorrentRowUpdate(
+                                        "missing",
+                                        listOf(TorrentFieldUpdate.StoredBytes("1")),
+                                    ),
+                                ),
+                                emptyList(),
+                                null,
+                                null,
+                            ),
                         ),
                 ),
             )
@@ -542,7 +629,12 @@ class ProductStateReducerTest {
                     "1",
                     "2",
                     ViewUpdatePayload.Patch(
-                        ViewPatch.Files(TORRENT_ID, listOf(second), listOf(first.fileId)),
+                        ViewPatch.Files(
+                            TORRENT_ID,
+                            listOf(second),
+                            emptyList(),
+                            listOf(first.fileId),
+                        ),
                     ),
                 ),
             )

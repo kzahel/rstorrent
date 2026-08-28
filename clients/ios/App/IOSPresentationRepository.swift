@@ -174,7 +174,7 @@ final class IOSPresentationRepository: ObservableObject {
                 sequence: sequence,
                 revision: update.revision
             )
-            applyPatch(patch)
+            try applyPatch(patch)
         }
         error = nil
     }
@@ -205,24 +205,44 @@ final class IOSPresentationRepository: ObservableObject {
         }
     }
 
-    private func applyPatch(_ patch: ViewPatch) {
+    private func applyPatch(_ patch: ViewPatch) throws {
         switch patch {
-        case .torrentList(let upsert, let removed, let storage, _):
+        case .torrentList(let upsert, let updates, let removed, let storage, _):
             var values = Dictionary(uniqueKeysWithValues: torrents.map { ($0.torrentId, $0) })
             removed.forEach { values.removeValue(forKey: $0) }
             upsert.forEach { values[$0.torrentId] = $0 }
+            for update in updates {
+                guard let current = values[update.torrentId] else {
+                    throw IOSPresentationError.discontinuity
+                }
+                values[update.torrentId] = try Self.apply(update, to: current)
+            }
             torrents = Self.sorted(Array(values.values))
             if let storage { self.storage = storage }
             onProductUpdate?(torrents)
-        case .torrent(let torrent):
-            guard let torrent else { return }
-            replaceTorrent(torrent)
-        case .files(let torrentID, let upsert, let removed):
+        case .torrent(let change):
+            switch change {
+            case .replace(let torrent):
+                guard let torrent else { return }
+                replaceTorrent(torrent)
+            case .update(let update):
+                guard let current = torrents.first(where: { $0.torrentId == update.torrentId }) else {
+                    throw IOSPresentationError.discontinuity
+                }
+                replaceTorrent(try Self.apply(update, to: current))
+            }
+        case .files(let torrentID, let upsert, let updates, let removed):
             var values = Dictionary(
                 uniqueKeysWithValues: files[torrentID, default: []].map { ($0.fileId, $0) }
             )
             removed.forEach { values.removeValue(forKey: $0) }
             upsert.forEach { values[$0.fileId] = $0 }
+            for update in updates {
+                guard let current = values[update.fileId] else {
+                    throw IOSPresentationError.discontinuity
+                }
+                values[update.fileId] = try Self.apply(update, to: current)
+            }
             files[torrentID] = values.values.sorted { $0.fileIndex < $1.fileIndex }
         case .trackers(let torrentID, let upsert, let removed):
             var values = Dictionary(
@@ -231,12 +251,18 @@ final class IOSPresentationRepository: ObservableObject {
             removed.forEach { values.removeValue(forKey: $0) }
             upsert.forEach { values[$0.trackerId] = $0 }
             trackers[torrentID] = values.values.sorted(by: Self.trackerOrder)
-        case .peers(let torrentID, let upsert, let removed):
+        case .peers(let torrentID, let upsert, let updates, let removed):
             var values = Dictionary(
                 uniqueKeysWithValues: peers[torrentID, default: []].map { ($0.connectionId, $0) }
             )
             removed.forEach { values.removeValue(forKey: $0) }
             upsert.forEach { values[$0.connectionId] = $0 }
+            for update in updates {
+                guard let current = values[update.connectionId] else {
+                    throw IOSPresentationError.discontinuity
+                }
+                values[update.connectionId] = try Self.apply(update, to: current)
+            }
             peers[torrentID] = values.values.sorted { $0.connectionId < $1.connectionId }
         case .pieceActivity(
             let torrentID,
@@ -244,6 +270,7 @@ final class IOSPresentationRepository: ObservableObject {
             let verified,
             let cleared,
             let activeUpsert,
+            let activeUpdates,
             let activeRemoved
         ):
             var ranges = pieces[torrentID]?.verified ?? []
@@ -254,6 +281,12 @@ final class IOSPresentationRepository: ObservableObject {
             )
             activeRemoved.forEach { active.removeValue(forKey: $0) }
             activeUpsert.forEach { active[$0.pieceId] = $0 }
+            for update in activeUpdates {
+                guard let current = active[update.pieceId] else {
+                    throw IOSPresentationError.discontinuity
+                }
+                active[update.pieceId] = try Self.apply(update, to: current)
+            }
             pieces[torrentID] = IOSPieceActivity(
                 pieceCount: count,
                 verified: ranges,
@@ -261,6 +294,243 @@ final class IOSPresentationRepository: ObservableObject {
             )
         default:
             return
+        }
+    }
+
+    private static func requireUnique<T>(
+        _ fields: [T],
+        key: (T) -> Int
+    ) throws {
+        // These keys only detect duplicate enum cases in memory. They are not
+        // serialized field numbers for a future binary view codec.
+        guard !fields.isEmpty, Set(fields.map(key)).count == fields.count else {
+            throw IOSPresentationError.discontinuity
+        }
+    }
+
+    private static func apply(
+        _ update: TorrentRowUpdate,
+        to current: TorrentView
+    ) throws -> TorrentView {
+        guard update.torrentId == current.torrentId else {
+            throw IOSPresentationError.discontinuity
+        }
+        try requireUnique(update.fields, key: torrentFieldKey)
+        var next = current
+        for field in update.fields {
+            switch field {
+            case .protocolIdentities(let value): next.protocolIdentities = value
+            case .displayName(let value): next.displayName = value
+            case .sourceDisplayName(let value): next.sourceDisplayName = value
+            case .state(let value): next.state = value
+            case .operationalState(let value): next.operationalState = value
+            case .downloadQueuePosition(let value): next.downloadQueuePosition = value
+            case .transferLimits(let value): next.transferLimits = value
+            case .storageState(let value): next.storageState = value
+            case .metadataAvailable(let value): next.metadataAvailable = value
+            case .pieceCount(let value): next.pieceCount = value
+            case .verifiedPieceCount(let value): next.verifiedPieceCount = value
+            case .requestedBytes(let value): next.requestedBytes = value
+            case .receivedBytes(let value): next.receivedBytes = value
+            case .storedBytes(let value): next.storedBytes = value
+            case .activePeerConnections(let value): next.activePeerConnections = value
+            case .configuredTrackerCount(let value): next.configuredTrackerCount = value
+            case .payloadDownloadRateBytes(let value): next.payloadDownloadRateBytes = value
+            case .requiredPayloadBytes(let value): next.requiredPayloadBytes = value
+            case .remainingPayloadBytes(let value): next.remainingPayloadBytes = value
+            case .etaPayloadDownloadRateBytes(let value): next.etaPayloadDownloadRateBytes = value
+            case .eta(let value): next.eta = value
+            case .progress(let value): next.progress = value
+            case .checking(let value): next.checking = value
+            case .archived(let value): next.archived = value
+            case .removalState(let value): next.removalState = value
+            case .deleteManagedDataSupported(let value): next.deleteManagedDataSupported = value
+            case .forceRecheckAvailable(let value): next.forceRecheckAvailable = value
+            case .error(let value): next.error = value
+            }
+        }
+        return next
+    }
+
+    private static func torrentFieldKey(_ field: TorrentFieldUpdate) -> Int {
+        switch field {
+        case .protocolIdentities: return 0
+        case .displayName: return 1
+        case .sourceDisplayName: return 2
+        case .state: return 3
+        case .operationalState: return 4
+        case .downloadQueuePosition: return 5
+        case .transferLimits: return 6
+        case .storageState: return 7
+        case .metadataAvailable: return 8
+        case .pieceCount: return 9
+        case .verifiedPieceCount: return 10
+        case .requestedBytes: return 11
+        case .receivedBytes: return 12
+        case .storedBytes: return 13
+        case .activePeerConnections: return 14
+        case .configuredTrackerCount: return 15
+        case .payloadDownloadRateBytes: return 16
+        case .requiredPayloadBytes: return 17
+        case .remainingPayloadBytes: return 18
+        case .etaPayloadDownloadRateBytes: return 19
+        case .eta: return 20
+        case .progress: return 21
+        case .checking: return 22
+        case .archived: return 23
+        case .removalState: return 24
+        case .deleteManagedDataSupported: return 25
+        case .forceRecheckAvailable: return 26
+        case .error: return 27
+        }
+    }
+
+    private static func apply(_ update: FileRowUpdate, to current: FileView) throws -> FileView {
+        guard update.fileId == current.fileId else { throw IOSPresentationError.discontinuity }
+        try requireUnique(update.fields, key: fileFieldKey)
+        var next = current
+        for field in update.fields {
+            switch field {
+            case .selection(let value): next.selection = value
+            case .doneBytes(let value): next.doneBytes = value
+            case .verifiedBytes(let value): next.verifiedBytes = value
+            case .mediaAvailability(let value): next.mediaAvailability = value
+            }
+        }
+        return next
+    }
+
+    private static func fileFieldKey(_ field: FileFieldUpdate) -> Int {
+        switch field {
+        case .selection: return 0
+        case .doneBytes: return 1
+        case .verifiedBytes: return 2
+        case .mediaAvailability: return 3
+        }
+    }
+
+    private static func apply(_ update: PeerRowUpdate, to current: PeerView) throws -> PeerView {
+        guard update.connectionId == current.connectionId else {
+            throw IOSPresentationError.discontinuity
+        }
+        try requireUnique(update.fields, key: peerFieldKey)
+        var next = current
+        for field in update.fields {
+            switch field {
+            case .peerRecordId(let value): next.peerRecordId = value
+            case .direction(let value): next.direction = value
+            case .transport(let value): next.transport = value
+            case .lifecycle(let value): next.lifecycle = value
+            case .role(let value): next.role = value
+            case .peerFlags(let value): next.peerFlags = value
+            case .mseMethod(let value): next.mseMethod = value
+            case .lifecycleAgeMillis(let value): next.lifecycleAgeMillis = value
+            case .remoteEndpoint(let value): next.remoteEndpoint = value
+            case .localEndpoint(let value): next.localEndpoint = value
+            case .sources(let value): next.sources = value
+            case .peerId(let value): next.peerId = value
+            case .clientName(let value): next.clientName = value
+            case .supportsExtensions(let value): next.supportsExtensions = value
+            case .supportsUtMetadata(let value): next.supportsUtMetadata = value
+            case .localInterested(let value): next.localInterested = value
+            case .remoteInterested(let value): next.remoteInterested = value
+            case .remoteChoking(let value): next.remoteChoking = value
+            case .localChoking(let value): next.localChoking = value
+            case .availablePieceCount(let value): next.availablePieceCount = value
+            case .wantedPieceCount(let value): next.wantedPieceCount = value
+            case .payloadDownloadRateBytes(let value): next.payloadDownloadRateBytes = value
+            case .payloadDownloadedBytes(let value): next.payloadDownloadedBytes = value
+            case .protocolDownloadRateBytes(let value): next.protocolDownloadRateBytes = value
+            case .protocolDownloadedBytes(let value): next.protocolDownloadedBytes = value
+            case .payloadUploadRateBytes(let value): next.payloadUploadRateBytes = value
+            case .payloadUploadedBytes(let value): next.payloadUploadedBytes = value
+            case .pendingRequests(let value): next.pendingRequests = value
+            case .targetRequests(let value): next.targetRequests = value
+            case .queuedPayloadBytes(let value): next.queuedPayloadBytes = value
+            case .oldestRequestAgeMillis(let value): next.oldestRequestAgeMillis = value
+            case .requestTimeoutMillis(let value): next.requestTimeoutMillis = value
+            case .requestPhase(let value): next.requestPhase = value
+            case .connectedAgeMillis(let value): next.connectedAgeMillis = value
+            case .lastUsefulAgeMillis(let value): next.lastUsefulAgeMillis = value
+            case .lastPayloadAgeMillis(let value): next.lastPayloadAgeMillis = value
+            case .disconnectReason(let value): next.disconnectReason = value
+            case .capabilities(let value): next.capabilities = value
+            }
+        }
+        return next
+    }
+
+    private static func peerFieldKey(_ field: PeerFieldUpdate) -> Int {
+        switch field {
+        case .peerRecordId: return 0
+        case .direction: return 1
+        case .transport: return 2
+        case .lifecycle: return 3
+        case .role: return 4
+        case .peerFlags: return 5
+        case .mseMethod: return 6
+        case .lifecycleAgeMillis: return 7
+        case .remoteEndpoint: return 8
+        case .localEndpoint: return 9
+        case .sources: return 10
+        case .peerId: return 11
+        case .clientName: return 12
+        case .supportsExtensions: return 13
+        case .supportsUtMetadata: return 14
+        case .localInterested: return 15
+        case .remoteInterested: return 16
+        case .remoteChoking: return 17
+        case .localChoking: return 18
+        case .availablePieceCount: return 19
+        case .wantedPieceCount: return 20
+        case .payloadDownloadRateBytes: return 21
+        case .payloadDownloadedBytes: return 22
+        case .protocolDownloadRateBytes: return 23
+        case .protocolDownloadedBytes: return 24
+        case .payloadUploadRateBytes: return 25
+        case .payloadUploadedBytes: return 26
+        case .pendingRequests: return 27
+        case .targetRequests: return 28
+        case .queuedPayloadBytes: return 29
+        case .oldestRequestAgeMillis: return 30
+        case .requestTimeoutMillis: return 31
+        case .requestPhase: return 32
+        case .connectedAgeMillis: return 33
+        case .lastUsefulAgeMillis: return 34
+        case .lastPayloadAgeMillis: return 35
+        case .disconnectReason: return 36
+        case .capabilities: return 37
+        }
+    }
+
+    private static func apply(
+        _ update: ActivePieceUpdate,
+        to current: ActivePiece
+    ) throws -> ActivePiece {
+        guard update.pieceId == current.pieceId else { throw IOSPresentationError.discontinuity }
+        try requireUnique(update.fields, key: activePieceFieldKey)
+        var next = current
+        for field in update.fields {
+            switch field {
+            case .stage(let value): next.stage = value
+            case .requested(let value): next.requested = value
+            case .received(let value): next.received = value
+            case .stored(let value): next.stored = value
+            case .ageMillis(let value): next.ageMillis = value
+            case .error(let value): next.error = value
+            }
+        }
+        return next
+    }
+
+    private static func activePieceFieldKey(_ field: ActivePieceFieldUpdate) -> Int {
+        switch field {
+        case .stage: return 0
+        case .requested: return 1
+        case .received: return 2
+        case .stored: return 3
+        case .ageMillis: return 4
+        case .error: return 5
         }
     }
 

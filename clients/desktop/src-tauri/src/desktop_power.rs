@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 
-use rstorrent_session::{TorrentOperationalState, TorrentView};
+use rstorrent_session::{
+    TorrentFieldUpdate, TorrentOperationalState, TorrentRowUpdate, TorrentView,
+};
 
 #[derive(Default)]
 pub(crate) struct DesktopPowerPolicy {
@@ -25,10 +27,11 @@ impl DesktopPowerPolicy {
     pub(crate) fn apply_patch<'a>(
         &mut self,
         upsert: impl IntoIterator<Item = &'a TorrentView>,
+        updates: impl IntoIterator<Item = &'a TorrentRowUpdate>,
         removed: impl IntoIterator<Item = &'a String>,
-    ) -> bool {
+    ) -> Result<bool, ()> {
         if !self.established {
-            return false;
+            return Err(());
         }
         for torrent_id in removed {
             self.torrents.remove(torrent_id);
@@ -37,7 +40,22 @@ impl DesktopPowerPolicy {
             self.torrents
                 .insert(torrent.torrent_id.clone(), torrent.operational_state);
         }
-        self.required()
+        for update in updates {
+            let Some(state) = self.torrents.get_mut(&update.torrent_id) else {
+                self.reset();
+                return Err(());
+            };
+            if update.validate().is_err() {
+                self.reset();
+                return Err(());
+            }
+            for field in &update.fields {
+                if let TorrentFieldUpdate::OperationalState { value } = field {
+                    *state = *value;
+                }
+            }
+        }
+        Ok(self.required())
     }
 
     pub(crate) fn reset(&mut self) -> bool {

@@ -8,35 +8,37 @@ use rstorrent_gateway::{
     ChooseDownloadRootRequest, ChooseDownloadRootResponse, CreateMediaUrlRequest,
 };
 use rstorrent_session::{
-    ActiveDownloadsClampReason, ActivePiece, ActivePieceStageView, AddTorrentBytesRequest,
-    AddTorrentDisposition, AddTorrentResult, AdvertisedPeerEndpointScope,
-    AdvertisedPeerEndpointStatus, AdvertisedPeerEndpointUnavailableReason, ApiEncoding, ApiHello,
-    ApiLimits, ApiVersion, ApplicationCall, ApplicationCallResult, BandwidthDirectionRuntimeView,
-    BandwidthRuntimeView, CapabilityStatus, CatalogPageRequest, CatalogPageView, CheckingPhaseView,
-    CheckingProgressView, ClientSettings, ClientSettingsApplicationState,
-    ClientSettingsDegradedReason, ClientSettingsPatch, ClientSettingsRuntimeView, Command,
-    CommandResult, DeliveryMode, DeliveryPolicy, DhtAddressFamilyView, DhtBucketView,
-    DhtFamilyInspectionView, DhtInspectionView, DhtLifecycleView, DhtLookupView,
-    DhtNetworkPolicyView, DiagnosticCategory, DiagnosticEvent, DiagnosticField, DiagnosticFilter,
-    DiagnosticProfile, DiagnosticRetention, DiagnosticSeverity, DiagnosticSubject, DiagnosticValue,
-    DiskCheckpointStageView, DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView,
+    ActiveDownloadsClampReason, ActivePiece, ActivePieceFieldUpdate, ActivePieceStageView,
+    ActivePieceUpdate, AddTorrentBytesRequest, AddTorrentDisposition, AddTorrentResult,
+    AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus,
+    AdvertisedPeerEndpointUnavailableReason, ApiEncoding, ApiHello, ApiLimits, ApiVersion,
+    ApplicationCall, ApplicationCallResult, BandwidthDirectionRuntimeView, BandwidthRuntimeView,
+    CapabilityStatus, CatalogPageRequest, CatalogPageView, CheckingPhaseView, CheckingProgressView,
+    ClientSettings, ClientSettingsApplicationState, ClientSettingsDegradedReason,
+    ClientSettingsPatch, ClientSettingsRuntimeView, Command, CommandResult, DeliveryMode,
+    DeliveryPolicy, DhtAddressFamilyView, DhtBucketView, DhtFamilyInspectionView,
+    DhtInspectionView, DhtLifecycleView, DhtLookupView, DhtNetworkPolicyView, DiagnosticCategory,
+    DiagnosticEvent, DiagnosticField, DiagnosticFilter, DiagnosticProfile, DiagnosticRetention,
+    DiagnosticSeverity, DiagnosticSubject, DiagnosticValue, DiskCheckpointStageView,
+    DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView,
     EffectiveListenerSettings, EncryptionPolicy, ErrorCode, ErrorResponse, FileCatalogState,
-    FileIndexRange, FilePriority, FileSelectionIntent, FileSelectionView, FileView,
-    HttpsServerAuthenticationPolicy, IndexRange, Ipv6PinholeFailureStage, Ipv6PinholeStatus,
-    ListenerBindFailureReason, ListenerPolicy, ListenerStatus, MagnetExportResult,
-    MagnetExportSource, MediaFileAvailability, MediaUrlOutcome, MediaUrlResponse,
-    OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse, PeerDirection,
-    PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView, PeerLifecycle, PeerMseMethodView,
-    PeerRequestPhase, PeerRole, PeerSourceView, PeerTransportKind, PeerView,
-    PortMappingFailureStage, PortMappingMechanism, PortMappingPolicy, PortMappingStatus,
-    ProgressAction, ProgressAssessment, ProgressDisposition, ProgressPhase, ProgressReason,
-    RemovalDataPolicy, RemovalState, RequestEnvelope, ResetReason, ResponseEnvelope,
-    ResponseOutcome, ServiceSnapshot, SessionUdpStatus, SpeedCurrentRate, SpeedHistoryView,
-    SpeedMetric, SpeedMetricAvailability, SpeedPersistenceState, SpeedRange, SpeedSeriesView,
-    StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot, StorageState,
-    SubscriptionSpec, SwarmCatalogState, SwarmCountsView, SwarmPeerState, SwarmPeerView,
-    TorrentEtaView, TorrentOperationalState, TorrentProtocolIdentities, TorrentSettingsPatch,
-    TorrentSnapshot, TorrentState, TorrentTransferLimits, TorrentView, TrackerAnnounceEventView,
+    FileFieldUpdate, FileIndexRange, FilePriority, FileRowUpdate, FileSelectionIntent,
+    FileSelectionView, FileView, HttpsServerAuthenticationPolicy, IndexRange,
+    Ipv6PinholeFailureStage, Ipv6PinholeStatus, ListenerBindFailureReason, ListenerPolicy,
+    ListenerStatus, MagnetExportResult, MagnetExportSource, MediaFileAvailability, MediaUrlOutcome,
+    MediaUrlResponse, OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse, PeerDirection,
+    PeerDisconnectReason, PeerFieldCapabilities, PeerFieldUpdate, PeerFlagView, PeerLifecycle,
+    PeerMseMethodView, PeerRequestPhase, PeerRole, PeerRowUpdate, PeerSourceView,
+    PeerTransportKind, PeerView, PortMappingFailureStage, PortMappingMechanism, PortMappingPolicy,
+    PortMappingStatus, ProgressAction, ProgressAssessment, ProgressDisposition, ProgressPhase,
+    ProgressReason, RemovalDataPolicy, RemovalState, RequestEnvelope, ResetReason,
+    ResponseEnvelope, ResponseOutcome, ServiceSnapshot, SessionUdpStatus, SpeedCurrentRate,
+    SpeedHistoryView, SpeedMetric, SpeedMetricAvailability, SpeedPersistenceState, SpeedRange,
+    SpeedSeriesView, StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot,
+    StorageState, SubscriptionSpec, SwarmCatalogState, SwarmCountsView, SwarmPeerState,
+    SwarmPeerView, TorrentEtaView, TorrentFieldUpdate, TorrentOperationalState,
+    TorrentProtocolIdentities, TorrentRowUpdate, TorrentSettingsPatch, TorrentSnapshot,
+    TorrentState, TorrentTransferLimits, TorrentView, TorrentViewChange, TrackerAnnounceEventView,
     TrackerCatalogState, TrackerConnectionFamilyView, TrackerNextActionView, TrackerSecurityView,
     TrackerSourceView, TrackerStatusView, TrackerTransportView, TrackerView, TransferRateLimit,
     TransportAddressFamily, TransportFamilyRuntimeView, UpdateBatch, UpdateViewSetRequest,
@@ -169,6 +171,8 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<CatalogPageView>(&mut declarations)?;
     append::<ActivePieceStageView>(&mut declarations)?;
     append::<ActivePiece>(&mut declarations)?;
+    append::<ActivePieceFieldUpdate>(&mut declarations)?;
+    append::<ActivePieceUpdate>(&mut declarations)?;
     append::<DiskPressureView>(&mut declarations)?;
     append::<DiskCheckpointStageView>(&mut declarations)?;
     append::<DiskPieceStageView>(&mut declarations)?;
@@ -193,6 +197,9 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<CheckingProgressView>(&mut declarations)?;
     append::<TorrentOperationalState>(&mut declarations)?;
     append::<TorrentView>(&mut declarations)?;
+    append::<TorrentFieldUpdate>(&mut declarations)?;
+    append::<TorrentRowUpdate>(&mut declarations)?;
+    append::<TorrentViewChange>(&mut declarations)?;
     append::<CapabilityStatus>(&mut declarations)?;
     append::<PeerDirection>(&mut declarations)?;
     append::<PeerTransportKind>(&mut declarations)?;
@@ -205,6 +212,8 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<PeerDisconnectReason>(&mut declarations)?;
     append::<PeerFieldCapabilities>(&mut declarations)?;
     append::<PeerView>(&mut declarations)?;
+    append::<PeerFieldUpdate>(&mut declarations)?;
+    append::<PeerRowUpdate>(&mut declarations)?;
     append::<SwarmCatalogState>(&mut declarations)?;
     append::<SwarmCountsView>(&mut declarations)?;
     append::<SwarmPeerState>(&mut declarations)?;
@@ -212,6 +221,8 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<FileSelectionView>(&mut declarations)?;
     append::<FileCatalogState>(&mut declarations)?;
     append::<FileView>(&mut declarations)?;
+    append::<FileFieldUpdate>(&mut declarations)?;
+    append::<FileRowUpdate>(&mut declarations)?;
     append::<TrackerCatalogState>(&mut declarations)?;
     append::<TrackerTransportView>(&mut declarations)?;
     append::<TrackerSecurityView>(&mut declarations)?;
@@ -401,6 +412,7 @@ fn write_fixture(output: PathBuf) -> Result<(), Box<dyn Error>> {
                         age_millis: "125".to_owned(),
                         error: None,
                     }],
+                    active_updates: Vec::new(),
                     active_removed: Vec::new(),
                 },
             },
@@ -451,6 +463,7 @@ fn write_view_set_fixture(output: PathBuf) -> Result<(), Box<dyn Error>> {
             view_id: "library".to_owned(),
             patch: ViewPatch::TorrentList {
                 upsert: vec![fixture_torrent(&torrent_id, 1)],
+                updates: Vec::new(),
                 removed: Vec::new(),
                 storage: None,
                 client_settings: None,

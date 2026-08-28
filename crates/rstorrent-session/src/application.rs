@@ -12590,6 +12590,18 @@ mod tests {
             .view_set(&owner, &opened.view_set_id)
             .expect("peer view set handle");
         let mut cursor = opened.initial.cursor.clone();
+        let mut summary_torrent = opened
+            .initial
+            .updates
+            .iter()
+            .find_map(|update| match update {
+                ViewSetUpdate::Snapshot {
+                    snapshot: ViewSnapshot::Torrent { torrent, .. },
+                    ..
+                } => torrent.clone(),
+                _ => None,
+            })
+            .expect("initial selected torrent");
         let mut active_peer = opened
             .initial
             .updates
@@ -12622,12 +12634,31 @@ mod tests {
                                 .find(|peer| peer.lifecycle == crate::PeerLifecycle::Connected)
                                 .map(|peer| peer.connection_id.clone()),
                             ViewSetUpdate::Patch {
-                                patch: ViewPatch::Peers { upsert, .. },
+                                patch:
+                                    ViewPatch::Peers {
+                                        upsert, updates, ..
+                                    },
                                 ..
                             } => upsert
                                 .iter()
                                 .find(|peer| peer.lifecycle == crate::PeerLifecycle::Connected)
-                                .map(|peer| peer.connection_id.clone()),
+                                .map(|peer| peer.connection_id.clone())
+                                .or_else(|| {
+                                    updates.iter().find_map(|update| {
+                                        update
+                                            .fields
+                                            .iter()
+                                            .any(|field| {
+                                                matches!(
+                                                    field,
+                                                    crate::PeerFieldUpdate::Lifecycle {
+                                                        value: crate::PeerLifecycle::Connected
+                                                    }
+                                                )
+                                            })
+                                            .then(|| update.connection_id.clone())
+                                    })
+                                }),
                             _ => None,
                         })
                     {
@@ -12687,11 +12718,31 @@ mod tests {
                         ViewSetUpdate::Patch {
                             patch:
                                 ViewPatch::Torrent {
-                                    torrent: Some(torrent),
+                                    change: crate::TorrentViewChange::Update { update },
                                 },
                             ..
+                        } => {
+                            update
+                                .apply(&mut summary_torrent)
+                                .expect("selected torrent update");
+                            summary_is_terminal |= summary_torrent.active_peer_connections == 0
+                                && summary_torrent.payload_download_rate_bytes == "0";
                         }
-                        | ViewSetUpdate::Snapshot {
+                        ViewSetUpdate::Patch {
+                            patch:
+                                ViewPatch::Torrent {
+                                    change:
+                                        crate::TorrentViewChange::Replace {
+                                            torrent: Some(torrent),
+                                        },
+                                },
+                            ..
+                        } => {
+                            summary_torrent = torrent;
+                            summary_is_terminal |= summary_torrent.active_peer_connections == 0
+                                && summary_torrent.payload_download_rate_bytes == "0";
+                        }
+                        ViewSetUpdate::Snapshot {
                             snapshot:
                                 ViewSnapshot::Torrent {
                                     torrent: Some(torrent),
@@ -14008,24 +14059,38 @@ mod tests {
         };
 
         let waiting = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            let mut observed = None;
             loop {
                 let update = summary.next_update().await.expect("summary update");
-                let is_waiting = match update.payload {
+                match update.payload {
                     ViewUpdatePayload::Snapshot {
                         snapshot: ViewSnapshot::TorrentList { torrents, .. },
-                    } => torrents.first().is_some_and(|torrent| {
-                        torrent.progress.disposition == ProgressDisposition::Waiting
-                            && torrent.progress.reason == ProgressReason::WaitingForDiscovery
-                    }),
+                    } => observed = torrents.into_iter().next(),
                     ViewUpdatePayload::Patch {
-                        patch: ViewPatch::TorrentList { upsert, .. },
-                    } => upsert.first().is_some_and(|torrent| {
-                        torrent.progress.disposition == ProgressDisposition::Waiting
-                            && torrent.progress.reason == ProgressReason::WaitingForDiscovery
-                    }),
-                    _ => false,
-                };
-                if is_waiting {
+                        patch:
+                            ViewPatch::TorrentList {
+                                mut upsert,
+                                updates,
+                                ..
+                            },
+                    } => {
+                        if let Some(torrent) = upsert.pop() {
+                            observed = Some(torrent);
+                        }
+                        if let Some(torrent) = observed.as_mut() {
+                            for update in updates {
+                                if update.torrent_id == torrent.torrent_id {
+                                    update.apply(torrent).expect("torrent list update");
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                if observed.as_ref().is_some_and(|torrent| {
+                    torrent.progress.disposition == ProgressDisposition::Waiting
+                        && torrent.progress.reason == ProgressReason::WaitingForDiscovery
+                }) {
                     break;
                 }
             }
@@ -14092,21 +14157,38 @@ mod tests {
             .expect("add while offline");
 
         let torrent = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            let mut observed = None;
             loop {
                 let update = summary.next_update().await.expect("summary update");
-                let candidate = match update.payload {
+                match update.payload {
                     ViewUpdatePayload::Snapshot {
-                        snapshot: ViewSnapshot::TorrentList { mut torrents, .. },
-                    } => torrents.pop(),
+                        snapshot: ViewSnapshot::TorrentList { torrents, .. },
+                    } => observed = torrents.into_iter().next(),
                     ViewUpdatePayload::Patch {
-                        patch: ViewPatch::TorrentList { mut upsert, .. },
-                    } => upsert.pop(),
-                    _ => None,
-                };
-                if let Some(torrent) = candidate
-                    && torrent.progress.reason == ProgressReason::NetworkDisabled
-                {
-                    break torrent;
+                        patch:
+                            ViewPatch::TorrentList {
+                                mut upsert,
+                                updates,
+                                ..
+                            },
+                    } => {
+                        if let Some(torrent) = upsert.pop() {
+                            observed = Some(torrent);
+                        }
+                        if let Some(torrent) = observed.as_mut() {
+                            for update in updates {
+                                if update.torrent_id == torrent.torrent_id {
+                                    update.apply(torrent).expect("torrent list update");
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                if observed.as_ref().is_some_and(|torrent| {
+                    torrent.progress.reason == ProgressReason::NetworkDisabled
+                }) {
+                    break observed.expect("network-disabled torrent");
                 }
             }
         })

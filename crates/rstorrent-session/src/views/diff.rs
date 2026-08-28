@@ -8,14 +8,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::diagnostics::{
     MAX_DIAGNOSTIC_PATCH_BYTES, MAX_DIAGNOSTIC_PATCH_EVENTS, patch_encoded_len,
 };
-use crate::file_views::FileView;
+use crate::file_views::FileViewChange;
 use crate::settings::{ClientSettingsRuntimeView, StorageSettingsSnapshot};
 use crate::tracker_views::{TrackerView, TrackerViewModel};
 
 use super::ranges::{difference, insert_interval, remove_interval};
 use super::{
-    ActivePiece, DiskSessionView, IndexRange, PeerView, SubscriptionSpec, SwarmModel, TorrentModel,
-    TorrentView, ViewPatch, ViewProjection, ViewSelector, ViewUpdate, ViewUpdatePayload,
+    ActivePiece, ActivePieceUpdate, DiskSessionView, FileRowUpdate, IndexRange, PeerRowUpdate,
+    PeerView, SubscriptionSpec, SwarmModel, TorrentModel, TorrentRowUpdate, TorrentView,
+    TorrentViewChange, ViewPatch, ViewProjection, ViewSelector, ViewUpdate, ViewUpdatePayload,
 };
 
 pub(super) fn patch_for(
@@ -29,24 +30,35 @@ pub(super) fn patch_for(
 ) -> Option<ViewPatch> {
     match (&spec.selector, spec.projection) {
         (ViewSelector::TorrentList, ViewProjection::Summary) => {
-            let upsert = current
-                .iter()
-                .filter(|(id, model)| previous.get(*id).map(|old| &old.view) != Some(&model.view))
-                .map(|(_, model)| model.view.clone())
-                .collect::<Vec<_>>();
+            let mut upsert = Vec::new();
+            let mut updates = Vec::new();
+            for (id, model) in current {
+                match previous.get(id) {
+                    None => upsert.push(model.view.clone()),
+                    Some(old) => {
+                        if let Some(update) = TorrentRowUpdate::between(&old.view, &model.view) {
+                            updates.push(update);
+                        }
+                    }
+                }
+            }
             let removed = previous
                 .keys()
                 .filter(|id| !current.contains_key(*id))
                 .cloned()
                 .collect::<Vec<_>>();
-            let storage = previous_storage.map(|_| current_storage.clone());
-            let client_settings = previous_client_settings.map(|_| current_client_settings.clone());
+            let storage =
+                (previous_storage != Some(current_storage)).then(|| current_storage.clone());
+            let client_settings = (previous_client_settings != Some(current_client_settings))
+                .then(|| current_client_settings.clone());
             (!upsert.is_empty()
+                || !updates.is_empty()
                 || !removed.is_empty()
                 || storage.is_some()
                 || client_settings.is_some())
             .then_some(ViewPatch::TorrentList {
                 upsert,
+                updates,
                 removed,
                 storage,
                 client_settings,
@@ -55,9 +67,7 @@ pub(super) fn patch_for(
         (ViewSelector::Torrent { torrent_id }, ViewProjection::Summary) => {
             let old = previous.get(torrent_id).map(|model| &model.view);
             let next = current.get(torrent_id).map(|model| &model.view);
-            (old != next).then(|| ViewPatch::Torrent {
-                torrent: next.cloned(),
-            })
+            selected_torrent_patch(old, next)
         }
         (ViewSelector::Torrent { torrent_id }, ViewProjection::PieceActivity) => {
             let old = previous.get(torrent_id);
@@ -72,13 +82,15 @@ pub(super) fn patch_for(
             let empty = BTreeMap::new();
             let old_active = old.map_or(&empty, |model| &model.active);
             let next_active = next.map_or(&empty, |model| &model.active);
-            let (active_upsert, active_removed) = active_piece_patch(old_active, next_active);
+            let (active_upsert, active_updates, active_removed) =
+                active_piece_patch(old_active, next_active);
             Some(ViewPatch::PieceActivity {
                 torrent_id: torrent_id.clone(),
                 piece_count: next.map_or(0, |model| model.view.piece_count),
                 verified,
                 cleared,
                 active_upsert,
+                active_updates,
                 active_removed,
             })
         }
@@ -106,18 +118,20 @@ pub(super) fn patch_for(
                 .get(torrent_id)
                 .and_then(|model| model.files.as_ref());
             match (old, next) {
-                (Some(old), Some(next)) if old.catalog_matches(next) => {
+                (Some(old), Some(next)) if old.patchable_catalog_matches(next) => {
                     let page = spec
                         .catalog_page
                         .expect("validated file projection has a catalog page");
-                    let upsert = next
-                        .rows_changed_since(old)
-                        .into_iter()
-                        .filter(|file| page.contains(file.file_index))
+                    let updates = page
+                        .bounds(next.count())
+                        .filter_map(|index| {
+                            FileRowUpdate::between(&old.row(index), &next.row(index))
+                        })
                         .collect::<Vec<_>>();
-                    (!upsert.is_empty()).then(|| ViewPatch::Files {
+                    (!updates.is_empty()).then(|| ViewPatch::Files {
                         torrent_id: torrent_id.clone(),
-                        upsert,
+                        upsert: Vec::new(),
+                        updates,
                         removed: Vec::new(),
                     })
                 }
@@ -186,10 +200,39 @@ pub(super) fn projection_requires_snapshot(
         (None, None) => false,
         (Some(old), Some(next)) => match (&old.files, &next.files) {
             (None, None) => false,
-            (Some(old), Some(next)) => !old.catalog_matches(next),
+            (Some(old), Some(next)) => !old.patchable_catalog_matches(next),
             _ => true,
         },
         _ => true,
+    }
+}
+
+fn torrent_list_row_patch(previous: &TorrentView, current: &TorrentView) -> Option<ViewPatch> {
+    TorrentRowUpdate::between(previous, current).map(|update| ViewPatch::TorrentList {
+        upsert: Vec::new(),
+        updates: vec![update],
+        removed: Vec::new(),
+        storage: None,
+        client_settings: None,
+    })
+}
+
+fn selected_torrent_patch(
+    previous: Option<&TorrentView>,
+    current: Option<&TorrentView>,
+) -> Option<ViewPatch> {
+    match (previous, current) {
+        (Some(previous), Some(current)) => {
+            TorrentRowUpdate::between(previous, current).map(|update| ViewPatch::Torrent {
+                change: TorrentViewChange::Update { update },
+            })
+        }
+        _ if previous != current => Some(ViewPatch::Torrent {
+            change: TorrentViewChange::Replace {
+                torrent: current.cloned(),
+            },
+        }),
+        _ => None,
     }
 }
 
@@ -203,25 +246,18 @@ pub(super) fn targeted_activity_patch(
     next_verified: &[IndexRange],
     previous_active: &BTreeMap<u32, ActivePiece>,
     next_active: &BTreeMap<u32, ActivePiece>,
-    file_upsert: &[FileView],
+    file_changes: &[FileViewChange],
 ) -> Option<ViewPatch> {
     match (&spec.selector, spec.projection) {
         (ViewSelector::TorrentList, ViewProjection::Summary) => {
-            (previous_view != next_view).then(|| ViewPatch::TorrentList {
-                upsert: vec![next_view.clone()],
-                removed: Vec::new(),
-                storage: None,
-                client_settings: None,
-            })
+            torrent_list_row_patch(previous_view, next_view)
         }
         (
             ViewSelector::Torrent {
                 torrent_id: selected,
             },
             ViewProjection::Summary,
-        ) if selected == torrent_id => (previous_view != next_view).then(|| ViewPatch::Torrent {
-            torrent: Some(next_view.clone()),
-        }),
+        ) if selected == torrent_id => selected_torrent_patch(Some(previous_view), Some(next_view)),
         (
             ViewSelector::Torrent {
                 torrent_id: selected,
@@ -230,10 +266,12 @@ pub(super) fn targeted_activity_patch(
         ) if selected == torrent_id => {
             let verified = difference(next_verified, previous_verified);
             let cleared = difference(previous_verified, next_verified);
-            let (active_upsert, active_removed) = active_piece_patch(previous_active, next_active);
+            let (active_upsert, active_updates, active_removed) =
+                active_piece_patch(previous_active, next_active);
             (!verified.is_empty()
                 || !cleared.is_empty()
                 || !active_upsert.is_empty()
+                || !active_updates.is_empty()
                 || !active_removed.is_empty())
             .then(|| ViewPatch::PieceActivity {
                 torrent_id: torrent_id.to_owned(),
@@ -241,6 +279,7 @@ pub(super) fn targeted_activity_patch(
                 verified,
                 cleared,
                 active_upsert,
+                active_updates,
                 active_removed,
             })
         }
@@ -249,19 +288,20 @@ pub(super) fn targeted_activity_patch(
                 torrent_id: selected,
             },
             ViewProjection::Files,
-        ) if selected == torrent_id && !file_upsert.is_empty() => {
-            let upsert = file_upsert
+        ) if selected == torrent_id && !file_changes.is_empty() => {
+            let updates = file_changes
                 .iter()
-                .filter(|file| {
+                .filter(|change| {
                     spec.catalog_page
                         .expect("validated file projection has a catalog page")
-                        .contains(file.file_index)
+                        .contains(change.current.file_index)
                 })
-                .cloned()
+                .filter_map(|change| FileRowUpdate::between(&change.previous, &change.current))
                 .collect::<Vec<_>>();
-            (!upsert.is_empty()).then(|| ViewPatch::Files {
+            (!updates.is_empty()).then(|| ViewPatch::Files {
                 torrent_id: torrent_id.to_owned(),
-                upsert,
+                upsert: Vec::new(),
+                updates,
                 removed: Vec::new(),
             })
         }
@@ -279,21 +319,14 @@ pub(super) fn targeted_peer_patch(
 ) -> Option<ViewPatch> {
     match (&spec.selector, spec.projection) {
         (ViewSelector::TorrentList, ViewProjection::Summary) => {
-            (previous_view != next_view).then(|| ViewPatch::TorrentList {
-                upsert: vec![next_view.clone()],
-                removed: Vec::new(),
-                storage: None,
-                client_settings: None,
-            })
+            torrent_list_row_patch(previous_view, next_view)
         }
         (
             ViewSelector::Torrent {
                 torrent_id: selected,
             },
             ViewProjection::Summary,
-        ) if selected == torrent_id => (previous_view != next_view).then(|| ViewPatch::Torrent {
-            torrent: Some(next_view.clone()),
-        }),
+        ) if selected == torrent_id => selected_torrent_patch(Some(previous_view), Some(next_view)),
         (
             ViewSelector::Torrent {
                 torrent_id: selected,
@@ -312,24 +345,16 @@ pub(super) fn targeted_torrent_view_patch(
     previous: &TorrentView,
     current: &TorrentView,
 ) -> Option<ViewPatch> {
-    if previous == current {
-        return None;
-    }
     match (&spec.selector, spec.projection) {
-        (ViewSelector::TorrentList, ViewProjection::Summary) => Some(ViewPatch::TorrentList {
-            upsert: vec![current.clone()],
-            removed: Vec::new(),
-            storage: None,
-            client_settings: None,
-        }),
+        (ViewSelector::TorrentList, ViewProjection::Summary) => {
+            torrent_list_row_patch(previous, current)
+        }
         (
             ViewSelector::Torrent {
                 torrent_id: selected,
             },
             ViewProjection::Summary,
-        ) if selected == torrent_id => Some(ViewPatch::Torrent {
-            torrent: Some(current.clone()),
-        }),
+        ) if selected == torrent_id => selected_torrent_patch(Some(previous), Some(current)),
         _ => None,
     }
 }
@@ -361,21 +386,14 @@ pub(super) fn targeted_tracker_patch(
 ) -> Option<ViewPatch> {
     match (&spec.selector, spec.projection) {
         (ViewSelector::TorrentList, ViewProjection::Summary) => {
-            (previous_view != next_view).then(|| ViewPatch::TorrentList {
-                upsert: vec![next_view.clone()],
-                removed: Vec::new(),
-                storage: None,
-                client_settings: None,
-            })
+            torrent_list_row_patch(previous_view, next_view)
         }
         (
             ViewSelector::Torrent {
                 torrent_id: selected,
             },
             ViewProjection::Summary,
-        ) if selected == torrent_id => (previous_view != next_view).then(|| ViewPatch::Torrent {
-            torrent: Some(next_view.clone()),
-        }),
+        ) if selected == torrent_id => selected_torrent_patch(Some(previous_view), Some(next_view)),
         (
             ViewSelector::Torrent {
                 torrent_id: selected,
@@ -399,19 +417,27 @@ fn peer_collection_patch(
     previous: &BTreeMap<String, PeerView>,
     current: &BTreeMap<String, PeerView>,
 ) -> Option<ViewPatch> {
-    let upsert = current
-        .iter()
-        .filter(|(id, peer)| previous.get(*id) != Some(*peer))
-        .map(|(_, peer)| peer.clone())
-        .collect::<Vec<_>>();
+    let mut upsert = Vec::new();
+    let mut updates = Vec::new();
+    for (id, peer) in current {
+        match previous.get(id) {
+            None => upsert.push(peer.clone()),
+            Some(old) => {
+                if let Some(update) = PeerRowUpdate::between(old, peer) {
+                    updates.push(update);
+                }
+            }
+        }
+    }
     let removed = previous
         .keys()
         .filter(|id| !current.contains_key(*id))
         .cloned()
         .collect::<Vec<_>>();
-    (!upsert.is_empty() || !removed.is_empty()).then(|| ViewPatch::Peers {
+    (!upsert.is_empty() || !updates.is_empty() || !removed.is_empty()).then(|| ViewPatch::Peers {
         torrent_id: torrent_id.to_owned(),
         upsert,
+        updates,
         removed,
     })
 }
@@ -497,12 +523,19 @@ pub(super) fn disk_patch(
 fn active_piece_patch(
     previous: &BTreeMap<u32, ActivePiece>,
     current: &BTreeMap<u32, ActivePiece>,
-) -> (Vec<ActivePiece>, Vec<String>) {
-    let upsert = current
-        .iter()
-        .filter(|(piece_index, piece)| previous.get(*piece_index) != Some(*piece))
-        .map(|(_, piece)| piece.clone())
-        .collect();
+) -> (Vec<ActivePiece>, Vec<ActivePieceUpdate>, Vec<String>) {
+    let mut upsert = Vec::new();
+    let mut updates = Vec::new();
+    for (piece_index, piece) in current {
+        match previous.get(piece_index) {
+            Some(old) if old.piece_id == piece.piece_id => {
+                if let Some(update) = ActivePieceUpdate::between(old, piece) {
+                    updates.push(update);
+                }
+            }
+            _ => upsert.push(piece.clone()),
+        }
+    }
     let removed = previous
         .iter()
         .filter(|(piece_index, piece)| {
@@ -512,7 +545,7 @@ fn active_piece_patch(
         })
         .map(|(_, piece)| piece.piece_id.clone())
         .collect();
-    (upsert, removed)
+    (upsert, updates, removed)
 }
 
 pub(super) fn coalesce(update: &mut ViewUpdate, next: &ViewUpdatePayload) -> bool {
@@ -524,39 +557,127 @@ pub(super) fn coalesce(update: &mut ViewUpdate, next: &ViewUpdatePayload) -> boo
     coalesce_patch(current, next)
 }
 
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn coalesce_sparse_rows<Row: Clone, Update: Clone>(
+    current_upsert: &[Row],
+    current_updates: &[Update],
+    current_removed: &[String],
+    next_upsert: &[Row],
+    next_updates: &[Update],
+    next_removed: &[String],
+    row_id: impl Fn(&Row) -> String,
+    update_id: impl Fn(&Update) -> String,
+    apply: impl Fn(&Update, &mut Row) -> bool,
+    merge: impl Fn(&mut Update, &Update) -> bool,
+) -> Option<(Vec<Row>, Vec<Update>, Vec<String>)> {
+    let mut rows = current_upsert
+        .iter()
+        .cloned()
+        .map(|row| (row_id(&row), row))
+        .collect::<BTreeMap<_, _>>();
+    let mut updates = current_updates
+        .iter()
+        .cloned()
+        .map(|update| (update_id(&update), update))
+        .collect::<BTreeMap<_, _>>();
+    let mut removed = current_removed.iter().cloned().collect::<BTreeSet<_>>();
+    if rows.len() != current_upsert.len()
+        || updates.len() != current_updates.len()
+        || removed.len() != current_removed.len()
+        || rows
+            .keys()
+            .any(|id| updates.contains_key(id) || removed.contains(id))
+        || updates.keys().any(|id| removed.contains(id))
+    {
+        return None;
+    }
+
+    let next_row_ids = next_upsert.iter().map(&row_id).collect::<BTreeSet<_>>();
+    let next_update_ids = next_updates.iter().map(&update_id).collect::<BTreeSet<_>>();
+    let next_removed_ids = next_removed.iter().collect::<BTreeSet<_>>();
+    if next_row_ids.len() != next_upsert.len()
+        || next_update_ids.len() != next_updates.len()
+        || next_removed_ids.len() != next_removed.len()
+        || next_row_ids
+            .iter()
+            .any(|id| next_update_ids.contains(id) || next_removed_ids.contains(id))
+        || next_update_ids
+            .iter()
+            .any(|id| next_removed_ids.contains(id))
+    {
+        return None;
+    }
+
+    for id in next_removed {
+        rows.remove(id);
+        updates.remove(id);
+        removed.insert(id.clone());
+    }
+    for row in next_upsert {
+        let id = row_id(row);
+        rows.insert(id.clone(), row.clone());
+        updates.remove(&id);
+        removed.remove(&id);
+    }
+    for next_update in next_updates {
+        let id = update_id(next_update);
+        if removed.contains(&id) {
+            return None;
+        }
+        if let Some(row) = rows.get_mut(&id) {
+            if !apply(next_update, row) {
+                return None;
+            }
+        } else if let Some(update) = updates.get_mut(&id) {
+            if !merge(update, next_update) {
+                return None;
+            }
+        } else {
+            updates.insert(id, next_update.clone());
+        }
+    }
+    Some((
+        rows.into_values().collect(),
+        updates.into_values().collect(),
+        removed.into_iter().collect(),
+    ))
+}
+
 pub(crate) fn coalesce_patch(current: &mut ViewPatch, next: &ViewPatch) -> bool {
     match (current, next) {
         (
             ViewPatch::TorrentList {
                 upsert,
+                updates,
                 removed,
                 storage,
                 client_settings,
             },
             ViewPatch::TorrentList {
                 upsert: next_upsert,
+                updates: next_updates,
                 removed: next_removed,
                 storage: next_storage,
                 client_settings: next_client_settings,
             },
         ) => {
-            let mut values = upsert
-                .drain(..)
-                .map(|torrent| (torrent.torrent_id.clone(), torrent))
-                .collect::<BTreeMap<_, _>>();
-            for id in next_removed {
-                values.remove(id);
-            }
-            for torrent in next_upsert {
-                values.insert(torrent.torrent_id.clone(), torrent.clone());
-            }
-            let mut removed_ids = removed.drain(..).collect::<std::collections::BTreeSet<_>>();
-            for torrent in next_upsert {
-                removed_ids.remove(&torrent.torrent_id);
-            }
-            removed_ids.extend(next_removed.iter().cloned());
-            *upsert = values.into_values().collect();
-            *removed = removed_ids.into_iter().collect();
+            let Some((next_rows, next_fields, next_removed_ids)) = coalesce_sparse_rows(
+                upsert,
+                updates,
+                removed,
+                next_upsert,
+                next_updates,
+                next_removed,
+                |torrent| torrent.torrent_id.clone(),
+                |update| update.torrent_id.clone(),
+                |update, torrent| update.apply(torrent).is_ok(),
+                |current, next| current.merge(next).is_ok(),
+            ) else {
+                return false;
+            };
+            *upsert = next_rows;
+            *updates = next_fields;
+            *removed = next_removed_ids;
             if next_storage.is_some() {
                 *storage = next_storage.clone();
             }
@@ -565,10 +686,24 @@ pub(crate) fn coalesce_patch(current: &mut ViewPatch, next: &ViewPatch) -> bool 
             }
             true
         }
-        (ViewPatch::Torrent { torrent }, ViewPatch::Torrent { torrent: next }) => {
-            *torrent = next.clone();
-            true
-        }
+        (
+            ViewPatch::Torrent { change },
+            ViewPatch::Torrent {
+                change: next_change,
+            },
+        ) => match next_change {
+            TorrentViewChange::Replace { .. } => {
+                *change = next_change.clone();
+                true
+            }
+            TorrentViewChange::Update { update } => match change {
+                TorrentViewChange::Replace {
+                    torrent: Some(torrent),
+                } => update.apply(torrent).is_ok(),
+                TorrentViewChange::Replace { torrent: None } => false,
+                TorrentViewChange::Update { update: current } => current.merge(update).is_ok(),
+            },
+        },
         (
             ViewPatch::PieceActivity {
                 torrent_id,
@@ -576,6 +711,7 @@ pub(crate) fn coalesce_patch(current: &mut ViewPatch, next: &ViewPatch) -> bool 
                 verified,
                 cleared,
                 active_upsert,
+                active_updates,
                 active_removed,
             },
             ViewPatch::PieceActivity {
@@ -584,9 +720,24 @@ pub(crate) fn coalesce_patch(current: &mut ViewPatch, next: &ViewPatch) -> bool 
                 verified: next_verified,
                 cleared: next_cleared,
                 active_upsert: next_active_upsert,
+                active_updates: next_active_updates,
                 active_removed: next_active_removed,
             },
         ) if torrent_id == next_id => {
+            let Some((next_rows, next_fields, next_removed_ids)) = coalesce_sparse_rows(
+                active_upsert,
+                active_updates,
+                active_removed,
+                next_active_upsert,
+                next_active_updates,
+                next_active_removed,
+                |piece| piece.piece_id.clone(),
+                |update| update.piece_id.clone(),
+                |update, piece| update.apply(piece).is_ok(),
+                |current, next| current.merge(next).is_ok(),
+            ) else {
+                return false;
+            };
             for range in next_cleared {
                 remove_interval(verified, *range);
                 insert_interval(cleared, *range);
@@ -596,23 +747,9 @@ pub(crate) fn coalesce_patch(current: &mut ViewPatch, next: &ViewPatch) -> bool 
                 insert_interval(verified, *range);
             }
             *piece_count = *next_piece_count;
-            let mut values = active_upsert
-                .drain(..)
-                .map(|piece| (piece.piece_id.clone(), piece))
-                .collect::<BTreeMap<_, _>>();
-            for id in next_active_removed {
-                values.remove(id);
-            }
-            for piece in next_active_upsert {
-                values.insert(piece.piece_id.clone(), piece.clone());
-            }
-            let mut removed_ids = active_removed.drain(..).collect::<BTreeSet<_>>();
-            for piece in next_active_upsert {
-                removed_ids.remove(&piece.piece_id);
-            }
-            removed_ids.extend(next_active_removed.iter().cloned());
-            *active_upsert = values.into_values().collect();
-            *active_removed = removed_ids.into_iter().collect();
+            *active_upsert = next_rows;
+            *active_updates = next_fields;
+            *active_removed = next_removed_ids;
             true
         }
         (
@@ -669,31 +806,33 @@ pub(crate) fn coalesce_patch(current: &mut ViewPatch, next: &ViewPatch) -> bool 
             ViewPatch::Peers {
                 torrent_id,
                 upsert,
+                updates,
                 removed,
             },
             ViewPatch::Peers {
                 torrent_id: next_id,
                 upsert: next_upsert,
+                updates: next_updates,
                 removed: next_removed,
             },
         ) if torrent_id == next_id => {
-            let mut values = upsert
-                .drain(..)
-                .map(|peer| (peer.connection_id.clone(), peer))
-                .collect::<BTreeMap<_, _>>();
-            for id in next_removed {
-                values.remove(id);
-            }
-            for peer in next_upsert {
-                values.insert(peer.connection_id.clone(), peer.clone());
-            }
-            let mut removed_ids = removed.drain(..).collect::<std::collections::BTreeSet<_>>();
-            for peer in next_upsert {
-                removed_ids.remove(&peer.connection_id);
-            }
-            removed_ids.extend(next_removed.iter().cloned());
-            *upsert = values.into_values().collect();
-            *removed = removed_ids.into_iter().collect();
+            let Some((next_rows, next_fields, next_removed_ids)) = coalesce_sparse_rows(
+                upsert,
+                updates,
+                removed,
+                next_upsert,
+                next_updates,
+                next_removed,
+                |peer| peer.connection_id.clone(),
+                |update| update.connection_id.clone(),
+                |update, peer| update.apply(peer).is_ok(),
+                |current, next| current.merge(next).is_ok(),
+            ) else {
+                return false;
+            };
+            *upsert = next_rows;
+            *updates = next_fields;
+            *removed = next_removed_ids;
             true
         }
         (
@@ -743,31 +882,33 @@ pub(crate) fn coalesce_patch(current: &mut ViewPatch, next: &ViewPatch) -> bool 
             ViewPatch::Files {
                 torrent_id,
                 upsert,
+                updates,
                 removed,
             },
             ViewPatch::Files {
                 torrent_id: next_id,
                 upsert: next_upsert,
+                updates: next_updates,
                 removed: next_removed,
             },
         ) if torrent_id == next_id => {
-            let mut values = upsert
-                .drain(..)
-                .map(|file| (file.file_id.clone(), file))
-                .collect::<BTreeMap<_, _>>();
-            for id in next_removed {
-                values.remove(id);
-            }
-            for file in next_upsert {
-                values.insert(file.file_id.clone(), file.clone());
-            }
-            let mut removed_ids = removed.drain(..).collect::<std::collections::BTreeSet<_>>();
-            for file in next_upsert {
-                removed_ids.remove(&file.file_id);
-            }
-            removed_ids.extend(next_removed.iter().cloned());
-            *upsert = values.into_values().collect();
-            *removed = removed_ids.into_iter().collect();
+            let Some((next_rows, next_fields, next_removed_ids)) = coalesce_sparse_rows(
+                upsert,
+                updates,
+                removed,
+                next_upsert,
+                next_updates,
+                next_removed,
+                |file| file.file_id.clone(),
+                |update| update.file_id.clone(),
+                |update, file| update.apply(file).is_ok(),
+                |current, next| current.merge(next).is_ok(),
+            ) else {
+                return false;
+            };
+            *upsert = next_rows;
+            *updates = next_fields;
+            *removed = next_removed_ids;
             true
         }
         (

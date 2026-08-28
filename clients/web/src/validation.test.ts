@@ -343,6 +343,56 @@ describe("torrent ETA validation", () => {
       /seconds/,
     );
   });
+
+  it("accepts typed sparse fields and rejects duplicate row or field meaning", () => {
+    const sparse = torrentBatch("Sparse") as unknown as Record<string, unknown>;
+    const initial = (sparse.updates as Array<Record<string, unknown>>)[0]!;
+    const torrent = (
+      (initial.snapshot as Record<string, unknown>).torrents as Array<TorrentView>
+    )[0]!;
+    sparse.updates = [{
+      type: "patch",
+      view_id: "library",
+      patch: {
+        type: "torrent_list",
+        upsert: [],
+        updates: [{
+          torrent_id: torrent.torrent_id,
+          fields: [{ field: "display_name" as const, value: null }],
+        }],
+        removed: [],
+      },
+    }];
+    expect(decodeUpdateBatch(JSON.stringify(sparse)).updates).toHaveLength(1);
+
+    const sparsePatch = (sparse.updates as Array<Record<string, unknown>>)[0]!
+      .patch as Record<string, unknown>;
+    const sparseRow = (sparsePatch.updates as Array<Record<string, unknown>>)[0]!;
+    (sparseRow.fields as Array<Record<string, unknown>>).push({
+      field: "display_name",
+      value: "duplicate",
+    });
+    expect(() => decodeUpdateBatch(JSON.stringify(sparse))).toThrow(
+      /repeats field display_name/,
+    );
+
+    const duplicateRow = torrentBatch("Duplicate row") as unknown as Record<string, unknown>;
+    const update = (duplicateRow.updates as Array<Record<string, unknown>>)[0]!;
+    update.type = "patch";
+    delete update.snapshot;
+    update.patch = {
+      type: "torrent_list",
+      upsert: [torrent],
+      updates: [{
+        torrent_id: torrent.torrent_id,
+        fields: [{ field: "display_name", value: "also updated" }],
+      }],
+      removed: [],
+    };
+    expect(() => decodeUpdateBatch(JSON.stringify(duplicateRow))).toThrow(
+      /repeats a row operation/,
+    );
+  });
 });
 
 describe("peer view validation", () => {

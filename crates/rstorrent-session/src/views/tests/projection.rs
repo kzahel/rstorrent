@@ -6,12 +6,12 @@ use std::time::Instant;
 use rstorrent_protocol::metainfo::{Metainfo, MetainfoFile, MetainfoMode};
 use rstorrent_protocol::storage_layout::RequiredPayloadGeometry;
 
-use crate::TorrentEtaView;
 use crate::file_views::FileProgressModel;
 use crate::settings::{
     ClientSettings, ClientSettingsApplicationState, Ipv6PinholeStatus, PortMappingStatus,
     SettingsConvergenceModel, SettingsDomain,
 };
+use crate::{ActivePieceFieldUpdate, TorrentEtaView, TorrentFieldUpdate, TorrentViewChange};
 
 const TORRENT_ID: &str = "t1-000102030405060708090a0b0c0d0e0f";
 
@@ -714,9 +714,12 @@ async fn tracker_state_publishes_complete_keyed_rows_and_terminal_inactive_state
         summary_update.payload,
         ViewUpdatePayload::Patch {
             patch: ViewPatch::Torrent {
-                torrent: Some(ref torrent)
+                change: TorrentViewChange::Update { ref update }
             }
-        } if torrent.configured_tracker_count == Some(1)
+        } if update.fields.iter().any(|field| matches!(
+            field,
+            TorrentFieldUpdate::ConfiguredTrackerCount { value: Some(1) }
+        ))
     ));
 
     hub.record_tracker_state(
@@ -896,7 +899,13 @@ async fn piece_hash_failure_clears_unverified_active_ranges() {
         },
     )
     .expect("start piece");
-    subscription.next_update().await.expect("start patch");
+    let start = subscription.next_update().await.expect("start patch");
+    let mut active = match start.payload {
+        ViewUpdatePayload::Patch {
+            patch: ViewPatch::PieceActivity { active_upsert, .. },
+        } => active_upsert.into_iter().next().expect("started piece"),
+        _ => panic!("expected active-piece start patch"),
+    };
     hub.record_activity(
         torrent_id,
         TorrentActivity::BlockStored {
@@ -906,7 +915,15 @@ async fn piece_hash_failure_clears_unverified_active_ranges() {
         },
     )
     .expect("stored block");
-    subscription.next_update().await.expect("stored patch");
+    let stored = subscription.next_update().await.expect("stored patch");
+    match stored.payload {
+        ViewUpdatePayload::Patch {
+            patch: ViewPatch::PieceActivity { active_updates, .. },
+        } => active_updates[0]
+            .apply(&mut active)
+            .expect("stored piece update"),
+        _ => panic!("expected active-piece stored patch"),
+    }
     hub.record_activity(
         torrent_id,
         TorrentActivity::PieceHashFailed {
@@ -918,17 +935,26 @@ async fn piece_hash_failure_clears_unverified_active_ranges() {
     let update = subscription.next_update().await.expect("reset patch");
     let ViewUpdatePayload::Patch {
         patch: ViewPatch::PieceActivity {
-            ref active_upsert, ..
+            ref active_updates, ..
         },
     } = update.payload
     else {
         panic!("expected active-piece reset patch");
     };
-    assert_eq!(active_upsert.len(), 1);
-    assert!(active_upsert[0].requested.is_empty());
-    assert!(active_upsert[0].received.is_empty());
-    assert!(active_upsert[0].stored.is_empty());
-    assert_eq!(active_upsert[0].stage, ActivePieceStageView::Failed);
+    assert_eq!(active_updates.len(), 1);
+    assert!(active_updates[0].fields.iter().any(|field| matches!(
+        field,
+        ActivePieceFieldUpdate::Stage {
+            value: ActivePieceStageView::Failed
+        }
+    )));
+    active_updates[0]
+        .apply(&mut active)
+        .expect("failed piece update");
+    assert!(active.requested.is_empty());
+    assert!(active.received.is_empty());
+    assert!(active.stored.is_empty());
+    assert_eq!(active.stage, ActivePieceStageView::Failed);
 }
 
 #[tokio::test]
@@ -1067,31 +1093,32 @@ async fn source_name_is_provisional_until_verified_metadata_patches_both_summari
 
     let list_update = list.next_update().await.expect("list patch");
     let ViewUpdatePayload::Patch {
-        patch: ViewPatch::TorrentList { upsert, .. },
+        patch: ViewPatch::TorrentList { updates, .. },
     } = list_update.payload
     else {
         panic!("expected torrent-list patch");
     };
-    assert!(upsert[0].display_name.is_none());
-    assert_eq!(
-        upsert[0].source_display_name.as_deref(),
-        Some("Magnet fixture")
-    );
+    assert!(updates[0].fields.iter().any(|field| matches!(
+        field,
+        TorrentFieldUpdate::SourceDisplayName { value: Some(value) }
+            if value == "Magnet fixture"
+    )));
 
     let summary_update = summary.next_update().await.expect("summary patch");
     let ViewUpdatePayload::Patch {
-        patch: ViewPatch::Torrent {
-            torrent: Some(torrent),
-        },
+        patch:
+            ViewPatch::Torrent {
+                change: TorrentViewChange::Update { update },
+            },
     } = summary_update.payload
     else {
         panic!("expected selected-summary patch");
     };
-    assert!(torrent.display_name.is_none());
-    assert_eq!(
-        torrent.source_display_name.as_deref(),
-        Some("Magnet fixture")
-    );
+    assert!(update.fields.iter().any(|field| matches!(
+        field,
+        TorrentFieldUpdate::SourceDisplayName { value: Some(value) }
+            if value == "Magnet fixture"
+    )));
 
     hub.replace_durable(
         &snapshot(2, 4),
@@ -1112,31 +1139,32 @@ async fn source_name_is_provisional_until_verified_metadata_patches_both_summari
 
     let list_update = list.next_update().await.expect("verified list patch");
     let ViewUpdatePayload::Patch {
-        patch: ViewPatch::TorrentList { upsert, .. },
+        patch: ViewPatch::TorrentList { updates, .. },
     } = list_update.payload
     else {
         panic!("expected verified torrent-list patch");
     };
-    assert_eq!(upsert[0].display_name.as_deref(), Some("Verified fixture"));
-    assert_eq!(
-        upsert[0].source_display_name.as_deref(),
-        Some("Magnet fixture")
-    );
+    assert!(updates[0].fields.iter().any(|field| matches!(
+        field,
+        TorrentFieldUpdate::DisplayName { value: Some(value) }
+            if value == "Verified fixture"
+    )));
 
     let summary_update = summary.next_update().await.expect("verified summary patch");
     let ViewUpdatePayload::Patch {
-        patch: ViewPatch::Torrent {
-            torrent: Some(torrent),
-        },
+        patch:
+            ViewPatch::Torrent {
+                change: TorrentViewChange::Update { update },
+            },
     } = summary_update.payload
     else {
         panic!("expected verified selected-summary patch");
     };
-    assert_eq!(torrent.display_name.as_deref(), Some("Verified fixture"));
-    assert_eq!(
-        torrent.source_display_name.as_deref(),
-        Some("Magnet fixture")
-    );
+    assert!(update.fields.iter().any(|field| matches!(
+        field,
+        TorrentFieldUpdate::DisplayName { value: Some(value) }
+            if value == "Verified fixture"
+    )));
 }
 
 #[test]

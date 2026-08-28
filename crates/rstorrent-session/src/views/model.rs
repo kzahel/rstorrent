@@ -20,7 +20,7 @@ use rstorrent_protocol::peer_id::identify_client;
 use rstorrent_protocol::storage_layout::RequiredPayloadGeometry;
 
 use crate::control::{TorrentSnapshot, TorrentState};
-use crate::file_views::{FileProgressModel, FileView};
+use crate::file_views::{FileProgressModel, FileViewChange};
 use crate::tracker_views::TrackerViewModel;
 
 use super::eta::TorrentEtaModel;
@@ -798,7 +798,7 @@ impl TorrentModel {
     pub(super) fn apply_activity(
         &mut self,
         activity: TorrentActivity,
-    ) -> Result<Vec<FileView>, crate::file_views::FileProgressError> {
+    ) -> Result<Vec<FileViewChange>, crate::file_views::FileProgressError> {
         let mut file_upsert = Vec::new();
         match activity {
             TorrentActivity::PieceStarted {

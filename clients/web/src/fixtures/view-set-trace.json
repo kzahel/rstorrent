@@ -249,6 +249,7 @@
                 "force_recheck_available": true
               }
             ],
+            "updates": [],
             "removed": []
           }
         }

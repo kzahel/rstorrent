@@ -70,6 +70,117 @@
       ],
       "type": "object"
     },
+    "ActivePieceFieldUpdate": {
+      "oneOf": [
+        {
+          "properties": {
+            "field": {
+              "const": "stage",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/ActivePieceStageView"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "requested",
+              "type": "string"
+            },
+            "value": {
+              "items": {
+                "$ref": "#/$defs/IndexRange"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "received",
+              "type": "string"
+            },
+            "value": {
+              "items": {
+                "$ref": "#/$defs/IndexRange"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "stored",
+              "type": "string"
+            },
+            "value": {
+              "items": {
+                "$ref": "#/$defs/IndexRange"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "age_millis",
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "error",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "ActivePieceStageView": {
       "enum": [
         "requested",
@@ -82,6 +193,24 @@
         "failed"
       ],
       "type": "string"
+    },
+    "ActivePieceUpdate": {
+      "properties": {
+        "fields": {
+          "items": {
+            "$ref": "#/$defs/ActivePieceFieldUpdate"
+          },
+          "type": "array"
+        },
+        "piece_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "piece_id",
+        "fields"
+      ],
+      "type": "object"
     },
     "AddTorrentBytesRequest": {
       "properties": {
@@ -3301,6 +3430,80 @@
       ],
       "type": "string"
     },
+    "FileFieldUpdate": {
+      "oneOf": [
+        {
+          "properties": {
+            "field": {
+              "const": "selection",
+              "type": "string"
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/FileSelectionView"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "done_bytes",
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "verified_bytes",
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "media_availability",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/MediaFileAvailability"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "FileIndexRange": {
       "properties": {
         "end_exclusive": {
@@ -3327,6 +3530,24 @@
         "skip"
       ],
       "type": "string"
+    },
+    "FileRowUpdate": {
+      "properties": {
+        "fields": {
+          "items": {
+            "$ref": "#/$defs/FileFieldUpdate"
+          },
+          "type": "array"
+        },
+        "file_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "file_id",
+        "fields"
+      ],
+      "type": "object"
     },
     "FileSelectionIntent": {
       "oneOf": [
@@ -4155,6 +4376,702 @@
       ],
       "type": "object"
     },
+    "PeerFieldUpdate": {
+      "oneOf": [
+        {
+          "properties": {
+            "field": {
+              "const": "peer_record_id",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "direction",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/PeerDirection"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "transport",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/PeerTransportKind"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "lifecycle",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/PeerLifecycle"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "role",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/PeerRole"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "peer_flags",
+              "type": "string"
+            },
+            "value": {
+              "items": {
+                "$ref": "#/$defs/PeerFlagView"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "mse_method",
+              "type": "string"
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/PeerMseMethodView"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "lifecycle_age_millis",
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "remote_endpoint",
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "local_endpoint",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "sources",
+              "type": "string"
+            },
+            "value": {
+              "items": {
+                "$ref": "#/$defs/PeerSourceView"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "peer_id",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "client_name",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "supports_extensions",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "supports_ut_metadata",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "local_interested",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "remote_interested",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "remote_choking",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "local_choking",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "available_piece_count",
+              "type": "string"
+            },
+            "value": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "wanted_piece_count",
+              "type": "string"
+            },
+            "value": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "payload_download_rate_bytes",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "payload_downloaded_bytes",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "protocol_download_rate_bytes",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "protocol_downloaded_bytes",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "payload_upload_rate_bytes",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "payload_uploaded_bytes",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "pending_requests",
+              "type": "string"
+            },
+            "value": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "target_requests",
+              "type": "string"
+            },
+            "value": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "queued_payload_bytes",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "oldest_request_age_millis",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "request_timeout_millis",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "request_phase",
+              "type": "string"
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/PeerRequestPhase"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "connected_age_millis",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "last_useful_age_millis",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "last_payload_age_millis",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "disconnect_reason",
+              "type": "string"
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/PeerDisconnectReason"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "capabilities",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/PeerFieldCapabilities"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "PeerFlagView": {
       "enum": [
         "incoming",
@@ -4206,6 +5123,24 @@
         "content"
       ],
       "type": "string"
+    },
+    "PeerRowUpdate": {
+      "properties": {
+        "connection_id": {
+          "type": "string"
+        },
+        "fields": {
+          "items": {
+            "$ref": "#/$defs/PeerFieldUpdate"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "connection_id",
+        "fields"
+      ],
+      "type": "object"
     },
     "PeerSourceView": {
       "enum": [
@@ -5488,6 +6423,494 @@
         }
       ]
     },
+    "TorrentFieldUpdate": {
+      "oneOf": [
+        {
+          "properties": {
+            "field": {
+              "const": "protocol_identities",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/TorrentProtocolIdentities"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "display_name",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "source_display_name",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "state",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/TorrentState"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "operational_state",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/TorrentOperationalState"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "download_queue_position",
+              "type": "string"
+            },
+            "value": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "transfer_limits",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/TorrentTransferLimits"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "storage_state",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/StorageState"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "metadata_available",
+              "type": "string"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "piece_count",
+              "type": "string"
+            },
+            "value": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "verified_piece_count",
+              "type": "string"
+            },
+            "value": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "requested_bytes",
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "received_bytes",
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "stored_bytes",
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "active_peer_connections",
+              "type": "string"
+            },
+            "value": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "configured_tracker_count",
+              "type": "string"
+            },
+            "value": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "payload_download_rate_bytes",
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "required_payload_bytes",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "remaining_payload_bytes",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "eta_payload_download_rate_bytes",
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "eta",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/TorrentEtaView"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "progress",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/ProgressAssessment"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "checking",
+              "type": "string"
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/CheckingProgressView"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "archived",
+              "type": "string"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "removal_state",
+              "type": "string"
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/RemovalState"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "delete_managed_data_supported",
+              "type": "string"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "force_recheck_available",
+              "type": "string"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "error",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "TorrentOperationalState": {
       "enum": [
         "queued",
@@ -5513,6 +6936,24 @@
           "type": "string"
         }
       },
+      "type": "object"
+    },
+    "TorrentRowUpdate": {
+      "properties": {
+        "fields": {
+          "items": {
+            "$ref": "#/$defs/TorrentFieldUpdate"
+          },
+          "type": "array"
+        },
+        "torrent_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "torrent_id",
+        "fields"
+      ],
       "type": "object"
     },
     "TorrentSettingsPatch": {
@@ -5852,6 +7293,48 @@
         "force_recheck_available"
       ],
       "type": "object"
+    },
+    "TorrentViewChange": {
+      "oneOf": [
+        {
+          "properties": {
+            "change": {
+              "const": "replace",
+              "type": "string"
+            },
+            "torrent": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TorrentView"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "change"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "change": {
+              "const": "update",
+              "type": "string"
+            },
+            "update": {
+              "$ref": "#/$defs/TorrentRowUpdate"
+            }
+          },
+          "required": [
+            "change",
+            "update"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "TrackerAnnounceEventView": {
       "enum": [
@@ -6231,6 +7714,12 @@
               "const": "torrent_list",
               "type": "string"
             },
+            "updates": {
+              "items": {
+                "$ref": "#/$defs/TorrentRowUpdate"
+              },
+              "type": "array"
+            },
             "upsert": {
               "items": {
                 "$ref": "#/$defs/TorrentView"
@@ -6241,21 +7730,15 @@
           "required": [
             "type",
             "upsert",
+            "updates",
             "removed"
           ],
           "type": "object"
         },
         {
           "properties": {
-            "torrent": {
-              "anyOf": [
-                {
-                  "$ref": "#/$defs/TorrentView"
-                },
-                {
-                  "type": "null"
-                }
-              ]
+            "change": {
+              "$ref": "#/$defs/TorrentViewChange"
             },
             "type": {
               "const": "torrent",
@@ -6263,7 +7746,8 @@
             }
           },
           "required": [
-            "type"
+            "type",
+            "change"
           ],
           "type": "object"
         },
@@ -6272,6 +7756,12 @@
             "active_removed": {
               "items": {
                 "type": "string"
+              },
+              "type": "array"
+            },
+            "active_updates": {
+              "items": {
+                "$ref": "#/$defs/ActivePieceUpdate"
               },
               "type": "array"
             },
@@ -6314,6 +7804,7 @@
             "verified",
             "cleared",
             "active_upsert",
+            "active_updates",
             "active_removed"
           ],
           "type": "object"
@@ -6396,6 +7887,12 @@
               "const": "peers",
               "type": "string"
             },
+            "updates": {
+              "items": {
+                "$ref": "#/$defs/PeerRowUpdate"
+              },
+              "type": "array"
+            },
             "upsert": {
               "items": {
                 "$ref": "#/$defs/PeerView"
@@ -6407,6 +7904,7 @@
             "type",
             "torrent_id",
             "upsert",
+            "updates",
             "removed"
           ],
           "type": "object"
@@ -6476,6 +7974,12 @@
               "const": "files",
               "type": "string"
             },
+            "updates": {
+              "items": {
+                "$ref": "#/$defs/FileRowUpdate"
+              },
+              "type": "array"
+            },
             "upsert": {
               "items": {
                 "$ref": "#/$defs/FileView"
@@ -6487,6 +7991,7 @@
             "type",
             "torrent_id",
             "upsert",
+            "updates",
             "removed"
           ],
           "type": "object"

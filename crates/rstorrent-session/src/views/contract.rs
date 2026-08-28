@@ -18,6 +18,10 @@ use crate::settings::{ClientSettingsRuntimeView, StorageSettingsSnapshot, Torren
 use crate::speed::{SpeedHistoryView, SpeedMetric, SpeedRange};
 use crate::tracker_views::{TrackerCatalogState, TrackerView};
 
+use super::row_updates::{
+    ActivePieceUpdate, FileRowUpdate, PeerRowUpdate, TorrentRowUpdate, TorrentViewChange,
+};
+
 pub const API_VERSION: u16 = 1;
 pub const MAX_VIEW_SETS: usize = 32;
 pub const MAX_VIEW_SETS_PER_OWNER: usize = 8;
@@ -1404,6 +1408,7 @@ pub enum ViewSnapshot {
 pub enum ViewPatch {
     TorrentList {
         upsert: Vec<TorrentView>,
+        updates: Vec<TorrentRowUpdate>,
         removed: Vec<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         storage: Option<StorageSettingsSnapshot>,
@@ -1411,7 +1416,7 @@ pub enum ViewPatch {
         client_settings: Option<ClientSettingsRuntimeView>,
     },
     Torrent {
-        torrent: Option<TorrentView>,
+        change: TorrentViewChange,
     },
     PieceActivity {
         #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
@@ -1420,6 +1425,7 @@ pub enum ViewPatch {
         verified: Vec<IndexRange>,
         cleared: Vec<IndexRange>,
         active_upsert: Vec<ActivePiece>,
+        active_updates: Vec<ActivePieceUpdate>,
         active_removed: Vec<String>,
     },
     SessionDisk {
@@ -1437,6 +1443,7 @@ pub enum ViewPatch {
         #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
         upsert: Vec<PeerView>,
+        updates: Vec<PeerRowUpdate>,
         removed: Vec<String>,
     },
     Swarm {
@@ -1453,6 +1460,7 @@ pub enum ViewPatch {
         #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
         upsert: Vec<FileView>,
+        updates: Vec<FileRowUpdate>,
         removed: Vec<String>,
     },
     Trackers {

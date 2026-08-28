@@ -1,6 +1,8 @@
 package org.rstorrent.bootstrap
 
 import org.rstorrent.session.uniffi.ActivePiece
+import org.rstorrent.session.uniffi.ActivePieceFieldUpdate
+import org.rstorrent.session.uniffi.ActivePieceUpdate
 import org.rstorrent.session.uniffi.ClientSettingsRuntimeView
 import org.rstorrent.session.uniffi.CatalogPageView
 import org.rstorrent.session.uniffi.DhtInspectionView
@@ -8,9 +10,13 @@ import org.rstorrent.session.uniffi.DiagnosticEvent
 import org.rstorrent.session.uniffi.DiskPieceView
 import org.rstorrent.session.uniffi.DiskPipelineView
 import org.rstorrent.session.uniffi.FileCatalogState
+import org.rstorrent.session.uniffi.FileFieldUpdate
+import org.rstorrent.session.uniffi.FileRowUpdate
 import org.rstorrent.session.uniffi.FileView
 import org.rstorrent.session.uniffi.IndexRange
 import org.rstorrent.session.uniffi.PeerView
+import org.rstorrent.session.uniffi.PeerFieldUpdate
+import org.rstorrent.session.uniffi.PeerRowUpdate
 import org.rstorrent.session.uniffi.SpeedHistoryView
 import org.rstorrent.session.uniffi.StorageSettingsSnapshot
 import org.rstorrent.session.uniffi.SwarmCatalogState
@@ -19,6 +25,9 @@ import org.rstorrent.session.uniffi.SwarmPeerView
 import org.rstorrent.session.uniffi.TrackerCatalogState
 import org.rstorrent.session.uniffi.TrackerView
 import org.rstorrent.session.uniffi.TorrentView
+import org.rstorrent.session.uniffi.TorrentFieldUpdate
+import org.rstorrent.session.uniffi.TorrentRowUpdate
+import org.rstorrent.session.uniffi.TorrentViewChange
 import org.rstorrent.session.uniffi.ViewPatch
 import org.rstorrent.session.uniffi.ViewSnapshot
 import org.rstorrent.session.uniffi.ViewUpdate
@@ -276,6 +285,14 @@ internal object ProductStateReducer {
                 val torrents = state.torrents.toMutableMap()
                 patch.removed.forEach(torrents::remove)
                 patch.upsert.forEach { torrents[it.torrentId] = it }
+                patch.updates.forEach { update ->
+                    val current =
+                        torrents[update.torrentId]
+                            ?: throw ViewContinuityException(
+                                "torrent update has no existing row ${update.torrentId}",
+                            )
+                    torrents[update.torrentId] = applyTorrentUpdate(current, update)
+                }
                 val configured = patch.clientSettings?.configured
                 val clientDraft =
                     if (configured == null) {
@@ -288,7 +305,7 @@ internal object ProductStateReducer {
                         )
                     }
                 val draftKey = state.torrentSettingsDraft.resourceKey
-                val matching = patch.upsert.firstOrNull { it.torrentId == draftKey }
+                val matching = torrents[draftKey]
                 val torrentDraft =
                     if (draftKey != null && draftKey in patch.removed) {
                         SettingsDraftState()
@@ -309,20 +326,40 @@ internal object ProductStateReducer {
                 )
             }
             is ViewPatch.Torrent -> {
-                val torrent = patch.torrent
-                if (torrent == null) {
-                    state
-                } else {
-                    state.copy(
-                        torrents = state.torrents + (torrent.torrentId to torrent),
-                        torrentSettingsDraft =
-                            reconcileTorrentDraft(
-                                state.torrentSettingsDraft,
-                                torrent,
-                                revision,
-                                removeWhenMissing = false,
-                            ),
-                    )
+                when (val change = patch.change) {
+                    is TorrentViewChange.Replace -> {
+                        val torrent = change.torrent
+                        if (torrent == null) {
+                            state
+                        } else {
+                            state.copy(
+                                torrents = state.torrents + (torrent.torrentId to torrent),
+                                torrentSettingsDraft =
+                                    reconcileTorrentDraft(
+                                        state.torrentSettingsDraft,
+                                        torrent,
+                                        revision,
+                                        removeWhenMissing = false,
+                                    ),
+                            )
+                        }
+                    }
+                    is TorrentViewChange.Update -> {
+                        val current =
+                            state.torrents[change.update.torrentId]
+                                ?: throw ViewContinuityException("selected torrent update has no row")
+                        val torrent = applyTorrentUpdate(current, change.update)
+                        state.copy(
+                            torrents = state.torrents + (torrent.torrentId to torrent),
+                            torrentSettingsDraft =
+                                reconcileTorrentDraft(
+                                    state.torrentSettingsDraft,
+                                    torrent,
+                                    revision,
+                                    removeWhenMissing = false,
+                                ),
+                        )
+                    }
                 }
             }
             is ViewPatch.PieceActivity -> {
@@ -336,6 +373,12 @@ internal object ProductStateReducer {
                         .associateByTo(mutableMapOf(), ActivePiece::pieceId)
                 patch.activeRemoved.forEach(active::remove)
                 patch.activeUpsert.forEach { active[it.pieceId] = it }
+                patch.activeUpdates.forEach { update ->
+                    val current =
+                        active[update.pieceId]
+                            ?: throw ViewContinuityException("active piece update has no row")
+                    active[update.pieceId] = applyActivePieceUpdate(current, update)
+                }
                 state.copy(
                     pieces =
                         state.pieces +
@@ -357,6 +400,12 @@ internal object ProductStateReducer {
                 val peers = state.peers[patch.torrentId].orEmpty().toMutableMap()
                 patch.removed.forEach(peers::remove)
                 patch.upsert.forEach { peers[it.connectionId] = it }
+                patch.updates.forEach { update ->
+                    val current =
+                        peers[update.connectionId]
+                            ?: throw ViewContinuityException("peer update has no row")
+                    peers[update.connectionId] = applyPeerUpdate(current, update)
+                }
                 state.copy(peers = state.peers + (patch.torrentId to peers))
             }
             is ViewPatch.Swarm -> {
@@ -391,6 +440,12 @@ internal object ProductStateReducer {
                 val files = current.files.toMutableMap()
                 patch.removed.forEach(files::remove)
                 patch.upsert.forEach { files[it.fileId] = it }
+                patch.updates.forEach { update ->
+                    val file =
+                        files[update.fileId]
+                            ?: throw ViewContinuityException("file update has no row")
+                    files[update.fileId] = applyFileUpdate(file, update)
+                }
                 state.copy(files = state.files + (patch.torrentId to current.copy(files = files)))
             }
             is ViewPatch.Trackers -> {
@@ -417,6 +472,157 @@ internal object ProductStateReducer {
                 )
             }
         }
+
+    private fun requireUniqueFields(
+        fields: List<Any>,
+        label: String,
+    ) {
+        if (fields.isEmpty() || fields.map { it::class }.toSet().size != fields.size) {
+            throw ViewContinuityException("$label update has empty or duplicate fields")
+        }
+    }
+
+    private fun applyTorrentUpdate(
+        current: TorrentView,
+        update: TorrentRowUpdate,
+    ): TorrentView {
+        if (current.torrentId != update.torrentId) {
+            throw ViewContinuityException("torrent update identity mismatch")
+        }
+        requireUniqueFields(update.fields, "torrent")
+        val next = current.copy()
+        update.fields.forEach { field ->
+            when (field) {
+                is TorrentFieldUpdate.ProtocolIdentities -> next.protocolIdentities = field.value
+                is TorrentFieldUpdate.DisplayName -> next.displayName = field.value
+                is TorrentFieldUpdate.SourceDisplayName -> next.sourceDisplayName = field.value
+                is TorrentFieldUpdate.State -> next.state = field.value
+                is TorrentFieldUpdate.OperationalState -> next.operationalState = field.value
+                is TorrentFieldUpdate.DownloadQueuePosition -> next.downloadQueuePosition = field.value
+                is TorrentFieldUpdate.TransferLimits -> next.transferLimits = field.value
+                is TorrentFieldUpdate.StorageState -> next.storageState = field.value
+                is TorrentFieldUpdate.MetadataAvailable -> next.metadataAvailable = field.value
+                is TorrentFieldUpdate.PieceCount -> next.pieceCount = field.value
+                is TorrentFieldUpdate.VerifiedPieceCount -> next.verifiedPieceCount = field.value
+                is TorrentFieldUpdate.RequestedBytes -> next.requestedBytes = field.value
+                is TorrentFieldUpdate.ReceivedBytes -> next.receivedBytes = field.value
+                is TorrentFieldUpdate.StoredBytes -> next.storedBytes = field.value
+                is TorrentFieldUpdate.ActivePeerConnections -> next.activePeerConnections = field.value
+                is TorrentFieldUpdate.ConfiguredTrackerCount -> next.configuredTrackerCount = field.value
+                is TorrentFieldUpdate.PayloadDownloadRateBytes -> next.payloadDownloadRateBytes = field.value
+                is TorrentFieldUpdate.RequiredPayloadBytes -> next.requiredPayloadBytes = field.value
+                is TorrentFieldUpdate.RemainingPayloadBytes -> next.remainingPayloadBytes = field.value
+                is TorrentFieldUpdate.EtaPayloadDownloadRateBytes ->
+                    next.etaPayloadDownloadRateBytes = field.value
+                is TorrentFieldUpdate.Eta -> next.eta = field.value
+                is TorrentFieldUpdate.Progress -> next.progress = field.value
+                is TorrentFieldUpdate.Checking -> next.checking = field.value
+                is TorrentFieldUpdate.Archived -> next.archived = field.value
+                is TorrentFieldUpdate.RemovalState -> next.removalState = field.value
+                is TorrentFieldUpdate.DeleteManagedDataSupported ->
+                    next.deleteManagedDataSupported = field.value
+                is TorrentFieldUpdate.ForceRecheckAvailable -> next.forceRecheckAvailable = field.value
+                is TorrentFieldUpdate.Error -> next.error = field.value
+            }
+        }
+        return next
+    }
+
+    private fun applyFileUpdate(
+        current: FileView,
+        update: FileRowUpdate,
+    ): FileView {
+        if (current.fileId != update.fileId) {
+            throw ViewContinuityException("file update identity mismatch")
+        }
+        requireUniqueFields(update.fields, "file")
+        val next = current.copy()
+        update.fields.forEach { field ->
+            when (field) {
+                is FileFieldUpdate.Selection -> next.selection = field.value
+                is FileFieldUpdate.DoneBytes -> next.doneBytes = field.value
+                is FileFieldUpdate.VerifiedBytes -> next.verifiedBytes = field.value
+                is FileFieldUpdate.MediaAvailability -> next.mediaAvailability = field.value
+            }
+        }
+        return next
+    }
+
+    private fun applyPeerUpdate(
+        current: PeerView,
+        update: PeerRowUpdate,
+    ): PeerView {
+        if (current.connectionId != update.connectionId) {
+            throw ViewContinuityException("peer update identity mismatch")
+        }
+        requireUniqueFields(update.fields, "peer")
+        val next = current.copy()
+        update.fields.forEach { field ->
+            when (field) {
+                is PeerFieldUpdate.PeerRecordId -> next.peerRecordId = field.value
+                is PeerFieldUpdate.Direction -> next.direction = field.value
+                is PeerFieldUpdate.Transport -> next.transport = field.value
+                is PeerFieldUpdate.Lifecycle -> next.lifecycle = field.value
+                is PeerFieldUpdate.Role -> next.role = field.value
+                is PeerFieldUpdate.PeerFlags -> next.peerFlags = field.value
+                is PeerFieldUpdate.MseMethod -> next.mseMethod = field.value
+                is PeerFieldUpdate.LifecycleAgeMillis -> next.lifecycleAgeMillis = field.value
+                is PeerFieldUpdate.RemoteEndpoint -> next.remoteEndpoint = field.value
+                is PeerFieldUpdate.LocalEndpoint -> next.localEndpoint = field.value
+                is PeerFieldUpdate.Sources -> next.sources = field.value
+                is PeerFieldUpdate.PeerId -> next.peerId = field.value
+                is PeerFieldUpdate.ClientName -> next.clientName = field.value
+                is PeerFieldUpdate.SupportsExtensions -> next.supportsExtensions = field.value
+                is PeerFieldUpdate.SupportsUtMetadata -> next.supportsUtMetadata = field.value
+                is PeerFieldUpdate.LocalInterested -> next.localInterested = field.value
+                is PeerFieldUpdate.RemoteInterested -> next.remoteInterested = field.value
+                is PeerFieldUpdate.RemoteChoking -> next.remoteChoking = field.value
+                is PeerFieldUpdate.LocalChoking -> next.localChoking = field.value
+                is PeerFieldUpdate.AvailablePieceCount -> next.availablePieceCount = field.value
+                is PeerFieldUpdate.WantedPieceCount -> next.wantedPieceCount = field.value
+                is PeerFieldUpdate.PayloadDownloadRateBytes -> next.payloadDownloadRateBytes = field.value
+                is PeerFieldUpdate.PayloadDownloadedBytes -> next.payloadDownloadedBytes = field.value
+                is PeerFieldUpdate.ProtocolDownloadRateBytes -> next.protocolDownloadRateBytes = field.value
+                is PeerFieldUpdate.ProtocolDownloadedBytes -> next.protocolDownloadedBytes = field.value
+                is PeerFieldUpdate.PayloadUploadRateBytes -> next.payloadUploadRateBytes = field.value
+                is PeerFieldUpdate.PayloadUploadedBytes -> next.payloadUploadedBytes = field.value
+                is PeerFieldUpdate.PendingRequests -> next.pendingRequests = field.value
+                is PeerFieldUpdate.TargetRequests -> next.targetRequests = field.value
+                is PeerFieldUpdate.QueuedPayloadBytes -> next.queuedPayloadBytes = field.value
+                is PeerFieldUpdate.OldestRequestAgeMillis -> next.oldestRequestAgeMillis = field.value
+                is PeerFieldUpdate.RequestTimeoutMillis -> next.requestTimeoutMillis = field.value
+                is PeerFieldUpdate.RequestPhase -> next.requestPhase = field.value
+                is PeerFieldUpdate.ConnectedAgeMillis -> next.connectedAgeMillis = field.value
+                is PeerFieldUpdate.LastUsefulAgeMillis -> next.lastUsefulAgeMillis = field.value
+                is PeerFieldUpdate.LastPayloadAgeMillis -> next.lastPayloadAgeMillis = field.value
+                is PeerFieldUpdate.DisconnectReason -> next.disconnectReason = field.value
+                is PeerFieldUpdate.Capabilities -> next.capabilities = field.value
+            }
+        }
+        return next
+    }
+
+    private fun applyActivePieceUpdate(
+        current: ActivePiece,
+        update: ActivePieceUpdate,
+    ): ActivePiece {
+        if (current.pieceId != update.pieceId) {
+            throw ViewContinuityException("active piece update identity mismatch")
+        }
+        requireUniqueFields(update.fields, "active piece")
+        val next = current.copy()
+        update.fields.forEach { field ->
+            when (field) {
+                is ActivePieceFieldUpdate.Stage -> next.stage = field.value
+                is ActivePieceFieldUpdate.Requested -> next.requested = field.value
+                is ActivePieceFieldUpdate.Received -> next.received = field.value
+                is ActivePieceFieldUpdate.Stored -> next.stored = field.value
+                is ActivePieceFieldUpdate.AgeMillis -> next.ageMillis = field.value
+                is ActivePieceFieldUpdate.Error -> next.error = field.value
+            }
+        }
+        return next
+    }
 
     private fun reconcileTorrentDraft(
         draft: SettingsDraftState<TorrentSettingsField>,

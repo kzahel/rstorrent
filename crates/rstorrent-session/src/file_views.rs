@@ -52,6 +52,12 @@ pub struct FileView {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct FileViewChange {
+    pub previous: FileView,
+    pub current: FileView,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct FileCatalog {
     layout: ContentLayout,
     selection: FileSelection,
@@ -200,6 +206,11 @@ impl FileProgressModel {
         self.catalog == other.catalog
     }
 
+    pub(crate) fn patchable_catalog_matches(&self, other: &Self) -> bool {
+        self.catalog.layout == other.catalog.layout
+            && self.catalog.filesystem_content_base == other.catalog.filesystem_content_base
+    }
+
     pub(crate) fn eta_selection_matches(&self, other: &Self) -> bool {
         self.catalog.layout == other.catalog.layout
             && self.catalog.selection == other.catalog.selection
@@ -217,16 +228,6 @@ impl FileProgressModel {
 
     pub(crate) fn verified_piece_indices(&self) -> Vec<u32> {
         self.verified_pieces.iter().copied().collect()
-    }
-
-    pub(crate) fn rows_changed_since(&self, previous: &Self) -> Vec<FileView> {
-        self.counters
-            .iter()
-            .zip(&previous.counters)
-            .enumerate()
-            .filter(|(_, (current, old))| current != old)
-            .map(|(index, _)| self.row(index))
-            .collect()
     }
 
     #[cfg(test)]
@@ -249,8 +250,11 @@ impl FileProgressModel {
     }
 
     pub(crate) fn row(&self, index: usize) -> FileView {
+        self.row_with_counters(index, self.counters[index])
+    }
+
+    fn row_with_counters(&self, index: usize, counters: FileCounters) -> FileView {
         let file = &self.catalog.layout.files()[index];
-        let counters = self.counters[index];
         let (first_piece, last_piece) = if file.length == 0 {
             (None, None)
         } else {
@@ -310,7 +314,7 @@ impl FileProgressModel {
         piece: u32,
         begin: u32,
         length: u32,
-    ) -> Result<Vec<FileView>, FileProgressError> {
+    ) -> Result<Vec<FileViewChange>, FileProgressError> {
         self.validate_piece_interval(piece, begin, length)?;
         if self.verified_pieces.contains(&piece) {
             return Ok(Vec::new());
@@ -321,7 +325,7 @@ impl FileProgressModel {
         let ranges = self.unverified.entry(piece).or_default();
         let uncovered = uncovered_ranges(ranges, begin, end_exclusive);
         insert_stored_range(ranges, begin, end_exclusive);
-        let mut changed = BTreeSet::new();
+        let mut changed = BTreeMap::new();
         for range in uncovered {
             self.add_interval(
                 piece,
@@ -337,12 +341,24 @@ impl FileProgressModel {
     pub(crate) fn piece_verified(
         &mut self,
         piece: u32,
-    ) -> Result<Vec<FileView>, FileProgressError> {
+    ) -> Result<Vec<FileViewChange>, FileProgressError> {
         self.validate_piece(piece)?;
-        if !self.verified_pieces.insert(piece) {
+        if self.verified_pieces.contains(&piece) {
             return Ok(Vec::new());
         }
-        let mut changed = BTreeSet::new();
+        let length = self.catalog.layout.piece_length_at(piece)?;
+        let affected = self
+            .catalog
+            .layout
+            .file_segments(piece, 0, length)?
+            .into_iter()
+            .map(|segment| segment.file_index)
+            .collect::<BTreeSet<_>>();
+        let mut changed = affected
+            .into_iter()
+            .map(|index| (index, self.row(index)))
+            .collect::<BTreeMap<_, _>>();
+        self.verified_pieces.insert(piece);
         if let Some(ranges) = self.unverified.remove(&piece) {
             for range in ranges {
                 self.subtract_interval(
@@ -353,7 +369,6 @@ impl FileProgressModel {
                 )?;
             }
         }
-        let length = self.catalog.layout.piece_length_at(piece)?;
         self.add_interval(piece, 0, length, true, &mut changed)?;
         Ok(self.changed_rows(changed))
     }
@@ -361,12 +376,12 @@ impl FileProgressModel {
     pub(crate) fn piece_hash_failed(
         &mut self,
         piece: u32,
-    ) -> Result<Vec<FileView>, FileProgressError> {
+    ) -> Result<Vec<FileViewChange>, FileProgressError> {
         self.validate_piece(piece)?;
         if self.verified_pieces.contains(&piece) {
             return Ok(Vec::new());
         }
-        let mut changed = BTreeSet::new();
+        let mut changed = BTreeMap::new();
         if let Some(ranges) = self.unverified.remove(&piece) {
             for range in ranges {
                 self.subtract_interval(
@@ -383,8 +398,10 @@ impl FileProgressModel {
     pub(crate) fn reconcile_verified(
         &mut self,
         verified_pieces: &[u32],
-    ) -> Result<Vec<FileView>, FileProgressError> {
-        let previous = self.counters.clone();
+    ) -> Result<Vec<FileViewChange>, FileProgressError> {
+        let previous = (0..self.counters.len())
+            .map(|index| self.row(index))
+            .collect::<Vec<_>>();
         let unverified = std::mem::take(&mut self.unverified);
         self.counters.fill(FileCounters::default());
         self.verified_pieces.clear();
@@ -392,7 +409,7 @@ impl FileProgressModel {
             self.validate_piece(piece)?;
             if self.verified_pieces.insert(piece) {
                 let length = self.catalog.layout.piece_length_at(piece)?;
-                let mut ignored = BTreeSet::new();
+                let mut ignored = BTreeMap::new();
                 self.add_interval(piece, 0, length, true, &mut ignored)?;
             }
         }
@@ -401,7 +418,7 @@ impl FileProgressModel {
                 continue;
             }
             for range in &ranges {
-                let mut ignored = BTreeSet::new();
+                let mut ignored = BTreeMap::new();
                 self.add_interval(
                     piece,
                     range.begin,
@@ -413,11 +430,10 @@ impl FileProgressModel {
             self.unverified.insert(piece, ranges);
         }
         let changed = previous
-            .iter()
-            .zip(&self.counters)
+            .into_iter()
             .enumerate()
-            .filter_map(|(index, (old, next))| (old != next).then_some(index))
-            .collect::<BTreeSet<_>>();
+            .filter_map(|(index, old)| (old != self.row(index)).then_some((index, old)))
+            .collect::<BTreeMap<_, _>>();
         Ok(self.changed_rows(changed))
     }
 
@@ -447,15 +463,17 @@ impl FileProgressModel {
         begin: u32,
         length: u32,
         verified: bool,
-        changed: &mut BTreeSet<usize>,
+        changed: &mut BTreeMap<usize, FileView>,
     ) -> Result<(), FileProgressError> {
         for segment in self.catalog.layout.file_segments(piece, begin, length)? {
             let bytes =
                 u64::try_from(segment.length).map_err(|_| FileProgressError::CounterOverflow)?;
+            let previous = self.row(segment.file_index);
             let counters = self
                 .counters
                 .get_mut(segment.file_index)
                 .ok_or(FileProgressError::FileIndexOverflow)?;
+            changed.entry(segment.file_index).or_insert(previous);
             counters.done = counters
                 .done
                 .checked_add(bytes)
@@ -470,7 +488,6 @@ impl FileProgressModel {
             if counters.done > length || counters.verified > counters.done {
                 return Err(FileProgressError::CounterOverflow);
             }
-            changed.insert(segment.file_index);
         }
         Ok(())
     }
@@ -480,15 +497,17 @@ impl FileProgressModel {
         piece: u32,
         begin: u32,
         length: u32,
-        changed: &mut BTreeSet<usize>,
+        changed: &mut BTreeMap<usize, FileView>,
     ) -> Result<(), FileProgressError> {
         for segment in self.catalog.layout.file_segments(piece, begin, length)? {
             let bytes =
                 u64::try_from(segment.length).map_err(|_| FileProgressError::CounterUnderflow)?;
+            let previous = self.row(segment.file_index);
             let counters = self
                 .counters
                 .get_mut(segment.file_index)
                 .ok_or(FileProgressError::FileIndexOverflow)?;
+            changed.entry(segment.file_index).or_insert(previous);
             counters.done = counters
                 .done
                 .checked_sub(bytes)
@@ -496,13 +515,18 @@ impl FileProgressModel {
             if counters.verified > counters.done {
                 return Err(FileProgressError::CounterUnderflow);
             }
-            changed.insert(segment.file_index);
         }
         Ok(())
     }
 
-    fn changed_rows(&self, changed: BTreeSet<usize>) -> Vec<FileView> {
-        changed.into_iter().map(|index| self.row(index)).collect()
+    fn changed_rows(&self, changed: BTreeMap<usize, FileView>) -> Vec<FileViewChange> {
+        changed
+            .into_iter()
+            .map(|(index, previous)| FileViewChange {
+                previous,
+                current: self.row(index),
+            })
+            .collect()
     }
 }
 
@@ -657,6 +681,32 @@ mod tests {
         assert_eq!(rows[2].selection, Some(FileSelectionView::Skipped));
         assert_eq!(rows[2].media_availability, MediaFileAvailability::Available);
         assert_eq!(rows[3].media_availability, MediaFileAvailability::Padding);
+    }
+
+    #[test]
+    fn verification_change_retains_pre_mutation_media_availability() {
+        let mut model = FileProgressModel::new_with_media(
+            &fixture(),
+            &[],
+            &[],
+            None,
+            MediaFileAvailability::Available,
+        )
+        .expect("published model");
+        model.piece_verified(0).expect("first piece");
+        let changes = model.piece_verified(1).expect("second piece");
+        let wanted = changes
+            .iter()
+            .find(|change| change.current.file_index == 1)
+            .expect("wanted file change");
+        assert_eq!(
+            wanted.previous.media_availability,
+            MediaFileAvailability::Unverified
+        );
+        assert_eq!(
+            wanted.current.media_availability,
+            MediaFileAvailability::Available
+        );
     }
 
     #[test]

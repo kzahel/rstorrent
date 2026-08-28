@@ -221,7 +221,7 @@ describe("view controller", () => {
         {
           type: "patch",
           view_id: "library",
-          patch: { type: "torrent_list", upsert: [], removed: [] },
+          patch: { type: "torrent_list", upsert: [], updates: [], removed: [] },
         },
       ]),
     );
@@ -292,7 +292,7 @@ describe("view controller", () => {
         {
           type: "patch",
           view_id: "library",
-          patch: { type: "torrent_list", upsert: [], removed: [] },
+          patch: { type: "torrent_list", upsert: [], updates: [], removed: [] },
         },
       ]),
     ]);
@@ -341,7 +341,7 @@ describe("view controller", () => {
         {
           type: "patch",
           view_id: "library",
-          patch: { type: "torrent_list", upsert: [], removed: [] },
+          patch: { type: "torrent_list", upsert: [], updates: [], removed: [] },
         },
       ]),
     ]);
