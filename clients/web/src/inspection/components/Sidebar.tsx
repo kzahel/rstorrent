@@ -104,7 +104,7 @@ export function Sidebar() {
           ))}
         </ul>
         <p className={styles.note}>
-          Media details and playback are not connected yet.
+          Playback and Library-wide media grouping are not connected yet.
         </p>
       </nav>
     );

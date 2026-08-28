@@ -446,8 +446,8 @@ function LibraryEmpty({ message }: { readonly message: string }) {
       <span aria-hidden="true">◇</span>
       <strong>{message}</strong>
       <p>
-        Library will gain media-aware files, metadata, artwork, and playback
-        only when those application owners are connected.
+        Artwork, playback, and Library-wide media grouping remain separate
+        capabilities.
       </p>
     </div>
   );

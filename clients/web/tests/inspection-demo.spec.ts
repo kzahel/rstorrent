@@ -182,6 +182,37 @@ test("Library media detail sorts episodes and adapts to phone", async ({
   await page.keyboard.press("Escape");
   await expect(card).toBeVisible();
   await expect(card).toBeFocused();
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/?demo=file-progress&at=24000&autoplay=0");
+  await page
+    .getByRole("navigation", { name: "Primary" })
+    .getByRole("button", { name: "Library" })
+    .click();
+  await page
+    .getByRole("button", {
+      name: "Open details for Open Movies production archive",
+    })
+    .click();
+  const largeMedia = page.getByRole("list", {
+    name: "Recognized video files",
+  });
+  await expect(largeMedia).toBeVisible();
+  const mountedRows = await largeMedia.getByRole("listitem").count();
+  const scaleMetrics = await page.evaluate(() => {
+    const measuredPerformance = performance as Performance & {
+      memory?: { usedJSHeapSize: number };
+    };
+    return {
+      domElements: document.getElementsByTagName("*").length,
+      usedJsHeapBytes: measuredPerformance.memory?.usedJSHeapSize ?? null,
+    };
+  });
+  expect(mountedRows).toBeLessThanOrEqual(20);
+  expect(scaleMetrics.domElements).toBeLessThan(1_500);
+  console.log(
+    `media_scale_metrics ${JSON.stringify({ mountedRows, ...scaleMetrics })}`,
+  );
 });
 
 test("More copies selected torrents' source-aware magnets", async ({
