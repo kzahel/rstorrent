@@ -560,23 +560,9 @@ fn enqueue_update(
         view_id: next_id,
         patch: next_patch,
     } = &update
+        && coalesce_pending_patch(state, next_id, next_patch, ready_at)?
     {
-        let replacement = if let Some(queued) = state.pending.back_mut()
-            && let ViewSetUpdate::Patch { view_id, patch } = &mut queued.update
-            && view_id == next_id
-            && coalesce_patch(patch, next_patch)
-        {
-            let previous = queued.encoded_bytes;
-            queued.encoded_bytes = encoded_update_len(&queued.update)?;
-            queued.ready_at = queued.ready_at.max(ready_at);
-            Some((previous, queued.encoded_bytes))
-        } else {
-            None
-        };
-        if let Some((previous, replacement)) = replacement {
-            state.pending_bytes = state.pending_bytes - previous + replacement;
-            return enforce_bound(state);
-        }
+        return enforce_bound(state);
     }
     let encoded_bytes = encoded_update_len(&update)?;
     state.pending_bytes = state.pending_bytes.saturating_add(encoded_bytes);
@@ -586,6 +572,37 @@ fn enqueue_update(
         ready_at,
     });
     enforce_bound(state)
+}
+
+fn coalesce_pending_patch(
+    state: &mut ViewSetState,
+    next_id: &str,
+    next_patch: &ViewPatch,
+    ready_at: Instant,
+) -> Result<bool, ViewSetError> {
+    let Some(position) = state
+        .pending
+        .iter()
+        .rposition(|queued| queued.update.view_id() == Some(next_id))
+    else {
+        return Ok(false);
+    };
+    let queued = state
+        .pending
+        .get_mut(position)
+        .expect("position came from the same pending queue");
+    let ViewSetUpdate::Patch { patch, .. } = &mut queued.update else {
+        return Ok(false);
+    };
+    if !coalesce_patch(patch, next_patch) {
+        return Ok(false);
+    }
+
+    let previous = queued.encoded_bytes;
+    queued.encoded_bytes = encoded_update_len(&queued.update)?;
+    queued.ready_at = queued.ready_at.max(ready_at);
+    state.pending_bytes = state.pending_bytes - previous + queued.encoded_bytes;
+    Ok(true)
 }
 
 fn enforce_bound(state: &mut ViewSetState) -> Result<(), ViewSetError> {

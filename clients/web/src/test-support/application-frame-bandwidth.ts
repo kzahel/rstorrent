@@ -37,6 +37,8 @@ export interface SemanticBandwidth {
   readonly initial_batches: number;
   readonly streamed_batches: number;
   readonly empty_batches: number;
+  readonly batches_with_duplicate_view_updates: number;
+  readonly maximum_updates_for_one_view_in_batch: number;
   readonly reset_batches: number;
   readonly reset_frame_payload_bytes: number;
   readonly view_updates: Readonly<Record<string, ViewUpdateBandwidth>>;
@@ -77,6 +79,8 @@ interface MutableSemanticBandwidth {
   initial_batches: number;
   streamed_batches: number;
   empty_batches: number;
+  batches_with_duplicate_view_updates: number;
+  maximum_updates_for_one_view_in_batch: number;
   reset_batches: number;
   reset_frame_payload_bytes: number;
   view_updates: Record<string, MutableViewUpdateBandwidth>;
@@ -141,6 +145,8 @@ export function summarizeApplicationFrames(
     initial_batches: 0,
     streamed_batches: 0,
     empty_batches: 0,
+    batches_with_duplicate_view_updates: 0,
+    maximum_updates_for_one_view_in_batch: 0,
     reset_batches: 0,
     reset_frame_payload_bytes: 0,
     view_updates: {},
@@ -261,12 +267,14 @@ function recordBatch(
   if (value.updates.length === 0) semantic.empty_batches += 1;
 
   let reset = false;
+  const updatesByView: Record<string, number> = {};
   for (const update of value.updates) {
     if (!isRecord(update) || typeof update.type !== "string") {
       throw new Error("application update has no string type");
     }
     const viewId =
       typeof update.view_id === "string" ? update.view_id : "<view-set>";
+    updatesByView[viewId] = (updatesByView[viewId] ?? 0) + 1;
     const current = semantic.view_updates[viewId] ?? emptyViewUpdate();
     current.updates += 1;
     current.update_json_bytes += encodedBytes(JSON.stringify(update));
@@ -278,6 +286,14 @@ function recordBatch(
       reset = true;
     }
     semantic.view_updates[viewId] = current;
+  }
+  const maximumForOneView = Math.max(0, ...Object.values(updatesByView));
+  semantic.maximum_updates_for_one_view_in_batch = Math.max(
+    semantic.maximum_updates_for_one_view_in_batch,
+    maximumForOneView,
+  );
+  if (maximumForOneView > 1) {
+    semantic.batches_with_duplicate_view_updates += 1;
   }
   if (reset) {
     semantic.reset_batches += 1;

@@ -1,6 +1,6 @@
 use super::super::*;
 use super::*;
-use crate::diagnostics::category;
+use crate::diagnostics::{MAX_DIAGNOSTIC_PATCH_EVENTS, category};
 use crate::{
     DiagnosticCategory, DiagnosticEvent, DiagnosticFilter, DiagnosticRetention, DiagnosticSeverity,
     FileCatalogState, FileSelectionView, FileView, MediaFileAvailability, ProgressAction,
@@ -131,6 +131,94 @@ fn inner(now: Instant) -> Arc<ViewSetInner> {
         },
     )
     .expect("view set")
+}
+
+fn multi_view_inner(now: Instant) -> Arc<ViewSetInner> {
+    let delivery = ViewDeliveryPolicy {
+        min_interval_millis: 1_000,
+    };
+    let library = ViewSpec::TorrentList {
+        view_id: "library".to_owned(),
+        delivery,
+    };
+    let summary = ViewSpec::TorrentSummary {
+        view_id: "summary".to_owned(),
+        torrent_id: TORRENT_ID.to_owned(),
+        delivery,
+    };
+    ViewSetInner::new(
+        "vs_multi".to_owned(),
+        ViewSetOwner::trusted("owner"),
+        ViewSetInitialState {
+            revision: 7,
+            views: BTreeMap::from([
+                ("library".to_owned(), library),
+                ("summary".to_owned(), summary),
+            ]),
+            queue_bytes_limit: DEFAULT_VIEW_SET_QUEUE_BYTES,
+            snapshots: vec![
+                ViewSetUpdate::Snapshot {
+                    view_id: "library".to_owned(),
+                    snapshot: ViewSnapshot::TorrentList {
+                        torrents: vec![torrent_view(TORRENT_ID, 0)],
+                        storage: Default::default(),
+                        client_settings: Default::default(),
+                    },
+                },
+                ViewSetUpdate::Snapshot {
+                    view_id: "summary".to_owned(),
+                    snapshot: ViewSnapshot::Torrent {
+                        torrent: Some(torrent_view(TORRENT_ID, 0)),
+                    },
+                },
+            ],
+            now,
+            lease: Duration::from_millis(VIEW_SET_LEASE_MILLIS),
+        },
+    )
+    .expect("multi-view set")
+}
+
+fn library_patch(verified: u32) -> ViewPatch {
+    ViewPatch::TorrentList {
+        upsert: vec![torrent_view(TORRENT_ID, verified)],
+        removed: Vec::new(),
+        storage: None,
+        client_settings: None,
+    }
+}
+
+fn summary_patch(verified: u32) -> ViewPatch {
+    ViewPatch::Torrent {
+        torrent: Some(torrent_view(TORRENT_ID, verified)),
+    }
+}
+
+fn diagnostic_event(sequence: u32) -> DiagnosticEvent {
+    DiagnosticEvent {
+        sequence: sequence.to_string(),
+        timestamp_millis: sequence.to_string(),
+        severity: DiagnosticSeverity::Info,
+        category: DiagnosticCategory::from_static(category::LIFECYCLE_TORRENT),
+        code: "coalesce".to_owned(),
+        torrent_id: None,
+        message: format!("event {sequence}"),
+        subjects: Vec::new(),
+        fields: Vec::new(),
+    }
+}
+
+fn diagnostic_patch(events: Vec<DiagnosticEvent>) -> ViewPatch {
+    let retained_from_sequence = events
+        .first()
+        .map_or_else(|| "0".to_owned(), |event| event.sequence.clone());
+    ViewPatch::Diagnostics {
+        events,
+        retention: DiagnosticRetention {
+            source_evicted_count: "0".to_owned(),
+            retained_from_sequence,
+        },
+    }
 }
 
 #[test]
@@ -347,6 +435,200 @@ fn nonzero_delivery_interval_defers_accumulated_patch_without_a_task() {
         inner.poll_state(1, ready_at).expect("poll at deadline"),
         PollState::Ready(_)
     ));
+}
+
+#[test]
+fn compatible_patches_coalesce_per_view_across_interleaved_ids() {
+    let now = Instant::now();
+    let inner = multi_view_inner(now);
+    assert!(matches!(
+        inner.poll_state(1, now).expect("acknowledge initial"),
+        PollState::Wait(None)
+    ));
+
+    for (view_id, patch, revision) in [
+        ("library", library_patch(1), 8),
+        ("summary", summary_patch(1), 9),
+        ("library", library_patch(2), 10),
+        ("summary", summary_patch(2), 11),
+    ] {
+        inner
+            .enqueue_patch(view_id, patch, revision)
+            .expect("enqueue interleaved patch");
+    }
+
+    {
+        let state = inner.state().expect("state");
+        assert_eq!(state.pending.len(), 2);
+        assert_eq!(
+            state.pending_bytes,
+            state
+                .pending
+                .iter()
+                .map(|queued| queued.encoded_bytes)
+                .sum::<usize>()
+        );
+    }
+    let batch = match inner
+        .poll_state(1, now + Duration::from_secs(2))
+        .expect("poll coalesced patches")
+    {
+        PollState::Ready(batch) => batch,
+        _ => panic!("coalesced patches were not ready"),
+    };
+    assert_eq!(batch.durable_revision, "11");
+    assert_eq!(batch.updates.len(), 2);
+    assert!(batch.updates.iter().any(|update| matches!(
+        update,
+        ViewSetUpdate::Patch {
+            view_id,
+            patch: ViewPatch::TorrentList { upsert, .. },
+        } if view_id == "library" && upsert[0].verified_piece_count == 2
+    )));
+    assert!(batch.updates.iter().any(|update| matches!(
+        update,
+        ViewSetUpdate::Patch {
+            view_id,
+            patch: ViewPatch::Torrent { torrent: Some(torrent) },
+        } if view_id == "summary" && torrent.verified_piece_count == 2
+    )));
+}
+
+#[test]
+fn same_view_replacement_is_a_coalescing_barrier() {
+    let now = Instant::now();
+    let inner = multi_view_inner(now);
+    let mut state = inner.state().expect("state");
+    state.in_flight = None;
+    state.acknowledged_cursor = 1;
+
+    enqueue_update(
+        &mut state,
+        ViewSetUpdate::Patch {
+            view_id: "library".to_owned(),
+            patch: library_patch(1),
+        },
+        now,
+    )
+    .expect("first library patch");
+    enqueue_update(
+        &mut state,
+        ViewSetUpdate::Patch {
+            view_id: "summary".to_owned(),
+            patch: summary_patch(1),
+        },
+        now,
+    )
+    .expect("interleaved summary patch");
+    enqueue_update(
+        &mut state,
+        ViewSetUpdate::Snapshot {
+            view_id: "library".to_owned(),
+            snapshot: ViewSnapshot::TorrentList {
+                torrents: vec![torrent_view(TORRENT_ID, 2)],
+                storage: Default::default(),
+                client_settings: Default::default(),
+            },
+        },
+        now,
+    )
+    .expect("replacement snapshot");
+    enqueue_update(
+        &mut state,
+        ViewSetUpdate::Patch {
+            view_id: "library".to_owned(),
+            patch: library_patch(3),
+        },
+        now,
+    )
+    .expect("patch after replacement");
+
+    assert!(matches!(
+        state.pending.iter().collect::<Vec<_>>().as_slice(),
+        [
+            QueuedViewSetUpdate {
+                update: ViewSetUpdate::Patch { view_id: summary, .. },
+                ..
+            },
+            QueuedViewSetUpdate {
+                update: ViewSetUpdate::Snapshot { view_id: snapshot, .. },
+                ..
+            },
+            QueuedViewSetUpdate {
+                update: ViewSetUpdate::Patch { view_id: patch, .. },
+                ..
+            }
+        ] if summary == "summary" && snapshot == "library" && patch == "library"
+    ));
+}
+
+#[test]
+fn diagnostics_preserve_order_and_do_not_merge_past_a_full_segment() {
+    let now = Instant::now();
+    let inner = multi_view_inner(now);
+    let mut state = inner.state().expect("state");
+    state.in_flight = None;
+    state.acknowledged_cursor = 1;
+
+    let first_segment = (1..=MAX_DIAGNOSTIC_PATCH_EVENTS as u32)
+        .map(diagnostic_event)
+        .collect();
+    for (view_id, patch) in [
+        ("logs", diagnostic_patch(first_segment)),
+        ("library", library_patch(1)),
+        (
+            "logs",
+            diagnostic_patch(vec![diagnostic_event(
+                MAX_DIAGNOSTIC_PATCH_EVENTS as u32 + 1,
+            )]),
+        ),
+        ("summary", summary_patch(1)),
+        (
+            "logs",
+            diagnostic_patch(vec![diagnostic_event(
+                MAX_DIAGNOSTIC_PATCH_EVENTS as u32 + 2,
+            )]),
+        ),
+    ] {
+        enqueue_update(
+            &mut state,
+            ViewSetUpdate::Patch {
+                view_id: view_id.to_owned(),
+                patch,
+            },
+            now,
+        )
+        .expect("enqueue diagnostic sequence");
+    }
+
+    let diagnostic_segments = state
+        .pending
+        .iter()
+        .filter_map(|queued| match &queued.update {
+            ViewSetUpdate::Patch {
+                view_id,
+                patch: ViewPatch::Diagnostics { events, .. },
+            } if view_id == "logs" => Some(events),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(diagnostic_segments.len(), 2);
+    assert_eq!(diagnostic_segments[0].len(), MAX_DIAGNOSTIC_PATCH_EVENTS);
+    assert_eq!(
+        diagnostic_segments[1]
+            .iter()
+            .map(|event| event.sequence.as_str())
+            .collect::<Vec<_>>(),
+        ["129", "130"]
+    );
+    assert_eq!(
+        state.pending_bytes,
+        state
+            .pending
+            .iter()
+            .map(|queued| queued.encoded_bytes)
+            .sum::<usize>()
+    );
 }
 
 #[test]

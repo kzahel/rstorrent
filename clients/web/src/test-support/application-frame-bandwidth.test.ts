@@ -68,6 +68,11 @@ describe("application frame bandwidth", () => {
           view_id: "torrent-peers",
           snapshot: { type: "peers", torrent_id: "t1", peers: [] },
         },
+        {
+          type: "patch",
+          view_id: "library",
+          patch: { type: "torrent_list", upsert: [], removed: [] },
+        },
       ]),
     });
     const summary = summarizeApplicationFrames([
@@ -80,12 +85,14 @@ describe("application frame bandwidth", () => {
       initial_batches: 1,
       streamed_batches: 1,
       empty_batches: 0,
+      batches_with_duplicate_view_updates: 1,
+      maximum_updates_for_one_view_in_batch: 2,
       reset_batches: 0,
     });
     expect(summary.semantic.view_updates.library).toMatchObject({
-      updates: 2,
+      updates: 3,
       snapshots: 1,
-      patches: 1,
+      patches: 2,
       resets: 0,
     });
     expect(summary.semantic.view_updates["torrent-peers"]).toMatchObject({
