@@ -1254,15 +1254,22 @@ production-browser consumption pass. The cadence retains one 184-byte scalar
 model per torrent, publishes at most once per changed tick, and uses targeted
 torrent-row changes rather than cloning file, peer, swarm, or piece state.
 
-These are now reproducible regression observations, not accepted efficiency
-targets. Library's zero-reset behavior proves the common Summary/reset path is
-already material before detail views amplify it. The next delivery optimization
-should make pending current-state coalescing view-aware across interleaved IDs
-while preserving ordered Diagnostics, exact queue accounting, cursor, reset,
-and fresh-snapshot recovery semantics. Re-measure before choosing sparse
-volatile fields, incremental rate history, projection overlap removal, or a
-wire codec. Browser decode/reducer/paint cost remains a distinct measurement
-boundary.
+Tactical `184` now makes pending current-state coalescing view-aware across
+interleaved IDs while preserving ordered Diagnostics, exact queue accounting,
+cursor, reset, and fresh-snapshot recovery semantics. Its identical clean run
+reduces total server bytes by 76.48% and active detail rates by 70--86%, with
+zero duplicate-view batches and no public-contract change. Batch cadence stays
+nearly constant, proving semantic collapse caused the reduction.
+
+The residual measurement selects Torrent, File, Peer, and active-piece rows
+for Tactical `185`'s closed typed field deltas. New rows and snapshots remain
+complete; existing rows carry only changed fields; nullable changes distinguish
+unchanged from explicit clear; all reducers reconstruct full state. These
+semantics are defined before serialization, so JSON remains an interchangeable
+codec rather than the source of patch meaning. A future binary codec must use
+an explicit versioned field-number registry rather than Rust enum order.
+Complete session-rate history replacement, projection overlap removal, and
+browser decode/reducer/paint cost remain separately measured follow-ups.
 
 Public swarms and visible Tauri launch are unnecessary for this foundation.
 The browser gateway, temporary profiles, controlled libtorrent peer, and pure

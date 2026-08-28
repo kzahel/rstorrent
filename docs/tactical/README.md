@@ -79,10 +79,14 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`185-typed-sparse-hot-view-patches.md`](185-typed-sparse-hot-view-patches.md):
+  active; replaces measured repeated Torrent, File, Peer, and active-piece rows
+  with closed typed field deltas across every first-party reducer while keeping
+  semantics independent from a much later binary codec.
 - [`184-view-aware-current-state-coalescing.md`](184-view-aware-current-state-coalescing.md):
-  active; coalesces compatible pending current-state patches per logical view
-  across interleaved view IDs, then reruns the production bandwidth baseline
-  before the separately required sparse-row contract change.
+  complete; coalesces compatible pending patches across interleaved logical
+  view IDs and reduces active detail traffic by 70--86% without a public
+  contract change, reset, or lost state.
 - [`183-production-websocket-ui-bandwidth-baseline.md`](183-production-websocket-ui-bandwidth-baseline.md):
   complete; adds bounded exact production React/WebSocket measurement and
   shows that interleaved same-view current-state updates defeat the intended

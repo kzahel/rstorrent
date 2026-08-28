@@ -1,9 +1,12 @@
 # Tactical 184: View-Aware Current-State Coalescing
 
-Status: **In progress (2026-08-28).** Explicit user direction temporarily
-yields Tactical `176` to the first of two measured application-delivery
-repairs. Tactical `176` retains only its unchanged macOS-hosted iOS simulator/
-archive compile gate.
+Status: **Complete (2026-08-28).** Compatible pending patches now coalesce
+across unrelated view IDs without crossing a same-view barrier. The retained
+production-browser A/B reduces active detail traffic by 70--86% with no reset,
+lost progress, duplicate-view batch, or public-contract change. Tactical
+[`185`](185-typed-sparse-hot-view-patches.md) owns the measured sparse-row
+follow-up. Tactical `176` retains only its unchanged macOS-hosted iOS
+simulator/archive compile gate.
 
 Topics:
 [`client-view-delivery-policy`](../topics/client-view-delivery-policy.md),
@@ -155,3 +158,36 @@ wire contract is proven, the clean Tactical `183` run records a causal A/B
 reduction with no lost state or reset, the owning topics record the result,
 and a separate sparse-row tactical is selected from the remaining measured
 traffic.
+
+## Result And Evidence
+
+`ViewSetInner` now finds the newest pending item for the same view rather than
+only inspecting the shared queue tail. Deterministic tests prove interleaved
+Library/Summary collapse, snapshot barriers, bounded Diagnostics segment
+ordering, and exact replacement byte accounting. The measurement harness also
+records duplicate view IDs and maximum updates for one view in each batch.
+
+The clean retained run at commit `4151c837` used the same 11 stopped torrents,
+one 64 MiB active torrent, 256 KiB/s source, and eight-second windows as
+Tactical `183`. It carried 1,239,166 server bytes instead of 5,268,042
+(-76.48%), with zero resets, zero duplicate-view batches, one update per view
+per batch maximum, exact browser/gateway agreement, and progress from 1% to
+20%. Steady active detail rates changed as follows:
+
+| View | Before KiB/s | After KiB/s | Reduction |
+| --- | ---: | ---: | ---: |
+| Peers | 114.05 | 33.83 | 70.34% |
+| General | 101.86 | 14.69 | 85.58% |
+| Files | 113.31 | 16.02 | 85.87% |
+| Pieces | 147.93 | 27.81 | 81.20% |
+| Normal Logs | 103.23 | 15.96 | 84.54% |
+
+Idle remained 5.28 KiB/s and active Transfers measured 13.14 KiB/s, within run
+variance of the 12.84 KiB/s baseline. Batch cadence was nearly unchanged
+(520 versus 515 gateway view batches), proving the reduction comes from
+semantic coalescing rather than a slower producer. The report SHA-256 is
+`64172265b2c1eafc6565f4fd742b067f6a34fc744e2c82c938dd17bcf18838dc`.
+
+Residual attribution selects typed sparse Torrent, Peer, File, and active-piece
+rows for Tactical `185`. Complete session-rate history replacement remains a
+separate projection-specific follow-up.

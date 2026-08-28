@@ -43,11 +43,12 @@ machine-control.
 ## Current Tactical State
 
 The authoritative **Now** is
-[`184-view-aware-current-state-coalescing.md`](docs/tactical/184-view-aware-current-state-coalescing.md).
-It repairs interleaved tail-only current-state coalescing and reruns completed
-Tactical `183`'s production React/WebSocket baseline before a separately
-bounded typed sparse-row contract change. Tactical `176` retains only its
-unchanged macOS-hosted iOS simulator/archive compile gate.
+[`185-typed-sparse-hot-view-patches.md`](docs/tactical/185-typed-sparse-hot-view-patches.md).
+It replaces measured repeated Torrent, File, Peer, and active-piece rows with
+closed typed semantic deltas across all first-party reducers. The contract is
+transport-neutral so a much later negotiated binary codec can reuse it without
+making Rust enum layout or JSON paths part of the wire design. Tactical `176`
+retains only its unchanged macOS-hosted iOS simulator/archive compile gate.
 Completed Tactical `182` bounds preferred-uTP/TCP/MSE/plain handshake work to
 one 15-second outbound-attempt lifetime and conservatively turns over a
 zero-contribution metadata worker only when the 30-peer cohort is saturated

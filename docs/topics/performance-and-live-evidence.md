@@ -517,6 +517,22 @@ patches and 390 Summary replacements observed in General. This is the first
 causal optimization target; sparse rows, delivery profiles, and codecs remain
 post-coalescing measurements.
 
+Tactical `184` completed that isolated repair and repeated the exact fixture at
+clean commit `4151c837`. Server application bytes fell from 5,268,042 to
+1,239,166 (-76.48%) while gateway view batches remained nearly constant at 515
+versus 520. Peers, General, Files, Pieces, and Normal Logs fell respectively
+70.34%, 85.58%, 85.87%, 81.20%, and 84.54%. The run had zero duplicate-view
+batches, one update per view per batch maximum, zero resets, exact browser/
+gateway agreement, and progress from 1% to 20%. The report SHA-256 is
+`64172265b2c1eafc6565f4fd742b067f6a34fc744e2c82c938dd17bcf18838dc`.
+
+Residual standalone attribution now selects complete Torrent, Peer, File, and
+active-piece rows for Tactical `185`'s typed sparse semantic updates. Complete
+session-rate history still costs roughly 5 KiB/s and remains a separate
+projection-specific candidate. Binary encoding remains a later measurement-
+driven codec decision; current semantic diffs must not depend on JSON paths or
+Rust enum layout.
+
 The reproducible command is:
 
 ```bash

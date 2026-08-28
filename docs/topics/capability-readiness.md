@@ -210,6 +210,16 @@ Both semantic changes must remain encoding-independent so a much later binary
 codec can reuse them. Tactical `176` retains only its unchanged macOS-hosted
 iOS compile gate.
 
+Tactical `184` is complete. Its clean retained run reduces total server
+application bytes by 76.48% and active detail rates by 70--86%, with zero
+duplicate-view batches, resets, or lost progress and no public-contract change.
+Explicit user direction now selects typed sparse hot-view Tactical
+[`185`](../tactical/185-typed-sparse-hot-view-patches.md) as the sole **Now**.
+It replaces repeated Torrent, File, Peer, and active-piece rows across every
+first-party reducer while keeping semantic fields independent from JSON and
+from a much later negotiated binary codec. Tactical `176` retains only its
+unchanged macOS-hosted iOS compile gate.
+
 The updater tactical's client, production route, five-target signed hosted
 rehearsal, public `0.1.0`, `0.1.1`, and `0.1.2` releases, installed macOS arm64
 launch smoke, and exact macOS arm64 and Linux arm64 `0.1.0`-to-`0.1.1` updates
