@@ -79,10 +79,13 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`186-current-rates-and-incremental-speed-history.md`](186-current-rates-and-incremental-speed-history.md):
+  active as the sole **Now**; separates tiny latest-value current rates from
+  interest-selected graph history and makes completed graph buckets exact,
+  cursor-validated, coalescible appends without choosing a binary codec.
 - [`176-durable-high-file-priority.md`](176-durable-high-file-priority.md):
-  active as the sole **Now** only for its remaining macOS-hosted iOS
-  simulator/archive compile gate; implementation and every other validation
-  gate pass.
+  temporarily yielded to Tactical `186`; only its remaining macOS-hosted iOS
+  simulator/archive compile gate remains after that slice.
 - [`185-typed-sparse-hot-view-patches.md`](185-typed-sparse-hot-view-patches.md):
   complete; replaces measured repeated Torrent, File, Peer, and active-piece
   rows with closed typed field deltas across every first-party reducer and

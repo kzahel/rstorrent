@@ -221,6 +221,17 @@ with zero resets or lost progress. Semantic fields remain independent from
 JSON and from a much later negotiated binary codec. Tactical `176` resumes as
 the sole **Now** with only its unchanged macOS-hosted iOS compile gate.
 
+Explicit user direction then temporarily yields Tactical `176` to current-rate
+and incremental speed-history Tactical
+[`186`](../tactical/186-current-rates-and-incremental-speed-history.md). The
+measured always-present `session-rates` projection currently sends a complete
+300-point ten-minute graph once per second merely to read current upload and
+download. Tactical `186` separates that tiny latest-value state from the
+interest-selected graph and makes completed graph buckets bounded contiguous
+appends validated by semantic history position while reusing the established
+view-set cursor and acknowledgement. It is the sole **Now**; Tactical `176`
+retains its unchanged macOS-only iOS compile gate.
+
 The updater tactical's client, production route, five-target signed hosted
 rehearsal, public `0.1.0`, `0.1.1`, and `0.1.2` releases, installed macOS arm64
 launch smoke, and exact macOS arm64 and Linux arm64 `0.1.0`-to-`0.1.1` updates
@@ -716,8 +727,9 @@ exactly.
 
 ### Now
 
-- Resume **Tactical `176`** only for its existing macOS-hosted iOS simulator/
-  archive compile; every implementation and other validation gate passes.
+- Complete **Tactical `186`** current-rate separation, exact incremental speed
+  history, every first-party reducer, and the retained production bandwidth
+  measurement.
 
 ### Next
 
