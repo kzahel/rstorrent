@@ -49,6 +49,15 @@ Workbench is not hidden behind an advanced setting, and only Workbench leases
 selected-torrent detail projections. See
 [`application-interface-direction.md`](application-interface-direction.md).
 
+Completed Tactical
+[`072`](../tactical/072-derived-media-catalog.md) gives Library its own bounded
+content-focused torrent detail without weakening Workbench. The Media tab
+leases a derived video/episode catalog and presents exact shared file progress
+in numeric episode order; All files leases the existing literal catalog.
+Workbench keeps its selected-torrent state and dense Files surface unchanged,
+while Library detail navigation, focus, history, and responsive layout remain
+owned by the clean product destination.
+
 Tactical `042` makes a magnet's verified metainfo name appear in both the live
 library row and General heading as soon as metadata arrives. Completed
 Tactical

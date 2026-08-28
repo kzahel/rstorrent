@@ -1,8 +1,7 @@
 # Tactical 072: Derived Media Catalog And Library Torrent Detail
 
-Status: Active on 2026-08-28 by explicit user direction. Tactical `176`
-retains only its unchanged macOS-hosted iOS compile gate while this slice is
-the sole **Now**.
+Status: Completed on 2026-08-28. Tactical `176` resumes as the sole **Now**
+with only its unchanged macOS-hosted iOS compile gate.
 
 Topics: `application-interface-direction`, `application-view-api`,
 `web-ui-design`, `desktop-inspection-surface`, `client-surfaces`
@@ -597,6 +596,65 @@ No public network, visible application, emulator, physical device, HTTP media
 server, media fixture download, or external metadata request is authorized or
 required. The controlled fixture is independently generated from short test
 bytes and contains no copied media.
+
+## Implemented Result And Evidence
+
+The completed slice adds the pure `rstorrent-media-catalog` crate with one
+compiled, versioned classifier. Its explicit case-insensitive extension gate
+and conservative `SxxExx`, multi-episode, and `NxM` parsing return typed hints
+without probing payload bytes or inventing a title for a bare episode. Table,
+adversarial, Unicode, false-positive, boundary, and 4,096-path tests pass.
+
+`ViewHub` now retains one immutable `DerivedMediaCatalog` beside each verified
+file-progress model. It reuses that classification across progress,
+availability, priority, and view-interest changes, then joins the authoritative
+file rows into the separately leased `torrent_media` snapshot and complete-row
+patch. Removal and generation replacement discard the cache. Generated Rust,
+TypeScript, JSON Schema, Kotlin/UniFFI, and Swift/UniFFI shapes plus all
+first-party reducers remain exhaustive. A worst-case 4,096-row snapshot is
+1,901,592 encoded bytes and 1,901,762 bytes including the retained view-set
+envelope, below the existing 16 MiB snapshot ceiling.
+
+Library cards now open an ephemeral same-document detail. Recognized videos
+are the default when present and sort by typed series, season, starting episode,
+ending episode, then stable file index; **All files** leases the existing Files
+projection. Rows show the exact source name and folder, length, selection,
+Done, Verified, and media availability. Only `verified == length` is labelled
+**Downloaded**. Back, Escape, history, removal repair, filter changes, focus
+return, and retained collection scroll are covered. Wide layout uses a summary
+beside the virtual list, while compact and phone layouts stack without
+horizontal overflow. Generated gradient/initial placeholders remain plainly
+synthetic; thumbnails, artwork, and playback did not land.
+
+The permanent `media-library` scenario contains six deliberately misordered
+videos across two seasons plus image and NFO sidecars and complete, partial,
+skipped, and unavailable states. Its browser checks prove numeric ordering,
+Media/All files filtering, wide and 390-by-844 layouts, focus restoration,
+zero serious/critical Axe findings, and no horizontal overflow. The 4,096-file
+scale scenario yields 3,003 recognized videos while mounting 19 media rows and
+421 total DOM elements; the observed Chromium heap was 53,192,260 bytes on the
+development host.
+
+The production-build controlled proof used a delayed loopback tracker and a
+pinned libtorrent `2.0.13` peer with eight independently generated files. It
+observed metadata-pending before catalog arrival, six Media rows, all eight
+Files rows, Media/Files lease switches and eviction, one application-view
+upgrade, zero semantic HTTP calls, zero serious/critical Axe findings, joined
+shutdown, and exact cleanup. The 879-byte metainfo described 14 pieces; the
+payload SHA-1 was `4caa9dfc2a7f691fd910e069b91e4e70d3118c6a`, and the
+run completed in 33.570 seconds.
+
+Recorded closure gates pass:
+
+- `cargo fmt --all -- --check`, warning-denying workspace Clippy, and all
+  workspace tests;
+- generated-contract drift, web typecheck, 333 passing Vitest tests with two
+  opt-in skips, production build/CSP scan, and 36 passing Playwright cases with
+  14 opt-in cases skipped, followed by the focused scale-instrumented rerun;
+- `clients/android/build.sh` for both retained ABIs, Android
+  `testDebugUnitTest`, and generated Kotlin reducer coverage; and
+- release `rstorrent-ios` compilation plus generated Swift binding inspection
+  on the available Linux host.
 
 ## Stopping Condition
 

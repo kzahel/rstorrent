@@ -84,6 +84,16 @@ torrent-backed content grid; and collection-only application-view leasing
 outside Workbench. The detailed surface remains intact as Workbench, as
 recorded in
 [`application-interface-direction.md`](application-interface-direction.md).
+Completed Tactical
+[`072`](../tactical/072-derived-media-catalog.md) makes normal Library card
+activation open a responsive read-only torrent detail. Media defaults to
+recognized videos ordered by typed episode values; All files is an explicit
+fallback. Same-document history, Back, Escape, focus return, collection scroll,
+filter/removal repair, and visible-projection-only leasing remain local to the
+Library owner. Wide layout places source summary beside a virtual list;
+compact and phone layouts stack and use smaller generated placeholders without
+claiming artwork. Thumbnails, playback, and Library-wide aggregation remain
+separate decisions.
 Tactical `058` replaces persistent torrent checkboxes with a discoverable
 selection mode, separates the current torrent from batch command targets, and
 applies the same interaction locally to Files. It initially staged disabled
@@ -767,6 +777,18 @@ keeps Workbench and Transfers below 100 rendered rows, keeps Library below 100
 rendered cards, and retains fewer than 2,000 total DOM elements after changing
 destinations. These are bounded development assertions rather than a general
 browser performance guarantee.
+
+Tactical `072` adds pure comparator, reducer, lease, navigation, component,
+and headless browser coverage for the Library detail. Its permanent six-video
+TV scenario proves numeric ordering, sidecar exclusion, exact Downloaded/
+partial/skipped labels, Media/All files switching, wide and 390-by-844
+layouts, focus restoration, no horizontal overflow, and no serious/critical
+Axe findings. In the 4,096-file scenario, 3,003 recognized videos mount only
+19 list rows and retain 421 total DOM elements; Chromium reported 53,192,260
+used heap bytes on the development host. The production browser proof observes
+metadata pending through six-media/eight-file catalog arrival and completion,
+view eviction/recovery, zero semantic HTTP calls, and joined cleanup against a
+controlled pinned-libtorrent peer.
 
 Tactical `083` adds deterministic empty/nonempty Add, pointer/keyboard chooser,
 cancel, advisory accept, same-file reset, default/chosen root, start-content,

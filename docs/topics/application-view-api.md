@@ -39,6 +39,14 @@ level reducer. Authoritative `operational_state` is sufficient, so the slice
 adds no view kind, field, generated contract, browser event, or mobile API.
 Unlike notification edges, an initial or replacement snapshot may immediately
 restore the current inhibitor level.
+Completed Tactical
+[`072`](../tactical/072-derived-media-catalog.md) adds the separately leased
+`torrent_media` projection. One immutable derived catalog per verified
+metainfo joins the existing authoritative file-progress model into typed video
+and episode rows; classification remains rebuildable and outside persistence.
+Generated TypeScript/schema and Kotlin/Swift UniFFI boundaries plus all
+first-party reducers consume the new snapshot and complete-row patch without
+adding native presentation.
 Tactical `034` implements the per-application Zustand store and React
 inspection model against a deterministic adapter. Tactical `035` adds stable
 Rust torrent and active-peer projections, semantic responsive view selection,
@@ -488,6 +496,7 @@ type ViewSpec = {
   | { type: "torrent_detail"; torrent_id: TorrentId }
   | { type: "torrent_peers"; torrent_id: TorrentId }
   | { type: "torrent_files"; torrent_id: TorrentId }
+  | { type: "torrent_media"; torrent_id: TorrentId }
   | {
       type: "diagnostics";
       torrent_id?: TorrentId;
@@ -1046,6 +1055,34 @@ the materialization after the ordered view removal. A phone detail does not
 retain the library. Browser suspension follows the existing stale/reopen
 contract: the controlled 500 ms lease proof replaced the expired set and
 restored all 122 rows from a fresh epoch while the engine continued.
+
+## Derived Media Extension
+
+Completed Tactical `072` implements `torrent_media` as a complete recognized-
+video catalog for one explicitly opened Library source. Stable media IDs remain
+the metainfo file indices. Each row carries the exact relative path, normalized
+recognized extension, decimal length, High/Normal/Skip selection, Done and
+Verified bytes, existing media availability, and either a conservative typed
+episode hint or `unclassified_video`. The snapshot distinguishes metadata
+pending, available-empty, and torrent missing; it also carries the total
+non-padding file count so the client can explain the filtered result without
+leasing Files.
+
+`ViewHub` retains one immutable classification beside the file-progress model
+and rebuilds it only with verified metainfo creation or replacement. Progress,
+availability, and selection remain owned by Files and are joined when a Media
+snapshot or changed row is projected. Steady changes use keyed complete-row
+upserts and removals, preserving the existing coalescing, reset, lease-expiry,
+and generation-fencing rules. A classification or join inconsistency cannot
+change torrent lifecycle or fabricate an empty catalog.
+
+Library Media requests this view only while the detail and Media tab are
+visible; All files replaces it with the existing paged `torrent_files` lease.
+Android and iOS consume the generated additive contract in exhaustive reducers
+without adding a Compose or SwiftUI screen. A synthetic 4,096-item Media
+snapshot encodes to 1,901,592 bytes and occupies 1,901,762 bytes in the retained
+view-set envelope, below the existing 16 MiB snapshot ceiling. No classifier
+state is persisted and no payload bytes cross this interface.
 
 ## Live Trackers Extension
 

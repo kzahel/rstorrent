@@ -171,6 +171,14 @@ the three values through its existing grouped file actions, Android Compose
 replaces the binary checkbox with a three-value menu, and iOS SwiftUI displays
 and sets the same values. This presentation does not add a second scheduler or
 progressive Android/iOS playback.
+Completed Tactical
+[`072`](../tactical/072-derived-media-catalog.md) adds a media-first torrent
+detail to the shared React browser/Tauri presentation. It leases a generated
+derived video/episode projection independently from the existing paged Files
+view and retains exact shared file progress, priority, and availability.
+Android and iOS compile and exhaustively reduce the additive generated
+contract, but gain no Compose or SwiftUI presentation; thumbnails and playback
+remain separate cross-platform product decisions.
 
 Tactical `081` adds adapter-level v1 `.torrent` byte intake through
 the ordinary browser WebSocket and raw in-process Tauri IPC, plus HTTP
@@ -667,6 +675,16 @@ a distinct view set and installs a fresh coherent snapshot. Wide, compact,
 phone, accessibility, payload-hash, process-join, and temporary-cleanup checks
 run without a visible browser or Tauri window.
 
+Tactical `072` extends that same production-built browser seam with a delayed
+metadata, eight-file controlled torrent and pinned libtorrent `2.0.13` peer.
+The headless run observes a truthful metadata-pending detail, six recognized
+videos in numeric episode order, all eight literal files including two
+sidecars, exact progress/completion, Media/Files lease replacement and
+eviction, one application upgrade, zero semantic HTTP requests, empty serious/
+critical Axe findings, joined shutdown, and exact cleanup in 33.570 seconds.
+Tauri reuses the same React/store/view contract without opening a loopback
+server or launching a visible window.
+
 Tactical `083` adds a focused production-build browser proof without a
 visible window. Headless Chrome receives a real `filechooser` event from empty
 Add, selects an independently generated 157-byte v1 source, confirms
@@ -760,6 +778,12 @@ clients without crossing the UI contract. Embedded playback, stable sharing,
 remote exposure, and Android streaming remain independent product decisions.
 
 ## Current Gaps
+
+- The React Library now has a rebuildable media-first torrent detail, but its
+  top level remains torrent-backed. Library-wide item aggregation, durable
+  media identity/organization, thumbnails or provider artwork, watched state,
+  and embedded playback remain separate product capabilities. Android and iOS
+  have no corresponding derived-media presentation.
 
 - The loopback WebSocket gateway and configured private-host Basic service are
   not a production owner-remote-access design. RSTorrent has no built-in TLS,

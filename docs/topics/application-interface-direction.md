@@ -8,10 +8,11 @@ Transfers, and Workbench are distinct responsive top-level destinations.
 Workbench preserves the dense inspection surface as a first-class interface;
 Transfers is the fresh-install default; and browser-local state restores the
 last destination and each destination's filter. Library currently presents
-truthful torrent-backed content sources only. Explicit user direction on
-2026-08-28 activates Tactical `072` to add a derived media catalog and one
-responsive torrent detail without thumbnails, external metadata, playback
-presentation, persistence, or Library-wide media aggregation.
+truthful torrent-backed content sources. Completed Tactical `072` adds one
+responsive media-first detail for an explicitly opened source, backed by a
+derived video/episode catalog and authoritative file progress. Thumbnails,
+external metadata, playback presentation, persistence, and Library-wide media
+aggregation remain absent.
 
 ## Purpose And Scope
 
@@ -59,9 +60,10 @@ The Library sidebar filters media concepts such as all media, movies, recently
 added, ready to play, watched, and unwatched. It does not relabel torrent
 status filters as a media library.
 
-The mockup is directional, not evidence that playback is ready. RSTorrent does
-not yet own a derived media catalog, metadata/artwork acquisition, watched
-history, or playback presentation. The verified-range HTTP data plane now
+The mockup is directional, not evidence that playback is ready. RSTorrent now
+owns a rebuildable derived video/episode catalog for verified torrent files,
+but does not own metadata/artwork acquisition, watched history, durable media
+organization, or playback presentation. The verified-range HTTP data plane
 exists as recorded in
 [`http-file-serving-and-streaming.md`](http-file-serving-and-streaming.md), but
 its existence alone does not make a Library row a truthful Play action.
@@ -178,6 +180,16 @@ commands, generated contracts, or durable data:
 The initial slice deliberately leaves lightweight clean-view inspectors,
 media enrichment, playback, routes, and multi-remove policy open.
 
+Completed Tactical `072` adds the first bounded Library detail without
+changing the top-level collection's torrent-backed identity. Activating a card
+opens a same-document responsive detail; recognized videos default to typed
+numeric episode order and an explicit All files tab retains literal source
+inspection. Exact file progress, selection, and availability remain
+authoritative. Back, Escape, browser history, focus restoration, filter
+changes, and removal repair are presentation-local. The detail leases only
+its visible Media or Files projection. Generated initials and gradients remain
+placeholders rather than artwork, and no Play claim appears.
+
 Tactical `058` refines that initial selection interaction. Checkboxes and
 select-all appear only in a clearly labeled mode entered through Select,
 keyboard Space, Command/Control-click, or touch/pen long press. Done and Escape
@@ -256,8 +268,8 @@ commit accidentally.
 
 ## Open Decisions
 
-- The durable media-catalog owner and relationship between torrents, files,
-  playable media, and user organization.
+- The durable Media Library relationship between rebuildable torrent/file
+  classifications, playable items, and user organization.
 - Metadata, artwork, watched-state, privacy, cache, and offline behavior.
 - Playback application choice and the eventual verified-range data plane.
 - Whether Library includes incomplete but not-yet-playable media, and how that
@@ -273,10 +285,11 @@ commit accidentally.
 
 ## Recommended Next Work
 
-Use the implemented shell for product discussion before opening another
-interface tactical. The next bounded slice should choose one actual user need:
-a lightweight Library/Transfers inspector, richer durable content identity,
-or playback foundations. Media catalog and playback work require a separate
-source- and edge-case-driven tactical because they introduce integrity,
-storage, persistence, metadata, privacy, and platform-lifecycle questions
-beyond presentation navigation.
+Use the implemented shell and torrent detail for product discussion before
+opening another interface tactical. The next bounded slice should choose one
+actual user need: Library-wide derived-item aggregation, playback presentation
+over the existing verified-range data plane, thumbnail generation/cache
+ownership, or richer durable content identity. Each remains an independent
+source- and edge-case-driven tactical because it introduces storage,
+persistence, metadata, privacy, or platform-lifecycle questions beyond this
+read-only detail.

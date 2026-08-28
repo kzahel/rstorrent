@@ -83,8 +83,8 @@ that scope and its cleanup or compatibility rules explicitly.
   complete; adds one selected-torrent packed BEP 9 block map for v1/v2/hybrid
   metadata plus a separate coarse BEP 52 integrity-preparation phase,
   generated first-party reducers, and accessible React General presentation.
-- [`072-derived-media-catalog.md`](072-derived-media-catalog.md): active as the
-  sole **Now**; adds a pure deterministic video/episode classifier, one
+- [`072-derived-media-catalog.md`](072-derived-media-catalog.md): complete; adds
+  a pure deterministic video/episode classifier, one
   rebuildable application catalog, a separately leased media projection, and
   a responsive Library torrent detail with an explicit All files fallback.
   Thumbnails, artwork, playback presentation, persistence, and Library-wide
@@ -95,9 +95,8 @@ that scope and its cleanup or compatibility rules explicitly.
   coalescible appends, and cuts the preceding server-payload residual 41.98%
   without choosing a binary codec.
 - [`176-durable-high-file-priority.md`](176-durable-high-file-priority.md):
-  retains only its remaining macOS-hosted iOS simulator/archive compile gate
-  while explicit user direction temporarily gives Tactical `072` the sole
-  **Now**.
+  resumed as the sole **Now** with only its remaining macOS-hosted iOS
+  simulator/archive compile gate.
 - [`185-typed-sparse-hot-view-patches.md`](185-typed-sparse-hot-view-patches.md):
   complete; replaces measured repeated Torrent, File, Peer, and active-piece
   rows with closed typed field deltas across every first-party reducer and
@@ -405,7 +404,7 @@ that scope and its cleanup or compatibility rules explicitly.
   singleton-selection More action that copies a canonical v1 magnet from the
   projected info hash with truthful clipboard feedback and accessible focus.
 - [`072-derived-media-catalog.md`](072-derived-media-catalog.md): listed above
-  as the active sole **Now**.
+  as complete.
 - [`073-unified-storage-and-complete-recheck.md`](073-unified-storage-and-complete-recheck.md):
   complete; removes the single-file storage fork, gives every v1 torrent one
   durable resume/publication path, and adds bounded full managed-storage and
