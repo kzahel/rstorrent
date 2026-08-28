@@ -11,7 +11,7 @@ test("checker progress stays truthful across every shared surface", async ({ pag
   await page.goto("/?demo=checking-progress&at=18000&autoplay=0");
   const primary = page.getByRole("navigation", { name: "Primary" });
   const checkingBar = page.getByRole("progressbar", {
-    name: /Big Buck Bunny 1080p surround checking progress: Checked 40.0%/,
+      name: /Big Buck Bunny 1080p surround checking progress: Checked 40.0%/,
   });
   await expect(checkingBar).toHaveAttribute("aria-valuenow", "40");
 
@@ -20,7 +20,7 @@ test("checker progress stays truthful across every shared surface", async ({ pag
   await expect(checkingBar).toHaveAttribute("aria-valuenow", "40");
   await page
     .getByRole("button", {
-      name: "Activate Big Buck Bunny 1080p surround in Library",
+      name: "Open details for Big Buck Bunny 1080p surround",
     })
     .click();
   await page.getByRole("button", { name: "Open in Workbench" }).click();
@@ -97,13 +97,10 @@ test("primary destinations preserve shared source state", async ({ page }) => {
   await expect(
     page.getByRole("list", { name: "Torrent-backed content" }),
   ).toBeVisible();
-  await expect(
-    page.getByText(/media details are not connected yet/i),
-  ).toBeVisible();
   await expect(page.getByRole("button", { name: /^Play / })).toHaveCount(0);
   await capture(page, "rstorrent-library-wide.png");
   await page
-    .getByRole("button", { name: "Activate Sintel 4K open movie in Library" })
+    .getByRole("button", { name: "Open details for Sintel 4K open movie" })
     .click();
   await page.getByRole("button", { name: "Open in Workbench" }).click();
   await expect(
@@ -121,6 +118,70 @@ test("primary destinations preserve shared source state", async ({ page }) => {
   );
   expect(violations).toEqual([]);
   await capture(page, "rstorrent-destinations-wide.png");
+});
+
+test("Library media detail sorts episodes and adapts to phone", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/?demo=media-library&at=0&autoplay=0");
+  const primary = page.getByRole("navigation", { name: "Primary" });
+  await primary.getByRole("button", { name: "Library" }).click();
+  const card = page.getByRole("button", {
+    name: "Open details for North Shore Stories · Seasons 1–2",
+  });
+  await card.click();
+
+  const back = page.getByRole("button", { name: "Back to Library" });
+  await expect(back).toBeFocused();
+  const media = page.getByRole("list", { name: "Recognized video files" });
+  await expect(media).toBeVisible();
+  expect(
+    await media.getByRole("listitem").locator("strong[title]").allTextContents(),
+  ).toEqual([
+    "North.Shore.Stories.S01E01.1080p.WEB-DL.mkv",
+    "North.Shore.Stories.S01E02.1080p.WEB-DL.mp4",
+    "North.Shore.Stories.S01E07E08.mkv",
+    "North.Shore.Stories.S01E10.1080p.WEB-DL.mkv",
+    "North.Shore.Stories.S02E01.mkv",
+    "Behind the scenes.webm",
+  ]);
+  await expect(media.getByText("poster.jpg")).toHaveCount(0);
+  await expect(media.getByText("README.nfo")).toHaveCount(0);
+  await expect(media.getByText("Downloaded", { exact: true })).toHaveCount(2);
+  await expect(media.getByText("Not selected", { exact: true })).toBeVisible();
+  await expect(media.getByLabel(/download progress$/)).toHaveCount(6);
+
+  await page.getByRole("tab", { name: "All files" }).click();
+  const files = page.getByRole("list", { name: "All torrent files" });
+  await expect(files.getByText("poster.jpg")).toBeVisible();
+  await expect(files.getByText("README.nfo")).toBeVisible();
+  await capture(page, "rstorrent-library-detail-wide.png");
+
+  await back.click();
+  await expect(card).toBeVisible();
+  await expect(card).toBeFocused();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await card.click();
+  await expect(page.getByRole("list", { name: "Recognized video files" })).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  const violations = (
+    await new AxeBuilder({ page }).analyze()
+  ).violations.filter(
+    (violation) =>
+      violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(violations).toEqual([]);
+  await capture(page, "rstorrent-library-detail-phone.png");
+
+  await page.keyboard.press("Escape");
+  await expect(card).toBeVisible();
+  await expect(card).toBeFocused();
 });
 
 test("More copies selected torrents' source-aware magnets", async ({
@@ -969,7 +1030,7 @@ test("data units reformat mounted product surfaces without changing raw state", 
   await primary.getByRole("button", { name: "Library" }).click();
   await expectVisibleUnits(page, "binary");
   await page
-    .getByRole("button", { name: "Activate Sintel 4K open movie in Library" })
+    .getByRole("button", { name: "Open details for Sintel 4K open movie" })
     .click();
   await page.getByRole("button", { name: "Open in Workbench" }).click();
   await page.getByRole("tab", { name: "General" }).click();

@@ -69,7 +69,13 @@ export function LibraryDetailView({
   return (
     <section className={styles.detail} aria-labelledby="library-detail-heading">
       <header className={styles.header}>
-        <button type="button" className={styles.back} onClick={onBack}>
+        <button
+          type="button"
+          className={styles.back}
+          aria-label="Back to Library"
+          autoFocus
+          onClick={onBack}
+        >
           <span aria-hidden="true">←</span>
           <span>Library</span>
         </button>
@@ -80,6 +86,7 @@ export function LibraryDetailView({
         <button
           type="button"
           className={styles.workbench}
+          aria-label="Open in Workbench"
           onClick={() => openInWorkbench(torrent.id)}
         >
           <Icon name="workbench" />
@@ -272,6 +279,7 @@ function VirtualCatalog({
       className={styles.viewport}
       role="list"
       aria-label={label}
+      tabIndex={0}
       onScroll={(event: UIEvent<HTMLDivElement>) =>
         setScrollTop(event.currentTarget.scrollTop)
       }
@@ -332,7 +340,9 @@ function CatalogRowView({
           {progressState}
         </strong>
         <span>{formatExactBytes(row.lengthBytes, dataUnits)}</span>
-        <span>{selectionLabel(row.selection)}</span>
+        <span>
+          {selectionLabel(row.selection)} · {availabilityLabel(row.mediaAvailability)}
+        </span>
       </span>
     </article>
   );
@@ -377,6 +387,25 @@ function selectionLabel(selection: "normal" | "high" | "skipped" | null): string
   if (selection === "high") return "High priority";
   if (selection === "skipped") return "Skipped";
   return "Normal priority";
+}
+
+function availabilityLabel(
+  availability: MediaRow["mediaAvailability"],
+): string {
+  switch (availability) {
+    case "available": return "Available";
+    case "streamable": return "Streamable";
+    case "metadata_unavailable": return "Metadata pending";
+    case "invalid_file": return "Invalid file";
+    case "padding": return "Padding";
+    case "not_published": return "Not published";
+    case "checking": return "Checking";
+    case "unverified": return "Not verified";
+    case "storage_unavailable": return "Storage unavailable";
+    case "removing": return "Removing";
+    case "server_unavailable": return "Server unavailable";
+    case "resource_limit": return "Temporarily unavailable";
+  }
 }
 
 function initials(name: string): string {

@@ -159,7 +159,7 @@
 .rowHeading strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .facts { justify-items: end; text-align: right; }
 .facts strong { color: var(--text-muted); font-size: var(--ui-font-small); }
-.facts strong[data-downloaded="true"] { color: var(--success); }
+.facts strong[data-downloaded="true"] { color: var(--success-strong); }
 .progress > span {
   display: inline-block;
   width: 5rem;

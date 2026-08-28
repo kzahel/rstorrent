@@ -704,6 +704,7 @@ export type InspectionCommand =
 
 export type DemoScenarioId =
   | "healthy-download"
+  | "media-library"
   | "checking-progress"
   | "stalled-metadata"
   | "tracker-recovery"

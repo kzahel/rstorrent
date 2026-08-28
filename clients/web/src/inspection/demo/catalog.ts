@@ -31,10 +31,12 @@ const BASE_TIME_MS = Date.UTC(2026, 7, 1, 8, 0, 0);
 const BUNNY_ID = "t1-00000000000000000000000000000001";
 const SINTEL_ID = "t1-00000000000000000000000000000002";
 const ARCH_ID = "t1-00000000000000000000000000000003";
+const MEDIA_LIBRARY_ID = "t1-00000000000000000000000000000004";
 const DEMO_INFO_HASHES: Readonly<Record<string, string>> = {
   [BUNNY_ID]: "a962f460b83861cfb5faa1d7ad7da9c3f3cc2fc4",
   [SINTEL_ID]: "08ada5a7a6183aae1e09d831df6748d566095a10",
   [ARCH_ID]: "e2d1f50a5d72bfc9c4d6c3f9913b1dfb2cf4f210",
+  [MEDIA_LIBRARY_ID]: "c3cc3e6ca44942f80e7b7b318773c18360864027",
 };
 
 export const DEMO_SCENARIOS: readonly DemoScenarioSummary[] = [
@@ -44,6 +46,13 @@ export const DEMO_SCENARIOS: readonly DemoScenarioSummary[] = [
     description: "Metadata, useful peers, sustained transfer, and completion.",
     durationMs: 110_000,
     autoplay: true,
+  },
+  {
+    id: "media-library",
+    title: "TV media Library",
+    description: "Misordered episodes, sidecars, and exact file progress.",
+    durationMs: 60_000,
+    autoplay: false,
   },
   {
     id: "checking-progress",
@@ -231,12 +240,16 @@ export function buildScenarioSnapshot(
     ]),
   );
   const filesByTorrent = content.files ?? {};
-  const mediaByTorrent = Object.fromEntries(
+  const derivedMediaByTorrent = Object.fromEntries(
     Object.entries(filesByTorrent).map(([torrentId, files]) => [
       torrentId,
       demoMediaSet(torrentId, files),
     ]),
   );
+  const mediaByTorrent = {
+    ...derivedMediaByTorrent,
+    ...(content.media ?? {}),
+  };
   const swarmByTorrent = content.swarm ?? {};
   const trackersByTorrent = content.trackers ?? {};
   const piecesByTorrent = content.pieces ?? {};
@@ -612,6 +625,7 @@ interface ScenarioContent {
   readonly peers: Readonly<Record<string, readonly PeerRow[]>>;
   readonly swarm?: Readonly<Record<string, SwarmSet>>;
   readonly files?: Readonly<Record<string, FileSet>>;
+  readonly media?: Readonly<Record<string, MediaSet>>;
   readonly trackers?: Readonly<Record<string, TrackerSet>>;
   readonly pieces?: Readonly<Record<string, PieceMapSet>>;
   readonly disk?: DiskSet;
@@ -626,6 +640,8 @@ function buildScenarioContent(
     switch (scenarioId) {
     case "healthy-download":
       return healthyDownload(elapsedMs);
+    case "media-library":
+      return mediaLibrary();
     case "checking-progress":
       return checkingProgress(elapsedMs);
     case "stalled-metadata":
@@ -806,6 +822,220 @@ function healthyDownload(elapsedMs: number): ScenarioContent {
       [98, "info", "integrity", "All pieces verified"],
       [99, "info", "storage", "Published 3 files"],
     ], elapsedMs),
+  };
+}
+
+function mediaLibrary(): ScenarioContent {
+  const catalog = namedMediaLibraryCatalog();
+  const requiredBytes = catalog.files.order.reduce(
+    (total, id) => {
+      const file = catalog.files.rows[id];
+      return file === undefined || file.selection === "skipped"
+        ? total
+        : total + BigInt(file.lengthBytes);
+    },
+    0n,
+  );
+  const doneBytes = catalog.files.order.reduce(
+    (total, id) => total + BigInt(catalog.files.rows[id]?.doneBytes ?? "0"),
+    0n,
+  );
+  const totalBytes = catalog.files.order.reduce(
+    (total, id) => total + BigInt(catalog.files.rows[id]?.lengthBytes ?? "0"),
+    0n,
+  );
+  return {
+    torrents: [
+      torrent({
+        id: MEDIA_LIBRARY_ID,
+        name: "North Shore Stories · Seasons 1–2",
+        status: "downloading",
+        sizeBytes: Number(totalBytes),
+        progress: Number(doneBytes) / Number(totalBytes),
+        downloadedBytes: Number(doneBytes),
+        requiredPayloadBytes: requiredBytes.toString(),
+        remainingPayloadBytes: (requiredBytes - doneBytes).toString(),
+        downloadRate: 3_800_000,
+        uploadRate: 96_000,
+        peersConnected: 11,
+        peersKnown: 38,
+        eta: estimateEta(214),
+        progressReason: "Downloading selected episodes",
+      }),
+    ],
+    peers: {
+      [MEDIA_LIBRARY_ID]: buildPeers(MEDIA_LIBRARY_ID, 11, 24, 0.58),
+    },
+    files: { [MEDIA_LIBRARY_ID]: catalog.files },
+    media: { [MEDIA_LIBRARY_ID]: catalog.media },
+    logs: timelineLogs(
+      MEDIA_LIBRARY_ID,
+      [[0, "info", "metadata", "Metadata verified: 8 files, 6 videos"]],
+      60_000,
+    ),
+  };
+}
+
+function namedMediaLibraryCatalog(): {
+  readonly files: FileSet;
+  readonly media: MediaSet;
+} {
+  const fixtures: readonly {
+    readonly path: readonly string[];
+    readonly lengthBytes: bigint;
+    readonly doneBytes: bigint;
+    readonly verifiedBytes: bigint;
+    readonly selection: "normal" | "high" | "skipped";
+    readonly role?: MediaRow["role"];
+  }[] = [
+    {
+      path: ["North Shore Stories", "Season 01", "North.Shore.Stories.S01E10.1080p.WEB-DL.mkv"],
+      lengthBytes: 810_000_000n,
+      doneBytes: 310_000_000n,
+      verifiedBytes: 280_000_000n,
+      selection: "normal",
+      role: episodeRole(1, 10),
+    },
+    {
+      path: ["North Shore Stories", "poster.jpg"],
+      lengthBytes: 2_400_000n,
+      doneBytes: 2_400_000n,
+      verifiedBytes: 2_400_000n,
+      selection: "normal",
+    },
+    {
+      path: ["North Shore Stories", "Season 01", "North.Shore.Stories.S01E02.1080p.WEB-DL.mp4"],
+      lengthBytes: 760_000_000n,
+      doneBytes: 760_000_000n,
+      verifiedBytes: 760_000_000n,
+      selection: "high",
+      role: episodeRole(1, 2),
+    },
+    {
+      path: ["North Shore Stories", "Season 01", "North.Shore.Stories.S01E01.1080p.WEB-DL.mkv"],
+      lengthBytes: 745_000_000n,
+      doneBytes: 745_000_000n,
+      verifiedBytes: 745_000_000n,
+      selection: "normal",
+      role: episodeRole(1, 1),
+    },
+    {
+      path: ["North Shore Stories", "Season 01", "North.Shore.Stories.S01E07E08.mkv"],
+      lengthBytes: 1_120_000_000n,
+      doneBytes: 0n,
+      verifiedBytes: 0n,
+      selection: "skipped",
+      role: { ...episodeRole(1, 7), endingEpisodeNumber: 8 },
+    },
+    {
+      path: ["North Shore Stories", "Season 02", "North.Shore.Stories.S02E01.mkv"],
+      lengthBytes: 825_000_000n,
+      doneBytes: 120_000_000n,
+      verifiedBytes: 96_000_000n,
+      selection: "normal",
+      role: episodeRole(2, 1),
+    },
+    {
+      path: ["North Shore Stories", "Extras", "Behind the scenes.webm"],
+      lengthBytes: 184_000_000n,
+      doneBytes: 0n,
+      verifiedBytes: 0n,
+      selection: "normal",
+      role: { type: "unclassified_video" },
+    },
+    {
+      path: ["North Shore Stories", "README.nfo"],
+      lengthBytes: 18_000n,
+      doneBytes: 18_000n,
+      verifiedBytes: 18_000n,
+      selection: "normal",
+    },
+  ];
+  let offset = 0n;
+  const fileRows = fixtures.map((fixture, index): FileRow => {
+    const name = fixture.path.at(-1) ?? "";
+    const extension = name.includes(".") ? name.split(".").at(-1) ?? "" : "";
+    const row: FileRow = {
+      id: String(index),
+      torrentId: MEDIA_LIBRARY_ID,
+      index,
+      path: fixture.path,
+      name,
+      folder: fixture.path.slice(0, -1).join("/"),
+      extension: extension.toLowerCase(),
+      lengthBytes: fixture.lengthBytes.toString(),
+      torrentOffsetBytes: offset.toString(),
+      firstPiece: Number(offset / 262_144n),
+      lastPiece: Number((offset + fixture.lengthBytes - 1n) / 262_144n),
+      selection: fixture.selection,
+      padding: false,
+      doneBytes: fixture.doneBytes.toString(),
+      verifiedBytes: fixture.verifiedBytes.toString(),
+      mediaAvailability:
+        fixture.verifiedBytes === fixture.lengthBytes
+          ? "available"
+          : fixture.doneBytes > 0n && fixture.role !== undefined
+            ? "streamable"
+            : "unverified",
+      storagePath: `/Users/demo/Downloads/${fixture.path.join("/")}`,
+    };
+    offset += fixture.lengthBytes;
+    return row;
+  });
+  const mediaRows = fixtures.flatMap((fixture, index): MediaRow[] => {
+    const file = fileRows[index];
+    return fixture.role === undefined || file === undefined
+      ? []
+      : [
+          {
+            id: file.id,
+            torrentId: file.torrentId,
+            fileIndex: file.index,
+            path: file.path,
+            name: file.name,
+            folder: file.folder,
+            extension: file.extension,
+            lengthBytes: file.lengthBytes,
+            selection: fixture.selection,
+            doneBytes: file.doneBytes,
+            verifiedBytes: file.verifiedBytes,
+            mediaAvailability: file.mediaAvailability,
+            role: fixture.role,
+          },
+        ];
+  });
+  return {
+    files: {
+      state: "available",
+      filesystemContentBase: "/Users/demo/Downloads/North Shore Stories",
+      page: {
+        offset: 0,
+        limit: 1024,
+        total: fileRows.length,
+        nextOffset: null,
+      },
+      order: fileRows.map((row) => row.id),
+      rows: Object.fromEntries(fileRows.map((row) => [row.id, row])),
+    },
+    media: {
+      state: "available",
+      totalNonPaddingFiles: fileRows.length,
+      order: mediaRows.map((row) => row.id),
+      rows: Object.fromEntries(mediaRows.map((row) => [row.id, row])),
+    },
+  };
+}
+
+function episodeRole(
+  seasonNumber: number,
+  episodeNumber: number,
+): Extract<MediaRow["role"], { readonly type: "episode" }> {
+  return {
+    type: "episode",
+    seriesTitleHint: "North Shore Stories",
+    seasonNumber,
+    episodeNumber,
+    endingEpisodeNumber: null,
   };
 }
 

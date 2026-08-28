@@ -1662,6 +1662,56 @@ describe("inspection application", () => {
     );
   });
 
+  it("orders a TV detail numerically and restores its Library card", async () => {
+    const user = userEvent.setup();
+    renderScenario("media-library", 0);
+    await user.click(screen.getByRole("button", { name: "Library" }));
+    const trigger = screen.getByRole("button", {
+      name: "Open details for North Shore Stories · Seasons 1–2",
+    });
+    await user.click(trigger);
+
+    expect(
+      screen.getByRole("heading", {
+        name: "North Shore Stories · Seasons 1–2",
+      }),
+    ).toBeVisible();
+    const media = await screen.findByRole("list", {
+      name: "Recognized video files",
+    });
+    const names = within(media)
+      .getAllByRole("listitem")
+      .map((row) => row.querySelector("strong[title]")?.textContent);
+    expect(names).toEqual([
+      "North.Shore.Stories.S01E01.1080p.WEB-DL.mkv",
+      "North.Shore.Stories.S01E02.1080p.WEB-DL.mp4",
+      "North.Shore.Stories.S01E07E08.mkv",
+      "North.Shore.Stories.S01E10.1080p.WEB-DL.mkv",
+      "North.Shore.Stories.S02E01.mkv",
+      "Behind the scenes.webm",
+    ]);
+    expect(within(media).getAllByText("Downloaded")).toHaveLength(2);
+    expect(within(media).getByText("Not selected")).toBeVisible();
+    const progress = within(media).getAllByLabelText(/download progress$/);
+    expect(progress).toHaveLength(6);
+    expect(progress.every((row) => /verified$/.test(row.textContent ?? ""))).toBe(
+      true,
+    );
+
+    await user.click(screen.getByRole("tab", { name: "All files" }));
+    const files = await screen.findByRole("list", {
+      name: "All torrent files",
+    });
+    expect(within(files).getByText("poster.jpg")).toBeVisible();
+    expect(within(files).getByText("README.nfo")).toBeVisible();
+
+    await user.keyboard("{Escape}");
+    const restored = await screen.findByRole("button", {
+      name: "Open details for North Shore Stories · Seasons 1–2",
+    });
+    await waitFor(() => expect(restored).toHaveFocus());
+  });
+
   it("leases detail views only while Workbench needs them", async () => {
     const user = userEvent.setup();
     const snapshot = {

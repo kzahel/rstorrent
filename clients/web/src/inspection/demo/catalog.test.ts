@@ -33,6 +33,38 @@ describe("file progress demo", () => {
   });
 });
 
+describe("media Library demo", () => {
+  it("keeps a named, deliberately misordered TV catalog with sidecars", () => {
+    const snapshot = buildScenarioSnapshot("media-library", 0, false, 1);
+    const torrentId = snapshot.torrentOrder[0];
+    if (torrentId === undefined) throw new Error("media demo torrent is missing");
+    const files = snapshot.filesByTorrent[torrentId];
+    const media = snapshot.mediaByTorrent[torrentId];
+
+    expect(snapshot.torrents[torrentId]?.name).toBe(
+      "North Shore Stories · Seasons 1–2",
+    );
+    expect(files?.page.total).toBe(8);
+    expect(media?.order).toHaveLength(6);
+    expect(media?.order.map((id) => media.rows[id]?.role)).toMatchObject([
+      { type: "episode", seasonNumber: 1, episodeNumber: 10 },
+      { type: "episode", seasonNumber: 1, episodeNumber: 2 },
+      { type: "episode", seasonNumber: 1, episodeNumber: 1 },
+      {
+        type: "episode",
+        seasonNumber: 1,
+        episodeNumber: 7,
+        endingEpisodeNumber: 8,
+      },
+      { type: "episode", seasonNumber: 2, episodeNumber: 1 },
+      { type: "unclassified_video" },
+    ]);
+    expect(
+      files?.order.map((id) => files.rows[id]?.extension),
+    ).toEqual(expect.arrayContaining(["jpg", "nfo"]));
+  });
+});
+
 describe("piece map demos", () => {
   it("shows a failed attempt, a clean retry, and eventual verification", () => {
     const failed = pieceMapAt("piece-retry", 10_000);
