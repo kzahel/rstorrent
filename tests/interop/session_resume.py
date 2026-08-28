@@ -395,6 +395,7 @@ def wait_for_complete(
 ) -> dict[str, Any]:
     deadline = time.monotonic() + timeout_seconds
     request_number = 0
+    last_response: dict[str, Any] | None = None
     while time.monotonic() < deadline:
         response = exchange(
             process,
@@ -403,6 +404,7 @@ def wait_for_complete(
                 {"type": "snapshot"},
             ),
         )
+        last_response = response
         request_number += 1
         torrents = response["snapshot"]["torrents"]
         if len(torrents) != 1:
@@ -420,7 +422,10 @@ def wait_for_complete(
         if torrent["state"] == "needs_repair":
             raise ScenarioFailure(f"restart entered repair state: {torrent}")
         time.sleep(0.05)
-    raise ScenarioFailure("restarted session did not complete before timeout")
+    raise ScenarioFailure(
+        "restarted session did not complete before timeout: "
+        f"last_response={last_response}"
+    )
 
 
 def stop_process(process: subprocess.Popen[str], graceful: bool) -> None:

@@ -49,6 +49,7 @@ PIECE_SIZE = 32 * 1024
 PROCESS_TIMEOUT_SECONDS = 45
 PUBLICATION_DELAY_MILLIS = 60_000
 REFERENCE_REVISION = "7d7fc38fac61177fa5e02148f791b2f65250b09d"
+OVERSIZED_SUFFIX = b"ignored oversized suffix"
 PUBLICATION_STAGES = (
     "intent_durable",
     "renamed",
@@ -87,6 +88,7 @@ class TopologyResult:
     repair_upload: int
     final_file_hashes: dict[str, str]
     libtorrent_recheck_pieces: int
+    oversized_suffix_bytes: int
     cleanup: bool = False
 
 
@@ -118,14 +120,6 @@ def bencode(value: Any) -> bytes:
         encoded.extend(b"e")
         return bytes(encoded)
     raise TypeError(f"cannot bencode {type(value).__name__}")
-
-
-def sha1_file(path: Path) -> str:
-    digest = hashlib.sha1()
-    with path.open("rb") as source:
-        while chunk := source.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def sha256_file(path: Path) -> str:
@@ -228,13 +222,27 @@ def staging_root(root: Path, torrent_id: str) -> Path:
     return root / f".{torrent_id}.rstorrent-staging"
 
 
-def verify_final(root: Path, fixture: Fixture) -> dict[str, str]:
+def verify_final(
+    root: Path, fixture: Fixture, *, preserve_oversized_suffix: bool = False
+) -> dict[str, str]:
     hashes: dict[str, str] = {}
     for file in fixture.files:
         path = final_file(root, fixture, file)
-        if path.stat().st_size != file.length:
+        suffix = (
+            OVERSIZED_SUFFIX
+            if preserve_oversized_suffix
+            and fixture.shape in {"length", "one_entry_files"}
+            and file == fixture.files[0]
+            else b""
+        )
+        if path.stat().st_size != file.length + len(suffix):
             raise ScenarioFailure(f"{fixture.shape} final length differs for {path}")
-        actual = sha1_file(path)
+        with path.open("rb") as source:
+            declared = source.read(file.length)
+            actual_suffix = source.read()
+        if actual_suffix != suffix:
+            raise ScenarioFailure(f"{fixture.shape} oversized suffix differs for {path}")
+        actual = hashlib.sha1(declared).hexdigest()
         if actual != file.sha1:
             raise ScenarioFailure(f"{fixture.shape} final hash differs for {path}")
         hashes["/".join(file.path)] = actual
@@ -326,12 +334,14 @@ def wait_for_publication_stage(
     raise ScenarioFailure(f"session did not reach publication stage {stage}")
 
 
-def add_fixture(process: subprocess.Popen[str], fixture: Fixture, port: int) -> str:
+def add_fixture(
+    process: subprocess.Popen[str], fixture: Fixture, port: int, request_id: str
+) -> str:
     return torrent_id_from_add(
         exchange(
             process,
             envelope(
-                "add",
+                request_id,
                 {
                     "type": "add_magnet",
                     "magnet": (
@@ -356,7 +366,7 @@ def mutate_final(root: Path, fixture: Fixture) -> list[int]:
             output.seek(PIECE_SIZE + 17)
             output.write(bytes([original[0] ^ 0xFF]))
             output.seek(0, 2)
-            output.write(b"ignored oversized suffix")
+            output.write(OVERSIZED_SUFFIX)
         return [1]
     if fixture.shape == "one_entry_files":
         path = final_file(root, fixture, fixture.files[0])
@@ -366,7 +376,7 @@ def mutate_final(root: Path, fixture: Fixture) -> list[int]:
             output.seek(PIECE_SIZE + 31)
             output.write(bytes([original[0] ^ 0xFF]))
             output.seek(0, 2)
-            output.write(b"ignored oversized suffix")
+            output.write(OVERSIZED_SUFFIX)
         return [1]
     middle = final_file(root, fixture, fixture.files[1])
     middle.unlink()
@@ -426,6 +436,14 @@ def libtorrent_recheck_oracle(
         rechecked = wait_libtorrent_check(session, handle, diagnostics)
         if rechecked != expected:
             raise ScenarioFailure("libtorrent force recheck changed the oracle result")
+        if fixture.shape in {"length", "one_entry_files"}:
+            mutated = final_file(oracle, fixture, fixture.files[0])
+            if mutated.stat().st_size != fixture.files[0].length + len(OVERSIZED_SUFFIX):
+                raise ScenarioFailure("libtorrent truncated the oversized oracle file")
+            with mutated.open("rb") as source:
+                source.seek(fixture.files[0].length)
+                if source.read() != OVERSIZED_SUFFIX:
+                    raise ScenarioFailure("libtorrent changed the oversized oracle suffix")
         return rechecked
     finally:
         if handle is not None and handle.is_valid():
@@ -455,27 +473,31 @@ def run_topology_case(binary: Path, shape: str) -> TopologyResult:
         )
         upload_before = seed_handle.status().total_payload_upload
         process = start_process(binary, profile, payload)
-        torrent_id = add_fixture(process, fixture, port)
+        torrent_id = add_fixture(process, fixture, port, "add")
         wait_for_complete(process, fixture, torrent_id)
         initial_upload = seed_handle.status().total_payload_upload - upload_before
         if initial_upload != fixture.torrent_info.total_size():
             raise ScenarioFailure("fresh download did not transfer exact payload bytes")
         verify_final(payload, fixture)
-        invalidated = mutate_final(payload, fixture)
-        repair_before = seed_handle.status().total_payload_upload
-        force = exchange(
+        exchange(
             process,
             envelope(
-                "force-recheck",
-                {"type": "force_recheck", "torrent_id": torrent_id},
+                "remove-keep-data",
+                {
+                    "type": "remove_torrent",
+                    "torrent_id": torrent_id,
+                    "data": "keep",
+                },
             ),
         )
-        wait_for_complete(
-            process,
-            fixture,
-            torrent_id,
-            minimum_revision=int(force["revision"]) + 2,
-        )
+        if exchange(process, envelope("removed-snapshot", {"type": "snapshot"}))[
+            "snapshot"
+        ]["torrents"]:
+            raise ScenarioFailure("keep-data removal retained the durable torrent row")
+        invalidated = mutate_final(payload, fixture)
+        repair_before = seed_handle.status().total_payload_upload
+        torrent_id = add_fixture(process, fixture, port, "readd")
+        wait_for_complete(process, fixture, torrent_id)
         repair_upload = seed_handle.status().total_payload_upload - repair_before
         expected_upload = sum(
             fixture.torrent_info.piece_size(index) for index in invalidated
@@ -484,7 +506,11 @@ def run_topology_case(binary: Path, shape: str) -> TopologyResult:
             raise ScenarioFailure(
                 f"repair uploaded {repair_upload} bytes, expected {expected_upload}"
             )
-        final_hashes = verify_final(payload, fixture)
+        final_hashes = verify_final(
+            payload,
+            fixture,
+            preserve_oversized_suffix=shape in {"length", "one_entry_files"},
+        )
         oracle_pieces = libtorrent_recheck_oracle(
             fixture, invalidated, run_path, diagnostics
         )
@@ -500,6 +526,7 @@ def run_topology_case(binary: Path, shape: str) -> TopologyResult:
             repair_upload,
             final_hashes,
             oracle_pieces,
+            len(OVERSIZED_SUFFIX) if shape in {"length", "one_entry_files"} else 0,
         )
     except BaseException as error:
         failure = error
@@ -557,7 +584,7 @@ def run_publication_crash(binary: Path, stage: str) -> PublicationCrashResult:
             publication_delay_millis=PUBLICATION_DELAY_MILLIS,
             trace_publication_stages=True,
         )
-        torrent_id = add_fixture(process, fixture, port)
+        torrent_id = add_fixture(process, fixture, port, "add")
         wait_for_publication_stage(process, stage, diagnostics)
         process.kill()
         process.wait(timeout=5)
@@ -633,6 +660,11 @@ def parse_arguments() -> argparse.Namespace:
         default="all",
     )
     parser.add_argument("--binary", type=Path)
+    parser.add_argument(
+        "--shape",
+        choices=("length", "one_entry_files", "cross_file"),
+        help="run only one topology shape",
+    )
     return parser.parse_args()
 
 
@@ -654,9 +686,14 @@ def main() -> int:
     }
     try:
         if arguments.phase in {"all", "topology"}:
+            shapes = (
+                (arguments.shape,)
+                if arguments.shape is not None
+                else ("length", "one_entry_files", "cross_file")
+            )
             result["topology"] = [
                 asdict(run_topology_case(binary, shape))
-                for shape in ("length", "one_entry_files", "cross_file")
+                for shape in shapes
             ]
         if arguments.phase in {"all", "publication"}:
             result["publication_crashes"] = [
