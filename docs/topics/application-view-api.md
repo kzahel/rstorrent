@@ -1271,6 +1271,25 @@ an explicit versioned field-number registry rather than Rust enum order.
 Complete session-rate history replacement, projection overlap removal, and
 browser decode/reducer/paint cost remain separately measured follow-ups.
 
+Tactical `185` is complete. `TorrentFieldUpdate`, `FileFieldUpdate`,
+`PeerFieldUpdate`, and `ActivePieceFieldUpdate` are closed tagged semantic
+variants carried by keyed update records alongside full insertion upserts and
+explicit removals. Selected Summary uses an explicit replace-or-update change.
+Nullable values clear through a present null-valued variant; omitted variants
+remain unchanged. Pure helpers and every first-party reducer reject empty or
+duplicate fields, identity drift, contradictory row operations, and updates
+without an existing row. Pending coalescing merges by row and field, including
+applying a sparse change into a queued complete upsert. Snapshots and resets
+remain complete.
+
+The identical clean production run reduces post-coalescing server payload
+from 1,239,166 to 783,539 bytes (-36.77%), with zero reset, duplicate-view
+batch, or lost progress. This validates the semantic boundary independently of
+the current JSON codec. Rust enum order, generated union layout, and client
+duplicate-detection keys are explicitly not binary field numbers; a future
+codec still requires negotiated versioning, a stable numeric registry,
+unknown-field rules, golden vectors, and payload/CPU measurements.
+
 Public swarms and visible Tauri launch are unnecessary for this foundation.
 The browser gateway, temporary profiles, controlled libtorrent peer, and pure
 fixtures provide higher-signal headless evidence without disturbing the

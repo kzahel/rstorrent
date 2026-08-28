@@ -3,20 +3,19 @@
 Topic: `client-view-delivery-policy`
 
 Status: The semantic application-view contract already accepts a per-view
-`min_interval_millis`, and the live client already requests only the
-projections implied by current navigation. Production browser delivery uses
-one WebSocket and does not support an automatic polling fallback. The web/
-Tauri adapter currently hardcodes 100 ms for Library, Summary, Peers, Pieces,
-Disk and Diagnostics and 250 ms for Files and Trackers. There is no
+`min_interval_millis`, and the live client requests only projections implied
+by current navigation. Production browser delivery uses one WebSocket and has
+no automatic polling fallback. Completed Tacticals
+[`183`](../tactical/183-production-websocket-ui-bandwidth-baseline.md),
+[`184`](../tactical/184-view-aware-current-state-coalescing.md), and
+[`185`](../tactical/185-typed-sparse-hot-view-patches.md) establish the clean
+baseline, repair interleaved current-state coalescing, and add closed typed
+sparse rows across all first-party reducers. Total server payload is now
+85.13% below the original measured run. The remaining idle floor is the
+complete session-rate history at roughly 5 KiB/s. There is still no
 user-selectable delivery profile, visibility-driven downshift, global
 bandwidth budget, or cadence-specific performance gate. Changing only a
-delivery interval also causes an unnecessary fresh snapshot today. Completed
-Tactical [`183`](../tactical/183-production-websocket-ui-bandwidth-baseline.md)
-measured the current production WebSocket baseline. Active Tactical
-[`184`](../tactical/184-view-aware-current-state-coalescing.md) first repairs
-view-aware coalescing of interleaved current-state patches. A separately
-measured typed sparse-row tactical follows; neither change is a codec,
-Diagnostics-default, or WebSocket-fallback change.
+delivery interval also causes an unnecessary fresh snapshot today.
 
 ## Purpose And Scope
 
@@ -287,6 +286,23 @@ receipt-to-applied-view transition measured 24.1 ms. Broader allocation,
 notification, render, and reset-rate measurement remains necessary before
 choosing sparse rows or structural sharing.
 
+Completed Tactical `184` makes current-state coalescing view-aware across
+interleaved logical view IDs. Its identical clean run cut total server payload
+76.48% without changing public DTOs, batch cadence, cursor/reset behavior, or
+progress. Completed Tactical `185` then replaces repeated complete Torrent,
+File, Peer, and active-piece rows with closed semantic field updates across
+Rust, web, desktop, Android, and iOS. That second clean run cut another 36.77%
+from server payload. Active Transfers, Peers, General, Files, Pieces, and
+Normal Logs now measure 8.22, 15.59, 8.58, 10.12, 16.75, and 9.02 KiB/s,
+respectively, with zero resets and exact browser/gateway byte agreement.
+
+The unchanged idle Transfers result, 5.28 KiB/s, is now high-signal evidence:
+it consists of complete ten-minute session-rate history replacement. Sparse
+Library and Summary updates are no longer dominant, unselected details still
+send no data, and default Normal Logs remain a minor direct contributor. The
+next optimization should therefore be selected from the new residual rather
+than inferred from the original trace.
+
 ## Required Evidence
 
 An implementing tactical should retain, for at least idle, Library, ordinary
@@ -313,17 +329,27 @@ continuity and reset gates instead of a narrow wall-clock throughput threshold.
 
 ## Recommended Next Work
 
-Create one bounded tactical for view-aware pending coalescing. It should merge
-compatible current-state patches for the same view across interleaved other
-view IDs, preserve the newest complete keyed row/singleton, retain ordered
-Diagnostics without reordering or silent loss, recompute exact queue bytes,
-and prove cadence, cursor, reset, fairness, and browser equivalence. Re-run
-Tactical `183`'s retained scenario as the causal A/B gate.
+Use the completed `183`/`184`/`185` reports as the causal baseline for one
+bounded next tactical. The leading payload candidate is an incremental
+session-rate window that sends only newly completed buckets plus the current
+sample and preserves epoch/range/reset semantics. It should prove bounded
+catch-up, gap handling, reconnect, and reconstruction before replacing the
+current complete history DTO.
 
-Only then choose a second optimization from the residual measurements. Likely
-candidates are sparse volatile torrent fields or avoiding duplicate Library/
-Summary row material, incremental session-rate samples, smaller viewport/page
-projections, and named low-bandwidth/background delivery profiles. Diagnostic
-scope was not the first observed problem. Do not bundle those changes, select
-a codec, expose raw intervals, add a general remote service, or implement a
-bandwidth budget before the coalescing result establishes the remaining cost.
+After that isolated result, measure a named low-bandwidth/background delivery
+profile rather than exposing raw intervals. It should combine explicit desired
+views with server-enforced cadence, document-visibility or platform lifecycle,
+and immediate foreground refresh, and report payload, command convergence,
+queue pressure, resets, and paint latency. Removing a view remains preferable
+to sampling it when the information is not visible.
+
+Library/selected-Summary overlap removal and viewport/page projections remain
+valid later candidates when measurements show enough residual duplication or
+large visible collections. Normal Logs are not currently a priority. A binary
+codec is deliberately later still: it must reuse the same semantic snapshots,
+patches, cursors, and acknowledgements; negotiate a version and codec; define
+an explicit stable field-number registry and unknown-field policy; and compare
+payload savings against CPU, allocation, implementation complexity, and
+mixed-version behavior. Rust enum order, JSON paths, and client-local duplicate
+keys are not that registry. Do not bundle these independent changes or add a
+polling fallback for networks that block WebSockets.

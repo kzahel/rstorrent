@@ -533,6 +533,36 @@ projection-specific candidate. Binary encoding remains a later measurement-
 driven codec decision; current semantic diffs must not depend on JSON paths or
 Rust enum layout.
 
+Tactical `185` completed the typed sparse-row repair and repeated the same
+fixture at clean commit `fe6a1d4959f3f0c0ce3f499dc46e53a7eb7a562e`.
+Server application payload fell from the post-coalescing 1,239,166 bytes to
+783,539 (-36.77%); gateway view-batch payload fell from 1,212,277 to 756,650
+(-37.58%). Browser and gateway totals agreed exactly. The run retained 506
+streamed batches, zero duplicate-view batches, zero resets, progress from 1%
+to 20%, a 52,891-byte maximum outbound message, and clean shutdown. Its report
+SHA-256 is
+`79aa0f26bfeebd709c4285697d442c2d8bec51507061ff67a2bdcca83ef0d73f`.
+
+| Eight-second steady window | Post-coalescing KiB/s | Sparse KiB/s | Reduction |
+| --- | ---: | ---: | ---: |
+| idle Transfers | 5.28 | 5.28 | 0.00% |
+| active Transfers | 13.14 | 8.22 | 37.43% |
+| Peers | 33.83 | 15.59 | 53.92% |
+| General | 14.69 | 8.58 | 41.64% |
+| Files | 16.02 | 10.12 | 36.79% |
+| Pieces | 27.81 | 16.75 | 39.73% |
+| Normal Logs | 15.96 | 9.02 | 43.46% |
+
+The causal attribution is correspondingly narrow: total Library, selected
+Summary, Peer, and active-piece semantic bytes fell 63.71%, 72.13%, 68.06%,
+and 47.35%, while file updates in the Files window fell 35.87%. Idle did not
+move because it contains only the still-complete session-rate projection.
+That roughly 5 KiB/s history replacement is now the clearest next payload
+candidate. A later measurement should compare an incremental rate-window
+contract against delivery-profile/hidden-client policy before considering a
+binary codec; binary remains a broader payload/CPU/complexity decision rather
+than a response to the original row-repetition bug.
+
 The reproducible command is:
 
 ```bash

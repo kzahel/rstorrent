@@ -42,13 +42,14 @@ machine-control.
 
 ## Current Tactical State
 
-The authoritative **Now** is
-[`185-typed-sparse-hot-view-patches.md`](docs/tactical/185-typed-sparse-hot-view-patches.md).
-It replaces measured repeated Torrent, File, Peer, and active-piece rows with
-closed typed semantic deltas across all first-party reducers. The contract is
-transport-neutral so a much later negotiated binary codec can reuse it without
-making Rust enum layout or JSON paths part of the wire design. Tactical `176`
-retains only its unchanged macOS-hosted iOS simulator/archive compile gate.
+The authoritative **Now** is the remaining macOS-hosted iOS simulator/archive
+compile gate in
+[`176-durable-high-file-priority.md`](docs/tactical/176-durable-high-file-priority.md).
+Completed Tactical `185` replaces measured repeated Torrent, File, Peer, and
+active-piece rows with closed typed semantic deltas across all first-party
+reducers. Its clean retained run cuts another 36.77% from post-coalescing
+server payload while keeping the contract transport-neutral for a much later
+negotiated binary codec with an explicit field registry.
 Completed Tactical `182` bounds preferred-uTP/TCP/MSE/plain handshake work to
 one 15-second outbound-attempt lifetime and conservatively turns over a
 zero-contribution metadata worker only when the 30-peer cohort is saturated

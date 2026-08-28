@@ -79,9 +79,14 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`176-durable-high-file-priority.md`](176-durable-high-file-priority.md):
+  active as the sole **Now** only for its remaining macOS-hosted iOS
+  simulator/archive compile gate; implementation and every other validation
+  gate pass.
 - [`185-typed-sparse-hot-view-patches.md`](185-typed-sparse-hot-view-patches.md):
-  active; replaces measured repeated Torrent, File, Peer, and active-piece rows
-  with closed typed field deltas across every first-party reducer while keeping
+  complete; replaces measured repeated Torrent, File, Peer, and active-piece
+  rows with closed typed field deltas across every first-party reducer and
+  cuts another 36.77% from post-coalescing server payload while keeping
   semantics independent from a much later binary codec.
 - [`184-view-aware-current-state-coalescing.md`](184-view-aware-current-state-coalescing.md):
   complete; coalesces compatible pending patches across interleaved logical

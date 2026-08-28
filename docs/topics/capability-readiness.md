@@ -213,12 +213,13 @@ iOS compile gate.
 Tactical `184` is complete. Its clean retained run reduces total server
 application bytes by 76.48% and active detail rates by 70--86%, with zero
 duplicate-view batches, resets, or lost progress and no public-contract change.
-Explicit user direction now selects typed sparse hot-view Tactical
-[`185`](../tactical/185-typed-sparse-hot-view-patches.md) as the sole **Now**.
-It replaces repeated Torrent, File, Peer, and active-piece rows across every
-first-party reducer while keeping semantic fields independent from JSON and
-from a much later negotiated binary codec. Tactical `176` retains only its
-unchanged macOS-hosted iOS compile gate.
+Typed sparse hot-view Tactical
+[`185`](../tactical/185-typed-sparse-hot-view-patches.md) is complete. It
+replaces repeated Torrent, File, Peer, and active-piece rows across every
+first-party reducer and cuts another 36.77% from the post-coalescing clean run,
+with zero resets or lost progress. Semantic fields remain independent from
+JSON and from a much later negotiated binary codec. Tactical `176` resumes as
+the sole **Now** with only its unchanged macOS-hosted iOS compile gate.
 
 The updater tactical's client, production route, five-target signed hosted
 rehearsal, public `0.1.0`, `0.1.1`, and `0.1.2` releases, installed macOS arm64
@@ -715,17 +716,10 @@ exactly.
 
 ### Now
 
-- Execute **Tactical `184`**: make pending current-state coalescing view-aware
-  across interleaved logical views and rerun the production WebSocket baseline.
-
-### Next
-
-- Implement the separately bounded typed sparse-row application contract from
-  Tactical `184`'s residual production-byte attribution, including web,
-  Android, and iOS generated/reducer parity.
-
 - Resume **Tactical `176`** only for its existing macOS-hosted iOS simulator/
   archive compile; every implementation and other validation gate passes.
+
+### Next
 
 - Resume **Tactical `158`** and close the clean Windows and Linux x86_64
   signed replacement/relaunch evidence plus Windows firewall-consent

@@ -1,9 +1,10 @@
 # Tactical 185: Typed Sparse Hot-View Patches
 
-Status: **In progress (2026-08-28).** Explicit user direction temporarily
-yields Tactical `176` to the second measured application-delivery repair.
-Tactical `176` retains only its unchanged macOS-hosted iOS simulator/archive
-compile gate.
+Status: **Complete (2026-08-28).** Typed sparse rows are implemented across
+the shared contract and every first-party reducer, and the clean retained
+production-browser run proves the second causal byte reduction. Tactical
+`176` resumes as the sole **Now** with only its unchanged macOS-hosted iOS
+simulator/archive compile gate.
 
 Topics:
 [`client-view-delivery-policy`](../topics/client-view-delivery-policy.md),
@@ -151,3 +152,66 @@ available first-party boundary, the old repeated whole-row update path is
 removed, the clean retained run proves a further causal reduction with no lost
 state/reset, all owning topics record exact evidence and deliberate deferrals,
 and temporary artifacts are removed.
+
+## Implementation And Evidence
+
+Commit `fe6a1d4959f3f0c0ce3f499dc46e53a7eb7a562e` replaces repeated complete
+rows with four closed typed field-update enums and keyed update records.
+Library, selected Summary, Peers, Files, and active Pieces now use complete
+upserts only for insertion or coherent replacement. Nullable variants encode
+explicit clears. Pure Rust diff/apply/merge helpers cover every mutable field,
+retain immutable identities and file geometry, canonicalize merged fields,
+and reject empty, duplicate, contradictory, or missing-base operations.
+
+The view hub records exact pre/post file rows so byte and media-availability
+transitions remain sparse and truthful. View-aware pending coalescing applies
+sparse changes into an earlier full row or merges them by row and semantic
+field. The generated JSON Schema/TypeScript and UniFFI Kotlin/Swift boundaries
+carry the same closed variants. Web, Android, iOS, and desktop consumers
+reconstruct complete rows; Android settings drafts continue to reconcile from
+the merged torrent, and desktop policy owners request resync on an
+inapplicable sparse update. No compatibility whole-row update lane remains.
+
+Deterministic validation passed:
+
+- `cargo fmt --all -- --check`, `cargo clippy --workspace -- -D warnings`,
+  and `cargo test --workspace`;
+- generated contract regeneration, web typecheck, 314 passing web tests with
+  two intentional skips, and the production CSP build;
+- the final Android dual-ABI `clients/android/build.sh`, generated Kotlin
+  compilation, debug APK, and unit tests; and
+- host Rust/UniFFI compilation plus generated Swift/source inspection. This
+  Linux host still cannot claim Tactical `176`'s macOS simulator/archive gate.
+
+The identical Tactical `183` fixture passed on clean commit `fe6a1d4` in
+76.8 seconds. Browser and gateway counters agreed exactly: 783,539 server
+payload bytes, 29,424 client payload bytes, 506 streamed view batches, no
+duplicate-view batch, reset, binary frame, stream error, heartbeat timeout, or
+cleanup failure, and active progress from 1% to 20%. Maximum outbound message
+size remained 52,891 bytes. The report SHA-256 is
+`79aa0f26bfeebd709c4285697d442c2d8bec51507061ff67a2bdcca83ef0d73f`.
+
+Relative to Tactical `184`'s clean post-coalescing run, total server payload
+fell from 1,239,166 to 783,539 bytes (-36.77%) and gateway view-batch payload
+fell from 1,212,277 to 756,650 bytes (-37.58%). Equal steady windows changed as
+follows:
+
+| Eight-second steady window | After coalescing KiB/s | Sparse KiB/s | Reduction |
+| --- | ---: | ---: | ---: |
+| idle Transfers | 5.28 | 5.28 | 0.00% |
+| active Transfers | 13.14 | 8.22 | 37.43% |
+| Peers | 33.83 | 15.59 | 53.92% |
+| General | 14.69 | 8.58 | 41.64% |
+| Files | 16.02 | 10.12 | 36.79% |
+| Pieces | 27.81 | 16.75 | 39.73% |
+| Normal Logs | 15.96 | 9.02 | 43.46% |
+
+Standalone semantic attribution confirms the intended mechanism: total
+Library, selected Summary, Peer, and active-piece update bytes fell 63.71%,
+72.13%, 68.06%, and 47.35%. The Files steady window's own file updates fell
+35.87%. Complete session-rate history was unchanged at roughly 5 KiB/s and now
+forms the obvious measured floor. Incremental rate windows, Library/Summary
+overlap removal, delivery profiles, viewport work, and a negotiated binary
+codec remain separate follow-ups. Any binary tactical must keep the explicit
+versioned field registry and golden-vector requirements above; these Rust enum
+orders and Swift duplicate-detection keys are not wire numbers.
