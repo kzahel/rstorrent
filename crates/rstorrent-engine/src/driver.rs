@@ -543,8 +543,9 @@ pub use control::{
     DiscoveryLaneOperation, DiscoveryLanePhase, DiskCheckpointStage, DiskPieceRuntimeSnapshot,
     DiskPieceStage, DiskPressure, DiskRuntimeSnapshot, DownloadActivityEvent, DownloadActivitySink,
     DownloadControl, DownloadDiagnosticSnapshot, DownloadProgress, FileSelectionUpdate,
-    MetadataAcquisitionPhase, MetadataAcquisitionSnapshot, MetadataPeerSnapshot, MetadataPeerStage,
-    PathPublicationStage, StreamingDemandLease, SwarmActivitySnapshot,
+    IntegrityPreparationPhase, IntegrityPreparationProgress, MetadataAcquisitionPhase,
+    MetadataAcquisitionProgress, MetadataAcquisitionSnapshot, MetadataPeerSnapshot,
+    MetadataPeerStage, PathPublicationStage, StreamingDemandLease, SwarmActivitySnapshot,
 };
 use control::{CheckerPieceOutcome, StorageCommandKind};
 
@@ -4059,10 +4060,13 @@ async fn run_metadata_peer(
             Some(result)
         }
     };
-    metadata
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .remove_peer(attempt.id().get());
+    {
+        let mut download = metadata
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        download.remove_peer(attempt.id().get());
+        control.observe_metadata_download(&download);
+    }
     match &result {
         Some(Ok(_)) => {
             control.metadata_peer_finished(attempt.id(), MetadataPeerStage::Complete, None)
@@ -4863,16 +4867,17 @@ async fn acquire_metadata_from_connection(
                         progress_deadline = TokioInstant::now() + metadata_progress_timeout;
                     }
                     MetadataMessage::Reject { piece } => {
-                        metadata
+                        let mut download = metadata
                             .lock()
-                            .unwrap_or_else(|poisoned| poisoned.into_inner())
+                            .unwrap_or_else(|poisoned| poisoned.into_inner());
+                        download
                             .on_reject(
                                 peer.attempt().id().get(),
                                 piece,
                                 metadata_instant(control.diagnostic_elapsed()),
                             )
                             .map_err(DownloadError::Metadata)?;
-                        control.metadata_rejected(peer.attempt().id());
+                        control.metadata_rejected(peer.attempt().id(), &download);
                         return Err(DownloadError::Metadata(MetadataError::Rejected {
                             piece: u32::try_from(piece).expect("validated metadata piece"),
                         }));
@@ -5379,6 +5384,29 @@ impl<'a> ContentSwarmDownload<'a> {
             );
         }
         assignments
+    }
+
+    fn integrity_preparation(&self) -> IntegrityPreparationProgress {
+        let primary = self.hash_scheduler.snapshot();
+        let leaf = self
+            .leaf_diagnosis
+            .as_ref()
+            .map(|diagnosis| diagnosis.scheduler.snapshot())
+            .unwrap_or_default();
+        let needed_hash_ranges = primary.logical_needs.saturating_add(leaf.logical_needs);
+        let active_requests = primary.active_attempts.saturating_add(leaf.active_attempts);
+        let phase = if needed_hash_ranges == 0 {
+            IntegrityPreparationPhase::Ready
+        } else if active_requests == 0 {
+            IntegrityPreparationPhase::WaitingForPeer
+        } else {
+            IntegrityPreparationPhase::Acquiring
+        };
+        IntegrityPreparationProgress {
+            phase,
+            needed_hash_ranges,
+            active_requests,
+        }
     }
 
     fn enqueue_candidate_verification(&mut self, piece: u32) -> Result<(), DownloadError> {
@@ -8028,6 +8056,9 @@ async fn run_selective_swarm_loop(
                 failed_connections.insert(assignment.connection);
             }
         }
+        download
+            .control
+            .observe_integrity_preparation(download.integrity_preparation());
 
         let scheduled = if storage_ready && !storage_backpressured {
             download.schedule(now)?

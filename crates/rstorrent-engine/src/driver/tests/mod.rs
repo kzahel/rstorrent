@@ -17,8 +17,9 @@ use rstorrent_protocol::extension::{
 use rstorrent_protocol::identity::{FullInfoHash, InfoHashes, SwarmKey, V1InfoHash, V2InfoHash};
 use rstorrent_protocol::magnet::{Magnet, UdpTrackerUrl};
 use rstorrent_protocol::metadata::{
-    MetadataMessage, UT_METADATA_LOCAL_ID, encode_extension_handshake, encode_metadata_data,
-    encode_metadata_reject, parse_metadata_message,
+    MetadataInstant, MetadataMessage, TorrentMetadataDownload, UT_METADATA_LOCAL_ID,
+    encode_extension_handshake, encode_metadata_data, encode_metadata_reject,
+    parse_metadata_message,
 };
 use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo, MetainfoError};
 use rstorrent_protocol::peer_wire::{
@@ -45,17 +46,18 @@ use super::{
     ContentDownloadConfig, ContentStorage, ContentStorageCommand, ContentStorageCompletion,
     ContentStoragePipeline, ContentSupervisorOwner, ContentWriteStats, DhtRetryTiming,
     DiskPressure, DownloadActivityEvent, DownloadActivitySink, DownloadConfig, DownloadControl,
-    DownloadError, DownloadResourceLimits, MAX_CONCURRENT_TRACKER_OPERATIONS,
-    MAX_DIAGNOSTIC_ERROR_LENGTH, MAX_METADATA_PEERS, MAX_RECENT_METADATA_ATTEMPTS,
-    MagnetDownloadConfig, MetadataAcquisitionPhase, MetadataConnectionLimits, MetadataDialPacer,
-    MetadataPeerStage, MetadataWorkerTurnoverState, PeerConnection, PreparedContentWrite,
-    QueuedContentStorageCommand, ResumableMagnetDownloadConfig, ResumableMetainfoDownloadConfig,
-    ResumeArtifactState, ResumedStorage, SwarmConfig, TorrentPeerCoordinator, TrackerManager,
-    UdpTrackerAnnounce, UdpTrackerExchange, UdpTrackerTiming, UdpTrackerTokenCache,
-    announce_udp_tracker, announce_udp_tracker_address, atomic_saturating_add,
-    atomic_saturating_increment, build_content_plan_window, coalesce_content_writes,
-    collect_content_write_batch, content_dial_slot_available, content_storage_job_limit,
-    download_magnet, download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
+    DownloadError, DownloadResourceLimits, IntegrityPreparationPhase, IntegrityPreparationProgress,
+    MAX_CONCURRENT_TRACKER_OPERATIONS, MAX_DIAGNOSTIC_ERROR_LENGTH, MAX_METADATA_PEERS,
+    MAX_RECENT_METADATA_ATTEMPTS, MagnetDownloadConfig, MetadataAcquisitionPhase,
+    MetadataAcquisitionProgress, MetadataConnectionLimits, MetadataDialPacer, MetadataPeerStage,
+    MetadataWorkerTurnoverState, PeerConnection, PreparedContentWrite, QueuedContentStorageCommand,
+    ResumableMagnetDownloadConfig, ResumableMetainfoDownloadConfig, ResumeArtifactState,
+    ResumedStorage, SwarmConfig, TorrentPeerCoordinator, TrackerManager, UdpTrackerAnnounce,
+    UdpTrackerExchange, UdpTrackerTiming, UdpTrackerTokenCache, announce_udp_tracker,
+    announce_udp_tracker_address, atomic_saturating_add, atomic_saturating_increment,
+    build_content_plan_window, coalesce_content_writes, collect_content_write_batch,
+    content_dial_slot_available, content_storage_job_limit, download_magnet,
+    download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
     download_magnet_with_control, download_verified_piece, download_verified_piece_with_control,
     dry_swarm_probe_available, execute_content_storage_verification,
     execute_content_storage_writes, full_recheck_managed_storage, metadata_cohort_has_capacity,

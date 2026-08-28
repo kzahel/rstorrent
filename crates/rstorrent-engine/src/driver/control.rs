@@ -74,8 +74,50 @@ pub enum DiscoveryLanePhase {
     Cancelled,
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct MetadataAcquisitionProgress {
+    pub total_size: Option<usize>,
+    pub received_bytes: usize,
+    pub block_count: usize,
+    pub packed_block_states: Vec<u8>,
+    pub active_peers: usize,
+    pub requests_in_flight: usize,
+    pub hash_failures: usize,
+}
+
+impl MetadataAcquisitionProgress {
+    fn from_download(download: &TorrentMetadataDownload) -> Self {
+        Self {
+            total_size: download.metadata_size(),
+            received_bytes: download.received_bytes(),
+            block_count: download.allocated_blocks(),
+            packed_block_states: download.packed_block_states(),
+            active_peers: download.peer_count(),
+            requests_in_flight: download.pending_requests(),
+            hash_failures: download.hash_failures(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IntegrityPreparationPhase {
+    Ready,
+    Acquiring,
+    WaitingForPeer,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IntegrityPreparationProgress {
+    pub phase: IntegrityPreparationPhase,
+    pub needed_hash_ranges: usize,
+    pub active_requests: usize,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DownloadActivityEvent {
+    MetadataAcquisitionProgress(MetadataAcquisitionProgress),
+    MetadataAcquisitionFinished,
+    IntegrityPreparation(IntegrityPreparationProgress),
     MetadataVerified {
         total_length: u64,
         piece_length: u32,
@@ -488,6 +530,8 @@ struct DownloadControlInner {
     peer_registry_activity: Mutex<PeerRegistryActivityState>,
     peer_connections: Mutex<PeerConnectionDiagnosticState>,
     metadata_diagnostics: Mutex<MetadataDiagnosticState>,
+    last_metadata_progress: Mutex<Option<MetadataAcquisitionProgress>>,
+    last_integrity_preparation: Mutex<Option<IntegrityPreparationProgress>>,
     storage_file_pool: Mutex<Option<StorageFilePool>>,
     active_content_reader: Mutex<Option<ActiveContentReader>>,
     platform_storage: Mutex<Option<PlatformStorageSpec>>,
@@ -859,6 +903,8 @@ impl DownloadControl {
                 peer_registry_activity: Mutex::new(PeerRegistryActivityState::default()),
                 peer_connections: Mutex::new(PeerConnectionDiagnosticState::default()),
                 metadata_diagnostics: Mutex::new(MetadataDiagnosticState::default()),
+                last_metadata_progress: Mutex::new(None),
+                last_integrity_preparation: Mutex::new(None),
                 storage_file_pool: Mutex::new(None),
                 active_content_reader: Mutex::new(None),
                 platform_storage: Mutex::new(None),
@@ -1838,6 +1884,40 @@ impl DownloadControl {
             phase: MetadataAcquisitionPhase::Discovering,
             ..MetadataDiagnosticState::default()
         };
+        drop(state);
+        self.publish_metadata_progress(MetadataAcquisitionProgress::default());
+    }
+
+    pub(super) fn observe_metadata_download(&self, download: &TorrentMetadataDownload) {
+        self.publish_metadata_progress(MetadataAcquisitionProgress::from_download(download));
+    }
+
+    fn publish_metadata_progress(&self, progress: MetadataAcquisitionProgress) {
+        let mut previous = self
+            .inner
+            .last_metadata_progress
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if previous.as_ref() == Some(&progress) {
+            return;
+        }
+        *previous = Some(progress.clone());
+        drop(previous);
+        self.emit(DownloadActivityEvent::MetadataAcquisitionProgress(progress));
+    }
+
+    pub(super) fn observe_integrity_preparation(&self, progress: IntegrityPreparationProgress) {
+        let mut previous = self
+            .inner
+            .last_integrity_preparation
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if *previous == Some(progress) {
+            return;
+        }
+        *previous = Some(progress);
+        drop(previous);
+        self.emit(DownloadActivityEvent::IntegrityPreparation(progress));
     }
 
     pub(super) fn observe_metadata_supervisor(
@@ -1947,6 +2027,8 @@ impl DownloadControl {
             peer.last_activity_at = now;
             peer.last_progress_at = now;
         }
+        drop(state);
+        self.observe_metadata_download(download);
     }
 
     pub(super) fn metadata_block_received(
@@ -1978,6 +2060,8 @@ impl DownloadControl {
             peer.last_activity_at = now;
             peer.last_progress_at = now;
         }
+        drop(state);
+        self.observe_metadata_download(download);
     }
 
     pub(super) fn metadata_requests_sent(
@@ -1986,9 +2070,6 @@ impl DownloadControl {
         download: &TorrentMetadataDownload,
         requests_sent: usize,
     ) {
-        if requests_sent == 0 {
-            return;
-        }
         let now = self.diagnostic_elapsed();
         let mut state = self
             .inner
@@ -2006,14 +2087,21 @@ impl DownloadControl {
             peer.requests_sent = peer.requests_sent.saturating_add(requests_sent);
             peer.last_activity_at = now;
         }
+        drop(state);
+        self.observe_metadata_download(download);
     }
 
-    pub(super) fn metadata_rejected(&self, attempt_id: DialAttemptId) {
+    pub(super) fn metadata_rejected(
+        &self,
+        attempt_id: DialAttemptId,
+        download: &TorrentMetadataDownload,
+    ) {
         let now = self.diagnostic_elapsed();
         self.update_metadata_peer(attempt_id, |peer| {
             peer.rejects_received = peer.rejects_received.saturating_add(1);
             peer.last_activity_at = now;
         });
+        self.observe_metadata_download(download);
     }
 
     pub(super) fn metadata_hash_failed(&self, contributors: usize) {
@@ -2085,6 +2173,13 @@ impl DownloadControl {
             peer.terminal_detail = detail.clone();
             push_recent_metadata_attempt(&mut state, peer);
         }
+        drop(state);
+        *self
+            .inner
+            .last_metadata_progress
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+        self.emit(DownloadActivityEvent::MetadataAcquisitionFinished);
     }
 
     pub(super) fn update_metadata_peer(

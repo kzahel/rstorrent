@@ -189,6 +189,99 @@ fn metadata_diagnostic_history_and_error_detail_are_bounded() {
 }
 
 #[test]
+fn preparation_activity_is_current_bounded_and_deduplicated() {
+    let control = DownloadControl::new();
+    let activity = Arc::new(RecordingActivitySink::default());
+    control.set_activity_sink(activity.clone());
+
+    control.metadata_started();
+    let bytes = b"compact metadata";
+    let mut download = TorrentMetadataDownload::new(<[u8; 20]>::from(Sha1::digest(bytes)));
+    download
+        .register_peer(7, Some(bytes.len()))
+        .expect("register metadata peer");
+    control.observe_metadata_download(&download);
+    assert_eq!(
+        download
+            .requests_for_peer(7, MetadataInstant::ZERO)
+            .expect("request metadata"),
+        [0]
+    );
+    control.observe_metadata_download(&download);
+    control.observe_metadata_download(&download);
+    download
+        .on_data(7, 0, bytes.len(), bytes, MetadataInstant::ZERO)
+        .expect("complete metadata");
+    control.observe_metadata_download(&download);
+    let completed: Result<(), DownloadError> = Ok(());
+    control.metadata_finished(&completed);
+
+    for progress in [
+        IntegrityPreparationProgress {
+            phase: IntegrityPreparationPhase::WaitingForPeer,
+            needed_hash_ranges: 2,
+            active_requests: 0,
+        },
+        IntegrityPreparationProgress {
+            phase: IntegrityPreparationPhase::WaitingForPeer,
+            needed_hash_ranges: 2,
+            active_requests: 0,
+        },
+        IntegrityPreparationProgress {
+            phase: IntegrityPreparationPhase::Acquiring,
+            needed_hash_ranges: 2,
+            active_requests: 1,
+        },
+        IntegrityPreparationProgress {
+            phase: IntegrityPreparationPhase::Ready,
+            needed_hash_ranges: 0,
+            active_requests: 0,
+        },
+    ] {
+        control.observe_integrity_preparation(progress);
+    }
+
+    let events = activity
+        .events
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let metadata = events
+        .iter()
+        .filter_map(|event| match event {
+            DownloadActivityEvent::MetadataAcquisitionProgress(progress) => Some(progress),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(metadata.len(), 4);
+    assert_eq!(metadata[0], &MetadataAcquisitionProgress::default());
+    assert_eq!(metadata[1].total_size, Some(bytes.len()));
+    assert_eq!(metadata[1].packed_block_states, [0]);
+    assert_eq!(metadata[2].packed_block_states, [0b01]);
+    assert_eq!(metadata[3].received_bytes, bytes.len());
+    assert_eq!(metadata[3].packed_block_states, [0b10]);
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, DownloadActivityEvent::MetadataAcquisitionFinished))
+    );
+
+    let integrity = events
+        .iter()
+        .filter_map(|event| match event {
+            DownloadActivityEvent::IntegrityPreparation(progress) => Some(*progress),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(integrity.len(), 3);
+    assert_eq!(
+        integrity[0].phase,
+        IntegrityPreparationPhase::WaitingForPeer
+    );
+    assert_eq!(integrity[1].phase, IntegrityPreparationPhase::Acquiring);
+    assert_eq!(integrity[2].phase, IntegrityPreparationPhase::Ready);
+}
+
+#[test]
 fn safe_cancel_waits_for_storage_creation_boundary() {
     let control = DownloadControl::new();
     let storage_creation = control

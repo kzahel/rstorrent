@@ -5280,6 +5280,9 @@ impl ViewActivitySink {
 
     fn record_discovery_event(&self, event: DownloadActivityEvent) {
         match event {
+            DownloadActivityEvent::MetadataAcquisitionProgress(_)
+            | DownloadActivityEvent::MetadataAcquisitionFinished
+            | DownloadActivityEvent::IntegrityPreparation(_) => {}
             DownloadActivityEvent::MetadataVerified {
                 total_length,
                 piece_length,

@@ -857,6 +857,46 @@ impl TorrentMetadataDownload {
         self.blocks.iter().filter(|block| block.received).count()
     }
 
+    /// Returns bytes retained by the current assembler generation.
+    ///
+    /// Unlike the engine's cumulative metadata counters, this returns to zero
+    /// when a completed candidate fails its info-hash check.
+    pub fn received_bytes(&self) -> usize {
+        let Some(size) = self.size else {
+            return 0;
+        };
+        self.blocks
+            .iter()
+            .enumerate()
+            .filter(|(_, block)| block.received)
+            .map(|(index, _)| {
+                metadata_block_length(size, u32::try_from(index).expect("metadata block index"))
+                    .expect("allocated metadata block has valid geometry")
+            })
+            .sum()
+    }
+
+    /// Packs four current block states into each byte, least-significant block
+    /// first. Missing is `00`, assigned is `01`, received is `10`, and `11` is
+    /// deliberately unused so product clients can reject future/invalid state.
+    pub fn packed_block_states(&self) -> Vec<u8> {
+        if self.size.is_none() {
+            return Vec::new();
+        }
+        let mut packed = vec![0_u8; self.blocks.len().div_ceil(4)];
+        for (index, block) in self.blocks.iter().enumerate() {
+            let state = if block.received {
+                0b10
+            } else if !block.assignments.is_empty() {
+                0b01
+            } else {
+                0b00
+            };
+            packed[index / 4] |= state << ((index % 4) * 2);
+        }
+        packed
+    }
+
     pub fn received_blocks_for_peer(&self, peer: u64) -> usize {
         self.blocks
             .iter()
@@ -1527,6 +1567,82 @@ mod tests {
                 .expect("combined completion"),
             TorrentMetadataEvent::Complete(bytes)
         );
+    }
+
+    #[test]
+    fn torrent_download_reports_compact_current_block_state() {
+        let bytes = vec![9; METADATA_BLOCK_LENGTH + 3];
+        let mut download = TorrentMetadataDownload::new([0; 20]);
+        download
+            .register_peer(1, Some(bytes.len()))
+            .expect("register first peer");
+        download
+            .register_peer(2, Some(bytes.len()))
+            .expect("register second peer");
+
+        assert_eq!(download.received_bytes(), 0);
+        assert_eq!(download.packed_block_states(), [0]);
+        assert_eq!(
+            download
+                .requests_for_peer(1, MetadataInstant::ZERO)
+                .expect("assign first block"),
+            [0]
+        );
+        assert_eq!(
+            download
+                .requests_for_peer(2, MetadataInstant::ZERO)
+                .expect("assign second block"),
+            [1]
+        );
+        assert_eq!(download.packed_block_states(), [0b0000_0101]);
+
+        assert_eq!(
+            download
+                .on_data(
+                    1,
+                    0,
+                    bytes.len(),
+                    &bytes[..METADATA_BLOCK_LENGTH],
+                    MetadataInstant::ZERO,
+                )
+                .expect("accept first block"),
+            TorrentMetadataEvent::BlockAccepted { piece: 0 }
+        );
+        assert_eq!(download.received_bytes(), METADATA_BLOCK_LENGTH);
+        assert_eq!(download.packed_block_states(), [0b0000_0110]);
+
+        download
+            .on_reject(2, 1, MetadataInstant::ZERO)
+            .expect("release rejected block");
+        assert_eq!(download.packed_block_states(), [0b0000_0010]);
+        assert_eq!(
+            download
+                .requests_for_peer(1, instant(METADATA_REQUEST_RAMP_MILLIS))
+                .expect("reassign final block"),
+            [1]
+        );
+        assert!(matches!(
+            download
+                .on_data(
+                    1,
+                    1,
+                    bytes.len(),
+                    &bytes[METADATA_BLOCK_LENGTH..],
+                    instant(METADATA_REQUEST_RAMP_MILLIS),
+                )
+                .expect("bad candidate resets"),
+            TorrentMetadataEvent::HashMismatch { .. }
+        ));
+        assert_eq!(download.received_bytes(), 0);
+        assert_eq!(download.packed_block_states(), [0]);
+        assert_eq!(download.hash_failures(), 1);
+
+        let mut maximum = TorrentMetadataDownload::new([0; 20]);
+        maximum
+            .accept_size(MAX_METADATA_LENGTH)
+            .expect("maximum geometry");
+        assert_eq!(maximum.allocated_blocks(), 1_920);
+        assert_eq!(maximum.packed_block_states().len(), 480);
     }
 
     #[test]
