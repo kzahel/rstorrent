@@ -1350,6 +1350,50 @@ test("piece canvas shows retry truth and bounds a large torrent", async ({
   console.log(`piece_scale_metrics ${JSON.stringify(largeMetrics)}`);
 });
 
+test("metadata preparation stays compact and accessible across widths", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1_180, height: 760 });
+  await openScenario(page, "stalled-metadata", 45_000);
+  await page.getByRole("tab", { name: "General" }).click();
+
+  const progress = page.getByRole("progressbar", {
+    name: "Metadata bytes received",
+  });
+  await expect(progress).toHaveAttribute("max", "8388608");
+  await expect(progress).toHaveAttribute("value", "2097152");
+  const map = page.getByRole("img", {
+    name: "512 metadata blocks: 128 received, 0 requested, 384 missing",
+  });
+  await expect(map).toBeVisible();
+  await expect(page.getByText("16 KiB per block")).toBeVisible();
+  await expect(page.getByText("Hash retries").last()).toBeVisible();
+  const wideMetrics = await page.evaluate(() => ({
+    domElements: document.getElementsByTagName("*").length,
+    canvases: document.querySelectorAll("canvas").length,
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }));
+  expect(wideMetrics.canvases).toBe(1);
+  expect(wideMetrics.domElements).toBeLessThan(1_500);
+  expect(wideMetrics.scrollWidth).toBeLessThanOrEqual(wideMetrics.clientWidth);
+  await capture(page, "rstorrent-metadata-progress-wide.png");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page
+    .getByRole("grid", { name: "Torrent library" })
+    .getByRole("row")
+    .nth(1)
+    .click();
+  await expect(map).toBeVisible();
+  await expect(page.getByText("Requests in flight")).toBeVisible();
+  const phoneOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(phoneOverflow).toBeLessThanOrEqual(0);
+  await capture(page, "rstorrent-metadata-progress-phone.png");
+});
+
 test("removal keeps data by default and exposes destructive intent", async ({
   page,
 }) => {

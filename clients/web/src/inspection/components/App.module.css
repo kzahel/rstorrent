@@ -454,12 +454,13 @@
     bottom: 0;
     left: 0;
     width: min(82vw, 17rem);
-    box-shadow: 10px 0 30px rgb(15 30 46 / 20%);
+    box-shadow: none;
     transform: translateX(-105%);
     transition: transform 160ms ease;
   }
 
   .app[data-sidebar-open="true"] .sidebarWrap {
+    box-shadow: 10px 0 30px rgb(15 30 46 / 20%);
     transform: translateX(0);
   }
 

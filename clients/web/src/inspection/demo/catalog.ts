@@ -1004,6 +1004,23 @@ function stalledMetadata(elapsedMs: number): ScenarioContent {
         peersConnected: peers.length,
         peersKnown: 127,
         progressReason: "Candidates available; no metadata request is active",
+        preparation: {
+          generation: "1",
+          metadata: {
+            phase: "downloading",
+            totalSizeBytes: 8_388_608,
+            receivedBytes: 2_097_152,
+            blockCount: 512,
+            blockStates: Uint8Array.from(
+              { length: 128 },
+              (_, index) => (index < 32 ? 0xaa : 0),
+            ),
+            activePeers: 6,
+            requestsInFlight: 0,
+            hashRetries: 0,
+          },
+          integrity: null,
+        },
       }),
     ],
     peers: { [BUNNY_ID]: peers },
@@ -1703,6 +1720,7 @@ function torrent(input: Partial<TorrentRow> & Pick<TorrentRow, "id" | "name" | "
       })(),
     error: input.error ?? null,
     progressReason: input.progressReason ?? "Waiting for activity",
+    preparation: input.preparation ?? null,
   };
 }
 

@@ -32,6 +32,7 @@ import { FileTable } from "./FileTable";
 import { TrackerTable } from "./TrackerTable";
 import { DiskPanel } from "./DiskPanel";
 import { PieceMapPanel } from "./PieceMapPanel";
+import { PreparationProgress } from "./PreparationProgress";
 import { LogConsole } from "./LogConsole";
 import { SpeedPanel } from "./SpeedPanel";
 import { DhtPanel } from "./DhtPanel";
@@ -227,9 +228,7 @@ function GeneralDetail({
         <div className={styles.largeProgress}>
           <strong>{progressLabel}</strong>
           <span
-            data-indeterminate={
-              (torrent.status === "checking" && visibleProgress === null) || undefined
-            }
+            data-indeterminate={visibleProgress === null || undefined}
             role="progressbar"
             aria-label={`${torrent.name} ${torrent.status === "checking" ? "checking" : "download"} progress: ${progressLabel}`}
             aria-valuemin={0}
@@ -246,6 +245,12 @@ function GeneralDetail({
           </span>
         </div>
       </section>
+      {torrent.preparation == null ? null : (
+        <PreparationProgress
+          preparation={torrent.preparation}
+          dataUnits={dataUnits}
+        />
+      )}
       {checking === null ? null : (
         <dl className={`${styles.metrics} ${styles.checkingMetrics}`}>
           <Metric
