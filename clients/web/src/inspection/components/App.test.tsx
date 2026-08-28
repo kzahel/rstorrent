@@ -1629,22 +1629,27 @@ describe("inspection application", () => {
     ]);
   });
 
-  it("selects truthful Library cards and hands their source to Workbench", async () => {
+  it("opens truthful Library details and hands their source to Workbench", async () => {
     const user = userEvent.setup();
     renderScenario("healthy-download", 42_000);
     await user.click(screen.getByRole("button", { name: "Library" }));
-    expect(
-      screen.getByText(/media details are not connected yet/i),
-    ).toBeVisible();
     expect(
       screen.queryByRole("button", { name: /^Play / }),
     ).not.toBeInTheDocument();
 
     await user.click(
       screen.getByRole("button", {
-        name: "Activate Sintel 4K open movie in Library",
+        name: "Open details for Sintel 4K open movie",
       }),
     );
+    expect(
+      screen.getByRole("heading", { name: "Sintel 4K open movie" }),
+    ).toBeVisible();
+    expect(screen.getByRole("tab", { name: "Media" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByText("Waiting for torrent metadata…")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Open in Workbench" }));
     expect(screen.getByRole("button", { name: "Workbench" })).toHaveAttribute(
       "aria-current",

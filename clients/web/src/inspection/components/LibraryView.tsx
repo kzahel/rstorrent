@@ -21,7 +21,7 @@ import type {
   ViewMaterialization,
 } from "../model";
 import { torrentMatchesLibraryCategory } from "../state";
-import { Icon } from "./Icon";
+import { LibraryDetailView } from "./LibraryDetailView";
 import styles from "./LibraryView.module.css";
 
 const GRID_METRICS: Readonly<
@@ -51,14 +51,30 @@ export function LibraryView() {
   const currentTorrentId = useInspectionStore(
     (state) => state.presentation.currentTorrentId,
   );
+  const detailOpen = useInspectionStore(
+    (state) => state.presentation.libraryDetailOpen,
+  );
+  const detailMode = useInspectionStore(
+    (state) => state.presentation.libraryDetailMode,
+  );
+  const layout = useInspectionStore((state) => state.presentation.layout);
   const interfaceSize = useInspectionStore(
     (state) => state.presentation.interfaceSize,
   );
-  const selectOnlyTorrent = useInspectionStore(
-    (state) => state.selectOnlyTorrent,
+  const openLibraryTorrentDetail = useInspectionStore(
+    (state) => state.openLibraryTorrentDetail,
   );
-  const openTorrentInWorkbench = useInspectionStore(
-    (state) => state.openTorrentInWorkbench,
+  const closeLibraryTorrentDetail = useInspectionStore(
+    (state) => state.closeLibraryTorrentDetail,
+  );
+  const selectLibraryDetailMode = useInspectionStore(
+    (state) => state.selectLibraryDetailMode,
+  );
+  const selectDestination = useInspectionStore(
+    (state) => state.selectDestination,
+  );
+  const selectLibraryCategory = useInspectionStore(
+    (state) => state.selectLibraryCategory,
   );
   const materialization = useInspectionStore(
     (state) => state.viewStatus.library,
@@ -88,7 +104,93 @@ export function LibraryView() {
       ),
     [allRows, category, newestAddedAtMs],
   );
-  const current = rows.find((row) => row.id === currentTorrentId);
+  const current = allRows.find((row) => row.id === currentTorrentId);
+  const [collectionScrollTop, setCollectionScrollTop] = useState(0);
+  const [returnFocusId, setReturnFocusId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onPopState = (event: PopStateEvent) => {
+      const route = libraryHistoryRoute(event.state);
+      if (route === null) {
+        closeLibraryTorrentDetail();
+        return;
+      }
+      selectDestination("library");
+      selectLibraryCategory(route.category);
+      if (route.torrentId === null || torrents[route.torrentId] === undefined) {
+        closeLibraryTorrentDetail();
+        return;
+      }
+      setReturnFocusId(route.torrentId);
+      openLibraryTorrentDetail(route.torrentId);
+      selectLibraryDetailMode(route.mode);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [
+    closeLibraryTorrentDetail,
+    openLibraryTorrentDetail,
+    selectDestination,
+    selectLibraryCategory,
+    selectLibraryDetailMode,
+    torrents,
+  ]);
+
+  useEffect(() => {
+    if (!detailOpen || currentTorrentId === null) return;
+    const route = libraryHistoryRoute(window.history.state);
+    if (route?.torrentId !== currentTorrentId || route.mode === detailMode) return;
+    window.history.replaceState(
+      withLibraryHistory(window.history.state, {
+        torrentId: currentTorrentId,
+        category,
+        mode: detailMode,
+      }),
+      "",
+    );
+  }, [category, currentTorrentId, detailMode, detailOpen]);
+
+  const openDetail = (torrentId: string) => {
+    setReturnFocusId(torrentId);
+    window.history.replaceState(
+      withLibraryHistory(window.history.state, {
+        torrentId: null,
+        category,
+        mode: "media",
+      }),
+      "",
+    );
+    window.history.pushState(
+      withLibraryHistory(window.history.state, {
+        torrentId,
+        category,
+        mode: "media",
+      }),
+      "",
+    );
+    openLibraryTorrentDetail(torrentId);
+  };
+
+  const closeDetail = () => {
+    const route = libraryHistoryRoute(window.history.state);
+    if (route?.torrentId === currentTorrentId) window.history.back();
+    else closeLibraryTorrentDetail();
+  };
+
+  useEffect(() => {
+    if (!detailOpen) return;
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      closeDetail();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  });
+
+  if (detailOpen && current !== undefined) {
+    return <LibraryDetailView torrent={current} onBack={closeDetail} />;
+  }
 
   return (
     <section className={styles.library} aria-labelledby="library-heading">
@@ -99,21 +201,8 @@ export function LibraryView() {
           <p>
             {rows.length.toLocaleString()} torrent-backed content{" "}
             {rows.length === 1 ? "source" : "sources"}
-            <span aria-hidden="true"> · </span>
-            <span>media details are not connected yet</span>
           </p>
         </div>
-        <button
-          type="button"
-          disabled={current === undefined}
-          onClick={() =>
-            current === undefined
-              ? undefined
-              : openTorrentInWorkbench(current.id)
-          }
-        >
-          <Icon name="workbench" /> Open in Workbench
-        </button>
       </div>
       {materialization.status !== "ready" ? (
         <LibraryEmpty message={materializationMessage(materialization)} />
@@ -124,8 +213,12 @@ export function LibraryView() {
           rows={rows}
           currentId={currentTorrentId}
           interfaceSize={interfaceSize}
+          layout={layout}
           dataUnits={dataUnits}
-          onActivate={selectOnlyTorrent}
+          initialScrollTop={collectionScrollTop}
+          returnFocusId={returnFocusId}
+          onScrollTop={setCollectionScrollTop}
+          onActivate={openDetail}
         />
       )}
     </section>
@@ -136,19 +229,31 @@ function VirtualLibraryGrid({
   rows,
   currentId,
   interfaceSize,
+  layout,
   dataUnits,
+  initialScrollTop,
+  returnFocusId,
+  onScrollTop,
   onActivate,
 }: {
   readonly rows: readonly TorrentRow[];
   readonly currentId: string | null;
   readonly interfaceSize: InterfaceSize;
+  readonly layout: "wide" | "compact" | "phone";
   readonly dataUnits: DataUnits;
+  readonly initialScrollTop: number;
+  readonly returnFocusId: string | null;
+  readonly onScrollTop: (scrollTop: number) => void;
   readonly onActivate: (torrentId: string) => void;
 }) {
   const viewportRef = useRef<HTMLDivElement>(null);
-  const [scrollTop, setScrollTop] = useState(0);
+  const [scrollTop, setScrollTop] = useState(initialScrollTop);
   const [viewportSize, setViewportSize] = useState({ width: 960, height: 640 });
-  const metrics = GRID_METRICS[interfaceSize];
+  const metrics =
+    layout === "phone"
+      ? { minimumCardWidth: 280, rowHeight: 108, gap: 8 }
+      : GRID_METRICS[interfaceSize];
+  const focusButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const element = viewportRef.current;
@@ -160,10 +265,15 @@ function VirtualLibraryGrid({
       });
     };
     measure();
+    element.scrollTop = initialScrollTop;
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     return () => observer.disconnect();
-  }, []);
+  }, [initialScrollTop]);
+
+  useEffect(() => {
+    focusButtonRef.current?.focus();
+  }, [returnFocusId]);
 
   const columnCount = Math.max(
     1,
@@ -188,12 +298,14 @@ function VirtualLibraryGrid({
 
   const onScroll = (event: UIEvent<HTMLDivElement>) => {
     setScrollTop(event.currentTarget.scrollTop);
+    onScrollTop(event.currentTarget.scrollTop);
   };
 
   return (
     <div
       ref={viewportRef}
       className={styles.viewport}
+      data-layout={layout}
       role="list"
       aria-label="Torrent-backed content"
       onScroll={onScroll}
@@ -232,9 +344,11 @@ function VirtualLibraryGrid({
                     >
                       <button
                         type="button"
-                        aria-label={`Activate ${row.name} in Library`}
+                        aria-label={`Open details for ${row.name}`}
                         aria-pressed={row.id === currentId}
                         onClick={() => onActivate(row.id)}
+                        data-library-torrent-id={row.id}
+                        ref={row.id === returnFocusId ? focusButtonRef : undefined}
                       >
                         <span
                           className={styles.art}
@@ -284,6 +398,45 @@ function VirtualLibraryGrid({
         })}
       </div>
     </div>
+  );
+}
+
+interface LibraryHistoryRoute {
+  readonly torrentId: string | null;
+  readonly category: LibraryCategory;
+  readonly mode: "media" | "files";
+}
+
+function libraryHistoryRoute(state: unknown): LibraryHistoryRoute | null {
+  if (typeof state !== "object" || state === null) return null;
+  const value = (state as { rstorrentLibrary?: unknown }).rstorrentLibrary;
+  if (typeof value !== "object" || value === null) return null;
+  const route = value as Partial<LibraryHistoryRoute>;
+  if (
+    (route.torrentId !== null && typeof route.torrentId !== "string") ||
+    !isLibraryCategory(route.category) ||
+    (route.mode !== "media" && route.mode !== "files")
+  ) {
+    return null;
+  }
+  return route as LibraryHistoryRoute;
+}
+
+function withLibraryHistory(
+  state: unknown,
+  route: LibraryHistoryRoute,
+): Record<string, unknown> {
+  return {
+    ...(typeof state === "object" && state !== null
+      ? (state as Record<string, unknown>)
+      : {}),
+    rstorrentLibrary: route,
+  };
+}
+
+function isLibraryCategory(value: unknown): value is LibraryCategory {
+  return ["all", "recent", "available", "downloading", "archived"].includes(
+    String(value),
   );
 }
 

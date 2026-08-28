@@ -260,4 +260,23 @@
   .viewport {
     padding: var(--ui-space-sm);
   }
+
+  .viewport[data-layout="phone"] .card > button {
+    grid-template-columns: 6.5rem minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .viewport[data-layout="phone"] .art {
+    grid-row: 1 / 3;
+    font-size: 1.35rem;
+  }
+
+  .viewport[data-layout="phone"] .cardBody {
+    align-content: center;
+    padding: var(--ui-space-sm);
+  }
+
+  .viewport[data-layout="phone"] .progress {
+    grid-column: 2;
+  }
 }
