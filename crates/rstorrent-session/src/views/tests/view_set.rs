@@ -3,9 +3,10 @@ use super::*;
 use crate::diagnostics::{MAX_DIAGNOSTIC_PATCH_EVENTS, category};
 use crate::{
     DiagnosticCategory, DiagnosticEvent, DiagnosticFilter, DiagnosticRetention, DiagnosticSeverity,
-    FileCatalogState, FileSelectionView, FileView, MediaFileAvailability, ProgressAction,
-    ProgressAssessment, ProgressDisposition, ProgressPhase, ProgressReason, ServiceSnapshot,
-    SpeedMetric, SpeedRange, StorageState, TorrentSnapshot, TorrentState, TorrentView,
+    FileCatalogState, FileSelectionView, FileView, MediaCatalogState, MediaFileAvailability,
+    MediaItemView, MediaRoleView, ProgressAction, ProgressAssessment, ProgressDisposition,
+    ProgressPhase, ProgressReason, ServiceSnapshot, SpeedMetric, SpeedRange, StorageState,
+    TorrentSnapshot, TorrentState, TorrentView,
 };
 use rstorrent_engine::peer::{PeerSource, PeerSources};
 use rstorrent_engine::swarm::ConnectionId;
@@ -338,6 +339,72 @@ fn maximum_file_page_is_separate_from_steady_queue_pressure() {
         )
         .expect("patch behind in-flight snapshot");
     assert!(inner.state().expect("state").reset_pending.is_none());
+}
+
+#[test]
+fn maximum_media_catalog_is_separate_from_steady_queue_pressure() {
+    let now = Instant::now();
+    let items = (0..4_096_u32)
+        .map(|index| MediaItemView {
+            media_id: index.to_string(),
+            file_index: index,
+            path: vec![
+                format!("Season-{:02}", index % 100),
+                format!("episode-{index:04}-{}.mkv", "x".repeat(96)),
+            ],
+            extension: "mkv".to_owned(),
+            length_bytes: "16777216".to_owned(),
+            selection: FileSelectionView::Normal,
+            done_bytes: "8388608".to_owned(),
+            verified_bytes: "4194304".to_owned(),
+            media_availability: MediaFileAvailability::Unverified,
+            role: MediaRoleView::Episode {
+                series_title_hint: "Bounded catalog fixture".to_owned(),
+                season_number: u16::try_from(index % 100).expect("bounded season"),
+                episode_number: u16::try_from(index % 1_000).expect("bounded episode"),
+                ending_episode_number: None,
+            },
+        })
+        .collect::<Vec<_>>();
+    let snapshot = ViewSnapshot::Media {
+        torrent_id: TORRENT_ID.to_owned(),
+        state: MediaCatalogState::Available,
+        total_non_padding_files: 4_096,
+        items,
+    };
+    let encoded_snapshot = serde_json::to_vec(&snapshot)
+        .expect("encode media snapshot")
+        .len();
+    assert!(encoded_snapshot > DEFAULT_VIEW_SET_QUEUE_BYTES as usize);
+    assert!(encoded_snapshot < MAX_VIEW_SET_SNAPSHOT_BYTES as usize);
+    let spec = ViewSpec::TorrentMedia {
+        view_id: "media".to_owned(),
+        torrent_id: TORRENT_ID.to_owned(),
+        delivery: ViewDeliveryPolicy::default(),
+    };
+    let inner = ViewSetInner::new(
+        "vs_media".to_owned(),
+        ViewSetOwner::trusted("owner"),
+        ViewSetInitialState {
+            revision: 7,
+            views: BTreeMap::from([("media".to_owned(), spec)]),
+            queue_bytes_limit: DEFAULT_VIEW_SET_QUEUE_BYTES,
+            snapshots: vec![ViewSetUpdate::Snapshot {
+                view_id: "media".to_owned(),
+                snapshot,
+            }],
+            now,
+            lease: Duration::from_millis(VIEW_SET_LEASE_MILLIS),
+        },
+    )
+    .expect("large media view set");
+    let stats = inner.stats().expect("view stats");
+    assert!(stats.queue_high_water > encoded_snapshot);
+    assert!(stats.queue_high_water < MAX_VIEW_SET_SNAPSHOT_BYTES as usize);
+    eprintln!(
+        "media_view_scale rows=4096 encoded_bytes={} queue_high_water={}",
+        encoded_snapshot, stats.queue_high_water,
+    );
 }
 
 #[test]
