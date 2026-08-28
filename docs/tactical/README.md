@@ -79,6 +79,10 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`184-view-aware-current-state-coalescing.md`](184-view-aware-current-state-coalescing.md):
+  active; coalesces compatible pending current-state patches per logical view
+  across interleaved view IDs, then reruns the production bandwidth baseline
+  before the separately required sparse-row contract change.
 - [`183-production-websocket-ui-bandwidth-baseline.md`](183-production-websocket-ui-bandwidth-baseline.md):
   complete; adds bounded exact production React/WebSocket measurement and
   shows that interleaved same-view current-state updates defeat the intended

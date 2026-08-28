@@ -43,11 +43,11 @@ machine-control.
 ## Current Tactical State
 
 The authoritative **Now** is
-[`176-durable-high-file-priority.md`](docs/tactical/176-durable-high-file-priority.md),
-only for its unchanged macOS-hosted iOS simulator/archive compile gate.
-Completed Tactical `183` records production React/WebSocket transition and
-steady bytes and identifies interleaved tail-only current-state coalescing as
-the first measured delivery optimization; it changed no product behavior.
+[`184-view-aware-current-state-coalescing.md`](docs/tactical/184-view-aware-current-state-coalescing.md).
+It repairs interleaved tail-only current-state coalescing and reruns completed
+Tactical `183`'s production React/WebSocket baseline before a separately
+bounded typed sparse-row contract change. Tactical `176` retains only its
+unchanged macOS-hosted iOS simulator/archive compile gate.
 Completed Tactical `182` bounds preferred-uTP/TCP/MSE/plain handshake work to
 one 15-second outbound-attempt lifetime and conservatively turns over a
 zero-contribution metadata worker only when the 30-peer cohort is saturated

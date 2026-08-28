@@ -12,8 +12,10 @@ user-selectable delivery profile, visibility-driven downshift, global
 bandwidth budget, or cadence-specific performance gate. Changing only a
 delivery interval also causes an unnecessary fresh snapshot today. Completed
 Tactical [`183`](../tactical/183-production-websocket-ui-bandwidth-baseline.md)
-measured the current production WebSocket baseline. The first follow-up is
-view-aware coalescing of interleaved current-state patches, not a codec,
+measured the current production WebSocket baseline. Active Tactical
+[`184`](../tactical/184-view-aware-current-state-coalescing.md) first repairs
+view-aware coalescing of interleaved current-state patches. A separately
+measured typed sparse-row tactical follows; neither change is a codec,
 Diagnostics-default, or WebSocket-fallback change.
 
 ## Purpose And Scope

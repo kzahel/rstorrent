@@ -199,6 +199,17 @@ rows dominate the measured Workbench traffic before Logs or framing. No
 product API or delivery behavior changed. Tactical `176` resumes as the sole
 **Now** for its unchanged macOS-only iOS compile gate.
 
+Explicit user direction on 2026-08-28 temporarily yields Tactical `176` to
+view-aware current-state coalescing Tactical
+[`184`](../tactical/184-view-aware-current-state-coalescing.md), followed by a
+separate measured typed sparse-row repair. Tactical `184` changes no public
+DTO: it makes compatible patches for one logical view coalesce across
+interleaved other view IDs, retains ordered Diagnostics and exact queue/reset
+semantics, and reruns Tactical `183` before the sparse contract is selected.
+Both semantic changes must remain encoding-independent so a much later binary
+codec can reuse them. Tactical `176` retains only its unchanged macOS-hosted
+iOS compile gate.
+
 The updater tactical's client, production route, five-target signed hosted
 rehearsal, public `0.1.0`, `0.1.1`, and `0.1.2` releases, installed macOS arm64
 launch smoke, and exact macOS arm64 and Linux arm64 `0.1.0`-to-`0.1.1` updates
@@ -694,10 +705,17 @@ exactly.
 
 ### Now
 
-- Resume **Tactical `176`** only for its existing macOS-hosted iOS simulator/
-  archive compile; every implementation and other validation gate passes.
+- Execute **Tactical `184`**: make pending current-state coalescing view-aware
+  across interleaved logical views and rerun the production WebSocket baseline.
 
 ### Next
+
+- Implement the separately bounded typed sparse-row application contract from
+  Tactical `184`'s residual production-byte attribution, including web,
+  Android, and iOS generated/reducer parity.
+
+- Resume **Tactical `176`** only for its existing macOS-hosted iOS simulator/
+  archive compile; every implementation and other validation gate passes.
 
 - Resume **Tactical `158`** and close the clean Windows and Linux x86_64
   signed replacement/relaunch evidence plus Windows firewall-consent
