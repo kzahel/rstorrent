@@ -4411,7 +4411,7 @@ fn validate_exact_payload_file(
 }
 
 fn remove_empty_payload_directory(path: &Path) -> Result<(), ApplicationError> {
-    let metadata = match std::fs::symlink_metadata(&path) {
+    let metadata = match std::fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(source) => {
