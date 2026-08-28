@@ -7,6 +7,8 @@ import type {
   FileSet,
   InspectionSnapshot,
   LogRow,
+  MediaRow,
+  MediaSet,
   PeerRow,
   SwarmRow,
   SwarmSet,
@@ -229,6 +231,12 @@ export function buildScenarioSnapshot(
     ]),
   );
   const filesByTorrent = content.files ?? {};
+  const mediaByTorrent = Object.fromEntries(
+    Object.entries(filesByTorrent).map(([torrentId, files]) => [
+      torrentId,
+      demoMediaSet(torrentId, files),
+    ]),
+  );
   const swarmByTorrent = content.swarm ?? {};
   const trackersByTorrent = content.trackers ?? {};
   const piecesByTorrent = content.pieces ?? {};
@@ -259,6 +267,7 @@ export function buildScenarioSnapshot(
     peersByTorrent,
     swarmByTorrent,
     filesByTorrent,
+    mediaByTorrent,
     trackersByTorrent,
     piecesByTorrent,
     disk,
@@ -278,6 +287,7 @@ export function buildScenarioSnapshot(
       peers: { status: "ready" },
       swarm: { status: "ready" },
       files: { status: "ready" },
+      media: { status: "ready" },
       trackers: { status: "ready" },
       pieces: { status: "ready" },
       disk: { status: "ready" },
@@ -978,6 +988,41 @@ function demoFileSet(
       total: rows.length,
       nextOffset: null,
     },
+    order: rows.map((row) => row.id),
+    rows: Object.fromEntries(rows.map((row) => [row.id, row])),
+  };
+}
+
+function demoMediaSet(torrentId: string, files: FileSet): MediaSet {
+  const rows = files.order
+    .map((id) => files.rows[id])
+    .filter((row): row is FileRow =>
+      row !== undefined &&
+      !row.padding &&
+      ["mp4", "mkv", "avi", "webm", "mov", "m4v"].includes(row.extension),
+    )
+    .map(
+      (file): MediaRow => ({
+        id: file.id,
+        torrentId,
+        fileIndex: file.index,
+        path: file.path,
+        name: file.name,
+        folder: file.folder,
+        extension: file.extension,
+        lengthBytes: file.lengthBytes,
+        selection: file.selection ?? "normal",
+        doneBytes: file.doneBytes,
+        verifiedBytes: file.verifiedBytes,
+        mediaAvailability: file.mediaAvailability,
+        role: { type: "unclassified_video" },
+      }),
+    );
+  return {
+    state: files.state,
+    totalNonPaddingFiles: files.order.filter(
+      (id) => files.rows[id]?.padding === false,
+    ).length,
     order: rows.map((row) => row.id),
     rows: Object.fromEntries(rows.map((row) => [row.id, row])),
   };

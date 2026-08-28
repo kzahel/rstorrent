@@ -221,6 +221,34 @@ describe("inspection store", () => {
     });
   });
 
+  it("keeps Library detail state separate from Workbench detail", () => {
+    const store = createInspectionStore();
+    store.getState().applyUpdate({
+      type: "snapshot",
+      snapshot: snapshot([row("show", "downloading")]),
+    });
+
+    store.getState().openLibraryTorrentDetail("show");
+    expect(store.getState().presentation).toMatchObject({
+      destination: "library",
+      currentTorrentId: "show",
+      libraryDetailOpen: true,
+      libraryDetailMode: "media",
+    });
+    store.getState().selectLibraryDetailMode("files");
+    expect(store.getState().presentation.libraryDetailMode).toBe("files");
+    store.getState().closeLibraryTorrentDetail();
+    expect(store.getState().presentation.libraryDetailOpen).toBe(false);
+
+    store.getState().openLibraryTorrentDetail("show");
+    store.getState().openTorrentInWorkbench("show");
+    expect(store.getState().presentation).toMatchObject({
+      destination: "workbench",
+      detailOpen: true,
+      libraryDetailOpen: false,
+    });
+  });
+
   it("opens an errored torrent directly at its General error detail", () => {
     const store = createInspectionStore();
     const failed = {
@@ -426,6 +454,7 @@ function snapshot(
     peersByTorrent,
     swarmByTorrent: {},
     filesByTorrent: {},
+    mediaByTorrent: {},
     trackersByTorrent: {},
     piecesByTorrent: {},
     disk: emptyDiskSet(),
@@ -445,6 +474,7 @@ function snapshot(
       peers: { status: "not_requested" },
       swarm: { status: "not_requested" },
       files: { status: "not_requested" },
+      media: { status: "not_requested" },
       trackers: { status: "not_requested" },
       pieces: { status: "not_requested" },
       disk: { status: "not_requested" },

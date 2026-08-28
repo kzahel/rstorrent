@@ -23,6 +23,7 @@ import type {
   LogRow,
   DiskSet,
   FileSet,
+  MediaSet,
   PeerSet,
   SwarmSet,
   TrackerSet,
@@ -59,6 +60,8 @@ export interface PresentationState {
   readonly activeTab: DetailTab;
   readonly detailPanePercent: number;
   readonly detailOpen: boolean;
+  readonly libraryDetailOpen: boolean;
+  readonly libraryDetailMode: "media" | "files";
   readonly detailTarget: {
     readonly type: "torrent_error";
     readonly torrentId: string;
@@ -98,6 +101,9 @@ export interface InspectionActions {
   readonly selectOnlyTorrent: (torrentId: string) => void;
   readonly revealTorrent: (torrentId: string) => void;
   readonly openTorrentDetail: (torrentId: string) => void;
+  readonly openLibraryTorrentDetail: (torrentId: string) => void;
+  readonly closeLibraryTorrentDetail: () => void;
+  readonly selectLibraryDetailMode: (mode: "media" | "files") => void;
   readonly openTorrentInWorkbench: (torrentId: string) => void;
   readonly openTorrentErrorDetail: (torrentId: string) => void;
   readonly clearDetailTarget: () => void;
@@ -153,6 +159,7 @@ const EMPTY_SNAPSHOT: InspectionSnapshot = {
   peersByTorrent: {},
   swarmByTorrent: {},
   filesByTorrent: {},
+  mediaByTorrent: {},
   trackersByTorrent: {},
   piecesByTorrent: {},
   disk: emptyDiskSet(),
@@ -172,6 +179,7 @@ const EMPTY_SNAPSHOT: InspectionSnapshot = {
     peers: { status: "not_requested" },
     swarm: { status: "not_requested" },
     files: { status: "not_requested" },
+    media: { status: "not_requested" },
     trackers: { status: "not_requested" },
     pieces: { status: "not_requested" },
     disk: { status: "not_requested" },
@@ -194,6 +202,8 @@ const DEFAULT_PRESENTATION: PresentationState = {
   activeTab: "peers",
   detailPanePercent: DEFAULT_DETAIL_PANE_PERCENT,
   detailOpen: false,
+  libraryDetailOpen: false,
+  libraryDetailMode: "media",
   detailTarget: null,
   sidebarOpen: false,
   layout: "wide",
@@ -260,6 +270,10 @@ export function createInspectionStore(
         const presentation = {
           ...state.presentation,
           destination,
+          libraryDetailOpen:
+            destination === "library"
+              ? state.presentation.libraryDetailOpen
+              : false,
           sidebarOpen: false,
           detailTarget: null,
         };
@@ -272,6 +286,7 @@ export function createInspectionStore(
         const presentation = {
           ...state.presentation,
           libraryCategory,
+          libraryDetailOpen: false,
           sidebarOpen: false,
         };
         persistNavigation(navigationPreferencesFor(presentation));
@@ -357,10 +372,46 @@ export function createInspectionStore(
               : [torrentId],
             currentPeerId: null,
             detailOpen: true,
+            libraryDetailOpen: false,
             detailTarget: null,
           },
         };
       });
+    },
+    openLibraryTorrentDetail: (torrentId) => {
+      set((state) => {
+        if (state.torrents[torrentId] === undefined) return state;
+        return {
+          presentation: {
+            ...state.presentation,
+            destination: "library",
+            currentTorrentId: torrentId,
+            torrentSelectionInitialized: true,
+            selectedTorrentIds: [torrentId],
+            currentPeerId: null,
+            libraryDetailOpen: true,
+            libraryDetailMode: "media",
+            detailTarget: null,
+            sidebarOpen: false,
+          },
+        };
+      });
+    },
+    closeLibraryTorrentDetail: () => {
+      set((state) => ({
+        presentation: {
+          ...state.presentation,
+          libraryDetailOpen: false,
+        },
+      }));
+    },
+    selectLibraryDetailMode: (libraryDetailMode) => {
+      set((state) => ({
+        presentation: {
+          ...state.presentation,
+          libraryDetailMode,
+        },
+      }));
     },
     openTorrentInWorkbench: (torrentId) => {
       set((state) => {
@@ -373,6 +424,7 @@ export function createInspectionStore(
           selectedTorrentIds: [torrentId],
           currentPeerId: null,
           detailOpen: true,
+          libraryDetailOpen: false,
           detailTarget: null,
           sidebarOpen: false,
         };
@@ -393,6 +445,7 @@ export function createInspectionStore(
           currentPeerId: null,
           activeTab: "general" as const,
           detailOpen: true,
+          libraryDetailOpen: false,
           detailTarget: { type: "torrent_error" as const, torrentId },
           sidebarOpen: false,
         };
@@ -421,6 +474,7 @@ export function createInspectionStore(
           selectedTorrentIds: [],
           currentPeerId: null,
           detailOpen: false,
+          libraryDetailOpen: false,
           detailTarget: null,
         },
       }));
@@ -646,6 +700,10 @@ export function reduceInspectionUpdate(
           didReveal || torrentPresentation.currentTorrentId === previousCurrent
             ? state.presentation.detailOpen
             : false,
+        libraryDetailOpen:
+          torrentPresentation.currentTorrentId === previousCurrent
+            ? state.presentation.libraryDetailOpen
+            : false,
         detailTarget:
           torrentPresentation.currentTorrentId === previousCurrent
             ? state.presentation.detailTarget
@@ -659,6 +717,7 @@ export function reduceInspectionUpdate(
   let peersByTorrent = state.peersByTorrent;
   let swarmByTorrent = state.swarmByTorrent;
   let filesByTorrent = state.filesByTorrent;
+  let mediaByTorrent = state.mediaByTorrent;
   let trackersByTorrent = state.trackersByTorrent;
   let piecesByTorrent = state.piecesByTorrent;
   let disk = state.disk;
@@ -743,6 +802,28 @@ export function reduceInspectionUpdate(
       };
     }
     filesByTorrent = nextFileSets;
+  }
+
+  if (update.media !== undefined) {
+    const nextMediaSets = { ...state.mediaByTorrent };
+    for (const patch of update.media) {
+      const current = state.mediaByTorrent[patch.torrentId] ?? EMPTY_MEDIA_SET;
+      const rows = applyRows(
+        current.rows,
+        patch.upsert,
+        patch.removed,
+        (row) => row.id,
+      );
+      nextMediaSets[patch.torrentId] = {
+        state: patch.state ?? current.state,
+        totalNonPaddingFiles:
+          patch.totalNonPaddingFiles ?? current.totalNonPaddingFiles,
+        rows,
+        order:
+          patch.order ?? current.order.filter((id) => rows[id] !== undefined),
+      };
+    }
+    mediaByTorrent = nextMediaSets;
   }
 
   if (update.trackers !== undefined) {
@@ -831,6 +912,7 @@ export function reduceInspectionUpdate(
     peersByTorrent,
     swarmByTorrent,
     filesByTorrent,
+    mediaByTorrent,
     trackersByTorrent,
     piecesByTorrent,
     disk,
@@ -846,6 +928,10 @@ export function reduceInspectionUpdate(
           ? state.presentation.detailOpen
           : torrentPresentation.currentTorrentId === currentId
           ? state.presentation.detailOpen
+          : false,
+      libraryDetailOpen:
+        torrentPresentation.currentTorrentId === currentId
+          ? state.presentation.libraryDetailOpen
           : false,
       detailTarget:
         torrentPresentation.currentTorrentId === currentId
@@ -1060,6 +1146,12 @@ const EMPTY_FILE_SET: FileSet = {
   state: "metadata_pending",
   filesystemContentBase: null,
   page: { offset: 0, limit: 1024, total: 0, nextOffset: null },
+  order: [],
+  rows: {},
+};
+const EMPTY_MEDIA_SET: MediaSet = {
+  state: "metadata_pending",
+  totalNonPaddingFiles: 0,
   order: [],
   rows: {},
 };

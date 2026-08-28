@@ -106,6 +106,7 @@ export interface InspectionViewStatus {
   readonly peers: ViewMaterialization;
   readonly swarm: ViewMaterialization;
   readonly files: ViewMaterialization;
+  readonly media: ViewMaterialization;
   readonly trackers: ViewMaterialization;
   readonly pieces: ViewMaterialization;
   readonly disk: ViewMaterialization;
@@ -123,6 +124,7 @@ export interface DesiredInspectionViews {
     | "peers"
     | "swarm"
     | "files"
+    | "media"
     | "pieces"
     | "disk"
     | "dht"
@@ -350,6 +352,39 @@ export interface FileSet {
   readonly rows: Readonly<Record<string, FileRow>>;
 }
 
+export type MediaRole =
+  | {
+      readonly type: "episode";
+      readonly seriesTitleHint: string;
+      readonly seasonNumber: number;
+      readonly episodeNumber: number;
+      readonly endingEpisodeNumber: number | null;
+    }
+  | { readonly type: "unclassified_video" };
+
+export interface MediaRow {
+  readonly id: string;
+  readonly torrentId: string;
+  readonly fileIndex: number;
+  readonly path: readonly string[];
+  readonly name: string;
+  readonly folder: string;
+  readonly extension: string;
+  readonly lengthBytes: string;
+  readonly selection: "normal" | "high" | "skipped";
+  readonly doneBytes: string;
+  readonly verifiedBytes: string;
+  readonly mediaAvailability: MediaFileAvailability;
+  readonly role: MediaRole;
+}
+
+export interface MediaSet {
+  readonly state: "metadata_pending" | "available" | "torrent_missing";
+  readonly totalNonPaddingFiles: number;
+  readonly order: readonly string[];
+  readonly rows: Readonly<Record<string, MediaRow>>;
+}
+
 export interface TrackerRow {
   readonly id: string;
   readonly torrentId: string;
@@ -533,6 +568,7 @@ export interface InspectionSnapshot {
   readonly peersByTorrent: Readonly<Record<string, PeerSet>>;
   readonly swarmByTorrent: Readonly<Record<string, SwarmSet>>;
   readonly filesByTorrent: Readonly<Record<string, FileSet>>;
+  readonly mediaByTorrent: Readonly<Record<string, MediaSet>>;
   readonly trackersByTorrent: Readonly<Record<string, TrackerSet>>;
   readonly piecesByTorrent: Readonly<Record<string, PieceMapSet>>;
   readonly disk: DiskSet;
@@ -577,6 +613,12 @@ export type InspectionUpdate =
         readonly torrentId: string;
         readonly state?: FileSet["state"];
         readonly filesystemContentBase?: string | null;
+        readonly order?: readonly string[];
+      })[];
+      readonly media?: readonly (KeyedPatch<MediaRow> & {
+        readonly torrentId: string;
+        readonly state?: MediaSet["state"];
+        readonly totalNonPaddingFiles?: number;
         readonly order?: readonly string[];
       })[];
       readonly trackers?: readonly (KeyedPatch<TrackerRow> & {

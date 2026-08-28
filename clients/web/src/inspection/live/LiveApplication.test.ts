@@ -58,6 +58,7 @@ class FakeLiveClient implements ApplicationViewClient {
         "torrent_peers",
         "torrent_swarm",
         "torrent_files",
+        "torrent_media",
         "torrent_trackers",
         "session_dht",
         "session_current_rates",
@@ -885,6 +886,50 @@ describe("LiveApplication", () => {
     await application.close();
   });
 
+  it("subscribes to derived media only while requested and maps episode hints", async () => {
+    const client = new FakeLiveClient();
+    const application = await LiveApplication.open(client, {
+      initialViews: {
+        library: true,
+        torrentId: TORRENT_ID,
+        detail: "media",
+        logCapture: null,
+      },
+    });
+    const snapshots: InspectionSnapshot[] = [];
+    application.subscribe((update) => {
+      if (update.type === "snapshot") snapshots.push(update.snapshot);
+    });
+    expect(
+      snapshots.at(-1)?.mediaByTorrent[TORRENT_ID]?.rows["0"],
+    ).toMatchObject({
+      name: "Show.Name.S01E02.mkv",
+      verifiedBytes: "0",
+      role: {
+        type: "episode",
+        seasonNumber: 1,
+        episodeNumber: 2,
+      },
+    });
+    expect(
+      client.opens[0]?.views.find((view) => view.type === "torrent_media"),
+    ).toMatchObject({ delivery: { min_interval_millis: 250 } });
+    await application.setViews({
+      library: true,
+      torrentId: TORRENT_ID,
+      detail: "files",
+      logCapture: null,
+    });
+    expect(client.updates.at(-1)?.views.map((view) => view.type)).toContain(
+      "torrent_files",
+    );
+    expect(client.updates.at(-1)?.views.map((view) => view.type)).not.toContain(
+      "torrent_media",
+    );
+    expect(snapshots.at(-1)?.mediaByTorrent).toEqual({});
+    await application.close();
+  });
+
   it("subscribes to trackers only while requested and maps retained state", async () => {
     const client = new FakeLiveClient();
     const application = await LiveApplication.open(client, {
@@ -1148,8 +1193,27 @@ function snapshotFor(
           type: "media",
           torrent_id: TORRENT_ID,
           state: "available",
-          total_non_padding_files: 1,
-          items: [],
+          total_non_padding_files: 2,
+          items: [
+            {
+              media_id: "0",
+              file_index: 0,
+              path: ["Show.Name.S01E02.mkv"],
+              extension: "mkv",
+              length_bytes: "32768",
+              selection: "normal",
+              done_bytes: "16384",
+              verified_bytes: "0",
+              media_availability: "unverified",
+              role: {
+                type: "episode",
+                series_title_hint: "Show Name",
+                season_number: 1,
+                episode_number: 2,
+                ending_episode_number: null,
+              },
+            },
+          ],
         },
       };
     case "torrent_trackers":

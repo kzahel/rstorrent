@@ -6,6 +6,7 @@ import {
   type CheckingProgressView,
   type DiagnosticEvent,
   type FileView,
+  type MediaItemView,
   type PeerSourceView,
   type PeerView,
   type RequestEnvelope,
@@ -39,6 +40,8 @@ import type {
   InspectionUpdate,
   FileRow,
   FileSet,
+  MediaRow,
+  MediaSet,
   LogRow,
   PeerFlag,
   PeerRow,
@@ -63,6 +66,7 @@ const PREPARATION_VIEW_ID = "torrent-preparation";
 const PEERS_VIEW_ID = "torrent-peers";
 const SWARM_VIEW_ID = "torrent-swarm";
 const FILES_VIEW_ID = "torrent-files";
+const MEDIA_VIEW_ID = "torrent-media";
 const TRACKERS_VIEW_ID = "torrent-trackers";
 const PIECES_VIEW_ID = "torrent-pieces";
 const DISK_VIEW_ID = "session-disk";
@@ -86,6 +90,10 @@ export class LiveApplication implements InspectionApplication {
   private mappedFiles: {
     readonly source: Extract<ViewSnapshot, { type: "files" }>;
     readonly value: FileSet;
+  } | null = null;
+  private mappedMedia: {
+    readonly source: Extract<ViewSnapshot, { type: "media" }>;
+    readonly value: MediaSet;
   } | null = null;
   private mappedPieces: MappedPieceActivity | null = null;
   private hello: ApiHello | null = null;
@@ -497,6 +505,8 @@ export class LiveApplication implements InspectionApplication {
     if (this.closed) return;
     const files = projection(state, FILES_VIEW_ID, "files");
     const fileSet = this.mapFiles(files);
+    const media = projection(state, MEDIA_VIEW_ID, "media");
+    const mediaSet = this.mapMedia(media);
     const pieces = projection(state, PIECES_VIEW_ID, "piece_activity");
     const pieceSet = this.mapPieces(pieces, state.epoch);
     this.snapshot = mapViewState(
@@ -505,6 +515,7 @@ export class LiveApplication implements InspectionApplication {
       this.capabilities(),
       "connected",
       fileSet,
+      mediaSet,
       pieceSet,
       this.snapshot.storage,
       this.snapshot.clientSettings,
@@ -541,6 +552,25 @@ export class LiveApplication implements InspectionApplication {
     return value;
   }
 
+  private mapMedia(
+    source: Extract<ViewSnapshot, { type: "media" }> | null,
+  ): MediaSet | null {
+    if (source === null) {
+      this.mappedMedia = null;
+      return null;
+    }
+    if (this.mappedMedia?.source === source) return this.mappedMedia.value;
+    const rows = source.items.map((item) => mapMediaItem(source.torrent_id, item));
+    const value: MediaSet = {
+      state: source.state,
+      totalNonPaddingFiles: source.total_non_padding_files,
+      order: rows.map((row) => row.id),
+      rows: Object.fromEntries(rows.map((row) => [row.id, row])),
+    };
+    this.mappedMedia = { source, value };
+    return value;
+  }
+
   private markReconnecting(error: Error): void {
     if (this.closed) return;
     this.snapshot = {
@@ -555,6 +585,7 @@ export class LiveApplication implements InspectionApplication {
         peers: staleIfMaterialized(this.snapshot.viewStatus.peers, error),
         swarm: staleIfMaterialized(this.snapshot.viewStatus.swarm, error),
         files: staleIfMaterialized(this.snapshot.viewStatus.files, error),
+        media: staleIfMaterialized(this.snapshot.viewStatus.media, error),
         trackers: staleIfMaterialized(
           this.snapshot.viewStatus.trackers,
           error,
@@ -652,6 +683,18 @@ export class LiveApplication implements InspectionApplication {
       specs.push({
         type: "torrent_files",
         view_id: FILES_VIEW_ID,
+        torrent_id: views.torrentId,
+        delivery: { min_interval_millis: 250 },
+      });
+    }
+    if (
+      views.detail === "media" &&
+      views.torrentId !== null &&
+      capabilities.has("torrent_media")
+    ) {
+      specs.push({
+        type: "torrent_media",
+        view_id: MEDIA_VIEW_ID,
         torrent_id: views.torrentId,
         delivery: { min_interval_millis: 250 },
       });
@@ -820,6 +863,7 @@ function mapViewState(
   capabilities: ReadonlySet<string>,
   connection: "connected" | "reconnecting" | "offline",
   fileSet: FileSet | null,
+  mediaSet: MediaSet | null,
   pieceSet: PieceMapSet | null,
   previousStorage: DownloadStorageSettings,
   previousClientSettings: ClientSettingsRuntimeView,
@@ -834,6 +878,7 @@ function mapViewState(
   const peers = projection(state, PEERS_VIEW_ID, "peers");
   const swarm = projection(state, SWARM_VIEW_ID, "swarm");
   const files = projection(state, FILES_VIEW_ID, "files");
+  const media = projection(state, MEDIA_VIEW_ID, "media");
   const trackers = projection(state, TRACKERS_VIEW_ID, "trackers");
   const pieces = projection(state, PIECES_VIEW_ID, "piece_activity");
   const disk = projection(state, DISK_VIEW_ID, "session_disk");
@@ -877,6 +922,12 @@ function mapViewState(
     fileSet === null || desired.torrentId === null || files?.torrent_id !== desired.torrentId
       ? {}
       : { [desired.torrentId]: fileSet };
+  const mediaByTorrent =
+    mediaSet === null ||
+    desired.torrentId === null ||
+    media?.torrent_id !== desired.torrentId
+      ? {}
+      : { [desired.torrentId]: mediaSet };
   const trackerSet = trackers === null ? null : mapTrackers(trackers);
   const trackersByTorrent =
     trackerSet === null ||
@@ -928,6 +979,7 @@ function mapViewState(
     peersByTorrent,
     swarmByTorrent,
     filesByTorrent,
+    mediaByTorrent,
     trackersByTorrent,
     piecesByTorrent,
     disk: disk === null ? emptyDiskSet() : mapDisk(disk),
@@ -978,6 +1030,12 @@ function mapViewState(
         capabilities.has("torrent_files"),
         files?.torrent_id === desired.torrentId,
         "File inspection is unavailable",
+      ),
+      media: materialization(
+        desired.detail === "media",
+        capabilities.has("torrent_media"),
+        media?.torrent_id === desired.torrentId,
+        "Media details are unavailable",
       ),
       trackers: materialization(
         desired.detail === "trackers",
@@ -1090,6 +1148,7 @@ function transitionSnapshot(
     peersByTorrent: {},
     swarmByTorrent: {},
     filesByTorrent: {},
+    mediaByTorrent: {},
     trackersByTorrent: {},
     piecesByTorrent: {},
     disk: current.disk,
@@ -1121,6 +1180,10 @@ function transitionSnapshot(
       files: transitionStatus(
         desired.detail === "files",
         capabilities.has("torrent_files"),
+      ),
+      media: transitionStatus(
+        desired.detail === "media",
+        capabilities.has("torrent_media"),
       ),
       trackers: transitionStatus(
         desired.detail === "trackers",
@@ -1582,6 +1645,34 @@ function mapFile(
   };
 }
 
+function mapMediaItem(torrentId: string, item: MediaItemView): MediaRow {
+  const name = item.path.at(-1) ?? "";
+  return {
+    id: item.media_id,
+    torrentId,
+    fileIndex: item.file_index,
+    path: item.path,
+    name,
+    folder: item.path.slice(0, -1).join("/"),
+    extension: item.extension,
+    lengthBytes: item.length_bytes,
+    selection: item.selection,
+    doneBytes: item.done_bytes,
+    verifiedBytes: item.verified_bytes,
+    mediaAvailability: item.media_availability,
+    role:
+      item.role.type === "episode"
+        ? {
+            type: "episode",
+            seriesTitleHint: item.role.series_title_hint,
+            seasonNumber: item.role.season_number,
+            episodeNumber: item.role.episode_number,
+            endingEpisodeNumber: item.role.ending_episode_number,
+          }
+        : { type: "unclassified_video" },
+  };
+}
+
 function mediaUnavailableMessage(reason: import("../../api").MediaFileAvailability): string {
   switch (reason) {
     case "metadata_unavailable":
@@ -1789,6 +1880,7 @@ function emptyLiveSnapshot(
     peersByTorrent: {},
     swarmByTorrent: {},
     filesByTorrent: {},
+    mediaByTorrent: {},
     trackersByTorrent: {},
     piecesByTorrent: {},
     disk: emptyDiskSet(),
@@ -1809,6 +1901,7 @@ function emptyLiveSnapshot(
       peers: desired.detail === "peers" ? { status: "loading" } : { status: "not_requested" },
       swarm: desired.detail === "swarm" ? { status: "loading" } : { status: "not_requested" },
       files: desired.detail === "files" ? { status: "loading" } : { status: "not_requested" },
+      media: desired.detail === "media" ? { status: "loading" } : { status: "not_requested" },
       trackers:
         desired.detail === "trackers"
           ? { status: "loading" }

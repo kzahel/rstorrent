@@ -132,6 +132,19 @@ function delay(millis: number, signal: AbortSignal): Promise<void> {
 
 function desiredViewsFor(state: InspectionStore): DesiredInspectionViews {
   const presentation = state.presentation;
+  if (presentation.destination === "library") {
+    const torrentId = presentation.libraryDetailOpen
+      ? presentation.currentTorrentId
+      : null;
+    return {
+      library: true,
+      torrentId,
+      detail:
+        torrentId === null ? null : presentation.libraryDetailMode,
+      logCapture: null,
+      speed: null,
+    };
+  }
   if (presentation.destination !== "workbench") {
     return { library: true, torrentId: null, detail: null, logCapture: null, speed: null };
   }

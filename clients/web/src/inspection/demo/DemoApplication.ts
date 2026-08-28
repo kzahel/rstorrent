@@ -15,6 +15,7 @@ import type {
   InspectionUpdate,
   KeyedPatch,
   FileRow,
+  MediaRow,
   LogRow,
   PeerRow,
   SwarmRow,
@@ -408,6 +409,17 @@ function materializeDemoViews(
           },
         }
       : {};
+  const mediaByTorrent =
+    desired.detail === "media" && desired.torrentId !== null
+      ? {
+          [desired.torrentId]: source.mediaByTorrent[desired.torrentId] ?? {
+            state: "metadata_pending" as const,
+            totalNonPaddingFiles: 0,
+            order: [],
+            rows: {},
+          },
+        }
+      : {};
   const trackersByTorrent =
     desired.detail === "trackers" && desired.torrentId !== null
       ? {
@@ -434,6 +446,7 @@ function materializeDemoViews(
     peersByTorrent,
     swarmByTorrent,
     filesByTorrent,
+    mediaByTorrent,
     trackersByTorrent,
     piecesByTorrent,
     disk: desired.detail === "disk" ? source.disk : emptyDiskSet(),
@@ -473,6 +486,10 @@ function materializeDemoViews(
           : { status: "not_requested" },
       files:
         desired.detail === "files"
+          ? { status: "ready" }
+          : { status: "not_requested" },
+      media:
+        desired.detail === "media"
           ? { status: "ready" }
           : { status: "not_requested" },
       trackers:
@@ -714,6 +731,11 @@ function applyOverlays(
     filesByTorrent: Object.fromEntries(
       Object.entries(source.filesByTorrent).filter(([torrentId]) => !removed.has(torrentId)),
     ),
+    mediaByTorrent: Object.fromEntries(
+      Object.entries(source.mediaByTorrent).filter(
+        ([torrentId]) => !removed.has(torrentId),
+      ),
+    ),
     trackersByTorrent: Object.fromEntries(
       Object.entries(source.trackersByTorrent).filter(
         ([torrentId]) => !removed.has(torrentId),
@@ -762,6 +784,14 @@ function diffSnapshots(
       readonly torrentId: string;
       readonly state: "metadata_pending" | "available" | "torrent_missing";
       readonly filesystemContentBase: string | null;
+      readonly order: readonly string[];
+    }
+  > = [];
+  const mediaPatches: Array<
+    KeyedPatch<MediaRow> & {
+      readonly torrentId: string;
+      readonly state: "metadata_pending" | "available" | "torrent_missing";
+      readonly totalNonPaddingFiles: number;
       readonly order: readonly string[];
     }
   > = [];
@@ -881,6 +911,43 @@ function diffSnapshots(
       });
     }
   }
+  for (const [torrentId, nextSet] of Object.entries(next.mediaByTorrent)) {
+    const previousSet = previous.mediaByTorrent[torrentId];
+    const upsert = nextSet.order
+      .map((id) => nextSet.rows[id])
+      .filter((row): row is MediaRow => row !== undefined)
+      .filter((row) => !shallowEqual(previousSet?.rows[row.id], row));
+    const removed =
+      previousSet?.order.filter((id) => nextSet.rows[id] === undefined) ?? [];
+    if (
+      upsert.length > 0 ||
+      removed.length > 0 ||
+      previousSet?.state !== nextSet.state ||
+      previousSet?.totalNonPaddingFiles !== nextSet.totalNonPaddingFiles ||
+      !arraysEqual(previousSet?.order ?? [], nextSet.order)
+    ) {
+      mediaPatches.push({
+        torrentId,
+        state: nextSet.state,
+        totalNonPaddingFiles: nextSet.totalNonPaddingFiles,
+        upsert,
+        removed,
+        order: nextSet.order,
+      });
+    }
+  }
+  for (const [torrentId, previousSet] of Object.entries(previous.mediaByTorrent)) {
+    if (next.mediaByTorrent[torrentId] === undefined) {
+      mediaPatches.push({
+        torrentId,
+        state: "torrent_missing",
+        totalNonPaddingFiles: 0,
+        upsert: [],
+        removed: previousSet.order,
+        order: [],
+      });
+    }
+  }
   for (const [torrentId, nextSet] of Object.entries(next.trackersByTorrent)) {
     const previousSet = previous.trackersByTorrent[torrentId];
     const upsert = nextSet.order
@@ -941,6 +1008,7 @@ function diffSnapshots(
     ...(peerPatches.length === 0 ? {} : { peers: peerPatches }),
     ...(swarmPatches.length === 0 ? {} : { swarm: swarmPatches }),
     ...(filePatches.length === 0 ? {} : { files: filePatches }),
+    ...(mediaPatches.length === 0 ? {} : { media: mediaPatches }),
     ...(trackerPatches.length === 0 ? {} : { trackers: trackerPatches }),
     ...(!samePieceMaps(previous.piecesByTorrent, next.piecesByTorrent)
       ? { pieces: next.piecesByTorrent }
