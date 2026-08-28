@@ -1712,6 +1712,27 @@ describe("inspection application", () => {
     await waitFor(() => expect(restored).toHaveFocus());
   });
 
+  it("bounds the mounted media rows for a 4,096-file catalog", async () => {
+    const user = userEvent.setup();
+    renderScenario("file-progress", 24_000);
+    await user.click(screen.getByRole("button", { name: "Library" }));
+    await user.click(
+      screen.getByRole("button", {
+        name: "Open details for Open Movies production archive",
+      }),
+    );
+
+    expect(screen.getByText(/recognized videos$/)).toHaveTextContent(
+      /^[2-4],[0-9]{3} recognized videos$/,
+    );
+    const media = await screen.findByRole("list", {
+      name: "Recognized video files",
+    });
+    const mountedRows = within(media).getAllByRole("listitem").length;
+    expect(mountedRows).toBeGreaterThan(0);
+    expect(mountedRows).toBeLessThanOrEqual(20);
+  });
+
   it("leases detail views only while Workbench needs them", async () => {
     const user = userEvent.setup();
     const snapshot = {

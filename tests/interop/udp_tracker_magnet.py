@@ -75,6 +75,7 @@ class OneShotUdpTracker:
         expected_left: int = UNKNOWN_MAGNET_LEFT,
         expected_peer_id: bytes | None = DIAGNOSTIC_PEER_ID,
         expected_listen_port: int | None = ANNOUNCED_PORT,
+        accept_any_peer_id: bool = False,
     ) -> None:
         self.info_hash = bytes.fromhex(info_hash)
         self.peer_port = peer_port
@@ -83,6 +84,7 @@ class OneShotUdpTracker:
         self.leechers = leechers
         self.expected_left = expected_left
         self.expected_peer_id = expected_peer_id
+        self.accept_any_peer_id = accept_any_peer_id
         self.expected_listen_port = expected_listen_port
         self.observed_listen_port: int | None = None
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -177,7 +179,9 @@ class OneShotUdpTracker:
                 raise ScenarioFailure("UDP announce transaction was not renewed")
             if info_hash != self.info_hash:
                 raise ScenarioFailure("UDP announce has the wrong info hash")
-            if self.expected_peer_id is None:
+            if self.accept_any_peer_id:
+                valid_peer_id = True
+            elif self.expected_peer_id is None:
                 valid_peer_id = peer_id.startswith(b"-RS0001-")
             else:
                 valid_peer_id = peer_id == self.expected_peer_id

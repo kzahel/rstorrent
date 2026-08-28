@@ -21,6 +21,7 @@ const transportBenchmark =
   process.env.RSTORRENT_LIVE_TRANSPORT_BENCHMARK === "1";
 const benchmarkTransport = process.env.RSTORRENT_LIVE_TRANSPORT;
 const expectFileSelection = process.env.RSTORRENT_LIVE_FILE_SELECTION === "1";
+const expectMediaLibrary = process.env.RSTORRENT_LIVE_MEDIA_LIBRARY === "1";
 const torrentFile = process.env.RSTORRENT_LIVE_TORRENT_FILE;
 const expectTorrentFilePicker =
   process.env.RSTORRENT_LIVE_TORRENT_FILE_PICKER === "1";
@@ -758,6 +759,159 @@ test("live peer inspection follows a controlled verified transfer", async ({
   expect(semanticHttpRequests).toEqual([]);
   console.log(
     `file_live_milestones ${JSON.stringify({ firstDoneMs, firstVerifiedMs, files: expectedFileCount, swarmSourceMerge: true, swarmTerminalCleanup: true, applicationUpgrades, semanticHttpRequests: semanticHttpRequests.length })}`,
+  );
+});
+
+test("live Library media detail follows metadata through completion", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  test.skip(
+    !expectMediaLibrary ||
+      gateway === undefined ||
+      applicationOrigin === undefined ||
+      magnet === undefined ||
+      torrentId === undefined ||
+      torrentName === undefined ||
+      fileCount === undefined,
+    "controlled live media Library is opt-in",
+  );
+  const detailRequests: string[] = [];
+  const semanticHttpRequests: string[] = [];
+  let applicationUpgrades = 0;
+  let sawMetadataPending = false;
+  const expectedSocket = `${applicationOrigin!.replace(/^http/, "ws")}/api/v1/connect`;
+  page.on("websocket", (socket) => {
+    if (socket.url() !== expectedSocket) return;
+    applicationUpgrades += 1;
+    socket.on("framesent", (frame) => {
+      if (typeof frame.payload !== "string") return;
+      const value = JSON.parse(frame.payload) as {
+        type?: string;
+        operation?: {
+          type?: string;
+          request?: { views?: readonly { type?: string }[] };
+        };
+      };
+      if (
+        value.type !== "call" ||
+        value.operation?.type !== "update_view_set"
+      ) {
+        return;
+      }
+      const details = (value.operation.request?.views ?? [])
+        .flatMap((view) =>
+          view.type === "torrent_media"
+            ? ["media"]
+            : view.type === "torrent_files"
+              ? ["files"]
+              : [],
+        );
+      detailRequests.push(details.join("+") || "none");
+    });
+  });
+  page.on("request", (request) => {
+    if (!request.url().startsWith(applicationOrigin!)) return;
+    const pathname = new URL(request.url()).pathname;
+    if (
+      pathname === "/api/v1/hello" ||
+      pathname === "/api/v1/commands" ||
+      pathname.startsWith("/api/v1/view-sets")
+    ) {
+      semanticHttpRequests.push(`${request.method()} ${pathname}`);
+    }
+  });
+
+  await page.setViewportSize({ width: 1_440, height: 900 });
+  await page.goto(liveUrl());
+  const primary = page.getByRole("navigation", { name: "Primary" });
+  const addForm = page.getByRole("form", { name: "Add torrent" });
+  const input = addForm.getByRole("textbox", {
+    name: "Magnet link or torrent URL",
+  });
+  await input.fill(magnet!);
+  await input.press("Enter");
+  await confirmDefaultAddOptions(page);
+  await expect(
+    page.getByRole("region", { name: "Transfers" }).getByRole("status"),
+  ).toHaveText("Added");
+  await primary.getByRole("button", { name: "Library" }).click();
+  const card = page
+    .getByRole("list", { name: "Torrent-backed content" })
+    .getByRole("button")
+    .first();
+  await expect(card).toBeVisible();
+  await card.click();
+  const pending = page.getByText("Waiting for torrent metadata…");
+  await expect(pending).toBeVisible();
+  sawMetadataPending = true;
+
+  await expect(
+    page.getByRole("heading", { name: torrentName! }),
+  ).toBeVisible({ timeout: 20_000 });
+  const media = page.getByRole("list", { name: "Recognized video files" });
+  await expect(media).toBeVisible();
+  expect(
+    await media.getByRole("listitem").locator("strong[title]").allTextContents(),
+  ).toEqual([
+    "North.Shore.Stories.S01E01.1080p.WEB-DL.mkv",
+    "North.Shore.Stories.S01E02.1080p.WEB-DL.mp4",
+    "North.Shore.Stories.S01E07E08.mkv",
+    "North.Shore.Stories.S01E10.1080p.WEB-DL.mkv",
+    "North.Shore.Stories.S02E01.mkv",
+    "Behind the scenes.webm",
+  ]);
+  await expect(media.getByText("poster.jpg")).toHaveCount(0);
+  await expect(media.getByText("README.nfo")).toHaveCount(0);
+  await expect.poll(() => detailRequests.at(-1)).toBe("media");
+  await expect
+    .poll(
+      async () =>
+        media.getByText("Downloaded", { exact: true }).count(),
+      { timeout: 5_000 },
+    )
+    .toBeLessThan(6);
+
+  await page.getByRole("tab", { name: "All files" }).click();
+  const files = page.getByRole("list", { name: "All torrent files" });
+  await expect(files.getByRole("listitem")).toHaveCount(Number(fileCount!));
+  await expect(files.getByText("poster.jpg")).toBeVisible();
+  await expect(files.getByText("README.nfo")).toBeVisible();
+  await expect.poll(() => detailRequests.at(-1)).toBe("files");
+
+  await page.getByRole("tab", { name: "Media" }).click();
+  await expect(media).toBeVisible();
+  await expect.poll(() => detailRequests.at(-1)).toBe("media");
+  await expect(
+    media.getByText("Downloaded", { exact: true }),
+  ).toHaveCount(6, { timeout: 45_000 });
+  const progress = media.getByLabel(/download progress$/);
+  await expect(progress).toHaveCount(6);
+  for (let index = 0; index < 6; index += 1) {
+    await expect(progress.nth(index)).toHaveText("100% done · 100% verified");
+  }
+
+  const violations = (
+    await new AxeBuilder({ page }).analyze()
+  ).violations.filter(
+    (violation) =>
+      violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(violations).toEqual([]);
+  await page.getByRole("button", { name: "Back to Library" }).click();
+  await expect(card).toBeFocused();
+  await expect.poll(() => detailRequests.at(-1)).toBe("none");
+  await card.click();
+  await expect(media).toBeVisible();
+  await expect(
+    media.getByText("Downloaded", { exact: true }),
+  ).toHaveCount(6);
+  await page.keyboard.press("Escape");
+  await expect(card).toBeFocused();
+  expect(applicationUpgrades).toBe(1);
+  expect(semanticHttpRequests).toEqual([]);
+  console.log(
+    `media_library_live_milestones ${JSON.stringify({ sawMetadataPending, mediaRows: 6, fileRows: Number(fileCount!), detailRequests, applicationUpgrades, semanticHttpRequests: semanticHttpRequests.length, axeViolations: violations.length })}`,
   );
 });
 
