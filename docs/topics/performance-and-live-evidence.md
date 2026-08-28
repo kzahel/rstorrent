@@ -557,11 +557,42 @@ The causal attribution is correspondingly narrow: total Library, selected
 Summary, Peer, and active-piece semantic bytes fell 63.71%, 72.13%, 68.06%,
 and 47.35%, while file updates in the Files window fell 35.87%. Idle did not
 move because it contains only the still-complete session-rate projection.
-That roughly 5 KiB/s history replacement is now the clearest next payload
-candidate. A later measurement should compare an incremental rate-window
-contract against delivery-profile/hidden-client policy before considering a
-binary codec; binary remains a broader payload/CPU/complexity decision rather
-than a response to the original row-repetition bug.
+That roughly 5 KiB/s history replacement selected the next payload candidate:
+compare an incremental rate-window contract against delivery-profile/hidden-
+client policy before considering a binary codec. Binary remains a broader
+payload/CPU/complexity decision rather than a response to the original row-
+repetition bug.
+
+Tactical `186` removes the overloaded rate projection and repeats the exact
+fixture at clean commit `7c84c5b57629130059c28876450f4092ebfb8812`.
+`SessionCurrentRates` now carries only complete latest requested metrics, while
+the independently interest-selected `SessionSpeedHistory` sends one bounded
+fixed-window snapshot followed by every completed bucket as an exact
+position-validated append. The ordinary React UI does not select graph history
+outside Speed.
+
+Server application payload falls from 783,539 to 454,581 bytes (-41.98%);
+client payload is 29,152 bytes. The 75.16-second run retains 502 streamed
+batches, zero duplicate-view batches, zero resets, exact browser/gateway byte
+agreement, progress from 1% to 20%, 74 ordinary logs, a 52,891-byte maximum
+outbound message, and clean shutdown. The report SHA-256 is
+`f6a202382f4d59f8670cff0bf936c9fa18f78a3c834fa0f58b1c96cd1fadb456`.
+
+| Eight-second steady window | Sparse KiB/s | Split-rate KiB/s | Reduction |
+| --- | ---: | ---: | ---: |
+| idle Transfers | 5.28 | 0.41 | 92.22% |
+| active Transfers | 8.22 | 2.88 | 64.92% |
+| Peers | 15.59 | 10.81 | 30.69% |
+| General | 8.58 | 3.66 | 57.29% |
+| Files | 10.12 | 5.05 | 50.05% |
+| Pieces | 16.75 | 11.97 | 28.52% |
+| Normal Logs | 9.02 | 4.09 | 54.63% |
+
+The next bandwidth-policy experiment should start from this smaller residual
+and measure a named background/cellular profile with selected-view removal,
+server-enforced cadence, immediate foreground refresh, convergence latency,
+queue pressure, and resets. A negotiated binary codec remains later and must
+preserve these semantic snapshots, appends, cursors, and acknowledgements.
 
 The reproducible command is:
 

@@ -815,15 +815,19 @@ Tactical `043`. Tactical
 [`064`](../tactical/064-registry-backed-swarm-inspection.md) implements
 `torrent_swarm`, and Tactical
 [`066`](../tactical/066-smooth-session-speed-history.md) implements
-`session_speed`; Tactical
+the underlying session-rate history; Tactical
 [`065`](../tactical/065-dht-observatory.md) implements `session_dht`. Swarm is
 keyed registry state with
 active, inactive, and torrent-missing catalogs; DHT is one bounded latest
 session observation containing exact 160-bucket occupancy/freshness and at
-most 16 lookup-convergence summaries; Speed is a range-selected bounded session
-history with coalescible selected-tier replacements and server-owned coarse
-retention, so a fresh client receives its requested tier rather than the full
-database.
+most 16 lookup-convergence summaries. Tactical `066` established range-
+selected bounded history and server-owned coarse retention. Tactical `186`
+exposes rates as a tiny complete
+`session_current_rates` latest-value view and an independent,
+interest-selected `session_speed_history` projection. History sends a bounded
+range snapshot and then exact contiguous completed-bucket appends, so a fresh
+client receives its requested tier rather than the full database and a
+current-rate consumer receives no graph state.
 Unsupported views must report unsupported or unavailable explicitly rather
 than fabricate empty data.
 
@@ -1268,8 +1272,9 @@ unchanged from explicit clear; all reducers reconstruct full state. These
 semantics are defined before serialization, so JSON remains an interchangeable
 codec rather than the source of patch meaning. A future binary codec must use
 an explicit versioned field-number registry rather than Rust enum order.
-Complete session-rate history replacement, projection overlap removal, and
-browser decode/reducer/paint cost remain separately measured follow-ups.
+At that point, complete session-rate history replacement, projection overlap
+removal, and browser decode/reducer/paint cost remained separately measured
+follow-ups; Tactical `186` closes the first item below.
 
 Tactical `185` is complete. `TorrentFieldUpdate`, `FileFieldUpdate`,
 `PeerFieldUpdate`, and `ActivePieceFieldUpdate` are closed tagged semantic
@@ -1289,6 +1294,25 @@ the current JSON codec. Rust enum order, generated union layout, and client
 duplicate-detection keys are explicitly not binary field numbers; a future
 codec still requires negotiated versioning, a stable numeric registry,
 unknown-field rules, golden vectors, and payload/CPU measurements.
+
+Tactical `186` removes the overloaded `SessionSpeed` projection. Current
+values are complete latest-state `SessionCurrentRates` replacements. Graph
+state is an independent `SessionSpeedHistory` fixed-window snapshot followed
+by exact nullable contiguous appends. History epoch, base/new completed-bucket
+positions, resulting start geometry, selected metrics, and equal value counts
+are validated before mutation. Compatible pending appends concatenate within
+the selected window; any gap or incompatible shape establishes a fresh
+snapshot. These semantic anchors do not duplicate transport reliability: the
+existing view-set cursor and post-reduction acknowledgement still own replay,
+queue release, and backpressure.
+
+React always requests only received/uploaded current rates and requests graph
+history only while Speed is visible. Android composes the two independent
+subscriptions for its Speed route. iOS does not yet present or subscribe to
+Speed, but its maintained repository reduces both contract shapes exactly.
+The clean production run reduces Tactical `185`'s server payload from 783,539
+to 454,581 bytes (-41.98%) and idle Transfers from 5.28 to 0.41 KiB/s, with
+zero resets, exact browser/gateway agreement, and progress from 1% to 20%.
 
 Public swarms and visible Tauri launch are unnecessary for this foundation.
 The browser gateway, temporary profiles, controlled libtorrent peer, and pure
@@ -1315,8 +1339,9 @@ interactive machine.
 6. Tactical `065` adds the bounded latest-value DHT view, exact generated
    contract validation, coherent replacement reduction, and joined terminal
    forwarding. This step is complete.
-7. Measure update volume, decode/reduce cost, rendering, and memory before
-   selecting binary encoding or finer-grained row patches.
+7. Tacticals `183`--`186` measure and repair interleaved coalescing, repeated
+   complete hot rows, and overloaded session-rate history. Continue measuring
+   decode/reduce cost, rendering, and memory before selecting binary encoding.
 
 Tacticals `033`, `034`, `035`, `048`, `060`, and `065` completed the first six
 steps. Further views should follow observed inspection value. Binary encoding

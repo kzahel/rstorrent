@@ -43,11 +43,12 @@ machine-control.
 ## Current Tactical State
 
 The authoritative **Now** is
-[`186-current-rates-and-incremental-speed-history.md`](docs/tactical/186-current-rates-and-incremental-speed-history.md),
-which separates tiny latest-value current rates from interest-selected exact
-graph history and replaces repeated complete graph windows with bounded
-cursor-validated appends. Tactical `176` retains only its unchanged
-macOS-hosted iOS simulator/archive compile gate.
+[`176-durable-high-file-priority.md`](docs/tactical/176-durable-high-file-priority.md),
+whose implementation is complete and whose only remaining gate is the
+macOS-hosted iOS simulator/archive compile. Completed Tactical `186` separates
+tiny latest-value current rates from interest-selected exact graph history,
+replaces repeated complete graph windows with bounded cursor-validated
+appends, and cuts the Tactical `185` residual server payload by 41.98%.
 Completed Tactical `185` replaces measured repeated Torrent, File, Peer, and
 active-piece rows with closed typed semantic deltas across all first-party
 reducers. Its clean retained run cuts another 36.77% from post-coalescing

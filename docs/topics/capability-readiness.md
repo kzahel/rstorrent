@@ -232,6 +232,20 @@ appends validated by semantic history position while reusing the established
 view-set cursor and acknowledgement. It is the sole **Now**; Tactical `176`
 retains its unchanged macOS-only iOS compile gate.
 
+Tactical `186` is complete. The obsolete combined `SessionSpeed` contract is
+removed: `SessionCurrentRates` now carries tiny complete latest values, while
+interest-selected `SessionSpeedHistory` carries one bounded snapshot followed
+by exact nullable contiguous appends anchored by history epoch and completed-
+bucket position. Existing view-set cursor acknowledgement remains the sole
+transport reliability and backpressure mechanism. React requests history only
+while Speed is visible; Android composes current and history subscriptions for
+its Speed route; every Linux-available first-party reducer rejects continuity
+or shape gaps atomically. The clean retained run reduces Tactical `185`'s
+server payload from 783,539 to 454,581 bytes (-41.98%) and idle Transfers from
+5.28 to 0.41 KiB/s, with exact browser/gateway agreement, zero resets, and
+progress from 1% to 20%. Tactical `176` resumes as the sole **Now** with only
+its unchanged macOS-hosted iOS compile gate.
+
 The updater tactical's client, production route, five-target signed hosted
 rehearsal, public `0.1.0`, `0.1.1`, and `0.1.2` releases, installed macOS arm64
 launch smoke, and exact macOS arm64 and Linux arm64 `0.1.0`-to-`0.1.1` updates
@@ -727,9 +741,8 @@ exactly.
 
 ### Now
 
-- Complete **Tactical `186`** current-rate separation, exact incremental speed
-  history, every first-party reducer, and the retained production bandwidth
-  measurement.
+- Complete **Tactical `176`**'s remaining macOS-hosted iOS simulator/archive
+  compile gate for durable High/Normal/Skip file priority.
 
 ### Next
 

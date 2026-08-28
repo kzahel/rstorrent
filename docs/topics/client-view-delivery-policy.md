@@ -10,9 +10,11 @@ no automatic polling fallback. Completed Tacticals
 [`184`](../tactical/184-view-aware-current-state-coalescing.md), and
 [`185`](../tactical/185-typed-sparse-hot-view-patches.md) establish the clean
 baseline, repair interleaved current-state coalescing, and add closed typed
-sparse rows across all first-party reducers. Total server payload is now
-85.13% below the original measured run. The remaining idle floor is the
-complete session-rate history at roughly 5 KiB/s. There is still no
+sparse rows across all first-party reducers. Completed Tactical
+[`186`](../tactical/186-current-rates-and-incremental-speed-history.md) then
+separates tiny current rates from interest-selected exact graph history. Total
+server payload is now 91.37% below the original measured run and idle
+Transfers is 0.41 KiB/s. There is still no
 user-selectable delivery profile, visibility-driven downshift, global
 bandwidth budget, or cadence-specific performance gate. Changing only a
 delivery interval also causes an unnecessary fresh snapshot today.
@@ -296,12 +298,16 @@ from server payload. Active Transfers, Peers, General, Files, Pieces, and
 Normal Logs now measure 8.22, 15.59, 8.58, 10.12, 16.75, and 9.02 KiB/s,
 respectively, with zero resets and exact browser/gateway byte agreement.
 
-The unchanged idle Transfers result, 5.28 KiB/s, is now high-signal evidence:
-it consists of complete ten-minute session-rate history replacement. Sparse
-Library and Summary updates are no longer dominant, unselected details still
-send no data, and default Normal Logs remain a minor direct contributor. The
-next optimization should therefore be selected from the new residual rather
-than inferred from the original trace.
+Completed Tactical `186` removes that remaining overloaded rate projection.
+Every ordinary surface receives only tiny complete current-rate values; exact
+fixed-window graph history is selected only while Speed is visible and then
+advances by contiguous completed-bucket appends. Slower cadence concatenates
+all intervening points without resampling, and the established acknowledged
+view-set cursor still owns transport replay and backpressure. The identical
+run cuts total server payload another 41.98%. Idle Transfers falls from 5.28
+to 0.41 KiB/s; active Transfers, Peers, General, Files, Pieces, and Normal Logs
+measure 2.88, 10.81, 3.66, 5.05, 11.97, and 4.09 KiB/s, with zero resets and
+exact browser/gateway agreement.
 
 ## Required Evidence
 
@@ -329,19 +335,13 @@ continuity and reset gates instead of a narrow wall-clock throughput threshold.
 
 ## Recommended Next Work
 
-Use the completed `183`/`184`/`185` reports as the causal baseline for one
-bounded next tactical. The leading payload candidate is an incremental
-session-rate window that sends only newly completed buckets plus the current
-sample and preserves epoch/range/reset semantics. It should prove bounded
-catch-up, gap handling, reconnect, and reconstruction before replacing the
-current complete history DTO.
-
-After that isolated result, measure a named low-bandwidth/background delivery
-profile rather than exposing raw intervals. It should combine explicit desired
-views with server-enforced cadence, document-visibility or platform lifecycle,
-and immediate foreground refresh, and report payload, command convergence,
-queue pressure, resets, and paint latency. Removing a view remains preferable
-to sampling it when the information is not visible.
+Use the completed `183`--`186` reports as the causal baseline. Next measure a
+named low-bandwidth/background delivery profile rather than exposing raw
+intervals. It should combine explicit desired views with server-enforced
+cadence, document-visibility or platform lifecycle, and immediate foreground
+refresh, and report payload, command convergence, queue pressure, resets, and
+paint latency. Removing a view remains preferable to sampling it when the
+information is not visible.
 
 Library/selected-Summary overlap removal and viewport/page projections remain
 valid later candidates when measurements show enough residual duplication or

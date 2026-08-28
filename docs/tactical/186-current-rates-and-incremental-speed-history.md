@@ -1,8 +1,10 @@
 # Tactical 186: Current Rates And Incremental Speed History
 
-Status: **Active.** Explicit user direction on 2026-08-28 temporarily yields
-Tactical `176` to this measured application-view optimization. Tactical `176`
-retains only its unchanged macOS-hosted iOS simulator/archive compile gate.
+Status: **Complete.** The contract, server projection, coalescing, generated
+boundaries, and every Linux-available first-party reducer landed on
+2026-08-28. The retained production-browser run proves the causal bandwidth
+reduction, and Tactical `176` resumes as the sole **Now** with only its
+unchanged macOS-hosted iOS simulator/archive compile gate.
 
 Topics:
 [`client-view-delivery-policy`](../topics/client-view-delivery-policy.md),
@@ -89,8 +91,10 @@ An ordinary history patch contains:
 - `history_epoch`;
 - `base_complete_through_millis` and new `complete_through_millis`;
 - `captured_millis`;
-- one ordered append per selected metric with identical nonzero value count;
-  and
+- the resulting `start_millis`, so fixed-window geometry is validated before
+  mutation;
+- when buckets advance, one ordered append per selected metric with identical
+  nonzero value count; a persistence-only patch carries an empty series; and
 - an optional changed persistence fact.
 
 The first appended bucket is exactly one bucket after the base position;
@@ -167,6 +171,73 @@ compression, or mixed-version lane.
 The updated iOS source and generated Swift boundary remain subject to Tactical
 `176`'s existing macOS-only simulator/archive compile gate. This Linux host
 must not claim that compile.
+
+## Result And Evidence
+
+Commit `c27620a` removes the overloaded `SessionSpeed` contract rather than
+retaining a compatibility endpoint. `SessionCurrentRates` is a complete tiny
+latest-value projection whose pending updates replace one another.
+`SessionSpeedHistory` has no current-rate fields: it sends one complete fixed
+window followed by contiguous appends carrying history epoch, prior and new
+complete-through positions, resulting start geometry, capture time, optional
+persistence change, and equal-length nullable values for every selected
+metric. Direct subscriptions and view sets retain only semantic history
+position, concatenate compatible pending appends within the selected window,
+and establish a fresh snapshot on any continuity or shape mismatch. The
+existing view-set batch cursor and post-reduction acknowledgement remain the
+only reliable-delivery and backpressure mechanism.
+
+The React product always selects only received/uploaded current rates and adds
+history interest only while Speed is visible. Android independently composes
+the same two global subscriptions for its Speed route. Its ordinary routes
+request neither graph history nor hidden detail views. iOS has no Speed UI or
+subscription today, but its maintained repository and new pure tests reduce
+both new contract shapes exactly so a later presentation cannot reintroduce
+the overloaded model. Web, Android, and iOS reducers reject epoch, base,
+geometry, metric, count, and series-shape mismatches before mutation.
+
+The exact Tactical `183` fixture ran on clean commit
+`7c84c5b57629130059c28876450f4092ebfb8812` for 75.16 seconds. One WebSocket
+and no semantic HTTP carried 454,581 server payload bytes and 29,152 client
+payload bytes. That is a 41.98% server-payload reduction from Tactical `185`'s
+783,539-byte residual. All 502 streamed batches had at most one update per
+logical view, with zero duplicates and resets. Gateway counters exactly
+matched browser totals, the active torrent advanced from 1% to 20%, all 74
+ordinary logs were retained, the maximum outbound message remained 52,891
+bytes, and cleanup passed.
+
+That measured commit and landed implementation commit `c27620a` have the
+identical source tree `2cc04a5a0a2a5e13c577b0019edc2cd22ef38a5b`.
+
+| Eight-second steady window | Tactical 185 KiB/s | Tactical 186 KiB/s | Reduction |
+| --- | ---: | ---: | ---: |
+| idle Transfers | 5.28 | 0.41 | 92.22% |
+| active Transfers | 8.22 | 2.88 | 64.92% |
+| Peers | 15.59 | 10.81 | 30.69% |
+| General | 8.58 | 3.66 | 57.29% |
+| Files | 10.12 | 5.05 | 50.05% |
+| Pieces | 16.75 | 11.97 | 28.52% |
+| Normal Logs | 9.02 | 4.09 | 54.63% |
+
+The report SHA-256 is
+`f6a202382f4d59f8670cff0bf936c9fa18f78a3c834fa0f58b1c96cd1fadb456`.
+The report and generated Swift inspection tree were removed after evidence was
+recorded.
+
+Validation passed:
+
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace -- -D warnings`;
+- `cargo test --workspace`;
+- web typecheck, production/CSP build, focused tests, and the complete 321-test
+  suite with 319 passed and two skipped; Node 25 required an explicit temporary
+  `--localstorage-file` because jsdom otherwise refuses local storage;
+- the Android dual-ABI generated-boundary, Rust, APK, and unit-test build plus
+  a direct `testDebugUnitTest` rerun; and
+- `cargo build -p rstorrent-ios --release`, generated Swift source inspection,
+  and inspection of the new iOS reducer test source. This Linux host has no
+  `swiftc` or Xcode, so compiling or running those Swift tests and the
+  simulator/archive remain exactly Tactical `176`'s gate.
 
 ## Non-Goals
 

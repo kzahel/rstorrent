@@ -837,7 +837,12 @@ remote exposure, and Android streaming remain independent product decisions.
   exact retained Swarm payload download/upload totals through the generated
   UniFFI/Kotlin record and dual-ABI build. Compose currently presents only the
   Swarm catalog summary, not peer rows, so it does not fabricate a parallel
-  row presentation for those fields.
+  row presentation for those fields. Tactical `186` makes Speed compose an
+  independent tiny current-rate subscription with graph history selected only
+  on that route; inactive routes receive neither hidden graph history nor
+  unrelated detail projections. iOS still has no Speed presentation or
+  interest, although its maintained reducer accepts both independent contract
+  shapes exactly.
 - Diagnostics currently cover application lifecycle, discovery exhaustion,
   network restriction, tracker policy rejection, metadata, storage, piece,
   integrity, and terminal MSE handshake edges, including role, captured policy,
