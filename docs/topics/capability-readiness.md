@@ -290,6 +290,16 @@ cleanup. Thumbnails, artwork, playback, persistence, and Library-wide item
 aggregation remain deferred. Tactical `176` resumes as the sole **Now** with
 only its unchanged macOS-hosted iOS compile gate.
 
+Explicit user direction on 2026-08-28 temporarily yields Tactical `176` to
+existing-payload adoption and recheck Tactical
+[`188`](../tactical/188-existing-payload-adoption-and-recheck.md). The active
+slice replaces a fresh-row `output already exists` repair with bounded
+path/platform discovery and the common complete checker, commits discovered
+ownership and pending verification atomically, and makes managed cleanup
+metainfo-exact so unrelated content survives. It changes no schema, trusted
+fast-resume rule, or user setting. Tactical `188` is the sole **Now**;
+Tactical `176` retains only its unchanged macOS-hosted iOS compile gate.
+
 The updater tactical's client, production route, five-target signed hosted
 rehearsal, public `0.1.0`, `0.1.1`, and `0.1.2` releases, installed macOS arm64
 launch smoke, and exact macOS arm64 and Linux arm64 `0.1.0`-to-`0.1.1` updates
@@ -785,10 +795,14 @@ exactly.
 
 ### Now
 
-- Complete **Tactical `176`**'s remaining macOS-hosted iOS simulator/archive
-  compile gate for durable High/Normal/Skip file priority.
+- Complete **Tactical `188`** existing-payload discovery, atomic adoption and
+  full recheck, metainfo-exact removal, path/platform parity, Android gates,
+  and local-service recovery evidence.
 
 ### Next
+
+- Resume **Tactical `176`**'s remaining macOS-hosted iOS simulator/archive
+  compile gate for durable High/Normal/Skip file priority.
 
 - Resume **Tactical `158`** and close the clean Windows and Linux x86_64
   signed replacement/relaunch evidence plus Windows firewall-consent

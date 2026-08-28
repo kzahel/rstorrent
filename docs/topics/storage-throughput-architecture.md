@@ -2,7 +2,12 @@
 
 Topic: `storage-throughput-architecture`
 
-Status: Accepted by maintainer direction on 2026-08-02. Tacticals
+Status: Active Tactical
+[`188`](../tactical/188-existing-payload-adoption-and-recheck.md) reuses the
+existing complete checker, independent hash execution, shared storage permits,
+and session-wide handle/request ceilings for discovered bytes. It adds no
+executor, task, queue, or concurrency allowance. Accepted by maintainer
+direction on 2026-08-02. Tacticals
 [`052`](../tactical/052-batched-durability-checkpoints.md) and
 [`053`](../tactical/053-immutable-positional-storage-plans.md) completed the
 durability split and immutable positional-plan foundation. Tactical

@@ -2,7 +2,11 @@
 
 Topic: `application-control`
 
-Status: Completed Tactical
+Status: Active Tactical
+[`188`](../tactical/188-existing-payload-adoption-and-recheck.md) makes
+existing-payload discovery a transparent consequence of starting a verified
+torrent without durable storage ownership. It adds no command, setting, path
+authority, or alternate checker. Completed Tactical
 [`143`](../tactical/143-dual-identity-and-persistence-foundation.md) makes the
 canonical opaque `TorrentId` the command, receipt, queue, runtime, and
 cancellation owner while projecting protocol identities separately; legacy

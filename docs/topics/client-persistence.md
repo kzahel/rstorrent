@@ -2,7 +2,12 @@
 
 Topic: `client-persistence`
 
-Status: Tacticals `007` and `009` implemented the first
+Status: Active Tactical
+[`188`](../tactical/188-existing-payload-adoption-and-recheck.md) changes no
+schema. It adds one transaction that converts unowned discovered storage into
+the exact staging/published state while advancing `verification_requested`,
+so every post-commit restart must complete checking before ordinary
+fast-resume can apply. Tacticals `007` and `009` implemented the first
 `rstorrent-session` application/engine boundary, instance-scoped SQLite
 profile store, exact magnet metadata retention, durable have checkpoints, and
 conservative restart through both path and Android SAF platform-capability

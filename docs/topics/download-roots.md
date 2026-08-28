@@ -2,7 +2,13 @@
 
 Topic: `download-roots`
 
-Status: Product behavior accepted in maintainer discussion on 2026-08-03 and
+Status: Active Tactical
+[`188`](../tactical/188-existing-payload-adoption-and-recheck.md) replaces a
+fresh-row destination collision with automatic metainfo-exact discovery and
+the common complete checker. Discovered bytes remain unverified until hashing
+passes, ownership and pending verification commit atomically, and managed
+removal preserves unrelated content. Product behavior accepted in maintainer
+discussion on 2026-08-03 and
 implemented for the macOS code paths and initial native Linux adapter in
 [`061-user-selected-download-roots.md`](../tactical/061-user-selected-download-roots.md).
 [`062-user-visible-publication-layout.md`](../tactical/062-user-visible-publication-layout.md)
@@ -378,12 +384,15 @@ bounded hidden names containing the info hash so ownership and cleanup remain
 unambiguous. They must remain beneath the selected root unless a later
 explicit storage design says otherwise.
 
-Never overwrite or merge an existing final destination implicitly. The
-initial product may report a visible destination conflict and require another
-choice. A later **use existing data and recheck** action may deliberately adopt
-matching content through the ordinary integrity path. Automatic suffixing,
-blind overwrite, and treating same-length files as verified are not accepted
-fallbacks.
+Never overwrite an existing final destination or trust it from names, kinds,
+or lengths. Tactical `188` automatically treats exact metainfo destinations
+found without durable ownership as unverified candidates, enters the common
+complete checker, retains only hash-matching pieces, and downloads missing or
+corrupt work normally. Automatic suffixing, blind overwrite, and treating
+same-length files as verified remain rejected. Because adoption never grants
+ownership over unrelated descendants, `Delete managed data` removes exact
+metainfo files and hash-owned auxiliary state, then prunes only empty expected
+directories.
 
 Tactical 062 replaces the former `<root>/<info-hash>` bring-up shape for new
 multi-file downloads. The verified safe metainfo name is durable and becomes
