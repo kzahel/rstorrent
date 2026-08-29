@@ -10,6 +10,7 @@ mod binding;
 mod error;
 mod opaque;
 mod record;
+mod resume;
 
 pub use binding::{Binding, HostId, HostPin, RelayId, Username};
 pub use error::{RemoteCryptoError, Result};
@@ -22,6 +23,13 @@ pub use opaque::{
 pub use record::{
     APP_CLIENT_MAX_PLAINTEXT, APP_SERVER_MAX_PLAINTEXT, OpenedRecord, RECORD_OVERHEAD, Role,
     SecureChannel,
+};
+pub use resume::{
+    AuthorizationChallenge, AuthorizationGeneration, ClientId, ClientResumeFinish,
+    ClientResumeProof, HostResumeKey, P256PublicKey, P256Signature, ResumeClientHello,
+    ResumeClientStart, ResumeContext, ResumeServerChallenge, ResumeServerStart,
+    authorization_transcript, finish_client_resume, finish_server_resume, start_client_resume,
+    start_server_resume, verify_authorization_signature,
 };
 
 #[cfg(feature = "ksf-bench")]
