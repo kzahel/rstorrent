@@ -1,4 +1,4 @@
-//! Pure geometry for recognizable published payload artifacts.
+//! Pure geometry for direct final-path torrent content.
 
 use std::error::Error;
 use std::fmt;
@@ -7,12 +7,12 @@ use rstorrent_protocol::content::TorrentContent;
 use rstorrent_protocol::metainfo::{Metainfo, MetainfoMode};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PublicationShape {
+pub enum ContentShape {
     File,
     Tree,
 }
 
-impl PublicationShape {
+impl ContentShape {
     pub fn from_metainfo(metainfo: &Metainfo) -> Self {
         match metainfo.mode {
             MetainfoMode::SingleFile => Self::File,
@@ -38,7 +38,7 @@ impl PublicationShape {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct LogicalPayloadArtifact {
+pub struct LogicalContentFile {
     pub file_index: usize,
     pub components: Vec<String>,
     pub qualified_components: Vec<String>,
@@ -47,18 +47,18 @@ pub struct LogicalPayloadArtifact {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PublishedArtifactLayout {
-    pub namespace: String,
-    pub shape: PublicationShape,
-    pub files: Vec<LogicalPayloadArtifact>,
+pub struct DirectContentLayout {
+    pub root_name: String,
+    pub shape: ContentShape,
+    pub files: Vec<LogicalContentFile>,
 }
 
-impl PublishedArtifactLayout {
-    pub fn from_metainfo(metainfo: &Metainfo) -> Result<Self, ArtifactLayoutError> {
-        Self::with_namespace(metainfo, metainfo.name.clone())
+impl DirectContentLayout {
+    pub fn from_metainfo(metainfo: &Metainfo) -> Result<Self, DirectContentLayoutError> {
+        Self::with_root_name(metainfo, metainfo.name.clone())
     }
 
-    pub fn from_content(content: &TorrentContent) -> Result<Self, ArtifactLayoutError> {
+    pub fn from_content(content: &TorrentContent) -> Result<Self, DirectContentLayoutError> {
         match content {
             TorrentContent::V1(content) => Self::from_metainfo(&content.metainfo),
             TorrentContent::V2(_) | TorrentContent::Hybrid(_) => {
@@ -69,9 +69,9 @@ impl PublishedArtifactLayout {
                 let shape = if metainfo.files.len() == 1
                     && metainfo.files[0].path == [metainfo.name.as_str()]
                 {
-                    PublicationShape::File
+                    ContentShape::File
                 } else {
-                    PublicationShape::Tree
+                    ContentShape::Tree
                 };
                 let mut files = Vec::with_capacity(metainfo.files.len());
                 for (file_index, file) in metainfo.files.iter().enumerate() {
@@ -81,15 +81,15 @@ impl PublishedArtifactLayout {
                             .iter()
                             .any(|part| validate_component(part).is_err())
                     {
-                        return Err(ArtifactLayoutError::InvalidComponent);
+                        return Err(DirectContentLayoutError::InvalidComponent);
                     }
                     let qualified_components = match shape {
-                        PublicationShape::File => vec![metainfo.name.clone()],
-                        PublicationShape::Tree => std::iter::once(metainfo.name.clone())
+                        ContentShape::File => vec![metainfo.name.clone()],
+                        ContentShape::Tree => std::iter::once(metainfo.name.clone())
                             .chain(file.path.iter().cloned())
                             .collect(),
                     };
-                    files.push(LogicalPayloadArtifact {
+                    files.push(LogicalContentFile {
                         file_index,
                         components: file.path.clone(),
                         qualified_components,
@@ -98,7 +98,7 @@ impl PublishedArtifactLayout {
                     });
                 }
                 Ok(Self {
-                    namespace: metainfo.name.clone(),
+                    root_name: metainfo.name.clone(),
                     shape,
                     files,
                 })
@@ -106,14 +106,14 @@ impl PublishedArtifactLayout {
         }
     }
 
-    pub fn with_namespace(
+    pub fn with_root_name(
         metainfo: &Metainfo,
-        namespace: String,
-    ) -> Result<Self, ArtifactLayoutError> {
-        validate_component(&namespace)?;
-        let shape = PublicationShape::from_metainfo(metainfo);
-        if shape == PublicationShape::File && metainfo.files.len() != 1 {
-            return Err(ArtifactLayoutError::InvalidSingleFileGeometry);
+        root_name: String,
+    ) -> Result<Self, DirectContentLayoutError> {
+        validate_component(&root_name)?;
+        let shape = ContentShape::from_metainfo(metainfo);
+        if shape == ContentShape::File && metainfo.files.len() != 1 {
+            return Err(DirectContentLayoutError::InvalidSingleFileGeometry);
         }
         let mut files = Vec::with_capacity(metainfo.files.len());
         for (file_index, file) in metainfo.files.iter().enumerate() {
@@ -123,15 +123,15 @@ impl PublishedArtifactLayout {
                     .iter()
                     .any(|part| validate_component(part).is_err())
             {
-                return Err(ArtifactLayoutError::InvalidComponent);
+                return Err(DirectContentLayoutError::InvalidComponent);
             }
             let qualified_components = match shape {
-                PublicationShape::File => vec![namespace.clone()],
-                PublicationShape::Tree => std::iter::once(namespace.clone())
+                ContentShape::File => vec![root_name.clone()],
+                ContentShape::Tree => std::iter::once(root_name.clone())
                     .chain(file.path.iter().cloned())
                     .collect(),
             };
-            files.push(LogicalPayloadArtifact {
+            files.push(LogicalContentFile {
                 file_index,
                 components: file.path.clone(),
                 qualified_components,
@@ -140,7 +140,7 @@ impl PublishedArtifactLayout {
             });
         }
         Ok(Self {
-            namespace,
+            root_name,
             shape,
             files,
         })
@@ -148,12 +148,12 @@ impl PublishedArtifactLayout {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ArtifactLayoutError {
+pub enum DirectContentLayoutError {
     InvalidComponent,
     InvalidSingleFileGeometry,
 }
 
-impl fmt::Display for ArtifactLayoutError {
+impl fmt::Display for DirectContentLayoutError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidComponent => formatter.write_str("invalid artifact path component"),
@@ -164,9 +164,9 @@ impl fmt::Display for ArtifactLayoutError {
     }
 }
 
-impl Error for ArtifactLayoutError {}
+impl Error for DirectContentLayoutError {}
 
-fn validate_component(component: &str) -> Result<(), ArtifactLayoutError> {
+fn validate_component(component: &str) -> Result<(), DirectContentLayoutError> {
     if component.is_empty()
         || component.len() > 255
         || matches!(component, "." | "..")
@@ -174,7 +174,7 @@ fn validate_component(component: &str) -> Result<(), ArtifactLayoutError> {
             .bytes()
             .any(|byte| matches!(byte, 0 | b'/' | b'\\'))
     {
-        return Err(ArtifactLayoutError::InvalidComponent);
+        return Err(DirectContentLayoutError::InvalidComponent);
     }
     Ok(())
 }
@@ -183,7 +183,7 @@ fn validate_component(component: &str) -> Result<(), ArtifactLayoutError> {
 mod tests {
     use rstorrent_protocol::metainfo::{Metainfo, MetainfoFile, MetainfoMode};
 
-    use super::{PublicationShape, PublishedArtifactLayout};
+    use super::{ContentShape, DirectContentLayout};
 
     #[test]
     fn maps_single_and_tree_files_to_safe_qualified_components() {
@@ -202,16 +202,16 @@ mod tests {
                 padding: false,
             }],
         };
-        let layout = PublishedArtifactLayout::from_metainfo(&single).expect("single layout");
-        assert_eq!(layout.shape, PublicationShape::File);
+        let layout = DirectContentLayout::from_metainfo(&single).expect("single layout");
+        assert_eq!(layout.shape, ContentShape::File);
         assert_eq!(layout.files[0].qualified_components, ["one.bin"]);
 
         let mut tree = single;
         tree.name = "tree".to_owned();
         tree.mode = MetainfoMode::MultiFile;
         tree.files[0].path = vec!["nested".to_owned(), "one.bin".to_owned()];
-        let layout = PublishedArtifactLayout::from_metainfo(&tree).expect("tree layout");
-        assert_eq!(layout.shape, PublicationShape::Tree);
+        let layout = DirectContentLayout::from_metainfo(&tree).expect("tree layout");
+        assert_eq!(layout.shape, ContentShape::Tree);
         assert_eq!(
             layout.files[0].qualified_components,
             ["tree", "nested", "one.bin"]
@@ -235,6 +235,6 @@ mod tests {
                 padding: false,
             }],
         };
-        assert!(PublishedArtifactLayout::from_metainfo(&metainfo).is_err());
+        assert!(DirectContentLayout::from_metainfo(&metainfo).is_err());
     }
 }

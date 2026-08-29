@@ -1,4 +1,4 @@
-//! Conservative read-only access to verified published logical content.
+//! Conservative read-only access to verified logical content.
 
 use std::error::Error;
 use std::fmt;
@@ -13,7 +13,7 @@ use rstorrent_protocol::metainfo::Metainfo;
 use rstorrent_protocol::peer_wire::BlockRequest;
 use rstorrent_protocol::storage_layout::{ContentLayout, FileSelection, LayoutError};
 
-use crate::artifact_layout::{ArtifactLayoutError, PublicationShape, PublishedArtifactLayout};
+use crate::direct_content_layout::{ContentShape, DirectContentLayout, DirectContentLayoutError};
 use crate::identity::TorrentId;
 use crate::positional_io::read_exact_at;
 use crate::selective_storage::{
@@ -36,7 +36,7 @@ pub struct VerifiedFileSnapshot {
     pub file_lease_high_water: usize,
 }
 
-/// Immutable authority for bounded reads from one verified published file.
+/// Immutable authority for bounded reads from one verified file.
 #[derive(Clone, Debug)]
 pub struct VerifiedFileReader {
     file_index: usize,
@@ -48,7 +48,7 @@ pub struct VerifiedFileReader {
 }
 
 impl VerifiedFileReader {
-    pub async fn open_published_with_pool(
+    pub async fn open_verified_with_pool(
         storage_root: &Path,
         metainfo: &Metainfo,
         verified: &[bool],
@@ -58,7 +58,7 @@ impl VerifiedFileReader {
         read_jobs: Arc<tokio::sync::Semaphore>,
     ) -> Result<Self, VerifiedFileError> {
         let content = TorrentContent::from_v1_metainfo(metainfo.clone());
-        Self::open_published_content_with_pool(
+        Self::open_verified_content_with_pool(
             storage_root,
             &content,
             verified,
@@ -70,7 +70,7 @@ impl VerifiedFileReader {
         .await
     }
 
-    pub async fn open_published_content_with_pool(
+    pub async fn open_verified_content_with_pool(
         storage_root: &Path,
         content: &TorrentContent,
         verified: &[bool],
@@ -84,24 +84,24 @@ impl VerifiedFileReader {
             storage_root,
             content.name(),
             torrent_id,
-            PublicationShape::from_content(content),
+            ContentShape::from_content(content),
         )
         .map_err(VerifiedFileError::StoragePlan)?;
         let storage_id = torrent_id.to_string();
-        let artifact = PublishedArtifactLayout::from_content(content)
+        let artifact = DirectContentLayout::from_content(content)
             .map_err(VerifiedFileError::ArtifactLayout)?;
         let logical = artifact
             .files
             .get(file_index)
             .ok_or(VerifiedFileError::InvalidFileIndex(file_index))?;
-        let namespace_reference = StorageFileReference::new(
+        let content_root_reference = StorageFileReference::new(
             pool.clone(),
             StorageFileKey {
                 storage_id: storage_id.clone(),
-                namespace_generation: 1,
-                role: StorageFileRole::Namespace,
+                storage_generation: 1,
+                role: StorageFileRole::ContentRoot,
             },
-            StorageFileLocator::Path(paths.output),
+            StorageFileLocator::Path(paths.content),
         );
         let path = logical
             .qualified_components
@@ -111,7 +111,7 @@ impl VerifiedFileReader {
             pool,
             StorageFileKey {
                 storage_id,
-                namespace_generation: 1,
+                storage_generation: 1,
                 role: StorageFileRole::Payload(file_index),
             },
             StorageFileLocator::Path(path),
@@ -121,14 +121,14 @@ impl VerifiedFileReader {
             file_index,
             layout,
             artifact,
-            namespace_reference,
+            content_root_reference,
             reference,
             read_jobs,
         )
         .await
     }
 
-    pub async fn open_published_with_platform(
+    pub async fn open_verified_with_platform(
         spec: &PlatformStorageSpec,
         metainfo: &Metainfo,
         verified: &[bool],
@@ -136,25 +136,24 @@ impl VerifiedFileReader {
         read_jobs: Arc<tokio::sync::Semaphore>,
     ) -> Result<Self, VerifiedFileError> {
         let content = TorrentContent::from_v1_metainfo(metainfo.clone());
-        Self::open_published_content_with_platform(spec, &content, verified, file_index, read_jobs)
+        Self::open_verified_content_with_platform(spec, &content, verified, file_index, read_jobs)
             .await
     }
 
-    pub async fn open_published_content_with_platform(
+    pub async fn open_verified_content_with_platform(
         spec: &PlatformStorageSpec,
         content: &TorrentContent,
         verified: &[bool],
         file_index: usize,
         read_jobs: Arc<tokio::sync::Semaphore>,
     ) -> Result<Self, VerifiedFileError> {
-        if !spec.published
-            || spec.publication_name != content.name()
-            || spec.publication_shape != PublicationShape::from_content(content)
+        if spec.content_name != content.name()
+            || spec.content_shape != ContentShape::from_content(content)
         {
-            return Err(VerifiedFileError::InvalidPlatformNamespace);
+            return Err(VerifiedFileError::InvalidPlatformContentRoot);
         }
         let layout = ContentLayout::from_content(content);
-        let artifact = PublishedArtifactLayout::from_content(content)
+        let artifact = DirectContentLayout::from_content(content)
             .map_err(VerifiedFileError::ArtifactLayout)?;
         let logical = artifact
             .files
@@ -164,7 +163,7 @@ impl VerifiedFileReader {
             let target = PlatformStorageTarget {
                 root_id: spec.root_id.clone(),
                 storage_id: spec.storage_id.clone(),
-                namespace_generation: spec.namespace_generation,
+                storage_generation: spec.storage_generation,
                 role,
                 path,
             };
@@ -172,14 +171,16 @@ impl VerifiedFileReader {
                 spec.pool.clone(),
                 StorageFileKey {
                     storage_id: spec.storage_id.clone(),
-                    namespace_generation: spec.namespace_generation,
+                    storage_generation: spec.storage_generation,
                     role,
                 },
                 StorageFileLocator::Platform(target),
             )
         };
-        let namespace_reference =
-            reference(StorageFileRole::Namespace, vec![artifact.namespace.clone()]);
+        let content_root_reference = reference(
+            StorageFileRole::ContentRoot,
+            vec![artifact.root_name.clone()],
+        );
         let file_reference = reference(
             StorageFileRole::Payload(file_index),
             logical.qualified_components.clone(),
@@ -189,7 +190,7 @@ impl VerifiedFileReader {
             file_index,
             layout,
             artifact,
-            namespace_reference,
+            content_root_reference,
             file_reference,
             read_jobs,
         )
@@ -201,8 +202,8 @@ impl VerifiedFileReader {
         verified: &[bool],
         file_index: usize,
         layout: ContentLayout,
-        artifact: PublishedArtifactLayout,
-        namespace_reference: StorageFileReference,
+        artifact: DirectContentLayout,
+        content_root_reference: StorageFileReference,
         reference: StorageFileReference,
         read_jobs: Arc<tokio::sync::Semaphore>,
     ) -> Result<Self, VerifiedFileError> {
@@ -237,21 +238,19 @@ impl VerifiedFileReader {
         if !all_verified {
             return Err(VerifiedFileError::UnverifiedFile(file_index));
         }
-        let namespace =
-            namespace_reference
-                .observe()
-                .await
-                .map_err(|source| VerifiedFileError::Storage {
-                    artifact: "published namespace".to_owned(),
-                    source,
-                })?;
-        let expected_namespace_kind = match artifact.shape {
-            PublicationShape::File => StorageObjectKind::File,
-            PublicationShape::Tree => StorageObjectKind::Directory,
+        let content_root = content_root_reference.observe().await.map_err(|source| {
+            VerifiedFileError::Storage {
+                artifact: "verified content root".to_owned(),
+                source,
+            }
+        })?;
+        let expected_content_root_kind = match artifact.shape {
+            ContentShape::File => StorageObjectKind::File,
+            ContentShape::Tree => StorageObjectKind::Directory,
         };
-        if !namespace.exists || namespace.kind != Some(expected_namespace_kind) {
+        if !content_root.exists || content_root.kind != Some(expected_content_root_kind) {
             return Err(VerifiedFileError::UnexpectedArtifact(
-                "published namespace".to_owned(),
+                "verified content root".to_owned(),
             ));
         }
         let label = format!("payload file {file_index}");
@@ -260,7 +259,7 @@ impl VerifiedFileReader {
             .components
             .last()
             .cloned()
-            .unwrap_or_else(|| artifact.namespace.clone());
+            .unwrap_or_else(|| artifact.root_name.clone());
         Ok(Self {
             file_index,
             file_name,
@@ -423,7 +422,7 @@ pub struct SeedContent {
 }
 
 impl SeedContent {
-    pub async fn open_published(
+    pub async fn open_verified(
         storage_root: &Path,
         torrent_id: TorrentId,
         metainfo: &Metainfo,
@@ -432,11 +431,11 @@ impl SeedContent {
     ) -> Result<Self, SeedContentError> {
         let pool = StorageFilePool::new(DEFAULT_STORAGE_FILE_LIMIT, None)
             .expect("default seed file pool is valid");
-        Self::open_published_with_pool(storage_root, torrent_id, metainfo, verified, skipped, pool)
+        Self::open_verified_with_pool(storage_root, torrent_id, metainfo, verified, skipped, pool)
             .await
     }
 
-    pub async fn open_published_with_pool(
+    pub async fn open_verified_with_pool(
         storage_root: &Path,
         torrent_id: TorrentId,
         metainfo: &Metainfo,
@@ -445,7 +444,7 @@ impl SeedContent {
         pool: StorageFilePool,
     ) -> Result<Self, SeedContentError> {
         let content = TorrentContent::from_v1_metainfo(metainfo.clone());
-        Self::open_published_content_with_pool(
+        Self::open_verified_content_with_pool(
             storage_root,
             torrent_id,
             &content,
@@ -456,7 +455,7 @@ impl SeedContent {
         .await
     }
 
-    pub async fn open_published_content_with_pool(
+    pub async fn open_verified_content_with_pool(
         storage_root: &Path,
         torrent_id: TorrentId,
         content: &TorrentContent,
@@ -469,20 +468,20 @@ impl SeedContent {
             storage_root,
             content.name(),
             torrent_id,
-            PublicationShape::from_content(content),
+            ContentShape::from_content(content),
         )
         .map_err(SeedContentError::StoragePlan)?;
         let storage_id = torrent_id.to_string();
-        let artifact = PublishedArtifactLayout::from_content(content)
-            .map_err(SeedContentError::ArtifactLayout)?;
-        let namespace_reference = StorageFileReference::new(
+        let artifact =
+            DirectContentLayout::from_content(content).map_err(SeedContentError::ArtifactLayout)?;
+        let content_root_reference = StorageFileReference::new(
             pool.clone(),
             StorageFileKey {
                 storage_id: storage_id.clone(),
-                namespace_generation: 1,
-                role: StorageFileRole::Namespace,
+                storage_generation: 1,
+                role: StorageFileRole::ContentRoot,
             },
-            StorageFileLocator::Path(paths.output),
+            StorageFileLocator::Path(paths.content),
         );
         let references = artifact
             .files
@@ -496,7 +495,7 @@ impl SeedContent {
                     pool.clone(),
                     StorageFileKey {
                         storage_id: storage_id.clone(),
-                        namespace_generation: 1,
+                        storage_generation: 1,
                         role: StorageFileRole::Payload(file.file_index),
                     },
                     StorageFileLocator::Path(path),
@@ -509,41 +508,40 @@ impl SeedContent {
             skipped,
             layout,
             artifact,
-            namespace_reference,
+            content_root_reference,
             references,
         )
         .await
     }
 
-    pub async fn open_published_with_platform(
+    pub async fn open_verified_with_platform(
         spec: &PlatformStorageSpec,
         metainfo: &Metainfo,
         verified: &[bool],
         skipped: &[usize],
     ) -> Result<Self, SeedContentError> {
         let content = TorrentContent::from_v1_metainfo(metainfo.clone());
-        Self::open_published_content_with_platform(spec, &content, verified, skipped).await
+        Self::open_verified_content_with_platform(spec, &content, verified, skipped).await
     }
 
-    pub async fn open_published_content_with_platform(
+    pub async fn open_verified_content_with_platform(
         spec: &PlatformStorageSpec,
         content: &TorrentContent,
         verified: &[bool],
         skipped: &[usize],
     ) -> Result<Self, SeedContentError> {
-        if !spec.published
-            || spec.publication_name != content.name()
-            || spec.publication_shape != PublicationShape::from_content(content)
+        if spec.content_name != content.name()
+            || spec.content_shape != ContentShape::from_content(content)
         {
-            return Err(SeedContentError::InvalidPlatformNamespace);
+            return Err(SeedContentError::InvalidPlatformContentRoot);
         }
         let layout = ContentLayout::from_content(content);
-        let artifact = PublishedArtifactLayout::from_content(content)
-            .map_err(SeedContentError::ArtifactLayout)?;
+        let artifact =
+            DirectContentLayout::from_content(content).map_err(SeedContentError::ArtifactLayout)?;
         let target = |role, path| PlatformStorageTarget {
             root_id: spec.root_id.clone(),
             storage_id: spec.storage_id.clone(),
-            namespace_generation: spec.namespace_generation,
+            storage_generation: spec.storage_generation,
             role,
             path,
         };
@@ -552,14 +550,16 @@ impl SeedContent {
                 spec.pool.clone(),
                 StorageFileKey {
                     storage_id: spec.storage_id.clone(),
-                    namespace_generation: spec.namespace_generation,
+                    storage_generation: spec.storage_generation,
                     role,
                 },
                 StorageFileLocator::Platform(target(role, path)),
             )
         };
-        let namespace_reference =
-            reference(StorageFileRole::Namespace, vec![artifact.namespace.clone()]);
+        let content_root_reference = reference(
+            StorageFileRole::ContentRoot,
+            vec![artifact.root_name.clone()],
+        );
         let references = artifact
             .files
             .iter()
@@ -576,7 +576,7 @@ impl SeedContent {
             skipped,
             layout,
             artifact,
-            namespace_reference,
+            content_root_reference,
             references,
         )
         .await
@@ -587,8 +587,8 @@ impl SeedContent {
         verified: &[bool],
         skipped: &[usize],
         layout: ContentLayout,
-        artifact: PublishedArtifactLayout,
-        namespace_reference: StorageFileReference,
+        artifact: DirectContentLayout,
+        content_root_reference: StorageFileReference,
         references: Vec<StorageFileReference>,
     ) -> Result<Self, SeedContentError> {
         if verified.len() != layout.piece_count() {
@@ -599,21 +599,21 @@ impl SeedContent {
         }
         let selection =
             FileSelection::new_content(&layout, skipped).map_err(SeedContentError::Layout)?;
-        let namespace =
-            namespace_reference
+        let content_root =
+            content_root_reference
                 .observe()
                 .await
                 .map_err(|source| SeedContentError::Storage {
-                    artifact: "published namespace".to_owned(),
+                    artifact: "verified content root".to_owned(),
                     source,
                 })?;
-        let expected_namespace_kind = match artifact.shape {
-            PublicationShape::File => StorageObjectKind::File,
-            PublicationShape::Tree => StorageObjectKind::Directory,
+        let expected_content_root_kind = match artifact.shape {
+            ContentShape::File => StorageObjectKind::File,
+            ContentShape::Tree => StorageObjectKind::Directory,
         };
-        if !namespace.exists || namespace.kind != Some(expected_namespace_kind) {
+        if !content_root.exists || content_root.kind != Some(expected_content_root_kind) {
             return Err(SeedContentError::UnexpectedArtifact(
-                "published namespace".to_owned(),
+                "verified content root".to_owned(),
             ));
         }
 
@@ -849,10 +849,10 @@ pub enum SeedContentError {
     InvalidRequest(BlockRequest),
     UnavailablePiece(u32),
     UnexpectedArtifact(String),
-    InvalidPlatformNamespace,
+    InvalidPlatformContentRoot,
     ArithmeticOverflow,
     Layout(LayoutError),
-    ArtifactLayout(ArtifactLayoutError),
+    ArtifactLayout(DirectContentLayoutError),
     StoragePlan(SelectiveStorageError),
     Storage {
         artifact: String,
@@ -885,11 +885,11 @@ pub enum VerifiedFileError {
         maximum: usize,
     },
     UnexpectedArtifact(String),
-    InvalidPlatformNamespace,
+    InvalidPlatformContentRoot,
     ReadOwnerClosed,
     ArithmeticOverflow,
     Layout(LayoutError),
-    ArtifactLayout(ArtifactLayoutError),
+    ArtifactLayout(DirectContentLayoutError),
     StoragePlan(SelectiveStorageError),
     Storage {
         artifact: String,
@@ -935,8 +935,8 @@ impl fmt::Display for VerifiedFileError {
                 formatter,
                 "verified payload has an unexpected type or length: {artifact}"
             ),
-            Self::InvalidPlatformNamespace => {
-                formatter.write_str("platform namespace does not match verified published metadata")
+            Self::InvalidPlatformContentRoot => {
+                formatter.write_str("platform content root does not match verified metadata")
             }
             Self::ReadOwnerClosed => formatter.write_str("verified file read owner is closed"),
             Self::ArithmeticOverflow => formatter.write_str("verified file arithmetic overflow"),
@@ -988,8 +988,8 @@ impl fmt::Display for SeedContentError {
                     "seed payload has an unexpected type or length: {artifact}",
                 )
             }
-            Self::InvalidPlatformNamespace => {
-                formatter.write_str("seed platform namespace does not match verified metadata")
+            Self::InvalidPlatformContentRoot => {
+                formatter.write_str("seed platform content root does not match verified metadata")
             }
             Self::ArithmeticOverflow => formatter.write_str("seed content arithmetic overflow"),
             Self::Layout(error) => write!(formatter, "seed layout: {error}"),
@@ -1098,7 +1098,7 @@ mod tests {
     use rstorrent_protocol::metainfo::{Metainfo, MetainfoFile, MetainfoMode};
     use rstorrent_protocol::peer_wire::BlockRequest;
 
-    use crate::artifact_layout::PublicationShape;
+    use crate::direct_content_layout::ContentShape;
     use crate::identity::TorrentId;
     use crate::selective_storage::PlatformStorageSpec;
     use crate::storage_file_pool::{
@@ -1188,7 +1188,7 @@ mod tests {
             .await
             .expect("write payload");
         let content =
-            SeedContent::open_published(&root, test_torrent_id(), &single(), &[true, true], &[])
+            SeedContent::open_verified(&root, test_torrent_id(), &single(), &[true, true], &[])
                 .await
                 .expect("open seed content");
         assert_eq!(content.availability(), [true, true]);
@@ -1228,7 +1228,7 @@ mod tests {
             .await
             .expect("write c");
         let pool = StorageFilePool::new(1, None).expect("create one-handle pool");
-        let content = SeedContent::open_published_with_pool(
+        let content = SeedContent::open_verified_with_pool(
             &root,
             test_torrent_id(),
             &multi(),
@@ -1283,7 +1283,7 @@ mod tests {
         tokio::fs::write(root.join("tree/c"), b"gh")
             .await
             .expect("write c");
-        let truncated = SeedContent::open_published(
+        let truncated = SeedContent::open_verified(
             &root,
             test_torrent_id(),
             &multi(),
@@ -1293,7 +1293,7 @@ mod tests {
         .await
         .expect("open with masked source");
         assert_eq!(truncated.availability(), [false, false, true]);
-        let skipped = SeedContent::open_published(
+        let skipped = SeedContent::open_verified(
             &root,
             test_torrent_id(),
             &multi(),
@@ -1324,7 +1324,7 @@ mod tests {
             .await
             .expect("write payload");
         let content =
-            SeedContent::open_published(&root, test_torrent_id(), &single(), &[true, true], &[])
+            SeedContent::open_verified(&root, test_torrent_id(), &single(), &[true, true], &[])
                 .await
                 .expect("open seed content");
         tokio::fs::write(root.join("single.bin"), b"short")
@@ -1361,7 +1361,7 @@ mod tests {
             .expect("write c");
         let pool = StorageFilePool::new(1, None).expect("pool");
         let read_jobs = Arc::new(tokio::sync::Semaphore::new(1));
-        let reader = VerifiedFileReader::open_published_with_pool(
+        let reader = VerifiedFileReader::open_verified_with_pool(
             &root,
             &multi(),
             &[true, false, false],
@@ -1377,7 +1377,7 @@ mod tests {
         assert_eq!(reader.length(), 3);
         assert_eq!(reader.read_range(1, 2).await.expect("bounded read"), b"bc");
         assert!(matches!(
-            VerifiedFileReader::open_published_with_pool(
+            VerifiedFileReader::open_verified_with_pool(
                 &root,
                 &multi(),
                 &[true, false, false],
@@ -1390,7 +1390,7 @@ mod tests {
             Err(VerifiedFileError::UnverifiedFile(1))
         ));
         assert!(matches!(
-            VerifiedFileReader::open_published_with_pool(
+            VerifiedFileReader::open_verified_with_pool(
                 &root,
                 &multi(),
                 &[true, true, true],
@@ -1481,16 +1481,14 @@ mod tests {
                 }
             }
         });
-        let content = SeedContent::open_published_with_platform(
+        let content = SeedContent::open_verified_with_platform(
             &PlatformStorageSpec {
                 pool: pool.clone(),
                 root_id: "root".to_owned(),
                 storage_id: "platform-seed".to_owned(),
-                publication_name: "tree".to_owned(),
-                publication_shape: PublicationShape::Tree,
-                namespace_generation: 9,
-                managed: true,
-                published: true,
+                content_name: "tree".to_owned(),
+                content_shape: ContentShape::Tree,
+                storage_generation: 9,
             },
             &multi(),
             &[true, true, true],
@@ -1510,16 +1508,14 @@ mod tests {
                 .expect("platform cross-file read"),
             b"abcd"
         );
-        let reader = VerifiedFileReader::open_published_with_platform(
+        let reader = VerifiedFileReader::open_verified_with_platform(
             &PlatformStorageSpec {
                 pool: pool.clone(),
                 root_id: "root".to_owned(),
                 storage_id: "platform-seed".to_owned(),
-                publication_name: "tree".to_owned(),
-                publication_shape: PublicationShape::Tree,
-                namespace_generation: 9,
-                managed: true,
-                published: true,
+                content_name: "tree".to_owned(),
+                content_shape: ContentShape::Tree,
+                storage_generation: 9,
             },
             &multi(),
             &[true, true, false],

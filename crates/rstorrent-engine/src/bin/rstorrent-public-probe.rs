@@ -14,11 +14,10 @@ use rstorrent_engine::{
     DownloadResourceLimits, MseDhWorkOwner, NetworkConfig, NetworkPolicy, PeerBudget,
     PeerBudgetConfig, PeerConnectionLifecycle, PeerConnectionObservation, PeerEncryptionPolicy,
     PeerEncryptionPolicyHandle, PeerTransport, ResumableMagnetDownloadConfig,
-    ResumeArtifactExpectation, ResumeArtifactState, ResumeValidationIntent, ResumedStorage,
-    SessionUdpService, SessionUdpSnapshot, TorrentId, TorrentIdentityContext,
-    TorrentPeerActivitySink, TorrentPeerHandle, TrackerConfig, TrackerEndpoint, TrackerSource,
-    UtpService, UtpServiceSnapshot, UtpTerminalEvidence, download_verified_piece_with_peer_state,
-    resume_magnet_with_control, select_global_ipv6,
+    ResumeValidationIntent, ResumedStorage, SessionUdpService, SessionUdpSnapshot, TorrentId,
+    TorrentIdentityContext, TorrentPeerActivitySink, TorrentPeerHandle, TrackerConfig,
+    TrackerEndpoint, TrackerSource, UtpService, UtpServiceSnapshot, UtpTerminalEvidence,
+    download_verified_piece_with_peer_state, resume_magnet_with_control, select_global_ipv6,
 };
 use rstorrent_protocol::identity::V1InfoHash;
 use rstorrent_protocol::magnet::{Magnet, UdpTrackerUrl};
@@ -1525,21 +1524,6 @@ impl DownloadCheckpointSink for ProbeCheckpointSink {
     fn pieces_durable(&self, _piece_indices: &[usize]) -> Result<(), String> {
         Ok(())
     }
-
-    fn descriptor_prepared(
-        &self,
-        _files: &[rstorrent_engine::PreparedFileHash],
-    ) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn publication_prepared(&self) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn published(&self) -> Result<(), String> {
-        Ok(())
-    }
 }
 
 #[derive(Debug, Default)]
@@ -1879,7 +1863,7 @@ async fn run(config: Config) -> ProbeResult {
             peer: config.peer_hints[0],
             output_path: config.output.join(
                 prepared
-                    .publication_name
+                    .content_name
                     .expect("metainfo input has a publication name"),
             ),
             network,
@@ -1909,7 +1893,6 @@ async fn run(config: Config) -> ProbeResult {
             high_priority_files: Vec::new(),
             verified_info: prepared.verified_info,
             verified_pieces: Vec::new(),
-            artifact_expectation: ResumeArtifactExpectation::Exact(ResumeArtifactState::None),
             resume_validation: ResumeValidationIntent::FastEligible,
             download_missing: true,
             dht: live_udp
@@ -2051,7 +2034,7 @@ struct PreparedInput {
     verified_info: Option<Vec<u8>>,
     trackers: Option<Vec<TrackerConfig>>,
     metainfo_path: Option<PathBuf>,
-    publication_name: Option<String>,
+    content_name: Option<String>,
 }
 
 fn prepare_input(config: &Config, sink: &ProbeSink) -> Result<PreparedInput, String> {
@@ -2074,7 +2057,7 @@ fn prepare_input(config: &Config, sink: &ProbeSink) -> Result<PreparedInput, Str
                 ))
                 .then(Vec::new),
                 metainfo_path: None,
-                publication_name: None,
+                content_name: None,
             })
         }
         ProbeInput::Metainfo(path) => {
@@ -2095,7 +2078,7 @@ fn prepare_input(config: &Config, sink: &ProbeSink) -> Result<PreparedInput, Str
             }
             let raw_info = bytes[projection.info_span.clone()].to_vec();
             sink.mark_metainfo(&projection.metainfo);
-            let publication_name = projection.metainfo.name.clone();
+            let content_name = projection.metainfo.name.clone();
             let magnet = format!(
                 "magnet:?xt=urn:btih:{}",
                 hex_info_hash(&projection.metainfo.info_hash)
@@ -2137,7 +2120,7 @@ fn prepare_input(config: &Config, sink: &ProbeSink) -> Result<PreparedInput, Str
                 verified_info: Some(raw_info),
                 trackers: Some(trackers),
                 metainfo_path: Some(path.clone()),
-                publication_name: Some(publication_name),
+                content_name: Some(content_name),
             })
         }
     }

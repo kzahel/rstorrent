@@ -980,7 +980,7 @@ async fn pure_v2_restart_refetches_hashes_before_promoting_candidate_payload() {
         &[],
     )
     .await
-    .expect("create v2 candidate staging");
+    .expect("create v2 candidate content");
     storage
         .write_block(0, 0, pieces[0].clone())
         .await
@@ -1019,9 +1019,6 @@ async fn pure_v2_restart_refetches_hashes_before_promoting_candidate_payload() {
                 high_priority_files: Vec::new(),
                 verified_info: Some(info),
                 verified_pieces: vec![true, false],
-                artifact_expectation: ResumeArtifactExpectation::Exact(
-                    ResumeArtifactState::Staging,
-                ),
                 resume_validation: ResumeValidationIntent::Full,
                 download_missing: true,
                 dht: None,
@@ -1040,7 +1037,7 @@ async fn pure_v2_restart_refetches_hashes_before_promoting_candidate_payload() {
     assert_eq!(
         tokio::fs::read(root.join("root/a"))
             .await
-            .expect("read resumed v2 publication"),
+            .expect("read resumed v2 completion"),
         pieces.concat()
     );
     tokio::fs::remove_dir_all(root)
@@ -1474,7 +1471,7 @@ async fn tracker_only_magnet_discovers_registry_peers_and_downloads() {
     assert_eq!(
         tokio::fs::read(&output_path)
             .await
-            .expect("published tracker output"),
+            .expect("direct tracker output"),
         payload
     );
     peers
@@ -1566,7 +1563,7 @@ async fn http_tracker_only_magnet_discovers_peer_and_verifies_download() {
     assert_eq!(
         tokio::fs::read(&output_path)
             .await
-            .expect("published HTTP tracker output"),
+            .expect("direct HTTP tracker output"),
         payload
     );
     assert!(peers.peers.with_state(|state| {
@@ -1806,7 +1803,6 @@ async fn authenticated_https_tracker_introduces_pinned_libtorrent_peer() {
                 high_priority_files: Vec::new(),
                 verified_info: None,
                 verified_pieces: Vec::new(),
-                artifact_expectation: ResumeArtifactExpectation::Exact(ResumeArtifactState::None),
                 resume_validation: crate::resume_validation::ResumeValidationIntent::FastEligible,
                 download_missing: true,
                 dht: None,
@@ -3614,9 +3610,7 @@ async fn magnet_registry_fails_over_and_hands_same_peer_to_content_download() {
 
     assert_eq!(report.info_hash, info_hash);
     assert_eq!(
-        tokio::fs::read(&output_path)
-            .await
-            .expect("published output"),
+        tokio::fs::read(&output_path).await.expect("direct output"),
         payload
     );
     peer_task.await.expect("scripted peer task");
@@ -3694,9 +3688,7 @@ async fn public_magnet_entry_starts_tracker_and_uses_peer_registry_path() {
 
     assert_eq!(report.info_hash, info_hash);
     assert_eq!(
-        tokio::fs::read(&output_path)
-            .await
-            .expect("published output"),
+        tokio::fs::read(&output_path).await.expect("direct output"),
         payload
     );
     unsupported_task.await.expect("non-extension peer task");
@@ -3841,9 +3833,7 @@ async fn trackerless_dht_peer_completes_metadata_and_content_path() {
 
     assert_eq!(report.info_hash, info_hash);
     assert_eq!(
-        tokio::fs::read(&output_path)
-            .await
-            .expect("published output"),
+        tokio::fs::read(&output_path).await.expect("direct output"),
         payload
     );
     dht_task.await.expect("scripted DHT task");
@@ -3905,7 +3895,7 @@ async fn invalid_premetadata_bitfield_fails_before_storage_creation() {
     let info = single_file_info(&payload);
     let info_hash: [u8; 20] = Sha1::digest(&info).into();
     let output_path = test_path("bad-premetadata-output.bin");
-    let staging = staging_path(&output_path).expect("staging path");
+    let content = output_path.clone();
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind scripted metadata peer");
@@ -3935,7 +3925,7 @@ async fn invalid_premetadata_bitfield_fails_before_storage_creation() {
         Err(DownloadError::InvalidPremetadataState(_))
     ));
     assert!(!tokio::fs::try_exists(&output_path).await.expect("output"));
-    assert!(!tokio::fs::try_exists(&staging).await.expect("staging"));
+    assert!(!tokio::fs::try_exists(&content).await.expect("content"));
     peer_task.abort();
     let _ = peer_task.await;
 }
@@ -3945,7 +3935,7 @@ async fn magnet_peer_without_extension_support_fails_before_storage() {
     let info = single_file_info(b"not written");
     let info_hash: [u8; 20] = Sha1::digest(&info).into();
     let output_path = test_path("no-extension-output.bin");
-    let staging = staging_path(&output_path).expect("staging path");
+    let content = output_path.clone();
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind non-extension peer");
@@ -3990,7 +3980,7 @@ async fn magnet_peer_without_extension_support_fails_before_storage() {
         Err(DownloadError::ExtensionProtocolUnsupported)
     ));
     assert!(!tokio::fs::try_exists(&output_path).await.expect("output"));
-    assert!(!tokio::fs::try_exists(&staging).await.expect("staging"));
+    assert!(!tokio::fs::try_exists(&content).await.expect("content"));
     peer_task.await.expect("non-extension peer task");
 }
 
@@ -3999,7 +3989,7 @@ async fn magnet_peer_disconnect_during_metadata_fails_before_storage() {
     let info = single_file_info(b"not written");
     let info_hash: [u8; 20] = Sha1::digest(&info).into();
     let output_path = test_path("metadata-disconnect-output.bin");
-    let staging = staging_path(&output_path).expect("staging path");
+    let content = output_path.clone();
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind disconnecting peer");
@@ -4049,6 +4039,6 @@ async fn magnet_peer_disconnect_during_metadata_fails_before_storage() {
         "unexpected disconnect result: {result:?}"
     );
     assert!(!tokio::fs::try_exists(&output_path).await.expect("output"));
-    assert!(!tokio::fs::try_exists(&staging).await.expect("staging"));
+    assert!(!tokio::fs::try_exists(&content).await.expect("content"));
     peer_task.await.expect("disconnecting peer task");
 }

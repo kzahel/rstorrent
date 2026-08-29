@@ -81,13 +81,12 @@ use crate::piece_availability::{
 };
 use crate::piece_picker::picker_seed;
 use crate::resume_validation::{
-    ResumeAdmissionOutcome, ResumeStorageEvidence, ResumeValidationIntent, decide_resume_admission,
+    ResumeAdmissionOutcome, ResumeStorageEvidence, ResumeValidationIntent,
+    ResumeValidationRejectReason, decide_resume_admission,
 };
 use crate::selective_storage::{
-    ComputedPieceHash, DescriptorStorage, PreparedFileHash, ResumeArtifactExpectation,
-    ResumedStorage, SelectiveStorage, SelectiveStorageError, TorrentArtifactIdentity,
-    VERIFICATION_CHUNK_LENGTH, remove_selective_part_if_present,
-    remove_selective_staging_if_present, validate_publication_name,
+    ComputedPieceHash, DescriptorStorage, ResumedStorage, SelectiveStorage, SelectiveStorageError,
+    TorrentArtifactIdentity, VERIFICATION_CHUNK_LENGTH, validate_content_name,
 };
 use crate::streaming::{
     MAX_STREAMING_CANDIDATE_INSPECTIONS, StreamingCandidateCursor, StreamingDemandSnapshot,
@@ -423,8 +422,7 @@ pub struct MagnetDownloadConfig {
 pub struct ResumableMagnetDownloadConfig {
     pub identity: TorrentIdentityContext,
     pub magnet: String,
-    /// Selected containing directory. Verified multi-file metadata supplies
-    /// the recognizable publication directory beneath this root.
+    /// Selected containing directory for direct metainfo-derived content.
     pub storage_root: PathBuf,
     pub network: NetworkConfig,
     /// Session-wide connection ownership shared with the incoming listener.
@@ -441,7 +439,6 @@ pub struct ResumableMagnetDownloadConfig {
     pub high_priority_files: Vec<usize>,
     pub verified_info: Option<Vec<u8>>,
     pub verified_pieces: Vec<bool>,
-    pub artifact_expectation: ResumeArtifactExpectation,
     pub resume_validation: ResumeValidationIntent,
     pub download_missing: bool,
     pub dht: Option<DhtHandle>,
@@ -455,8 +452,7 @@ pub struct ResumableMetainfoDownloadConfig {
     pub identity: TorrentIdentityContext,
     /// Exact complete outer metainfo source retained by byte intake.
     pub metainfo_source: Vec<u8>,
-    /// Selected containing directory. The validated content name supplies the
-    /// recognizable publication entry beneath this root.
+    /// Selected containing directory for direct metainfo-derived content.
     pub storage_root: PathBuf,
     pub network: NetworkConfig,
     pub peer_budget: PeerBudget,
@@ -467,7 +463,6 @@ pub struct ResumableMetainfoDownloadConfig {
     pub skip_files: Vec<usize>,
     pub high_priority_files: Vec<usize>,
     pub verified_pieces: Vec<bool>,
-    pub artifact_expectation: ResumeArtifactExpectation,
     pub resume_validation: ResumeValidationIntent,
     pub download_missing: bool,
     pub dht: Option<DhtHandle>,
@@ -513,9 +508,6 @@ pub trait DownloadCheckpointSink: Send + Sync {
     fn piece_durable(&self, piece_index: usize) -> Result<(), String> {
         self.pieces_durable(&[piece_index])
     }
-    fn descriptor_prepared(&self, files: &[PreparedFileHash]) -> Result<(), String>;
-    fn publication_prepared(&self) -> Result<(), String>;
-    fn published(&self) -> Result<(), String>;
 }
 
 #[derive(Clone, Debug)]
@@ -555,7 +547,7 @@ pub use control::{
     DownloadControl, DownloadDiagnosticSnapshot, DownloadProgress, FileSelectionUpdate,
     IntegrityPreparationPhase, IntegrityPreparationProgress, MetadataAcquisitionPhase,
     MetadataAcquisitionProgress, MetadataAcquisitionSnapshot, MetadataPeerSnapshot,
-    MetadataPeerStage, PathPublicationStage, StreamingDemandLease, SwarmActivitySnapshot,
+    MetadataPeerStage, StreamingDemandLease, SwarmActivitySnapshot,
 };
 use control::{CheckerPieceOutcome, StorageCommandKind};
 
@@ -584,7 +576,6 @@ pub struct DownloadReport {
     pub part_slots_after_materialization: usize,
     pub part_reopened: bool,
     pub part_path: Option<PathBuf>,
-    pub prepared_files: Vec<PreparedFileHash>,
 }
 
 #[derive(Debug)]
@@ -655,10 +646,6 @@ pub enum DownloadError {
     PeerCleanup {
         failure: String,
         cleanup: String,
-    },
-    CleanupAfterFailure {
-        failure: String,
-        source: io::Error,
     },
 }
 
@@ -769,10 +756,6 @@ impl fmt::Display for DownloadError {
                     "{failure}; additionally failed to stop peer tasks: {cleanup}"
                 )
             }
-            Self::CleanupAfterFailure { failure, source } => write!(
-                formatter,
-                "{failure}; additionally failed to remove staging output: {source}"
-            ),
         }
     }
 }
@@ -795,7 +778,6 @@ impl Error for DownloadError {
             Self::Piece(error) => Some(error),
             Self::Layout(error) => Some(error),
             Self::SelectiveStorage(error) => Some(error),
-            Self::CleanupAfterFailure { source, .. } => Some(source),
             _ => None,
         }
     }
@@ -1014,29 +996,10 @@ pub async fn download_magnet_with_control(
     if control.is_cancelled() {
         return Err(DownloadError::Cancelled);
     }
-    let output_path = config.output_path.clone();
     let result = run_magnet_download(config, control.clone()).await;
     let result = require_terminal_owner_cleanup(&control, result);
     control.clear_buffered_payload();
-
-    match result {
-        Ok(report) => Ok(report),
-        Err(error) if preserves_existing_artifact(&error) => Err(error),
-        Err(error) => {
-            let cleanup = async {
-                remove_selective_staging_if_present(&output_path).await?;
-                remove_selective_part_if_present(&output_path).await
-            }
-            .await;
-            match cleanup {
-                Ok(()) => Err(error),
-                Err(source) => Err(DownloadError::CleanupAfterFailure {
-                    failure: error.to_string(),
-                    source,
-                }),
-            }
-        }
-    }
+    result
 }
 
 pub async fn download_verified_piece_with_control(
@@ -1048,29 +1011,11 @@ pub async fn download_verified_piece_with_control(
         return Err(DownloadError::Cancelled);
     }
 
-    let output_path = config.output_path.clone();
     let result = run_download(config, control.clone(), None, None).await;
     let result = require_terminal_owner_cleanup(&control, result);
     control.clear_buffered_payload();
 
-    match result {
-        Ok(report) => Ok(report),
-        Err(error) if preserves_existing_artifact(&error) => Err(error),
-        Err(error) => {
-            let cleanup = async {
-                remove_selective_staging_if_present(&output_path).await?;
-                remove_selective_part_if_present(&output_path).await
-            }
-            .await;
-            match cleanup {
-                Ok(()) => Err(error),
-                Err(source) => Err(DownloadError::CleanupAfterFailure {
-                    failure: error.to_string(),
-                    source,
-                }),
-            }
-        }
-    }
+    result
 }
 
 #[doc(hidden)]
@@ -1084,7 +1029,6 @@ pub async fn download_verified_piece_with_peer_state(
     if control.is_cancelled() {
         return Err(DownloadError::Cancelled);
     }
-    let output_path = config.output_path.clone();
     let result = run_download(
         config,
         control.clone(),
@@ -1094,24 +1038,7 @@ pub async fn download_verified_piece_with_peer_state(
     .await;
     let result = require_terminal_owner_cleanup(&control, result);
     control.clear_buffered_payload();
-    match result {
-        Ok(report) => Ok(report),
-        Err(error) if preserves_existing_artifact(&error) => Err(error),
-        Err(error) => {
-            let cleanup = async {
-                remove_selective_staging_if_present(&output_path).await?;
-                remove_selective_part_if_present(&output_path).await
-            }
-            .await;
-            match cleanup {
-                Ok(()) => Err(error),
-                Err(source) => Err(DownloadError::CleanupAfterFailure {
-                    failure: error.to_string(),
-                    source,
-                }),
-            }
-        }
-    }
+    result
 }
 
 #[cfg_attr(not(feature = "descriptor-storage-diagnostics"), allow(dead_code))]
@@ -1312,9 +1239,7 @@ fn validate_content_runtime_identity(
 fn preserves_existing_artifact(error: &DownloadError) -> bool {
     matches!(
         error,
-        DownloadError::SelectiveStorage(SelectiveStorageError::ExistingOutput(_))
-            | DownloadError::SelectiveStorage(SelectiveStorageError::ExistingStaging(_))
-            | DownloadError::SelectiveStorage(SelectiveStorageError::ExistingPartFile(_))
+        DownloadError::SelectiveStorage(SelectiveStorageError::ExistingPartFile(_))
             | DownloadError::SelectiveStorage(SelectiveStorageError::PartFile(
                 crate::part_file::PartFileError::Existing(_)
             ))
@@ -4383,7 +4308,6 @@ struct ResumeContext {
     verified_pieces: Vec<bool>,
     checkpoints: Arc<dyn DownloadCheckpointSink>,
     initialize_descriptors: bool,
-    artifact_expectation: ResumeArtifactExpectation,
     validation: ResumeValidationIntent,
     download_missing: bool,
 }
@@ -4403,7 +4327,6 @@ async fn run_resumable_magnet_download(
         raw_info: config.verified_info.map(Arc::from),
         verified_pieces: config.verified_pieces,
         checkpoints: checkpoints.clone(),
-        artifact_expectation: config.artifact_expectation,
         validation: config.resume_validation,
         download_missing: config.download_missing,
         initialize_descriptors: descriptors
@@ -4444,7 +4367,7 @@ async fn run_resumable_magnet_download(
                 "descriptor storage does not support v2 content".to_owned(),
             ));
         }
-        validate_publication_name(runtime_content.content.name())
+        validate_content_name(runtime_content.content.name())
             .map_err(DownloadError::SelectiveStorage)?;
         let content_dht = if runtime_content.content.private() {
             control.emit(DownloadActivityEvent::DhtDisabledForPrivateTorrent);
@@ -4542,7 +4465,7 @@ async fn run_resumable_magnet_download(
         peers.set_content_identities(runtime_content.content.info_hashes());
         peers.ensure_tracker_lanes()?;
         reconnect_v1_metadata_peer_for_hybrid_hashes(&mut peers, &runtime_content.content)?;
-        validate_publication_name(runtime_content.content.name())
+        validate_content_name(runtime_content.content.name())
             .map_err(DownloadError::SelectiveStorage)?;
         if let Err(message) = checkpoints.metadata_verified(&raw_info) {
             peers.close_current(None)?;
@@ -4599,7 +4522,7 @@ async fn run_resumable_metainfo_download(
     let raw_info_span = projection.info_span.clone();
     let content = &projection.content;
     validate_content_runtime_identity(config.identity, content)?;
-    validate_publication_name(content.name()).map_err(DownloadError::SelectiveStorage)?;
+    validate_content_name(content.name()).map_err(DownloadError::SelectiveStorage)?;
     let raw_info = Arc::<[u8]>::from(
         config.metainfo_source[raw_info_span]
             .to_vec()
@@ -4632,7 +4555,6 @@ async fn run_resumable_metainfo_download(
         verified_pieces: config.verified_pieces,
         checkpoints,
         initialize_descriptors: false,
-        artifact_expectation: config.artifact_expectation,
         validation: config.resume_validation,
         download_missing: config.download_missing,
     };
@@ -8663,7 +8585,7 @@ async fn wait_for_checking_resume(
     }
 }
 
-async fn full_recheck_managed_storage(
+async fn full_recheck_storage(
     storage: &mut SelectiveStorage,
     content: &TorrentContent,
     integrity: &TorrentIntegrity,
@@ -9085,17 +9007,24 @@ async fn run_selective_download(
             }
         }
     }
-    let storage_creation = control.enter_safe_cancel_critical()?;
+    let storage_creation = if platform_storage.is_some() {
+        None
+    } else {
+        Some(control.enter_safe_cancel_critical()?)
+    };
     let (mut storage, resumed_storage) = if let Some(platform) = platform_storage {
-        let (storage, resumed) = SelectiveStorage::create_content_with_platform(
+        let creation = SelectiveStorage::create_content_with_platform(
             platform,
             config.artifact_identity,
             Arc::new(content.clone()),
             &config.skip_files,
             verified_pieces.clone(),
-        )
-        .await
-        .map_err(DownloadError::SelectiveStorage)?;
+        );
+        tokio::pin!(creation);
+        let (storage, resumed) = tokio::select! {
+            () = control.cancelled() => return Err(DownloadError::Cancelled),
+            result = &mut creation => result.map_err(DownloadError::SelectiveStorage)?,
+        };
         (storage, Some(resumed))
     } else {
         match (descriptors, &resume) {
@@ -9120,7 +9049,7 @@ async fn run_selective_download(
                     None,
                 )
             }
-            (None, Some(resume)) => {
+            (None, Some(_resume)) => {
                 let content = Arc::new(content.clone());
                 let (storage, resumed) = match control.storage_file_pool() {
                     Some(pool) => {
@@ -9131,7 +9060,6 @@ async fn run_selective_download(
                             &config.skip_files,
                             verified_pieces.clone(),
                             pool,
-                            resume.artifact_expectation.expected(),
                         )
                         .await
                     }
@@ -9142,7 +9070,6 @@ async fn run_selective_download(
                             content,
                             &config.skip_files,
                             verified_pieces.clone(),
-                            resume.artifact_expectation.expected(),
                         )
                         .await
                     }
@@ -9219,40 +9146,41 @@ async fn run_selective_download(
                 let resumed = if initialize {
                     ResumedStorage::Created
                 } else {
-                    ResumedStorage::Staging
+                    ResumedStorage::Existing
                 };
                 (storage, Some(resumed))
             }
         }
     };
-    let discovered_recheck_generation =
-        if let (Some(resume), Some(resumed)) = (&resume, resumed_storage) {
-            if resume.artifact_expectation.is_discovery() && resumed != ResumedStorage::Created {
-                let discovery = storage
-                    .inspect_discovered_payload()
-                    .await
-                    .map_err(DownloadError::SelectiveStorage)?;
-                Some(
-                    resume
-                        .checkpoints
-                        .storage_discovered(
-                            resumed,
-                            discovery.expected_files,
-                            discovery.present_files,
-                            discovery.oversized_files,
-                        )
-                        .map_err(DownloadError::Checkpoint)?,
-                )
-            } else {
+    let discovered_recheck_generation = if let (Some(resume), Some(resumed)) =
+        (&resume, resumed_storage)
+    {
+        if resume.validation == ResumeValidationIntent::Full && resumed != ResumedStorage::Created {
+            let discovery = storage
+                .inspect_discovered_payload()
+                .await
+                .map_err(DownloadError::SelectiveStorage)?;
+            Some(
                 resume
                     .checkpoints
-                    .storage_prepared(resumed)
-                    .map_err(DownloadError::Checkpoint)?;
-                None
-            }
+                    .storage_discovered(
+                        resumed,
+                        discovery.expected_files,
+                        discovery.present_files,
+                        discovery.oversized_files,
+                    )
+                    .map_err(DownloadError::Checkpoint)?,
+            )
         } else {
+            resume
+                .checkpoints
+                .storage_prepared(resumed)
+                .map_err(DownloadError::Checkpoint)?;
             None
-        };
+        }
+    } else {
+        None
+    };
     drop(storage_creation);
 
     reconstruct_complete_selected_v2_piece_layers(
@@ -9271,12 +9199,7 @@ async fn run_selective_download(
     };
     if let (Some(resume), Some(resumed)) = (&resume, resumed_storage) {
         let validation_started = Instant::now();
-        let validation_intent =
-            if resume.artifact_expectation.is_discovery() && resumed != ResumedStorage::Created {
-                ResumeValidationIntent::Full
-            } else {
-                resume.validation
-            };
+        let validation_intent = resume.validation;
         let validation = if validation_intent == ResumeValidationIntent::FastEligible {
             Some(tokio::select! {
                 validation = storage.validate_fast_resume(resumed) => {
@@ -9331,15 +9254,32 @@ async fn run_selective_download(
         // Accepted state keeps the committed bitmap as runtime authority.
         // Every other reachable outcome enters the existing checker.
         if outcome != ResumeAdmissionOutcome::Accepted {
+            let ResumeAdmissionOutcome::NeedsFullCheck(reason) = outcome else {
+                unreachable!("non-checking outcomes return before checker admission");
+            };
             let generation = match discovered_recheck_generation {
                 Some(generation) => generation,
+                None if resumed == ResumedStorage::Existing
+                    && reason == ResumeValidationRejectReason::PendingVerification =>
+                {
+                    let discovery = storage
+                        .inspect_discovered_payload()
+                        .await
+                        .map_err(DownloadError::SelectiveStorage)?;
+                    resume
+                        .checkpoints
+                        .storage_discovered(
+                            resumed,
+                            discovery.expected_files,
+                            discovery.present_files,
+                            discovery.oversized_files,
+                        )
+                        .map_err(DownloadError::Checkpoint)?
+                }
                 None => resume
                     .checkpoints
                     .recheck_started()
                     .map_err(DownloadError::Checkpoint)?,
-            };
-            let ResumeAdmissionOutcome::NeedsFullCheck(reason) = outcome else {
-                unreachable!("non-checking outcomes return before checker admission");
             };
             control.emit(DownloadActivityEvent::FastResumeRejected {
                 generation,
@@ -9381,7 +9321,7 @@ async fn run_selective_download(
                     candidates: BTreeSet::new(),
                 }
             } else {
-                match full_recheck_managed_storage(
+                match full_recheck_storage(
                     &mut storage,
                     &content,
                     &integrity,
@@ -9410,7 +9350,7 @@ async fn run_selective_download(
                 control.checker_finished(generation);
                 return Err(DownloadError::SelectiveStorage(error));
             }
-            if resumed == ResumedStorage::Staging
+            if resumed == ResumedStorage::Existing
                 && let Err(error) = storage.sync_pieces(&checked.recovered).await
             {
                 control.checker_finished(generation);
@@ -9561,7 +9501,6 @@ async fn run_selective_download(
             part_slots_after_materialization: storage.part_slots(),
             part_reopened: storage.has_part_file(),
             part_path,
-            prepared_files: Vec::new(),
         });
     }
     let (
@@ -9660,67 +9599,13 @@ async fn run_selective_download(
             part_slots_after_materialization: part_slots,
             part_reopened: storage.has_part_file(),
             part_path,
-            prepared_files: Vec::new(),
         });
     }
 
-    let completed_existing_publication = storage.is_published();
-    if descriptor_backed {
-        storage
-            .prepare_descriptors()
-            .await
-            .map_err(DownloadError::SelectiveStorage)?;
-    } else if storage.is_published() {
-        storage
-            .finish_published()
-            .await
-            .map_err(DownloadError::SelectiveStorage)?;
-    } else if platform_backed {
-        storage
-            .prepare_platform()
-            .await
-            .map_err(DownloadError::SelectiveStorage)?;
-    } else {
-        storage
-            .prepare_path_publication()
-            .await
-            .map_err(DownloadError::SelectiveStorage)?;
-        if let Some(resume) = &resume {
-            resume
-                .checkpoints
-                .publication_prepared()
-                .map_err(DownloadError::Checkpoint)?;
-        }
-        control
-            .enter_path_publication_stage(PathPublicationStage::IntentDurable)
-            .await;
-        storage
-            .rename_path_publication()
-            .await
-            .map_err(DownloadError::SelectiveStorage)?;
-        control
-            .enter_path_publication_stage(PathPublicationStage::Renamed)
-            .await;
-        storage
-            .sync_path_publication_namespace()
-            .await
-            .map_err(DownloadError::SelectiveStorage)?;
-        control
-            .enter_path_publication_stage(PathPublicationStage::NamespaceDurable)
-            .await;
-        storage
-            .finish_path_publication()
-            .map_err(DownloadError::SelectiveStorage)?;
-    }
-    if ((!descriptor_backed && !platform_backed) || completed_existing_publication)
-        && let Some(resume) = &resume
-    {
-        resume
-            .checkpoints
-            .published()
-            .map_err(DownloadError::Checkpoint)?;
-        control.mark_content_published();
-    }
+    storage
+        .finish_content()
+        .await
+        .map_err(DownloadError::SelectiveStorage)?;
     let part_slots_before_materialization = storage.part_slots();
     let part_reopened = storage.has_part_file();
     if content.v1().is_some() {
@@ -9738,22 +9623,6 @@ async fn run_selective_download(
             .bytes;
     }
     let part_slots_after_materialization = storage.part_slots();
-    let requires_provider_publication =
-        descriptor_backed || (platform_backed && !completed_existing_publication);
-    let prepared_files = if requires_provider_publication {
-        storage
-            .finalize_descriptor_hashes()
-            .await
-            .map_err(DownloadError::SelectiveStorage)?
-    } else {
-        Vec::new()
-    };
-    if requires_provider_publication && let Some(resume) = &resume {
-        resume
-            .checkpoints
-            .descriptor_prepared(&prepared_files)
-            .map_err(DownloadError::Checkpoint)?;
-    }
     Ok(DownloadReport {
         info_hash: content.swarm_key().into_bytes(),
         // Selective pieces may complete in any order. Keep the diagnostic
@@ -9781,7 +9650,6 @@ async fn run_selective_download(
         part_slots_after_materialization,
         part_reopened,
         part_path,
-        prepared_files,
     })
 }
 

@@ -263,7 +263,7 @@ impl PartFile {
             pool,
             StorageFileKey {
                 storage_id: path.to_string_lossy().into_owned(),
-                namespace_generation: 0,
+                storage_generation: 0,
                 role: StorageFileRole::Part,
             },
             StorageFileLocator::Path(path.clone()),
@@ -372,7 +372,7 @@ impl PartFile {
             pool,
             StorageFileKey {
                 storage_id: path.to_string_lossy().into_owned(),
-                namespace_generation: 0,
+                storage_generation: 0,
                 role: StorageFileRole::Part,
             },
             StorageFileLocator::Path(path.clone()),

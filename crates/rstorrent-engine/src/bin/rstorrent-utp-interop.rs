@@ -534,7 +534,7 @@ async fn run_seed(
     let torrent_peers = TorrentPeerHandle::new(peer_sink.clone())?;
     let torrent_id =
         TorrentId::generate().map_err(|error| std::io::Error::other(error.to_string()))?;
-    let content = SeedContent::open_published(
+    let content = SeedContent::open_verified(
         storage_root,
         torrent_id,
         &metainfo,

@@ -131,7 +131,6 @@ async fn pure_v2_complete_source_download_rechecks_and_reopens_without_part_file
                 skip_files: vec![0],
                 high_priority_files: Vec::new(),
                 verified_pieces: vec![false; 3],
-                artifact_expectation: ResumeArtifactExpectation::Exact(ResumeArtifactState::None),
                 resume_validation: ResumeValidationIntent::Full,
                 download_missing: true,
                 dht: None,
@@ -181,7 +180,6 @@ async fn pure_v2_complete_source_download_rechecks_and_reopens_without_part_file
             skip_files: vec![0],
             high_priority_files: Vec::new(),
             verified_pieces: vec![false, true, true],
-            artifact_expectation: ResumeArtifactExpectation::Exact(ResumeArtifactState::Published),
             resume_validation: ResumeValidationIntent::Full,
             download_missing: false,
             dht: None,
@@ -191,7 +189,7 @@ async fn pure_v2_complete_source_download_rechecks_and_reopens_without_part_file
         reopen_control,
     )
     .await
-    .expect("pure-v2 published reopen");
+    .expect("pure-v2 direct reopen");
     assert_eq!(reopen.verified_piece_count, 2);
     assert!(!reopen.part_reopened);
     assert_eq!(tokio::fs::read(root.join("root/b")).await.unwrap(), large);
@@ -219,9 +217,6 @@ async fn pure_v2_complete_source_download_rechecks_and_reopens_without_part_file
                 high_priority_files: Vec::new(),
                 verified_info: Some(info_only),
                 verified_pieces: vec![false, true, true],
-                artifact_expectation: ResumeArtifactExpectation::Exact(
-                    ResumeArtifactState::Published,
-                ),
                 resume_validation: ResumeValidationIntent::FastEligible,
                 download_missing: true,
                 dht: None,
@@ -306,7 +301,7 @@ async fn multi_piece_single_file_uses_torrent_offsets_and_publishes() {
     assert_eq!(report.bytes_written, payload.len());
     assert_eq!(report.selected_written_bytes, payload.len());
     assert_eq!(
-        tokio::fs::read(&output).await.expect("published file"),
+        tokio::fs::read(&output).await.expect("direct file"),
         payload
     );
     timeout(Duration::from_secs(1), peer_task)
@@ -370,7 +365,7 @@ async fn one_entry_multi_file_uses_same_pipeline_and_publishes_a_tree() {
     assert_eq!(
         tokio::fs::read(output.join("payload.bin"))
             .await
-            .expect("read one-entry publication"),
+            .expect("read one-entry completion"),
         payload
     );
     timeout(Duration::from_secs(1), peer_task)
@@ -379,7 +374,7 @@ async fn one_entry_multi_file_uses_same_pipeline_and_publishes_a_tree() {
         .expect("one-entry peer task");
     tokio::fs::remove_dir_all(output)
         .await
-        .expect("remove one-entry publication");
+        .expect("remove one-entry completion");
 }
 
 #[tokio::test]
@@ -394,7 +389,7 @@ async fn full_recheck_recovers_synced_single_file_with_empty_have() {
         .await
         .expect("create storage root");
     let paths = torrent_storage_paths_for_metainfo(&root, &metainfo, test_torrent_id())
-        .expect("plan managed storage");
+        .expect("plan direct storage");
     let layout = TorrentLayout::from_metainfo(&metainfo);
     let selection = FileSelection::new(&layout, &[]).expect("all files wanted");
     let mut storage = SelectiveStorage::create_with_paths(
@@ -404,7 +399,7 @@ async fn full_recheck_recovers_synced_single_file_with_empty_have() {
         selection.clone(),
     )
     .await
-    .expect("create managed staging storage");
+    .expect("create direct content storage");
     for piece_index in 0..layout.piece_count() {
         let piece_index_u32 = u32::try_from(piece_index).expect("bounded piece index");
         let piece_offset = piece_index * metainfo.piece_length as usize;
@@ -436,8 +431,7 @@ async fn full_recheck_recovers_synced_single_file_with_empty_have() {
         );
     }
     drop(storage);
-    assert!(paths.staging.exists());
-    assert!(!paths.output.exists());
+    assert!(paths.content.exists());
 
     let unused_peer = TcpListener::bind("127.0.0.1:0")
         .await
@@ -462,7 +456,6 @@ async fn full_recheck_recovers_synced_single_file_with_empty_have() {
             high_priority_files: Vec::new(),
             verified_info: Some(raw_info),
             verified_pieces: vec![false; layout.piece_count()],
-            artifact_expectation: ResumeArtifactExpectation::Exact(ResumeArtifactState::Staging),
             resume_validation: ResumeValidationIntent::Full,
             download_missing: true,
             dht: None,
@@ -485,19 +478,19 @@ async fn full_recheck_recovers_synced_single_file_with_empty_have() {
         vec![vec![true; layout.piece_count()]]
     );
     assert_eq!(
-        tokio::fs::read(&paths.output)
+        tokio::fs::read(&paths.content)
             .await
-            .expect("published recovered payload"),
+            .expect("direct recovered payload"),
         payload
     );
-    assert!(!paths.staging.exists());
+    assert!(paths.content.exists());
     tokio::fs::remove_dir_all(root)
         .await
         .expect("remove recheck fixture");
 }
 
 #[tokio::test]
-async fn fast_resume_accepts_complete_publication_without_checker_or_hashing() {
+async fn fast_resume_accepts_complete_completion_without_checker_or_hashing() {
     let payload = (0..(2 * MIN_PAYLOAD_ALLOWANCE + 731))
         .map(|index| ((index * 29 + index / 11) & 0xff) as u8)
         .collect::<Vec<_>>();
@@ -509,9 +502,9 @@ async fn fast_resume_accepts_complete_publication_without_checker_or_hashing() {
         .expect("create storage root");
     let paths = torrent_storage_paths_for_metainfo(&root, &metainfo, test_torrent_id())
         .expect("plan storage");
-    tokio::fs::write(&paths.output, &payload)
+    tokio::fs::write(&paths.content, &payload)
         .await
-        .expect("write complete publication");
+        .expect("write complete completion");
     let layout = TorrentLayout::from_metainfo(&metainfo);
     let checkpoints = Arc::new(RecordingCheckpointSink::default());
     let activity = Arc::new(RecordingActivitySink::default());
@@ -540,7 +533,6 @@ async fn fast_resume_accepts_complete_publication_without_checker_or_hashing() {
             high_priority_files: Vec::new(),
             verified_info: Some(raw_info),
             verified_pieces: vec![true; layout.piece_count()],
-            artifact_expectation: ResumeArtifactExpectation::Exact(ResumeArtifactState::Published),
             resume_validation: ResumeValidationIntent::FastEligible,
             download_missing: true,
             dht: None,
@@ -579,13 +571,13 @@ async fn fast_resume_accepts_complete_publication_without_checker_or_hashing() {
 }
 
 #[tokio::test]
-async fn unowned_publication_is_discovered_and_fully_rechecked() {
+async fn unowned_completion_is_discovered_and_fully_rechecked() {
     let payload = (0..(2 * MIN_PAYLOAD_ALLOWANCE + 731))
         .map(|index| ((index * 41 + index / 13) & 0xff) as u8)
         .collect::<Vec<_>>();
     let raw_info = single_file_info_with_piece_length(&payload, MIN_PAYLOAD_ALLOWANCE);
     let metainfo = Metainfo::from_info_bytes(&raw_info).expect("discovery metainfo");
-    let root = test_path("discover-complete-publication");
+    let root = test_path("discover-complete-completion");
     tokio::fs::create_dir(&root)
         .await
         .expect("create discovery root");
@@ -593,9 +585,9 @@ async fn unowned_publication_is_discovered_and_fully_rechecked() {
         .expect("plan discovery storage");
     let mut oversized = payload.clone();
     oversized.extend_from_slice(b"unrelated suffix");
-    tokio::fs::write(&paths.output, &oversized)
+    tokio::fs::write(&paths.content, &oversized)
         .await
-        .expect("write oversized existing publication");
+        .expect("write oversized existing completion");
     let layout = TorrentLayout::from_metainfo(&metainfo);
     let checkpoints = Arc::new(RecordingCheckpointSink::default());
     let activity = Arc::new(RecordingActivitySink::default());
@@ -624,7 +616,6 @@ async fn unowned_publication_is_discovered_and_fully_rechecked() {
             high_priority_files: Vec::new(),
             verified_info: Some(raw_info),
             verified_pieces: vec![false; layout.piece_count()],
-            artifact_expectation: ResumeArtifactExpectation::Discover,
             resume_validation: ResumeValidationIntent::FastEligible,
             download_missing: true,
             dht: None,
@@ -634,7 +625,7 @@ async fn unowned_publication_is_discovered_and_fully_rechecked() {
         control,
     )
     .await
-    .expect("discover and check existing publication");
+    .expect("discover and check existing completion");
 
     assert_eq!(report.bytes_written, 0);
     assert_eq!(report.verified_piece_count, layout.piece_count());
@@ -644,9 +635,9 @@ async fn unowned_publication_is_discovered_and_fully_rechecked() {
     );
     assert_eq!(
         checkpoints.discoveries(),
-        vec![(ResumedStorage::Published, 1, 1, 1)]
+        vec![(ResumedStorage::Existing, 1, 1, 1)]
     );
-    let stored = tokio::fs::read(&paths.output).await.unwrap();
+    let stored = tokio::fs::read(&paths.content).await.unwrap();
     assert_eq!(stored.len(), oversized.len());
     assert!(stored.starts_with(&payload));
     assert!(stored.ends_with(b"unrelated suffix"));
@@ -685,11 +676,9 @@ async fn cancelling_platform_fast_resume_drops_observation_without_admission() {
         pool: pool.clone(),
         root_id: "downloads".to_owned(),
         storage_id: test_torrent_id().to_string(),
-        publication_name: metainfo.name.clone(),
-        publication_shape: crate::PublicationShape::from_metainfo(&metainfo),
-        namespace_generation: 1,
-        managed: true,
-        published: true,
+        content_name: metainfo.name.clone(),
+        content_shape: crate::ContentShape::from_metainfo(&metainfo),
+        storage_generation: 1,
     });
     let unused_peer = TcpListener::bind("127.0.0.1:0")
         .await
@@ -713,7 +702,6 @@ async fn cancelling_platform_fast_resume_drops_observation_without_admission() {
             high_priority_files: Vec::new(),
             verified_info: Some(raw_info),
             verified_pieces: vec![true; layout.piece_count()],
-            artifact_expectation: ResumeArtifactExpectation::Exact(ResumeArtifactState::Published),
             resume_validation: ResumeValidationIntent::FastEligible,
             download_missing: true,
             dht: None,
@@ -767,7 +755,7 @@ async fn full_recheck_verifies_readable_skipped_pieces() {
         .await
         .expect("create storage root");
     let paths = torrent_storage_paths_for_metainfo(&root, &metainfo, test_torrent_id())
-        .expect("managed paths");
+        .expect("direct paths");
     let layout = TorrentLayout::from_metainfo(&metainfo);
     let all_wanted = FileSelection::new(&layout, &[]).expect("all files wanted");
     let mut storage = SelectiveStorage::create_with_paths(
@@ -777,7 +765,7 @@ async fn full_recheck_verifies_readable_skipped_pieces() {
         all_wanted,
     )
     .await
-    .expect("create staging storage");
+    .expect("create content storage");
     for (piece_index, payload) in [first.as_slice(), second.as_slice()]
         .into_iter()
         .enumerate()
@@ -801,7 +789,7 @@ async fn full_recheck_verifies_readable_skipped_pieces() {
     )
     .await
     .expect("resume with skipped retained destination");
-    assert_eq!(resumed, ResumedStorage::Staging);
+    assert_eq!(resumed, ResumedStorage::Existing);
     let control = DownloadControl::new();
     let activity = Arc::new(RecordingActivitySink::default());
     control.set_activity_sink(activity.clone());
@@ -813,7 +801,7 @@ async fn full_recheck_verifies_readable_skipped_pieces() {
     };
     let content = TorrentContent::from_v1_metainfo(metainfo.clone());
     let content_layout = ContentLayout::from_content(&content);
-    let checked = full_recheck_managed_storage(
+    let checked = full_recheck_storage(
         &mut storage,
         &content,
         &TorrentIntegrity::V1,
@@ -877,7 +865,7 @@ async fn selection_fence_and_slow_hash_heartbeat_share_one_check_generation() {
         .await
         .expect("create storage root");
     let paths = torrent_storage_paths_for_metainfo(&root, &metainfo, test_torrent_id())
-        .expect("managed paths");
+        .expect("direct paths");
     let layout = TorrentLayout::from_metainfo(&metainfo);
     let selection = FileSelection::new(&layout, &[]).expect("all files wanted");
     let mut storage = SelectiveStorage::create_with_paths(
@@ -915,7 +903,7 @@ async fn selection_fence_and_slow_hash_heartbeat_share_one_check_generation() {
             high_priority_files: Vec::new(),
             revision: 0,
         };
-        let result = full_recheck_managed_storage(
+        let result = full_recheck_storage(
             &mut storage,
             &task_content,
             &TorrentIntegrity::V1,
@@ -1055,7 +1043,7 @@ async fn full_recheck_clears_stale_have_and_redownloads_only_corrupt_piece() {
         .await
         .expect("create storage root");
     let paths = torrent_storage_paths_for_metainfo(&root, &metainfo, test_torrent_id())
-        .expect("plan managed storage");
+        .expect("plan direct storage");
     let layout = TorrentLayout::from_metainfo(&metainfo);
     let selection = FileSelection::new(&layout, &[]).expect("all files wanted");
     let mut storage = SelectiveStorage::create_with_paths(
@@ -1081,7 +1069,7 @@ async fn full_recheck_clears_stale_have_and_redownloads_only_corrupt_piece() {
 
     let mut staged = tokio::fs::OpenOptions::new()
         .write(true)
-        .open(&paths.staging)
+        .open(&paths.content)
         .await
         .expect("open staged file for corruption");
     staged
@@ -1127,7 +1115,6 @@ async fn full_recheck_clears_stale_have_and_redownloads_only_corrupt_piece() {
             high_priority_files: Vec::new(),
             verified_info: Some(raw_info),
             verified_pieces: vec![true; layout.piece_count()],
-            artifact_expectation: ResumeArtifactExpectation::Exact(ResumeArtifactState::Staging),
             resume_validation: ResumeValidationIntent::Full,
             download_missing: true,
             dht: None,
@@ -1149,9 +1136,9 @@ async fn full_recheck_clears_stale_have_and_redownloads_only_corrupt_piece() {
     assert_eq!(report.bytes_written, MIN_PAYLOAD_ALLOWANCE);
     assert_eq!(report.verified_piece_count, 2);
     assert_eq!(
-        tokio::fs::read(&paths.output)
+        tokio::fs::read(&paths.content)
             .await
-            .expect("read repaired publication"),
+            .expect("read repaired completion"),
         payload
     );
     tokio::fs::remove_dir_all(root)
@@ -1187,7 +1174,7 @@ async fn outgoing_connection_uploads_verified_piece_before_torrent_completion() 
         selection,
     )
     .await
-    .expect("create duplex staging");
+    .expect("create duplex content");
     storage
         .write_block(0, 0, pieces[0].clone())
         .await
@@ -1225,7 +1212,6 @@ async fn outgoing_connection_uploads_verified_piece_before_torrent_completion() 
             high_priority_files: Vec::new(),
             verified_info: Some(raw_info),
             verified_pieces: vec![true, false],
-            artifact_expectation: ResumeArtifactExpectation::Exact(ResumeArtifactState::Staging),
             resume_validation: ResumeValidationIntent::Full,
             download_missing: true,
             dht: None,
@@ -1246,9 +1232,9 @@ async fn outgoing_connection_uploads_verified_piece_before_torrent_completion() 
         .expect("duplex peer joined")
         .expect("duplex peer task");
     assert_eq!(
-        tokio::fs::read(&paths.output)
+        tokio::fs::read(&paths.content)
             .await
-            .expect("read duplex publication"),
+            .expect("read duplex completion"),
         payload
     );
     tokio::fs::remove_dir_all(root)
@@ -1284,7 +1270,7 @@ async fn accepted_connection_uploads_and_downloads_before_torrent_completion() {
         selection,
     )
     .await
-    .expect("create incoming duplex staging");
+    .expect("create incoming duplex content");
     storage
         .write_block(0, 0, pieces[0].clone())
         .await
@@ -1341,7 +1327,6 @@ async fn accepted_connection_uploads_and_downloads_before_torrent_completion() {
             high_priority_files: Vec::new(),
             verified_info: Some(raw_info),
             verified_pieces: vec![true, false],
-            artifact_expectation: ResumeArtifactExpectation::Exact(ResumeArtifactState::Staging),
             resume_validation: ResumeValidationIntent::Full,
             download_missing: true,
             dht: None,
@@ -1395,9 +1380,9 @@ async fn accepted_connection_uploads_and_downloads_before_torrent_completion() {
     assert_eq!(terminal.registrations, 0);
     assert_eq!(terminal.established, 0);
     assert_eq!(
-        tokio::fs::read(&paths.output)
+        tokio::fs::read(&paths.content)
             .await
-            .expect("read incoming duplex publication"),
+            .expect("read incoming duplex completion"),
         payload
     );
     tokio::fs::remove_dir_all(root)
@@ -1466,7 +1451,6 @@ async fn incoming_contributor_survives_disconnect_until_delayed_hash_finishes() 
             high_priority_files: Vec::new(),
             verified_info: Some(raw_info),
             verified_pieces: vec![false],
-            artifact_expectation: ResumeArtifactExpectation::Exact(ResumeArtifactState::None),
             resume_validation: ResumeValidationIntent::Full,
             download_missing: true,
             dht: None,
@@ -1512,9 +1496,9 @@ async fn incoming_contributor_survives_disconnect_until_delayed_hash_finishes() 
     assert_eq!(terminal.registrations, 0);
     assert_eq!(terminal.established, 0);
     assert_eq!(
-        tokio::fs::read(&paths.output)
+        tokio::fs::read(&paths.content)
             .await
-            .expect("read disconnected contributor publication"),
+            .expect("read disconnected contributor completion"),
         *payload
     );
     tokio::fs::remove_dir_all(root)
@@ -1544,7 +1528,7 @@ async fn active_upload_read_failure_retracts_route_and_stops_generation() {
         selection,
     )
     .await
-    .expect("create read-failure staging");
+    .expect("create read-failure content");
     storage
         .write_block(0, 0, payload[..MIN_PAYLOAD_ALLOWANCE].to_vec())
         .await
@@ -1597,7 +1581,6 @@ async fn active_upload_read_failure_retracts_route_and_stops_generation() {
             high_priority_files: Vec::new(),
             verified_info: Some(raw_info),
             verified_pieces: vec![true, false],
-            artifact_expectation: ResumeArtifactExpectation::Exact(ResumeArtifactState::Staging),
             resume_validation: ResumeValidationIntent::Full,
             download_missing: true,
             dht: None,
@@ -1657,9 +1640,9 @@ async fn active_upload_read_failure_retracts_route_and_stops_generation() {
     tokio::fs::OpenOptions::new()
         .write(true)
         .truncate(true)
-        .open(&paths.staging)
+        .open(&paths.content)
         .await
-        .expect("truncate active staging payload");
+        .expect("truncate active content payload");
     send_message(
         &mut peer,
         &PeerMessage::Request(rstorrent_protocol::peer_wire::BlockRequest {
@@ -1714,7 +1697,7 @@ async fn cancelling_full_recheck_stops_admission_and_joins_bounded_hashes() {
         .await
         .expect("create storage root");
     let paths = torrent_storage_paths_for_metainfo(&root, &metainfo, test_torrent_id())
-        .expect("plan managed storage");
+        .expect("plan direct storage");
     let layout = TorrentLayout::from_metainfo(&metainfo);
     let selection = FileSelection::new(&layout, &[]).expect("all files wanted");
     let mut storage = SelectiveStorage::create_with_paths(
@@ -1774,7 +1757,6 @@ async fn cancelling_full_recheck_stops_admission_and_joins_bounded_hashes() {
             high_priority_files: Vec::new(),
             verified_info: Some(raw_info),
             verified_pieces: vec![false; layout.piece_count()],
-            artifact_expectation: ResumeArtifactExpectation::Exact(ResumeArtifactState::Staging),
             resume_validation: ResumeValidationIntent::Full,
             download_missing: true,
             dht: None,
@@ -1806,142 +1788,16 @@ async fn cancelling_full_recheck_stops_admission_and_joins_bounded_hashes() {
     assert_eq!(progress.storage_hash_operations_completed, 2);
     assert_eq!(progress.storage_hash_operations_active, 0);
     assert_eq!(progress.storage_hash_operations_active_high_water, 2);
-    assert!(paths.staging.exists());
-    assert!(!paths.output.exists());
+    assert!(paths.content.exists());
     tokio::fs::remove_dir_all(root)
         .await
         .expect("remove cancellation fixture");
 }
 
 #[tokio::test]
-async fn publishing_intent_recovers_both_sides_of_atomic_rename() {
-    let payload = (0..(2 * MIN_PAYLOAD_ALLOWANCE + 317))
-        .map(|index| ((index * 23 + index / 5) & 0xff) as u8)
-        .collect::<Vec<_>>();
-    let raw_info = single_file_info_with_piece_length(&payload, MIN_PAYLOAD_ALLOWANCE);
-    let metainfo = Metainfo::from_info_bytes(&raw_info).expect("publication fault metainfo");
-    let layout = TorrentLayout::from_metainfo(&metainfo);
-
-    for (label, point) in [
-        ("after-intent", PublicationFailurePoint::AfterIntent),
-        ("after-rename", PublicationFailurePoint::AfterRename),
-    ] {
-        let root = test_path(label);
-        tokio::fs::create_dir(&root)
-            .await
-            .expect("create publication fault root");
-        let paths = torrent_storage_paths_for_metainfo(&root, &metainfo, test_torrent_id())
-            .expect("plan publication fault storage");
-        stage_single_file_payload(&paths, &metainfo, &payload).await;
-        let unused_peer = TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind unused publication peer");
-        let peer_address = unused_peer
-            .local_addr()
-            .expect("unused publication peer address");
-        let failpoints = Arc::new(PublicationFailureSink {
-            point,
-            rechecked: Mutex::new(Vec::new()),
-        });
-        let failed = resume_magnet(
-            ResumableMagnetDownloadConfig {
-                identity: test_identity(metainfo.info_hash),
-                magnet: format!(
-                    "magnet:?xt=urn:btih:{}&x.pe={peer_address}",
-                    hex(&metainfo.info_hash)
-                ),
-                storage_root: root.clone(),
-                network: loopback_network(Duration::from_secs(1)),
-                peer_budget: PeerBudget::system_default(),
-                mse_dh: crate::MseDhWorkOwner::new(),
-                encryption: crate::PeerEncryptionPolicyHandle::default(),
-                torrent_peers: None,
-                resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
-                skip_files: Vec::new(),
-                high_priority_files: Vec::new(),
-                verified_info: Some(raw_info.clone()),
-                verified_pieces: vec![false; layout.piece_count()],
-                artifact_expectation: ResumeArtifactExpectation::Exact(
-                    ResumeArtifactState::Staging,
-                ),
-                resume_validation: ResumeValidationIntent::Full,
-                download_missing: true,
-                dht: None,
-                trackers: None,
-            },
-            failpoints.clone(),
-        )
-        .await;
-        let rechecked = failpoints
-            .rechecked
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone();
-        assert!(
-            matches!(failed, Err(DownloadError::Checkpoint(_))),
-            "unexpected publication failpoint result: {failed:?}; rechecked={rechecked:?}"
-        );
-        match point {
-            PublicationFailurePoint::AfterIntent => {
-                assert!(paths.staging.exists());
-                assert!(!paths.output.exists());
-            }
-            PublicationFailurePoint::AfterRename => {
-                assert!(!paths.staging.exists());
-                assert!(paths.output.exists());
-            }
-        }
-
-        let recovered = resume_magnet(
-            ResumableMagnetDownloadConfig {
-                identity: test_identity(metainfo.info_hash),
-                magnet: format!(
-                    "magnet:?xt=urn:btih:{}&x.pe={peer_address}",
-                    hex(&metainfo.info_hash)
-                ),
-                storage_root: root.clone(),
-                network: loopback_network(Duration::from_secs(1)),
-                peer_budget: PeerBudget::system_default(),
-                mse_dh: crate::MseDhWorkOwner::new(),
-                encryption: crate::PeerEncryptionPolicyHandle::default(),
-                torrent_peers: None,
-                resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
-                skip_files: Vec::new(),
-                high_priority_files: Vec::new(),
-                verified_info: Some(raw_info.clone()),
-                verified_pieces: vec![false; layout.piece_count()],
-                artifact_expectation: ResumeArtifactExpectation::Exact(
-                    ResumeArtifactState::Publishing,
-                ),
-                resume_validation: ResumeValidationIntent::Full,
-                download_missing: true,
-                dht: None,
-                trackers: None,
-            },
-            Arc::new(RecordingCheckpointSink::default()),
-        )
-        .await
-        .expect("reconcile publication side after injected death");
-        assert_eq!(recovered.bytes_written, 0);
-        assert_eq!(recovered.verified_piece_count, layout.piece_count());
-        assert_eq!(
-            tokio::fs::read(&paths.output)
-                .await
-                .expect("read recovered publication"),
-            payload
-        );
-        assert!(!paths.staging.exists());
-        tokio::fs::remove_dir_all(root)
-            .await
-            .expect("remove publication fault root");
-    }
-}
-
-#[tokio::test]
-async fn timeout_removes_unverified_staging_output() {
+async fn timeout_before_writes_leaves_no_content() {
     let metainfo_path = test_path("fixture.torrent");
     let output_path = test_path("output.bin");
-    let staging = staging_path(&output_path).expect("staging path");
     let mut metainfo = b"d4:infod6:lengthi1e4:name1:x12:piece lengthi16384e6:pieces20:".to_vec();
     metainfo.extend_from_slice(&[1; 20]);
     metainfo.extend_from_slice(b"ee");
@@ -1978,22 +1834,15 @@ async fn timeout_removes_unverified_staging_output() {
             .await
             .expect("output status")
     );
-    assert!(
-        !tokio::fs::try_exists(&staging)
-            .await
-            .expect("staging status")
-    );
-
     peer_task.abort();
     let _ = peer_task.await;
     let _ = tokio::fs::remove_file(metainfo_path).await;
 }
 
 #[tokio::test]
-async fn selective_timeout_removes_owned_staging_and_part_paths() {
+async fn selective_timeout_before_writes_leaves_no_content_or_part() {
     let metainfo_path = test_path("selective-timeout.torrent");
     let output_path = test_path("selective-timeout");
-    let staging = selective_staging_path(&output_path).expect("staging path");
     let part = selective_part_path(&output_path).expect("part path");
     tokio::fs::write(&metainfo_path, two_file_metainfo())
         .await
@@ -2023,7 +1872,6 @@ async fn selective_timeout_removes_owned_staging_and_part_paths() {
 
     assert!(matches!(result, Err(DownloadError::PeerTimedOut { .. })));
     assert!(!tokio::fs::try_exists(&output_path).await.expect("output"));
-    assert!(!tokio::fs::try_exists(&staging).await.expect("staging"));
     assert!(!tokio::fs::try_exists(&part).await.expect("part"));
 
     peer_task.abort();
@@ -2032,10 +1880,9 @@ async fn selective_timeout_removes_owned_staging_and_part_paths() {
 }
 
 #[tokio::test]
-async fn cancellation_is_terminal_and_removes_owned_artifacts() {
+async fn cancellation_before_writes_leaves_no_content_or_part() {
     let metainfo_path = test_path("selective-cancel.torrent");
     let output_path = test_path("selective-cancel");
-    let staging = selective_staging_path(&output_path).expect("staging path");
     let part = selective_part_path(&output_path).expect("part path");
     tokio::fs::write(&metainfo_path, two_file_metainfo())
         .await
@@ -2079,11 +1926,6 @@ async fn cancellation_is_terminal_and_removes_owned_artifacts() {
     ));
 
     assert!(
-        !tokio::fs::try_exists(&staging)
-            .await
-            .expect("staging remains lazy")
-    );
-    assert!(
         !tokio::fs::try_exists(&part)
             .await
             .expect("part remains lazy")
@@ -2102,7 +1944,7 @@ async fn cancellation_is_terminal_and_removes_owned_artifacts() {
         }
     })
     .await
-    .expect("engine published active diagnostic peer");
+    .expect("engine direct active diagnostic peer");
 
     control.cancel();
     control.cancel();
@@ -2118,7 +1960,6 @@ async fn cancellation_is_terminal_and_removes_owned_artifacts() {
     assert_eq!(progress.outstanding_request_bytes, 0);
     assert!(control.diagnostic_snapshot().peer_connections.is_empty());
     assert!(!tokio::fs::try_exists(&output_path).await.expect("output"));
-    assert!(!tokio::fs::try_exists(&staging).await.expect("staging"));
     assert!(!tokio::fs::try_exists(&part).await.expect("part"));
 
     timeout(Duration::from_secs(1), peer_task)
@@ -2157,7 +1998,7 @@ async fn preexisting_selective_part_file_is_preserved() {
     let paths = torrent_storage_paths_for_output_with_shape(
         output_path.clone(),
         identity.torrent_id(),
-        PublicationShape::from_metainfo(&metainfo),
+        ContentShape::from_metainfo(&metainfo),
     )
     .expect("storage paths");
     let part = paths.part;
@@ -2195,7 +2036,7 @@ async fn preexisting_selective_part_file_is_preserved() {
         b"owned elsewhere"
     );
 
-    let _ = tokio::fs::remove_dir_all(paths.staging).await;
+    let _ = tokio::fs::remove_dir_all(paths.content).await;
     let _ = tokio::fs::remove_file(part).await;
     let _ = tokio::fs::remove_file(metainfo_path).await;
 }

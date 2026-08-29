@@ -208,6 +208,10 @@ impl PeerSocketError {
             | Self::MseDh(_)
             | Self::Entropy(_) => PeerFailure::Handshake,
             Self::UtpEncryptionRequired => PeerFailure::Handshake,
+            Self::Io {
+                operation: "handshake read",
+                ..
+            } => PeerFailure::RemoteClosed,
             Self::Closed => PeerFailure::RemoteClosed,
             Self::Io { .. } | Self::TimedOut { .. } | Self::Frame(_) => PeerFailure::Protocol,
         }

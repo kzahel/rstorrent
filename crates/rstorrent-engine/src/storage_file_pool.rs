@@ -22,13 +22,13 @@ pub const MAX_STORAGE_OBSERVATION_TOKEN_BYTES: usize = 256;
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct StorageFileKey {
     pub storage_id: String,
-    pub namespace_generation: u64,
+    pub storage_generation: u64,
     pub role: StorageFileRole,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum StorageFileRole {
-    Namespace,
+    ContentRoot,
     Payload(usize),
     Part,
 }
@@ -148,7 +148,7 @@ pub enum StorageFileLocator {
 pub struct PlatformStorageTarget {
     pub root_id: String,
     pub storage_id: String,
-    pub namespace_generation: u64,
+    pub storage_generation: u64,
     pub role: StorageFileRole,
     pub path: Vec<String>,
 }
@@ -357,7 +357,7 @@ pub struct PlatformStorageRequest {
     pub request_id: u64,
     pub root_id: String,
     pub storage_id: String,
-    pub namespace_generation: u64,
+    pub storage_generation: u64,
     pub role: StorageFileRole,
     pub path: Vec<String>,
     pub operation: PlatformStorageOperation,
@@ -461,7 +461,7 @@ impl PlatformStorageClient {
             request_id,
             root_id: target.root_id.clone(),
             storage_id: target.storage_id.clone(),
-            namespace_generation: target.namespace_generation,
+            storage_generation: target.storage_generation,
             role: target.role,
             path: target.path.clone(),
             operation: PlatformStorageOperation::Open,
@@ -513,7 +513,7 @@ impl PlatformStorageClient {
             request_id,
             root_id: target.root_id.clone(),
             storage_id: target.storage_id.clone(),
-            namespace_generation: target.namespace_generation,
+            storage_generation: target.storage_generation,
             role: target.role,
             path: target.path.clone(),
             operation: PlatformStorageOperation::Observe,
@@ -545,7 +545,7 @@ impl PlatformStorageClient {
             request_id,
             root_id: target.root_id.clone(),
             storage_id: target.storage_id.clone(),
-            namespace_generation: target.namespace_generation,
+            storage_generation: target.storage_generation,
             role: target.role,
             path: target.path.clone(),
             operation: PlatformStorageOperation::Delete,
@@ -1479,7 +1479,7 @@ mod tests {
             pool,
             StorageFileKey {
                 storage_id: "test".to_owned(),
-                namespace_generation: 0,
+                storage_generation: 0,
                 role: StorageFileRole::Payload(index),
             },
             StorageFileLocator::Path(root.join(format!("{index}.bin"))),
@@ -1526,13 +1526,13 @@ mod tests {
             pool.clone(),
             StorageFileKey {
                 storage_id: "singleflight".to_owned(),
-                namespace_generation: 0,
+                storage_generation: 0,
                 role: StorageFileRole::Payload(0),
             },
             StorageFileLocator::Platform(super::PlatformStorageTarget {
                 root_id: "root".to_owned(),
                 storage_id: "singleflight".to_owned(),
-                namespace_generation: 0,
+                storage_generation: 0,
                 role: StorageFileRole::Payload(0),
                 path: vec!["0.bin".to_owned()],
             }),
@@ -1625,7 +1625,7 @@ mod tests {
         let target = super::PlatformStorageTarget {
             root_id: "root".to_owned(),
             storage_id: "torrent".to_owned(),
-            namespace_generation: 7,
+            storage_generation: 7,
             role: StorageFileRole::Part,
             path: vec!["part".to_owned()],
         };
@@ -1633,7 +1633,7 @@ mod tests {
             pool.clone(),
             StorageFileKey {
                 storage_id: "torrent".to_owned(),
-                namespace_generation: 7,
+                storage_generation: 7,
                 role: StorageFileRole::Part,
             },
             StorageFileLocator::Platform(target),
@@ -1668,13 +1668,13 @@ mod tests {
             pool.clone(),
             StorageFileKey {
                 storage_id: "torrent".to_owned(),
-                namespace_generation: 3,
+                storage_generation: 3,
                 role: StorageFileRole::Part,
             },
             StorageFileLocator::Platform(super::PlatformStorageTarget {
                 root_id: "root".to_owned(),
                 storage_id: "torrent".to_owned(),
-                namespace_generation: 3,
+                storage_generation: 3,
                 role: StorageFileRole::Part,
                 path: vec!["part".to_owned()],
             }),
@@ -1720,15 +1720,15 @@ mod tests {
                 pool.clone(),
                 StorageFileKey {
                     storage_id: "multifile".to_owned(),
-                    namespace_generation: 9,
+                    storage_generation: 9,
                     role: StorageFileRole::Payload(index),
                 },
                 StorageFileLocator::Platform(super::PlatformStorageTarget {
                     root_id: "root".to_owned(),
                     storage_id: "multifile".to_owned(),
-                    namespace_generation: 9,
+                    storage_generation: 9,
                     role: StorageFileRole::Payload(index),
-                    path: vec!["staging".to_owned(), format!("{index}.bin")],
+                    path: vec!["content".to_owned(), format!("{index}.bin")],
                 }),
             );
             opens.push(tokio::spawn(async move {
@@ -1800,13 +1800,13 @@ mod tests {
             pool.clone(),
             StorageFileKey {
                 storage_id: "torrent".to_owned(),
-                namespace_generation: 0,
+                storage_generation: 0,
                 role: StorageFileRole::Part,
             },
             StorageFileLocator::Platform(super::PlatformStorageTarget {
                 root_id: "root".to_owned(),
                 storage_id: "torrent".to_owned(),
-                namespace_generation: 0,
+                storage_generation: 0,
                 role: StorageFileRole::Part,
                 path: vec!["part".to_owned()],
             }),
@@ -1840,15 +1840,15 @@ mod tests {
             pool.clone(),
             StorageFileKey {
                 storage_id: "torrent".to_owned(),
-                namespace_generation: 4,
+                storage_generation: 4,
                 role: StorageFileRole::Payload(2),
             },
             StorageFileLocator::Platform(super::PlatformStorageTarget {
                 root_id: "root".to_owned(),
                 storage_id: "torrent".to_owned(),
-                namespace_generation: 4,
+                storage_generation: 4,
                 role: StorageFileRole::Payload(2),
-                path: vec!["published".to_owned(), "payload.bin".to_owned()],
+                path: vec!["content".to_owned(), "payload.bin".to_owned()],
             }),
         );
         let open =
@@ -1858,7 +1858,7 @@ mod tests {
         assert_eq!(request.operation, PlatformStorageOperation::Open);
         assert_eq!(
             request.path,
-            ["published".to_owned(), "payload.bin".to_owned()]
+            ["content".to_owned(), "payload.bin".to_owned()]
         );
         assert_eq!(pool.snapshot().platform_pending, 1);
 
@@ -1882,15 +1882,15 @@ mod tests {
             pool.clone(),
             StorageFileKey {
                 storage_id: "torrent".to_owned(),
-                namespace_generation: 4,
+                storage_generation: 4,
                 role: StorageFileRole::Payload(2),
             },
             StorageFileLocator::Platform(super::PlatformStorageTarget {
                 root_id: "root".to_owned(),
                 storage_id: "torrent".to_owned(),
-                namespace_generation: 4,
+                storage_generation: 4,
                 role: StorageFileRole::Payload(2),
-                path: vec!["published".to_owned(), "payload.bin".to_owned()],
+                path: vec!["content".to_owned(), "payload.bin".to_owned()],
             }),
         );
         let observation = tokio::spawn(async move { reference.observe().await });
@@ -1945,15 +1945,15 @@ mod tests {
             pool.clone(),
             StorageFileKey {
                 storage_id: "torrent".to_owned(),
-                namespace_generation: 4,
+                storage_generation: 4,
                 role: StorageFileRole::Payload(2),
             },
             StorageFileLocator::Platform(super::PlatformStorageTarget {
                 root_id: "root".to_owned(),
                 storage_id: "torrent".to_owned(),
-                namespace_generation: 4,
+                storage_generation: 4,
                 role: StorageFileRole::Payload(2),
-                path: vec!["published".to_owned(), "payload.bin".to_owned()],
+                path: vec!["content".to_owned(), "payload.bin".to_owned()],
             }),
         );
         let observation = tokio::spawn({
@@ -2028,22 +2028,22 @@ mod tests {
             pool.clone(),
             StorageFileKey {
                 storage_id: "torrent".to_owned(),
-                namespace_generation: 7,
+                storage_generation: 7,
                 role: StorageFileRole::Payload(1),
             },
             StorageFileLocator::Platform(super::PlatformStorageTarget {
                 root_id: "root".to_owned(),
                 storage_id: "torrent".to_owned(),
-                namespace_generation: 7,
+                storage_generation: 7,
                 role: StorageFileRole::Payload(1),
-                path: vec!["published".to_owned(), "file.bin".to_owned()],
+                path: vec!["content".to_owned(), "file.bin".to_owned()],
             }),
         );
         let observation = tokio::spawn(async move { reference.observe().await });
         let request = broker.next_request().await.expect("observation request");
         assert_eq!(request.operation, PlatformStorageOperation::Observe);
-        assert_eq!(request.namespace_generation, 7);
-        assert_eq!(request.path, ["published", "file.bin"]);
+        assert_eq!(request.storage_generation, 7);
+        assert_eq!(request.path, ["content", "file.bin"]);
         let expected = StorageObservation::present(
             StorageObjectKind::File,
             Some(23),
@@ -2070,15 +2070,15 @@ mod tests {
             pool.clone(),
             StorageFileKey {
                 storage_id: "torrent".to_owned(),
-                namespace_generation: 3,
-                role: StorageFileRole::Namespace,
+                storage_generation: 3,
+                role: StorageFileRole::ContentRoot,
             },
             StorageFileLocator::Platform(super::PlatformStorageTarget {
                 root_id: "root".to_owned(),
                 storage_id: "torrent".to_owned(),
-                namespace_generation: 3,
-                role: StorageFileRole::Namespace,
-                path: vec!["published".to_owned()],
+                storage_generation: 3,
+                role: StorageFileRole::ContentRoot,
+                path: vec!["content".to_owned()],
             }),
         );
         let observation = tokio::spawn(async move { reference.observe().await });
@@ -2108,7 +2108,7 @@ mod tests {
                 pool.clone(),
                 StorageFileKey {
                     storage_id: format!("torrent-{}", logical_index / 100),
-                    namespace_generation: 0,
+                    storage_generation: 0,
                     role: StorageFileRole::Payload(file_index),
                 },
                 StorageFileLocator::Path(root.join(format!("{file_index}.bin"))),

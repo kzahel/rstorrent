@@ -39,8 +39,6 @@ use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::{Barrier, Notify, Semaphore, mpsc, oneshot};
 use tokio::time::{sleep, timeout};
 
-use crate::ResumeArtifactState;
-
 use super::{
     CHECKPOINT_MAX_DIRTY_BYTES, CLIENT_PEER_ID, CONTENT_STORAGE_HASH_CONCURRENCY,
     CONTENT_STORAGE_WRITE_BATCH_BLOCKS, CONTENT_STORAGE_WRITE_BATCH_BYTES,
@@ -53,20 +51,19 @@ use super::{
     MAX_RECENT_METADATA_ATTEMPTS, MagnetDownloadConfig, MetadataAcquisitionPhase,
     MetadataAcquisitionProgress, MetadataConnectionLimits, MetadataDialPacer, MetadataPeerStage,
     MetadataWorkerTurnoverState, PeerConnection, PreparedContentWrite, QueuedContentStorageCommand,
-    ResumableMagnetDownloadConfig, ResumableMetainfoDownloadConfig, ResumeArtifactExpectation,
-    ResumedStorage, SwarmConfig, TorrentPeerCoordinator, TrackerManager, UdpTrackerAnnounce,
-    UdpTrackerExchange, UdpTrackerTiming, UdpTrackerTokenCache, announce_udp_tracker,
-    announce_udp_tracker_address, atomic_saturating_add, atomic_saturating_increment,
-    build_content_plan_window, coalesce_content_writes, collect_content_write_batch,
-    content_dial_slot_available, content_storage_job_limit, download_magnet,
-    download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
-    download_magnet_with_control, download_verified_piece, download_verified_piece_with_control,
-    dry_swarm_probe_available, execute_content_storage_verification,
-    execute_content_storage_writes, full_recheck_managed_storage, metadata_cohort_has_capacity,
-    next_peer_message, resume_magnet, resume_magnet_with_control, resume_metainfo_with_control,
-    retrying_dht_lookup, run_content_download, run_magnet_download_with_peers,
-    select_metadata_turnover_candidate, send_message, validate_network_config,
-    validate_v1_runtime_identity,
+    ResumableMagnetDownloadConfig, ResumableMetainfoDownloadConfig, ResumedStorage, SwarmConfig,
+    TorrentPeerCoordinator, TrackerManager, UdpTrackerAnnounce, UdpTrackerExchange,
+    UdpTrackerTiming, UdpTrackerTokenCache, announce_udp_tracker, announce_udp_tracker_address,
+    atomic_saturating_add, atomic_saturating_increment, build_content_plan_window,
+    coalesce_content_writes, collect_content_write_batch, content_dial_slot_available,
+    content_storage_job_limit, download_magnet, download_magnet_metadata_with_control,
+    download_magnet_metadata_with_dht, download_magnet_with_control, download_verified_piece,
+    download_verified_piece_with_control, dry_swarm_probe_available,
+    execute_content_storage_verification, execute_content_storage_writes, full_recheck_storage,
+    metadata_cohort_has_capacity, next_peer_message, resume_magnet, resume_magnet_with_control,
+    resume_metainfo_with_control, retrying_dht_lookup, run_content_download,
+    run_magnet_download_with_peers, select_metadata_turnover_candidate, send_message,
+    validate_network_config, validate_v1_runtime_identity,
 };
 
 trait TestMetainfoParse: Sized {
@@ -94,8 +91,7 @@ use crate::peer::{
 use crate::peer_runtime::PeerConnectionLifecycle;
 use crate::selective_storage::{
     CheckpointFileReference, CheckpointHandles, SelectiveStorage, SelectiveStorageError,
-    TorrentArtifactIdentity, selective_part_path, selective_staging_path,
-    selective_staging_path as staging_path, torrent_storage_paths_for_metainfo,
+    TorrentArtifactIdentity, selective_part_path, torrent_storage_paths_for_metainfo,
     torrent_storage_paths_for_output_with_shape,
 };
 use crate::storage_file_pool::StorageFileLease;
@@ -104,8 +100,8 @@ use crate::swarm::{
     DEFAULT_MAX_PENDING_DIALS, PieceGeneration,
 };
 use crate::{
-    ByteMetric, ByteMetricSink, CheckerPhase, CheckerProgress, DiskCheckpointStage, DiskPieceStage,
-    PublicationShape,
+    ByteMetric, ByteMetricSink, CheckerPhase, CheckerProgress, ContentShape, DiskCheckpointStage,
+    DiskPieceStage,
 };
 
 use super::control::CheckerPieceOutcome;
@@ -243,81 +239,6 @@ impl super::DownloadCheckpointSink for RecordingCheckpointSink {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .take()
             .map_or(Ok(()), Err)
-    }
-
-    fn descriptor_prepared(&self, _files: &[super::PreparedFileHash]) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn publication_prepared(&self) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn published(&self) -> Result<(), String> {
-        Ok(())
-    }
-}
-
-#[derive(Clone, Copy)]
-enum PublicationFailurePoint {
-    AfterIntent,
-    AfterRename,
-}
-
-struct PublicationFailureSink {
-    point: PublicationFailurePoint,
-    rechecked: Mutex<Vec<bool>>,
-}
-
-impl super::DownloadCheckpointSink for PublicationFailureSink {
-    fn metadata_verified(&self, _raw_info: &[u8]) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn storage_prepared(&self, _storage: super::ResumedStorage) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn recheck_started(&self) -> Result<u64, String> {
-        Ok(1)
-    }
-
-    fn have_rechecked(&self, verified_pieces: &[bool]) -> Result<(), String> {
-        *self
-            .rechecked
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = verified_pieces.to_vec();
-        Ok(())
-    }
-
-    fn pieces_invalidated(&self, _piece_indices: &[usize]) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn pieces_durable(&self, _piece_indices: &[usize]) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn descriptor_prepared(&self, _files: &[super::PreparedFileHash]) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn publication_prepared(&self) -> Result<(), String> {
-        match self.point {
-            PublicationFailurePoint::AfterIntent => {
-                Err("injected death after publication intent".to_owned())
-            }
-            PublicationFailurePoint::AfterRename => Ok(()),
-        }
-    }
-
-    fn published(&self) -> Result<(), String> {
-        match self.point {
-            PublicationFailurePoint::AfterIntent => Ok(()),
-            PublicationFailurePoint::AfterRename => {
-                Err("injected death after publication rename".to_owned())
-            }
-        }
     }
 }
 
@@ -1457,53 +1378,6 @@ fn one_entry_multi_file_info(payload: &[u8], piece_length: usize) -> Vec<u8> {
     info
 }
 
-async fn stage_single_file_payload(
-    paths: &crate::selective_storage::TorrentStoragePaths,
-    metainfo: &Metainfo,
-    payload: &[u8],
-) {
-    let layout = TorrentLayout::from_metainfo(metainfo);
-    let selection = FileSelection::new(&layout, &[]).expect("all files wanted");
-    let mut storage = SelectiveStorage::create_with_paths(
-        paths.clone(),
-        test_artifact_identity(),
-        layout.clone(),
-        selection.clone(),
-    )
-    .await
-    .expect("create staged single-file payload");
-    for piece_index in 0..layout.piece_count() {
-        let piece_index_u32 = u32::try_from(piece_index).expect("bounded piece index");
-        let piece_offset = piece_index * layout.piece_length() as usize;
-        for request in layout
-            .request_ranges(piece_index_u32, &selection)
-            .expect("piece request ranges")
-        {
-            let begin = request.begin as usize;
-            storage
-                .write_block(
-                    piece_index_u32,
-                    request.begin,
-                    payload[piece_offset + begin..piece_offset + begin + request.length as usize]
-                        .to_vec(),
-                )
-                .await
-                .expect("write staged single-file range");
-        }
-        storage
-            .sync_piece(piece_index_u32)
-            .await
-            .expect("sync staged single-file piece");
-        assert_eq!(
-            storage
-                .hash_piece(piece_index_u32)
-                .await
-                .expect("hash staged single-file piece"),
-            metainfo.piece_hashes[piece_index]
-        );
-    }
-}
-
 fn private_single_file_info(payload: &[u8]) -> Vec<u8> {
     let mut info = single_file_info(payload);
     info.splice(
@@ -1943,10 +1817,11 @@ async fn serve_idle_metadata_peer(
 ) {
     let (mut stream, _) = listener.accept().await.expect("accept metadata client");
     let mut handshake_bytes = [0; HANDSHAKE_LENGTH];
-    stream
-        .read_exact(&mut handshake_bytes)
-        .await
-        .expect("read client handshake");
+    match stream.read_exact(&mut handshake_bytes).await {
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return,
+        Err(error) => panic!("read client handshake: {error}"),
+    }
     assert!(
         decode_handshake(&handshake_bytes, info_hash)
             .expect("client handshake identity")
@@ -2791,9 +2666,9 @@ async fn assert_tracker_wait_cancels_without_socket_leaks() {
     assert!(matches!(result, Err(DownloadError::Cancelled)));
     assert!(!tokio::fs::try_exists(&output_path).await.expect("output"));
     assert!(
-        !tokio::fs::try_exists(staging_path(&output_path).expect("staging path"))
+        !tokio::fs::try_exists(output_path.clone())
             .await
-            .expect("staging")
+            .expect("content")
     );
 
     UdpSocket::bind(client)
@@ -2984,5 +2859,5 @@ async fn serve_bounded_startup_tracker(
 mod content;
 mod control;
 mod discovery_metadata;
-mod recheck_publication;
+mod recheck_direct;
 mod storage_pipeline;

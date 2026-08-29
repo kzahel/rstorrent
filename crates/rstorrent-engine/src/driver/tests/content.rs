@@ -715,7 +715,7 @@ async fn sole_corrupt_source_is_banned_and_clean_peer_retries_piece() {
     assert_eq!(report.verified_piece_count, 1);
     assert_eq!(report.selected_written_bytes, 2 * payload.len());
     assert_eq!(
-        tokio::fs::read(&output).await.expect("published output"),
+        tokio::fs::read(&output).await.expect("direct output"),
         payload
     );
     let snapshot = control
@@ -921,7 +921,7 @@ async fn ambiguous_corrupt_generation_records_suspects_without_false_bans() {
     assert_eq!(report.verified_piece_count, 1);
     assert_eq!(report.selected_written_bytes, 2 * payload.len());
     assert_eq!(
-        tokio::fs::read(&output).await.expect("published output"),
+        tokio::fs::read(&output).await.expect("direct output"),
         payload
     );
     let snapshot = control
@@ -1131,9 +1131,9 @@ async fn cancellation_joins_a_full_silent_pending_cohort() {
             .expect("silent peer task");
     }
     assert!(!output.exists());
-    let staging = staging_path(&output).expect("staging path");
+    let content = output.clone();
     assert!(
-        !staging.exists(),
+        !content.exists(),
         "cancellation before the first write leaves no empty artifact"
     );
 }
@@ -1363,7 +1363,7 @@ async fn full_choked_set_without_an_alternative_waits_without_churn() {
         .await
         .expect("choked peer joined")
         .expect("choked peer task");
-    let _ = tokio::fs::remove_file(staging_path(&output).expect("staging path")).await;
+    let _ = tokio::fs::remove_file(output.clone()).await;
 }
 
 #[tokio::test]
@@ -1437,7 +1437,7 @@ async fn dry_swarm_probe_recovers_after_three_transient_handshake_failures() {
     assert_eq!(report.verified_piece_count, 1);
     assert_eq!(report.bytes_written, payload.len());
     assert_eq!(
-        tokio::fs::read(&output).await.expect("published output"),
+        tokio::fs::read(&output).await.expect("direct output"),
         payload
     );
     peer_task.await.expect("recovering peer task");

@@ -177,7 +177,6 @@ pub enum DownloadActivityEvent {
         part_header_bytes: u64,
         elapsed_millis: u64,
     },
-    PathPublicationStage(PathPublicationStage),
     StorageState(Box<DiskRuntimeSnapshot>),
     DiscoveryLane {
         protocol: ProtocolVersion,
@@ -262,13 +261,6 @@ pub enum DownloadActivityEvent {
     },
     TrackerState(Box<TrackerRuntimeSnapshot>),
     SwarmState(Box<SwarmActivitySnapshot>),
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PathPublicationStage {
-    IntentDurable = 1,
-    Renamed = 2,
-    NamespaceDurable = 3,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -542,7 +534,6 @@ struct DownloadControlInner {
     session_resources: Mutex<Option<SessionTorrentResources>>,
     selection_updates: watch::Sender<Option<FileSelectionUpdate>>,
     streaming_demands: Arc<StreamingDemandOwner>,
-    content_published: watch::Sender<bool>,
     checking_paused: watch::Sender<bool>,
     selection_applied_revision: AtomicU64,
     safe_cancel_state: AtomicUsize,
@@ -858,7 +849,6 @@ impl DownloadControl {
     pub fn new() -> Self {
         let (selection_updates, _) = watch::channel(None);
         let (streaming_updates, _) = watch::channel(StreamingDemandSnapshot::default());
-        let (content_published, _) = watch::channel(false);
         let (checking_paused, _) = watch::channel(false);
         Self {
             inner: Arc::new(DownloadControlInner {
@@ -921,7 +911,6 @@ impl DownloadControl {
                     progress_events: AtomicUsize::new(0),
                     pieces_verified: AtomicUsize::new(0),
                 }),
-                content_published,
                 checking_paused,
                 selection_applied_revision: AtomicU64::new(0),
                 safe_cancel_state: AtomicUsize::new(0),
@@ -1155,18 +1144,6 @@ impl DownloadControl {
         let snapshot = state.snapshot();
         drop(state);
         owner.updates.send_replace(snapshot);
-    }
-
-    pub(super) fn mark_content_published(&self) {
-        self.inner.content_published.send_replace(true);
-    }
-
-    pub fn content_is_published(&self) -> bool {
-        *self.inner.content_published.borrow()
-    }
-
-    pub fn content_publication_updates(&self) -> watch::Receiver<bool> {
-        self.inner.content_published.subscribe()
     }
 
     pub(super) fn selection_updates(&self) -> watch::Receiver<Option<FileSelectionUpdate>> {
@@ -1767,10 +1744,6 @@ impl DownloadControl {
         self.inner
             .checkpoint_sync_bypassed_for_testing
             .load(Ordering::Acquire)
-    }
-
-    pub(super) async fn enter_path_publication_stage(&self, stage: PathPublicationStage) {
-        self.emit(DownloadActivityEvent::PathPublicationStage(stage));
     }
 
     #[cfg(test)]

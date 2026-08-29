@@ -11,10 +11,10 @@ use rstorrent_engine::{
     DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink, DownloadConfig,
     DownloadControl, DownloadError, DownloadProgress, DownloadResourceLimits, MagnetDownloadConfig,
     MseDhWorkOwner, NetworkConfig, NetworkPolicy, PeerBudget, PeerEncryptionPolicy,
-    PeerEncryptionPolicyHandle, PreparedFileHash, ResumableMetainfoDownloadConfig,
-    ResumeArtifactExpectation, ResumeArtifactState, ResumeValidationIntent, ResumedStorage,
-    TorrentId, TorrentIdentityContext, TorrentPeerHandle, download_magnet_with_control,
-    download_verified_piece_with_control, resume_metainfo_with_control,
+    PeerEncryptionPolicyHandle, ResumableMetainfoDownloadConfig, ResumeValidationIntent,
+    ResumedStorage, TorrentId, TorrentIdentityContext, TorrentPeerHandle,
+    download_magnet_with_control, download_verified_piece_with_control,
+    resume_metainfo_with_control,
 };
 use rstorrent_protocol::content::{TorrentContent, TorrentContentProjection};
 use rstorrent_protocol::identity::V1InfoHash;
@@ -92,18 +92,6 @@ impl DownloadCheckpointSink for DiagnosticCheckpointSink {
     }
 
     fn pieces_durable(&self, _piece_indices: &[usize]) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn descriptor_prepared(&self, _files: &[PreparedFileHash]) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn publication_prepared(&self) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn published(&self) -> Result<(), String> {
         Ok(())
     }
 }
@@ -267,9 +255,6 @@ async fn main() -> ExitCode {
                             skip_files: config.skip_files,
                             high_priority_files: Vec::new(),
                             verified_pieces: vec![false; piece_count],
-                            artifact_expectation: ResumeArtifactExpectation::Exact(
-                                ResumeArtifactState::None,
-                            ),
                             resume_validation: ResumeValidationIntent::Full,
                             download_missing: true,
                             dht: None,

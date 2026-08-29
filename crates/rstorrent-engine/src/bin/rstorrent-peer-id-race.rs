@@ -56,7 +56,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
     let torrent_peers = TorrentPeerHandle::new(sink.clone())?;
     let torrent_id =
         TorrentId::generate().map_err(|error| std::io::Error::other(error.to_string()))?;
-    let content = SeedContent::open_published(
+    let content = SeedContent::open_verified(
         &arguments.seed_root,
         torrent_id,
         &metainfo,

@@ -184,18 +184,18 @@ pub(crate) struct V2SeedHashService {
 
 #[derive(Clone, Debug)]
 enum RegisteredSeedContent {
-    Published(SeedContent),
+    Complete(SeedContent),
     Active(ActiveSeedContent),
 }
 
 impl RegisteredSeedContent {
     const fn local_complete(&self) -> bool {
-        matches!(self, Self::Published(_))
+        matches!(self, Self::Complete(_))
     }
 
     fn upload_state(&self, piece_lengths: Arc<[u32]>) -> Result<UploadPeerState, ()> {
         match self {
-            Self::Published(content) => UploadPeerState::from_shared(
+            Self::Complete(content) => UploadPeerState::from_shared(
                 piece_lengths,
                 Arc::<[bool]>::from(content.availability()),
             )
@@ -209,7 +209,7 @@ impl RegisteredSeedContent {
 
     async fn read_block(&self, request: BlockRequest) -> Result<Vec<u8>, ()> {
         match self {
-            Self::Published(content) => content.read_block(request).await.map_err(|_| ()),
+            Self::Complete(content) => content.read_block(request).await.map_err(|_| ()),
             Self::Active(content) => content.read_block(request).await.map_err(|_| ()),
         }
     }
@@ -500,7 +500,7 @@ impl SeedRegistration {
             swarm_key,
             info_hashes,
             raw_info,
-            content: RegisteredSeedContent::Published(content),
+            content: RegisteredSeedContent::Complete(content),
             piece_lengths: piece_lengths.into(),
             hybrid_padding: runtime.and_then(|runtime| runtime.content.hybrid_padding().cloned()),
             torrent_peers,
@@ -4613,7 +4613,7 @@ mod tests {
         let pool =
             crate::StorageFilePool::new(crate::storage_file_pool::DEFAULT_STORAGE_FILE_LIMIT, None)
                 .expect("seed file pool");
-        let seed = SeedContent::open_published_content_with_pool(
+        let seed = SeedContent::open_verified_content_with_pool(
             &root,
             torrent_id,
             &runtime.content,
@@ -4659,9 +4659,9 @@ mod tests {
         tokio::fs::create_dir_all(&root).await.expect("create root");
         tokio::fs::write(root.join("seed.bin"), payload)
             .await
-            .expect("write published payload");
+            .expect("write verified payload");
         let torrent_id = crate::TorrentId::new([0x71; 16]).expect("nonzero test owner");
-        let content = SeedContent::open_published(&root, torrent_id, &metainfo, &[true, true], &[])
+        let content = SeedContent::open_verified(&root, torrent_id, &metainfo, &[true, true], &[])
             .await
             .expect("open seed content");
         let peer_activity = Arc::new(TestPeerActivity::default());
@@ -5423,13 +5423,13 @@ mod tests {
             torrent_id: crate::TorrentId::new([0x72; 16]).expect("nonzero test owner"),
             content_fingerprint: crate::ContentFingerprint::for_info_bytes(&raw_info),
         };
-        let staging = crate::torrent_storage_paths_for_metainfo(
+        let content_path = crate::torrent_storage_paths_for_metainfo(
             &root,
             &metainfo,
             artifact_identity.torrent_id,
         )
         .expect("active storage paths")
-        .staging;
+        .content;
         let mut storage = SelectiveStorage::create(
             output.clone(),
             artifact_identity,
@@ -5535,7 +5535,7 @@ mod tests {
         tokio::fs::OpenOptions::new()
             .write(true)
             .truncate(true)
-            .open(&staging)
+            .open(&content_path)
             .await
             .expect("open active payload for truncation");
         send(
@@ -5781,7 +5781,7 @@ mod tests {
         let pool =
             crate::StorageFilePool::new(crate::storage_file_pool::DEFAULT_STORAGE_FILE_LIMIT, None)
                 .expect("hybrid hash file pool");
-        let seed = SeedContent::open_published_content_with_pool(
+        let seed = SeedContent::open_verified_content_with_pool(
             &root,
             crate::TorrentId::new([0x74; 16]).expect("nonzero hybrid hash owner"),
             &runtime.content,

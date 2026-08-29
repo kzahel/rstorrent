@@ -4,10 +4,10 @@
 
 mod active_seed_content;
 mod advertisement;
-mod artifact_layout;
 mod bandwidth;
 mod checkpoint;
 pub mod dht;
+mod direct_content_layout;
 mod driver;
 mod http_tracker;
 mod identity;
@@ -15,7 +15,6 @@ mod incoming;
 mod metadata_seed;
 mod metrics;
 mod mse;
-mod namespace_transition;
 mod network;
 mod part_file;
 pub mod peer;
@@ -60,15 +59,15 @@ pub use advertisement::{
     TRACKER_STOP_TIMEOUT, TorrentPrivacy, TrackerCounterSnapshot, TrackerCounters,
     UNKNOWN_METADATA_LEFT_BYTES,
 };
-pub use artifact_layout::{
-    ArtifactLayoutError, LogicalPayloadArtifact, PublicationShape, PublishedArtifactLayout,
-};
 pub use bandwidth::{
     BandwidthDirectionSnapshot, BandwidthError, BandwidthPermit, MAX_BANDWIDTH_BURST_BYTES,
     MAX_BANDWIDTH_GRANT_BYTES, MAX_BANDWIDTH_REGISTRATIONS, MAX_BANDWIDTH_WAITERS,
     MIN_TRANSFER_RATE_BYTES_PER_SECOND, SessionBandwidth, SessionBandwidthHandle,
     SessionBandwidthSnapshot, TorrentBandwidth, TorrentTransferRateLimits, TransferRateLimit,
     TransferRateLimitError,
+};
+pub use direct_content_layout::{
+    ContentShape, DirectContentLayout, DirectContentLayoutError, LogicalContentFile,
 };
 pub use driver::{
     CheckerPhase, CheckerProgress, ContentPeerActivitySnapshot, ContentRequestWindowPhase,
@@ -79,11 +78,11 @@ pub use driver::{
     FileSelectionUpdate, IntegrityPreparationPhase, IntegrityPreparationProgress,
     MagnetDownloadConfig, MetadataAcquisitionPhase, MetadataAcquisitionProgress,
     MetadataAcquisitionSnapshot, MetadataConnectionLimits, MetadataPeerSnapshot, MetadataPeerStage,
-    PathPublicationStage, ResumableMagnetDownloadConfig, ResumableMetainfoDownloadConfig,
-    StreamingDemandLease, SwarmActivitySnapshot, download_magnet,
-    download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
-    download_magnet_metadata_with_dht_and_peers, download_magnet_metadata_with_external_discovery,
-    download_magnet_with_control, download_verified_piece, download_verified_piece_with_control,
+    ResumableMagnetDownloadConfig, ResumableMetainfoDownloadConfig, StreamingDemandLease,
+    SwarmActivitySnapshot, download_magnet, download_magnet_metadata_with_control,
+    download_magnet_metadata_with_dht, download_magnet_metadata_with_dht_and_peers,
+    download_magnet_metadata_with_external_discovery, download_magnet_with_control,
+    download_verified_piece, download_verified_piece_with_control,
     download_verified_piece_with_peer_state, resume_magnet, resume_magnet_with_control,
     resume_metainfo_with_control,
 };
@@ -121,10 +120,6 @@ pub use mse::{
     MAX_MSE_DH_JOBS, MseDhWorkError, MseDhWorkOwner, MseDhWorkSnapshot, MseHandshakeFailure,
     MseHandshakeObservation, MseHandshakeOutcome, MseHandshakeSink,
 };
-pub use namespace_transition::{
-    NamespaceAction, NamespaceDisposition, NamespaceState, NamespaceTransitionError,
-    NamespaceTransitionInput, NamespaceTransitionOutcome, decide_namespace_transition,
-};
 pub use network::{
     AddressFamily, AddressFamilyPolicy, AddressFamilyPolicyHandle, DEFAULT_PEER_ID, NetworkConfig,
     NetworkPolicy, PeerEncryptionPolicy, PeerEncryptionPolicyHandle, PeerTransportPolicy,
@@ -159,20 +154,18 @@ pub use seed_content::{
 #[doc(hidden)]
 pub use selective_storage::{
     DescriptorFile, DescriptorFileRole, DescriptorStorage, DescriptorStoragePlan,
-    DescriptorStoragePlanFile, plan_descriptor_storage, verify_prepared_descriptors,
+    DescriptorStoragePlanFile, plan_descriptor_storage,
 };
 pub use selective_storage::{
     FastResumeValidation, MAX_ACTIVE_FILE_READ_BYTES, MAX_UPLOAD_READ_SEGMENTS,
-    MaterializationReport, PlatformStorageSpec, PreparedFileHash, ResumeArtifactExpectation,
-    ResumeArtifactState, ResumedStorage, SelectionReconcileReport, SelectiveFileReadPlan,
-    SelectiveStorage, SelectiveStorageError, SelectiveUploadReadPlan, SelectiveWriteStats,
-    TorrentArtifactIdentity, TorrentStoragePaths, remove_selective_part_if_present,
-    remove_selective_staging_if_present, selective_part_path, selective_staging_path,
-    torrent_storage_paths, torrent_storage_paths_for_metainfo, torrent_storage_paths_with_shape,
-    validate_publication_name, validate_published_fast_resume_content_with_path,
-    validate_published_fast_resume_content_with_platform, validate_published_fast_resume_with_path,
-    validate_published_fast_resume_with_platform, verify_prepared_platform_content_files,
-    verify_prepared_platform_files,
+    MaterializationReport, PlatformStorageSpec, ResumedStorage, SelectionReconcileReport,
+    SelectiveFileReadPlan, SelectiveStorage, SelectiveStorageError, SelectiveUploadReadPlan,
+    SelectiveWriteStats, TorrentArtifactIdentity, TorrentStoragePaths,
+    remove_selective_part_if_present, selective_part_path, torrent_storage_paths,
+    torrent_storage_paths_for_metainfo, torrent_storage_paths_with_shape, validate_content_name,
+    validate_direct_fast_resume_content_with_path,
+    validate_direct_fast_resume_content_with_platform, validate_direct_fast_resume_with_path,
+    validate_direct_fast_resume_with_platform,
 };
 pub use session_resources::{
     SessionDownloadResourceSnapshot, SessionDownloadResources, SessionStorageRootResourceSnapshot,

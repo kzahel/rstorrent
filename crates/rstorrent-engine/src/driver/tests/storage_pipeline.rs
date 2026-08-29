@@ -22,7 +22,7 @@ async fn checkpoint_delays_preserve_storage_progress_bounds_and_final_flush() {
     wait_for_checkpoint_stage(&control, DiskCheckpointStage::Syncing).await;
 
     let output = test_path("checkpoint-overlap-storage.bin");
-    let staged = staging_path(&output).expect("staging path");
+    let staged = output.clone();
     let mut storage = single_file_content_storage(output, 16, 16).await;
     let writes =
         execute_content_storage_writes(&mut storage, vec![queued_write(0, 0, 16)], &control).await;
@@ -234,7 +234,7 @@ fn storage_write_batch_respects_exact_count_and_byte_caps() {
 #[tokio::test]
 async fn failed_coalesced_write_mutates_no_valid_prefix() {
     let output = test_path("coalesced-write-failure.bin");
-    let staged = staging_path(&output).expect("staging path");
+    let staged = output.clone();
     let mut storage = single_file_content_storage(output.clone(), 4, 4).await;
     let commands = vec![queued_write(0, 0, 4), queued_write(0, 4, 4)];
 
@@ -484,12 +484,12 @@ async fn cancellation_joins_storage_with_queued_writes() {
     assert_eq!(progress.storage_hash_operations_started, 0);
     assert_eq!(progress.storage_active_write_micros, None);
     assert_eq!(progress.storage_active_hash_micros, None);
-    assert!(!output.exists());
+    assert!(output.exists());
     timeout(Duration::from_secs(1), peer_task)
         .await
         .expect("queued-write peer joined")
         .expect("queued-write peer task");
-    let _ = tokio::fs::remove_file(staging_path(&output).expect("staging path")).await;
+    let _ = tokio::fs::remove_file(output.clone()).await;
 }
 
 #[tokio::test]
@@ -571,19 +571,19 @@ async fn cancellation_joins_storage_during_piece_hash() {
     assert!(progress.storage_hash_service_micros >= 200_000);
     assert_eq!(progress.storage_active_write_micros, None);
     assert_eq!(progress.storage_active_hash_micros, None);
-    assert!(!output.exists());
+    assert!(output.exists());
     timeout(Duration::from_secs(1), peer_task)
         .await
         .expect("hash-cancel peer joined")
         .expect("hash-cancel peer task");
-    let _ = tokio::fs::remove_file(staging_path(&output).expect("staging path")).await;
+    let _ = tokio::fs::remove_file(output.clone()).await;
 }
 
 #[tokio::test]
 async fn storage_executor_enforces_independent_write_and_hash_limits() {
     let block_length = MIN_PAYLOAD_ALLOWANCE;
     let output = test_path("storage-executor-limits.bin");
-    let staging = staging_path(&output).expect("staging path");
+    let content_path = output.clone();
     let control = DownloadControl::new();
     control.set_storage_write_delay(Duration::from_millis(300));
     let storage = single_file_content_storage(output.clone(), 5 * block_length, block_length).await;
@@ -639,10 +639,10 @@ async fn storage_executor_enforces_independent_write_and_hash_limits() {
     assert_eq!(finished.storage_write_operations_active, 0);
     assert_eq!(finished.storage_write_operations_started, 4);
     assert_eq!(finished.storage_write_operations_completed, 4);
-    let _ = tokio::fs::remove_file(&staging).await;
+    let _ = tokio::fs::remove_file(&content_path).await;
 
     let output = test_path("storage-hash-limits.bin");
-    let staging = staging_path(&output).expect("hash staging path");
+    let content_path = output.clone();
     let mut storage = single_file_content_storage(
         output.clone(),
         (CONTENT_STORAGE_HASH_CONCURRENCY + 1) * block_length,
@@ -717,14 +717,14 @@ async fn storage_executor_enforces_independent_write_and_hash_limits() {
     assert_eq!(finished.storage_hash_operations_active, 0);
     assert_eq!(finished.storage_hash_operations_started, 4);
     assert_eq!(finished.storage_hash_operations_completed, 4);
-    let _ = tokio::fs::remove_file(&staging).await;
+    let _ = tokio::fs::remove_file(&content_path).await;
 }
 
 #[tokio::test]
 async fn storage_executor_overlaps_classes_and_survives_full_completion_queue() {
     let block_length = MIN_PAYLOAD_ALLOWANCE;
     let output = test_path("storage-cross-class.bin");
-    let staging = staging_path(&output).expect("cross-class staging path");
+    let content_path = output.clone();
     let mut storage =
         single_file_content_storage(output.clone(), 2 * block_length, block_length).await;
     storage
@@ -788,10 +788,10 @@ async fn storage_executor_overlaps_classes_and_survives_full_completion_queue() 
         .expect("cross-class cancellation joined")
         .expect("cross-class storage returned");
     drop(storage);
-    let _ = tokio::fs::remove_file(&staging).await;
+    let _ = tokio::fs::remove_file(&content_path).await;
 
     let output = test_path("storage-full-completion.bin");
-    let staging = staging_path(&output).expect("completion staging path");
+    let content_path = output.clone();
     let mut storage =
         single_file_content_storage(output.clone(), 2 * block_length, block_length).await;
     for piece in 0..2 {
@@ -841,7 +841,7 @@ async fn storage_executor_overlaps_classes_and_survives_full_completion_queue() 
     assert_eq!(finished.storage_hash_operations_started, 2);
     assert_eq!(finished.storage_hash_operations_completed, 2);
     assert_eq!(finished.storage_hash_operations_active, 0);
-    let _ = tokio::fs::remove_file(&staging).await;
+    let _ = tokio::fs::remove_file(&content_path).await;
 }
 
 #[tokio::test]
@@ -1037,7 +1037,7 @@ async fn storage_pressure_cannot_starve_dht_intake_or_dial_refill() {
     let report = result.expect("storage-pressure download");
     assert_eq!(report.verified_piece_count, 1);
     assert_eq!(
-        tokio::fs::read(&output).await.expect("published output"),
+        tokio::fs::read(&output).await.expect("direct output"),
         payload
     );
     let progress = control.snapshot();
