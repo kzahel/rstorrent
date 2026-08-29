@@ -4,22 +4,24 @@ Topic: `remote-access-authentication`
 
 Status: Direction and investigation background accepted from maintainer
 discussion on 2026-08-04. Tactical
-[`190`](../tactical/190-opaque-wasm-relay-foundation.md) was accepted on
-2026-08-29 and is now **Active**. It selects an account-free OPAQUE login
-through one native/Wasm Rust core and a controlled dumb-relay proof. Its exact
-dependency/audit and encrypted-record pre-code gate is closed, but it does not
-authorize a production listener, public relay, durable owner authority or
-stable remote wire contract. Completed Tactical `174` separately permits one
+[`190`](../tactical/190-opaque-wasm-relay-foundation.md) completed on
+2026-08-29. Its account-free OPAQUE login, one native/Wasm Rust core, bounded
+dumb relay and unchanged application trace pass as a controlled local proof.
+It does not authorize a production listener, public relay, durable owner
+authority or stable remote wire contract. Decision-ready Tactical
+[`192`](../tactical/192-production-owner-relay-access.md) owns that next
+boundary. Completed Tactical `174` separately permits one
 trusted Tailscale operator deployment; tailnet admission is not the owner
 authentication designed here.
 
-The pure OPAQUE/record core and separate Wasm client binding now pass their
-native tests and real-headless-Chrome equivalence gate. Browser Web Crypto
-entropy, consuming state handles, first/repeated host pinning, changed-pin
-blocking and bidirectional records have been exercised against a native Rust
-oracle. The complete Argon2id matrix and exact bundle/memory results live in
-Tactical `190`; relay routing and real application-frame composition remain
-in progress, so no supported remote-access capability exists yet.
+The pure OPAQUE/record core and separate Wasm client binding pass native tests,
+the upstream RFC-vector suite and real-headless-Chrome equivalence. The local
+relay/host proof carries the real React negotiation, reducer snapshot/update,
+acknowledgement and benign call identically to the direct adapter. Changed
+pin, wrong password, unknown route and modified handshake cases fail, while
+joined shutdown leaves zero circuits and pumps. The complete Argon2id,
+bundle, message and owner high-water results live in Tactical `190`. No
+supported remote-access capability exists yet.
 
 ## Purpose And Scope
 
@@ -223,22 +225,24 @@ proof. The selected libraries are now bounded workspace dependencies for that
 controlled proof only; they are not a production listener, durable wire
 contract or support claim.
 
-One runtime-independent Rust core will own OPAQUE, transcript binding and the
+One runtime-independent Rust core now owns OPAQUE, transcript binding and the
 encrypted record state natively on the host and through Wasm in the browser.
 WebCrypto remains the browser CSPRNG and future non-extractable-device-key seam,
 not a second cryptographic protocol implementation. The product presents a
 username/passphrase model while keeping its relay-scoped routing name, random
 host ID, OPAQUE host setup and relay registration credential distinct.
 
-The proof uses a portable-profile host-key tier and requires a complete
-password login after every disconnect. Account delegation, Google/OIDC login,
-cloud sync, remembered devices, resumption and hardware-backed host keys remain
+The completed proof uses a portable-profile host-key tier and requires a
+complete password login after every disconnect. Account delegation,
+Google/OIDC login, cloud sync, remembered devices, resumption and
+hardware-backed host keys remain
 separate later decisions. Tactical `190` has closed the source-first dependency
 gate and fixed RFC 9807 Ristretto255/SHA-512/3DH, Argon2id 64 MiB/three
 passes/parallelism one, HKDF-SHA-512 and directional ChaCha20-Poly1305 records.
 Its real Chrome matrix keeps that KSF point within the controlled proof bounds.
-Public-relay, low-end-device and durable-authority decisions remain explicitly
-unmade.
+Public-relay, representative low-end-device and durable-authority evidence
+remain explicitly outside that proof; Tactical `192` fixes their production
+decision boundary without activating it.
 
 ## SRP And OPAQUE Background
 
@@ -617,20 +621,21 @@ production/device tactical rather than being implied by the proof.
 
 ## Recommended Next Work
 
-Do not add a production remote listener or cryptographic dependency from this
-topic alone. When its implementation is explicitly user-directed, accepted
+Do not add a production remote listener from this topic alone. Completed
 Tactical
 [`190`](../tactical/190-opaque-wasm-relay-foundation.md) owns the controlled
-native-host/browser-Wasm OPAQUE proof, bounded dumb relay, hostile-input and
-clone matrix, resource measurements and exact existing-application trace. It
-must finish by selecting the complete construction and producing a separate
-decision-ready production tactical; it must not expose the proof publicly.
+native-host/browser-Wasm construction and evidence record; its proof binary is
+not a product mode.
 
-That later production tactical owns durable application-private authority,
-enable/disable/change/recovery UX, supported host platforms, independently
-delivered client assets and public-relay operational evidence. Remembered
-devices and account delegation remain separate decisions even after the
-password path succeeds.
+Decision-ready Tactical
+[`192`](../tactical/192-production-owner-relay-access.md) is the next bounded
+slice. It owns durable application-private authority, local
+enable/disable/change/recovery UX, desktop and configured-headless host
+lifecycle, an independently delivered remote-only browser capability profile,
+challenge-bound public-relay operation and representative external evidence.
+It requires explicit activation and separate authority before any public
+deployment. Remembered devices and account delegation remain separate
+decisions even after the password path succeeds.
 
 Friend sharing, fragment-held capability links, offline encrypted snapshots,
 UPnP/NAT traversal, wake-up delivery, public accounts and multi-user

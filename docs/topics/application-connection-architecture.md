@@ -9,11 +9,14 @@ bounded `/api/v1/connect` WebSocket. HTTP long polling remains an explicit
 loopback diagnostic adapter, and acknowledged per-view-set Tauri Channel
 delivery shares the extracted Rust acknowledgement core without opening a
 socket. The legacy `/control` route, frames, direct-DOM frontend and superseded
-tests are deleted. Accepted later Tactical
-[`190`](../tactical/190-opaque-wasm-relay-foundation.md) will prove that relay
-delivery wraps these application frames in an OPAQUE-authenticated encrypted
-circuit rather than creating another application API; it has not started and
-does not authorize production remote access. Tactical `076` adds one
+tests are deleted. Completed Tactical
+[`190`](../tactical/190-opaque-wasm-relay-foundation.md) proves that local relay
+delivery wraps these exact application frames in an OPAQUE-authenticated
+encrypted circuit rather than creating another application API. Its native
+host, Wasm/browser transport and dumb relay are opt-in proof infrastructure,
+not production remote access; decision-ready Tactical
+[`192`](../tactical/192-production-owner-relay-access.md) owns that next
+boundary. Tactical `076` adds one
 deliberately limited maintainer-operated private host: bounded Basic
 authentication covers static, health, HTTP, and WebSocket routes; the gateway
 still enforces the exact public HTTPS Origin; and the production React build
@@ -522,11 +525,14 @@ typed application frame
   -> WebSocket/TLS transport
 ```
 
-Accepted Tactical `190` selects account-free OPAQUE, one native/Wasm Rust core,
-a portable-profile host key, a full password login per connection and no
-compression for its controlled proof. Its pre-code gate must still close the
-exact Argon2id and encrypted-record construction. Pairing, remembered devices,
-key rotation, padding, resumption and relay discovery remain later decisions.
+Completed Tactical `190` selects and proves account-free OPAQUE, one
+native/Wasm Rust core, a portable-profile host key, a full password login per
+connection, directional ChaCha20-Poly1305 records and no compression. Its
+direct and relayed React traces produce the same negotiation, three normalized
+reducer states, view update/acknowledgement and benign command result. The
+relay records routing/message metrics but has no OPAQUE or application
+dependency. Pairing, remembered devices, key rotation, padding, resumption and
+relay discovery remain later decisions.
 The investigation background and evidence gates live in
 [`remote-access-authentication.md`](remote-access-authentication.md). The
 application connection must not need to know whether an encrypted record

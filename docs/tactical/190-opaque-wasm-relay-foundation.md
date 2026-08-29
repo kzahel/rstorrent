@@ -1,7 +1,10 @@
 # Tactical 190: OPAQUE WebAssembly Relay Foundation
 
-Status: **Active as of 2026-08-29 by explicit user direction.** The
-cryptographic pre-code gate below is closed and implementation may proceed.
+Status: **Complete as of 2026-08-29.** The controlled native-host/browser-Wasm
+OPAQUE proof, bounded dumb relay, exact application trace and adversarial
+runtime gates pass. Decision-ready production Tactical
+[`192`](192-production-owner-relay-access.md) owns the next boundary; this
+proof remains local-only and unsupported.
 Desktop signed package and updater Tactical
 [`158`](158-desktop-signed-packaging-and-updater.md) remains independently
 active under the concurrent-work policy.
@@ -371,8 +374,10 @@ resolved normal dependency tree matches the selected graph. `cargo audit`
 finds no vulnerability; it reports 18 allowed workspace warnings, all either
 pre-existing unmaintained/unsound GTK and Unicode-chain notices or a yanked
 unrelated `chacha20` `0.10.1`, while this crate resolves `chacha20` `0.9.1`.
-Browser/Wasm, RFC-vector composition and relay evidence remain open in their
-declared later steps.
+At this intermediate slice, browser/Wasm and relay evidence remained for the
+later steps recorded below. RFC 9807 primitive-vector coverage is supplied by
+the exact passing upstream `opaque-ke` suite; RSTorrent's independently
+authored deterministic fixtures cover its custom binding, KSF and records.
 
 ### Wasm and controlled-browser evidence (2026-08-29)
 
@@ -421,9 +426,68 @@ The passing commands were the reusable browser runner above,
 `cargo clippy -p rstorrent-remote-crypto -p rstorrent-remote-wasm
 --all-targets --features rstorrent-remote-wasm/ksf-bench -- -D warnings`,
 the two crate test suites, `npm run typecheck --prefix clients/web`, and the
-focused entropy-adapter Vitest. Relay and application-composition evidence
-remain open; this browser result does not make the proof a supported remote
-client.
+focused entropy-adapter Vitest. At this intermediate slice, relay and
+application-composition evidence remained for the subsequent proof below; the
+browser result alone did not make a supported remote client.
+
+### Relay and application-composition evidence (2026-08-29)
+
+The third slice adds `rstorrent-remote-relay`, a local-only Axum/WebSocket
+library with no crypto or application dependency and no installed server. It
+owns at most 1,024 in-memory routes, one waiting host and active circuit per
+route, an exact 256-circuit semaphore, 30-second waiting timeout, 20-second
+pre-auth reads, 24-hour paired lifetime, one message plus one write in flight
+per pump, generation-fenced host replacement and joined cancellation. Route
+credentials are distinct zeroizing 32-byte values and compared in constant
+time. Unknown, offline and busy clients share the same close. Relay forwarding
+accepts only bounded binary/control WebSocket messages and records only counts,
+bytes and high-water marks.
+
+The fourth slice adds the thin React `ApplicationWebSocket` implementation and
+an opt-in `rstorrent-remote-proof` native adapter. The browser does not expose
+the application socket as open until relay pairing, OPAQUE login and an
+authenticated encrypted host-ready record complete. It then maps only UTF-8
+JSON application frames to the Wasm record session. Both browser and native
+adapter reject `.torrent` binary upload and `create_media_url`; the native host
+opens the existing loopback application WebSocket rather than creating another
+semantic API. Proof authority, password file and route credential stay in
+memory, every host circuit reconnects through the fenced route, and joined
+shutdown removes the ephemeral application root.
+
+`node scripts/verify-remote-relay.mjs` builds the ordinary Wasm artifact and
+proof host, serves a dedicated Vite proof page plus the Wasm module from
+temporary loopback origins, launches real headless Chrome, and deletes the
+exact temporary root. One generated passphrase provisions the native host;
+the existing `WebSocketApplicationViewClient` and `ViewController` then run the
+same direct and relayed trace. Negotiation, initial torrent-list snapshot,
+view-set replacement, streamed update, exact acknowledgement and benign
+`Snapshot` dispatch produce three semantically equal normalized reducer states
+and equal command results. A repeated pinned login succeeds. Changed pin,
+wrong passphrase, unknown route and one actively modified OPAQUE response fail
+with the declared blocking/generic distinctions.
+
+The controlled run used Chrome `150.0.7871.114` on Linux
+`7.0.0-30-generic` x86-64, AMD Ryzen AI 9 365, 20 logical CPUs and
+24,251,789,312 bytes of memory. The production Wasm/JavaScript artifacts remain
+286,175/17,083 bytes. Six paired circuits completed. Host high water was one
+active circuit; it observed one registration, five login attempts, two
+authenticated logins, ten client and ten server application frames, two exact
+acknowledgements, two view batches and four call results. Three hostile/failed
+circuits left no authenticated application owner. Relay high water was one
+active circuit, two pumps and a 3,161-byte message; it forwarded 26/2,454
+client messages/bytes and 20/13,910 host messages/bytes. Final host circuits,
+relay circuits and pumps were all zero. The relay retains no payload or
+application-frame capture.
+
+Focused relay tests additionally cover correct forwarding, wrong claim
+credential, same-credential generation replacement, identical
+unknown/offline/busy failure, oversized pre-auth and plaintext rejection, and
+shutdown of idle pre-auth plus waiting-host work. The core adversarial matrix
+covers message/identifier/relay substitution, wrong and fake records, record
+tamper, duplicate/skipped sequence, direction reflection, truncation and
+post-close input. The clone fixtures distinguish password-file-only,
+authority-only and complete portable-authority possession; a complete portable
+copy remains an acknowledged perfect clone.
 
 ## Owner, Task, Cancellation, And Dependency Map
 
@@ -482,6 +546,14 @@ not inspect the relay route or password.
 | Forward queues | one admitted message plus one write in flight per direction |
 | Invalid pre-auth messages | 3, then generic close |
 | Record lifetime | at most 24 hours or `2^32` records per direction, whichever comes first |
+
+The proof conservatively admits only the single route circuit through
+authentication, so the wider two-per-route/eight-per-host unauthenticated
+ceilings are never reached. It also closes on the first invalid pre-auth
+message rather than retaining two additional attacker-controlled failures.
+These are tightenings, not increased product claims. The 256 aggregate circuit
+bound is reserved by semaphore before pairing rather than inferred from a
+metric race.
 
 The KSF evaluation must compare Argon2id candidates from 32 through 128 MiB,
 one through four passes and parallelism one. The final choice stays within
@@ -588,6 +660,42 @@ npm run build --prefix clients/web
 
 The implementing record must add exact Wasm/browser and controlled relay
 commands once their harness names exist and report exactly what ran.
+
+### Completion validation (2026-08-29)
+
+The final repository pass ran the baseline above exactly. Rust formatting and
+workspace Clippy passed; after adding the exact relay-capacity assertions,
+focused all-target relay Clippy also passed. `cargo test --workspace` passed
+with no failures, including 17 remote-crypto tests and nine relay
+unit/integration tests. Web TypeScript checking passed; Vitest passed 343 tests
+with two skipped; the production Vite build and CSP inspection passed with ten
+JavaScript bundles containing no evaluated code or CommonJS `require`.
+
+The exact additional commands were:
+
+```bash
+source ~/.profile
+node scripts/verify-remote-wasm.mjs
+node scripts/verify-remote-relay.mjs
+```
+
+The final Wasm runner again passed deterministic native/browser equivalence,
+browser entropy failure, consuming handles, first/repeated/mismatched host pin
+and the complete 32--128 MiB by one--four-pass KSF matrix. The selected
+64-MiB/three-pass point took 139.8 ms in that final run; the worst candidate
+took 369.4 ms and 135,462,912 bytes of Wasm linear memory. The production
+artifact remained 286,175 bytes of Wasm plus 17,083 bytes of JavaScript.
+
+The final relay runner exited successfully after its own joined cleanup. It
+reproduced the exact direct/relayed three-state trace and every pin/password/
+route/modification result above, finished with zero host circuits, relay
+circuits and pumps, removed its temporary root and left no proof host or Vite
+process. Exact unit assertions additionally exercise route admission at 1,023
+and 1,024 names, acquire all 256 global circuit permits, reject the next
+admission, preserve an existing route at the name ceiling and recover every
+permit after release.
+`git diff --check` passed. No public endpoint, external service, mobile surface
+or persistent user state was created.
 
 ## Non-Goals And Next Boundary
 

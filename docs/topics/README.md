@@ -107,7 +107,8 @@ Topics own the current truth for a continuing concern. Tactical docs under
   generated TypeScript/schema, and provisional remote routes.
 - [`application-connection-architecture.md`](application-connection-architecture.md):
   one typed application API over HTTP, multiplexed WebSocket and Tauri IPC,
-  resumable view attachments, and future opaque encrypted relay layering.
+  resumable view attachments, and the proven controlled opaque encrypted relay
+  layering beneath the unchanged frame contract.
 - [`http-file-serving-and-streaming.md`](http-file-serving-and-streaming.md):
   capability-authorized HTTP reads of verified torrent files, ephemeral
   loopback and existing-gateway port policy, and the separate future
@@ -115,7 +116,8 @@ Topics own the current truth for a continuing concern. Tactical docs under
 - [`remote-access-authentication.md`](remote-access-authentication.md):
   owner username/passphrase E2E access, SRP and OPAQUE background, host and
   device identity, hardware-backed degradation, clone and active-proxy threat
-  scenarios, and pre-implementation security research gates.
+  scenarios, the completed controlled proof, and the production authority/
+  relay boundary.
 - [`client-view-delivery-policy.md`](client-view-delivery-policy.md):
   client-selected real-time, balanced, low-bandwidth and background view
   cadence, lifecycle policy, observer cost, and required evidence.

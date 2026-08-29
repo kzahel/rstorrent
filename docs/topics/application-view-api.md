@@ -10,6 +10,14 @@ checking, root health, verified-range, wanted-completion, seeding, and repair
 facts become the sole authority. The current generated contract history below
 remains implemented until that tactical lands.
 
+Completed remote-foundation Tactical
+[`190`](../tactical/190-opaque-wasm-relay-foundation.md) changes no view DTO,
+cursor, acknowledgement or reducer rule. Its controlled encrypted relay trace
+uses the existing application WebSocket client and `ViewController`; direct
+and relayed negotiation, initial snapshot, view replacement/update, exact
+acknowledgement and benign command reduce identically across three observed
+states. Bulk attachment and media breadth remain outside that proof.
+
 Completed Tactical
 [`143`](../tactical/143-dual-identity-and-persistence-foundation.md) changes
 every torrent route and view key to canonical opaque `TorrentId` and adds a
@@ -1418,6 +1426,9 @@ interactive machine.
 7. Tacticals `183`--`186` measure and repair interleaved coalescing, repeated
    complete hot rows, and overloaded session-rate history. Continue measuring
    decode/reduce cost, rendering, and memory before selecting binary encoding.
+8. Tactical `190` proves the same generated contract and reducer over an
+   OPAQUE-authenticated encrypted relay record without adding a remote view
+   variant. This step is complete; Tactical `192` owns production delivery.
 
 Tacticals `033`, `034`, `035`, `048`, `060`, and `065` completed the first six
 steps. Further views should follow observed inspection value. Binary encoding

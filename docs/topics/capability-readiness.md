@@ -833,10 +833,6 @@ exactly.
 
 ### Active
 
-- Execute **Tactical `190`** through its controlled native-host/browser-Wasm
-  OPAQUE proof, bounded dumb relay, exact application trace and adversarial
-  resource evidence. It does not authorize public relay deployment or
-  production owner authority.
 - Resume **Tactical `158`** and close the clean Windows and Linux x86_64
   signed replacement/relaunch evidence plus Windows firewall-consent
   characterization. Prove clean launch or bounded reset and payload safety,
@@ -844,6 +840,11 @@ exactly.
 
 ### Ready
 
+- Execute **Tactical `192`** to turn the passing ephemeral OPAQUE/relay proof
+  into one supported desktop/configured-headless owner-password path with
+  durable authority, explicit lifecycle/recovery UX, independently delivered
+  browser assets and separately authorized public-relay evidence. Accounts,
+  remembered devices and remote media remain excluded.
 - Execute **Tactical `191`** to replace hidden staging and managed publication
   with direct libtorrent-shaped final-path storage, existing-data recheck, a
   selective-boundary-only part file, plain exact data deletion, and one
@@ -897,12 +898,13 @@ Seeding goals and automatic network policy,
 multi-interface and BEP 45 multi-address binding,
 local service discovery,
 NAT traversal, dynamic VPN and metered-network controls, and production
-remote access remain
-important. Accepted Tactical
-[`190`](../tactical/190-opaque-wasm-relay-foundation.md) now actively owns a
-controlled OPAQUE native/Wasm dumb-relay proof without public exposure,
-durable authority, remembered devices or account delegation; it proceeds
-independently from Tactical `158`. Tactical
+remote access remain important. Completed Tactical
+[`190`](../tactical/190-opaque-wasm-relay-foundation.md) proves the controlled
+OPAQUE native/Wasm dumb-relay composition without public exposure, durable
+authority, remembered devices or account delegation. Ready Tactical
+[`192`](../tactical/192-production-owner-relay-access.md) owns the narrower
+production password path and proceeds independently from Tactical `158`.
+Tactical
 `112` now owns IPv6 DHT operation and dual-stack
 listening. Closed Tactical `113` implements IPv6 firewall-pinhole control but
 records positive physical capability as unknown on the current hardware after
@@ -1036,6 +1038,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Active-work sleep inhibition | Implemented | deterministic, web, desktop, Android build, physical | Completed Tactical `165` adds one default-on desktop/Android preference driven by authoritative `Starting`, `Downloading`, and `Checking` states. macOS/Windows use exact `keepawake` 0.6.1; GNOME uses its suspend inhibitor and other Linux sessions use a bounded XDG portal fallback. Android retains one partial CPU wake lock and removes its Wi-Fi lock. Installed macOS arm64, Windows arm64, Linux arm64, native Windows x86_64, and physical Android API 37 prove held, minimized/screen-off, preference, pause/restart, Start, and cleanup transitions without display inhibition. Physical iOS retains finite-background behavior and exposes no false keep-awake control. The unsigned native x86_64 preflight leaves package trust and the integrated signed update repeat to Tactical `158`. | [`client-surfaces`](client-surfaces.md), [`beta-release-readiness`](beta-release-readiness.md) |
 | Authenticated private web host | Implemented | deterministic, runtime, web, live | One explicitly configured maintainer host serves the production React bundle and multiplexed application WebSocket behind bounded Basic authentication and exact HTTPS Origin checks. Exact-push isolated build, candidate smoke, supervised restart, authenticated private-listener/public verification, and rollback-on-failure pass; this is not a relay, account, pairing, encryption, or stable public compatibility claim. | [`application-connection-architecture`](application-connection-architecture.md), [`client-surfaces`](client-surfaces.md) |
 | Local headless web authentication | Implemented | deterministic, runtime, web | Fresh loopback profiles have a communicated ten-minute setup choice between local-open and at most 32 rolling remembered-browser sessions. Four-digit one-use approval, five-attempt exhaustion, HttpOnly Strict cookies, exact Host/Origin checks, Settings revocation, typed live-socket termination, restart persistence, and explicit one-browser recovery pass. This is not password, LAN, relay, device-identity, or E2E remote authentication. | [`application-connection-architecture`](application-connection-architecture.md), [`web-ui-design`](web-ui-design.md), [`remote-access-authentication`](remote-access-authentication.md) |
+| Controlled owner-password relay foundation | Proven, not a product capability | deterministic, runtime, web, real browser | Tactical `190` selects RFC 9807 OPAQUE Ristretto255/SHA-512/3DH, measured Argon2id, one native/Wasm record core, blocking host pin, bounded local dumb relay and proof-only native host. Real Chrome provisions and runs the existing React negotiation/snapshot/view update/ack/benign-call trace identically to direct delivery; pin, password, unknown-route and modified-handshake failures plus zero-owner cleanup pass. Authority is ephemeral, the relay is local/unoperated, bulk/media are rejected, and no product mode is enabled. Tactical `192` owns production authority/delivery/operations. | [`remote-access-authentication`](remote-access-authentication.md), [`application-connection-architecture`](application-connection-architecture.md), [`190`](../tactical/190-opaque-wasm-relay-foundation.md) |
 | Android Compose foreground client | Implemented | deterministic, runtime, Android build, AVD, physical | The maintained Material 3 product provides the JSTorrent-shaped Library, six-tab torrent detail, Speed, dual-family DHT, structured Logs, and Settings hierarchy with RSTorrent branding. One service-scoped owner consumes every Android-relevant bounded projection; magnet and `.torrent` intake, SAF setup/repair, High/Normal/Skip file priority/open, torrent and queue actions, backed settings including session/per-torrent transfer limits and active-work sleep inhibition, activity/process recovery, and controlled concurrent downloads pass. Search/plugins, playback, tracker mutation, and dynamic network policy remain explicitly unavailable; Tactical `117` makes no new physical-device UI claim. | [`client-surfaces`](client-surfaces.md) |
 | iOS native client | Implemented | deterministic, runtime, interop, simulator, physical, live | The maintained iOS 16+ SwiftUI product runs the application service in-process through generated Swift UniFFI. App Documents and qualified on-device selected roots support controlled single- and multifile transfer, exact-target coordinated descriptors, publication, restart/Force recheck, complete-file handoff, and managed cleanup. Progress reserves 100%/Finished for Complete/Published. The exact three-file Big Buck Bunny public magnet completed 1,055/1,055 pieces and 276,445,467 bytes, published, and opened in one tap through Apple Quick Look; native video playback advanced before exact cleanup. The directly adapted JSTorrent surface, lifecycle, intake, phone/iPad layouts, and archives remain implemented. iCloud/identified providers, indefinite background work, embedded/progressive playback, migration, and public distribution remain absent. | [`product-direction`](product-direction.md), [`client-surfaces`](client-surfaces.md), [`download-roots`](download-roots.md) |
 | Derived progress, torrent ETA, and bounded diagnostics | Implemented | deterministic, runtime, interop, web, AVD | Progress remains an application projection. Selection-aware torrent ETA adds exact required/remaining non-padding peer work, a 184-byte scalar model, one shared cadence, and typed warming/estimate/stalled/unavailable presentation. Exact complete torrent size now derives from verified content geometry and renders across the shared web destinations; file ETA and the broader Size/Progress repair remain absent. Structured hierarchical diagnostics, typed context, capture interest, explicit source/delivery/local loss, and the global ordered console are complete. | [`application-control`](application-control.md), [`application-view-api`](application-view-api.md), [`download-correctness`](download-correctness.md) |

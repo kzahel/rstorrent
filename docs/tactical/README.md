@@ -93,14 +93,20 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`192-production-owner-relay-access.md`](192-production-owner-relay-access.md):
+  ready; turns the passing ephemeral OPAQUE/Wasm/dumb-relay proof into one
+  supported desktop/configured-headless username/passphrase path with durable
+  authority, explicit recovery lifecycle, independently delivered browser
+  assets, and separately authorized public-relay operations/evidence.
 - [`191-direct-filesystem-storage.md`](191-direct-filesystem-storage.md):
   ready; removes hidden staging and publication machinery across storage,
   persistence, platform adapters, generated contracts, and UI, making direct
   libtorrent-shaped final paths the sole ordinary payload model.
 - [`190-opaque-wasm-relay-foundation.md`](190-opaque-wasm-relay-foundation.md):
-  active; implements an account-free username/passphrase OPAQUE proof through
-  one native/Wasm Rust core and a bounded dumb relay without authorizing
-  production remote access.
+  complete; proves an account-free username/passphrase OPAQUE flow through one
+  native/Wasm Rust core and bounded dumb relay, carries the unchanged React
+  application trace, rejects active/password/pin failures, records resource
+  high waters, and authorizes no production remote access.
 - [`189-library-playback-and-torrent-size.md`](189-library-playback-and-torrent-size.md):
   complete; connects eligible Library Media Play controls to the existing
   ephemeral browser/Tauri media capability and carries exact torrent total
