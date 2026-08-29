@@ -76,6 +76,34 @@ The former direct-DOM proof has been retired. Android presentation is named
 explicitly as the **Android**, **Compose**, or **Android UI**; the Astro
 `website/` is the project website rather than a product client.
 
+## Standalone Downloader
+
+Source builds include `rstorrent-download`, a finite foreground downloader
+for one magnet URI or local `.torrent` file:
+
+```bash
+cargo build --locked --release -p rstorrent-session --bin rstorrent-download
+target/release/rstorrent-download --output /path/to/downloads \
+  'magnet:?xt=urn:btih:...'
+target/release/rstorrent-download --output /path/to/downloads file.torrent
+```
+
+The output directory defaults to the current directory. Wanted bytes are
+written directly to their final metainfo paths, so incomplete files can be
+visible while the command runs; there is no publish or move step at the end.
+Every non-padding file is selected unless a magnet contains a BEP 53 `so`
+selection, in which case the same strict selection used by the product clients
+is preserved.
+
+The command uses the ordinary application service with private in-memory
+SQLite state. It creates no profile or resume database, exits without seeding,
+and conservatively checks existing payload again on a later invocation. A
+same-user cooperative lock prevents two `rstorrent-download` processes from
+using the same canonical output directory, but other clients do not
+participate in that lock and must not write there concurrently. This binary is
+currently a source-build capability; packaging and a stable machine-readable
+CLI are not included.
+
 ## Intended Product And Deployment
 
 **RSTorrent** is the public product identity for the foreseeable release line,

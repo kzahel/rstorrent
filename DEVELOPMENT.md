@@ -40,6 +40,44 @@ testbed repositories for ordinary cross-platform acceptance. Direct provider
 access is reserved for a recovery procedure explicitly documented by
 machine-control.
 
+## Standalone Foreground Downloader
+
+Build and run the finite stateless downloader with:
+
+```bash
+source ~/.profile
+cargo build --locked --release -p rstorrent-session --bin rstorrent-download
+target/release/rstorrent-download --output /path/to/downloads \
+  'magnet:?xt=urn:btih:...'
+target/release/rstorrent-download --output /path/to/downloads file.torrent
+```
+
+Omit `--output` to use the current directory. The process composes one online
+ephemeral `ApplicationService`, including its bounded in-memory session and
+metrics SQLite databases, and shuts that owner down after verified completion.
+It writes wanted bytes directly at final paths, selects all non-padding files
+unless the magnet supplies BEP 53 `so`, creates no durable profile state, and
+does not seed after exit. A later run rechecks payload rather than restoring a
+resume database.
+
+Exit `0` means verified selected completion; `2` is argument or local-source
+classification failure; `3` is cooperative output-root lock contention; `4`
+is rejected magnet/metainfo/application input; and `5` is terminal runtime,
+network, storage, or engine failure. Ctrl-C exits `130`, and Unix `SIGTERM`
+exits `143`, after joined cleanup. The root lock coordinates only same-user
+`rstorrent-download` processes, so do not use the target concurrently from
+another torrent client.
+
+Run the controlled pinned-libtorrent lifecycle, selection, recheck, crash,
+locking, permission, and artifact-cleanliness matrix with:
+
+```bash
+source ~/.profile
+cargo build --locked --release -p rstorrent-session --bin rstorrent-download
+uv run --project tests/interop --locked \
+  python tests/interop/stateless_foreground_download.py
+```
+
 ## Current Tactical State
 
 Multiple independent tacticals may be active concurrently; this section is a
