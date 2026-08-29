@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { createHash } from "node:crypto";
 import path from "node:path";
 
 import AxeBuilder from "@axe-core/playwright";
@@ -22,6 +23,9 @@ const transportBenchmark =
 const benchmarkTransport = process.env.RSTORRENT_LIVE_TRANSPORT;
 const expectFileSelection = process.env.RSTORRENT_LIVE_FILE_SELECTION === "1";
 const expectMediaLibrary = process.env.RSTORRENT_LIVE_MEDIA_LIBRARY === "1";
+const mediaPaths = process.env.RSTORRENT_LIVE_MEDIA_PATHS;
+const mediaPayloadSha1 = process.env.RSTORRENT_LIVE_MEDIA_PAYLOAD_SHA1;
+const mediaFileSha1s = process.env.RSTORRENT_LIVE_MEDIA_FILE_SHA1S;
 const torrentFile = process.env.RSTORRENT_LIVE_TORRENT_FILE;
 const expectTorrentFilePicker =
   process.env.RSTORRENT_LIVE_TORRENT_FILE_PICKER === "1";
@@ -773,7 +777,11 @@ test("live Library media detail follows metadata through completion", async ({
       magnet === undefined ||
       torrentId === undefined ||
       torrentName === undefined ||
-      fileCount === undefined,
+      fileCount === undefined ||
+      storagePath === undefined ||
+      mediaPaths === undefined ||
+      mediaPayloadSha1 === undefined ||
+      mediaFileSha1s === undefined,
     "controlled live media Library is opt-in",
   );
   const detailRequests: string[] = [];
@@ -825,13 +833,40 @@ test("live Library media detail follows metadata through completion", async ({
   await page.setViewportSize({ width: 1_440, height: 900 });
   await page.goto(liveUrl());
   const primary = page.getByRole("navigation", { name: "Primary" });
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await settings.getByRole("tab", { name: "Connection & seeding" }).click();
+  await settings
+    .getByRole("checkbox", { name: "All torrents download limit unlimited" })
+    .uncheck();
+  await settings
+    .getByRole("spinbutton", {
+      name: "All torrents download limit in KiB per second",
+    })
+    .fill("32");
+  await settings.getByRole("button", { name: "Save settings" }).click();
+  await expect(
+    settings.getByText("Settings accepted and applying."),
+  ).toBeVisible();
+  await expect(settings.getByLabel("Current runtime state")).toContainText(
+    "Effective peer download limit: 32 KiB/s.",
+  );
+  await settings.getByRole("button", { name: "Close settings" }).click();
   const addForm = page.getByRole("form", { name: "Add torrent" });
   const input = addForm.getByRole("textbox", {
     name: "Magnet link or torrent URL",
   });
   await input.fill(magnet!);
   await input.press("Enter");
-  await confirmDefaultAddOptions(page);
+  const addDialog = page.getByRole("dialog", {
+    name: "Choose download options",
+  });
+  await addDialog
+    .getByRole("checkbox", {
+      name: /Start downloading files when metadata is available/,
+    })
+    .uncheck();
+  await addDialog.getByRole("button", { name: "Add torrent" }).click();
   await expect(
     page.getByRole("region", { name: "Transfers" }).getByRole("status"),
   ).toHaveText("Added");
@@ -864,13 +899,72 @@ test("live Library media detail follows metadata through completion", async ({
   await expect(media.getByText("poster.jpg")).toHaveCount(0);
   await expect(media.getByText("README.nfo")).toHaveCount(0);
   await expect.poll(() => detailRequests.at(-1)).toBe("media");
+
+  await page.getByRole("button", { name: "Back to Library" }).click();
+  await primary.getByRole("button", { name: "Workbench" }).click();
+  const torrentRow = page
+    .getByRole("grid", { name: "Torrent library" })
+    .getByRole("row")
+    .filter({ hasText: torrentName! });
+  await torrentRow.click();
+  await page.getByRole("tab", { name: "Files" }).click();
+  const fileGrid = page.getByRole("grid", { name: "Torrent files" });
+  const firstDirectFile = fileGrid
+    .getByRole("row")
+    .filter({ hasText: "North.Shore.Stories.S01E10.1080p.WEB-DL.mkv" });
+  await firstDirectFile.click();
+  await page.getByRole("button", { name: "More file actions" }).click();
+  await page
+    .getByRole("menu", { name: "More file actions" })
+    .getByRole("menuitem", { name: "High", exact: true })
+    .click();
+  await expect(firstDirectFile.getByText("High", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Start", exact: true }).click();
+  await primary.getByRole("button", { name: "Library" }).click();
+  await card.click();
+  await expect(media).toBeVisible();
+  const storage = path.resolve(storagePath!);
+  const directRoot = path.join(storage, torrentName!);
+  const expectedFileSha1 = JSON.parse(mediaFileSha1s!) as Record<string, string>;
+  const prioritizedPath =
+    "Season 01/North.Shore.Stories.S01E10.1080p.WEB-DL.mkv";
   await expect
-    .poll(
-      async () =>
-        media.getByText("Downloaded", { exact: true }).count(),
-      { timeout: 5_000 },
-    )
-    .toBeLessThan(6);
+    .poll(async () => fileSha1(path.join(directRoot, prioritizedPath)), {
+      timeout: 50_000,
+    })
+    .toBe(expectedFileSha1[prioritizedPath]);
+  const incompletePaths = await Promise.all(
+    (JSON.parse(mediaPaths!) as string[])
+      .filter((relative) => relative !== prioritizedPath)
+      .map(async (relative) =>
+        (await fileSha1(path.join(directRoot, relative))) !==
+        expectedFileSha1[relative]
+          ? relative
+          : null,
+      ),
+  );
+  expect(incompletePaths.some((relative) => relative !== null)).toBe(true);
+  const availableRow = media
+    .getByRole("listitem")
+    .filter({ hasText: "North.Shore.Stories.S01E10.1080p.WEB-DL.mkv" });
+  const play = availableRow.getByRole("button", { name: /^Play / });
+  await expect(play).toBeEnabled();
+  const popupPromise = page.context().waitForEvent("page");
+  await play.click();
+  const popup = await popupPromise;
+  await expect.poll(() => popup.url()).toContain("/media/");
+  await popup.close();
+  await expect(page.getByRole("status")).toContainText("Opening ");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await settings.getByRole("tab", { name: "Connection & seeding" }).click();
+  await settings
+    .getByRole("checkbox", { name: "All torrents download limit unlimited" })
+    .check();
+  await settings.getByRole("button", { name: "Save settings" }).click();
+  await expect(settings.getByLabel("Current runtime state")).toContainText(
+    "Effective peer download limit: unlimited.",
+  );
+  await settings.getByRole("button", { name: "Close settings" }).click();
 
   await page.getByRole("tab", { name: "All files" }).click();
   const files = page.getByRole("list", { name: "All torrent files" });
@@ -908,10 +1002,39 @@ test("live Library media detail follows metadata through completion", async ({
   ).toHaveCount(6);
   await page.keyboard.press("Escape");
   await expect(card).toBeFocused();
+
+  const payloadHash = createHash("sha1");
+  for (const relative of JSON.parse(mediaPaths!) as string[]) {
+    payloadHash.update(await fs.readFile(path.join(directRoot, relative)));
+  }
+  expect(payloadHash.digest("hex")).toBe(mediaPayloadSha1);
+  const unrelated = path.join(storage, "unrelated.keep");
+  await fs.writeFile(unrelated, "preserve");
+  await primary.getByRole("button", { name: "Workbench" }).click();
+  const removableTorrentRow = page
+    .getByRole("grid", { name: "Torrent library" })
+    .getByRole("row")
+    .filter({ hasText: torrentName! });
+  await removableTorrentRow.click({ button: "right" });
+  await page
+    .getByRole("menu")
+    .getByRole("menuitem", { name: "Remove", exact: true })
+    .click();
+  const removal = page.getByRole("dialog", { name: "Remove torrent?" });
+  await expect(removal).not.toContainText(/managed|publish/i);
+  await removal
+    .getByRole("checkbox", { name: "Also delete downloaded data" })
+    .check();
+  await removal
+    .getByRole("button", { name: "Remove and delete data" })
+    .click();
+  await expect(page.getByText(`Removed ${torrentName!}`, { exact: true })).toBeVisible();
+  await expect.poll(() => pathExists(directRoot)).toBe(false);
+  expect(await fs.readFile(unrelated, "utf8")).toBe("preserve");
   expect(applicationUpgrades).toBe(1);
   expect(semanticHttpRequests).toEqual([]);
   console.log(
-    `media_library_live_milestones ${JSON.stringify({ sawMetadataPending, mediaRows: 6, fileRows: Number(fileCount!), detailRequests, applicationUpgrades, semanticHttpRequests: semanticHttpRequests.length, axeViolations: violations.length })}`,
+    `media_library_live_milestones ${JSON.stringify({ sawMetadataPending, earlyDirectOpen: true, mediaRows: 6, fileRows: Number(fileCount!), exactRemoval: true, detailRequests, applicationUpgrades, semanticHttpRequests: semanticHttpRequests.length, axeViolations: violations.length })}`,
   );
 });
 
@@ -1011,7 +1134,7 @@ test("live metadata-only add and file selection", async ({ page }) => {
   await expect.poll(() => pathExists(part), { timeout: 20_000 }).toBe(false);
   await expect(torrentRow).toContainText("complete", { timeout: 20_000 });
   console.log(
-    "file_selection_live_milestones metadata_only=no_artifacts skip=published_part download_now=materialized_part_removed",
+    "file_selection_live_milestones metadata_only=no_artifacts skip=direct_part download_now=materialized_part_removed",
   );
 });
 
@@ -1112,6 +1235,17 @@ async function pathExists(candidate: string): Promise<boolean> {
     return true;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+async function fileSha1(candidate: string): Promise<string | null> {
+  try {
+    return createHash("sha1")
+      .update(await fs.readFile(candidate))
+      .digest("hex");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;
   }
 }

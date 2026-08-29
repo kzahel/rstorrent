@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import gc
 import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -26,17 +27,15 @@ from browser_surface_harness import reserve_loopback_port, stop_process
 from first_verified_piece import (
     ScenarioFailure,
     add_seed,
-    compare_payloads,
     create_session,
     wait_for_listener,
     write_deterministic_range,
 )
-from udp_tracker_magnet import OneShotUdpTracker, tracker_magnet
+from magnet_metadata import magnet_uri
 
 
 ROOT_NAME = "North Shore Stories"
 PIECE_SIZE = 256 * 1024
-UPLOAD_RATE_LIMIT = 192 * 1024
 FILES: tuple[tuple[str, int], ...] = (
     ("Season 01/North.Shore.Stories.S01E10.1080p.WEB-DL.mkv", 384 * 1024),
     ("poster.jpg", 4 * 1024),
@@ -55,7 +54,7 @@ class MediaFixture:
     torrent_info: lt.torrent_info
     info_hash: str
     info_bytes: bytes
-    source_files: tuple[Path, ...]
+    file_sha1: dict[str, str]
     payload_sha1: str
 
 
@@ -64,15 +63,16 @@ def create_media_fixture(run_path: Path) -> MediaFixture:
     content_root = seed_directory / ROOT_NAME
     content_root.mkdir(parents=True)
     storage = lt.file_storage()
-    source_files: list[Path] = []
+    file_sha1: dict[str, str] = {}
     payload_digest = hashlib.sha1()
     logical_offset = 0
     for relative, length in FILES:
         source = content_root / relative
         write_deterministic_range(source, logical_offset, length)
-        payload_digest.update(source.read_bytes())
+        source_bytes = source.read_bytes()
+        file_sha1[relative] = hashlib.sha1(source_bytes).hexdigest()
+        payload_digest.update(source_bytes)
         storage.add_file(f"{ROOT_NAME}/{relative}", length)
-        source_files.append(source)
         logical_offset += length
 
     creator = lt.create_torrent(
@@ -95,7 +95,7 @@ def create_media_fixture(run_path: Path) -> MediaFixture:
         torrent_info=torrent_info,
         info_hash=info_hash,
         info_bytes=info_bytes,
-        source_files=tuple(source_files),
+        file_sha1=file_sha1,
         payload_sha1=payload_digest.hexdigest(),
     )
 
@@ -105,20 +105,28 @@ def run_playwright(
     origin: str,
     gateway_address: str,
     fixture: MediaFixture,
-    tracker_port: int,
+    peer_port: int,
 ) -> str:
     environment = os.environ.copy()
     environment.update(
         {
             "RSTORRENT_PLAYWRIGHT_BASE_URL": origin,
             "RSTORRENT_LIVE_GATEWAY_URL": f"http://{gateway_address}",
-            "RSTORRENT_LIVE_MAGNET": tracker_magnet(
-                fixture.info_hash, tracker_port
+            "RSTORRENT_LIVE_MAGNET": magnet_uri(
+                fixture.info_hash, f"127.0.0.1:{peer_port}"
             ),
             "RSTORRENT_LIVE_TORRENT_ID": fixture.info_hash,
             "RSTORRENT_LIVE_TORRENT_NAME": ROOT_NAME,
             "RSTORRENT_LIVE_FILE_COUNT": str(len(FILES)),
             "RSTORRENT_LIVE_MEDIA_LIBRARY": "1",
+            "RSTORRENT_LIVE_STORAGE_PATH": str(
+                fixture.seed_directory.parent / "downloads"
+            ),
+            "RSTORRENT_LIVE_MEDIA_PATHS": json.dumps(
+                [relative for relative, _ in FILES]
+            ),
+            "RSTORRENT_LIVE_MEDIA_PAYLOAD_SHA1": fixture.payload_sha1,
+            "RSTORRENT_LIVE_MEDIA_FILE_SHA1S": json.dumps(fixture.file_sha1),
         }
     )
     completed = subprocess.run(
@@ -155,22 +163,11 @@ def run_playwright(
     )
 
 
-def verify_files(fixture: MediaFixture, storage: Path) -> None:
-    payload_digest = hashlib.sha1()
-    for (relative, _), source in zip(FILES, fixture.source_files, strict=True):
-        output = storage / ROOT_NAME / relative
-        compare_payloads(source, output)
-        payload_digest.update(output.read_bytes())
-    if payload_digest.hexdigest() != fixture.payload_sha1:
-        raise ScenarioFailure("media fixture aggregate payload hash differs")
-
-
 def run() -> None:
     repository = Path(__file__).resolve().parents[2]
     run_path = Path(tempfile.mkdtemp(prefix="rstorrent-browser-media-library-"))
     session: lt.session | None = None
     handle: lt.torrent_handle | None = None
-    tracker: OneShotUdpTracker | None = None
     gateway: subprocess.Popen[str] | None = None
     vite: subprocess.Popen[str] | None = None
     failure: BaseException | None = None
@@ -179,7 +176,6 @@ def run() -> None:
         fixture = create_media_fixture(run_path)
         diagnostics: list[str] = []
         session = create_session()
-        session.apply_settings({"upload_rate_limit": UPLOAD_RATE_LIMIT})
         port = wait_for_listener(session, diagnostics)
         handle = add_seed(
             session,
@@ -187,16 +183,6 @@ def run() -> None:
             fixture.seed_directory,
             diagnostics,
         )
-        handle.set_upload_limit(UPLOAD_RATE_LIMIT)
-        tracker = OneShotUdpTracker(
-            fixture.info_hash,
-            port,
-            response_delay_seconds=1.5,
-            expected_listen_port=None,
-            accept_any_peer_id=True,
-        )
-        tracker.start()
-
         vite_port = reserve_loopback_port()
         origin = f"http://127.0.0.1:{vite_port}"
         storage = run_path / "downloads"
@@ -212,10 +198,12 @@ def run() -> None:
             repository, origin, vite_port, address
         )
         milestones = run_playwright(
-            repository, origin, address, fixture, tracker.port
+            repository, origin, address, fixture, port
         )
-        tracker.join()
-        verify_files(fixture, storage)
+        if (storage / ROOT_NAME).exists():
+            raise ScenarioFailure("browser removal retained the direct content tree")
+        if (storage / "unrelated.keep").read_bytes() != b"preserve":
+            raise ScenarioFailure("browser removal changed the unrelated sibling")
         stop_process(vite, "Vite")
         vite = None
         terminate_gateway(gateway)
@@ -252,13 +240,6 @@ def run() -> None:
                 if failure is None:
                     raise
                 print(f"gateway cleanup failed: {cleanup_error}", file=sys.stderr)
-        if tracker is not None:
-            if failure is not None:
-                print(
-                    f"tracker requests={tracker.requests} failure={tracker.failure}",
-                    file=sys.stderr,
-                )
-            tracker.close()
         if session is not None:
             if handle is not None:
                 try:

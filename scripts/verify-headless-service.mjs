@@ -351,10 +351,7 @@ async function verifyDetachedTransfer(context, magnet) {
       await waitForTorrent(
         context,
         torrentId,
-        (torrent) =>
-          torrent.state === "complete" && torrent.storage_state === "published"
-            ? torrent
-            : undefined,
+        (torrent) => (torrent.state === "complete" ? torrent : undefined),
         90_000,
       );
     } finally {

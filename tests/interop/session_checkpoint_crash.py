@@ -383,7 +383,7 @@ def run_once(binary: Path, scenario: CrashScenario) -> CrashResult:
         expected_restart_upload = sum(
             fixture.torrent_info.piece_size(piece_index)
             for piece_index in range(fixture.torrent_info.num_pieces())
-            if piece_index not in durable_indices
+            if piece_index not in valid_after_crash
         )
         if restart_payload_upload != expected_restart_upload:
             raise ScenarioFailure(

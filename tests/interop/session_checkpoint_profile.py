@@ -79,7 +79,7 @@ def read_checkpoint_state(
         row = connection.execute(
             """
             SELECT updated_revision, raw_info, piece_count, have_state,
-                   desired_state, payload_state, verification_requested,
+                   desired_state, verification_requested,
                    verification_completed, quarantine_reason
             FROM torrents
             WHERE torrent_id = ?
@@ -94,7 +94,6 @@ def read_checkpoint_state(
         piece_count,
         have_state,
         desired_state,
-        payload_state,
         verification_requested,
         verification_completed,
         quarantine_reason,
@@ -105,7 +104,6 @@ def read_checkpoint_state(
             0,
             0,
             desired_state,
-            payload_state,
             verification_requested,
             verification_completed,
             quarantine_reason,
@@ -124,7 +122,6 @@ def read_checkpoint_state(
         piece_count,
         verified,
         desired_state,
-        payload_state,
         verification_requested,
         verification_completed,
         quarantine_reason,

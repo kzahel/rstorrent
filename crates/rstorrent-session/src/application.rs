@@ -2952,137 +2952,130 @@ impl ApplicationService {
             }
         };
         let platform_root = matches!(root, StorageRootLocation::PlatformCapability);
-        if platform_root {
-            if resume.raw_info.is_none() {
-                let identity = magnet_runtime_identity(identity, &resume.magnet)?;
-                let checkpoints = Arc::new(StoreCheckpointSink {
-                    store: self.store.clone(),
-                    storage_roots: self.storage_roots.clone(),
-                    torrent_id: torrent_id.to_owned(),
-                    views: self.views.clone(),
-                    recheck_generation: Mutex::new(None),
-                });
-                let (control, eta_generation) = self.download_control(torrent_id)?;
-                let task_control = control.clone();
-                let magnet = resume.magnet.clone();
-                let continue_downloading = resume.desired_running;
-                let root_id = resume.storage_root.clone();
-                let storage_id = torrent_id.to_owned();
-                let storage_pool = self.storage_file_pool.clone();
-                let resource_limits = self.download_resource_limits;
-                let network = self.network;
-                let peer_budget = self.session_network().peer_budget();
-                let mse_dh = self.session_network().mse_dh();
-                let encryption = self.session_network().encryption();
-                let pure_v2 = resume.info_hashes.v1_hash().is_none()
-                    && resume.info_hashes.v2_hash().is_some();
-                let operation = async move {
-                    let raw_info = download_magnet_metadata_with_external_discovery(
-                        ExternalMagnetMetadataDownloadConfig {
-                            identity,
-                            magnet: magnet.clone(),
-                            network,
-                            peer_budget: peer_budget.clone(),
-                            mse_dh: mse_dh.clone(),
-                            encryption: encryption.clone(),
-                            torrent_peers: torrent_peers.clone(),
-                            resource_limits,
-                        },
-                        task_control.clone(),
-                    )
-                    .await?;
-                    checkpoints
-                        .metadata_verified(&raw_info)
-                        .map_err(DownloadError::Checkpoint)?;
-                    if !continue_downloading {
-                        return Ok(ApplicationTaskReport::Metadata);
-                    }
-                    let (skip_files, high_priority_files) = {
-                        let store = checkpoints.store().map_err(DownloadError::Checkpoint)?;
-                        let resume = store
-                            .load_resume(&checkpoints.torrent_id)
-                            .map_err(|error| DownloadError::Checkpoint(error.to_string()))?;
-                        let skip_files = resume
-                            .skip_files
-                            .into_iter()
-                            .map(|index| {
-                                usize::try_from(index).map_err(|_| {
-                                    DownloadError::Checkpoint(
-                                        "file selection index overflow".to_owned(),
-                                    )
-                                })
+        if platform_root && resume.raw_info.is_none() {
+            let identity = magnet_runtime_identity(identity, &resume.magnet)?;
+            let checkpoints = Arc::new(StoreCheckpointSink {
+                store: self.store.clone(),
+                storage_roots: self.storage_roots.clone(),
+                torrent_id: torrent_id.to_owned(),
+                views: self.views.clone(),
+                recheck_generation: Mutex::new(None),
+            });
+            let (control, eta_generation) = self.download_control(torrent_id)?;
+            let task_control = control.clone();
+            let magnet = resume.magnet.clone();
+            let continue_downloading = resume.desired_running;
+            let root_id = resume.storage_root.clone();
+            let storage_id = torrent_id.to_owned();
+            let storage_pool = self.storage_file_pool.clone();
+            let resource_limits = self.download_resource_limits;
+            let network = self.network;
+            let peer_budget = self.session_network().peer_budget();
+            let mse_dh = self.session_network().mse_dh();
+            let encryption = self.session_network().encryption();
+            let pure_v2 =
+                resume.info_hashes.v1_hash().is_none() && resume.info_hashes.v2_hash().is_some();
+            let operation = async move {
+                let raw_info = download_magnet_metadata_with_external_discovery(
+                    ExternalMagnetMetadataDownloadConfig {
+                        identity,
+                        magnet: magnet.clone(),
+                        network,
+                        peer_budget: peer_budget.clone(),
+                        mse_dh: mse_dh.clone(),
+                        encryption: encryption.clone(),
+                        torrent_peers: torrent_peers.clone(),
+                        resource_limits,
+                    },
+                    task_control.clone(),
+                )
+                .await?;
+                checkpoints
+                    .metadata_verified(&raw_info)
+                    .map_err(DownloadError::Checkpoint)?;
+                if !continue_downloading {
+                    return Ok(ApplicationTaskReport::Metadata);
+                }
+                let (skip_files, high_priority_files) = {
+                    let store = checkpoints.store().map_err(DownloadError::Checkpoint)?;
+                    let resume = store
+                        .load_resume(&checkpoints.torrent_id)
+                        .map_err(|error| DownloadError::Checkpoint(error.to_string()))?;
+                    let skip_files = resume
+                        .skip_files
+                        .into_iter()
+                        .map(|index| {
+                            usize::try_from(index).map_err(|_| {
+                                DownloadError::Checkpoint(
+                                    "file selection index overflow".to_owned(),
+                                )
                             })
-                            .collect::<Result<Vec<_>, _>>()?;
-                        let high_priority_files = resume
-                            .high_priority_files
-                            .into_iter()
-                            .map(|index| {
-                                usize::try_from(index).map_err(|_| {
-                                    DownloadError::Checkpoint(
-                                        "file priority index overflow".to_owned(),
-                                    )
-                                })
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let high_priority_files = resume
+                        .high_priority_files
+                        .into_iter()
+                        .map(|index| {
+                            usize::try_from(index).map_err(|_| {
+                                DownloadError::Checkpoint("file priority index overflow".to_owned())
                             })
-                            .collect::<Result<Vec<_>, _>>()?;
-                        (skip_files, high_priority_files)
-                    };
-                    let content = if pure_v2 {
-                        TorrentContent::from_v2_info_bytes_with_limits(
-                            &raw_info,
-                            BEP9_METAINFO_LIMITS,
-                        )
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    (skip_files, high_priority_files)
+                };
+                let content = if pure_v2 {
+                    TorrentContent::from_v2_info_bytes_with_limits(&raw_info, BEP9_METAINFO_LIMITS)
                         .map_err(DownloadError::Metainfo)?
                         .content
-                    } else {
-                        TorrentContent::from_v1_metainfo(
-                            parse_peer_metainfo(&raw_info).map_err(DownloadError::Metainfo)?,
-                        )
-                    };
-                    task_control.set_platform_storage(PlatformStorageSpec {
-                        pool: storage_pool,
-                        root_id,
-                        storage_id,
-                        content_shape: ContentShape::from_content(&content),
-                        content_name: content.name().to_owned(),
-                        storage_generation: 0,
-                    });
-                    resume_magnet_with_control(
-                        ResumableMagnetDownloadConfig {
-                            identity,
-                            magnet,
-                            storage_root: PathBuf::new(),
-                            network,
-                            peer_budget,
-                            mse_dh,
-                            encryption,
-                            torrent_peers: Some(torrent_peers),
-                            resource_limits,
-                            skip_files,
-                            high_priority_files,
-                            verified_info: Some(raw_info),
-                            verified_pieces: Vec::new(),
-                            resume_validation: ResumeValidationIntent::FastEligible,
-                            download_missing: true,
-                            dht: None,
-                            trackers: Some(Vec::new()),
-                        },
-                        checkpoints,
-                        task_control,
+                } else {
+                    TorrentContent::from_v1_metainfo(
+                        parse_peer_metainfo(&raw_info).map_err(DownloadError::Metainfo)?,
                     )
-                    .await
-                    .map(|_| ApplicationTaskReport::Download)
                 };
-                let task = self.spawn_supervised_task(torrent_id, eta_generation, operation)?;
-                self.install_active_download(
-                    torrent_id,
-                    ActiveDownload {
-                        control,
-                        task,
-                        eta_generation,
+                task_control.set_platform_storage(PlatformStorageSpec {
+                    pool: storage_pool,
+                    root_id,
+                    storage_id,
+                    content_shape: ContentShape::from_content(&content),
+                    content_name: content.name().to_owned(),
+                    storage_generation: 0,
+                });
+                resume_magnet_with_control(
+                    ResumableMagnetDownloadConfig {
+                        identity,
+                        magnet,
+                        storage_root: PathBuf::new(),
+                        network,
+                        peer_budget,
+                        mse_dh,
+                        encryption,
+                        torrent_peers: Some(torrent_peers),
+                        resource_limits,
+                        skip_files,
+                        high_priority_files,
+                        verified_info: Some(raw_info),
+                        verified_pieces: Vec::new(),
+                        resume_validation: ResumeValidationIntent::FastEligible,
+                        download_missing: true,
+                        dht: None,
+                        trackers: Some(Vec::new()),
                     },
-                )?;
-                return Ok(());
-            }
+                    checkpoints,
+                    task_control,
+                )
+                .await
+                .map(|_| ApplicationTaskReport::Download)
+            };
+            let task = self.spawn_supervised_task(torrent_id, eta_generation, operation)?;
+            self.install_active_download(
+                torrent_id,
+                ActiveDownload {
+                    control,
+                    task,
+                    eta_generation,
+                },
+            )?;
+            return Ok(());
         }
         let root_path = match &root {
             StorageRootLocation::Path(root) => root.clone(),

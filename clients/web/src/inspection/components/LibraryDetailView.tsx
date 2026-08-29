@@ -186,12 +186,12 @@ export function LibraryDetailView({
             >
               All files
             </button>
-            {playbackStatus === "" ? null : (
-              <output className={styles.commandStatus} aria-live="polite">
-                {playbackStatus}
-              </output>
-            )}
           </div>
+          {playbackStatus === "" ? null : (
+            <output className={styles.commandStatus} aria-live="polite">
+              {playbackStatus}
+            </output>
+          )}
           {mode === "media" ? (
             <MediaCatalog
               rows={media === undefined ? [] : media.order
