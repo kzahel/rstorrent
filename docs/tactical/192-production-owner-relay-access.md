@@ -1,10 +1,12 @@
 # Tactical 192: Local Production-Shaped Owner Relay Access
 
-Status: **Active as of 2026-08-29.** Completed controlled foundation Tactical
+Status: **Complete as of 2026-08-29.** Completed controlled foundation Tactical
 [`190`](190-opaque-wasm-relay-foundation.md) supplies the selected cryptographic
 construction, Wasm boundary, dumb-relay behavior, real application trace and
 measured proof limits. The user explicitly activated end-to-end implementation
-on 2026-08-29 and requested incremental commits.
+on 2026-08-29 and requested incremental commits. The resulting composition is
+implemented and validated only as the internal local mode defined here; it is
+not deployed, published or described as supported remote access.
 This tactical is strictly local-only: it may productionize relay/client/host
 code and exercise distinct loopback HTTPS/WSS origins, but it must not create or
 use an external account or host, mutate public DNS/TLS, publish a release or
@@ -411,8 +413,10 @@ principal asserted inside a client frame.
   handshakes at 64 with a ten-second deadline, emits one metadata-only JSON
   readiness record and drains on interrupt/termination. A stalled handshake
   does not block valid clients and shutdown aborts pending handshakes. The
-  isolated local-authority/client runner is still part of unfinished Step 6;
-  the service never creates or installs a trust root itself.
+  isolated local-authority/client runner now creates a temporary server-auth
+  certificate, serves the release bundle from a distinct HTTPS origin and
+  removes the authority on exit; the service never creates or installs a trust
+  root itself.
 - The first Step 4 runtime boundary now lives in `rstorrent-remote-host` rather
   than the proof harness. Its product owner reserves and claims the durable
   P-256 relay identity, emits a relay/host greeting needed for account-free
@@ -449,12 +453,51 @@ principal asserted inside a client frame.
   same-UID checking, bounded requests/responses and deadlines, and accepts
   passphrases only from protected absolute files. A real TLS-relay test enables
   through that socket, joins shutdown, reopens the configured headless service,
-  reloads the same authority and reclaims the route. The desktop React
-  presentation and browser controller remain unfinished.
+  reloads the same authority and reclaims the route. The desktop lifecycle has
+  a parallel real-TLS composition test covering app-data authority, route
+  claim, audit and joined remote-before-application shutdown.
+- The release-built remote React profile loads the Rust cryptographic core from
+  a hashed Wasm artifact, fixes one WSS relay URL at build time, rejects remote
+  torrent-byte/media breadth and stores private-browser continuity in a
+  dedicated IndexedDB database. Its WebCrypto P-256 key is non-extractable;
+  host trust and revocable authorization are separate records. The gate tries
+  resume before showing a password, retries bounded transient route handoffs,
+  automatically reconnects after unexpected authenticated transport loss and
+  keeps changed-host recovery blocking and explicit.
+- The local and authenticated-remote **Remote access** settings category shows
+  every current authorization, tombstone, owner event, failed-attempt bucket
+  and live circuit without a default filter. It marks **This browser** and
+  supports rename, exact revoke, keep-only, require-password-everywhere,
+  circuit close, sign-out and retained-history clear. Provisioning,
+  passphrase replacement, disable and recovery remain local-only. Remote
+  controls are independently bounded encrypted records; the host derives
+  current-browser sign-out from the authenticated circuit rather than a
+  caller-provided client ID.
+- `scripts/verify-remote-product.mjs` replaces the retired proof crate/page.
+  Chrome 152 on macOS arm64 passes first private password login, immediate
+  reload resume, browser-process restart, phone viewport, shared-browser
+  non-persistence, automatic relay-process restart/route reattachment, local
+  installed-layout rollback, complete remote audit rendering, exact
+  revocation/tombstone, changed-host blocking, strict HTTPS CSP plus immutable
+  hashed assets and zero service workers. A final 256-invalid-circuit churn
+  leaves both processes alive; relay RSS moves from 7,307,264 to 7,503,872
+  bytes and headless RSS from 97,435,648 to 98,172,928 bytes, with both sampled
+  at 0% CPU after drain. The runner uses the actual headless and relay binaries
+  on distinct loopback origins and removes every temporary process,
+  certificate, authority, profile, payload and reservation root.
+- Deterministic native layers cover authorization expiry, replay/reflection,
+  generation fencing, individual/global revocation, passphrase replacement,
+  disable/recovery, crash prior-or-new persistence, ledger/failure-pressure
+  ceilings, exact relay admission and opaque pump cleanup. The local package
+  rollback uses the same working-tree binary under a prior immutable-layout
+  identity; it is lifecycle evidence, not a cross-release compatibility or
+  signed-publication claim.
 
-No browser persistence or supported product surface is implied by these
-internal checkpoints. Step 5, desktop presentation work in Step 3, the
-remainder of Step 6, and Steps 7 and 8 remain required.
+The stopping condition is met for the deliberately local composition. No
+browser persistence outside the isolated client origin and no supported or
+public product surface is implied. Public relay/client deployment, DNS/TLS,
+Internet abuse operations, signed cross-version rollback and a supported
+remote-access claim require a separately authorized tactical.
 
 ## Required Evidence
 

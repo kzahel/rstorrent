@@ -12,13 +12,13 @@ on 2026-08-26. Exact tailnet-access Tactical
 systemd user unit, signed source release/update machinery, exact
 credential-free RFC 1918 and Tailscale Serve modes, and real x86_64
 lifecycle/transfer/current-host campaigns pass. The native ARM64 release job
-exists without a native ARM64 systemd claim. Production owner-remote
-authentication, relay delivery, promoted signed public headless artifacts,
-and system-wide service ownership do not exist yet. Completed Tactical
+exists without a native ARM64 systemd claim. Public owner-remote deployment,
+promoted signed public headless artifacts and system-wide service ownership do
+not exist yet. Completed Tactical
 [`190`](../tactical/190-opaque-wasm-relay-foundation.md) proves only a local,
 ephemeral OPAQUE native/Wasm dumb-relay composition. It does not broaden these
-deployment claims. Active Tactical
-[`192`](../tactical/192-production-owner-relay-access.md) owns the future
+deployment claims. Completed Tactical
+[`192`](../tactical/192-production-owner-relay-access.md) adds the
 desktop/configured-headless host lifecycle, durable authority, authorized-
 browser resume and operator security-audit boundary only in a production-shaped
 loopback validation composition. Deployment remains later work. Independently,
@@ -258,7 +258,7 @@ combinations that look secure but are not.
 | Private reverse-proxy host | One explicit unicast backend address | Bounded Basic credential, with password from a secret file | Public HTTPS/WSS terminated by an operator-owned proxy | Implemented maintainer preview |
 | Trusted private LAN | One exact non-loopback RFC 1918 IPv4 authority | None; every reachable client has full owner control | Plain HTTP/WS with exact Host and Origin, no confidentiality | Implemented operator mode |
 | Trusted Tailscale overlay | Exact loopback backend plus one exact HTTPS `*.ts.net` authority | None; every identity admitted by tailnet policy has full owner control | Tailscale transport and Serve HTTPS/WSS | Implemented operator mode |
-| Owner remote access | Direct or relay-mediated host | Passphrase bootstrap plus bounded named-browser authorization, automatic resume and exact revocation | Authenticated end-to-end records; relay remains opaque | Tactical `192` local validation ready; deployment later |
+| Owner remote access | Direct or relay-mediated host | Passphrase bootstrap plus bounded named-browser authorization, automatic resume and exact revocation | Authenticated end-to-end records; relay remains opaque | Tactical `192` local validation implemented; deployment later |
 | Development-none | Ephemeral loopback only | None | Local test traffic only | Implemented development mode |
 
 The immediate operator deployment may place RSTorrent behind Caddy, nginx, or
@@ -498,14 +498,13 @@ ownership, data-preserving removal, and explicit startup policy.
 The desktop windowless/extension-attachment tactical can proceed independently
 because it uses the same application-service and presentation-lifecycle
 invariants but a different OS shell and local authentication boundary.
-Completed Tactical `190` remains separate from both and used an ephemeral
-loopback application owner rather than changing a package. Ready Tactical
-`192` must integrate a durable remote owner into the desktop and configured
-headless lifecycles explicitly, including persistent resume authorization,
-revocation-driven live closure and the bounded operator security ledger; proof
-success leaves that composition in an explicit local validation mode and does
-not enable either host for public remote access. A later tactical owns service
-deployment, external paths and support.
+Completed Tactical `190` remains the ephemeral foundation. Completed Tactical
+`192` integrates a durable remote owner into the desktop and configured
+headless lifecycles, including persistent resume authorization,
+revocation-driven live closure and the bounded operator security ledger. Its
+real-browser/package evidence remains an explicit local validation mode and
+does not enable either host for public remote access. A later tactical owns
+service deployment, external paths and support.
 
 ## Non-Goals
 

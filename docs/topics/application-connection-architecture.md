@@ -12,14 +12,12 @@ socket. The legacy `/control` route, frames, direct-DOM frontend and superseded
 tests are deleted. Completed Tactical
 [`190`](../tactical/190-opaque-wasm-relay-foundation.md) proves that local relay
 delivery wraps these exact application frames in an OPAQUE-authenticated
-encrypted circuit rather than creating another application API. Its native
-host, Wasm/browser transport and dumb relay are opt-in proof infrastructure,
-not production remote access; decision-ready Tactical
-[`192`](../tactical/192-production-owner-relay-access.md) owns that next
-boundary, including automatic challenge-bound reconnect for authorized
-browsers and an owner-visible authorization/circuit audit in a separate
-loopback-only production-shaped composition. Public deployment and support
-remain later work. Tactical `076` adds one
+encrypted circuit rather than creating another application API. Completed
+Tactical [`192`](../tactical/192-production-owner-relay-access.md) replaces
+the proof infrastructure with durable host/browser authority, automatic
+challenge-bound reconnect and a complete authorization/circuit audit in a
+separate loopback-only production-shaped composition. Public deployment and
+support remain later work. Tactical `076` adds one
 deliberately limited maintainer-operated private host: bounded Basic
 authentication covers static, health, HTTP, and WebSocket routes; the gateway
 still enforces the exact public HTTPS Origin; and the production React build
@@ -667,12 +665,10 @@ Steps one through six are complete in Tactical `060`. Future bounded work may:
 7. Further unify the Tauri attachment owner and, when justified, replace
    per-stream Channels with one window-level multiplexed Channel without
    routing native calls through HTTP or JSON unnecessarily.
-8. Execute accepted Tactical `190` as the controlled relay-authentication and
-   encryption proof using the already-proven direct application frames, then
-   execute Tactical `192` for durable authority, challenge-bound resume,
-   authorization/circuit audit and a production-shaped loopback-only service.
-   Authorize external deployment and its evidence only through a later
-   tactical.
+8. Tacticals `190` and `192` complete the controlled relay-authentication
+   proof and durable production-shaped local composition using the
+   already-proven direct application frames. Authorize external deployment and
+   its evidence only through a later tactical.
 
 Browser WebSocket work must not silently introduce a production remote
 listener. Relay work must not be combined into the initial local transport

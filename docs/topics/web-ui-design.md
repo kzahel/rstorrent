@@ -189,7 +189,7 @@ access owns immediate browser approval, session listing and revocation,
 sign-out, and restart-pairing recovery. Tauri, demo, Basic-only, and bearer
 surfaces do not show an inert cookie-session category.
 
-Ready Tactical
+Completed Tactical
 [`192`](../tactical/192-production-owner-relay-access.md) adds a distinct
 capability-gated **Remote access security** category rather than overloading
 that loopback **Web access** panel. This first implementation is exercised only
@@ -197,10 +197,12 @@ from the release-built bundle at a distinct loopback HTTPS origin and does not
 become a published client surface. After the first successful remote password
 login, the browser offers an explicit primary **Private browser — stay
 authorized** choice and a secondary **Shared browser — this page only** choice.
-A returning private browser shows bounded **Reconnecting securely** progress
-while it attempts challenge-bound resume before presenting the password form;
-expiry or ordinary resume rejection explains that the password is required,
-while host-identity mismatch remains a separate blocking warning.
+A returning private browser shows bounded connection progress while it attempts
+challenge-bound resume before presenting the password form; transient route
+handoffs retry and unexpected authenticated transport loss reloads into the
+same resume path. Expiry or ordinary resume rejection explains that the
+password is required, while host-identity mismatch remains a separate blocking
+warning.
 
 The security category is available to local desktop/headless administration
 and the authenticated remote capability profile. It shows every current

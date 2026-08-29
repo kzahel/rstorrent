@@ -16,11 +16,12 @@ cursor, acknowledgement or reducer rule. Its controlled encrypted relay trace
 uses the existing application WebSocket client and `ViewController`; direct
 and relayed negotiation, initial snapshot, view replacement/update, exact
 acknowledgement and benign command reduce identically across three observed
-states. Bulk attachment and media breadth remain outside that proof. Ready
+states. Bulk attachment and media breadth remain outside that proof. Completed
 Tactical [`192`](../tactical/192-production-owner-relay-access.md) adds a
-bounded generated remote-security projection for authorized clients and live
-circuits plus bounded security-ledger retrieval in a loopback-only validation
-composition; those values remain application semantics rather than properties
+bounded remote-security control profile for authorized clients, live circuits
+and the complete security ledger in a loopback-only validation composition.
+It deliberately does not add authority or credential material to generated
+torrent view DTOs; those values remain owner semantics rather than properties
 inferred from a WebSocket, and no public delivery claim follows.
 
 Completed Tactical
@@ -333,17 +334,15 @@ A view set is:
 A view set is not authentication, durable user data, or the engine session.
 Its identifier locates a resource but never grants authority to use it.
 
-Tactical `192`'s remote-security projection follows the same rule. It may show
-bounded client/circuit IDs, labels, authentication method, timestamps, expiry,
-route/build observations, a non-authorizing public-key fingerprint when
-applicable, and current/revoked state only after the adapter has already
-admitted an owner. The complete current authorization set is one
-coherent bounded snapshot at a security-authority generation; live circuit and
-authorization changes may use typed deltas. The retained event ledger uses
-bounded newest-first pagination or another explicitly bounded retrieval rather
-than forcing historical rows into every reactive update. No projected ID,
-client-supplied label or **This browser** field is accepted back as proof of
-authority; the verified transport context owns that distinction.
+Tactical `192`'s remote-security snapshot follows the same authority rule but
+is not a leased torrent view. An authenticated adapter explicitly fetches one
+coherent, bounded snapshot containing client/circuit IDs, labels,
+authentication method, timestamps, expiry, route/build observations, a
+non-authorizing public-key fingerprint, current/revoked state and the complete
+bounded ledger. The encrypted control response is capped at 4 MiB; fixed
+registry ceilings keep it below that limit. No returned ID, client-supplied
+label or **This browser** field is accepted back as proof of authority; the
+verified transport context owns that distinction.
 
 Every live remote circuit is projected even when a shared-browser password
 login deliberately created no durable client authorization. That circuit uses
@@ -1450,9 +1449,9 @@ interactive machine.
    decode/reduce cost, rendering, and memory before selecting binary encoding.
 8. Tactical `190` proves the same generated contract and reducer over an
    OPAQUE-authenticated encrypted relay record without adding a remote view
-   variant. This step is complete; Tactical `192` owns production-shaped local
-   delivery, resumable authorized-client context and its bounded security
-   projection. Public delivery remains later work.
+   variant. Tactical `192` completes production-shaped local delivery,
+   resumable authorized-client context and its bounded security snapshot.
+   Public delivery remains later work.
 
 Tacticals `033`, `034`, `035`, `048`, `060`, and `065` completed the first six
 steps. Further views should follow observed inspection value. Binary encoding

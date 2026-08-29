@@ -299,6 +299,31 @@ discarding ordinary dev or release output:
 cargo clean --profile debugging
 ```
 
+### Local owner-relay product matrix
+
+Tactical `192` retains one local-only production-shaped end-to-end runner:
+
+```bash
+node scripts/verify-remote-product.mjs
+```
+
+It builds the actual headless, gateway and TLS-relay binaries plus the
+release-mode remote React/Wasm bundle. The run creates distinct loopback HTTPS,
+WSS and headless origins, enables through the protected headless admin socket
+and drives isolated persistent Chrome profiles through password login,
+automatic resume, shared-browser non-persistence, relay restart, local
+installed-layout rollback, audit, revocation and changed-host blocking. It
+also checks the fixed CSP, immutable hashed assets and absence of service
+workers. `openssl`, `curl`, the `wasm32-unknown-unknown` Rust target,
+`wasm-bindgen-cli` matching the lockfile and the web workspace's Playwright
+browser are prerequisites.
+
+The runner binds only `127.0.0.1`, creates no external account or deployment,
+and removes its temporary certificate, authority, browser profiles, payload,
+relay state and processes in a `finally` path. Its older layout generation uses
+the same working-tree binary and is lifecycle evidence, not signed
+cross-version compatibility.
+
 ## Launching The Desktop App
 
 Install the locked web dependencies when necessary, build the static web

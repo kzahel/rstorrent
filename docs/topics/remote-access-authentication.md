@@ -3,55 +3,42 @@
 Topic: `remote-access-authentication`
 
 Status: Direction and investigation background accepted from maintainer
-discussion on 2026-08-04. Tactical
-[`190`](../tactical/190-opaque-wasm-relay-foundation.md) completed on
-2026-08-29. Its account-free OPAQUE login, one native/Wasm Rust core, bounded
-dumb relay and unchanged application trace pass as a controlled local proof.
-It does not authorize a production listener, public relay, durable owner
-authority or stable remote wire contract. Decision-ready Tactical
-[`192`](../tactical/192-production-owner-relay-access.md) owns that next
-boundary, including required challenge-bound browser resume and a bounded
-owner-visible authorization/security ledger, but is now deliberately limited
-to production-shaped loopback validation. Deployment and support remain a later
+discussion on 2026-08-04. Controlled foundation Tactical
+[`190`](../tactical/190-opaque-wasm-relay-foundation.md) and local
+production-shaped Tactical
+[`192`](../tactical/192-production-owner-relay-access.md) completed on
+2026-08-29. Tactical `192` implements the deliberately local boundary: durable
+OPAQUE host authority, challenge-bound named-browser resume, complete bounded
+security audit, exact revocation, a separately supervised opaque TLS relay and
+a release-built remote React client. Deployment and support remain a later
 separately authorized tactical. Completed Tactical `174` separately permits one
 trusted Tailscale operator deployment; tailnet admission is not the owner
 authentication designed here.
 
-The pure OPAQUE/record core and separate Wasm client binding pass native tests,
-the upstream RFC-vector suite and real-headless-Chrome equivalence. The local
-relay/host proof carries the real React negotiation, reducer snapshot/update,
-acknowledgement and benign call identically to the direct adapter. Changed
-pin, wrong password, unknown route and modified handshake cases fail, while
-joined shutdown leaves zero circuits and pumps. The complete Argon2id,
-bundle, message and owner high-water results live in Tactical `190`. No
-supported remote-access capability exists yet. Active Tactical `192` has now
-landed its first two internal boundaries: the selected mutually authenticated
-P-256 resume core and a runtime-independent durable-authority domain with
-bounded client, tombstone, security-event and failed-attempt registries. Its
-Unix store proves atomic prior-or-new replacement, exact owner-only modes and
-history-only disable. A further relay-library boundary now durably stores only
-route usernames and P-256 public keys and requires a fresh signed challenge for
-host claims and route release; restart, replay, replacement, exact-Origin,
-bounded-admission and opaque-forwarding tests pass. Desktop/headless commands,
-live circuit ownership, browser key persistence, the local-authority/client
-runner and the remote-client composition are still absent. The relay does now
-have a separately supervised TLS 1.3 service binary with loopback-only bind,
-owner-only key loading, bounded concurrent handshake work and graceful signal
-shutdown, but it performs no trust-root installation or public deployment.
-This does not change the product claim. Tactical `192` still
-requires a private browser to resume ordinary reconnects without another
-password entry and requires the host to list and revoke every authorization
-and live circuit before a later deployment tactical can change that claim.
+The native/Wasm cryptographic core, upstream RFC vectors, persistence crash
+matrix and exact registry ceilings pass. Desktop and headless both own the same
+remote runtime beneath their incumbent application owner. Local desktop Tauri
+commands and the protected same-UID headless administration socket expose full
+inspection, enable, passphrase replacement, revocation, disable and recovery.
+The authenticated remote circuit exposes the audit and revocation subset but
+derives **This browser** and sign-out from verified transport context; local
+provisioning/recovery operations are not remotely callable.
 
-The product-host runtime core has also replaced the proof's ephemeral host
-state. It durably creates a private authorization only after password login,
-keeps shared login ephemeral, resumes with the selected P-256 construction,
-reuses the bounded application frame contract and closes a resumed circuit
-after durable revocation. Its safe snapshot combines the bounded authority
-ledger with all live circuits without serializing passphrases, relay/internal
-credentials or raw client public keys. This remains internal runtime evidence:
-desktop/headless attachment, full local administration and browser persistence
-are not yet present.
+The remote browser keeps host trust separate from one revocable authorization,
+stores a non-extractable P-256 continuity key in dedicated IndexedDB and tries
+resume before showing a password. It automatically reconnects across ordinary
+transport loss and bounded route handoff, while shared mode retains no durable
+authorization and a changed host remains blocking. The isolated product runner
+uses the actual headless and TLS-relay binaries plus the release bundle on
+distinct HTTPS/WSS loopback origins. Real Chrome passes private login, reload,
+browser restart, phone viewport, shared non-persistence, relay restart, local
+layout rollback, full audit, exact revocation and changed-host recovery, then
+removes every temporary process and authority root.
+
+This does not change the supported product claim. No public relay/client,
+external account, DNS/certificate operation, Internet abuse evidence, stable
+wire promise or remote media/file path exists. Tactical `192` is an internal
+validation mode, not production deployment authorization.
 
 ## Purpose And Scope
 
@@ -259,12 +246,13 @@ proof. The selected libraries are now bounded workspace dependencies for that
 controlled proof only; they are not a production listener, durable wire
 contract or support claim.
 
-One runtime-independent Rust core now owns OPAQUE, transcript binding and the
-encrypted record state natively on the host and through Wasm in the browser.
-WebCrypto remains the browser CSPRNG and future non-extractable-device-key seam,
-not a second cryptographic protocol implementation. The product presents a
-username/passphrase model while keeping its relay-scoped routing name, random
-host ID, OPAQUE host setup and relay registration credential distinct.
+One runtime-independent Rust core owns OPAQUE, transcript binding and encrypted
+record state natively on the host and through Wasm in the browser. WebCrypto
+supplies the browser CSPRNG plus a non-extractable P-256 continuity key whose
+handle remains in IndexedDB; it is not a second password or record protocol.
+The product presents a username/passphrase model while keeping its relay-scoped
+routing name, random host ID, OPAQUE host setup and relay registration
+credential distinct.
 
 The completed proof uses a portable-profile host-key tier and requires a
 complete password login after every disconnect. Tactical `192` deliberately
@@ -702,21 +690,18 @@ production-shaped local Tactical `192` rather than being implied by the proof.
 Do not add a production remote listener from this topic alone. Completed
 Tactical
 [`190`](../tactical/190-opaque-wasm-relay-foundation.md) owns the controlled
-native-host/browser-Wasm construction and evidence record; its proof binary is
-not a product mode.
+native-host/browser-Wasm construction and evidence record; its retired proof
+binary was never a product mode.
 
-Decision-ready Tactical
-[`192`](../tactical/192-production-owner-relay-access.md) is the next bounded
-slice. It owns durable application-private authority, local
-enable/disable/change/recovery UX, desktop and configured-headless host
-lifecycle, an independently delivered remote-only browser capability profile,
-a separate loopback-only production-shaped relay service, and complete local
-package/browser evidence. Its bounded browser authorization/resume registry and
-security ledger are required, while public relay/client deployment, DNS/TLS,
-external paths, support claims, passkeys, account-wide identity, account
-delegation and multi-user roles remain separate decisions. It requires explicit
-activation, and a later tactical requires separate authority before any public
-deployment.
+Completed Tactical
+[`192`](../tactical/192-production-owner-relay-access.md) owns the durable
+application-private authority, local enable/disable/change/recovery UX,
+desktop and configured-headless lifecycle, independently built remote browser,
+separate loopback TLS relay and complete local package/browser evidence. The
+next remote-access tactical, if authorized, must own public relay/client
+deployment, DNS/TLS, external paths, operations and support claims. Passkeys,
+account-wide identity, delegation and multi-user roles remain separate
+decisions and are not implied by the local implementation.
 
 Friend sharing, fragment-held capability links, offline encrypted snapshots,
 UPnP/NAT traversal, wake-up delivery, public accounts and multi-user

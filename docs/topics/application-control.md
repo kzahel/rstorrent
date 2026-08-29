@@ -306,7 +306,7 @@ capabilities to dispatch, apply replay and rate limits, and redact sensitive
 source data. The application service must not trust an `is_admin`-style value
 inside an envelope.
 
-Ready Tactical
+Completed Tactical
 [`192`](../tactical/192-production-owner-relay-access.md) makes remote-security
 management an application-owned semantic domain above that rule in a
 production-shaped loopback validation composition; it adds no public listener

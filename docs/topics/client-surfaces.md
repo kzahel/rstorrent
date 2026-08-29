@@ -14,8 +14,8 @@ product surface. Its tested proof-only browser transport composes the existing
 `WebSocketApplicationViewClient` above the shared Wasm OPAQUE/record core,
 withholds socket-open until authenticated host readiness, and explicitly
 rejects torrent byte upload and remote media capability calls. A real Chrome
-trace matches the direct reducer exactly. Ready Tactical
-[`192`](../tactical/192-production-owner-relay-access.md) owns a release-built
+trace matches the direct reducer exactly. Completed Tactical
+[`192`](../tactical/192-production-owner-relay-access.md) implements a release-built
 remote-only React capability profile, private/shared-browser login choice,
 automatic resume and complete authorization/circuit security UX only in an
 explicit loopback validation composition. Publication and support remain later.
@@ -951,7 +951,7 @@ run. Tactical `013` records explicit product and harness network selection.
 Tacticals `033` through `035` record the leased view-set boundary, responsive
 demo surface, and first live peer projection plus recovery evidence.
 Completed Tactical `117` records the Android product-presentation closure.
-Production-shaped local remote authorization is decision-ready in Tactical
+Production-shaped local remote authorization is implemented by Tactical
 `192`, including private-browser automatic resume plus the local/remote security
 surface for authorization inspection and revocation. Public client/relay
 deployment and support remain a later tactical; dynamic Android network
