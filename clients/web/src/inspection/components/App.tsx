@@ -40,6 +40,7 @@ import type { DesktopExternalIntake } from "../../desktop-external-intake";
 import { DesktopExternalIntakeProvider } from "../desktop-external-intake-context";
 import type { DesktopNotifications } from "../desktop-notifications/types";
 import type { DesktopPower } from "../desktop-power/types";
+import type { DesktopRemoteAccess } from "../remote-access/types";
 import type {
   HostedAccessMode,
   HostedProduct,
@@ -61,6 +62,7 @@ export interface AppProps {
   readonly externalIntake?: DesktopExternalIntake | undefined;
   readonly notifications?: DesktopNotifications | undefined;
   readonly power?: DesktopPower | undefined;
+  readonly remoteAccess?: DesktopRemoteAccess | undefined;
   readonly accessMode?: HostedAccessMode | undefined;
   readonly hostedProduct?: HostedProduct | undefined;
 }
@@ -71,6 +73,7 @@ export function App({
   externalIntake,
   notifications,
   power,
+  remoteAccess,
   accessMode,
   hostedProduct,
 }: AppProps) {
@@ -82,6 +85,7 @@ export function App({
           updater={updater}
           notifications={notifications}
           power={power}
+          remoteAccess={remoteAccess}
           accessMode={accessMode}
           hostedProduct={hostedProduct}
         />
@@ -95,6 +99,7 @@ function AppContent({
   updater,
   notifications,
   power,
+  remoteAccess,
   accessMode,
   hostedProduct,
 }: AppProps) {
@@ -478,6 +483,7 @@ function AppContent({
           clientSettingsManageable
           notifications={notifications}
           power={power}
+          remoteAccess={remoteAccess}
           webAuth={webAuth}
           updater={updater}
           updaterSnapshot={updaterSnapshot}

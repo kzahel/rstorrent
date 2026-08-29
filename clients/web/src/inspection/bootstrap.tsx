@@ -12,6 +12,7 @@ import type { DesktopUpdater } from "./updater/types";
 import type { DesktopExternalIntake } from "../desktop-external-intake";
 import type { DesktopNotifications } from "./desktop-notifications/types";
 import type { DesktopPower } from "./desktop-power/types";
+import type { DesktopRemoteAccess } from "./remote-access/types";
 import type { ApplicationViewClient } from "../api/client";
 import { RemoteOnlyApplicationClient } from "../remote-application-client";
 import { HttpApplicationClient } from "../api/client";
@@ -120,13 +121,14 @@ async function openLiveInspection(
     undefined,
     undefined,
     undefined,
+    undefined,
     hosted?.accessMode,
     hosted?.product,
   );
 }
 
 export async function startTauriInspection(): Promise<void> {
-  const [updater, notifications, power, application, externalIntake] =
+  const [updater, notifications, power, remoteAccess, application, externalIntake] =
     await Promise.all([
       import("../tauri-updater")
         .then(({ createTauriDesktopUpdater }) => createTauriDesktopUpdater())
@@ -151,6 +153,14 @@ export async function startTauriInspection(): Promise<void> {
           console.error("Desktop power settings initialization failed:", error);
           return undefined;
         }),
+      import("../tauri-remote-access")
+        .then(({ createTauriDesktopRemoteAccess }) =>
+          createTauriDesktopRemoteAccess(),
+        )
+        .catch((error: unknown) => {
+          console.error("Desktop remote access initialization failed:", error);
+          return undefined;
+        }),
       LiveApplication.open(new TauriApplicationViewClient()),
       import("../desktop-external-intake").then(
         ({ TauriDesktopExternalIntake }) => TauriDesktopExternalIntake.open(),
@@ -165,6 +175,7 @@ export async function startTauriInspection(): Promise<void> {
     externalIntake,
     notifications,
     power,
+    remoteAccess,
   );
 }
 
@@ -187,6 +198,7 @@ function renderInspection(
   externalIntake?: DesktopExternalIntake,
   notifications?: DesktopNotifications,
   power?: DesktopPower,
+  remoteAccess?: DesktopRemoteAccess,
   accessMode?: HostedAccessMode,
   hostedProduct?: HostedProduct,
 ): void {
@@ -199,6 +211,7 @@ function renderInspection(
         externalIntake={externalIntake}
         notifications={notifications}
         power={power}
+        remoteAccess={remoteAccess}
         accessMode={accessMode}
         hostedProduct={hostedProduct}
       />

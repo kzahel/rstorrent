@@ -17,12 +17,14 @@ import { DownloadSettingsSection } from "./DownloadSettingsSection";
 import { Icon } from "./Icon";
 import { NotificationsSettingsSection } from "./NotificationsSettingsSection";
 import { PowerSettingsSection } from "./PowerSettingsSection";
+import { RemoteAccessSettingsSection } from "./RemoteAccessSettingsSection";
 import { WebAccessSettingsSection } from "./WebAccessSettingsSection";
 import styles from "./SettingsDialog.module.css";
 import type { WebAuthClient } from "../../web-auth-client";
 import type { DesktopUpdater, DesktopUpdaterSnapshot } from "../updater/types";
 import type { DesktopNotifications } from "../desktop-notifications/types";
 import type { DesktopPower } from "../desktop-power/types";
+import type { DesktopRemoteAccess } from "../remote-access/types";
 
 export type SettingsCategory =
   | "appearance"
@@ -30,6 +32,7 @@ export type SettingsCategory =
   | "connection"
   | "notifications"
   | "power"
+  | "remote-access"
   | "web-access"
   | "updates";
 
@@ -44,6 +47,7 @@ export interface SettingsDialogProps {
   readonly clientSettingsManageable: boolean;
   readonly notifications?: DesktopNotifications | undefined;
   readonly power?: DesktopPower | undefined;
+  readonly remoteAccess?: DesktopRemoteAccess | undefined;
   readonly webAuth?: WebAuthClient | undefined;
   readonly updater?: DesktopUpdater | undefined;
   readonly updaterSnapshot?: DesktopUpdaterSnapshot | undefined;
@@ -74,6 +78,7 @@ export function SettingsDialog({
   clientSettingsManageable,
   notifications,
   power,
+  remoteAccess,
   webAuth,
   updater,
   updaterSnapshot,
@@ -104,6 +109,9 @@ export function SettingsDialog({
       ? []
       : [{ id: "notifications" as const, label: "Notifications" }]),
     ...(power === undefined ? [] : [{ id: "power" as const, label: "Power" }]),
+    ...(remoteAccess === undefined
+      ? []
+      : [{ id: "remote-access" as const, label: "Remote access" }]),
     ...(webAuth === undefined
       ? []
       : [{ id: "web-access" as const, label: "Web access" }]),
@@ -281,6 +289,16 @@ export function SettingsDialog({
                 hidden={category !== "power"}
               >
                 <PowerSettingsSection power={power} />
+              </div>
+            )}
+            {remoteAccess === undefined ? null : (
+              <div
+                id="settings-panel-remote-access"
+                role="tabpanel"
+                aria-labelledby="settings-tab-remote-access"
+                hidden={category !== "remote-access"}
+              >
+                <RemoteAccessSettingsSection remoteAccess={remoteAccess} />
               </div>
             )}
             {webAuth === undefined ? null : (

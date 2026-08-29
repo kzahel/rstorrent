@@ -1,0 +1,235 @@
+.panel {
+  display: grid;
+  gap: var(--ui-space-lg);
+}
+
+.statusCard,
+.section {
+  display: grid;
+  gap: var(--ui-space-md);
+  border: 1px solid var(--border-soft);
+  border-radius: 0.7rem;
+  padding: var(--ui-space-md);
+}
+
+.statusCard > div:first-child,
+.sectionHeading > div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.statusCard > div:first-child span,
+.note,
+.sectionHeading p,
+.records small,
+.audit small {
+  color: var(--text-muted);
+  font-size: var(--ui-font-small);
+  line-height: 1.45;
+}
+
+.statusCard p,
+.section p,
+.section h3,
+.section h4 {
+  margin: 0;
+}
+
+.identity {
+  display: grid;
+  gap: var(--ui-space-xs);
+  margin: 0;
+}
+
+.identity > div {
+  display: grid;
+  grid-template-columns: minmax(7rem, 0.35fr) minmax(0, 1fr);
+  gap: var(--ui-space-sm);
+}
+
+.identity dt {
+  color: var(--text-muted);
+  font-size: var(--ui-font-small);
+}
+
+.identity dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.identity code,
+.records code,
+.audit code {
+  color: var(--text-secondary);
+  font-size: var(--ui-font-caption);
+  overflow-wrap: anywhere;
+}
+
+.statusCard button,
+.section button {
+  min-height: var(--ui-control-height);
+  border: 1px solid var(--border-strong);
+  border-radius: 0.48rem;
+  padding: 0 var(--ui-space-sm);
+  color: var(--text-primary);
+  background: var(--surface-secondary);
+  font: inherit;
+  font-size: var(--ui-font-small);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.statusCard button {
+  justify-self: start;
+}
+
+.statusCard button:disabled,
+.section button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.sectionHeading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--ui-space-md);
+}
+
+.form {
+  display: grid;
+  gap: var(--ui-space-sm);
+}
+
+.form label {
+  display: grid;
+  gap: 0.3rem;
+  color: var(--text-secondary);
+  font-size: var(--ui-font-small);
+  font-weight: 650;
+}
+
+.form input {
+  min-height: var(--ui-control-height);
+  box-sizing: border-box;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.48rem;
+  padding: 0 var(--ui-space-sm);
+  color: var(--text-primary);
+  background: var(--surface-secondary);
+  font: inherit;
+}
+
+.form button {
+  justify-self: start;
+}
+
+.records,
+.audit {
+  display: grid;
+  gap: var(--ui-space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.records > li {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--ui-space-md);
+  border-top: 1px solid var(--border-soft);
+  padding-top: var(--ui-space-sm);
+}
+
+.records li > div:first-child,
+.audit li {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ui-space-xs);
+}
+
+.records small,
+.records code,
+.audit small,
+.audit code {
+  flex-basis: 100%;
+}
+
+.badge {
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+  color: var(--accent-strong);
+  background: var(--selection);
+  font-size: var(--ui-font-caption);
+  font-weight: 750;
+}
+
+.rowActions,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-space-xs);
+}
+
+.rowActions {
+  justify-content: flex-end;
+}
+
+.section .danger {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border-strong));
+  color: var(--danger);
+}
+
+.audit {
+  max-height: 26rem;
+  overflow: auto;
+}
+
+.audit li {
+  border-top: 1px solid var(--border-soft);
+  padding-top: var(--ui-space-xs);
+}
+
+.section details summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: var(--ui-font-small);
+  font-weight: 700;
+}
+
+.section details .audit {
+  margin-top: var(--ui-space-sm);
+}
+
+.success {
+  margin: 0;
+  color: var(--success);
+  font-size: var(--ui-font-small);
+}
+
+.error {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--ui-font-small);
+}
+
+@media (max-width: 680px) {
+  .sectionHeading,
+  .records > li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .rowActions {
+    justify-content: flex-start;
+  }
+
+  .identity > div {
+    grid-template-columns: 1fr;
+    gap: 0.1rem;
+  }
+}
