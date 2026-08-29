@@ -19,8 +19,9 @@ acknowledgement and benign command reduce identically across three observed
 states. Bulk attachment and media breadth remain outside that proof. Ready
 Tactical [`192`](../tactical/192-production-owner-relay-access.md) adds a
 bounded generated remote-security projection for authorized clients and live
-circuits plus bounded security-ledger retrieval; those values remain
-application semantics rather than properties inferred from a WebSocket.
+circuits plus bounded security-ledger retrieval in a loopback-only validation
+composition; those values remain application semantics rather than properties
+inferred from a WebSocket, and no public delivery claim follows.
 
 Completed Tactical
 [`143`](../tactical/143-dual-identity-and-persistence-foundation.md) changes
@@ -1449,8 +1450,9 @@ interactive machine.
    decode/reduce cost, rendering, and memory before selecting binary encoding.
 8. Tactical `190` proves the same generated contract and reducer over an
    OPAQUE-authenticated encrypted relay record without adding a remote view
-   variant. This step is complete; Tactical `192` owns production delivery,
-   resumable authorized-client context and its bounded security projection.
+   variant. This step is complete; Tactical `192` owns production-shaped local
+   delivery, resumable authorized-client context and its bounded security
+   projection. Public delivery remains later work.
 
 Tacticals `033`, `034`, `035`, `048`, `060`, and `065` completed the first six
 steps. Further views should follow observed inspection value. Binary encoding

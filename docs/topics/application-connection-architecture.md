@@ -17,8 +17,9 @@ host, Wasm/browser transport and dumb relay are opt-in proof infrastructure,
 not production remote access; decision-ready Tactical
 [`192`](../tactical/192-production-owner-relay-access.md) owns that next
 boundary, including automatic challenge-bound reconnect for authorized
-browsers and an owner-visible authorization/circuit audit. Tactical `076` adds
-one
+browsers and an owner-visible authorization/circuit audit in a separate
+loopback-only production-shaped composition. Public deployment and support
+remain later work. Tactical `076` adds one
 deliberately limited maintainer-operated private host: bounded Basic
 authentication covers static, health, HTTP, and WebSocket routes; the gateway
 still enforces the exact public HTTPS Origin; and the production React build
@@ -533,11 +534,12 @@ connection, directional ChaCha20-Poly1305 records and no compression. Its
 direct and relayed React traces produce the same negotiation, three normalized
 reducer states, view update/acknowledgement and benign command result. The
 relay records routing/message metrics but has no OPAQUE or application
-dependency. Production Tactical `192` now owns a bounded named-client registry,
-fresh mutual resume beneath the same application connection, exact
-expiry/revocation and the security ledger needed to inspect every authorization
-and live circuit. Key rotation beyond that fixed lifecycle, padding, relay
-discovery, multi-host identity and delegated roles remain later decisions.
+dependency. Tactical `192` now owns a bounded named-client registry, fresh
+mutual resume beneath the same application connection, exact expiry/revocation
+and the security ledger needed to inspect every authorization and live circuit
+through a production-shaped loopback-only service composition. Deployment, key
+rotation beyond that fixed lifecycle, padding, relay discovery, multi-host
+identity and delegated roles remain later decisions.
 The investigation background and evidence gates live in
 [`remote-access-authentication.md`](remote-access-authentication.md). The
 application connection must not need to know whether an encrypted record
@@ -668,7 +670,9 @@ Steps one through six are complete in Tactical `060`. Future bounded work may:
 8. Execute accepted Tactical `190` as the controlled relay-authentication and
    encryption proof using the already-proven direct application frames, then
    execute Tactical `192` for durable authority, challenge-bound resume,
-   authorization/circuit audit and separately authorized production exposure.
+   authorization/circuit audit and a production-shaped loopback-only service.
+   Authorize external deployment and its evidence only through a later
+   tactical.
 
 Browser WebSocket work must not silently introduce a production remote
 listener. Relay work must not be combined into the initial local transport

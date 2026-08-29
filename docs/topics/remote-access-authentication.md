@@ -11,8 +11,9 @@ It does not authorize a production listener, public relay, durable owner
 authority or stable remote wire contract. Decision-ready Tactical
 [`192`](../tactical/192-production-owner-relay-access.md) owns that next
 boundary, including required challenge-bound browser resume and a bounded
-owner-visible authorization/security ledger. Completed Tactical `174`
-separately permits one
+owner-visible authorization/security ledger, but is now deliberately limited
+to production-shaped loopback validation. Deployment and support remain a later
+separately authorized tactical. Completed Tactical `174` separately permits one
 trusted Tailscale operator deployment; tailnet admission is not the owner
 authentication designed here.
 
@@ -26,7 +27,7 @@ bundle, message and owner high-water results live in Tactical `190`. No
 supported remote-access capability exists yet. Tactical `192` now requires a
 private browser to resume ordinary reconnects without another password entry
 and requires the host to list and revoke every authorization and live circuit
-before that claim can change.
+before a later deployment tactical can change that claim.
 
 ## Purpose And Scope
 
@@ -243,18 +244,20 @@ host ID, OPAQUE host setup and relay registration credential distinct.
 
 The completed proof uses a portable-profile host-key tier and requires a
 complete password login after every disconnect. Tactical `192` deliberately
-supersedes that proof limitation for the first production slice: it requires
-one bounded registry of named browser authorizations, challenge-bound automatic
-resume, exact expiry/revocation and an owner-visible security ledger. Account
-delegation, Google/OIDC login, cloud sync, account-wide device identity,
+supersedes that proof limitation for the production-shaped local slice: it
+requires one bounded registry of named browser authorizations, challenge-bound
+automatic resume, exact expiry/revocation and an owner-visible security ledger.
+Account delegation, Google/OIDC login, cloud sync, account-wide device identity,
 passkeys and hardware-backed host keys remain separate later decisions.
 Tactical `190` has closed the source-first dependency
 gate and fixed RFC 9807 Ristretto255/SHA-512/3DH, Argon2id 64 MiB/three
 passes/parallelism one, HKDF-SHA-512 and directional ChaCha20-Poly1305 records.
 Its real Chrome matrix keeps that KSF point within the controlled proof bounds.
 Public-relay, representative low-end-device, durable-authority, resume and
-authorization-audit evidence remain explicitly outside that proof; Tactical
-`192` fixes their production decision boundary without activating it.
+authorization-audit evidence remain explicitly outside that proof. Tactical
+`192` owns durable authority, resume and audit only in a production-shaped
+local composition; public relay/client operation and external evidence remain a
+later tactical.
 
 ## SRP And OPAQUE Background
 
@@ -384,8 +387,8 @@ without moving long-term private bytes through Rust, Kotlin or JavaScript.
 ## Device Identity And Resumption
 
 PAKE authenticates password knowledge, not a physical device. Tactical `192`
-requires a supported private browser to become a named authorized client after
-a successful password login:
+requires a declared private-browser profile to become a named authorized client
+after a successful password login:
 
 1. Generate a device key using the best available local platform facility.
 2. Prove possession of the device private key inside the authenticated E2E
@@ -408,9 +411,9 @@ transferable full-owner bearer credential. Resume proof must be fresh,
 challenge-bound, replay-resistant, expiry-bounded, independently revocable and
 cryptographically bound to the host identity, client identity, relay
 deployment and username, protocol floor, authorization generation and parent
-authorization. A supported private browser attempts it automatically before
-showing the password form; a shared-browser login may keep only page-lifetime
-resume state.
+authorization. A declared private-browser profile attempts it automatically
+before showing the password form; a shared-browser login may keep only
+page-lifetime resume state.
 
 Tactical `192` bounds the initial host registry at 32 current authorized
 clients and 128 non-authorizing expired/revoked tombstones retained for 180
@@ -650,7 +653,7 @@ not a stopping condition for Tactical `190`'s explicit portable-profile tier.
 New-device login, blocking host-identity change, secret handling and honest
 user-facing claims apply proportionately to Tactical `190`. Authorized-client,
 resume, audit and complete invalidation-matrix behavior now belongs to
-production Tactical `192` rather than being implied by the proof.
+production-shaped local Tactical `192` rather than being implied by the proof.
 
 - New-device passphrase login works without a central account or an existing
   paired device when the original host is healthy.
@@ -683,11 +686,13 @@ Decision-ready Tactical
 slice. It owns durable application-private authority, local
 enable/disable/change/recovery UX, desktop and configured-headless host
 lifecycle, an independently delivered remote-only browser capability profile,
-challenge-bound public-relay operation and representative external evidence.
-It requires explicit activation and separate authority before any public
-deployment. Its bounded browser authorization/resume registry and security
-ledger are required, while passkeys, account-wide identity, account delegation
-and multi-user roles remain separate decisions.
+a separate loopback-only production-shaped relay service, and complete local
+package/browser evidence. Its bounded browser authorization/resume registry and
+security ledger are required, while public relay/client deployment, DNS/TLS,
+external paths, support claims, passkeys, account-wide identity, account
+delegation and multi-user roles remain separate decisions. It requires explicit
+activation, and a later tactical requires separate authority before any public
+deployment.
 
 Friend sharing, fragment-held capability links, offline encrypted snapshots,
 UPnP/NAT traversal, wake-up delivery, public accounts and multi-user

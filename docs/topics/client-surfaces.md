@@ -16,9 +16,10 @@ product surface. Its tested proof-only browser transport composes the existing
 withholds socket-open until authenticated host readiness, and explicitly
 rejects torrent byte upload and remote media capability calls. A real Chrome
 trace matches the direct reducer exactly. Ready Tactical
-[`192`](../tactical/192-production-owner-relay-access.md) owns any supported
+[`192`](../tactical/192-production-owner-relay-access.md) owns a release-built
 remote-only React capability profile, private/shared-browser login choice,
-automatic resume and complete authorization/circuit security UX.
+automatic resume and complete authorization/circuit security UX only in an
+explicit loopback validation composition. Publication and support remain later.
 
 The first-party product is implemented across a browser-hosted web view, a
 Tauri desktop webview, Android Compose, and the maintained iOS SwiftUI client.
@@ -472,7 +473,8 @@ accounts, relay operation, wake-up delivery, stable compatibility, and product
 remote-access policy require later threat models and tacticals. Ready Tactical
 `192` now owns the first bounded exception: one named authorized-browser
 registry, automatic challenge-bound resume and an owner-visible security
-surface above the existing application client.
+surface above the existing application client, exercised only against distinct
+local HTTPS/WSS origins and a loopback-only relay service.
 
 Completed Tactical
 [`170`](../tactical/170-configured-linux-headless-service.md) turns that shared
@@ -950,9 +952,11 @@ run. Tactical `013` records explicit product and harness network selection.
 Tacticals `033` through `035` record the leased view-set boundary, responsive
 demo surface, and first live peer projection plus recovery evidence.
 Completed Tactical `117` records the Android product-presentation closure.
-Production remote authorization is decision-ready in Tactical `192`, including
-private-browser automatic resume plus the local/remote security surface for
-authorization inspection and revocation; dynamic Android network controls and
-broader desktop lifecycle work remain later capability boundaries. Signed
+Production-shaped local remote authorization is decision-ready in Tactical
+`192`, including private-browser automatic resume plus the local/remote security
+surface for authorization inspection and revocation. Public client/relay
+deployment and support remain a later tactical; dynamic Android network
+controls and broader desktop lifecycle work remain later capability boundaries.
+Signed
 distribution, updating, CI, product identity, and beta MVP triage are tracked
 in [`beta-release-readiness.md`](beta-release-readiness.md).

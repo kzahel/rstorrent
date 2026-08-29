@@ -305,11 +305,13 @@ inside an envelope.
 
 Ready Tactical
 [`192`](../tactical/192-production-owner-relay-access.md) makes remote-security
-management an application-owned semantic domain above that rule. A capable
-local or authenticated-owner adapter may list bounded authorized-client,
-resume-expiry, live-circuit and security-ledger views and may rename or revoke
-one authorization, revoke all others, require passwords everywhere, sign out
-the verified current browser or clear retained non-authorizing history. Client
+management an application-owned semantic domain above that rule in a
+production-shaped loopback validation composition; it adds no public listener
+or support claim. A capable local or authenticated-owner adapter may list
+bounded authorized-client, resume-expiry, live-circuit and security-ledger views
+and may rename or revoke one authorization, revoke all others, require passwords
+everywhere, sign out the verified current browser or clear retained
+non-authorizing history. Client
 and circuit IDs locate records but never grant access; **this browser** and
 **other browsers** derive from verified transport context rather than caller
 claims. Revocation commits before owned connection generations close, and a

@@ -2,9 +2,9 @@
 
 Status: **Complete as of 2026-08-29.** The controlled native-host/browser-Wasm
 OPAQUE proof, bounded dumb relay, exact application trace and adversarial
-runtime gates pass. Decision-ready production Tactical
-[`192`](192-production-owner-relay-access.md) owns the next boundary; this
-proof remains local-only and unsupported.
+runtime gates pass. Decision-ready production-shaped local Tactical
+[`192`](192-production-owner-relay-access.md) owns the next boundary;
+deployment remains later, and this proof remains local-only and unsupported.
 Desktop signed package and updater Tactical
 [`158`](158-desktop-signed-packaging-and-updater.md) remains independently
 active under the concurrent-work policy.

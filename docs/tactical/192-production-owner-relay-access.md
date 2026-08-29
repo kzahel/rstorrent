@@ -1,12 +1,14 @@
-# Tactical 192: Production Owner Relay Access
+# Tactical 192: Local Production-Shaped Owner Relay Access
 
 Status: **Ready, not active.** Completed controlled foundation Tactical
 [`190`](190-opaque-wasm-relay-foundation.md) supplies the selected cryptographic
 construction, Wasm boundary, dumb-relay behavior, real application trace and
 measured proof limits. Starting this tactical requires explicit user direction.
-Any public relay deployment, DNS/TLS mutation, release publication or external
-account is a separately authorized operation within that execution, not implied
-by this document.
+This tactical is strictly local-only: it may productionize relay/client/host
+code and exercise distinct loopback HTTPS/WSS origins, but it must not create or
+use an external account or host, mutate public DNS/TLS, publish a release or
+retain any nonlocal service. A later separately authorized tactical owns every
+deployment and supported-public-capability claim.
 
 Topics:
 [`remote-access-authentication`](../topics/remote-access-authentication.md),
@@ -23,23 +25,26 @@ Topics:
 The proof establishes that an account-free username/passphrase path is viable,
 but it intentionally loses all authority on exit, binds only loopback, serves no
 supported remote page and has no relay operations or recovery UX. The next
-slice turns that evidence into one deliberately narrow supported capability:
+slice turns that evidence into one deliberately narrow, production-shaped
+local product composition:
 
-> One owner enables remote access locally on a supported desktop or configured
-> Linux headless host, then a freshly loaded supported browser uses the owner's
-> relay-scoped username and passphrase to establish the existing bounded
-> application connection through the operated relay with end-to-end encryption
-> and blocking host pinning. A private browser may then retain one revocable
-> authorization and resume ordinary reconnects without another password entry,
-> while the owner can inspect and terminate every authorization and live
-> circuit from the RSTorrent host.
+> One owner enables the validation mode locally on a declared desktop or
+> configured Linux headless host, then a freshly loaded declared browser uses
+> the owner's relay-scoped username and passphrase to establish the existing
+> bounded application connection through the separate local relay with
+> end-to-end encryption and blocking host pinning. A private browser may then
+> retain one revocable authorization and resume ordinary reconnects without
+> another password entry, while the owner can inspect and terminate every
+> authorization and live circuit from the RSTorrent host.
 
 This tactical stops only when enable, first login, private-versus-shared-browser
 choice, automatic resume, expiry, individual and global revocation, complete
 authorization inspection, passphrase change, disable, local recovery,
-host-identity warning, relay outage and release rollback pass on the declared
-hosts and representative external browsers. The proof harness is removed from
-product selection and remains an internal gate.
+host-identity warning, relay outage and package rollback pass through the
+declared desktop/headless lifecycles and isolated local real-browser profiles.
+The proof harness is removed; the production-shaped composition remains an
+explicit internal validation mode and does not become a supported remote
+product surface.
 
 ## Accepted Product Boundary
 
@@ -56,11 +61,12 @@ product selection and remains an internal gate.
   has the same single-owner authority in this slice. Passkeys, QR enrollment,
   delegated roles and authorization without an initial password remain later
   work.
-- Initial supported hosts are the ordinary desktop application and configured
+- Initial validation hosts are the ordinary desktop application and configured
   Linux headless service. Android, iOS, an extension-owned backend and a generic
   remote daemon are not host surfaces in this slice.
-- The supported controller is the independently served remote React/browser
-  client. Native Android/iOS remote-controller integration remains absent.
+- The validated controller is the independently served release-built
+  React/browser client at a loopback HTTPS origin. Native Android/iOS
+  remote-controller integration remains absent.
 - Remote `.torrent` byte upload, media capability creation, payload streaming,
   filesystem selection and arbitrary HTTP proxying remain disabled. Magnet
   intake, ordinary commands and bounded application views use the encrypted
@@ -68,8 +74,10 @@ product selection and remains an internal gate.
 - The portable-profile host-key tier is the honest initial claim. A protected
   local authority file improves ordinary at-rest handling but is exportable and
   clonable; no hardware-backed, non-exportable or attested identity is claimed.
-- A public relay is an untrusted rendezvous and opaque byte forwarder. It never
-  terminates application encryption or becomes an application principal.
+- The eventual public relay is modeled as an untrusted rendezvous and opaque
+  byte forwarder. Tactical `192` implements that exact dependency boundary in a
+  separate loopback-only service process; it never terminates application
+  encryption or becomes an application principal.
 - The application owner exposes one security surface that lists every current
   authorized browser and live circuit, supports exact revocation, and retains a
   bounded security-event history. A transport identifier, browser label or
@@ -208,16 +216,18 @@ entries are audit evidence only and can never authorize a connection.
 
 The remote client is built from the same reviewed React source and generated
 application contract, with an explicit remote capability profile selecting the
-Wasm transport and hiding unsupported bulk/media/filesystem actions. It is
-served from one dedicated HTTPS origin independent of a user's host and uses a
+Wasm transport and hiding unsupported bulk/media/filesystem actions. Tactical
+`192` serves the release-built bundle from one dedicated loopback HTTPS origin
+independent of the locally tested host and relay origins. It uses a
 release-pinned CSP, immutable hashed assets, no third-party script, no analytics
-and no service-worker persistence in the first slice.
+and no service-worker persistence in the first slice. Publication and a public
+client origin remain later work.
 
 This protects ordinary delivery mistakes but does not turn Wasm, CSP or asset
 hashing into a boundary from the page. Product copy must say that a compromised
 client origin can observe the entered passphrase and decrypted application
-state. Release evidence records the exact client build ID alongside protocol
-version without sending either value inside OPAQUE secrets.
+state. Local artifact evidence records the exact client build ID alongside
+protocol version without sending either value inside OPAQUE secrets.
 
 The browser retains a host pin only after authenticated readiness. Pin storage
 is scoped by relay deployment ID plus username. Clearing browser storage
@@ -227,13 +237,17 @@ identify and revoke the abandoned authorization. A surviving mismatched pin
 remains a blocking identity warning requiring an explicit local recovery
 explanation, not a resume fallback or another password prompt.
 
-## Relay Operation And Bounds
+## Local Production-Shaped Relay And Bounds
 
-The production relay preserves the proof's dependency direction: routing may
-depend on transport/storage/operations, but never on OPAQUE, record keys or
-application DTOs. It adds only the operational breadth needed for one service:
+The production-shaped relay preserves the proof's dependency direction:
+routing may depend on transport/storage/operations, but never on OPAQUE, record
+keys or application DTOs. Tactical `192` turns the proof library into a
+separately supervised service binary whose listeners fail unless every resolved
+address is loopback. It adds the operational breadth needed to validate one
+future service:
 
-- WSS behind one exact TLS authority and stable random relay deployment ID;
+- WSS behind one exact local TLS authority and a durable random relay
+  deployment ID inside the isolated evidence root;
 - durable bounded username reservation with a non-reversible verifier for the
   relay registration credential rather than its plaintext;
 - challenge-bound route reclaims so a captured old claim cannot evict a live
@@ -248,9 +262,12 @@ application DTOs. It adds only the operational breadth needed for one service:
   opaque payload capture by default.
 
 Namespace reservation, offensive-name policy, expiry, abuse response, capacity
-planning, backup, key rotation, deletion and incident rollback must be written
-before public exposure. Billing, regions, multi-relay discovery and a permanent
-wire-compatibility promise remain absent.
+planning, backup, key rotation, deletion and incident rollback must be drafted
+and exercised locally where deterministic, but Tactical `192` cannot validate
+public certificate operation, Internet abuse sources, external availability or
+real incident response. Those are gates for the later deployment tactical.
+Billing, regions, multi-relay discovery and a permanent wire-compatibility
+promise remain absent.
 
 ## Owner, Task And Cancellation Map
 
@@ -286,15 +303,16 @@ principal asserted inside a client frame.
    private/shared choice, reload/restart/relay-route-reattachment resume,
    expiry, sign-out, revocation and audit behavior in real browsers.
 6. Replace proof claim registration with challenge-bound durable relay routing,
-   rate limits and operational cleanup. Run locally and in an isolated staging
-   environment before any public mutation.
+   rate limits and operational cleanup. Run it only as a loopback-bound separate
+   process with an isolated durable root and local TLS authority.
 7. Run the complete direct-versus-relayed trace, active relay, password/resume
    clone, crash, replay, revocation race, audit-retention, flood, restart,
    outage and rollback matrices.
-8. With separate deployment authorization, perform bounded external desktop
-   and headless campaigns from at least two network paths and supported desktop
-   plus phone-sized browsers. Remove or roll back all staging resources unless
-   publication was explicitly requested.
+8. Run packaged desktop and configured-headless hosts against the separate
+   local relay/client origins through isolated real-browser profiles, including
+   desktop and phone-sized viewports, injected path changes and an exact
+   upgrade/rollback cycle. Remove every certificate, authority root, profile,
+   reservation, log and process created by the campaign.
 
 ## Required Evidence
 
@@ -306,15 +324,15 @@ principal asserted inside a client frame.
   wrong/unknown/offline/busy outcomes remain generic and bounded.
 - Private browsers resume without password entry across ordinary socket loss,
   reload, process restart and relay-route reattachment; shared browsers do not
-  persist authority. Expired, signed-out, revoked, replayed, reflected, copied and
-  generation-stale resume attempts fail closed and require the documented full
-  login or identity-recovery path.
+  persist authority. Expired, signed-out, revoked, replayed, reflected, copied
+  and generation-stale resume attempts fail closed and require the documented
+  full login or identity-recovery path.
 - The local and remote security surface lists every authority-bearing record
   and live circuit, closes revoked circuits promptly, keeps revoked state
   non-authorizing, and preserves owner events under failed-attempt pressure
   within the declared record and retention ceilings.
 - Direct and relayed negotiation, view snapshot/update/ack and benign command
-  reduce identically on production adapters.
+  reduce identically on the production-shaped adapters.
 - Active modification, replay, reordering, reflection, route/relay substitution
   and record attacks fail closed without partially admitted application state.
 - Password-file-only, relay-credential-only, resume-only, client-key-only,
@@ -324,14 +342,16 @@ principal asserted inside a client frame.
   queues, task counts and rate-limit high waters; shutdown reaches zero owners.
 - Desktop and configured headless restart/update/rollback preserve torrents and
   either preserve one valid remote generation or remain disabled.
-- Remote client production build, CSP inspection, accessibility, desktop/mobile
-  browser matrix and release provenance pass.
-- Public/staging relay evidence records TLS, capacity, backup/restore, abuse,
-  metrics retention and exact rollback without logging a protocol payload.
+- Remote client production build, CSP inspection, accessibility, isolated
+  desktop/phone-sized real-browser matrix and local artifact provenance pass.
+- The loopback-only relay service records local TLS, exact bind rejection,
+  capacity, backup/restore, abuse-control simulation, metrics retention and
+  exact rollback without logging a protocol payload; the campaign proves no
+  nonloopback listener, external account or retained service exists.
 
 The proportional repository baseline remains the Tactical `190` baseline plus
-desktop/headless package tests affected by the implementation and the approved
-external staging runner.
+desktop/headless package tests affected by the implementation and the
+production-shaped local relay/browser runner.
 
 ## Non-Goals
 
@@ -347,15 +367,19 @@ external staging runner.
   traversal, WebRTC/TURN, wake-up delivery or extension control.
 - Android/iOS host mode or native remote-controller UI.
 - Stable third-party API or permanent public wire compatibility.
+- Public relay/client deployment, public DNS or certificate mutation, external
+  hosting/account creation, release publication, real Internet-path evidence or
+  a supported remote-access product claim.
 
 ## Escalation Contract
 
-Routine refactoring, fixtures, local listeners, isolated staging construction,
-the source-first resume selection, and conservative tightening inside these
-decisions are implementation work once the tactical is activated. Stop for
-direction before changing the selected OPAQUE construction, weakening
-password/pin/resume behavior, making resume a transferable unbound bearer,
-adding an authority or recovery provider, broadening remote payload/media
-access, claiming a stronger key tier, publishing client/relay artifacts,
-mutating public DNS/TLS, or retaining a staging/public service beyond its
-authorized campaign.
+Routine refactoring, fixtures, exact loopback listeners, temporary local TLS,
+isolated local service construction, the source-first resume selection, and
+conservative tightening inside these decisions are implementation work once
+the tactical is activated. Stop for direction before changing the selected
+OPAQUE construction, weakening password/pin/resume behavior, making resume a
+transferable unbound bearer, adding an authority or recovery provider,
+broadening remote payload/media access, claiming a stronger key tier, using any
+nonloopback address or external service/account, publishing client/relay
+artifacts, mutating public DNS/TLS, or retaining any service after the local
+campaign.

@@ -95,11 +95,12 @@ that scope and its cleanup or compatibility rules explicitly.
 
 - [`192-production-owner-relay-access.md`](192-production-owner-relay-access.md):
   ready; turns the passing ephemeral OPAQUE/Wasm/dumb-relay proof into one
-  supported desktop/configured-headless username/passphrase path with durable
-  authority, automatic challenge-bound authorized-browser resume, complete
-  authorization/circuit security audit, explicit recovery lifecycle,
-  independently delivered browser assets, and separately authorized
-  public-relay operations/evidence.
+  local production-shaped desktop/configured-headless username/passphrase path
+  with durable authority, automatic challenge-bound authorized-browser resume,
+  complete authorization/circuit security audit, explicit recovery lifecycle,
+  a release-built browser profile and a separate loopback-only relay service.
+  Deployment and every supported-public-capability claim remain a later
+  separately authorized tactical.
 - [`191-direct-filesystem-storage.md`](191-direct-filesystem-storage.md):
   ready; removes hidden staging and publication machinery across storage,
   persistence, platform adapters, generated contracts, and UI, making direct

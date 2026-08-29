@@ -20,7 +20,8 @@ ephemeral OPAQUE native/Wasm dumb-relay composition. It does not broaden these
 deployment claims. Ready Tactical
 [`192`](../tactical/192-production-owner-relay-access.md) owns the future
 desktop/configured-headless host lifecycle, durable authority, authorized-
-browser resume and operator security-audit boundary.
+browser resume and operator security-audit boundary only in a production-shaped
+loopback validation composition. Deployment remains later work.
 
 ## Purpose And Scope
 
@@ -242,7 +243,7 @@ combinations that look secure but are not.
 | Private reverse-proxy host | One explicit unicast backend address | Bounded Basic credential, with password from a secret file | Public HTTPS/WSS terminated by an operator-owned proxy | Implemented maintainer preview |
 | Trusted private LAN | One exact non-loopback RFC 1918 IPv4 authority | None; every reachable client has full owner control | Plain HTTP/WS with exact Host and Origin, no confidentiality | Implemented operator mode |
 | Trusted Tailscale overlay | Exact loopback backend plus one exact HTTPS `*.ts.net` authority | None; every identity admitted by tailnet policy has full owner control | Tailscale transport and Serve HTTPS/WSS | Implemented operator mode |
-| Owner remote access | Direct or relay-mediated host | Passphrase bootstrap plus bounded named-browser authorization, automatic resume and exact revocation | Authenticated end-to-end records; relay remains opaque | Tactical `192` ready, not implemented |
+| Owner remote access | Direct or relay-mediated host | Passphrase bootstrap plus bounded named-browser authorization, automatic resume and exact revocation | Authenticated end-to-end records; relay remains opaque | Tactical `192` local validation ready; deployment later |
 | Development-none | Ephemeral loopback only | None | Local test traffic only | Implemented development mode |
 
 The immediate operator deployment may place RSTorrent behind Caddy, nginx, or
@@ -487,7 +488,9 @@ loopback application owner rather than changing a package. Ready Tactical
 `192` must integrate a durable remote owner into the desktop and configured
 headless lifecycles explicitly, including persistent resume authorization,
 revocation-driven live closure and the bounded operator security ledger; proof
-success does not enable either host.
+success leaves that composition in an explicit local validation mode and does
+not enable either host for public remote access. A later tactical owns service
+deployment, external paths and support.
 
 ## Non-Goals
 

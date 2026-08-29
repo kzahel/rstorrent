@@ -192,7 +192,9 @@ surfaces do not show an inert cookie-session category.
 Ready Tactical
 [`192`](../tactical/192-production-owner-relay-access.md) adds a distinct
 capability-gated **Remote access security** category rather than overloading
-that loopback **Web access** panel. After the first successful remote password
+that loopback **Web access** panel. This first implementation is exercised only
+from the release-built bundle at a distinct loopback HTTPS origin and does not
+become a published client surface. After the first successful remote password
 login, the browser offers an explicit primary **Private browser — stay
 authorized** choice and a secondary **Shared browser — this page only** choice.
 A returning private browser shows bounded **Reconnecting securely** progress
