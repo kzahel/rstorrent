@@ -8,11 +8,20 @@ publish = false
 
 [dependencies]
 axum = { workspace = true, features = ["ws"] }
+base64.workspace = true
 futures-util = { workspace = true, features = ["sink"] }
+getrandom.workspace = true
+p256.workspace = true
+rustix.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 subtle.workspace = true
+tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
 tokio-util.workspace = true
+url.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
+reqwest.workspace = true
 tokio-tungstenite.workspace = true

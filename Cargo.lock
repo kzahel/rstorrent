@@ -4393,11 +4393,20 @@ name = "rstorrent-remote-relay"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "futures-util",
+ "getrandom 0.3.4",
+ "p256",
+ "reqwest",
+ "rustix",
+ "serde",
+ "serde_json",
  "subtle",
+ "tempfile",
  "tokio",
  "tokio-tungstenite",
  "tokio-util",
+ "url",
  "zeroize",
 ]
 

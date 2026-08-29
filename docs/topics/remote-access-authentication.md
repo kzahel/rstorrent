@@ -29,9 +29,13 @@ landed its first two internal boundaries: the selected mutually authenticated
 P-256 resume core and a runtime-independent durable-authority domain with
 bounded client, tombstone, security-event and failed-attempt registries. Its
 Unix store proves atomic prior-or-new replacement, exact owner-only modes and
-history-only disable. Desktop/headless commands, live circuit ownership,
-browser key persistence and the production-shaped relay/client composition are
-still absent, so this does not change the product claim. Tactical `192` still
+history-only disable. A further relay-library boundary now durably stores only
+route usernames and P-256 public keys and requires a fresh signed challenge for
+host claims and route release; restart, replay, replacement, exact-Origin,
+bounded-admission and opaque-forwarding tests pass. Desktop/headless commands,
+live circuit ownership, browser key persistence, the supervised TLS relay and
+the remote-client composition are still absent, so this does not change the
+product claim. Tactical `192` still
 requires a private browser to resume ordinary reconnects without another
 password entry and requires the host to list and revoke every authorization
 and live circuit before a later deployment tactical can change that claim.

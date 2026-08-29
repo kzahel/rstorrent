@@ -397,10 +397,20 @@ principal asserted inside a client frame.
   ceilings, prune both retention periods, prove password/global generation
   fencing and complete a fresh resume through application record encryption.
   `cargo test -p rstorrent-remote-access` and strict all-target clippy pass.
+- The first Step 6 boundary is also complete in the relay library. Its durable
+  store retains only a deployment ID, sorted usernames and P-256 public keys;
+  a fresh relay challenge plus signature authorizes every host claim and route
+  release. One waiting generation and one active circuit remain exact per
+  route, all forwarding stays opaque, public failures are generic, and bounded
+  aggregate/source/route buckets create no attacker-owned tasks. Restart,
+  idempotent reservation, conflicting-key, wrong-key, replay, exact-Origin,
+  release, owner-mode, corruption and end-to-end forwarding tests pass. The
+  separately supervised TLS service and local authority runner are still part
+  of unfinished Step 6.
 
-No desktop/headless command, host task, browser persistence, relay service or
-supported product surface is implied by these first two internal checkpoints.
-Steps 3 through 8 remain required.
+No desktop/headless command, host task, browser persistence, TLS relay service
+or supported product surface is implied by these internal checkpoints. Steps
+3 through 5, the remainder of Step 6, and Steps 7 and 8 remain required.
 
 ## Required Evidence
 

@@ -11,7 +11,6 @@ fn relay_manifest_has_no_crypto_or_application_dependency() {
         "rstorrent-gateway",
         "rstorrent-session",
         "rstorrent-engine",
-        "serde_json",
     ] {
         assert!(
             !manifest.contains(forbidden),

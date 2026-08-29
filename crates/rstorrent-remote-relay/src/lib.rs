@@ -1,9 +1,18 @@
 #![forbid(unsafe_code)]
-//! Local-only bounded dumb relay for Tactical 190's controlled proof.
+//! Local-only bounded dumb relay implementations.
 //!
 //! This crate owns routing metadata and opaque WebSocket messages. It has no
-//! dependency on OPAQUE, encrypted records, or application frame types and it
-//! exposes no durable/public relay binary.
+//! dependency on OPAQUE, encrypted records, or application frame types. The
+//! `ProofRelay` remains only while Tactical 192 migrates its harness;
+//! `ProductRelay` is the durable, challenge-bound local validation service.
+
+mod production;
+
+pub use production::{
+    HOST_CHALLENGE_MAGIC, HOST_PROOF_MAGIC, ProductRelay, ProductRelayError,
+    ProductRelayMetricsSnapshot, ProductRelayServer, RELEASE_COMPLETE_MAGIC, ReserveRouteRequest,
+    ReserveRouteResponse, encode_host_proof, host_claim_transcript,
+};
 
 use std::collections::BTreeMap;
 use std::fmt;
