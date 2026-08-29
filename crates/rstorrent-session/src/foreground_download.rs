@@ -39,6 +39,7 @@ const EXIT_LOCKED: i32 = 3;
 const EXIT_REJECTED: i32 = 4;
 const EXIT_RUNTIME: i32 = 5;
 const EXIT_INTERRUPTED: i32 = 130;
+#[cfg(unix)]
 const EXIT_TERMINATED: i32 = 143;
 
 const HELP: &str = "\
@@ -978,6 +979,7 @@ fn is_lower_hex(byte: u8) -> bool {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ReceivedSignal {
     Interrupt,
+    #[cfg(unix)]
     Terminate,
     SetupFailure,
 }
@@ -1227,6 +1229,7 @@ impl CliError {
                 exit: EXIT_INTERRUPTED,
                 message: "download interrupted".to_owned(),
             },
+            #[cfg(unix)]
             ReceivedSignal::Terminate => Self {
                 exit: EXIT_TERMINATED,
                 message: "download terminated".to_owned(),
