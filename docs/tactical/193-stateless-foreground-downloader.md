@@ -359,9 +359,10 @@ the transient part disappears only after joined shutdown.
 
 ### SFD-003: Empty and rejected selection
 
-A valid out-of-range/padding-only `so` resolves to zero wanted files, writes no
-payload, reports the no-op, and exits `0`. Malformed, inverted, empty-token, or
-over-limit input follows the already accepted strict parser and exits `4` with
+A valid padding-only `so` resolves to zero wanted files, writes no payload,
+reports the no-op, and exits `0`. Out-of-range, malformed, inverted,
+empty-token, or over-limit input follows the already accepted strict parser and
+exits `4` with
 no content. It never becomes an all-files download.
 
 ### SFD-004: Local metainfo

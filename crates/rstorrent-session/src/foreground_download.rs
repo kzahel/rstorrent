@@ -4,6 +4,7 @@ use std::ffi::{OsStr, OsString};
 use std::fs::{self, File, OpenOptions, TryLockError};
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use rstorrent_protocol::metainfo::MAX_EXPLICIT_METAINFO_LENGTH;
@@ -199,12 +200,14 @@ async fn execute(arguments: DownloadArguments) -> Result<CompletionSummary, CliE
                 .with_path_part_directory(workspace.path.clone());
                 match ApplicationService::open(config).await {
                     Ok(opened) => {
+                        let opened = Arc::new(tokio::sync::Mutex::new(opened));
+                        ApplicationService::ensure_maintenance_owner(&opened).await;
                         service = Some(opened);
                         if let Some(signal) = signals.pending() {
                             Err(CliError::signal(signal))
                         } else {
                             download(
-                                service.as_mut().expect("service was installed"),
+                                service.as_ref().expect("service was installed"),
                                 source,
                                 &output_root,
                                 &mut signals,
@@ -224,8 +227,8 @@ async fn execute(arguments: DownloadArguments) -> Result<CompletionSummary, CliE
 
     renderer.finish();
     let mut cleanup_error = None;
-    if let Some(service) = service.as_mut()
-        && let Err(error) = service.shutdown().await
+    if let Some(service) = service.as_ref()
+        && let Err(error) = service.lock().await.shutdown().await
     {
         cleanup_error = Some(format!("join downloader service: {error}"));
     }
@@ -243,7 +246,7 @@ async fn execute(arguments: DownloadArguments) -> Result<CompletionSummary, CliE
 }
 
 async fn download(
-    service: &mut ApplicationService,
+    service: &Arc<tokio::sync::Mutex<ApplicationService>>,
     source: PreparedSource,
     output_root: &Path,
     signals: &mut SignalOwner,
@@ -252,6 +255,8 @@ async fn download(
     let response = match source {
         PreparedSource::Magnet(magnet) => {
             service
+                .lock()
+                .await
                 .dispatch(RequestEnvelope {
                     version: CONTROL_VERSION,
                     request_id: "foreground-add-magnet".to_owned(),
@@ -269,6 +274,8 @@ async fn download(
             let source_length = u32::try_from(bytes.len())
                 .map_err(|_| CliError::rejected("torrent source length exceeds u32"))?;
             service
+                .lock()
+                .await
                 .add_torrent_bytes(
                     AddTorrentBytesRequest {
                         version: CONTROL_VERSION,
@@ -285,8 +292,10 @@ async fn download(
         }
     }
     .map_err(|error| CliError::runtime(format!("add torrent: {error}")))?;
-    let (torrent_id, mut snapshot) = accepted_add(response)?;
+    let (torrent_id, _) = accepted_add(response)?;
     let subscription = service
+        .lock()
+        .await
         .subscribe(SubscriptionSpec {
             selector: ViewSelector::Torrent {
                 torrent_id: torrent_id.clone(),
@@ -310,13 +319,28 @@ async fn download(
         renderer.render(current)?;
     }
 
-    let mut sequence = 0_u64;
     loop {
-        if let Some(terminal) =
-            terminal_outcome(&torrent_id, &snapshot, view.as_ref(), output_root)?
-        {
-            subscription.close();
-            return terminal;
+        if view.as_ref().is_some_and(view_requires_terminal_snapshot) {
+            let response = service
+                .lock()
+                .await
+                .dispatch(RequestEnvelope {
+                    version: CONTROL_VERSION,
+                    request_id: "foreground-final-snapshot".to_owned(),
+                    expected_revision: None,
+                    command: Command::Snapshot,
+                })
+                .await
+                .map_err(|error| {
+                    CliError::runtime(format!("observe download completion: {error}"))
+                })?;
+            let snapshot = successful_snapshot(response)?;
+            if let Some(terminal) =
+                terminal_outcome(&torrent_id, &snapshot, view.as_ref(), output_root)?
+            {
+                subscription.close();
+                return terminal;
+            }
         }
         tokio::select! {
             signal = signals.receive() => {
@@ -339,24 +363,22 @@ async fn download(
                 }
             }
             () = tokio::time::sleep(POLL_INTERVAL) => {
-                sequence = sequence.checked_add(1).ok_or_else(|| {
-                    CliError::runtime("progress request sequence overflow")
-                })?;
-                let response = service.dispatch(RequestEnvelope {
-                    version: CONTROL_VERSION,
-                    request_id: format!("foreground-snapshot-{sequence}"),
-                    expected_revision: None,
-                    command: Command::Snapshot,
-                }).await.map_err(|error| {
-                    CliError::runtime(format!("observe download completion: {error}"))
-                })?;
-                snapshot = successful_snapshot(response)?;
                 if let Some(current) = view.as_ref() {
                     renderer.render(current)?;
                 }
             }
         }
     }
+}
+
+fn view_requires_terminal_snapshot(view: &TorrentView) -> bool {
+    matches!(
+        view.state,
+        TorrentState::Complete
+            | TorrentState::NeedsRepair
+            | TorrentState::Error
+            | TorrentState::Paused
+    ) || view.progress.disposition == ProgressDisposition::Blocked
 }
 
 fn accepted_add(response: ResponseEnvelope) -> Result<(String, ServiceSnapshot), CliError> {
@@ -420,20 +442,19 @@ fn terminal_outcome(
         .iter()
         .find(|torrent| torrent.torrent_id == torrent_id)
         .ok_or_else(|| CliError::runtime("torrent disappeared before completion"))?;
+    let zero_selection = torrent.metadata_available
+        && torrent.selection_default == FilePriority::Skip
+        && torrent.selection_exceptions.is_empty();
+    let completion = || CompletionSummary {
+        output_root: output_root.to_path_buf(),
+        name: view
+            .and_then(|view| view.display_name.as_deref())
+            .map(|name| sanitize(name, 160)),
+        zero_selection,
+    };
     match torrent.state {
-        TorrentState::Complete => {
-            let zero_selection = torrent.metadata_available
-                && torrent.selection_default == FilePriority::Skip
-                && torrent.selection_exceptions.is_empty();
-            let name = view
-                .and_then(|view| view.display_name.as_deref())
-                .map(|name| sanitize(name, 160));
-            Ok(Some(Ok(CompletionSummary {
-                output_root: output_root.to_path_buf(),
-                name,
-                zero_selection,
-            })))
-        }
+        TorrentState::Complete => Ok(Some(Ok(completion()))),
+        TorrentState::Paused if zero_selection => Ok(Some(Ok(completion()))),
         TorrentState::NeedsRepair | TorrentState::Error => {
             let detail = torrent
                 .error
@@ -1081,8 +1102,10 @@ fn format_progress(view: &TorrentView) -> String {
             .as_ref()
             .map(|checking| {
                 format!(
-                    "checking {}/{} pieces",
-                    checking.pieces_processed, checking.pieces_total
+                    "checking {} {}/{} pieces",
+                    checking_phase(checking.phase),
+                    checking.pieces_processed,
+                    checking.pieces_total
                 )
             })
             .unwrap_or_else(|| {
@@ -1106,6 +1129,17 @@ fn format_progress(view: &TorrentView) -> String {
             }
         }
         reason => progress_reason(reason).to_owned(),
+    }
+}
+
+fn checking_phase(phase: crate::CheckingPhaseView) -> &'static str {
+    match phase {
+        crate::CheckingPhaseView::Queued => "queued",
+        crate::CheckingPhaseView::Preparing => "preparing",
+        crate::CheckingPhaseView::Hashing => "hashing",
+        crate::CheckingPhaseView::ReconcilingStorage => "reconciling",
+        crate::CheckingPhaseView::Paused => "paused",
+        crate::CheckingPhaseView::Finalizing => "finalizing",
     }
 }
 
