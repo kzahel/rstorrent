@@ -14,7 +14,10 @@ credential-free RFC 1918 and Tailscale Serve modes, and real x86_64
 lifecycle/transfer/current-host campaigns pass. The native ARM64 release job
 exists without a native ARM64 systemd claim. Production owner-remote
 authentication, relay delivery, promoted signed public headless artifacts,
-and system-wide service ownership do not exist yet.
+and system-wide service ownership do not exist yet. Accepted later Tactical
+[`190`](../tactical/190-opaque-wasm-relay-foundation.md) owns only a controlled
+OPAQUE native/Wasm dumb-relay proof; it does not broaden these deployment
+claims.
 
 ## Purpose And Scope
 
@@ -472,9 +475,10 @@ ownership, data-preserving removal, and explicit startup policy.
 
 The desktop windowless/extension-attachment tactical can proceed independently
 because it uses the same application-service and presentation-lifecycle
-invariants but a different OS shell and local authentication boundary. The
-remote-authentication research tactical remains separate from both and may
-reuse the headless package once its direct application connection is stable.
+invariants but a different OS shell and local authentication boundary.
+Accepted Tactical `190` remains separate from both and may reuse the headless
+package only for its controlled remote-authentication proof once the direct
+application connection is stable.
 
 ## Non-Goals
 

@@ -9,14 +9,18 @@ bounded `/api/v1/connect` WebSocket. HTTP long polling remains an explicit
 loopback diagnostic adapter, and acknowledged per-view-set Tauri Channel
 delivery shares the extracted Rust acknowledgement core without opening a
 socket. The legacy `/control` route, frames, direct-DOM frontend and superseded
-tests are deleted. Future relay delivery still wraps these application frames
-in an end-to-end encrypted circuit rather than creating another application
-API. Tactical `076` adds one deliberately limited maintainer-operated private
-host: bounded Basic authentication covers static, health, HTTP, and WebSocket
-routes; the gateway still enforces the exact public HTTPS Origin; and the
-production React build selects the same origin explicitly. This is not the
-future relay, device-authentication, encryption, or stable-public-compatibility
-campaign, which remains unauthorized and unimplemented. Tactical `081`
+tests are deleted. Accepted later Tactical
+[`190`](../tactical/190-opaque-wasm-relay-foundation.md) will prove that relay
+delivery wraps these application frames in an OPAQUE-authenticated encrypted
+circuit rather than creating another application API; it has not started and
+does not authorize production remote access. Tactical `076` adds one
+deliberately limited maintainer-operated private host: bounded Basic
+authentication covers static, health, HTTP, and WebSocket routes; the gateway
+still enforces the exact public HTTPS Origin; and the production React build
+selects the same origin explicitly. This is neither Tactical `190`'s controlled
+relay proof nor a production relay, device-authentication, encryption, or
+stable-public-compatibility campaign; those capabilities remain unimplemented.
+Tactical `081`
 extends the same connection with one declared, one-frame binary `.torrent`
 attachment bounded at 64 MiB while retaining the 64-KiB text bound; HTTP
 remains an explicit automation adapter and Tauri uses raw in-process IPC.
@@ -518,11 +522,12 @@ typed application frame
   -> WebSocket/TLS transport
 ```
 
-Exact authentication, pairing, device identity, cryptography, key rotation,
-record sequence, padding, compression-oracle policy and relay discovery are
-deliberately not selected here. A security tactical must choose and review
-them before remote implementation. The investigation background and evidence
-gates now live in
+Accepted Tactical `190` selects account-free OPAQUE, one native/Wasm Rust core,
+a portable-profile host key, a full password login per connection and no
+compression for its controlled proof. Its pre-code gate must still close the
+exact Argon2id and encrypted-record construction. Pairing, remembered devices,
+key rotation, padding, resumption and relay discovery remain later decisions.
+The investigation background and evidence gates live in
 [`remote-access-authentication.md`](remote-access-authentication.md). The
 application connection must not need to know whether an encrypted record
 traveled directly or through a relay.
@@ -648,8 +653,9 @@ Steps one through six are complete in Tactical `060`. Future bounded work may:
 7. Further unify the Tauri attachment owner and, when justified, replace
    per-stream Channels with one window-level multiplexed Channel without
    routing native calls through HTTP or JSON unnecessarily.
-8. Design and implement relay authentication/encryption as its own security
-   campaign using the already-proven direct application frames.
+8. Execute accepted Tactical `190` as the controlled relay-authentication and
+   encryption proof using the already-proven direct application frames, then
+   authorize production exposure only through a separate tactical.
 
 Browser WebSocket work must not silently introduce a production remote
 listener. Relay work must not be combined into the initial local transport

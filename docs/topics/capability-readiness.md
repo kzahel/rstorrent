@@ -877,7 +877,12 @@ multi-interface and BEP 45 multi-address binding,
 local service discovery,
 NAT traversal, dynamic VPN and metered-network controls, and production
 remote access remain
-important. Tactical `112` now owns IPv6 DHT operation and dual-stack
+important. Accepted Tactical
+[`190`](../tactical/190-opaque-wasm-relay-foundation.md) owns a later controlled
+OPAQUE native/Wasm dumb-relay proof without public exposure, durable authority,
+remembered devices or account delegation; it remains **Later** until explicitly
+selected and does not displace Tactical `158` as the sole **Now**. Tactical
+`112` now owns IPv6 DHT operation and dual-stack
 listening. Closed Tactical `113` implements IPv6 firewall-pinhole control but
 records positive physical capability as unknown on the current hardware after
 the live gateway returned typed `606` to `AddPinhole`.

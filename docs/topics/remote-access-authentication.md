@@ -3,13 +3,14 @@
 Topic: `remote-access-authentication`
 
 Status: Direction and investigation background accepted from maintainer
-discussion on 2026-08-04. Owner end-to-end remote control is the first desired
-future remote feature, with username/passphrase login available from a new
-device without prior pairing or a central product account. No production
-listener, relay, password protocol, cryptographic library, platform key
-dependency, persistence schema or stable remote wire contract is authorized
-or implemented by this topic. Completed Tactical `174` separately permits one
-trusted Tailscale operator deployment; tailnet admission is not the owner
+discussion on 2026-08-04. Tactical
+[`190`](../tactical/190-opaque-wasm-relay-foundation.md) was accepted on
+2026-08-29 for later execution and selects an account-free OPAQUE login through
+one native/Wasm Rust core and a controlled dumb-relay proof. It is not the
+authoritative **Now**, has not started implementation and does not authorize a
+production listener, public relay, durable owner authority or stable remote
+wire contract. Completed Tactical `174` separately permits one trusted
+Tailscale operator deployment; tailnet admission is not the owner
 authentication designed here.
 
 ## Purpose And Scope
@@ -21,7 +22,8 @@ connection. It records:
 - the password-authenticated login semantics desired by the product;
 - the relationship among password, host, device, relay and connection
   identities;
-- the SRP and OPAQUE distinction without prematurely selecting either;
+- the SRP and OPAQUE distinction and why OPAQUE is selected for the first
+  controlled proof;
 - profile theft, verifier theft, host cloning, active proxy, downgrade,
   resumption and live-process attack scenarios;
 - hardware-backed, operating-system-protected and portable host-key tiers;
@@ -203,33 +205,27 @@ least:
 Application frames must never accept `is_admin`, `read_only`, `device_id` or
 similar assertions from untrusted client payloads as their authority.
 
-## Current Direction And Open Selection
+## Current Direction And Selected First Slice
 
 The accepted requirement is a password-authenticated E2E key exchange through
-an untrusted relay. SRP-6a is the concrete behavioral baseline because the
-maintainer has shipped and extended that model in YepAnywhere. OPAQUE is a
-candidate, not an accepted replacement.
+an untrusted relay. SRP-6a remains useful product history because the
+maintainer has shipped and extended that model in YepAnywhere. Tactical `190`
+selects OPAQUE for the first controlled feasibility and application-composition
+proof; that selection is not yet a production dependency or support claim.
 
-The future security tactical must select one reviewed construction rather than
-compose new cryptographic protocols from primitives. The selection must be
-based on current library, platform and attack evidence rather than protocol
-novelty.
+One runtime-independent Rust core will own OPAQUE, transcript binding and the
+encrypted record state natively on the host and through Wasm in the browser.
+WebCrypto remains the browser CSPRNG and future non-extractable-device-key seam,
+not a second cryptographic protocol implementation. The product presents a
+username/passphrase model while keeping its relay-scoped routing name, random
+host ID, OPAQUE host setup and relay registration credential distinct.
 
-The following remain deliberately open:
-
-- SRP-6a, OPAQUE or another reviewed aPAKE;
-- exact groups, curves, hashes, key-stretching and cipher suites;
-- Rust, browser/Wasm, Android and Apple implementation libraries;
-- whether the password protocol directly authenticates a host identity key or
-  a separately reviewed transcript signature supplies that binding;
-- whether a routing name is globally human-readable, scoped by relay or backed
-  by a random opaque host identifier;
-- credential storage, password normalization, password change and rate policy;
-- device enrollment, key storage, attestation and revocation details;
-- resume construction, duration, rotation and recovery;
-- host backup, migration, replacement and identity-reset UX; and
-- the exact assurance shown to the user for hardware-bound, OS-protected and
-  portable host identities.
+The proof uses a portable-profile host-key tier and requires a complete
+password login after every disconnect. Account delegation, Google/OIDC login,
+cloud sync, remembered devices, resumption and hardware-backed host keys remain
+separate later decisions. The exact dependency graph, Argon2id parameters and
+record cipher construction remain subject to Tactical `190`'s source-first
+pre-code gate rather than being inferred from the high-level selection.
 
 ## SRP And OPAQUE Background
 
@@ -262,7 +258,7 @@ server as a client. A transparent attacker that terminates both sides therefore
 needs an additional client credential, resume secret, recovered password or
 compromise of the original host.
 
-### OPAQUE candidate
+### OPAQUE selected proof target
 
 OPAQUE combines an OPRF-backed password credential envelope with an
 authenticated key exchange. The standardized construction includes an
@@ -279,8 +275,8 @@ OPAQUE does not protect a perfect clone that possesses every long-term server
 secret. A corrupted single server can still perform an exhaustive offline
 dictionary attack, and a resumption design that persists or reuses the wrong
 key can discard forward-secrecy advantages. Its newer standard and more
-complex state are reasons for library and operational evaluation, not reasons
-to reject or adopt it automatically.
+complex state require the library and operational evaluation specified by
+Tactical `190`; selection for that proof is not a shortcut around those gates.
 
 ### First-use distinction
 
@@ -444,6 +440,10 @@ claims must name which operator and code-delivery assumptions they cover.
   including registration, online AKE, password stretching hooks,
   precomputation resistance, forward secrecy, server-key separation and the
   remaining offline-dictionary boundary after single-server compromise.
+- [RFC 9497](https://www.rfc-editor.org/rfc/rfc9497.html) specifies the VOPRF
+  construction used by the selected OPAQUE configuration.
+- [RFC 9106](https://www.rfc-editor.org/rfc/rfc9106.html) specifies Argon2id
+  and the memory/time tradeoffs that the browser proof must measure.
 - [RFC 9180](https://www.rfc-editor.org/rfc/rfc9180.html) specifies HPKE and is
   relevant background for high-entropy PSK/public-key constructions. HPKE is
   not a password protocol and must not receive a human passphrase as a PSK.
@@ -452,12 +452,31 @@ Implementation must re-read the exact current documents, errata, library
 documentation and test vectors rather than treat this summary as normative
 protocol guidance.
 
+### OPAQUE Rust/Wasm candidate
+
+The initial exact candidate for Tactical `190` is
+[`opaque-ke` `4.0.1`](https://crates.io/crates/opaque-ke/4.0.1), tag `v4.0.1`
+commit `75fe4cdddb7946440054da0c8e7cdd73828af3f9`, crates.io SHA-256
+`ded22991b43cd15561b62b2e1cf9ace1344a8534eebec96202d5c96a77a6616a`,
+licensed `MIT OR Apache-2.0` with Rust 1.85 minimum. The surveyed implementation
+and test paths, audit limitation and final dependency gate are recorded in the
+tactical and the central reference ledger. No dependency, source or fixture is
+accepted merely by this design selection.
+
+[`@serenity-kit/opaque` `1.1.0`](https://www.npmjs.com/package/@serenity-kit/opaque)
+is a browser/Wasm feasibility and performance reference, not an accepted
+dependency or an independent implementation. Its published browser Argon2
+measurements justify measuring RSTorrent's complete native/Wasm construction
+before selecting parameters.
+
 ### YepAnywhere
 
 The local `~/code/yepanywhere` sibling was inspected during the 2026-08-04
-discussion at commit `cc4732bf8d4ca9d0b4cce1c8eaf13de1ea4f11be`. It is a
-product, architecture and failure reference, not an RSTorrent dependency or
-wire contract. Relevant current paths include:
+discussion at commit `cc4732bf8d4ca9d0b4cce1c8eaf13de1ea4f11be` and its
+relay-relevant paths were refreshed for Tactical `190` at commit
+`dcf0449d5336c866d37c50cb1f2e1df66ed50663`. It is a product, architecture and
+failure reference, not an RSTorrent dependency or wire contract. Relevant
+paths include:
 
 - `packages/server/src/crypto/srp-server.ts`: `tssrp6a`, a 2048-bit group and
   SHA-512 produce the stored salt/verifier and server SRP session;
@@ -473,7 +492,11 @@ wire contract. Relevant current paths include:
 - `docs/project/ws-auth-state-model.md`: trusted-local and SRP-established
   authentication remain distinct; and
 - `topics/relay-origin-and-share-gating.md`: owner Remote Access is E2E while
-  the current public-share exception is relay-readable.
+  the current public-share exception is relay-readable;
+- `docs/project/relay-design.md`, `topics/relay-client-mux.md`,
+  `docs/project/relay-head-of-line-blocking.md`,
+  `packages/shared/src/relay.ts`, and `packages/relay/src/mux-handler.ts`:
+  username routing, opaque forwarding, fairness, fencing and joined cleanup.
 
 Lessons adopted as investigation inputs:
 
@@ -496,25 +519,33 @@ exception without separate evidence and an explicit decision.
 
 ## Feasibility And Library Research Gates
 
-Before selecting or implementing the owner authentication protocol, one
-bounded security tactical must record and satisfy at least these gates.
+Tactical `190` owns the first bounded protocol and composition proof. It must
+record and satisfy the applicable gates below before adding its candidate
+dependency or proof protocol code; later device, recovery and platform-key
+tacticals own the gates that its non-goals explicitly defer.
 
 ### Protocol and library matrix
 
-- Identify maintained SRP-6a and OPAQUE implementations for Rust and the
-  actual browser delivery target, including Wasm feasibility where relevant.
+- Close the exact `opaque-ke` native/Wasm dependency and standards dossier;
+  retain SRP-6a as comparison history rather than implementing both protocols.
 - Record exact versions, licenses, maintainers, recent activity, audits,
   published security review, standards conformance, errata handling and test
   vector coverage.
 - Confirm fixed approved parameters, hostile input validation, constant-time
   behavior, zeroization posture, randomness sources, password byte/string
   normalization and error behavior.
-- Measure browser bundle cost, handshake CPU/memory, low-end Android behavior
-  and denial-of-service cost before authentication succeeds.
+- Prove native/Wasm vector and serialized-message equivalence, browser CSPRNG
+  failure behavior and consuming state-handle semantics.
+- Measure browser bundle cost, handshake CPU/memory and denial-of-service cost
+  before authentication succeeds. Low-end physical-device evidence remains a
+  production gate outside the controlled proof.
 - Reject a design that requires independently reimplementing protocol
   arithmetic or translating key material through an unreviewed custom bridge.
 
 ### Platform key matrix
+
+This matrix remains required before a production protection-tier claim, but is
+not a stopping condition for Tactical `190`'s explicit portable-profile tier.
 
 - Determine non-exportable signing or key-agreement support and exact
   algorithms on macOS, Windows, Android and the supported Linux posture.
@@ -553,6 +584,11 @@ bounded security tactical must record and satisfy at least these gates.
 
 ### Product and recovery evidence
 
+New-device login, blocking host-identity change, secret handling and honest
+user-facing claims apply proportionately to Tactical `190`. Remembered-device
+and complete invalidation-matrix behavior belongs to the later
+production/device tactical rather than being implied by the proof.
+
 - New-device passphrase login works without a central account or an existing
   paired device when the original host is healthy.
 - Remembering a device creates an independently named and revocable identity.
@@ -569,20 +605,18 @@ bounded security tactical must record and satisfy at least these gates.
 ## Recommended Next Work
 
 Do not add a production remote listener or cryptographic dependency from this
-topic alone. After the current authorized product work, create one bounded
-owner-remote-authentication research tactical that:
+topic alone. When explicitly promoted to **Now**, accepted Tactical
+[`190`](../tactical/190-opaque-wasm-relay-foundation.md) owns the controlled
+native-host/browser-Wasm OPAQUE proof, bounded dumb relay, hostile-input and
+clone matrix, resource measurements and exact existing-application trace. It
+must finish by selecting the complete construction and producing a separate
+decision-ready production tactical; it must not expose the proof publicly.
 
-1. refreshes the YepAnywhere dossier and standards/errata review;
-2. fixes the exact threat model and answers the new-client/profile-clone
-   requirement;
-3. builds the protocol and platform-key library matrices;
-4. prototypes only enough SRP and OPAQUE handshakes to exercise browser/Rust
-   interoperability, hardware-key composition and hostile cases;
-5. selects or rejects a construction with explicit reasons;
-6. defines owner, host, device, relay and resume persistence plus cancellation
-   ownership; and
-7. records the separate implementation tactical and evidence gates before any
-   production exposure.
+That later production tactical owns durable application-private authority,
+enable/disable/change/recovery UX, supported host platforms, independently
+delivered client assets and public-relay operational evidence. Remembered
+devices and account delegation remain separate decisions even after the
+password path succeeds.
 
 Friend sharing, fragment-held capability links, offline encrypted snapshots,
 UPnP/NAT traversal, wake-up delivery, public accounts and multi-user

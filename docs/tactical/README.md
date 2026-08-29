@@ -79,6 +79,10 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`190-opaque-wasm-relay-foundation.md`](190-opaque-wasm-relay-foundation.md):
+  accepted and decision-complete for later execution; selects an account-free
+  username/passphrase OPAQUE proof through one native/Wasm Rust core and a
+  bounded dumb relay without authorizing production remote access.
 - [`189-library-playback-and-torrent-size.md`](189-library-playback-and-torrent-size.md):
   complete; connects eligible Library Media Play controls to the existing
   ephemeral browser/Tauri media capability and carries exact torrent total

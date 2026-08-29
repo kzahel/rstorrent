@@ -349,6 +349,59 @@ tracker credential was copied. Controlled roots exist only inside temporary
 test directories or a feature-gated test process and never enter production
 construction or a platform trust store.
 
+## Owner Remote Access References
+
+Accepted Tactical
+[`190`](tactical/190-opaque-wasm-relay-foundation.md) selects an account-free
+OPAQUE native-host/browser-Wasm proof through a controlled dumb relay. The
+normative sources are [RFC 9807](https://www.rfc-editor.org/rfc/rfc9807.html)
+for OPAQUE, [RFC 9497](https://www.rfc-editor.org/rfc/rfc9497.html) for its
+VOPRF, and [RFC 9106](https://www.rfc-editor.org/rfc/rfc9106.html) for
+Argon2id. [RFC 5869](https://www.rfc-editor.org/rfc/rfc5869.html) and
+[RFC 8439](https://www.rfc-editor.org/rfc/rfc8439.html) are candidate record
+KDF/AEAD references; the tactical must record the exact construction before
+implementation. [Web Cryptography Level 2](https://www.w3.org/TR/webcrypto/)
+owns the browser randomness and future non-extractable-key platform boundary,
+not OPAQUE itself.
+
+The initial exact Rust candidate is
+[`opaque-ke` `4.0.1`](https://crates.io/crates/opaque-ke/4.0.1), crates.io SHA-256
+`ded22991b43cd15561b62b2e1cf9ace1344a8534eebec96202d5c96a77a6616a`,
+tag `v4.0.1` commit `75fe4cdddb7946440054da0c8e7cdd73828af3f9`, licensed
+`MIT OR Apache-2.0`, with Rust 1.85 minimum. The source survey covered:
+
+- `src/opaque.rs`, `src/messages.rs`, `src/envelope.rs`,
+  `src/serialization/`, and `src/ksf.rs` for protocol state, codecs, identity
+  handling, hostile decoding and the password-stretching seam;
+- `src/key_exchange/tripledh.rs` and
+  `src/key_exchange/group/ristretto255.rs` for the selected AKE/group;
+- `src/tests/rfc9807_vectors.rs`, `src/tests/test_opaque_vectors.rs`,
+  `src/tests/full_test.rs`, and `src/tests/full_test_vectors.rs` for standards,
+  deterministic and malformed-input behavior; and
+- `src/serialization/tests.rs` and `tests/remote_key.rs` for invalid encodings
+  and the external-private-key seam.
+
+The project's cited NCC Group review covered a 2021 pre-final release, not
+`4.0.1` or RSTorrent's complete composition. Tactical `190` therefore requires
+a fresh audit/change/advisory, dependency-feature and license review before
+adding the crate.
+[`@serenity-kit/opaque` `1.1.0`](https://www.npmjs.com/package/@serenity-kit/opaque)
+is only a browser/Wasm feasibility and Argon2 performance reference, not an
+accepted dependency.
+
+The local YepAnywhere sibling's relay-relevant paths were refreshed at commit
+`dcf0449d5336c866d37c50cb1f2e1df66ed50663`, including
+`docs/project/relay-design.md`, `topics/relay-client-mux.md`,
+`docs/project/relay-head-of-line-blocking.md`,
+`packages/client/src/lib/connection/SecureConnection.ts`,
+`packages/shared/src/relay.ts`, and `packages/relay/src/mux-handler.ts`. They
+inform username routing, one inner protocol, opaque forwarding, fairness,
+generation ownership and cleanup. RSTorrent does not adopt YepAnywhere's SRP,
+NaCl, resume, HTTP-like messages, limits or hosted deployment.
+
+No external source, fixture, test vector, dependency or generated asset was
+imported by the tactical design or this reference record.
+
 ## Application View And Web Client References
 
 The accepted application-view direction in
