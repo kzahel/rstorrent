@@ -1147,6 +1147,15 @@ checkpoint profile, Android cross-build, SAF rename-death AVD, reactive AVD,
 workspace, and web gates pass. The accepted same-length mutation risk remains
 explicit and Force-detectable.
 
+Accepted Tactical
+[`191`](../tactical/191-direct-filesystem-storage.md) is the next storage-model
+replacement checkpoint. It retains `073`/`120`'s common checker, synchronized
+have evidence, Force behavior, positional execution, and resource bounds while
+removing hidden full-payload staging, publication transitions, and provider
+completion rename. Until it lands, `073` plus `120` remains the implemented
+restart checkpoint; afterward this campaign must describe verified direct
+content rather than publication as the completion evidence.
+
 Tacticals `086`--`098` subsequently completed the long-lived torrent peer
 runtime, incoming reachability and coordinated transport foundations,
 availability-ranked activation, truthful tracker/DHT advertisement, bounded

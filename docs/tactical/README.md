@@ -93,6 +93,10 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`191-direct-filesystem-storage.md`](191-direct-filesystem-storage.md):
+  ready; removes hidden staging and publication machinery across storage,
+  persistence, platform adapters, generated contracts, and UI, making direct
+  libtorrent-shaped final paths the sole ordinary payload model.
 - [`190-opaque-wasm-relay-foundation.md`](190-opaque-wasm-relay-foundation.md):
   active; implements an account-free username/passphrase OPAQUE proof through
   one native/Wasm Rust core and a bounded dumb relay without authorizing

@@ -2,8 +2,15 @@
 
 Topic: `download-correctness`
 
-Status: Controlled v1 downloads now verify, persist, resume, and publish through
-a bounded multi-peer request owner across ordinary single-file and selective
+Status: Direct-storage replacement accepted on 2026-08-29. Tactical
+[`191`](../tactical/191-direct-filesystem-storage.md) preserves verification,
+request ownership, synchronized have evidence, selective boundary handling,
+restart, and repair while replacing publication with direct final-path
+readability. The implemented behavior remains publication-based until that
+tactical lands.
+
+Controlled v1 downloads now verify, persist, resume, and publish through a
+bounded multi-peer request owner across ordinary single-file and selective
 multi-file profiles. Completed Tactical
 [`143`](../tactical/143-dual-identity-and-persistence-foundation.md) binds
 durable have and part state to opaque owner plus raw-info fingerprint and

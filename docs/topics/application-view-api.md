@@ -2,7 +2,15 @@
 
 Topic: `application-view-api`
 
-Status: Completed Tactical
+Status: Direct-storage contract replacement accepted on 2026-08-29. Tactical
+[`191`](../tactical/191-direct-filesystem-storage.md) removes publication-only
+states, progress, reasons, media availability, and managed-deletion values
+from the generated view/command schema without a compatibility alias. Existing
+checking, root health, verified-range, wanted-completion, seeding, and repair
+facts become the sole authority. The current generated contract history below
+remains implemented until that tactical lands.
+
+Completed Tactical
 [`143`](../tactical/143-dual-identity-and-persistence-foundation.md) changes
 every torrent route and view key to canonical opaque `TorrentId` and adds a
 separate optional full v1/v2 identity projection. Regenerated schemas,

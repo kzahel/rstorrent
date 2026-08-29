@@ -370,44 +370,31 @@ real-swarm Big Buck Bunny run reaches Complete/Published, advances native video
 playback, releases the preview lease on dismissal, removes managed data, and
 independently shows the selected folder at zero items in Apple Files.
 
-## User-Visible Publication Layout
+## User-Visible Content Layout
 
-A chosen root is intended to contain recognizable content rather than a
-permanent hash-named product layout:
+Accepted direction on 2026-08-29 replaces the implemented publication model
+with [`direct-filesystem-storage.md`](direct-filesystem-storage.md). Tactical
+[`191`](../tactical/191-direct-filesystem-storage.md) is Ready; until it lands,
+the product still follows the historical staging/publication behavior recorded
+by Tacticals `062`, `073`, and `188`.
 
-- a single-file torrent publishes as `<root>/<filename>`; and
-- a multi-file torrent publishes as `<root>/<torrent name>/...` using its safe
-  metainfo-relative tree.
+The accepted root-relative layout is direct:
 
-Engine-owned staging, part files, and other incomplete artifacts may use
-bounded hidden names containing the info hash so ownership and cleanup remain
-unambiguous. They must remain beneath the selected root unless a later
-explicit storage design says otherwise.
+- a single-file torrent stores content as `<root>/<filename>`; and
+- a multi-file torrent stores content as `<root>/<torrent name>/...` using its
+  safe metainfo-relative tree.
 
-Never overwrite an existing final destination or trust it from names, kinds,
-or lengths. Tactical `188` automatically treats exact metainfo destinations
-found without durable ownership as unverified candidates, enters the common
-complete checker, retains only hash-matching pieces, and downloads missing or
-corrupt work normally. Automatic suffixing, blind overwrite, and treating
-same-length files as verified remain rejected. Because adoption never grants
-ownership over unrelated descendants, `Delete managed data` removes exact
-metainfo files and hash-owned auxiliary state, then prunes only empty expected
-directories.
+Fresh wanted bytes are written to those final paths rather than a hidden
+full-payload staging namespace. Existing expected files are normal candidates
+for the common checker: only hash-matching pieces are retained, while missing,
+short, or corrupt work downloads normally. Automatic suffixing, blind
+overwrite, and treating same-length files as verified remain rejected.
 
-Tactical 062 replaces the former `<root>/<info-hash>` bring-up shape for new
-multi-file downloads. The verified safe metainfo name is durable and becomes
-the visible directory; incomplete staging and part artifacts retain hidden
-full-info-hash names. Durable ownership prevents a destination conflict from
-making an unrelated existing directory eligible for managed deletion.
-
-Tactical 073 makes the topology explicit rather than inferring it from file
-count. A BEP 3 `length` form owns a regular-file final and regular-file hidden
-staging artifact. A `files` form owns directory-tree final and staging
-artifacts even when the list contains one file. Both use the same full-info-
-hash plural part artifact when selection needs piece slots, the same durable
-ownership states, atomic no-replace publication, and fail-closed type/symlink
-checks. The obsolete singular `.rstorrent-part` bring-up artifact is neither
-created nor adopted.
+The hidden part artifact remains only when selective piece boundaries require
+storage for bytes belonging to skipped files. Exact delete-data cleanup removes
+metainfo files and that validated auxiliary state, then prunes only empty
+expected directories. It does not claim recursive ownership of the selected
+root or preserve the `managed data` product concept.
 
 ## JSTorrent Product Cheat Sheet
 
@@ -456,14 +443,18 @@ source, fixture, or asset is imported by this topic.
   capabilities; neither is serialized as a portable locator or interpreted by
   another backend.
 - Presentations cannot grant native filesystem authority by sending strings.
-- Root removal, repair, publication, and later relocation never silently move,
-  overwrite, merge, or trust content.
+- Root removal, repair/recheck, direct content access, and later relocation
+  never silently move, overwrite, merge, or trust content.
 - Interactive and headless add paths distinguish user consent from explicit
   developer/test root injection.
 - Metadata-only add may perform bounded metadata networking and parsing but
   cannot create a payload, staging, or part artifact.
 
 ## Recommended Next Work
+
+Execute Tactical `191` to make the accepted direct layout real across path,
+SAF, iOS, persistence, and presentation while preserving this topic's root
+identity, selection, validation, and repair authority.
 
 Tactical `161` provides one native Tauri dialog implementation for Windows,
 packaged Linux, and macOS while leaving the local WebUI helper implementation

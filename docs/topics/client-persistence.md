@@ -2,7 +2,15 @@
 
 Topic: `client-persistence`
 
-Status: Completed Tactical
+Status: Direct-filesystem replacement accepted on 2026-08-29. Tactical
+[`191`](../tactical/191-direct-filesystem-storage.md) is Ready to establish a
+fresh schema-22 epoch and remove publication names/states, namespace intents,
+and managed-deletion policy rather than migrate them. The reset remains
+application-private and must preserve every external final, legacy staging,
+part, and unrelated root artifact. The current implementation described below
+still applies until that tactical lands.
+
+Completed Tactical
 [`188`](../tactical/188-existing-payload-adoption-and-recheck.md) changes no
 schema. It adds one transaction that converts unowned discovered storage into
 the exact staging/published state while advancing `verification_requested`,
@@ -696,6 +704,15 @@ the service as an instance rather than a singleton keeps that later choice
 open without paying these policy costs now.
 
 ## Schema Direction
+
+The accepted successor is a fresh direct-storage schema, not a migration of
+publication-era ownership. Tactical `191` advances schema 21 to disposable
+schema 22, removes publication-specific columns/constraints and compatibility
+readers, and replaces `delete_managed` with a plain exact delete-data job.
+Durable verified metainfo, root/selection/run intent, verification generations,
+synchronized have evidence, repair facts, and restartable exact deletion
+remain. Final content is recovered by re-add and checking; unknown legacy
+hidden artifacts are neither adopted nor deleted by reset.
 
 Tactical `007` should define the first exact schema and migrations. The
 continuing direction is:

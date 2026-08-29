@@ -2,7 +2,14 @@
 
 Topic: `storage-throughput-architecture`
 
-Status: Completed Tactical
+Status: Direct-filesystem replacement accepted on 2026-08-29. Tactical
+[`191`](../tactical/191-direct-filesystem-storage.md) removes staging and
+publication routing while preserving this topic's positional plans,
+independent write/hash execution, durability order, fairness, watermarks, and
+shared resource ceilings. The implemented publication-era architecture
+described below remains current until that tactical lands.
+
+Completed Tactical
 [`188`](../tactical/188-existing-payload-adoption-and-recheck.md) reuses the
 existing complete checker, independent hash execution, shared storage permits,
 and session-wide handle/request ceilings for discovered bytes. It adds no
@@ -20,9 +27,11 @@ coarse joined torrent-generation fence, retained physical routes, lazy part
 creation, and exact verified-span promotion. Tactical `067` now routes path
 and Android SAF files through one session-wide 40-descriptor pool and performs
 all payload I/O in Rust after lazy platform capability acquisition.
-Tactical `073` removes the specialized single-file owner: every v1 metainfo
+Tactical `073` removed the specialized single-file owner: every v1 metainfo
 shape now uses the same bounded positional write/hash executor, checkpoint
-epoch, managed full recheck, and publication fence.
+epoch, managed full recheck, and publication fence. Tactical `191` retains the
+unified executor/checker and deletes only the superseded staging/publication
+namespace layer.
 Completed Tactical
 [`114`](../tactical/114-session-wide-concurrent-torrent-admission.md) moves
 write/hash concurrency and request/payload/active-piece byte authority above

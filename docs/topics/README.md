@@ -76,6 +76,10 @@ Topics own the current truth for a continuing concern. Tactical docs under
   proposed maximum-throughput receive-to-storage pipeline, positional I/O,
   write/hash joins, part-file coordination, batched durability, and
   session/root scheduling.
+- [`direct-filesystem-storage.md`](direct-filesystem-storage.md): accepted
+  libtorrent-shaped direct-to-final-path storage, existing-data recheck,
+  selective part-file limits, exact deletion, platform parity, and complete
+  removal of managed-publication state and terminology.
 - [`android-saf-storage.md`](android-saf-storage.md): persisted Android tree
   capabilities, dynamic document acquisition, shared session-wide descriptor
   pooling, lazy part storage, and the Kotlin namespace/Rust payload boundary.

@@ -2,7 +2,15 @@
 
 Topic: `android-saf-storage`
 
-Status: Completed Tactical
+Status: Direct-final-document replacement accepted on 2026-08-29. Tactical
+[`191`](../tactical/191-direct-filesystem-storage.md) must preserve SAF root
+authority, lazy acquisition, exact path safety, provider repair, and the shared
+40-handle/16-request bounds while removing staging documents, provider
+publication plans, completion rename, and publication-specific generated
+facts. The implemented publication-era behavior below remains current until
+that tactical lands.
+
+Completed Tactical
 [`188`](../tactical/188-existing-payload-adoption-and-recheck.md) applies the
 shared no-resume discovery/full-check decision to local platform-capability
 storage and replaces recursive managed cleanup with an exact payload/empty-

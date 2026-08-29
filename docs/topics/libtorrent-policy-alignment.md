@@ -9,7 +9,10 @@ against pinned Rasterbar libtorrent `2.0.13` at
 complete and aligns `LPA-001` while closing `LPA-002` with a conservative
 RSTorrent-specific saturated-cohort adaptation. Tactical `176` is complete
 and release/updater Tactical `158` remains active; this topic remains the
-durable comparison ledger.
+durable comparison ledger. Maintainer direction on 2026-08-29 accepts
+`LPA-009`: Tactical
+[`191`](../tactical/191-direct-filesystem-storage.md) will remove RSTorrent's
+managed-publication delta and adopt direct final-path storage.
 
 ## Scope
 
@@ -269,6 +272,33 @@ reduce queue wait for a third torrent while making each active torrent's
 connection, hashing, storage, and memory contention worse. Retain two until
 representative devices prove that three improves product outcomes within
 thermal, lifecycle, memory, and cleanup bounds.
+
+### LPA-009: Direct Filesystem Storage
+
+Disposition: **Accepted; Tactical `191` is Ready.**
+
+Pinned libtorrent treats `save_path` plus metainfo-relative paths as the
+ordinary content namespace. Both sparse and allocate storage modes write at
+those final offsets. Existing content without trusted resume evidence enters
+checking by default, and the part file is limited to bytes that fall in
+priority-zero files. Wanted completion is distinct from whole-torrent seeding;
+there is no default hidden whole-payload staging namespace or automatic
+completion publication.
+
+RSTorrent currently stages a single file or tree under a hidden owner-keyed
+name, persists namespace/publication state, and publishes the selected set by
+rename after all wanted pieces are durable. The extra lifecycle delays
+independently completed wanted files and leaks into platform and product
+contracts without a demonstrated need.
+
+Tactical `191` removes this delta rather than preserving it as an option. It
+writes wanted bytes directly to final safe paths, reuses the existing
+no-resume checker and synchronized fast-resume policy, retains only
+selective-boundary part storage, distinguishes wanted completion from seeding,
+and removes publication-specific persistence, platform operations, generated
+facts, and UI terminology. RSTorrent intentionally retains stricter path
+safety, explicit durability generations, bounded task/resource ownership, and
+native platform-capability adapters.
 
 ## Broader Audit Backlog
 

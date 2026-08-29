@@ -2,7 +2,14 @@
 
 Topic: `client-surfaces`
 
-Status: Accepted and implemented across a browser-hosted web view, a Tauri
+Status: Direct-storage presentation replacement accepted on 2026-08-29.
+Tactical [`191`](../tactical/191-direct-filesystem-storage.md) removes
+publication and managed-storage jargon from React/Tauri, Compose, and SwiftUI,
+and makes a completed wanted file usable without another selected file's
+completion. The following surface history remains current until that tactical
+lands.
+
+Accepted and implemented across a browser-hosted web view, a Tauri
 desktop webview, Android Compose, and the maintained iOS SwiftUI client. The
 same mature browser presentation is also packaged by completed Tactical `170`
 for one configured Linux headless service. Completed Tactical `174` attaches
