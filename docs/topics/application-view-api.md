@@ -10,6 +10,14 @@ compatibility alias. Existing checking, root health, verified-range,
 wanted-completion, seeding, and repair facts are the sole authority. Earlier
 generated-contract history below remains as an implementation record.
 
+Completed Tactical
+[`193`](../tactical/193-stateless-foreground-downloader.md) changes no view
+DTO, selector, cursor, delivery, acknowledgement, or generated binding. Its
+finite CLI leases one Summary projection, reduces normal snapshot/update/reset
+traffic, renders bounded human progress, and requests one ordinary application
+snapshot only after the view indicates a terminal candidate. Completion and
+failure remain application facts rather than CLI inference.
+
 Completed remote-foundation Tactical
 [`190`](../tactical/190-opaque-wasm-relay-foundation.md) changes no view DTO,
 cursor, acknowledgement or reducer rule. Its controlled encrypted relay trace

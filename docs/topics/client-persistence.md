@@ -414,7 +414,7 @@ maximum import returns the typed resource limit, rolls back atomically, and
 leaves the first torrent, revision, and store usable. The independent 32-MiB
 metrics budget is unchanged.
 
-Active Tactical
+Completed Tactical
 [`193`](../tactical/193-stateless-foreground-downloader.md) composes this mode
 into one finite native downloader. Its torrent catalog, exact source, metadata,
 selection, have facts, DHT snapshot, and progress history remain in these same
@@ -422,7 +422,9 @@ private databases only until joined exit; final payload stays external and a
 later invocation uses the complete checker rather than a new resume format.
 The small temporary lock rendezvous and invocation-owned selective part
 workspace are operational filesystem resources, not a durable application
-catalog.
+catalog. Controlled completion, cancellation, forced-death recovery, and
+native desktop runs left no session database, metrics database, WAL, shared-
+memory file, DHT snapshot, copied metainfo, or adjacent CLI part artifact.
 
 ### Verified metadata is durable
 

@@ -9,6 +9,13 @@ and makes a completed wanted file usable without another selected file's
 completion. The following surface history remains as an implementation record.
 
 Completed Tactical
+[`193`](../tactical/193-stateless-foreground-downloader.md) adds the separate
+native `rstorrent-download` foreground process. Its strict argument grammar,
+bounded human progress, and terminal summary form a finite command surface,
+not a generated application API, daemon, TUI, or alternate product UI. It
+causes no React, Tauri, Compose, SwiftUI, Android CLI, or iOS CLI change.
+
+Completed Tactical
 [`190`](../tactical/190-opaque-wasm-relay-foundation.md) adds no selectable
 product surface. Its tested proof-only browser transport composes the existing
 `WebSocketApplicationViewClient` above the shared Wasm OPAQUE/record core,

@@ -94,11 +94,13 @@ that scope and its cleanup or compatibility rules explicitly.
 ## Current Tacticals
 
 - [`193-stateless-foreground-downloader.md`](193-stateless-foreground-downloader.md):
-  active; adds one finite native downloader that composes the existing
+  complete; adds one finite native downloader that composes the existing
   ephemeral in-memory-SQLite application service, writes directly to final
   paths, selects all files except an explicit magnet BEP 53 `so` selection,
   cooperatively locks one canonical output root, and keeps selective boundary
-  bytes in an invocation-owned transient workspace.
+  bytes in an invocation-owned transient workspace. Controlled lifecycle and
+  native macOS/Linux/Windows gates pass without durable resume, post-exit
+  seeding, packaging, or a mobile CLI claim.
 - [`192-production-owner-relay-access.md`](192-production-owner-relay-access.md):
   ready; turns the passing ephemeral OPAQUE/Wasm/dumb-relay proof into one
   local production-shaped desktop/configured-headless username/passphrase path

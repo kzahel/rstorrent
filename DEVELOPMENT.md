@@ -88,8 +88,11 @@ Current active release work includes
 [`158-desktop-signed-packaging-and-updater.md`](docs/tactical/158-desktop-signed-packaging-and-updater.md),
 whose remaining gates are clean signed Windows replacement/relaunch,
 Windows firewall-consent characterization, and installed Linux x86_64
-evidence. Completed Tactical `176` carries durable High/Normal/Skip file
-priority through persistence, scheduling, and every first-party client; its
+evidence. Completed Tactical `193` supplies the source-built finite
+`rstorrent-download` command documented above, with controlled lifecycle and
+native macOS/Linux/Windows gates. Completed Tactical `176` carries durable
+High/Normal/Skip file priority through persistence, scheduling, and every
+first-party client; its
 final macOS-hosted iOS simulator/archive gate passes. Completed Tactical `186`
 separates tiny latest-value current rates from interest-selected exact graph
 history, replaces repeated complete graph windows with bounded

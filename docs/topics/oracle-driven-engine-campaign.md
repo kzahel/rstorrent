@@ -1159,16 +1159,19 @@ lifecycle. The next storage action must come from a separately bounded
 capability; no staging, publication, packed, suffix, or relocation follow-up
 is implied.
 
-Active Tactical
+Completed Tactical
 [`193`](../tactical/193-stateless-foreground-downloader.md) is that separately
-bounded finite path-only composition. Its source-first record adopts the
+bounded finite path-only composition. Its source-first record adopted the
 pinned libtorrent one-shot embedding lesson and BEP 53 priority behavior while
 retaining RSTorrent's strict bounded parser, ephemeral `ApplicationService`,
 common checker, direct final paths, opaque owners, and joined lifecycle. Its
 only storage seam is an explicit CLI auxiliary location for skipped boundary
 bytes; ordinary adjacent path parts and every SAF/iOS adapter remain unchanged.
-Implementation restarts at Tactical `193` Stage 1 and must close the declared
-lock/workspace, crash/recheck, controlled-oracle, and native desktop gates.
+The controlled v1/pure-v2/hybrid, BEP 53, complete/partial/corrupt, signal,
+crash/recheck, root-lock, and cleanup matrix passes against pinned libtorrent
+2.0.13. Release-built native macOS ARM64, Linux ARM64, and Windows ARM64
+execution closes the desktop gate; Android dual-ABI and maintained iOS
+simulator/archive regressions pass without broadening the CLI to mobile.
 
 Tacticals `086`--`098` subsequently completed the long-lived torrent peer
 runtime, incoming reachability and coordinated transport foundations,

@@ -22,11 +22,12 @@ deployment claims. Completed Tactical
 desktop/configured-headless host lifecycle, durable authority, authorized-
 browser resume and operator security-audit boundary only in a production-shaped
 loopback validation composition. Deployment remains later work. Independently,
-Active Tactical
-[`193`](../tactical/193-stateless-foreground-downloader.md) owns one finite
-foreground native command over an ephemeral in-process application owner. It
-is not a headless service, daemon, remote-control endpoint, or durable runtime
-configuration.
+completed Tactical
+[`193`](../tactical/193-stateless-foreground-downloader.md) supplies one finite
+`rstorrent-download` native command over an ephemeral in-process application
+owner. It exits after verified selected completion without seeding, creates no
+profile or resume database, and remains distinct from a headless service,
+daemon, remote-control endpoint, or durable runtime configuration.
 
 Tactical `192` now attaches its local-only validation owner beneath the actual
 desktop and configured-headless application lifecycles. Headless configuration

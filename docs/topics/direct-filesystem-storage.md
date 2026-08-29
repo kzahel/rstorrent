@@ -6,10 +6,10 @@ Status: **Implemented on 2026-08-29 by Tactical
 [`191`](../tactical/191-direct-filesystem-storage.md).** Path, Android SAF,
 and qualified iOS storage now write wanted bytes directly at final safe
 metainfo paths. Schema 22 and every generated first-party boundary remove the
-former publication lifecycle and managed-deletion policy. Active Tactical
-[`193`](../tactical/193-stateless-foreground-downloader.md) owns a finite
-path-only composition over this model; ordinary product storage remains
-unchanged until that separately bounded slice lands.
+former publication lifecycle and managed-deletion policy. Tactical
+[`193`](../tactical/193-stateless-foreground-downloader.md) completed a finite
+path-only composition over this model on the same date; ordinary product
+storage remains unchanged.
 
 ## Decision
 
@@ -303,8 +303,7 @@ This decision does not add:
   `.crdownload`;
 - move-on-completion, category relocation, or cross-volume copy;
 - preallocation as the default in place of sparse direct files;
-- simultaneous-process writes to the same target; or
-- a stateless single-shot CLI.
+- simultaneous-process writes to the same target.
 
 Those can be considered later only as concrete independent capabilities. They
 must not preserve a speculative generic publication layer now. In particular,
@@ -312,14 +311,19 @@ a future single-blob backend would be a distinct storage representation, and
 a future per-file temporary suffix would need explicit partial-selection,
 external-reader, collision, crash, and rename semantics.
 
-Tactical [`193`](../tactical/193-stateless-foreground-downloader.md) now makes
-the stateless CLI option decision-complete without reopening publication. It
+Tactical [`193`](../tactical/193-stateless-foreground-downloader.md) implements
+the stateless CLI without reopening publication. It
 keeps wanted bytes on these direct paths, reuses the common checker, and adds a
 narrow CLI-only auxiliary location for v1/hybrid skipped boundary bytes so a
 fresh opaque owner cannot strand random part artifacts beside user payload.
 Ordinary path storage retains adjacent owned parts; SAF and iOS are unchanged.
 The same-user CLI lock is an operational exclusion fence, not a claim that the
 storage model supports simultaneous writers.
+
+Its controlled v1, pure-v2, and hybrid matrix verified complete, partial,
+same-length corrupt, selective boundary, graceful interruption, and forced-
+death recovery cases. The largest transient part artifact was 33,792 bytes;
+joined and next-run cleanup left no CLI workspace or profile artifact.
 
 ## Landed Evidence And Next Work
 

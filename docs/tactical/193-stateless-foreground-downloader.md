@@ -1,10 +1,12 @@
 # Tactical 193: Stateless Foreground Downloader
 
-Status: **Active as of 2026-08-29.** The user accepted a deliberately simple
-one-source foreground downloader, all files by default, with the one exception
-that a magnet's BEP 53 `so` selection must behave like the same magnet added to
-the first-party client, then explicitly authorized end-to-end autonomous
-implementation with logical commits.
+Status: **Complete on 2026-08-29.** One source-built
+`rstorrent-download` process now composes the ordinary ephemeral application
+service, selects all files except an explicit magnet BEP 53 `so` selection,
+writes directly to final paths, locks one canonical output root, cleans its
+transient selective storage after joined shutdown or next-run recovery, and
+exits without seeding. The controlled, native desktop, mobile regression, and
+repository gates below pass.
 
 Topics:
 [`direct-filesystem-storage`](../topics/direct-filesystem-storage.md),
@@ -515,6 +517,77 @@ lenient malformed-token recovery.
   `~/code/machine-control` common CLI and applicable platform guide. Exact
   private target selection remains outside this public repository.
 
+## Completed Implementation And Evidence
+
+The landed command is `crates/rstorrent-session/src/bin/rstorrent-download.rs`
+over the finite owner in `foreground_download.rs`. It uses one ephemeral
+`ApplicationService`, normal magnet or torrent-byte intake, one bounded Summary
+subscription, and a final application snapshot only after a terminal candidate.
+`ApplicationConfig` supplies a CLI-only absolute auxiliary part directory;
+ordinary adjacent path parts and platform-backed storage retain their prior
+configuration. No schema, generated application contract, or client UI changed.
+
+The output owner creates or canonicalizes the requested directory, obtains the
+nonblocking standard-library lock, proves create/write/sync/remove access, and
+then prepares one marked random workspace under the per-user temporary control
+root. Startup removes only a prior validated workspace for that exact root.
+Normal completion, source rejection, root failure, Ctrl-C, Unix `SIGTERM`,
+progress failure, and application shutdown converge on joined service shutdown,
+exact workspace removal, and lock release. Forced process death deliberately
+leaves only the marked workspace and direct partial payload for next-run
+recovery.
+
+The release-built controlled harness
+`tests/interop/stateless_foreground_download.py` passed against pinned
+libtorrent 2.0.13 with independently generated v1, pure-v2, and hybrid data:
+
+- local complete data, ordinary all-files magnet, repeated/overlapping `so`,
+  padding-only zero selection, and malformed selection use the declared exits;
+- partial and same-length corrupt final data are conservatively checked and
+  repaired, while wanted files remain at final paths throughout;
+- a selective cross-file boundary uses only the invocation workspace, survives
+  graceful interruption and forced death, and resumes without stale have or
+  part-file authority;
+- same-root contention exits `3`, different roots run independently, an
+  unwritable root exits `5` before content, and forced-death stale cleanup is
+  exact; and
+- 1,080,960 payload bytes across 66 pieces completed at a 27,040 KiB peak RSS.
+  The largest part artifact was 33,792 bytes; profile artifacts and final stale
+  workspaces were both zero.
+
+Native release evidence used target-native shell and filesystem operations:
+
+- macOS ARM64 ran the complete controlled harness above;
+- Linux ARM64 verified the exact three-file all-files payload, same-root exit
+  `3`, Unix `SIGTERM` exit `143`, and zero profile/part/workspace residue; and
+- Windows ARM64 verified the same exact three-file payload, same-root exit `3`,
+  forced-owner-death recovery, and zero residue. The final committed non-Unix
+  signal-registration and root-probe code was then rebuilt natively and passed
+  a finite source-failure startup/cleanup smoke with exit `2` and zero
+  workspaces. The remote administration route has no injectable Windows console
+  event, so no claim is made for synthetic Ctrl-C delivery through OpenSSH.
+
+The Android regression rebuilt both maintained ABIs, regenerated UniFFI, and
+passed `assembleDebug` plus `testDebugUnitTest`. The maintained iOS scripts
+passed 27 Swift unit tests, two UI tests, and unsigned archive creation. These
+are regression gates for the shared engine/configuration seam, not mobile CLI
+claims.
+
+Final repository validation passed:
+
+```text
+cargo fmt --all -- --check
+cargo clippy --workspace -- -D warnings
+cargo test --workspace
+uv run --project tests/interop --locked \
+  python tests/interop/stateless_foreground_download.py
+```
+
+The application boundary did not change, so TypeScript generation and web
+client gates were inapplicable. Temporary host/guest source, downloads, logs,
+workspaces, iOS archives, and isolated toolchains were removed; native targets
+were restored to their initial powered-off state and every claim was released.
+
 ## Implementation Stages And Gates
 
 1. **Finite front-end shell.** Add `rstorrent-download` beside the session
@@ -623,13 +696,13 @@ escalations.
 
 ## Stopping Condition And Next Boundary
 
-Tactical `193` is complete only when a clean release-built
+The stopping condition is satisfied. A clean release-built
 `rstorrent-download` accepts one magnet or local `.torrent`, uses the existing
 ephemeral application service and in-memory SQLite stores, downloads the exact
 all-files-or-BEP-53 selection directly to the requested final paths, safely
 serializes same-user invocations per canonical output root, cleans transient
 selective storage after joined termination or the next post-crash run, exits
-with the declared outcome, and passes every required evidence row above.
+with the declared outcome, and passed the required evidence rows above.
 
 The next slice, if user evidence justifies one, may consider packaging, a
 machine-readable output mode, wider cross-product storage leasing, controlled

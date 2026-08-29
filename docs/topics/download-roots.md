@@ -10,6 +10,15 @@ the common checker, and exact delete-data removal preserves unrelated root
 content. Earlier publication tacticals below remain historical evidence.
 
 Completed Tactical
+[`193`](../tactical/193-stateless-foreground-downloader.md) adds one path-only
+foreground surface whose `--output` value is the final root capability. It
+creates a missing directory, canonicalizes its native identity, obtains a
+same-user CLI lock, proves create/write/sync/remove access before content, and
+then uses the ordinary root-relative layout below. No durable root record or
+picker/default-root policy is created, and other products do not participate
+in this cooperative lock.
+
+Completed Tactical
 [`188`](../tactical/188-existing-payload-adoption-and-recheck.md) replaces a
 fresh-row destination collision with automatic metainfo-exact discovery and
 the common complete checker. Discovered bytes remain unverified until hashing
