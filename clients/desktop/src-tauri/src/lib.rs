@@ -1775,16 +1775,26 @@ async fn open_desktop_remote_runtime(
     let Some((relay, certificate)) = remote_validation_parameters()? else {
         return Ok(None);
     };
+    open_configured_desktop_remote_runtime(app_data, &relay, certificate, service)
+        .await
+        .map(Some)
+}
+
+async fn open_configured_desktop_remote_runtime(
+    app_data: &Path,
+    relay: &str,
+    certificate: Vec<u8>,
+    service: Arc<Mutex<ApplicationService>>,
+) -> Result<Arc<RemoteApplicationRuntime>, String> {
     RemoteApplicationRuntime::open(
         app_data.join("remote-access"),
-        &relay,
+        relay,
         certificate,
         format!("rstorrent-desktop/{}", env!("CARGO_PKG_VERSION")),
         service,
     )
     .await
     .map(Arc::new)
-    .map(Some)
     .map_err(|error| format!("start remote access validation owner: {error}"))
 }
 
@@ -2037,18 +2047,22 @@ fn desktop_application_config(app_data: &std::path::Path) -> ApplicationConfig {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use std::time::Duration;
+
     use rstorrent_session::{
-        ClientSettings, DownloadResourceLimits, ListenerPolicy, PeerTransportPolicy,
-        PortMappingPolicy, StorageRootAvailability,
+        ApplicationService, ClientSettings, DownloadResourceLimits, ListenerPolicy,
+        PeerTransportPolicy, PortMappingPolicy, StorageRootAvailability,
     };
     use tauri::ipc::InvokeBody;
+    use tokio::sync::Mutex;
 
     use super::{
         ApplicationConfig, DesktopNotificationKind, DesktopNotificationSettings, HEADER_REQUEST_ID,
         HEADER_START_CONTENT, HEADER_STORAGE_ROOT, NetworkConfig, NetworkPolicy,
         decode_torrent_ipc, desktop_application_config, notification_enabled,
-        register_download_root_selection, resolve_download_directory_selection,
-        validate_local_media_url,
+        open_configured_desktop_remote_runtime, register_download_root_selection,
+        resolve_download_directory_selection, validate_local_media_url,
     };
 
     #[test]
@@ -2073,6 +2087,103 @@ mod tests {
             config.download_resource_limits,
             DownloadResourceLimits::DESKTOP
         );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn configured_desktop_remote_owner_claims_and_joins_real_tls_relay() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        use rcgen::{CertifiedKey, generate_simple_self_signed};
+        use rstorrent_remote_relay::TlsProductRelayServer;
+
+        let temporary = tempfile::tempdir().expect("desktop remote fixture");
+        let root = std::fs::canonicalize(temporary.path()).expect("canonical fixture");
+        let CertifiedKey { cert, signing_key } =
+            generate_simple_self_signed(["localhost".to_owned(), "127.0.0.1".to_owned()])
+                .expect("relay certificate");
+        let certificate_path = root.join("relay-certificate.der");
+        let private_key_path = root.join("relay-private-key.der");
+        std::fs::write(&certificate_path, cert.der()).expect("write relay certificate");
+        std::fs::write(&private_key_path, signing_key.serialize_der()).expect("write relay key");
+        std::fs::set_permissions(&private_key_path, std::fs::Permissions::from_mode(0o600))
+            .expect("protect relay key");
+        let relay_server = TlsProductRelayServer::bind(
+            "127.0.0.1:0".parse().unwrap(),
+            root.join("relay-state"),
+            "https://127.0.0.1:7443",
+            &certificate_path,
+            &private_key_path,
+        )
+        .await
+        .expect("bind relay");
+        let relay_address = relay_server.local_addr();
+        let relay = relay_server.relay();
+        let relay_task = tokio::spawn(async move { relay_server.serve().await });
+
+        let payload = root.join("payload");
+        std::fs::create_dir(&payload).expect("create payload root");
+        let service = Arc::new(Mutex::new(
+            ApplicationService::open(ApplicationConfig::ephemeral(
+                "desktop-remote-test".to_owned(),
+                vec![rstorrent_session::ConfiguredStorageRoot::path(
+                    "downloads",
+                    payload,
+                )],
+                NetworkConfig::new(
+                    NetworkPolicy::LoopbackOnly,
+                    Duration::from_secs(1),
+                    Duration::from_secs(1),
+                ),
+            ))
+            .await
+            .expect("open desktop application owner"),
+        ));
+        let runtime = open_configured_desktop_remote_runtime(
+            &root.join("desktop-app-data"),
+            &format!("https://127.0.0.1:{}/", relay_address.port()),
+            cert.der().to_vec(),
+            service.clone(),
+        )
+        .await
+        .expect("open desktop remote owner");
+        let enabled = runtime
+            .owner()
+            .enable("desktop-owner", b"correct horse battery staple")
+            .await
+            .expect("enable desktop remote access");
+        assert!(enabled.enabled);
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while relay.metrics().waiting_hosts != 1 {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("desktop host claimed relay route");
+        assert_eq!(
+            runtime
+                .owner()
+                .security_view()
+                .await
+                .expect("desktop remote audit")
+                .username
+                .as_deref(),
+            Some("desktop-owner")
+        );
+
+        runtime.shutdown().await.expect("join desktop remote owner");
+        service
+            .lock()
+            .await
+            .shutdown()
+            .await
+            .expect("join desktop application owner");
+        relay.shutdown();
+        tokio::time::timeout(Duration::from_secs(5), relay_task)
+            .await
+            .expect("relay shutdown timeout")
+            .expect("relay task")
+            .expect("relay shutdown");
     }
 
     #[test]
