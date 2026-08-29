@@ -4339,6 +4339,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "rstorrent-remote-access"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "p256",
+ "rand 0.8.8",
+ "rand_chacha 0.3.1",
+ "rstorrent-remote-crypto",
+ "rustix",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "zeroize",
+]
+
+[[package]]
 name = "rstorrent-remote-crypto"
 version = "0.1.0"
 dependencies = [

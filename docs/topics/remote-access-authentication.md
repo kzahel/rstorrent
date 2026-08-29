@@ -24,10 +24,17 @@ acknowledgement and benign call identically to the direct adapter. Changed
 pin, wrong password, unknown route and modified handshake cases fail, while
 joined shutdown leaves zero circuits and pumps. The complete Argon2id,
 bundle, message and owner high-water results live in Tactical `190`. No
-supported remote-access capability exists yet. Tactical `192` now requires a
-private browser to resume ordinary reconnects without another password entry
-and requires the host to list and revoke every authorization and live circuit
-before a later deployment tactical can change that claim.
+supported remote-access capability exists yet. Active Tactical `192` has now
+landed its first two internal boundaries: the selected mutually authenticated
+P-256 resume core and a runtime-independent durable-authority domain with
+bounded client, tombstone, security-event and failed-attempt registries. Its
+Unix store proves atomic prior-or-new replacement, exact owner-only modes and
+history-only disable. Desktop/headless commands, live circuit ownership,
+browser key persistence and the production-shaped relay/client composition are
+still absent, so this does not change the product claim. Tactical `192` still
+requires a private browser to resume ordinary reconnects without another
+password entry and requires the host to list and revoke every authorization
+and live circuit before a later deployment tactical can change that claim.
 
 ## Purpose And Scope
 

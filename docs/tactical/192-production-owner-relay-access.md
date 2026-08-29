@@ -373,6 +373,35 @@ principal asserted inside a client frame.
    upgrade/rollback cycle. Remove every certificate, authority root, profile,
    reservation, log and process created by the campaign.
 
+### Implementation checkpoints
+
+- Steps 1 and 2 are complete. Commit `77c6cbb` adds the strict, runtime-free
+  P-256 resume messages and fresh mutually authenticated record derivation.
+  Native tests cover replay, reflection, host/client/route-generation
+  substitution, malformed points and strict fixed encodings.
+- `rstorrent-remote-access` now owns the versioned authority candidate,
+  authorized-client registry, expiry/revocation transitions, non-authorizing
+  tombstones, authenticated security ledger, aggregate failed-attempt buckets
+  and protected persistence without depending on a socket, async runtime,
+  application service or generated DTO.
+- The current persistence gate accepts only Unix owners, creates an exact
+  `0700` authority directory and `0600` atomic-replace files, and rejects
+  symlinks, wrong owners, weakened modes, oversized records and malformed or
+  duplicate fields. This covers the declared macOS validation desktop and
+  configured Linux headless host. Other desktop platforms fail closed until a
+  platform-native owner-only store and its permission evidence land.
+- Deterministic tests exercise prior-versus-new outcomes before and after
+  replacement, failed mutation rollback, disable before/after authority-file
+  removal, retained history and explicit history clearing. They also reach the
+  32 current clients, 128 tombstones, 1,024 owner events and 256 failed-bucket
+  ceilings, prune both retention periods, prove password/global generation
+  fencing and complete a fresh resume through application record encryption.
+  `cargo test -p rstorrent-remote-access` and strict all-target clippy pass.
+
+No desktop/headless command, host task, browser persistence, relay service or
+supported product surface is implied by these first two internal checkpoints.
+Steps 3 through 8 remain required.
+
 ## Required Evidence
 
 - Pure core, Wasm/browser and dependency gates from Tactical `190` remain green.
