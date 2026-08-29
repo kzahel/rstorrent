@@ -6,6 +6,7 @@
 **/node_modules/
 **/dist/
 **/test-results/
+/clients/web/.remote-wasm/
 
 # Android and Gradle
 .gradle/

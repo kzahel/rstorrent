@@ -363,15 +363,23 @@ export class RemoteApplicationWebSocket implements ApplicationWebSocket {
   private finishPasswordLogin(response: Uint8Array): void {
     const greeting = required(this.greeting, "host greeting");
     const login = required(this.login, "login state");
-    const session = login.finish(
-      this.passphrase,
-      greeting.relayId,
-      this.options.username,
-      greeting.hostId,
-      this.expectedHostPin,
-      response,
-      this.operationEntropy(),
-    );
+    let session: WasmClientSession;
+    try {
+      session = login.finish(
+        this.passphrase,
+        greeting.relayId,
+        this.options.username,
+        greeting.hostId,
+        this.expectedHostPin,
+        response,
+        this.operationEntropy(),
+      );
+    } catch (error) {
+      if (errorMessage(error) === "host identity changed") {
+        throw new HostIdentityChanged("host identity changed");
+      }
+      throw error;
+    }
     this.login = undefined;
     this.passphrase.fill(0);
     this.expectedHostPin.fill(0);
@@ -829,4 +837,8 @@ function decodeId(value: string, length: number, label: string): Uint8Array {
 function required<T>(value: T | undefined, label: string): T {
   if (value === undefined) throw new Error(`${label} is unavailable`);
   return value;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

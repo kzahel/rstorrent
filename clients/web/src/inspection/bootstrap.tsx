@@ -12,6 +12,8 @@ import type { DesktopUpdater } from "./updater/types";
 import type { DesktopExternalIntake } from "../desktop-external-intake";
 import type { DesktopNotifications } from "./desktop-notifications/types";
 import type { DesktopPower } from "./desktop-power/types";
+import type { ApplicationViewClient } from "../api/client";
+import { RemoteOnlyApplicationClient } from "../remote-application-client";
 import { HttpApplicationClient } from "../api/client";
 import { TauriApplicationViewClient } from "../tauri-view-client";
 import { WebSocketApplicationViewClient } from "../websocket-view-client";
@@ -164,6 +166,17 @@ export async function startTauriInspection(): Promise<void> {
     notifications,
     power,
   );
+}
+
+export async function startRemoteInspection(
+  client: ApplicationViewClient,
+  root: Root,
+): Promise<void> {
+  const application = await LiveApplication.open(
+    new RemoteOnlyApplicationClient(client),
+  );
+  application.installBrowserWakeHints(window, document);
+  renderInspection(new InspectionController(application), root);
 }
 
 function renderInspection(

@@ -93,6 +93,12 @@ class FakeLogin implements WasmClientLogin {
   }
 }
 
+class ChangedPinLogin extends FakeLogin {
+  public override finish(): WasmClientSession {
+    throw new Error("host identity changed");
+  }
+}
+
 class FakeResumeProof implements WasmClientResumeProof {
   public signature_input(): Uint8Array {
     return Uint8Array.of(0x71);
@@ -237,6 +243,34 @@ describe("product remote application WebSocket", () => {
     expect(failure).toBe("host_identity_changed");
     expect(socket.readyState).toBe(3);
     expect(relay?.sent).toHaveLength(1);
+  });
+
+  it("classifies an authenticated OPAQUE pin mismatch as an identity change", async () => {
+    let relay: FakeSocket | undefined;
+    let failure: RemoteConnectionFailure | undefined;
+    new RemoteApplicationWebSocket({
+      relayUrl: "wss://127.0.0.1:7443/",
+      username: "alice",
+      authentication: {
+        type: "password",
+        passphrase: text.encode("correct horse battery staple"),
+        expectedIdentity: { relayId, hostId, hostPin },
+        choice: { type: "shared" },
+      },
+      crypto: { ...wasm, ClientLogin: ChangedPinLogin },
+      subtle,
+      socketFactory: (url) => (relay = new FakeSocket(url)),
+      onFailure: (value) => {
+        failure = value;
+      },
+    });
+    relay?.open();
+    relay?.server(text.encode("RSP1"));
+    relay?.server(greeting());
+    await tick();
+    relay?.server(framed("RSL2", Uint8Array.of(0x12)));
+    await tick();
+    expect(failure).toBe("host_identity_changed");
   });
 
   it("classifies a post-greeting resume rejection without weakening identity", async () => {

@@ -1,0 +1,389 @@
+import { useEffect, useRef, useState, type FormEvent } from "react";
+
+import type { ApplicationViewClient } from "../api/client";
+import {
+  RemoteApplicationWebSocket,
+  type RemoteAuthentication,
+  type RemoteConnectionFailure,
+  type RemoteCryptoWasmModule,
+  type RemoteHostIdentity,
+} from "../remote-application-websocket";
+import {
+  createPrivateBrowserCredential,
+  type RemoteClientStore,
+} from "../remote-client-store";
+import { WebSocketApplicationViewClient } from "../websocket-view-client";
+import styles from "./RemoteAccessGate.module.css";
+
+const LAST_USERNAME_KEY = "rstorrent.remote.last-username.v1";
+const TERMINAL_FAILURE_KEY = "rstorrent.remote.terminal-failure.v1";
+
+type Phase = "loading" | "sign_in" | "connecting" | "identity_changed";
+
+export interface RemoteAccessGateProps {
+  readonly relayUrl: string;
+  readonly clientBuild: string;
+  readonly crypto: RemoteCryptoWasmModule;
+  readonly store: RemoteClientStore;
+  readonly onConnected: (client: ApplicationViewClient) => Promise<void>;
+}
+
+export function RemoteAccessGate({
+  relayUrl,
+  clientBuild,
+  crypto,
+  store,
+  onConnected,
+}: RemoteAccessGateProps) {
+  const [phase, setPhase] = useState<Phase>("loading");
+  const [username, setUsername] = useState("");
+  const [passphrase, setPassphrase] = useState("");
+  const [privateBrowser, setPrivateBrowser] = useState(true);
+  const [browserLabel, setBrowserLabel] = useState(defaultBrowserLabel);
+  const [message, setMessage] = useState<string | null>(null);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    const terminal = sessionStorage.getItem(TERMINAL_FAILURE_KEY);
+    sessionStorage.removeItem(TERMINAL_FAILURE_KEY);
+    const remembered = localStorage.getItem(LAST_USERNAME_KEY) ?? "";
+    setUsername(remembered);
+    if (terminal === "host_identity_changed") {
+      setMessage(
+        "This route now presents a different authenticated host identity. " +
+          "RSTorrent will not send your password until you explicitly clear the old trust record.",
+      );
+      setPhase("identity_changed");
+      return () => {
+        mounted.current = false;
+      };
+    }
+    if (terminal === "resume_rejected") {
+      setMessage(
+        "This browser authorization is no longer valid. Sign in with the password.",
+      );
+    }
+    void attemptRememberedResume(remembered);
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  async function attemptRememberedResume(remembered: string): Promise<void> {
+    if (remembered === "") {
+      setPhase("sign_in");
+      return;
+    }
+    try {
+      const stored = await store.load(remembered);
+      if (stored?.authorization === undefined || stored.key === undefined) {
+        if (mounted.current) setPhase("sign_in");
+        return;
+      }
+      await connect(remembered, {
+        type: "resume",
+        authorization: stored.authorization,
+        key: stored.key,
+      });
+    } catch (error) {
+      if (!mounted.current) return;
+      setMessage(errorMessage(error));
+      setPhase("sign_in");
+    }
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    setMessage(null);
+    setPhase("connecting");
+    let encodedPassphrase = new TextEncoder().encode(passphrase);
+    setPassphrase("");
+    try {
+      const stored = await store.load(username);
+      const authentication: RemoteAuthentication = privateBrowser
+        ? {
+            type: "password",
+            passphrase: encodedPassphrase,
+            ...(stored?.identity === undefined
+              ? {}
+              : { expectedIdentity: stored.identity }),
+            choice: {
+              type: "private",
+              credential: await createPrivateBrowserCredential(
+                browserLabel,
+                clientBuild,
+              ),
+            },
+          }
+        : {
+            type: "password",
+            passphrase: encodedPassphrase,
+            ...(stored?.identity === undefined
+              ? {}
+              : { expectedIdentity: stored.identity }),
+            choice: { type: "shared", clientBuild },
+          };
+      await connect(username, authentication);
+      encodedPassphrase = new Uint8Array();
+    } catch (error) {
+      encodedPassphrase.fill(0);
+      if (!mounted.current) return;
+      setMessage(errorMessage(error));
+      setPhase("sign_in");
+    }
+  }
+
+  async function connect(
+    selectedUsername: string,
+    initialAuthentication: RemoteAuthentication,
+  ): Promise<void> {
+    let authentication = initialAuthentication;
+    let enteredProduct = false;
+    let observedFailure: RemoteConnectionFailure | undefined;
+    const applicationClient = new WebSocketApplicationViewClient(
+      window.location.origin,
+      null,
+      () =>
+        new RemoteApplicationWebSocket({
+          relayUrl,
+          username: selectedUsername,
+          authentication,
+          crypto,
+          onAuthorization: async (authorization) => {
+            if (
+              initialAuthentication.type !== "password" ||
+              initialAuthentication.choice.type !== "private"
+            ) {
+              throw new Error("private browser credential is unavailable");
+            }
+            const key = initialAuthentication.choice.credential.key;
+            await store.saveAuthorization(authorization, key);
+            initialAuthentication.passphrase.fill(0);
+            authentication = { type: "resume", authorization, key };
+          },
+          onHostPin: async (identity) => {
+            await store.saveTrust(selectedUsername, identity);
+            localStorage.setItem(LAST_USERNAME_KEY, selectedUsername);
+            if (authentication.type === "password") {
+              authentication = {
+                ...authentication,
+                expectedIdentity: copyIdentity(identity),
+              };
+            }
+          },
+          onFailure: (failure) => {
+            observedFailure = failure;
+            if (enteredProduct) {
+              void handleTerminalFailure(selectedUsername, failure);
+            }
+          },
+        }),
+    );
+    try {
+      await onConnected(applicationClient);
+      enteredProduct = true;
+    } catch (error) {
+      await applicationClient.close();
+      if (initialAuthentication.type === "password") {
+        initialAuthentication.passphrase.fill(0);
+      }
+      if (observedFailure !== undefined) {
+        await handleInitialFailure(selectedUsername, observedFailure);
+        return;
+      }
+      throw error;
+    }
+  }
+
+  async function handleInitialFailure(
+    selectedUsername: string,
+    failure: RemoteConnectionFailure,
+  ): Promise<void> {
+    if (failure === "resume_rejected") {
+      await store.clearAuthorization(selectedUsername);
+      if (!mounted.current) return;
+      setMessage(
+        "This browser authorization is no longer valid. Sign in with the password.",
+      );
+      setPhase("sign_in");
+      return;
+    }
+    if (failure === "host_identity_changed") {
+      if (!mounted.current) return;
+      setMessage(
+        "This route presents a different authenticated host identity. " +
+          "RSTorrent did not send your password.",
+      );
+      setPhase("identity_changed");
+      return;
+    }
+    if (!mounted.current) return;
+    setMessage(
+      "The remote host is unavailable or authentication was rejected. " +
+        "Check the route and password, then try again.",
+    );
+    setPhase("sign_in");
+  }
+
+  async function handleTerminalFailure(
+    selectedUsername: string,
+    failure: RemoteConnectionFailure,
+  ): Promise<void> {
+    if (failure === "connection_failed") return;
+    if (failure === "resume_rejected") {
+      await store.clearAuthorization(selectedUsername);
+    }
+    sessionStorage.setItem(TERMINAL_FAILURE_KEY, failure);
+    window.location.reload();
+  }
+
+  async function clearChangedIdentity(): Promise<void> {
+    if (username !== "") await store.clearHost(username);
+    localStorage.removeItem(LAST_USERNAME_KEY);
+    setMessage(
+      "Local trust was cleared. Confirm the host was intentionally reset before signing in again.",
+    );
+    setPhase("sign_in");
+  }
+
+  return (
+    <main className={styles.shell}>
+      <section className={styles.card} aria-labelledby="remote-title">
+        <div className={styles.brand} aria-hidden="true">
+          R
+        </div>
+        <p className={styles.eyebrow}>RSTorrent remote access</p>
+        <h1 id="remote-title">Your torrents, from this browser</h1>
+        <p className={styles.intro}>
+          The relay can route encrypted bytes, but it cannot read your password,
+          torrent state, or commands.
+        </p>
+
+        {phase === "loading" || phase === "connecting" ? (
+          <div className={styles.progress} role="status">
+            <span className={styles.spinner} aria-hidden="true" />
+            {phase === "loading"
+              ? "Checking this browser for an authorization…"
+              : "Authenticating the host and opening RSTorrent…"}
+          </div>
+        ) : null}
+
+        {message !== null ? (
+          <p className={styles.message} role="alert">
+            {message}
+          </p>
+        ) : null}
+
+        {phase === "identity_changed" ? (
+          <div className={styles.recovery}>
+            <p>
+              Only continue if the RSTorrent operator intentionally disabled,
+              reset, or restored this host.
+            </p>
+            <button
+              type="button"
+              className={styles.secondary}
+              onClick={() => void clearChangedIdentity()}
+            >
+              Clear old host trust
+            </button>
+          </div>
+        ) : null}
+
+        {phase === "sign_in" ? (
+          <form className={styles.form} onSubmit={(event) => void submit(event)}>
+            <label>
+              Route username
+              <input
+                required
+                autoComplete="username"
+                minLength={3}
+                maxLength={32}
+                pattern="[a-z0-9](?:[a-z0-9-]*[a-z0-9])?"
+                value={username}
+                onChange={(event) => setUsername(event.currentTarget.value)}
+              />
+            </label>
+            <label>
+              Password
+              <input
+                required
+                type="password"
+                autoComplete="current-password"
+                value={passphrase}
+                onChange={(event) => setPassphrase(event.currentTarget.value)}
+              />
+            </label>
+            <fieldset>
+              <legend>This browser</legend>
+              <label className={styles.choice}>
+                <input
+                  type="radio"
+                  name="browser-kind"
+                  checked={privateBrowser}
+                  onChange={() => setPrivateBrowser(true)}
+                />
+                <span>
+                  <strong>Private</strong> — resume automatically on this browser
+                </span>
+              </label>
+              <label className={styles.choice}>
+                <input
+                  type="radio"
+                  name="browser-kind"
+                  checked={!privateBrowser}
+                  onChange={() => setPrivateBrowser(false)}
+                />
+                <span>
+                  <strong>Shared</strong> — require the password after this page closes
+                </span>
+              </label>
+            </fieldset>
+            {privateBrowser ? (
+              <label>
+                Browser name shown to the operator
+                <input
+                  required
+                  maxLength={80}
+                  value={browserLabel}
+                  onChange={(event) => setBrowserLabel(event.currentTarget.value)}
+                />
+              </label>
+            ) : null}
+            <button type="submit" className={styles.primary}>
+              Sign in
+            </button>
+          </form>
+        ) : null}
+
+        <p className={styles.disclosure}>
+          A compromised client page could observe entered passwords and decrypted
+          application state. This local validation build uses no third-party scripts.
+        </p>
+      </section>
+    </main>
+  );
+}
+
+function defaultBrowserLabel(): string {
+  const platform =
+    (navigator as Navigator & { userAgentData?: { platform?: string } })
+      .userAgentData?.platform ||
+    navigator.platform ||
+    "Browser";
+  const prefix = platform.trim().slice(0, 60) || "Private";
+  return `${prefix} browser`;
+}
+
+function copyIdentity(identity: RemoteHostIdentity): RemoteHostIdentity {
+  return {
+    relayId: identity.relayId.slice(),
+    hostId: identity.hostId.slice(),
+    hostPin: identity.hostPin.slice(),
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Remote access failed";
+}

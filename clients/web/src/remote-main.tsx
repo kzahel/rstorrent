@@ -1,0 +1,48 @@
+import { createRoot } from "react-dom/client";
+
+import { startRemoteInspection } from "./inspection/bootstrap";
+import type { RemoteCryptoWasmModule } from "./remote-application-websocket";
+import { IndexedDbRemoteClientStore } from "./remote-client-store";
+import { RemoteAccessGate } from "./remote/RemoteAccessGate";
+
+const relayUrl = import.meta.env.VITE_RSTORRENT_REMOTE_RELAY_URL;
+const clientBuild = import.meta.env.VITE_RSTORRENT_REMOTE_BUILD_ID;
+const rootElement = document.querySelector<HTMLElement>("#app");
+if (rootElement === null) throw new Error("missing application root");
+if (typeof relayUrl !== "string" || !relayUrl.startsWith("wss://")) {
+  throw new Error("remote client build has no secure relay URL");
+}
+if (
+  typeof clientBuild !== "string" ||
+  clientBuild.length < 1 ||
+  clientBuild.length > 160
+) {
+  throw new Error("remote client build has no valid build ID");
+}
+
+const root = createRoot(rootElement);
+void loadCrypto()
+  .then((crypto) => {
+    root.render(
+      <RemoteAccessGate
+        relayUrl={relayUrl}
+        clientBuild={clientBuild}
+        crypto={crypto}
+        store={new IndexedDbRemoteClientStore()}
+        onConnected={(client) => startRemoteInspection(client, root)}
+      />,
+    );
+  })
+  .catch((error: unknown) => {
+    rootElement.textContent = `Unable to start secure remote access: ${errorMessage(error)}`;
+  });
+
+async function loadCrypto(): Promise<RemoteCryptoWasmModule> {
+  const module = await import("rstorrent-remote-wasm-client");
+  await module.default();
+  return module as unknown as RemoteCryptoWasmModule;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
