@@ -405,8 +405,14 @@ principal asserted inside a client frame.
   aggregate/source/route buckets create no attacker-owned tasks. Restart,
   idempotent reservation, conflicting-key, wrong-key, replay, exact-Origin,
   release, owner-mode, corruption and end-to-end forwarding tests pass. The
-  separately supervised TLS service and local authority runner are still part
-  of unfinished Step 6.
+  separately supervised TLS service now also exists: it accepts only an
+  explicit loopback bind, an absolute DER certificate path and an absolute
+  owner-only `0600` PKCS#8 DER key path, negotiates TLS 1.3, bounds concurrent
+  handshakes at 64 with a ten-second deadline, emits one metadata-only JSON
+  readiness record and drains on interrupt/termination. A stalled handshake
+  does not block valid clients and shutdown aborts pending handshakes. The
+  isolated local-authority/client runner is still part of unfinished Step 6;
+  the service never creates or installs a trust root itself.
 
 No desktop/headless command, host task, browser persistence, TLS relay service
 or supported product surface is implied by these internal checkpoints. Steps

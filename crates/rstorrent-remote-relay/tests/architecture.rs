@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 #[test]
-fn relay_manifest_has_no_crypto_or_application_dependency() {
+fn relay_manifest_has_no_record_or_application_dependency() {
     let manifest = include_str!("../Cargo.toml");
     for forbidden in [
         "rstorrent-remote-crypto",

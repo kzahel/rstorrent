@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use axum::body::{Body, Bytes};
+use axum::extract::connect_info::Connected;
 use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{ConnectInfo, DefaultBodyLimit, Path as AxumPath, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -23,6 +24,9 @@ use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore, oneshot};
 use tokio::task::JoinSet;
+use tokio_rustls::TlsAcceptor;
+use tokio_rustls::rustls::ServerConfig;
+use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -48,6 +52,10 @@ const CLOSE_CLAIM_REJECTED: u16 = 4_003;
 const RATE_ENTRY_LIFETIME: Duration = Duration::from_secs(10 * 60);
 const MAX_RATE_SOURCES: usize = 1_024;
 const MAX_RATE_ROUTES: usize = 2_048;
+const MAX_CERTIFICATE_BYTES: usize = 64 * 1024;
+const MAX_PRIVATE_KEY_BYTES: usize = 16 * 1024;
+const MAX_PENDING_TLS_HANDSHAKES: usize = 64;
+const TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -89,6 +97,10 @@ pub struct ProductRelayMetricsSnapshot {
     pub forwarded_message_bytes_high_water: usize,
     pub active_pumps: usize,
     pub active_pumps_high_water: usize,
+    pub pending_tls_handshakes: usize,
+    pub pending_tls_handshakes_high_water: usize,
+    pub rejected_tls_handshakes: u64,
+    pub tcp_accept_failures: u64,
 }
 
 #[derive(Default)]
@@ -117,6 +129,10 @@ struct ProductRelayMetrics {
     forwarded_message_bytes_high_water: AtomicUsize,
     active_pumps: AtomicUsize,
     active_pumps_high_water: AtomicUsize,
+    pending_tls_handshakes: AtomicUsize,
+    pending_tls_handshakes_high_water: AtomicUsize,
+    rejected_tls_handshakes: AtomicU64,
+    tcp_accept_failures: AtomicU64,
 }
 
 impl ProductRelayMetrics {
@@ -148,6 +164,12 @@ impl ProductRelayMetrics {
                 .load(Ordering::Relaxed),
             active_pumps: self.active_pumps.load(Ordering::Relaxed),
             active_pumps_high_water: self.active_pumps_high_water.load(Ordering::Relaxed),
+            pending_tls_handshakes: self.pending_tls_handshakes.load(Ordering::Relaxed),
+            pending_tls_handshakes_high_water: self
+                .pending_tls_handshakes_high_water
+                .load(Ordering::Relaxed),
+            rejected_tls_handshakes: self.rejected_tls_handshakes.load(Ordering::Relaxed),
+            tcp_accept_failures: self.tcp_accept_failures.load(Ordering::Relaxed),
         }
     }
 
@@ -191,6 +213,16 @@ impl ProductRelayMetrics {
 
     fn pump_stopped(&self) {
         self.active_pumps.fetch_sub(1, Ordering::Relaxed);
+    }
+
+    fn tls_handshake_started(&self) {
+        let value = self.pending_tls_handshakes.fetch_add(1, Ordering::Relaxed) + 1;
+        self.pending_tls_handshakes_high_water
+            .fetch_max(value, Ordering::Relaxed);
+    }
+
+    fn tls_handshake_stopped(&self) {
+        self.pending_tls_handshakes.fetch_sub(1, Ordering::Relaxed);
     }
 
     fn forwarded(&self, direction: Direction, bytes: usize) {
@@ -470,10 +502,231 @@ impl ProductRelayServer {
             self.listener,
             self.relay
                 .router()
-                .into_make_service_with_connect_info::<SocketAddr>(),
+                .into_make_service_with_connect_info::<RelayConnectInfo>(),
         )
         .with_graceful_shutdown(shutdown.cancelled_owned())
         .await
+    }
+}
+
+/// TLS-only loopback service used by the Tactical 192 local runner.
+///
+/// The caller supplies a leaf certificate in DER form and its PKCS#8 private
+/// key in DER form. The service reads but never creates or installs a local
+/// trust authority.
+pub struct TlsProductRelayServer {
+    listener: TlsListener,
+    address: SocketAddr,
+    relay: ProductRelay,
+}
+
+impl TlsProductRelayServer {
+    pub async fn bind(
+        address: SocketAddr,
+        root: impl Into<PathBuf>,
+        allowed_client_origin: impl Into<String>,
+        certificate_der: impl AsRef<Path>,
+        private_key_der: impl AsRef<Path>,
+    ) -> Result<Self, ProductRelayError> {
+        if !address.ip().is_loopback() {
+            return Err(ProductRelayError::Configuration(
+                "TLS relay address must be loopback",
+            ));
+        }
+        let certificate_der = certificate_der.as_ref();
+        let private_key_der = private_key_der.as_ref();
+        if !certificate_der.is_absolute() || !private_key_der.is_absolute() {
+            return Err(ProductRelayError::Configuration(
+                "TLS certificate and key paths must be absolute",
+            ));
+        }
+        let certificate = read_public_file(certificate_der, MAX_CERTIFICATE_BYTES)?;
+        let private_key = read_private_file(private_key_der, MAX_PRIVATE_KEY_BYTES)?;
+        let mut configuration =
+            ServerConfig::builder_with_protocol_versions(&[&tokio_rustls::rustls::version::TLS13])
+                .with_no_client_auth()
+                .with_single_cert(
+                    vec![CertificateDer::from(certificate)],
+                    PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(private_key)),
+                )
+                .map_err(|_| ProductRelayError::Configuration("TLS certificate or private key"))?;
+        configuration.alpn_protocols = vec![b"http/1.1".to_vec()];
+
+        let relay = ProductRelay::open(root, allowed_client_origin)?;
+        let listener = TcpListener::bind(address).await?;
+        let address = listener.local_addr()?;
+        if !address.ip().is_loopback() {
+            return Err(ProductRelayError::Configuration(
+                "resolved TLS relay address must be loopback",
+            ));
+        }
+        Ok(Self {
+            listener: TlsListener::new(
+                listener,
+                TlsAcceptor::from(Arc::new(configuration)),
+                relay.inner.clone(),
+            ),
+            address,
+            relay,
+        })
+    }
+
+    pub fn local_addr(&self) -> SocketAddr {
+        self.address
+    }
+
+    pub fn relay(&self) -> ProductRelay {
+        self.relay.clone()
+    }
+
+    pub async fn serve(self) -> std::io::Result<()> {
+        let shutdown = self.relay.inner.shutdown.clone();
+        axum::serve(
+            self.listener,
+            self.relay
+                .router()
+                .into_make_service_with_connect_info::<RelayConnectInfo>(),
+        )
+        .with_graceful_shutdown(shutdown.cancelled_owned())
+        .await
+    }
+}
+
+struct TlsListener {
+    listener: TcpListener,
+    acceptor: TlsAcceptor,
+    pending: JoinSet<
+        Option<(
+            tokio_rustls::server::TlsStream<tokio::net::TcpStream>,
+            SocketAddr,
+        )>,
+    >,
+    relay: Arc<ProductRelayInner>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct RelayConnectInfo(SocketAddr);
+
+impl Connected<axum::serve::IncomingStream<'_, TcpListener>> for RelayConnectInfo {
+    fn connect_info(stream: axum::serve::IncomingStream<'_, TcpListener>) -> Self {
+        Self(*stream.remote_addr())
+    }
+}
+
+impl Connected<axum::serve::IncomingStream<'_, TlsListener>> for RelayConnectInfo {
+    fn connect_info(stream: axum::serve::IncomingStream<'_, TlsListener>) -> Self {
+        Self(*stream.remote_addr())
+    }
+}
+
+impl TlsListener {
+    fn new(listener: TcpListener, acceptor: TlsAcceptor, relay: Arc<ProductRelayInner>) -> Self {
+        Self {
+            listener,
+            acceptor,
+            pending: JoinSet::new(),
+            relay,
+        }
+    }
+
+    fn start_handshake(&mut self, stream: tokio::net::TcpStream, address: SocketAddr) {
+        let acceptor = self.acceptor.clone();
+        let relay = self.relay.clone();
+        relay.metrics.tls_handshake_started();
+        self.pending.spawn(async move {
+            let _pending = PendingTlsHandshake(relay.clone());
+            match tokio::time::timeout(TLS_HANDSHAKE_TIMEOUT, acceptor.accept(stream)).await {
+                Ok(Ok(stream)) => Some((stream, address)),
+                Ok(Err(_)) | Err(_) => {
+                    relay
+                        .metrics
+                        .rejected_tls_handshakes
+                        .fetch_add(1, Ordering::Relaxed);
+                    None
+                }
+            }
+        });
+    }
+
+    async fn completed_handshake(
+        &mut self,
+    ) -> Option<(
+        tokio_rustls::server::TlsStream<tokio::net::TcpStream>,
+        SocketAddr,
+    )> {
+        match self.pending.join_next().await {
+            Some(Ok(connection)) => connection,
+            Some(Err(_)) => {
+                self.relay
+                    .metrics
+                    .rejected_tls_handshakes
+                    .fetch_add(1, Ordering::Relaxed);
+                None
+            }
+            None => None,
+        }
+    }
+}
+
+struct PendingTlsHandshake(Arc<ProductRelayInner>);
+
+impl Drop for PendingTlsHandshake {
+    fn drop(&mut self) {
+        self.0.metrics.tls_handshake_stopped();
+    }
+}
+
+impl axum::serve::Listener for TlsListener {
+    type Io = tokio_rustls::server::TlsStream<tokio::net::TcpStream>;
+    type Addr = SocketAddr;
+
+    async fn accept(&mut self) -> (Self::Io, Self::Addr) {
+        loop {
+            if self.pending.len() >= MAX_PENDING_TLS_HANDSHAKES {
+                if let Some(connection) = self.completed_handshake().await {
+                    return connection;
+                }
+                continue;
+            }
+            if self.pending.is_empty() {
+                match self.listener.accept().await {
+                    Ok((stream, address)) => self.start_handshake(stream, address),
+                    Err(_) => {
+                        self.relay
+                            .metrics
+                            .tcp_accept_failures
+                            .fetch_add(1, Ordering::Relaxed);
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                    }
+                }
+                continue;
+            }
+            tokio::select! {
+                accepted = self.listener.accept() => match accepted {
+                    Ok((stream, address)) => self.start_handshake(stream, address),
+                    Err(_) => {
+                        self.relay.metrics.tcp_accept_failures.fetch_add(1, Ordering::Relaxed);
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                    }
+                },
+                joined = self.pending.join_next() => {
+                    match joined {
+                        Some(Ok(Some(connection))) => return connection,
+                        Some(Ok(None)) | None => {}
+                        Some(Err(_)) => {
+                            self.relay.metrics.rejected_tls_handshakes.fetch_add(
+                                1,
+                                Ordering::Relaxed,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn local_addr(&self) -> std::io::Result<Self::Addr> {
+        self.listener.local_addr()
     }
 }
 
@@ -543,13 +796,13 @@ pub fn encode_host_proof(signature: &[u8]) -> Result<Vec<u8>, ProductRelayError>
 
 async fn reserve_route(
     State(relay): State<Arc<ProductRelayInner>>,
-    ConnectInfo(source): ConnectInfo<SocketAddr>,
+    ConnectInfo(source): ConnectInfo<RelayConnectInfo>,
     encoded: Bytes,
 ) -> Response {
     let Ok(request) = serde_json::from_slice::<ReserveRouteRequest>(&encoded) else {
         return generic_http_failure();
     };
-    if !admit(&relay, source.ip(), Some(&request.username)).await {
+    if !admit(&relay, source.0.ip(), Some(&request.username)).await {
         return generic_http_failure();
     }
     let Ok(public_key) = decode_public_key(&request.public_key) else {
@@ -613,11 +866,12 @@ async fn reserve_route(
 
 async fn host_upgrade(
     State(relay): State<Arc<ProductRelayInner>>,
-    ConnectInfo(source): ConnectInfo<SocketAddr>,
+    ConnectInfo(source): ConnectInfo<RelayConnectInfo>,
     AxumPath(username): AxumPath<String>,
     websocket: WebSocketUpgrade,
 ) -> Response {
-    if validate_username(&username).is_err() || !admit(&relay, source.ip(), Some(&username)).await {
+    if validate_username(&username).is_err() || !admit(&relay, source.0.ip(), Some(&username)).await
+    {
         return generic_http_failure();
     }
     websocket
@@ -629,11 +883,12 @@ async fn host_upgrade(
 
 async fn release_upgrade(
     State(relay): State<Arc<ProductRelayInner>>,
-    ConnectInfo(source): ConnectInfo<SocketAddr>,
+    ConnectInfo(source): ConnectInfo<RelayConnectInfo>,
     AxumPath(username): AxumPath<String>,
     websocket: WebSocketUpgrade,
 ) -> Response {
-    if validate_username(&username).is_err() || !admit(&relay, source.ip(), Some(&username)).await {
+    if validate_username(&username).is_err() || !admit(&relay, source.0.ip(), Some(&username)).await
+    {
         return generic_http_failure();
     }
     websocket
@@ -645,13 +900,13 @@ async fn release_upgrade(
 
 async fn client_upgrade(
     State(relay): State<Arc<ProductRelayInner>>,
-    ConnectInfo(source): ConnectInfo<SocketAddr>,
+    ConnectInfo(source): ConnectInfo<RelayConnectInfo>,
     headers: HeaderMap,
     websocket: WebSocketUpgrade,
 ) -> Response {
     if headers.get("origin").and_then(|value| value.to_str().ok())
         != Some(relay.allowed_client_origin.as_str())
-        || !admit(&relay, source.ip(), None).await
+        || !admit(&relay, source.0.ip(), None).await
     {
         return generic_http_failure();
     }
@@ -1298,6 +1553,57 @@ impl RelayStore {
         File::open(&self.root)?.sync_all()?;
         Ok(())
     }
+}
+
+fn read_public_file(path: &Path, maximum: usize) -> Result<Vec<u8>, ProductRelayError> {
+    let metadata = fs::symlink_metadata(path)?;
+    validate_public_file(&metadata)?;
+    read_bounded_file(path, maximum, false)
+}
+
+fn read_private_file(path: &Path, maximum: usize) -> Result<Vec<u8>, ProductRelayError> {
+    let metadata = fs::symlink_metadata(path)?;
+    validate_file(&metadata)?;
+    read_bounded_file(path, maximum, true)
+}
+
+fn read_bounded_file(
+    path: &Path,
+    maximum: usize,
+    private: bool,
+) -> Result<Vec<u8>, ProductRelayError> {
+    let file = File::open(path)?;
+    if private {
+        validate_file(&file.metadata()?)?;
+    } else {
+        validate_public_file(&file.metadata()?)?;
+    }
+    let mut bytes = Vec::new();
+    file.take((maximum + 1) as u64).read_to_end(&mut bytes)?;
+    if bytes.is_empty() || bytes.len() > maximum {
+        return Err(ProductRelayError::Configuration("TLS file size"));
+    }
+    Ok(bytes)
+}
+
+#[cfg(unix)]
+fn validate_public_file(metadata: &fs::Metadata) -> Result<(), ProductRelayError> {
+    use std::os::unix::fs::MetadataExt as _;
+
+    if !metadata.is_file()
+        || metadata.file_type().is_symlink()
+        || metadata.uid() != rustix::process::getuid().as_raw()
+    {
+        return Err(ProductRelayError::Corrupt("TLS certificate file"));
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn validate_public_file(_metadata: &fs::Metadata) -> Result<(), ProductRelayError> {
+    Err(ProductRelayError::Configuration(
+        "protected TLS files are unsupported",
+    ))
 }
 
 #[cfg(unix)]

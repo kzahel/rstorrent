@@ -33,9 +33,12 @@ history-only disable. A further relay-library boundary now durably stores only
 route usernames and P-256 public keys and requires a fresh signed challenge for
 host claims and route release; restart, replay, replacement, exact-Origin,
 bounded-admission and opaque-forwarding tests pass. Desktop/headless commands,
-live circuit ownership, browser key persistence, the supervised TLS relay and
-the remote-client composition are still absent, so this does not change the
-product claim. Tactical `192` still
+live circuit ownership, browser key persistence, the local-authority/client
+runner and the remote-client composition are still absent. The relay does now
+have a separately supervised TLS 1.3 service binary with loopback-only bind,
+owner-only key loading, bounded concurrent handshake work and graceful signal
+shutdown, but it performs no trust-root installation or public deployment.
+This does not change the product claim. Tactical `192` still
 requires a private browser to resume ordinary reconnects without another
 password entry and requires the host to list and revoke every authorization
 and live circuit before a later deployment tactical can change that claim.
