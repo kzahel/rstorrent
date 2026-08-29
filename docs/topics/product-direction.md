@@ -231,8 +231,11 @@ accepted maximum-throughput storage sequence.
 
 Substantial implementation begins with a numbered tactical. An automated run
 may work deeply within that slice, but it should not silently expand the
-feature or platform surface. The next slice begins only after the prior
-tactical records its outcome and validation honestly.
+feature or platform surface. Multiple independent tacticals may proceed at the
+same time. Each tactical records its own outcome and validation honestly;
+actual dependencies and overlapping ownership are reconciled before work that
+depends on or conflicts with another slice, rather than imposing a global
+sequence.
 
 ### Pure protocol and domain boundaries
 

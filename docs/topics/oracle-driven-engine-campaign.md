@@ -2,6 +2,12 @@
 
 Topic: `oracle-driven-engine-campaign`
 
+Work-selection policy: this runbook may track multiple independent active
+engine tacticals, each with its own restart checkpoint and next action. It does
+not reserve a global **Now** slot or block user-directed work in another
+tactical. Historical **Now**, pause, resume, and selection wording below
+records earlier campaign ordering only.
+
 Status: Tactical
 [`112`](../tactical/112-dual-stack-transport-and-ipv6-dht.md) graduated after
 controlled IPv6 DHT-only interoperability, bounded public dual-family
@@ -45,8 +51,8 @@ activated Tactical
 proves one exact remote-mapped direct-public-path uTP transfer and cleanup, and
 human review then explicitly paused uTP and activated TCP-only synthetic
 performance diagnosis Tactical
-[`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) as the single
-authoritative **Now**. Tactical `128` completed and selected bounded storage
+[`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) as active
+work. Tactical `128` completed and selected bounded storage
 intake watermark Tactical
 [`129`](../tactical/129-bounded-storage-intake-watermark.md). Before its
 implementation, explicit maintainer priority resumed uTP and activated
@@ -67,8 +73,8 @@ superseded unimplemented Tactical `129` with completed Tactical
 [`135`](../tactical/135-controlled-tcp-storage-near-parity.md) as the
 controlled TCP storage result. Tactical `122`'s classified Ubuntu result then
 selected Tactical
-[`136`](../tactical/136-shared-tracker-operation-executor.md) as the
-authoritative implementation **Now**. It is complete: one task-free tracker
+[`136`](../tactical/136-shared-tracker-operation-executor.md) for active
+implementation. It is complete: one task-free tracker
 operation executor serves the separate application and direct owners, and the
 focused driver now supports authenticated HTTP(S) plus bounded final
 lifecycle. Its authorized Ubuntu rerun closes the original dispatch gap and
@@ -139,7 +145,7 @@ complete, as is external-intake Tactical
 [`163`](../tactical/163-desktop-external-torrent-intake.md). Completed desktop
 notification Tactical
 [`164`](../tactical/164-desktop-completion-and-attention-notifications.md)
-returns the authoritative product **Now** to release/updater Tactical `158`.
+left release/updater Tactical `158` active.
 
 The completed
 maximum-throughput storage campaign
@@ -161,7 +167,7 @@ The campaign owns:
 - paired live-comparison policy above the detailed measurement contract;
 - rotation and escalation rules;
 - documentation and commit checkpoints; and
-- the exact current tactical and next executable action.
+- each active tactical's restart checkpoint and next executable action.
 
 It does not replace the focused correctness, peer, discovery, performance, or
 protocol topics. It coordinates them. Individual code changes remain bounded
@@ -170,7 +176,7 @@ by numbered tacticals.
 ## Authority And Desired Outcome
 
 The user has authorized autonomous source research, implementation,
-refactoring within the active tactical, public tracker and DHT work, repeated
+refactoring within active tacticals, public tracker and DHT work, repeated
 headless downloads, multi-gigabyte comparison cohorts, and reasonable commits.
 The machine has unmetered gigabit home Internet. Network volume is therefore
 not a reason to avoid a useful cohort, although every run still needs explicit
@@ -196,8 +202,8 @@ engine with its own explicit ownership boundaries.
 | Record | Owns |
 | --- | --- |
 | `CLAUDE.md` / `AGENTS.md` | Mandatory entry path and source-first campaign contract |
-| This topic | Runbook, parity rules, campaign checkpoint, and next action |
-| `capability-readiness.md` | Exactly one **Now**, at most three **Next**, and readiness roll-up |
+| This topic | Runbook, parity rules, per-tactical campaign checkpoints, and next actions |
+| `capability-readiness.md` | Non-exclusive active/ready work sets and readiness roll-up |
 | `libtorrent-policy-alignment.md` | Cross-tactical ledger of aligned limits, meaningful policy deltas, and deliberate platform adaptations |
 | `performance-and-live-evidence.md` | Comparator schema, measurement policy, cohort summaries, and artifact safety |
 | `download-correctness.md` | Integrity, liveness, completion, and adversarial scenario ledger |
@@ -215,8 +221,8 @@ shapes without committing sensitive or unstable endpoint data.
 A resumed agent must not infer campaign state from conversation summaries
 alone. Before taking an engine action:
 
-1. read `CLAUDE.md`, this topic, `capability-readiness.md`, and the active
-   tactical named in **Current Checkpoint**;
+1. read `CLAUDE.md`, this topic, `capability-readiness.md`, and the applicable
+   active tactical named in **Current Checkpoint**;
 2. read every focused topic named by that tactical;
 3. inspect `git status`, recent commits, and the tactical's recorded evidence;
 4. reconcile the working tree with **Last Completed Evidence** and **Next
@@ -228,9 +234,9 @@ alone. Before taking an engine action:
 
 At every bounded commit or deliberate pivot, update:
 
-- the active tactical status and actual validation;
+- each affected tactical's status and actual validation;
 - the focused topics whose truth changed;
-- `capability-readiness.md` if the queue or evidence changed; and
+- `capability-readiness.md` if active/ready state or evidence changed; and
 - **Current Checkpoint** in this topic.
 
 The transcript is commentary. These repository records and executable tests
@@ -394,9 +400,10 @@ correct. Do not tune around a state model already known to be incomplete.
 
 ## Rotation And Anti-Stall Policy
 
-Keep exactly one implementation tactical active and no more than three named
-hypotheses within it. If a source-surveyed, deterministically tested change
-does not move the live boundary:
+Multiple independent implementation tacticals may be active. Keep no more
+than three named hypotheses within any one tactical, and reconcile concurrent
+work before it touches the same owner, tests, or contract. If a source-
+surveyed, deterministically tested change does not move the live boundary:
 
 1. preserve its result and decide whether the invariant is still required for
    correctness;
@@ -422,7 +429,8 @@ milestones. Once core parity is complete:
    supports that conclusion;
 3. rank BEP work by completion impact, cross-torrent frequency, prerequisite
    value, integrity/security risk, and implementation cost;
-4. select one bounded BEP tactical; and
+4. select bounded BEP tacticals with explicit dependencies and independent
+   stopping conditions; and
 5. apply this same source-first, deterministic, controlled, and live evidence
    ladder before changing `protocol-support.md` claims.
 
@@ -530,9 +538,9 @@ maintained Android native builds. Disposable-incubation state Tactical
 [`179`](../tactical/179-disposable-incubation-state-epoch.md) is complete with
 the fresh schema-21 epoch, compatibility-reader removal, full repository/web
 gates, and both maintained Android native builds. Durable High file-priority
-Tactical `176` resumes as the product/engine **Now** with only its unavailable-
-on-Linux iOS simulator/archive compile before completion; release/updater
-Tactical `158` remains after `176`.
+Tactical `176` was active with only its unavailable-on-Linux iOS simulator/
+archive compile before completion; release/updater Tactical `158` remained
+independently active.
 Tacticals `142`, `145`, and `150` complete the uTP performance campaign at the
 maintainer-selected evidence stop. Completed Tactical `143` installs the
 v1-preserving opaque torrent owner, typed protocol aliases, schema-19 fresh
@@ -645,8 +653,8 @@ adopting a torrent never grants authority over unrelated descendants. Its
 controlled oracle, repository, Android, package, and local-service evidence
 passes. Tactical `176` subsequently closes its remaining macOS-only iOS gate
 with 28 passing simulator tests and an unsigned arm64 device archive.
-Release/updater Tactical `158` resumes as the sole **Now**; this engine
-campaign remains at its reconciled completed checkpoint.
+Release/updater Tactical `158` remains active; this engine campaign remains at
+its reconciled completed checkpoint.
 Completed Tactical
 [`182`](../tactical/182-bounded-outbound-attempt-and-metadata-turnover.md)
 makes 15 seconds one total preferred-uTP/TCP/MSE/plain-handshake attempt
@@ -661,7 +669,7 @@ dial/worker cohort to 30 and spacing accepted attempts at a configurable
 no-burst default of ten per second. Completed Tactical `179` retains the
 pre-task, crash-convergent, payload-preserving reset while removing old catalog
 and DHT readers. Decision-complete measurement Tactical `153` remains ready
-without competing with this explicit user priority.
+and may be activated independently by user direction.
 Completed Tactical `155` closes Stage 4 through hash scheduling, candidate
 verification, reconstruction, repair, service, first-party platforms, and
 two-role interoperability. Completed Tactical `156` closes Stage 5 through
@@ -681,7 +689,7 @@ Steady-state LEDBAT and every resource bound remain unchanged; BEP 29 remains
 
 Planned Tactical
 [`153`](../tactical/153-wired-lan-utp-data-plane-scalability.md) retains the
-next uTP performance frontier without competing with the current queue. It
+next uTP performance frontier without waiting behind unrelated active work. It
 uses a wired gigabit-effective Mac-to-desktop path, tests native Linux and
 native Windows separately when available, and attributes single-flow TCP/uTP
 packet-rate ceilings before proposing any production optimization.

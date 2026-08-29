@@ -2,8 +2,18 @@
 
 Topic: `capability-readiness`
 
+Work-selection policy: the former single-**Now** convention is retired as of
+2026-08-29. Multiple independent tacticals may be **Active** concurrently.
+**Active**, **Ready**, and **Later** describe current planning state; they are
+not locks, authorization gates, or a mandatory execution sequence. A direct
+user request may activate bounded work without demoting or pausing unrelated
+active tacticals. Sequence only concrete dependencies, overlapping ownership
+or edits, and incompatible contracts. Older **Now**, yield, resume, and
+displacement wording below is retained only as historical scheduling
+narrative and has no current force.
+
 Status: Authoritative cross-cutting feature-readiness scoreboard and current
-work queue for the functional public-incubation release line. Maintainer
+work inventory for the functional public-incubation release line. Maintainer
 direction on 2026-08-22 completed beta-release foundation Tactical `157` and
 cross-platform presubmit Tactical `159`, then selected desktop release/updater
 Tactical `158`. Native Windows evidence exposed its release-blocking default
@@ -37,7 +47,7 @@ release/updater Tactical `158` to bounded desktop native-bootstrap and
 extension-scaffold Tactical
 [`166`](../tactical/166-desktop-native-bootstrap-and-extension-scaffold.md).
 That tactical is complete after its exact-ID installed Chrome `hello` and
-cold-launch smoke; Tactical `158` has resumed as the single **Now**. Later
+cold-launch smoke; Tactical `158` remains active. Later
 desktop extension control remains undecided.
 
 Explicit maintainer direction later on 2026-08-26 temporarily yields Tactical
@@ -47,8 +57,7 @@ complete: the bundled gateway/React package, static on-demand service,
 ChromeOS Launcher, and exact beta-extension handoff pass the available
 physical Chromebook lifecycle, detachable-transfer, preservation, and purge
 matrix. The conditional full reboot was unavailable because the testbed has no
-approved profile-login credential. Tactical `158` has resumed as the single
-**Now**.
+approved profile-login credential. Tactical `158` remains active.
 
 Explicit maintainer direction then temporarily yields Tactical `158` to
 platform-aware extension launcher Tactical
@@ -57,8 +66,7 @@ ChromeOS gets the exact published JSTorrent Android listing and ChromeOS Linux
 controls, desktop gets the native bootstrap, and unknown platforms retain both
 as a recovery fallback. Deterministic/package gates and the physical ChromeOS
 chooser, exact Play destination, and retained Crostini handoff pass without
-detecting Play or Android-app availability. Tactical `158` resumes as the
-single **Now**.
+detecting Play or Android-app availability. Tactical `158` remains active.
 
 Explicit maintainer direction next temporarily yielded Tactical `158` to
 hosted Crostini bootstrap/release Tactical
@@ -69,7 +77,7 @@ fixture pass. A subsequent explicitly authorized operation published
 non-latest `crostini-v0.1.0`, deployed the website bootstrap, verified both
 public archives and the production-key manifest, and passed the exact website
 install/Launcher/relaunch path on the physical x86_64 Chromebook. Tactical
-`158` has resumed as the single **Now**.
+`158` remains active.
 
 Maintainer direction on 2026-08-26 temporarily yielded Tactical `158` to
 configured Linux headless-service Tactical
@@ -79,7 +87,7 @@ systemd user installation, rollback-safe repair, preservation-safe removal,
 isolated TLS/WSS proxy evidence, byte-identical x86_64/ARM64 packages, and the
 real x86_64 Linux no-presentation transfer/seeding/restart campaign pass. It
 adds no built-in TLS, relay authentication, extension control, seeding goals,
-or public release. Tactical `158` has resumed as the single **Now** with its
+or public release. Tactical `158` remains active with its
 open signed Windows and Linux x86_64 evidence unchanged.
 
 Explicit maintainer direction later on 2026-08-26 temporarily yielded Tactical
@@ -91,9 +99,8 @@ with truthful
 full-control presentation, and an enabled healthy deployment bound only to the
 current x86_64 Linux machine's selected Ethernet address. It performed no tag,
 public release, website/channel deployment, unattended update, system-wide
-service, firewall change, or Raspberry Pi mutation. Tactical `158` resumes as
-the single **Now** with its open signed Windows and Linux x86_64 gates
-unchanged.
+service, firewall change, or Raspberry Pi mutation. Tactical `158` remains
+active with its open signed Windows and Linux x86_64 gates unchanged.
 
 Explicit maintainer direction on 2026-08-27 temporarily yielded Tactical `158`
 to exact tailnet headless-access Tactical
@@ -103,7 +110,7 @@ dedicated Tailscale Serve HTTPS authority, retains one application owner, and
 rejects wildcard binds, direct shared-range binds, Funnel, and tailnet policy
 mutation. Its deterministic, installed-service, package-repair, exact-route,
 WSS/media, and phone-sized browser evidence now passes without changing any
-existing Serve route or ACL. Tactical `158` has resumed as the sole **Now**.
+existing Serve route or ACL. Tactical `158` remains active.
 
 Explicit maintainer direction later on 2026-08-27 temporarily yielded Tactical
 `158` to retained Swarm transfer-total Tactical
@@ -114,7 +121,7 @@ change peer selection, retry policy, persistence, or the current stalled
 torrent's runtime behavior. Exact engine/session transitions, generated web
 and UniFFI contracts, React desktop/phone presentation, Android dual-ABI
 build, full workspace/web gates, and the repaired installed LAN/tailnet
-service pass. Tactical `158` has resumed as the sole **Now**.
+service pass. Tactical `158` remains active.
 
 Explicit user direction later on 2026-08-27 temporarily yields Tactical `158`
 to durable High file-priority Tactical
@@ -123,7 +130,7 @@ High/Normal/Skip persistence, weighted ordinary piece activation, and truthful
 first-party presentation while composing beneath completed Tactical `139`'s
 independent transient streaming urgency. Implementation and every available
 Linux/web/Android gate pass; the updated SwiftUI source still needs its
-macOS-only simulator/archive compile. Tactical `176` remains the sole **Now**
+macOS-only simulator/archive compile. Tactical `176` remains active
 until that stopping-condition gate closes.
 
 Explicit user direction subsequently yields Tacticals `176` and `158` to
@@ -136,7 +143,7 @@ tracker-source rehabilitation plus one globally paced transient-failure probe
 only when no ordinary action remains. Deterministic source/selection/cadence
 evidence, scripted fourth-attempt verified completion, full workspace gates,
 and both maintained Android native builds pass. Tactical `177` is complete and
-Tactical `176` resumes as the sole **Now**.
+Tactical `176` remains active.
 
 Explicit user direction subsequently temporarily yielded Tactical `176` to
 Crostini storage-guidance Tactical
@@ -150,7 +157,7 @@ tests, typecheck, and the production/CSP build pass. A physical Chromebook
 Launcher run additionally proves the collapsed/expanded Settings help, Add
 dialog label, cancel path, and exact Files-app context action while preserving
 the installed public binaries and restoring the original web tree. Tactical
-`178` is complete and Tactical `176` resumes as the sole **Now**.
+`178` is complete and Tactical `176` remains active.
 
 Explicit user direction subsequently yields Tacticals `176` and `158` to
 disposable-incubation state Tactical
@@ -160,7 +167,7 @@ and removes compatibility-only readers for DHT snapshot v1, desktop-shell
 settings v1/v2, and browser appearance v1/v2. The existing bounded pre-task
 reset, fail-closed hostile-state handling, and external-payload preservation
 remain mandatory. All repository/web/Android gates pass; Tactical `179` is
-complete, and Tactical `176` resumes as the sole **Now** with only its existing
+complete, and Tactical `176` remains active with only its existing
 macOS-only iOS compile gate.
 
 Explicit user direction then selects typed settings patch and draft-
@@ -169,15 +176,15 @@ convergence Tactical
 removes the unsupported whole-value and pair-specific settings commands
 without aliases or a version bridge, updates every first-party generated
 boundary, and makes web and Android settings edits survive complete live view
-updates through receipt/revision convergence. Tactical `180` is the sole
-**Now**; Tactical `176` retains its existing macOS-only iOS compile gate.
+updates through receipt/revision convergence. Tactical `180` was selected for
+active work; Tactical `176` retained its existing macOS-only iOS compile gate.
 
 Tactical `180` is complete. Closed client/torrent patches, atomic merge and
 replay semantics, generated browser/Tauri/Android/Swift boundaries, web and
 Compose draft convergence, full repository/web/Android gates, and controlled
 active listener handover/restart/bind-recovery evidence pass. The Linux host
 could inspect but not compile the regenerated Swift boundary; Tactical `176`
-therefore resumes as the sole **Now** for its unchanged macOS-only iOS
+therefore remains active for its unchanged macOS-only iOS
 simulator/archive gate. Tactical `158` remains next.
 
 Explicit user direction subsequently temporarily yields Tactical `176` to
@@ -196,8 +203,8 @@ Transfers, Peers, General, Files, Pieces, and Normal Logs. Projection interest
 already excludes inactive details, but interleaved view IDs defeat the
 view-set's tail-only current-state coalescing; complete Library and Summary
 rows dominate the measured Workbench traffic before Logs or framing. No
-product API or delivery behavior changed. Tactical `176` resumes as the sole
-**Now** for its unchanged macOS-only iOS compile gate.
+product API or delivery behavior changed. Tactical `176` remained active for
+its unchanged macOS-only iOS compile gate.
 
 Explicit user direction on 2026-08-28 temporarily yields Tactical `176` to
 view-aware current-state coalescing Tactical
@@ -218,8 +225,8 @@ Typed sparse hot-view Tactical
 replaces repeated Torrent, File, Peer, and active-piece rows across every
 first-party reducer and cuts another 36.77% from the post-coalescing clean run,
 with zero resets or lost progress. Semantic fields remain independent from
-JSON and from a much later negotiated binary codec. Tactical `176` resumes as
-the sole **Now** with only its unchanged macOS-hosted iOS compile gate.
+JSON and from a much later negotiated binary codec. Tactical `176` remained
+active with only its unchanged macOS-hosted iOS compile gate.
 
 Explicit user direction then temporarily yields Tactical `176` to current-rate
 and incremental speed-history Tactical
@@ -229,7 +236,7 @@ measured always-present `session-rates` projection currently sends a complete
 download. Tactical `186` separates that tiny latest-value state from the
 interest-selected graph and makes completed graph buckets bounded contiguous
 appends validated by semantic history position while reusing the established
-view-set cursor and acknowledgement. It is the sole **Now**; Tactical `176`
+view-set cursor and acknowledgement. It is active; Tactical `176`
 retains its unchanged macOS-only iOS compile gate.
 
 Tactical `186` is complete. The obsolete combined `SessionSpeed` contract is
@@ -243,7 +250,7 @@ its Speed route; every Linux-available first-party reducer rejects continuity
 or shape gaps atomically. The clean retained run reduces Tactical `185`'s
 server payload from 783,539 to 454,581 bytes (-41.98%) and idle Transfers from
 5.28 to 0.41 KiB/s, with exact browser/gateway agreement, zero resets, and
-progress from 1% to 20%. Tactical `176` resumes as the sole **Now** with only
+progress from 1% to 20%. Tactical `176` remains active with only
 its unchanged macOS-hosted iOS compile gate.
 
 Explicit user direction subsequently temporarily yields Tactical `176` to
@@ -252,7 +259,7 @@ compact metadata-acquisition progress Tactical
 slice carries one selected-torrent packed BEP 9 block map for v1, v2, and
 hybrid metadata into an accessible React General card. Pure-v2 and hybrid BEP
 52 hash acquisition remains a separate coarse active/waiting preparation phase
-without an invented percentage. Tactical `187` is the sole **Now**; Tactical
+without an invented percentage. Tactical `187` is active; Tactical
 `176` retains only its unchanged macOS-hosted iOS compile gate.
 
 Tactical `187` is complete. The engine now emits current generation-fenced
@@ -263,8 +270,8 @@ v2, and hybrid metadata; v2/hybrid Merkle preparation remains a separate
 active/waiting record without an invented percentage. Generated web and
 UniFFI contracts, semantic validation, all first-party reducers, wide/phone
 browser evidence, Android dual-ABI/APK/unit gates, Linux-available Apple
-boundary checks, and full workspace/web gates pass. Tactical `176` resumes as
-the sole **Now** with only its unchanged macOS-hosted iOS compile gate.
+boundary checks, and full workspace/web gates pass. Tactical `176` remained
+active with only its unchanged macOS-hosted iOS compile gate.
 
 Explicit user direction on 2026-08-28 temporarily yields Tactical `176` to
 Library torrent-detail Tactical
@@ -274,7 +281,7 @@ derived video/episode catalog for an explicitly opened source, and makes card
 activation enter a responsive Media/All files detail with exact per-file
 progress and availability. Thumbnails, artwork, playback presentation,
 Library-wide item aggregation, persistence, and engine behavior remain outside
-the slice. Tactical `072` is the sole **Now**; Tactical `176` retains only its
+the slice. Tactical `072` is active; Tactical `176` retains only its
 unchanged macOS-hosted iOS compile gate.
 
 Tactical `072` is complete. A pure versioned classifier now derives
@@ -287,7 +294,7 @@ same-document history, focus repair, and bounded virtualization. A controlled
 eight-file libtorrent run observed metadata pending, six Media rows, all eight
 Files rows, exact lease eviction/recovery, zero semantic HTTP calls, and joined
 cleanup. Thumbnails, artwork, playback, persistence, and Library-wide item
-aggregation remain deferred. Tactical `176` resumes as the sole **Now** with
+aggregation remain deferred. Tactical `176` remains active with
 only its unchanged macOS-hosted iOS compile gate.
 
 Explicit user direction on 2026-08-28 temporarily yielded Tactical `176` to
@@ -304,7 +311,7 @@ Linux-available Apple boundary gates pass. The Library browser case passes at
 wide and phone sizes; the complete Playwright run retains one Swarm-only
 scroll-indicator failure that passes alone and is outside this repair.
 Embedded playback, media enrichment, and native mobile playback presentation
-remain separate. Tactical `176` resumes as the sole **Now** with only its
+remain separate. Tactical `176` remains active with only its
 unchanged macOS-hosted iOS compile gate.
 
 Completed existing-payload adoption and recheck Tactical
@@ -315,7 +322,7 @@ ownership and pending verification atomically, and makes managed cleanup
 metainfo-exact so unrelated content survives. It changes no schema, trusted
 fast-resume rule, or user setting. Its deterministic, controlled-libtorrent,
 workspace, web, Android, package, and local-service gates pass. Tactical `176`
-resumes as the sole **Now** with only its unchanged macOS-hosted iOS compile
+remains active with only its unchanged macOS-hosted iOS compile
 gate.
 
 Tactical `176` is complete on 2026-08-29. Xcode 26.6 regenerated and compiled
@@ -323,8 +330,8 @@ the current Swift boundaries, all 26 iOS unit tests and two product-surface UI
 tests pass on the simulator, and the unsigned generic arm64 device archive
 contains the expected application. The gate also found and repaired one
 Swift grammar regression from later existing-payload Tactical `188` without
-changing cleanup semantics. Tactical `158` resumes as the sole **Now** with
-its signed Windows and installed Linux x86_64 gates unchanged.
+changing cleanup semantics. Tactical `158` remains active with its signed
+Windows and installed Linux x86_64 gates unchanged.
 
 The updater tactical's client, production route, five-target signed hosted
 rehearsal, public `0.1.0`, `0.1.1`, and `0.1.2` releases, installed macOS arm64
@@ -354,20 +361,22 @@ This topic answers four recurring questions:
 - What can RSTorrent actually do now?
 - What evidence supports each claim?
 - Which missing capability presents the highest product or correctness risk?
-- What bounded implementation slice should come next?
+- Which bounded implementation slices are active or useful candidates?
 
 This is a roll-up, not a second source of detailed design truth. Focused topics
 own their invariants and decisions, numbered tacticals own implementation
 plans and execution records, and tests remain the executable evidence. This
-topic links those records and states the current priority.
+topic links those records and states the current priorities.
 
 [`product-direction.md`](product-direction.md) owns durable product posture and
-sequence. [`protocol-support.md`](protocol-support.md) owns BEP-level claims.
+dependency direction. [`protocol-support.md`](protocol-support.md) owns
+BEP-level claims.
 [`download-correctness.md`](download-correctness.md) owns completion, integrity,
 and recovery scenarios.
 [`beta-release-readiness.md`](beta-release-readiness.md) owns the external-beta
 gap ledger, distribution gates, and release feature boundary. This topic owns
-the cross-cutting capability view and its single current tactical.
+the cross-cutting capability view and its non-exclusive active and ready work
+sets.
 
 ## Reading The Scoreboard
 
@@ -407,9 +416,12 @@ Choose work in this order unless new evidence justifies an explicit change:
 
 Within the highest applicable class, prefer a slice that has a deterministic
 failure fixture, establishes an owner needed by later work, and has a
-falsifiable end-to-end stopping condition. Keep exactly one item in **Now**
-and no more than three in **Next**. A long inventory is useful; competing
-current priorities are not.
+falsifiable end-to-end stopping condition. This order is a default for choosing
+otherwise unspecified work, not a reason to redirect an explicit user request.
+Keep the **Active** set honest and bounded enough that ownership and working-
+tree conflicts remain visible, but impose no artificial item count. **Ready**
+means sufficiently framed to start; it does not mean blocked behind every
+active item.
 
 The completed DHT and multi-peer foundations now let late tracker or DHT
 observations improve active content work. The current campaign and restart
@@ -458,7 +470,7 @@ physical peer/torrent/session payload accounting now enforce multi-peer
 seeding. Two RSTorrent and two libtorrent 2.0.13 clients overlapped against one
 seed, independently verified 67,109,595 bytes each, and produced the exact
 268,438,380-byte physical upload total. This explicitly directed completion
-does not change the `Now` product-surface decision.
+did not change the active product-surface work.
 
 Tactical [`083`](../tactical/083-shared-torrent-file-picker.md) is complete.
 Empty Add now opens the shared browser/Tauri single-file chooser, reuses the
@@ -817,16 +829,16 @@ run reached 1,055/1,055, Published/Seeding, opened the available MP4 in one tap,
 advanced system playback from 1:46 to 2:10, and removed the selected-root tree
 exactly.
 
-## Current Queue
+## Current Work
 
-### Now
+### Active
 
 - Resume **Tactical `158`** and close the clean Windows and Linux x86_64
   signed replacement/relaunch evidence plus Windows firewall-consent
   characterization. Prove clean launch or bounded reset and payload safety,
   not retention of disposable `0.1.x` application state.
 
-### Next
+### Ready
 
 - Declare the future first supported version and freeze its fresh application
   identities and persistence/API baseline only from that version forward.
@@ -881,7 +893,7 @@ important. Accepted Tactical
 [`190`](../tactical/190-opaque-wasm-relay-foundation.md) owns a later controlled
 OPAQUE native/Wasm dumb-relay proof without public exposure, durable authority,
 remembered devices or account delegation; it remains **Later** until explicitly
-selected and does not displace Tactical `158` as the sole **Now**. Tactical
+selected and may become active without displacing Tactical `158`. Tactical
 `112` now owns IPv6 DHT operation and dual-stack
 listening. Closed Tactical `113` implements IPv6 firewall-pinhole control but
 records positive physical capability as unknown on the current hardware after
@@ -1025,14 +1037,16 @@ and parole selection remain evidence-gated rather than preplanned slices.
 ## Maintenance Contract
 
 Every substantial tactical must update this topic when it changes a row,
-evidence label, risk, or queue position. It must also update the focused owner,
-the relevant correctness scenarios, and any affected BEP claims.
+evidence label, risk, or active/ready/later classification. It must also update
+the focused owner, the relevant correctness scenarios, and any affected BEP
+claims.
 
 Every user-observed correctness failure gets a stable observation or scenario
 entry before it can disappear into a generic backlog item. Closing it requires
 either reproducible passing evidence or a recorded explanation that the
 observation was caused outside the claimed product scope.
 
-The **Now** item changes only when it completes, becomes invalidated by new
-evidence, or is explicitly superseded. Completed tacticals remain execution
-records; this topic should not accumulate their implementation narrative.
+The active set changes as work starts, completes, becomes invalidated by new
+evidence, or is explicitly reprioritized. Starting one tactical does not
+silently pause another. Completed tacticals remain execution records; this
+topic should not accumulate their implementation narrative.

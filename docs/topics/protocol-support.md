@@ -307,7 +307,7 @@ New real-swarm evidence may reorder common interoperability work, but it must
 not weaken integrity, privacy, or lifecycle invariants.
 
 The four planned tacticals are child slices, not a competing campaign or a
-change to the authoritative **Now** item. Existing topics remain the parent
+reason to pause unrelated active work. Existing topics remain the parent
 tracking layer. Full snub semantics and parole isolation do not yet have
 tacticals: current stalled-peer probing and corruption recovery already pass,
 so a stable failing scenario or comparative result must select those changes

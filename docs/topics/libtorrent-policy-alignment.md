@@ -8,7 +8,7 @@ against pinned Rasterbar libtorrent `2.0.13` at
 [`182`](../tactical/182-bounded-outbound-attempt-and-metadata-turnover.md) is
 complete and aligns `LPA-001` while closing `LPA-002` with a conservative
 RSTorrent-specific saturated-cohort adaptation. Tactical `176` is complete
-and release/updater Tactical `158` is the sole **Now**; this topic remains the
+and release/updater Tactical `158` remains active; this topic remains the
 durable comparison ledger.
 
 ## Scope
@@ -343,7 +343,7 @@ slice covering `LPA-001` and the tightly related `LPA-002` transition:
 
 The exact source dossier, scripted evidence, resource accounting, controlled
 interop, and Android gates are retained in the tactical. Tactical `176` is
-complete and Tactical `158` is the sole **Now**. `LPA-003`, a session-global
+complete and Tactical `158` remains active. `LPA-003`, a session-global
 no-burst dial owner, remains the strongest unimplemented connection-policy
-candidate, but requires a separate tactical and does not compete with the
-current queue.
+candidate, but requires a separate tactical and may be activated independently
+when directed.

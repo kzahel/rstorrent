@@ -2,6 +2,13 @@
 
 Topic: `beta-release-readiness`
 
+Work-selection policy: release tacticals may be active alongside unrelated
+engine, client, platform, or product tacticals. **Active**, **Ready**, and
+**Later** are planning states rather than a lock or required sequence. The
+historical yield/resume/**Now** narrative below records past prioritization
+only; it does not require future work to displace Tactical `158` or any other
+active slice.
+
 Status: **Active as of 2026-08-27.** RSTorrent desktop `0.1.0` is the first
 public signed incubation release and `0.1.1` is its first updater-validation
 release. Public `0.1.2` is the first signed candidate carrying the completed
@@ -35,16 +42,15 @@ and passes guest-native installed macOS arm64, Windows arm64, Linux arm64,
 physical Android API 37, and physical iOS evidence. Explicit maintainer
 direction temporarily yielded Tactical `158` to bounded desktop-bootstrap
 Tactical `166`. That slice is complete after its exact-ID installed Chrome
-`hello` and cold-launch smoke, and Tactical `158` has resumed as the sole
-**Now**. Explicit maintainer direction later on 2026-08-26 temporarily yields
+`hello` and cold-launch smoke, and Tactical `158` remains active. Explicit
+maintainer direction later on 2026-08-26 temporarily yields
 that work to bounded ChromeOS Linux Tactical
 [`167`](../tactical/167-chromeos-crostini-bundled-web-launcher.md). This is a
 source-package and physical-device incubation slice, not a new public beta
 lane or signed release. That slice is complete after the available physical
 Chromebook lifecycle, detachable-transfer, preservation, and purge matrix;
 the conditional full reboot was unavailable because the testbed has no
-approved profile-login credential. Tactical `158` has resumed as the sole
-**Now**.
+approved profile-login credential. Tactical `158` remains active.
 Installed Intel macOS testing is deliberately omitted. The public product
 name is RSTorrent for the foreseeable release line. A later production
 graduation is expected to retain JSTorrent's existing name, application
@@ -64,14 +70,14 @@ complete; desktop-bootstrap Tactical
 [`166`](../tactical/166-desktop-native-bootstrap-and-extension-scaffold.md) is
 complete; signed release Tactical
 [`158`](../tactical/158-desktop-signed-packaging-and-updater.md) retains its
-open gates and has resumed as the sole **Now**; Crostini Tactical `167` and
+open gates and remains active; Crostini Tactical `167` and
 configured Linux headless-service Tactical `170` are complete.
 Explicit maintainer direction temporarily yields Tactical `158` once more to
 bounded platform-aware extension popup Tactical
 [`168`](../tactical/168-platform-aware-extension-launcher.md). This polish adds
 no release lane, permission, Android detection, or application-control scope;
 its deterministic package and physical ChromeOS chooser/link/handoff spot
-check pass. Tactical `158` has resumed as the sole **Now**.
+check pass. Tactical `158` remains active.
 Explicit maintainer direction temporarily yields Tactical `158` to hosted
 Crostini bootstrap/release Tactical
 [`169`](../tactical/169-hosted-crostini-bootstrap-and-release.md). This is
@@ -80,14 +86,14 @@ create a public ChromeOS Linux release or expand the beta lane. That slice is
 complete after its deterministic and physical signed-fixture real-package
 matrix. A subsequent explicitly authorized operation published non-latest
 `crostini-v0.1.0`, deployed the website bootstrap, and passed exact public
-x86_64 acceptance; Tactical `158` has resumed as the sole **Now**.
+x86_64 acceptance; Tactical `158` remains active.
 Explicit maintainer direction on 2026-08-26 temporarily yielded Tactical `158`
 to configured Linux headless-service Tactical
 [`170`](../tactical/170-configured-linux-headless-service.md). Tactical `170`
 is complete with deterministic source/package gates, isolated HTTPS/WSS proxy
 evidence, and a real x86_64 Linux service/transfer/preservation campaign. It
 creates no public release lane and does not absorb the owner remote-
-authentication or relay campaign. Tactical `158` has resumed as **Now** with
+authentication or relay campaign. Tactical `158` remains active with
 its remaining signed Windows and Linux x86_64 acceptance gates unchanged.
 Explicit maintainer direction later on 2026-08-26 temporarily yielded Tactical
 `158` to signed headless release and trusted-LAN service Tactical
@@ -96,8 +102,8 @@ the completed source-only signed distribution/update plumbing, one exact RFC 191
 unauthenticated full-owner mode, truthful browser presentation, and an
 enabled healthy current-host service campaign. Public release/channel
 deployment, unattended updating, system-wide ownership, firewall changes, and
-Raspberry Pi mutation remain outside the slice. Tactical `158` resumes as the
-sole **Now** with its open gates unchanged.
+Raspberry Pi mutation remain outside the slice. Tactical `158` remains active
+with its open gates unchanged.
 Maintainer direction on 2026-08-24 promotes OS-level `magnet:` and local
 `.torrent` activation from a post-beta deferral to a beta usability gap;
 completed Tactical
@@ -127,7 +133,7 @@ complete with a fresh schema-21 catalog and removal of compatibility-only
 state readers while retaining bounded reset and external-payload safety.
 Tactical `176` is also complete after its Xcode 26.6 simulator and unsigned
 device-archive gates passed on 2026-08-29. Signed release Tactical `158`
-resumes as the sole **Now**.
+remains active.
 
 ## Scope And Release Definition
 
@@ -140,10 +146,11 @@ development team. It owns:
 - presubmit, scheduled, release, and post-release validation gates;
 - product identity, version, migration, privacy, support, licensing, and
   release-note gates; and
-- the ordered backlog of bounded tacticals needed to reach beta.
+- the statused backlog of bounded tacticals needed to reach beta.
 
 [`capability-readiness.md`](capability-readiness.md) remains the detailed
-engine and application capability scoreboard and owns exactly one **Now**.
+engine and application capability scoreboard and owns non-exclusive active and
+ready work sets.
 [`protocol-support.md`](protocol-support.md) owns exact BitTorrent protocol
 claims. Platform and UI truth remains in
 [`client-surfaces.md`](client-surfaces.md). This topic classifies those facts
@@ -641,7 +648,11 @@ are necessary for ordinary advertised downloads. Public incomplete-swarm
 reliability and ordinary performance remain evidence requirements even though
 no single optional BEP is mandatory.
 
-## Ordered Tactical Queue
+## Tactical Status And Release Backlog
+
+List order preserves the campaign record and rough release context; it is not
+a required execution sequence. Independent items may become active
+concurrently when directed, without demoting other active work.
 
 1. **Complete — Tactical `157`: beta release foundation.** Established this
    ledger, graduated the Android module path, added provisional platform
@@ -658,7 +669,7 @@ no single optional BEP is mandatory.
    Windows x86_64/Linux arm64 proof pass. File/magnet handoff remains outside
    that completed slice and is now owned by Tactical `163`; autostart stays
    deferred.
-4. **Now — Tactical `158`: desktop signed packaging and updater adoption.**
+4. **Active — Tactical `158`: desktop signed packaging and updater adoption.**
    The product-owned `desktop-update-v1` client, signed package workflow,
    release validation, per-app key, public configuration, production route,
    five-platform hosted rehearsal, three tagged publications, one installed
@@ -689,7 +700,7 @@ no single optional BEP is mandatory.
    inhibition.** One default-on desktop/Android preference, level-triggered
    system-idle ownership, iOS inapplicability, and real cleanup pass through
    machine-control on every available desktop/mobile target. Tactical `158`
-   resumes as **Now**.
+   remains active.
 8. **Complete — Tactical `160`: Windows local-network address selection.**
    Wildcard binding remains, only a concrete eligible address is reported,
    the bounded Windows best-route fallback and native CI regression pass, and
@@ -706,7 +717,7 @@ no single optional BEP is mandatory.
    High/Normal/Skip persistence, weighted ordinary scheduling, streaming
    composition, first-party presentation, Linux/web/Android gates, 28 iOS
    simulator tests, and the unsigned arm64 device archive pass.
-12. **Next — supported-release boundary.** Keep all `0.1.x` and current
+12. **Ready — supported-release boundary.** Keep all `0.1.x` and current
    previews explicitly disposable, then choose and declare the first supported
    version with a fresh persistence/API baseline. No migration from incubation
    state is required. Complete its changelog, privacy/support, diagnostics
@@ -723,7 +734,7 @@ no single optional BEP is mandatory.
     available warm, twice-stopped-VM, detachable-transfer, preservation, and
     purge matrix on the physical Chromebook. The conditional full reboot was
     unavailable because no approved profile-login credential exists; signed
-    public packages remain later breadth. Tactical `158` resumes as **Now**.
+    public packages remain later breadth. Tactical `158` remains active.
 16. **Complete — Tactical `168`: platform-aware extension launcher.** ChromeOS
     omits the irrelevant desktop-native flow and presents the exact published
     JSTorrent Android listing beside ChromeOS Linux; desktop platforms retain
@@ -753,11 +764,12 @@ no single optional BEP is mandatory.
     exact RFC 1918 `lan-none` admission with truthful full-control UI, and an
     enabled healthy current-host x86_64 service campaign pass. No public
     publication, unattended update, system-wide service, firewall change, or
-    Raspberry Pi mutation occurred. Tactical `158` resumes as **Now**.
+    Raspberry Pi mutation occurred. Tactical `158` remains active.
 
-Each implementation item requires its own bounded tactical. This ordering is
-not authorization to tag, publish, alter production routing, create store
-listings, or provision credentials without the required maintainer action.
+Each implementation item requires its own bounded tactical. These status
+classifications are not authorization to tag, publish, alter production
+routing, create store listings, or provision credentials without the required
+maintainer action.
 
 ## Maintenance Contract
 

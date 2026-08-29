@@ -172,7 +172,8 @@ gigabit-effective because the development Mac has a 1 GbE USB-C adapter even
 when the workstation negotiates 2.5 GbE. It uses both physical directions,
 forced TCP/uTP, pinned libtorrent and own-TCP controls, 8 or 16 GiB stable
 fixtures, native Linux or Windows, and a separate native Windows epoch when
-available. It does not alter the completed WAN result or current queue.
+available. It does not alter the completed WAN result or the status of other
+active or ready work.
 
 Completed Tactical
 [`152`](../tactical/152-ios-multifile-selected-root-coordination.md) records a

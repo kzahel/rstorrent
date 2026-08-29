@@ -1,8 +1,8 @@
 # Tactical 158: Desktop Signed Packaging And Updater
 
-Status: **Implementation resumed as the sole Now on 2026-08-29 after durable
-High file-priority Tactical
-[`176`](176-durable-high-file-priority.md) completed.** Tagged
+Status: **Active.** Implementation resumed on 2026-08-29 after durable High
+file-priority Tactical
+[`176`](176-durable-high-file-priority.md) completed. Tagged
 `desktop-v0.1.2` now publicly carries the completed desktop repairs and native
 bootstrap at exact commit `788e953d1ed578c238beccbbc224907b0d9dc95c`.
 Its source gate, five signed package jobs, and publication finalizer pass, and

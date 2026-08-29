@@ -94,8 +94,8 @@ scope, invariants, resource limits, evidence, and a falsifiable stopping
 condition before code changes begin.
 
 This topic does not by itself authorize a dependency, source import, or
-protocol-support claim. The readiness queue separately controls promotion and
-the single authoritative **Now**.
+protocol-support claim. Capability readiness separately records whether the
+work is active, ready, or later without reserving an exclusive slot.
 
 ## Current Truth
 
@@ -551,9 +551,8 @@ The next human choice is:
    and scripted failure/cleanup evidence, then return for another review before
    any independent-implementation exchange. This reduces one tactical's breadth
    but delays the first interoperability verdict.
-3. **C — pause the uTP campaign:** retain the completed deterministic core and
-   return the authoritative **Now** to the readiness queue without adding a
-   runtime path.
+3. **C — pause the uTP campaign:** retain the completed deterministic core
+   without adding a runtime path; unrelated active work continues unchanged.
 
 No choice authorizes `pimom`, another external network, a public swarm,
 physical-device work, UDP reachability changes, or a support claim.
@@ -600,8 +599,8 @@ not indicated. The next human choice is:
    RTT/loss/MTU/controller observations, and defer reverse incoming traffic
    until truthful UDP reachability exists.
 2. **B — pause before external evidence:** keep the completed diagnostic
-   runtime and return the authoritative **Now** to another readiness item.
-   Product uTP remains disabled and the campaign resumes later at Stage 4.
+   runtime while unrelated active work continues. Product uTP remains disabled
+   and the campaign resumes later at Stage 4.
 3. **C — plan product policy before WAN evidence:** define TCP/uTP selection,
    fallback, advertisement, and presentation as a design-only tactical without
    enabling them. This can clarify eventual controls, but it moves policy

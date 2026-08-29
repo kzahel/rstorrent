@@ -12,7 +12,8 @@ Start with [`README.md`](README.md) and
 - [`docs/topics/product-direction.md`](docs/topics/product-direction.md) and
   [`docs/topics/product-surfaces-and-migration.md`](docs/topics/product-surfaces-and-migration.md);
 - [`docs/topics/capability-readiness.md`](docs/topics/capability-readiness.md),
-  which owns the current queue and exactly one **Now**; and
+  which owns the capability scoreboard and non-exclusive active/ready work
+  sets; and
 - [`docs/references.md`](docs/references.md).
 
 [`docs/topics/README.md`](docs/topics/README.md) indexes every living topic;
@@ -136,13 +137,23 @@ deferral only when a material known problem is deliberately left in place.
 ## Feature Campaign Execution
 
 [`docs/topics/capability-readiness.md`](docs/topics/capability-readiness.md)
-owns the current queue and the single authoritative **Now**. Whenever engine
-work is in flight,
+owns the capability scoreboard and active/ready work sets. Multiple bounded
+tacticals may be active at the same time. `Active`, `Ready`, and `Later` are
+planning metadata, not repository locks, authorization gates, or a mandatory
+global sequence. A user-directed tactical does not need to displace or pause
+unrelated active work, and an agent must not redirect requested work merely
+because another tactical is active. Stop or sequence work only for a concrete
+dependency, overlapping ownership or edits, an incompatible accepted
+contract, or an escalation boundary stated below. References to **Now** in
+completed tacticals or historical topic narrative describe the retired
+single-`Now` convention and have no current force.
+
+Whenever engine work is in flight,
 [`docs/topics/oracle-driven-engine-campaign.md`](docs/topics/oracle-driven-engine-campaign.md)
-owns the source-first runbook, graduation rules, restart checkpoint, and next
-executable action; keep its checkpoint reconciled with repository state rather
-than with transcript memory. For each engine, protocol, discovery, scheduling,
-storage, or performance feature:
+owns the source-first runbook, graduation rules, and per-tactical restart
+checkpoints and next executable actions; keep each applicable checkpoint
+reconciled with repository state rather than with transcript memory. For each
+engine, protocol, discovery, scheduling, storage, or performance feature:
 
 1. Create or update one bounded tactical before implementation. State its
    stopping condition, non-goals, invariants, resource limits, and required

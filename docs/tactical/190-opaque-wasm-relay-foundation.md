@@ -3,8 +3,8 @@
 Status: **Accepted and decision-complete for later execution on 2026-08-29 by
 explicit user direction.** Implementation has not started. Desktop signed
 package and updater Tactical
-[`158`](158-desktop-signed-packaging-and-updater.md) remains the sole **Now**;
-creating this tactical does not change the authoritative queue.
+[`158`](158-desktop-signed-packaging-and-updater.md) remains independently
+active; creating this tactical does not itself start implementation.
 
 Topics:
 [`remote-access-authentication`](../topics/remote-access-authentication.md),
@@ -451,7 +451,8 @@ delegation remains a separate later decision even after that production path.
 
 Routine module extraction, binding generation, deterministic fixtures,
 headless-browser use, local temporary listeners and conservative tightening
-within the declared bounds are authorized when this tactical becomes **Now**.
+within the declared bounds are authorized when implementation of this tactical
+is user-directed. It may become active without pausing unrelated tacticals.
 Stop for direction if evidence requires abandoning OPAQUE, using a prerelease
 or materially different cryptographic library, accepting an identity KSF,
 changing the username/passphrase product, persisting production authority,

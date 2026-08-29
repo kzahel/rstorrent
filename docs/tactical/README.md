@@ -32,6 +32,20 @@ what landed, what validation actually ran, known gaps, and the recommended next
 slice. Completed tacticals remain in place as execution records; living
 direction belongs in `../topics/`.
 
+## Work Selection And Concurrency
+
+Multiple independent tacticals may be **Active** concurrently. **Active**,
+**Ready**, and **Later** are descriptive planning states, not locks,
+authorization gates, or a required global execution order. User-directed work
+may proceed in any bounded tactical whose concrete dependencies are satisfied;
+it does not need to displace or pause unrelated active work. Reconcile work
+only when tacticals touch the same owner or edits, depend on one another's
+outcome, or propose incompatible contracts.
+
+Some completed tacticals retain **Now** language as an execution record from
+the former single-`Now` convention. That wording is historical and does not
+govern current work selection.
+
 ## Decision-Complete Tacticals
 
 A tactical intended for autonomous execution must settle enough direction that
@@ -800,7 +814,7 @@ that scope and its cleanup or compatibility rules explicitly.
   art/metadata, and reconciles status before signed updater and cross-platform
   CI slices.
 - [`158-desktop-signed-packaging-and-updater.md`](158-desktop-signed-packaging-and-updater.md):
-  active as the sole Now after Tactical `170` completed; its Tauri-only
+  active release work; its Tauri-only
   `desktop-update-v1` UI/state boundary, per-app identity/key/route, hosted
   signed five-target package rehearsal, public `desktop-v0.1.0` through
   `desktop-v0.1.2` finalization, one installed macOS arm64 launch smoke, and
@@ -875,7 +889,7 @@ that scope and its cleanup or compatibility rules explicitly.
   enabled healthy current-host x86_64 service at its exact LAN authority.
   Public publication, unattended replacement, system-wide ownership, firewall
   changes, and Raspberry Pi mutation remain explicitly absent; Tactical `158`
-  resumes as the sole **Now**.
+  remains independently active.
 - [`172-provisional-magnet-display-name.md`](172-provisional-magnet-display-name.md):
   complete; carries bounded magnet `dn` as a distinct provisional source
   label through current-schema restart and first-party torrent-list
@@ -895,8 +909,8 @@ that scope and its cleanup or compatibility rules explicitly.
   retained Swarm record across active connections, backoff, disconnect, and
   reconnect, carries canonical decimal strings through generated web/UniFFI
   boundaries, and proves the installed LAN/tailnet service without changing
-  peer policy or adding durable history. Tactical `158` resumes as the sole
-  **Now**.
+  peer policy or adding durable history. Tactical `158` remains independently
+  active.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

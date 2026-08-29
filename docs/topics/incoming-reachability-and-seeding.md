@@ -351,9 +351,9 @@ self-connection rejection is local to an application rather than the
 RSTorrent client fingerprint.
 
 [`capability-readiness.md`](capability-readiness.md) remains authoritative for
-priority and the `Now`/`Next` queue. Completing these bounded slices does not
-promote settings, advertisement, or mapping work ahead of the currently
-recorded work.
+priority and non-exclusive active/ready work sets. Completing these bounded
+slices does not silently change the status of settings, advertisement, or
+mapping work.
 
 ## Desired End State
 

@@ -6,8 +6,8 @@ Status: Direction and investigation background accepted from maintainer
 discussion on 2026-08-04. Tactical
 [`190`](../tactical/190-opaque-wasm-relay-foundation.md) was accepted on
 2026-08-29 for later execution and selects an account-free OPAQUE login through
-one native/Wasm Rust core and a controlled dumb-relay proof. It is not the
-authoritative **Now**, has not started implementation and does not authorize a
+one native/Wasm Rust core and a controlled dumb-relay proof. It is **Later**,
+has not started implementation, and does not authorize a
 production listener, public relay, durable owner authority or stable remote
 wire contract. Completed Tactical `174` separately permits one trusted
 Tailscale operator deployment; tailnet admission is not the owner
@@ -605,7 +605,8 @@ production/device tactical rather than being implied by the proof.
 ## Recommended Next Work
 
 Do not add a production remote listener or cryptographic dependency from this
-topic alone. When explicitly promoted to **Now**, accepted Tactical
+topic alone. When its implementation is explicitly user-directed, accepted
+Tactical
 [`190`](../tactical/190-opaque-wasm-relay-foundation.md) owns the controlled
 native-host/browser-Wasm OPAQUE proof, bounded dumb relay, hostile-input and
 clone matrix, resource measurements and exact existing-application trace. It

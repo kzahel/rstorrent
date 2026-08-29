@@ -587,7 +587,7 @@ cross-product.
 
 [`capability-readiness.md`](capability-readiness.md) records measurement-only
 Tactical [`153`](../tactical/153-wired-lan-utp-data-plane-scalability.md) as the
-sole **Now** after the v2/hybrid campaign closure. Completed Tacticals
+active priority at that historical checkpoint. Completed Tacticals
 [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md),
 [`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md), and
 [`156`](../tactical/156-hybrid-dual-swarm-runtime-closure.md) own the exact

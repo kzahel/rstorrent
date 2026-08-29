@@ -42,7 +42,11 @@ machine-control.
 
 ## Current Tactical State
 
-The authoritative **Now** is
+Multiple independent tacticals may be active concurrently; this section is a
+status summary, not a work-selection lock or required execution sequence.
+User-directed work does not need to pause or displace another active tactical.
+
+Current active release work includes
 [`158-desktop-signed-packaging-and-updater.md`](docs/tactical/158-desktop-signed-packaging-and-updater.md),
 whose remaining gates are clean signed Windows replacement/relaunch,
 Windows firewall-consent characterization, and installed Linux x86_64
