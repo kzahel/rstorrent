@@ -2,9 +2,12 @@
 //! Narrow browser binding for the shared remote-access cryptographic core.
 
 use rstorrent_remote_crypto::{
-    Binding, ClientLoginStart, ClientRegistrationStart, HostId, HostPin, OperationSeed, RelayId,
-    SecureChannel, Username, finish_client_login, finish_client_registration, start_client_login,
-    start_client_registration,
+    AuthorizationChallenge, AuthorizationGeneration, Binding, ClientId, ClientLoginStart,
+    ClientRegistrationStart, ClientResumeFinish, HostId, HostPin, OperationSeed, P256PublicKey,
+    P256Signature, RelayId, ResumeClientStart, ResumeContext, ResumeServerChallenge, SecureChannel,
+    Username, authorization_metadata_digest, authorization_transcript, finish_client_login,
+    finish_client_registration, finish_client_resume, start_client_login,
+    start_client_registration, start_client_resume,
 };
 use wasm_bindgen::prelude::*;
 
@@ -119,6 +122,147 @@ impl WasmClientLogin {
     }
 }
 
+#[wasm_bindgen(js_name = authorizationTranscript)]
+#[allow(clippy::too_many_arguments)]
+pub fn wasm_authorization_transcript(
+    relay_id: &[u8],
+    username: &str,
+    host_id: &[u8],
+    host_pin: &[u8],
+    host_resume_public_key: &[u8],
+    authorization_generation: u64,
+    authorization_challenge: &[u8],
+    client_public_key: &[u8],
+    label: &str,
+    client_build: Option<String>,
+    route_observation: Option<String>,
+    browser_observation: Option<String>,
+) -> core::result::Result<Vec<u8>, JsError> {
+    let binding = binding(relay_id, username, host_id)?;
+    let host_pin = HostPin::from_bytes(host_pin).map_err(js_error)?;
+    let host_resume_public_key =
+        P256PublicKey::from_bytes(host_resume_public_key).map_err(js_error)?;
+    let authorization_challenge =
+        AuthorizationChallenge::new(fixed(authorization_challenge, "authorization challenge")?);
+    let client_public_key = P256PublicKey::from_bytes(client_public_key).map_err(js_error)?;
+    let digest = authorization_metadata_digest(
+        label,
+        client_build.as_deref(),
+        route_observation.as_deref(),
+        browser_observation.as_deref(),
+    );
+    Ok(authorization_transcript(
+        &binding,
+        host_pin,
+        host_resume_public_key,
+        AuthorizationGeneration::new(authorization_generation),
+        authorization_challenge,
+        client_public_key,
+        digest,
+    ))
+}
+
+#[wasm_bindgen(js_name = ClientResume)]
+pub struct WasmClientResume {
+    state: Option<ResumeClientStart>,
+    hello: Vec<u8>,
+    host_pin: HostPin,
+}
+
+#[wasm_bindgen(js_class = ClientResume)]
+impl WasmClientResume {
+    #[wasm_bindgen(constructor)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        relay_id: &[u8],
+        username: &str,
+        host_id: &[u8],
+        host_pin: &[u8],
+        host_resume_public_key: &[u8],
+        client_id: &[u8],
+        client_public_key: &[u8],
+        authorization_generation: u64,
+        client_generation: u64,
+        protocol_floor: u16,
+        entropy: &[u8],
+    ) -> core::result::Result<Self, JsError> {
+        let binding = binding(relay_id, username, host_id)?;
+        let host_pin = HostPin::from_bytes(host_pin).map_err(js_error)?;
+        let context = ResumeContext::new(
+            binding,
+            host_pin,
+            P256PublicKey::from_bytes(host_resume_public_key).map_err(js_error)?,
+            ClientId::new(fixed(client_id, "client ID")?),
+            P256PublicKey::from_bytes(client_public_key).map_err(js_error)?,
+            AuthorizationGeneration::new(authorization_generation),
+            AuthorizationGeneration::new(client_generation),
+            protocol_floor,
+        );
+        let state = start_client_resume(context, operation_seed(entropy)?);
+        let hello = state.hello().to_bytes().to_vec();
+        Ok(Self {
+            state: Some(state),
+            hello,
+            host_pin,
+        })
+    }
+
+    pub fn request(&self) -> core::result::Result<Vec<u8>, JsError> {
+        if self.state.is_none() {
+            return Err(consumed_error());
+        }
+        Ok(self.hello.clone())
+    }
+
+    pub fn finish(
+        &mut self,
+        challenge: &[u8],
+    ) -> core::result::Result<WasmClientResumeProof, JsError> {
+        let state = self.state.take().ok_or_else(consumed_error)?;
+        self.hello.clear();
+        let challenge = ResumeServerChallenge::from_bytes(challenge).map_err(js_error)?;
+        let finish = finish_client_resume(state, &challenge).map_err(js_error)?;
+        let signature_input = finish.client_signature_input().to_vec();
+        Ok(WasmClientResumeProof {
+            finish: Some(finish),
+            signature_input,
+            host_pin: self.host_pin,
+        })
+    }
+}
+
+#[wasm_bindgen(js_name = ClientResumeProof)]
+pub struct WasmClientResumeProof {
+    finish: Option<ClientResumeFinish>,
+    signature_input: Vec<u8>,
+    host_pin: HostPin,
+}
+
+#[wasm_bindgen(js_class = ClientResumeProof)]
+impl WasmClientResumeProof {
+    pub fn signature_input(&self) -> core::result::Result<Vec<u8>, JsError> {
+        if self.finish.is_none() {
+            return Err(consumed_error());
+        }
+        Ok(self.signature_input.clone())
+    }
+
+    pub fn complete(
+        &mut self,
+        signature: &[u8],
+    ) -> core::result::Result<WasmClientSession, JsError> {
+        let finish = self.finish.take().ok_or_else(consumed_error)?;
+        self.signature_input.clear();
+        let signature = P256Signature::from_bytes(signature).map_err(js_error)?;
+        let finalization = ClientResumeFinish::proof(signature).to_bytes().to_vec();
+        Ok(WasmClientSession {
+            finalization: Some(finalization),
+            channel: finish.into_channel(),
+            host_pin: self.host_pin,
+        })
+    }
+}
+
 #[wasm_bindgen(js_name = ClientSession)]
 pub struct WasmClientSession {
     finalization: Option<Vec<u8>>,
@@ -188,6 +332,12 @@ fn operation_seed(encoded: &[u8]) -> core::result::Result<OperationSeed, JsError
         .try_into()
         .map_err(|_| JsError::new("entropy must contain exactly 32 bytes"))?;
     Ok(OperationSeed::new(bytes))
+}
+
+fn fixed<const N: usize>(encoded: &[u8], label: &str) -> core::result::Result<[u8; N], JsError> {
+    encoded
+        .try_into()
+        .map_err(|_| JsError::new(&format!("{label} must contain exactly {N} bytes")))
 }
 
 fn binding(
