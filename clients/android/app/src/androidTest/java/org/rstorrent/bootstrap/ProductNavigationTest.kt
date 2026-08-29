@@ -237,6 +237,7 @@ class ProductNavigationTest {
             storageState = StorageState.STAGING,
             metadataAvailable = true,
             pieceCount = 4U,
+            totalSizeBytes = "65536",
             verifiedPieceCount = 1U,
             requestedBytes = "16384",
             receivedBytes = "8192",
