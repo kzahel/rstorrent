@@ -19,6 +19,9 @@ import styles from "./RemoteAccessGate.module.css";
 
 const LAST_USERNAME_KEY = "rstorrent.remote.last-username.v1";
 const TERMINAL_FAILURE_KEY = "rstorrent.remote.terminal-failure.v1";
+const RESUME_CONNECTION_ATTEMPTS = 5;
+const RESUME_RETRY_BASE_MILLIS = 100;
+const TERMINAL_RECONNECT_DELAY_MILLIS = 250;
 
 type Phase = "loading" | "sign_in" | "connecting" | "identity_changed";
 
@@ -86,11 +89,23 @@ export function RemoteAccessGate({
         if (mounted.current) setPhase("sign_in");
         return;
       }
-      await connect(remembered, {
-        type: "resume",
-        authorization: stored.authorization,
-        key: stored.key,
-      });
+      for (let attempt = 0; attempt < RESUME_CONNECTION_ATTEMPTS; attempt += 1) {
+        try {
+          await connect(remembered, {
+            type: "resume",
+            authorization: stored.authorization,
+            key: stored.key,
+          });
+          return;
+        } catch (error) {
+          if (!(error instanceof ResumeConnectionUnavailable)) throw error;
+          if (attempt + 1 === RESUME_CONNECTION_ATTEMPTS) {
+            await handleInitialFailure(remembered, "connection_failed");
+            return;
+          }
+          await delay(RESUME_RETRY_BASE_MILLIS * 2 ** attempt);
+        }
+      }
     } catch (error) {
       if (!mounted.current) return;
       setMessage(errorMessage(error));
@@ -205,6 +220,12 @@ export function RemoteAccessGate({
         initialAuthentication.passphrase.fill(0);
       }
       if (observedFailure !== undefined) {
+        if (
+          observedFailure === "connection_failed" &&
+          initialAuthentication.type === "resume"
+        ) {
+          throw new ResumeConnectionUnavailable();
+        }
         await handleInitialFailure(selectedUsername, observedFailure);
         return;
       }
@@ -246,12 +267,18 @@ export function RemoteAccessGate({
     selectedUsername: string,
     failure: RemoteConnectionFailure,
   ): Promise<void> {
-    if (failure === "connection_failed") return;
     if (failure === "resume_rejected") {
       await store.clearAuthorization(selectedUsername);
     }
     sessionStorage.setItem(TERMINAL_FAILURE_KEY, failure);
-    window.location.reload();
+    if (failure === "connection_failed") {
+      window.setTimeout(
+        () => window.location.reload(),
+        TERMINAL_RECONNECT_DELAY_MILLIS,
+      );
+    } else {
+      window.location.reload();
+    }
   }
 
   async function clearChangedIdentity(): Promise<void> {
@@ -380,6 +407,12 @@ export function RemoteAccessGate({
       </section>
     </main>
   );
+}
+
+class ResumeConnectionUnavailable extends Error {}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
 function defaultBrowserLabel(): string {

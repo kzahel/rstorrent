@@ -314,6 +314,18 @@ describe("product remote application WebSocket", () => {
     relay?.close(4_008, "unavailable");
     expect(failure).toBe("resume_rejected");
   });
+
+  it("reports an unexpected authenticated transport close for reconnect", async () => {
+    let failure: RemoteConnectionFailure | undefined;
+    const { relay } = passwordSocket("shared", {
+      onFailure: (value) => {
+        failure = value;
+      },
+    });
+    await passwordHandshake(relay, false);
+    relay.close(1_006, "relay outage");
+    expect(failure).toBe("connection_failed");
+  });
 });
 
 function passwordSocket(
@@ -322,6 +334,7 @@ function passwordSocket(
     readonly onAuthorization?: (
       authorization: RemoteAuthorization,
     ) => void | Promise<void>;
+    readonly onFailure?: (failure: RemoteConnectionFailure) => void;
   } = {},
 ): { socket: RemoteApplicationWebSocket; relay: FakeSocket } {
   let relay: FakeSocket | undefined;

@@ -266,8 +266,12 @@ export class RemoteApplicationWebSocket implements ApplicationWebSocket {
     };
     this.socket.onerror = () => this.fail(new Error("relay transport failed"));
     this.socket.onclose = (event) => {
-      if (this.state === SOCKET_CONNECTING && !this.failed) {
+      if (
+        (this.state === SOCKET_CONNECTING || this.state === SOCKET_OPEN) &&
+        !this.failed
+      ) {
         const resumeRejected =
+          this.state === SOCKET_CONNECTING &&
           this.options.authentication.type === "resume" &&
           this.phase !== "pair" &&
           this.phase !== "greeting";
@@ -275,7 +279,7 @@ export class RemoteApplicationWebSocket implements ApplicationWebSocket {
         this.options.onFailure?.(
           resumeRejected ? "resume_rejected" : "connection_failed",
         );
-        this.onerror?.(new Event("error"));
+        if (this.state === SOCKET_CONNECTING) this.onerror?.(new Event("error"));
       }
       this.closed(event);
     };

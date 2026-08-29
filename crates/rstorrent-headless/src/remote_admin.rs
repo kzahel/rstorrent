@@ -65,7 +65,7 @@ impl Drop for RemoteAdminRequest {
 #[serde(deny_unknown_fields)]
 struct RemoteAdminResponse {
     ok: bool,
-    result: Option<Value>,
+    result: Value,
     error: Option<String>,
 }
 
@@ -192,9 +192,9 @@ pub async fn request(
     }
     let response: RemoteAdminResponse = serde_json::from_slice(&response)
         .map_err(|_| HeadlessError::runtime("malformed remote administration response"))?;
-    match (response.ok, response.result, response.error) {
-        (true, Some(result), None) => Ok(result),
-        (false, None, Some(error)) => Err(HeadlessError::runtime(error)),
+    match (response.ok, response.error) {
+        (true, None) => Ok(response.result),
+        (false, Some(error)) if response.result.is_null() => Err(HeadlessError::runtime(error)),
         _ => Err(HeadlessError::runtime(
             "invalid remote administration response",
         )),
@@ -277,7 +277,7 @@ async fn execute(
     .map_err(|_| rstorrent_remote_host::RemoteHostError::Protocol)?;
     Ok(RemoteAdminResponse {
         ok: true,
-        result: Some(result),
+        result,
         error: None,
     })
 }
@@ -285,11 +285,30 @@ async fn execute(
 fn failure(message: &str) -> RemoteAdminResponse {
     RemoteAdminResponse {
         ok: false,
-        result: None,
+        result: Value::Null,
         error: Some(message.chars().take(512).collect()),
     }
 }
 
 fn admin_io(error: std::io::Error) -> HeadlessError {
     HeadlessError::runtime(format!("remote administration IO: {error}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn successful_unit_result_survives_response_round_trip() {
+        let encoded = serde_json::to_vec(&RemoteAdminResponse {
+            ok: true,
+            result: Value::Null,
+            error: None,
+        })
+        .unwrap();
+        let decoded: RemoteAdminResponse = serde_json::from_slice(&encoded).unwrap();
+        assert!(decoded.ok);
+        assert!(decoded.result.is_null());
+        assert!(decoded.error.is_none());
+    }
 }
