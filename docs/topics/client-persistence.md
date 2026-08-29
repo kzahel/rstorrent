@@ -414,6 +414,16 @@ maximum import returns the typed resource limit, rolls back atomically, and
 leaves the first torrent, revision, and store usable. The independent 32-MiB
 metrics budget is unchanged.
 
+Ready Tactical
+[`193`](../tactical/193-stateless-foreground-downloader.md) composes this mode
+into one finite native downloader. Its torrent catalog, exact source, metadata,
+selection, have facts, DHT snapshot, and progress history remain in these same
+private databases only until joined exit; final payload stays external and a
+later invocation uses the complete checker rather than a new resume format.
+The small temporary lock rendezvous and invocation-owned selective part
+workspace are operational filesystem resources, not a durable application
+catalog.
+
 ### Verified metadata is durable
 
 [BEP 9](https://www.bittorrent.org/beps/bep_0009.html) supplies only the exact

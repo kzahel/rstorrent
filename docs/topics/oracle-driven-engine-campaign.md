@@ -1159,6 +1159,17 @@ lifecycle. The next storage action must come from a separately bounded
 capability; no staging, publication, packed, suffix, or relocation follow-up
 is implied.
 
+Ready Tactical
+[`193`](../tactical/193-stateless-foreground-downloader.md) is that separately
+bounded finite path-only composition. Its source-first record adopts the
+pinned libtorrent one-shot embedding lesson and BEP 53 priority behavior while
+retaining RSTorrent's strict bounded parser, ephemeral `ApplicationService`,
+common checker, direct final paths, opaque owners, and joined lifecycle. Its
+only storage seam is an explicit CLI auxiliary location for skipped boundary
+bytes; ordinary adjacent path parts and every SAF/iOS adapter remain unchanged.
+Implementation restarts at Tactical `193` Stage 1 and must close the declared
+lock/workspace, crash/recheck, controlled-oracle, and native desktop gates.
+
 Tacticals `086`--`098` subsequently completed the long-lived torrent peer
 runtime, incoming reachability and coordinated transport foundations,
 availability-ranked activation, truthful tracker/DHT advertisement, bounded

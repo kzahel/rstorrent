@@ -21,7 +21,12 @@ deployment claims. Ready Tactical
 [`192`](../tactical/192-production-owner-relay-access.md) owns the future
 desktop/configured-headless host lifecycle, durable authority, authorized-
 browser resume and operator security-audit boundary only in a production-shaped
-loopback validation composition. Deployment remains later work.
+loopback validation composition. Deployment remains later work. Independently,
+Ready Tactical
+[`193`](../tactical/193-stateless-foreground-downloader.md) owns one finite
+foreground native command over an ephemeral in-process application owner. It
+is not a headless service, daemon, remote-control endpoint, or durable runtime
+configuration.
 
 ## Purpose And Scope
 

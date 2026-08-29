@@ -9,7 +9,10 @@ Status: Direct-storage application-contract replacement completed on
 `DeleteManaged` across generated first-party boundaries. Replacement facts
 name checking, incomplete, missing, root-unavailable, repair, wanted
 completion, full seeding, and plain exact data deletion. Earlier contract
-history below remains as an implementation record.
+history below remains as an implementation record. Ready Tactical
+[`193`](../tactical/193-stateless-foreground-downloader.md) will compose the
+existing add, view, completion, and joined-shutdown behavior behind a finite
+native CLI; it adds no alternate engine command or generated client contract.
 
 Completed Tactical
 [`188`](../tactical/188-existing-payload-adoption-and-recheck.md) makes
