@@ -19,8 +19,9 @@ use rstorrent_remote_host::{
     AUTHENTICATED_READY_MAGIC, AUTHENTICATION_SUCCEEDED_MAGIC, AUTHORIZATION_CHOICE_MAGIC,
     AuthenticationReady, AuthenticationSucceeded, AuthorizationChoice, HostGreeting,
     LOGIN_FINALIZATION, LOGIN_REQUEST, LOGIN_RESPONSE, RESUME_FINALIZATION, RESUME_RESPONSE,
-    RemoteAccessOwner, RemoteHostConfig, decode_json_record, encode_json_record,
-    encode_resume_request, protocol_payload,
+    RemoteAccessOwner, RemoteControlOperation, RemoteControlOutcome, RemoteControlRequest,
+    RemoteControlResponse, RemoteHostConfig, decode_control_response, decode_json_record,
+    encode_control_request, encode_json_record, encode_resume_request, protocol_payload,
 };
 use rstorrent_remote_relay::{PAIRED_CONTROL, TlsProductRelayServer, encode_client_select};
 use rstorrent_session::{
@@ -127,11 +128,41 @@ async fn private_browser_resumes_and_revocation_closes_its_application_circuit()
     assert!(!safe_view.contains(std::str::from_utf8(PASSPHRASE).unwrap()));
     assert!(!safe_view.contains("internal-remote-gateway-token"));
     assert!(!safe_view.contains(&encode(client_public.as_bytes())));
-    harness
-        .owner
-        .rename(&encode(client_id.as_bytes()), "Renamed browser")
-        .await
-        .unwrap();
+    let inspected = remote_control(
+        &mut client.socket,
+        &mut client.channel,
+        1,
+        RemoteControlOperation::Inspect,
+    )
+    .await;
+    let RemoteControlOutcome::Security { security } = inspected.outcome else {
+        panic!("remote inspect returned the wrong result")
+    };
+    assert_eq!(security.authority.as_ref().unwrap().clients.len(), 1);
+    assert_eq!(security.live_circuits.len(), 1);
+    let renamed = remote_control(
+        &mut client.socket,
+        &mut client.channel,
+        2,
+        RemoteControlOperation::Rename {
+            client_id: encode(client_id.as_bytes()),
+            label: "Renamed browser".to_owned(),
+        },
+    )
+    .await;
+    assert_eq!(renamed.outcome, RemoteControlOutcome::Complete);
+    assert_eq!(
+        harness
+            .owner
+            .security_view()
+            .await
+            .unwrap()
+            .authority
+            .unwrap()
+            .clients[0]
+            .label,
+        "Renamed browser"
+    );
 
     let resume_context = ResumeContext::new(
         client.binding.clone(),
@@ -206,11 +237,19 @@ async fn private_browser_resumes_and_revocation_closes_its_application_circuit()
     })
     .await;
 
-    harness
-        .owner
-        .revoke(&encode(client_id.as_bytes()))
-        .await
-        .unwrap();
+    let signed_out = remote_control(
+        &mut resumed_socket,
+        &mut resumed_channel,
+        3,
+        RemoteControlOperation::SignOutThisBrowser,
+    )
+    .await;
+    assert_eq!(
+        signed_out.outcome,
+        RemoteControlOutcome::SignedOut {
+            authorization_revoked: true
+        }
+    );
     let close_record = binary(&mut resumed_socket).await;
     assert!(resumed_channel.open(&close_record).unwrap().is_close);
     wait_for_async(|| async {
@@ -530,6 +569,26 @@ async fn application_connect(socket: &mut ClientSocket, channel: &mut SecureChan
     let opened = channel.open(&response).unwrap();
     let frame: ApplicationServerFrame = serde_json::from_slice(&opened.plaintext).unwrap();
     assert!(matches!(frame, ApplicationServerFrame::Connected { .. }));
+}
+
+async fn remote_control(
+    socket: &mut ClientSocket,
+    channel: &mut SecureChannel,
+    request_id: u32,
+    operation: RemoteControlOperation,
+) -> RemoteControlResponse {
+    let plaintext = encode_control_request(&RemoteControlRequest {
+        request_id,
+        operation,
+    })
+    .unwrap();
+    socket
+        .send(Message::Binary(channel.seal(&plaintext).unwrap().into()))
+        .await
+        .unwrap();
+    let response = binary(socket).await;
+    let opened = channel.open(&response).unwrap();
+    decode_control_response(&opened.plaintext).unwrap()
 }
 
 async fn send_protocol(socket: &mut ClientSocket, magic: &[u8; 4], payload: &[u8]) {

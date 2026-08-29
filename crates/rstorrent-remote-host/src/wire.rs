@@ -4,6 +4,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::RemoteHostError;
+use crate::owner::RemoteSecurityView;
 
 pub const LOGIN_REQUEST: &[u8; 4] = b"RSL1";
 pub const LOGIN_RESPONSE: &[u8; 4] = b"RSL2";
@@ -15,9 +16,13 @@ pub const AUTHENTICATED_READY_MAGIC: &[u8; 4] = b"RSA2";
 pub const AUTHORIZATION_CHOICE_MAGIC: &[u8; 4] = b"RSA3";
 pub const AUTHENTICATION_SUCCEEDED_MAGIC: &[u8; 4] = b"RSA4";
 pub const HOST_GREETING_MAGIC: &[u8; 4] = b"RHG1";
+pub const REMOTE_CONTROL_REQUEST_MAGIC: &[u8; 4] = b"RSC2";
+pub const REMOTE_CONTROL_RESPONSE_MAGIC: &[u8; 4] = b"RSC3";
 
 const MAX_HANDSHAKE_MESSAGE_BYTES: usize = 4 * 1024;
 const MAX_JSON_BYTES: usize = 2 * 1024;
+const MAX_CONTROL_REQUEST_BYTES: usize = 16 * 1024;
+const MAX_CONTROL_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -99,6 +104,43 @@ pub struct AuthenticationSucceeded {
     pub authorization: Option<AuthorizationSucceeded>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RemoteControlRequest {
+    pub request_id: u32,
+    pub operation: RemoteControlOperation,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum RemoteControlOperation {
+    Inspect,
+    Rename { client_id: String, label: String },
+    Revoke { client_id: String },
+    RevokeAllOther { retained_client_id: String },
+    CloseCircuit { circuit_id: String },
+    RequirePasswordEverywhere,
+    SignOutThisBrowser,
+    ClearHistory,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RemoteControlResponse {
+    pub request_id: u32,
+    pub outcome: RemoteControlOutcome,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum RemoteControlOutcome {
+    Security { security: Box<RemoteSecurityView> },
+    Count { count: usize },
+    Complete,
+    SignedOut { authorization_revoked: bool },
+    Error { message: String },
+}
+
 pub fn encode_json_record<T: Serialize>(
     magic: &[u8; 4],
     value: &T,
@@ -121,6 +163,46 @@ pub fn decode_json_record<T: DeserializeOwned>(
     if payload.len() > MAX_JSON_BYTES {
         return Err(RemoteHostError::Protocol);
     }
+    serde_json::from_slice(payload).map_err(|_| RemoteHostError::Protocol)
+}
+
+pub fn decode_control_request(message: &[u8]) -> Result<RemoteControlRequest, RemoteHostError> {
+    let payload = message
+        .strip_prefix(REMOTE_CONTROL_REQUEST_MAGIC)
+        .filter(|payload| !payload.is_empty() && payload.len() <= MAX_CONTROL_REQUEST_BYTES)
+        .ok_or(RemoteHostError::Protocol)?;
+    serde_json::from_slice(payload).map_err(|_| RemoteHostError::Protocol)
+}
+
+pub fn encode_control_request(request: &RemoteControlRequest) -> Result<Vec<u8>, RemoteHostError> {
+    let encoded = serde_json::to_vec(request).map_err(|_| RemoteHostError::Protocol)?;
+    if encoded.len() > MAX_CONTROL_REQUEST_BYTES {
+        return Err(RemoteHostError::Protocol);
+    }
+    let mut message = Vec::with_capacity(4 + encoded.len());
+    message.extend_from_slice(REMOTE_CONTROL_REQUEST_MAGIC);
+    message.extend_from_slice(&encoded);
+    Ok(message)
+}
+
+pub fn encode_control_response(
+    response: &RemoteControlResponse,
+) -> Result<Vec<u8>, RemoteHostError> {
+    let encoded = serde_json::to_vec(response).map_err(|_| RemoteHostError::Protocol)?;
+    if encoded.len() > MAX_CONTROL_RESPONSE_BYTES {
+        return Err(RemoteHostError::Protocol);
+    }
+    let mut message = Vec::with_capacity(4 + encoded.len());
+    message.extend_from_slice(REMOTE_CONTROL_RESPONSE_MAGIC);
+    message.extend_from_slice(&encoded);
+    Ok(message)
+}
+
+pub fn decode_control_response(message: &[u8]) -> Result<RemoteControlResponse, RemoteHostError> {
+    let payload = message
+        .strip_prefix(REMOTE_CONTROL_RESPONSE_MAGIC)
+        .filter(|payload| !payload.is_empty() && payload.len() <= MAX_CONTROL_RESPONSE_BYTES)
+        .ok_or(RemoteHostError::Protocol)?;
     serde_json::from_slice(payload).map_err(|_| RemoteHostError::Protocol)
 }
 

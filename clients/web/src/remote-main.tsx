@@ -29,7 +29,9 @@ void loadCrypto()
         clientBuild={clientBuild}
         crypto={crypto}
         store={new IndexedDbRemoteClientStore()}
-        onConnected={(client) => startRemoteInspection(client, root)}
+        onConnected={(client, remoteAccess) =>
+          startRemoteInspection(client, root, remoteAccess)
+        }
       />,
     );
   })

@@ -141,6 +141,22 @@ describe("product remote application WebSocket", () => {
     expect(relay.url).toBe("wss://127.0.0.1:7443/client");
     expect(asText(relay.sent[0])).toBe("RSC1\u0005alice");
 
+    const control = socket.remoteControl({ type: "inspect" });
+    expect(asText(relay.sent.at(-1)?.slice(1, 5))).toBe("RSC2");
+    const request = JSON.parse(asText(relay.sent.at(-1)?.slice(5))) as {
+      request_id: number;
+    };
+    relay.server(
+      encryptedJson("RSC3", {
+        request_id: request.request_id,
+        outcome: { type: "security", security: { enabled: true } },
+      }),
+    );
+    await expect(control).resolves.toEqual({
+      type: "security",
+      security: { enabled: true },
+    });
+
     socket.send('{"type":"connect"}');
     expect(relay.sent.at(-1)?.[0]).toBe(0xa0);
     let received: unknown;

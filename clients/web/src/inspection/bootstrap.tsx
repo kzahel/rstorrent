@@ -182,12 +182,22 @@ export async function startTauriInspection(): Promise<void> {
 export async function startRemoteInspection(
   client: ApplicationViewClient,
   root: Root,
+  remoteAccess: DesktopRemoteAccess,
 ): Promise<void> {
   const application = await LiveApplication.open(
     new RemoteOnlyApplicationClient(client),
   );
   application.installBrowserWakeHints(window, document);
-  renderInspection(new InspectionController(application), root);
+  renderInspection(
+    new InspectionController(application),
+    root,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    remoteAccess,
+  );
 }
 
 function renderInspection(

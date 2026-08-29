@@ -9,6 +9,7 @@ import type {
 
 export function createTauriDesktopRemoteAccess(): DesktopRemoteAccess {
   return {
+    scope: "local",
     state: () =>
       invoke<DesktopRemoteAccessState>("desktop_remote_access_state"),
     enable: (username, passphrase) =>

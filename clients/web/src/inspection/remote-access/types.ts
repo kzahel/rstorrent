@@ -88,6 +88,8 @@ export interface DisableRemoteAccessOutcome {
 }
 
 export interface DesktopRemoteAccess {
+  readonly scope: "local" | "remote";
+  readonly currentClientId?: string | undefined;
   state(): Promise<DesktopRemoteAccessState>;
   enable(username: string, passphrase: string): Promise<RemoteSecurityView>;
   rename(clientId: string, label: string): Promise<void>;
@@ -99,4 +101,5 @@ export interface DesktopRemoteAccess {
   disable(): Promise<DisableRemoteAccessOutcome>;
   recover(username: string, passphrase: string): Promise<RemoteSecurityView>;
   clearHistory(): Promise<boolean>;
+  signOutThisBrowser?(): Promise<void>;
 }

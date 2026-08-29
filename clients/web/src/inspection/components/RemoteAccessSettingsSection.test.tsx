@@ -20,7 +20,11 @@ describe("desktop remote security settings", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     render(
       <RemoteAccessSettingsSection
-        remoteAccess={remoteAccess(enabledState(), { revoke })}
+        remoteAccess={remoteAccess(enabledState(), {
+          scope: "remote",
+          currentClientId: "client-one",
+          revoke,
+        })}
       />,
     );
     expect(await screen.findByText("Authorized browsers")).toBeVisible();
@@ -29,6 +33,9 @@ describe("desktop remote security settings", () => {
     expect(screen.getByText("Live circuits")).toBeVisible();
     expect(screen.getByText("Current security ledger")).toBeVisible();
     expect(screen.getByText("full login succeeded")).toBeVisible();
+    expect(screen.getByText("This browser")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Disable remote access" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Change password" })).not.toBeInTheDocument();
     expect(screen.getByText(/Ended browser authorizations \(1\)/)).toBeVisible();
     expect(screen.getByText(/Failed authentication pressure \(1 buckets\)/)).toBeVisible();
 
@@ -56,6 +63,7 @@ function remoteAccess(
   overrides: Partial<DesktopRemoteAccess> = {},
 ): DesktopRemoteAccess {
   return {
+    scope: "local",
     state: async () => state,
     enable: async () => {
       throw new Error("not expected");

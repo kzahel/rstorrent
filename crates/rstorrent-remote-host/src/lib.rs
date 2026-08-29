@@ -23,6 +23,9 @@ pub use wire::{
     AUTHENTICATED_READY_MAGIC, AUTHENTICATION_SUCCEEDED_MAGIC, AUTHORIZATION_CHOICE_MAGIC,
     AuthenticationReady, AuthenticationSucceeded, AuthorizationChoice, AuthorizationSucceeded,
     HOST_GREETING_MAGIC, HostGreeting, LOGIN_FINALIZATION, LOGIN_REQUEST, LOGIN_RESPONSE,
-    RESUME_FINALIZATION, RESUME_REQUEST, RESUME_RESPONSE, decode_json_record,
-    decode_resume_request, encode_json_record, encode_resume_request, protocol_payload,
+    REMOTE_CONTROL_REQUEST_MAGIC, REMOTE_CONTROL_RESPONSE_MAGIC, RESUME_FINALIZATION,
+    RESUME_REQUEST, RESUME_RESPONSE, RemoteControlOperation, RemoteControlOutcome,
+    RemoteControlRequest, RemoteControlResponse, decode_control_request, decode_control_response,
+    decode_json_record, decode_resume_request, encode_control_request, encode_control_response,
+    encode_json_record, encode_resume_request, protocol_payload,
 };

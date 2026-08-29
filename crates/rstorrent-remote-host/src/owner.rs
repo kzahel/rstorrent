@@ -95,6 +95,7 @@ impl RemoteHostConfig {
         let relay_http_certificate = reqwest::tls::Certificate::from_der(&relay_certificate_der)
             .map_err(|_| RemoteHostError::Configuration("relay certificate"))?;
         let relay_http = reqwest::Client::builder()
+            .use_rustls_tls()
             .add_root_certificate(relay_http_certificate)
             .https_only(true)
             .build()
@@ -352,142 +353,27 @@ impl RemoteAccessOwner {
     }
 
     pub async fn security_view(&self) -> Result<RemoteSecurityView> {
-        self.expire_authorizations().await?;
-        let state = self.shared.state.lock().await;
-        let retained_history = self.shared.store.load_history()?;
-        let (username, route, relay_id, host_pin, authority) = match &state.authority {
-            Some(authority) => (
-                Some(authority.binding().username().as_str().to_owned()),
-                Some(authority.route().to_owned()),
-                Some(wire::encode_id(authority.binding().relay_id().as_bytes())),
-                Some(wire::encode_id(&authority.host_pin().to_bytes())),
-                Some(authority.security_snapshot()),
-            ),
-            None => (None, None, None, None, None),
-        };
-        let live_circuits = state
-            .circuits
-            .iter()
-            .map(|(circuit_id, circuit)| LiveCircuitView {
-                circuit_id: wire::encode_id(circuit_id),
-                client_id: circuit
-                    .client_id
-                    .map(|client_id| wire::encode_id(client_id.as_bytes())),
-                authentication_method: circuit.authentication_method,
-                connection_generation: circuit.connection_generation,
-                started: circuit.started,
-                last_activity: circuit.last_activity,
-                route: circuit.route.clone(),
-            })
-            .collect();
-        Ok(RemoteSecurityView {
-            enabled: state.authority.is_some(),
-            username,
-            route,
-            relay_id,
-            host_pin,
-            authority,
-            retained_history,
-            live_circuits,
-        })
+        self.shared.security_view().await
     }
 
     pub async fn revoke(&self, encoded_client_id: &str) -> Result<()> {
-        let client_id = ClientId::new(wire::decode_id(encoded_client_id)?);
-        let mut state = self.shared.state.lock().await;
-        let event_id = random_event_id()?;
-        let authority = state
-            .authority
-            .as_mut()
-            .ok_or(RemoteHostError::Configuration("remote access is disabled"))?;
-        self.shared.store.update(authority, |candidate| {
-            candidate.revoke_client(client_id, now(), event_id)
-        })?;
-        for circuit in state
-            .circuits
-            .values()
-            .filter(|circuit| circuit.client_id == Some(client_id))
-        {
-            circuit.cancellation.cancel();
-        }
-        Ok(())
+        self.shared.revoke(encoded_client_id).await
     }
 
     pub async fn revoke_all_other(&self, retained_client_id: &str) -> Result<usize> {
-        let retained_client_id = ClientId::new(wire::decode_id(retained_client_id)?);
-        let mut state = self.shared.state.lock().await;
-        let authority = state
-            .authority
-            .as_mut()
-            .ok_or(RemoteHostError::Configuration("remote access is disabled"))?;
-        let client_ids = authority
-            .security_snapshot()
-            .clients
-            .into_iter()
-            .map(|client| wire::decode_id(&client.client_id).map(ClientId::new))
-            .collect::<Result<Vec<_>>>()?;
-        let revoked_ids = client_ids
-            .iter()
-            .copied()
-            .filter(|client_id| *client_id != retained_client_id)
-            .collect::<Vec<_>>();
-        let event_ids = random_event_ids(revoked_ids.len())?;
-        let revoked = self.shared.store.update(authority, |candidate| {
-            candidate.revoke_all_except(retained_client_id, now(), event_ids)
-        })?;
-        for circuit in state.circuits.values().filter(|circuit| {
-            circuit
-                .client_id
-                .is_some_and(|client_id| revoked_ids.contains(&client_id))
-        }) {
-            circuit.cancellation.cancel();
-        }
-        Ok(revoked)
+        self.shared.revoke_all_other(retained_client_id).await
     }
 
     pub async fn close_circuit(&self, encoded_circuit_id: &str) -> Result<()> {
-        let circuit_id = wire::decode_id(encoded_circuit_id)?;
-        let state = self.shared.state.lock().await;
-        let circuit = state
-            .circuits
-            .get(&circuit_id)
-            .ok_or(RemoteHostError::Configuration("live circuit not found"))?;
-        circuit.cancellation.cancel();
-        Ok(())
+        self.shared.close_circuit(encoded_circuit_id).await
     }
 
     pub async fn rename(&self, encoded_client_id: &str, label: &str) -> Result<()> {
-        let client_id = ClientId::new(wire::decode_id(encoded_client_id)?);
-        let event_id = random_event_id()?;
-        let mut state = self.shared.state.lock().await;
-        let authority = state
-            .authority
-            .as_mut()
-            .ok_or(RemoteHostError::Configuration("remote access is disabled"))?;
-        self.shared.store.update(authority, |candidate| {
-            candidate.rename_client(client_id, label, now(), event_id)
-        })?;
-        Ok(())
+        self.shared.rename(encoded_client_id, label).await
     }
 
     pub async fn require_password_everywhere(&self) -> Result<usize> {
-        let mut state = self.shared.state.lock().await;
-        let authority = state
-            .authority
-            .as_mut()
-            .ok_or(RemoteHostError::Configuration("remote access is disabled"))?;
-        let count = authority.security_snapshot().clients.len();
-        let event_id = random_event_id()?;
-        let tombstone_events = random_event_ids(count)?;
-        let revoked = self.shared.store.update(authority, |candidate| {
-            candidate.require_password_everywhere(now(), event_id, tombstone_events)
-        })?;
-        state
-            .circuits
-            .values()
-            .filter(|circuit| circuit.client_id.is_some())
-            .for_each(|circuit| circuit.cancellation.cancel());
-        Ok(revoked)
+        self.shared.require_password_everywhere().await
     }
 
     pub async fn change_passphrase(&self, passphrase: &[u8]) -> Result<usize> {
@@ -522,7 +408,7 @@ impl RemoteAccessOwner {
     }
 
     pub async fn clear_history(&self) -> Result<bool> {
-        Ok(self.shared.store.clear_history()?)
+        self.shared.clear_history()
     }
 
     pub async fn disable(&self) -> Result<DisableRemoteAccessOutcome> {
@@ -592,43 +478,6 @@ impl RemoteAccessOwner {
             let _ = lifecycle.task.await;
         }
     }
-
-    async fn expire_authorizations(&self) -> Result<usize> {
-        let current = now();
-        let mut state = self.shared.state.lock().await;
-        let Some(authority) = state.authority.as_mut() else {
-            return Ok(0);
-        };
-        let count = authority
-            .security_snapshot()
-            .clients
-            .iter()
-            .filter(|client| current >= client.idle_expires || current >= client.absolute_expires)
-            .count();
-        if count == 0 {
-            return Ok(0);
-        }
-        let event_ids = random_event_ids(count)?;
-        let expired = self.shared.store.update(authority, |candidate| {
-            candidate.expire_clients(current, event_ids)
-        })?;
-        let current_ids = authority
-            .security_snapshot()
-            .clients
-            .into_iter()
-            .map(|client| client.client_id)
-            .collect::<std::collections::BTreeSet<_>>();
-        state
-            .circuits
-            .values()
-            .filter(|circuit| {
-                circuit
-                    .client_id
-                    .is_some_and(|id| !current_ids.contains(&wire::encode_id(id.as_bytes())))
-            })
-            .for_each(|circuit| circuit.cancellation.cancel());
-        Ok(expired)
-    }
 }
 
 pub(crate) fn now() -> Timestamp {
@@ -661,6 +510,186 @@ impl SharedOwner {
     pub(crate) fn connection_generation(&self) -> u64 {
         self.next_connection_generation
             .fetch_add(1, Ordering::Relaxed)
+    }
+
+    pub(crate) async fn security_view(&self) -> Result<RemoteSecurityView> {
+        self.expire_authorizations().await?;
+        let state = self.state.lock().await;
+        let retained_history = self.store.load_history()?;
+        let (username, route, relay_id, host_pin, authority) = match &state.authority {
+            Some(authority) => (
+                Some(authority.binding().username().as_str().to_owned()),
+                Some(authority.route().to_owned()),
+                Some(wire::encode_id(authority.binding().relay_id().as_bytes())),
+                Some(wire::encode_id(&authority.host_pin().to_bytes())),
+                Some(authority.security_snapshot()),
+            ),
+            None => (None, None, None, None, None),
+        };
+        let live_circuits = state
+            .circuits
+            .iter()
+            .map(|(circuit_id, circuit)| LiveCircuitView {
+                circuit_id: wire::encode_id(circuit_id),
+                client_id: circuit
+                    .client_id
+                    .map(|client_id| wire::encode_id(client_id.as_bytes())),
+                authentication_method: circuit.authentication_method,
+                connection_generation: circuit.connection_generation,
+                started: circuit.started,
+                last_activity: circuit.last_activity,
+                route: circuit.route.clone(),
+            })
+            .collect();
+        Ok(RemoteSecurityView {
+            enabled: state.authority.is_some(),
+            username,
+            route,
+            relay_id,
+            host_pin,
+            authority,
+            retained_history,
+            live_circuits,
+        })
+    }
+
+    pub(crate) async fn revoke(&self, encoded_client_id: &str) -> Result<()> {
+        let client_id = ClientId::new(wire::decode_id(encoded_client_id)?);
+        let mut state = self.state.lock().await;
+        let event_id = random_event_id()?;
+        let authority = state
+            .authority
+            .as_mut()
+            .ok_or(RemoteHostError::Configuration("remote access is disabled"))?;
+        self.store.update(authority, |candidate| {
+            candidate.revoke_client(client_id, now(), event_id)
+        })?;
+        for circuit in state
+            .circuits
+            .values()
+            .filter(|circuit| circuit.client_id == Some(client_id))
+        {
+            circuit.cancellation.cancel();
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn revoke_all_other(&self, retained_client_id: &str) -> Result<usize> {
+        let retained_client_id = ClientId::new(wire::decode_id(retained_client_id)?);
+        let mut state = self.state.lock().await;
+        let authority = state
+            .authority
+            .as_mut()
+            .ok_or(RemoteHostError::Configuration("remote access is disabled"))?;
+        let client_ids = authority
+            .security_snapshot()
+            .clients
+            .into_iter()
+            .map(|client| wire::decode_id(&client.client_id).map(ClientId::new))
+            .collect::<Result<Vec<_>>>()?;
+        let revoked_ids = client_ids
+            .iter()
+            .copied()
+            .filter(|client_id| *client_id != retained_client_id)
+            .collect::<Vec<_>>();
+        let event_ids = random_event_ids(revoked_ids.len())?;
+        let revoked = self.store.update(authority, |candidate| {
+            candidate.revoke_all_except(retained_client_id, now(), event_ids)
+        })?;
+        for circuit in state.circuits.values().filter(|circuit| {
+            circuit
+                .client_id
+                .is_some_and(|client_id| revoked_ids.contains(&client_id))
+        }) {
+            circuit.cancellation.cancel();
+        }
+        Ok(revoked)
+    }
+
+    pub(crate) async fn close_circuit(&self, encoded_circuit_id: &str) -> Result<()> {
+        let circuit_id = wire::decode_id(encoded_circuit_id)?;
+        let state = self.state.lock().await;
+        let circuit = state
+            .circuits
+            .get(&circuit_id)
+            .ok_or(RemoteHostError::Configuration("live circuit not found"))?;
+        circuit.cancellation.cancel();
+        Ok(())
+    }
+
+    pub(crate) async fn rename(&self, encoded_client_id: &str, label: &str) -> Result<()> {
+        let client_id = ClientId::new(wire::decode_id(encoded_client_id)?);
+        let event_id = random_event_id()?;
+        let mut state = self.state.lock().await;
+        let authority = state
+            .authority
+            .as_mut()
+            .ok_or(RemoteHostError::Configuration("remote access is disabled"))?;
+        self.store.update(authority, |candidate| {
+            candidate.rename_client(client_id, label, now(), event_id)
+        })?;
+        Ok(())
+    }
+
+    pub(crate) async fn require_password_everywhere(&self) -> Result<usize> {
+        let mut state = self.state.lock().await;
+        let authority = state
+            .authority
+            .as_mut()
+            .ok_or(RemoteHostError::Configuration("remote access is disabled"))?;
+        let count = authority.security_snapshot().clients.len();
+        let event_id = random_event_id()?;
+        let tombstone_events = random_event_ids(count)?;
+        let revoked = self.store.update(authority, |candidate| {
+            candidate.require_password_everywhere(now(), event_id, tombstone_events)
+        })?;
+        state
+            .circuits
+            .values()
+            .filter(|circuit| circuit.client_id.is_some())
+            .for_each(|circuit| circuit.cancellation.cancel());
+        Ok(revoked)
+    }
+
+    pub(crate) fn clear_history(&self) -> Result<bool> {
+        Ok(self.store.clear_history()?)
+    }
+
+    async fn expire_authorizations(&self) -> Result<usize> {
+        let current = now();
+        let mut state = self.state.lock().await;
+        let Some(authority) = state.authority.as_mut() else {
+            return Ok(0);
+        };
+        let count = authority
+            .security_snapshot()
+            .clients
+            .iter()
+            .filter(|client| current >= client.idle_expires || current >= client.absolute_expires)
+            .count();
+        if count == 0 {
+            return Ok(0);
+        }
+        let event_ids = random_event_ids(count)?;
+        let expired = self.store.update(authority, |candidate| {
+            candidate.expire_clients(current, event_ids)
+        })?;
+        let current_ids = authority
+            .security_snapshot()
+            .clients
+            .into_iter()
+            .map(|client| client.client_id)
+            .collect::<std::collections::BTreeSet<_>>();
+        state
+            .circuits
+            .values()
+            .filter(|circuit| {
+                circuit
+                    .client_id
+                    .is_some_and(|id| !current_ids.contains(&wire::encode_id(id.as_bytes())))
+            })
+            .for_each(|circuit| circuit.cancellation.cancel());
+        Ok(expired)
     }
 }
 

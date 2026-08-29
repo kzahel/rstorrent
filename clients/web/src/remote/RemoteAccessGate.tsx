@@ -13,6 +13,8 @@ import {
   type RemoteClientStore,
 } from "../remote-client-store";
 import { WebSocketApplicationViewClient } from "../websocket-view-client";
+import { createRemoteSecurityClient } from "../remote-security-client";
+import type { DesktopRemoteAccess } from "../inspection/remote-access/types";
 import styles from "./RemoteAccessGate.module.css";
 
 const LAST_USERNAME_KEY = "rstorrent.remote.last-username.v1";
@@ -25,7 +27,10 @@ export interface RemoteAccessGateProps {
   readonly clientBuild: string;
   readonly crypto: RemoteCryptoWasmModule;
   readonly store: RemoteClientStore;
-  readonly onConnected: (client: ApplicationViewClient) => Promise<void>;
+  readonly onConnected: (
+    client: ApplicationViewClient,
+    remoteAccess: DesktopRemoteAccess,
+  ) => Promise<void>;
 }
 
 export function RemoteAccessGate({
@@ -141,11 +146,12 @@ export function RemoteAccessGate({
     let authentication = initialAuthentication;
     let enteredProduct = false;
     let observedFailure: RemoteConnectionFailure | undefined;
+    let activeTransport: RemoteApplicationWebSocket | undefined;
     const applicationClient = new WebSocketApplicationViewClient(
       window.location.origin,
       null,
-      () =>
-        new RemoteApplicationWebSocket({
+      () => {
+        activeTransport = new RemoteApplicationWebSocket({
           relayUrl,
           username: selectedUsername,
           authentication,
@@ -178,10 +184,20 @@ export function RemoteAccessGate({
               void handleTerminalFailure(selectedUsername, failure);
             }
           },
-        }),
+        });
+        return activeTransport;
+      },
     );
+    const currentClientId = currentClientIdentifier(initialAuthentication);
+    const remoteAccess = createRemoteSecurityClient({
+      username: selectedUsername,
+      ...(currentClientId === undefined ? {} : { currentClientId }),
+      transport: () => activeTransport,
+      application: applicationClient,
+      store,
+    });
     try {
-      await onConnected(applicationClient);
+      await onConnected(applicationClient, remoteAccess);
       enteredProduct = true;
     } catch (error) {
       await applicationClient.close();
@@ -382,6 +398,24 @@ function copyIdentity(identity: RemoteHostIdentity): RemoteHostIdentity {
     hostId: identity.hostId.slice(),
     hostPin: identity.hostPin.slice(),
   };
+}
+
+function currentClientIdentifier(
+  authentication: RemoteAuthentication,
+): string | undefined {
+  const bytes =
+    authentication.type === "resume"
+      ? authentication.authorization.clientId
+      : authentication.choice.type === "private"
+        ? authentication.choice.credential.clientId
+        : undefined;
+  if (bytes === undefined) return undefined;
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary)
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/, "");
 }
 
 function errorMessage(error: unknown): string {

@@ -27,9 +27,11 @@ use crate::owner::{LiveCircuit, SharedOwner, now, random_array, random_event_id,
 use crate::wire::{
     AUTHENTICATED_READY_MAGIC, AUTHENTICATION_SUCCEEDED_MAGIC, AUTHORIZATION_CHOICE_MAGIC,
     AuthenticationReady, AuthenticationSucceeded, AuthorizationChoice, AuthorizationSucceeded,
-    HostGreeting, LOGIN_FINALIZATION, LOGIN_REQUEST, LOGIN_RESPONSE, RESUME_FINALIZATION,
-    RESUME_RESPONSE, decode_id, decode_json_record, decode_resume_request, encode_id,
-    encode_json_record, protocol_payload,
+    HostGreeting, LOGIN_FINALIZATION, LOGIN_REQUEST, LOGIN_RESPONSE, REMOTE_CONTROL_REQUEST_MAGIC,
+    RESUME_FINALIZATION, RESUME_RESPONSE, RemoteControlOperation, RemoteControlOutcome,
+    RemoteControlResponse, decode_control_request, decode_id, decode_json_record,
+    decode_resume_request, encode_control_response, encode_id, encode_json_record,
+    protocol_payload,
 };
 use crate::{RESUME_REQUEST, RemoteHostError};
 
@@ -139,6 +141,7 @@ pub(crate) async fn run_host(owner: Arc<SharedOwner>, cancellation: Cancellation
                 &mut relay,
                 &mut circuit.channel,
                 circuit.circuit_id,
+                circuit.client_id,
                 &circuit.cancellation,
                 &cancellation,
             )
@@ -464,6 +467,7 @@ async fn bridge_application(
     relay: &mut RelaySocket,
     channel: &mut SecureChannel,
     circuit_id: [u8; 16],
+    authenticated_client_id: Option<ClientId>,
     circuit_cancellation: &CancellationToken,
     host_cancellation: &CancellationToken,
 ) -> Result<()> {
@@ -499,6 +503,25 @@ async fn bridge_application(
                     Message::Binary(record) => {
                         let opened = channel.open(&record).map_err(|_| RemoteHostError::Protocol)?;
                         if opened.is_close { break; }
+                        if opened.plaintext.starts_with(REMOTE_CONTROL_REQUEST_MAGIC) {
+                            let request = decode_control_request(&opened.plaintext)?;
+                            let (outcome, close_after) = execute_remote_control(
+                                owner,
+                                authenticated_client_id,
+                                request.operation,
+                            ).await;
+                            let response = encode_control_response(&RemoteControlResponse {
+                                request_id: request.request_id,
+                                outcome,
+                            })?;
+                            let record = channel.seal(&response)
+                                .map_err(|_| RemoteHostError::Protocol)?;
+                            relay.send(Message::Binary(record.into())).await
+                                .map_err(|_| RemoteHostError::Protocol)?;
+                            touch(owner, circuit_id).await;
+                            if close_after { break; }
+                            continue;
+                        }
                         let text = std::str::from_utf8(&opened.plaintext)
                             .map_err(|_| RemoteHostError::Protocol)?;
                         let mut frame: ApplicationClientFrame = serde_json::from_str(text)
@@ -555,6 +578,67 @@ async fn bridge_application(
     }
     let _ = gateway.close(None).await;
     Ok(())
+}
+
+async fn execute_remote_control(
+    owner: &SharedOwner,
+    authenticated_client_id: Option<ClientId>,
+    operation: RemoteControlOperation,
+) -> (RemoteControlOutcome, bool) {
+    let close_after = matches!(&operation, RemoteControlOperation::SignOutThisBrowser);
+    let result = match operation {
+        RemoteControlOperation::Inspect => {
+            owner
+                .security_view()
+                .await
+                .map(|security| RemoteControlOutcome::Security {
+                    security: Box::new(security),
+                })
+        }
+        RemoteControlOperation::Rename { client_id, label } => owner
+            .rename(&client_id, &label)
+            .await
+            .map(|()| RemoteControlOutcome::Complete),
+        RemoteControlOperation::Revoke { client_id } => owner
+            .revoke(&client_id)
+            .await
+            .map(|()| RemoteControlOutcome::Complete),
+        RemoteControlOperation::RevokeAllOther { retained_client_id } => owner
+            .revoke_all_other(&retained_client_id)
+            .await
+            .map(|count| RemoteControlOutcome::Count { count }),
+        RemoteControlOperation::CloseCircuit { circuit_id } => owner
+            .close_circuit(&circuit_id)
+            .await
+            .map(|()| RemoteControlOutcome::Complete),
+        RemoteControlOperation::RequirePasswordEverywhere => owner
+            .require_password_everywhere()
+            .await
+            .map(|count| RemoteControlOutcome::Count { count }),
+        RemoteControlOperation::SignOutThisBrowser => match authenticated_client_id {
+            Some(client_id) => owner
+                .revoke(&encode_id(client_id.as_bytes()))
+                .await
+                .map(|()| RemoteControlOutcome::SignedOut {
+                    authorization_revoked: true,
+                }),
+            None => Ok(RemoteControlOutcome::SignedOut {
+                authorization_revoked: false,
+            }),
+        },
+        RemoteControlOperation::ClearHistory => owner
+            .clear_history()
+            .map(|_| RemoteControlOutcome::Complete),
+    };
+    match result {
+        Ok(outcome) => (outcome, close_after),
+        Err(_) => (
+            RemoteControlOutcome::Error {
+                message: "remote security operation was rejected".to_owned(),
+            },
+            false,
+        ),
+    }
 }
 
 fn validate_client_frame(frame: &ApplicationClientFrame) -> Result<()> {

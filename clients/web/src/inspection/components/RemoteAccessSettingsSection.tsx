@@ -66,6 +66,7 @@ export function RemoteAccessSettingsSection({
   }
 
   const security = state.security;
+  const local = remoteAccess.scope === "local";
   if (security === null) {
     return <p className={styles.error}>Remote security state is unavailable.</p>;
   }
@@ -123,7 +124,7 @@ export function RemoteAccessSettingsSection({
         </button>
       </section>
 
-      {!security.enabled ? (
+      {!security.enabled && local ? (
         <section className={styles.section}>
           <h3>Enable local validation access</h3>
           <p className={styles.note}>
@@ -142,6 +143,7 @@ export function RemoteAccessSettingsSection({
           <AuthorizationSection
             snapshot={security.authority}
             busy={busy}
+            currentClientId={remoteAccess.currentClientId}
             activeClientIds={security.live_circuits.flatMap((circuit) =>
               circuit.client_id === null ? [] : [circuit.client_id]
             )}
@@ -189,21 +191,33 @@ export function RemoteAccessSettingsSection({
                   return `Revoked ${revoked} browser authorization${revoked === 1 ? "" : "s"}.`;
                 });
               }}>Require password everywhere</button>
-              <button className={styles.danger} type="button" disabled={busy} onClick={() => {
+              {local ? <button className={styles.danger} type="button" disabled={busy} onClick={() => {
                 if (!window.confirm("Disable remote access, revoke every browser, and remove the host authority?")) return;
                 void perform(async () => {
                   const outcome = await remoteAccess.disable();
                   return `Remote access disabled. Authority removed: ${yesNo(outcome.authority_file_removed)}; route released: ${yesNo(outcome.route_released)}.`;
                 });
-              }}>Disable remote access</button>
+              }}>Disable remote access</button> : null}
+              {remoteAccess.signOutThisBrowser === undefined ? null : (
+                <button className={styles.danger} type="button" disabled={busy} onClick={() => {
+                  if (!window.confirm("Sign out this browser and revoke its private authorization, if present?")) return;
+                  setBusy(true);
+                  setMessage(null);
+                  setError(null);
+                  void remoteAccess.signOutThisBrowser?.().catch((cause: unknown) => {
+                    setError(asMessage(cause));
+                    setBusy(false);
+                  });
+                }}>Sign out this browser</button>
+              )}
             </div>
-            <form className={styles.form} onSubmit={changePassphrase}>
+            {local ? <form className={styles.form} onSubmit={changePassphrase}>
               <h4>Change password</h4>
               <p className={styles.note}>Changing it revokes every private browser and closes every remote circuit.</p>
               <label>New password<input required type="password" minLength={12} maxLength={256} autoComplete="new-password" value={newPassphrase} onChange={(event) => setNewPassphrase(event.currentTarget.value)} /></label>
               <label>Confirm new password<input required type="password" minLength={12} maxLength={256} autoComplete="new-password" value={newConfirmation} onChange={(event) => setNewConfirmation(event.currentTarget.value)} /></label>
               <button type="submit" disabled={busy}>Change password</button>
-            </form>
+            </form> : null}
           </section>
         </>
       )}
@@ -236,11 +250,12 @@ interface AuthorizationSectionProps {
   readonly snapshot: RemoteSecuritySnapshot | null;
   readonly busy: boolean;
   readonly activeClientIds: readonly string[];
+  readonly currentClientId?: string | undefined;
   readonly remoteAccess: DesktopRemoteAccess;
   readonly perform: (operation: () => Promise<string | void>) => Promise<void>;
 }
 
-function AuthorizationSection({ snapshot, busy, activeClientIds, remoteAccess, perform }: AuthorizationSectionProps) {
+function AuthorizationSection({ snapshot, busy, activeClientIds, currentClientId, remoteAccess, perform }: AuthorizationSectionProps) {
   const clients = snapshot?.clients ?? [];
   return (
     <section className={styles.section}>
@@ -253,6 +268,7 @@ function AuthorizationSection({ snapshot, busy, activeClientIds, remoteAccess, p
             <li key={client.client_id}>
               <div>
                 <strong>{client.label}</strong>
+                {client.client_id === currentClientId ? <span className={styles.badge}>This browser</span> : null}
                 <span className={styles.badge}>{activeClientIds.filter((id) => id === client.client_id).length} live</span>
                 <small>{client.state} · added {formatDate(client.created)} · password {formatDate(client.last_full_login)} · resume {formatOptionalDate(client.last_resume)} · seen {formatDate(client.last_seen)}</small>
                 <small>Idle expiry {formatDate(client.idle_expires)} · absolute expiry {formatDate(client.absolute_expires)} · build {client.client_build ?? "not reported"}</small>

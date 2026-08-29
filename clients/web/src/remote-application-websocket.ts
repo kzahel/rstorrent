@@ -22,11 +22,32 @@ const RESUME_FINALIZATION = bytes("RSR3");
 const AUTHENTICATED_READY = bytes("RSA2");
 const AUTHORIZATION_CHOICE = bytes("RSA3");
 const AUTHENTICATION_SUCCEEDED = bytes("RSA4");
+const REMOTE_CONTROL_REQUEST = bytes("RSC2");
+const REMOTE_CONTROL_RESPONSE = bytes("RSC3");
+const MAX_REMOTE_CONTROL_RESPONSE_BYTES = 4 * 1024 * 1024;
+const MAX_PENDING_REMOTE_CONTROLS = 4;
+const REMOTE_CONTROL_TIMEOUT_MILLIS = 10_000;
 
 export type RemoteConnectionFailure =
   | "connection_failed"
   | "host_identity_changed"
   | "resume_rejected";
+
+export type RemoteControlOperation =
+  | { readonly type: "inspect" }
+  | { readonly type: "rename"; readonly client_id: string; readonly label: string }
+  | { readonly type: "revoke"; readonly client_id: string }
+  | { readonly type: "revoke_all_other"; readonly retained_client_id: string }
+  | { readonly type: "close_circuit"; readonly circuit_id: string }
+  | { readonly type: "require_password_everywhere" }
+  | { readonly type: "sign_out_this_browser" }
+  | { readonly type: "clear_history" };
+
+export type RemoteControlOutcome =
+  | { readonly type: "security"; readonly security: unknown }
+  | { readonly type: "count"; readonly count: number }
+  | { readonly type: "complete" }
+  | { readonly type: "signed_out"; readonly authorization_revoked: boolean };
 
 export interface RemoteHostIdentity {
   readonly relayId: Uint8Array;
@@ -192,6 +213,12 @@ interface AuthenticationSucceeded {
   };
 }
 
+interface PendingRemoteControl {
+  readonly resolve: (outcome: RemoteControlOutcome) => void;
+  readonly reject: (error: Error) => void;
+  readonly timer: ReturnType<typeof setTimeout>;
+}
+
 class HostIdentityChanged extends Error {}
 
 /** ApplicationWebSocket-compatible encrypted product relay transport. */
@@ -214,6 +241,8 @@ export class RemoteApplicationWebSocket implements ApplicationWebSocket {
   private ready: AuthenticationReady | undefined;
   private readonly timer: ReturnType<typeof setTimeout>;
   private failed = false;
+  private nextControlId = 1;
+  private readonly pendingControls = new Map<number, PendingRemoteControl>();
 
   public constructor(private readonly options: RemoteConnectionOptions) {
     validateOptions(options);
@@ -276,6 +305,7 @@ export class RemoteApplicationWebSocket implements ApplicationWebSocket {
     this.state = SOCKET_CLOSING;
     clearTimeout(this.timer);
     this.eraseHandshakeSecrets();
+    this.rejectPendingControls(new Error("remote application connection closed"));
     if (this.session !== undefined) {
       try {
         this.socket.send(exactBuffer(this.session.seal_close()));
@@ -284,6 +314,36 @@ export class RemoteApplicationWebSocket implements ApplicationWebSocket {
       }
     }
     this.socket.close(code, reason);
+  }
+
+  public remoteControl(
+    operation: RemoteControlOperation,
+  ): Promise<RemoteControlOutcome> {
+    if (this.state !== SOCKET_OPEN || this.session === undefined) {
+      return Promise.reject(new Error("remote application connection is not open"));
+    }
+    if (this.pendingControls.size >= MAX_PENDING_REMOTE_CONTROLS) {
+      return Promise.reject(new Error("remote security operation limit reached"));
+    }
+    const requestId = this.allocateControlId();
+    const plaintext = encodeJsonRecord(REMOTE_CONTROL_REQUEST, {
+      request_id: requestId,
+      operation,
+    });
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingControls.delete(requestId);
+        reject(new Error("remote security operation timed out"));
+      }, REMOTE_CONTROL_TIMEOUT_MILLIS);
+      this.pendingControls.set(requestId, { resolve, reject, timer });
+      try {
+        this.socket.send(exactBuffer(this.session!.seal(plaintext)));
+      } catch (error) {
+        clearTimeout(timer);
+        this.pendingControls.delete(requestId);
+        reject(asError(error));
+      }
+    });
   }
 
   private async receive(data: unknown): Promise<void> {
@@ -549,6 +609,13 @@ export class RemoteApplicationWebSocket implements ApplicationWebSocket {
       this.close(1_000, "authenticated remote close");
       return;
     }
+    if (
+      opened.plaintext.byteLength > 4 &&
+      equalBytes(opened.plaintext.subarray(0, 4), REMOTE_CONTROL_RESPONSE)
+    ) {
+      this.acceptRemoteControl(opened.plaintext);
+      return;
+    }
     const text = new TextDecoder("utf-8", { fatal: true }).decode(opened.plaintext);
     this.onmessage?.(new MessageEvent("message", { data: text }));
   }
@@ -590,6 +657,48 @@ export class RemoteApplicationWebSocket implements ApplicationWebSocket {
     this.expectedHostPin.fill(0);
     this.login = undefined;
     this.resume = undefined;
+  }
+
+  private acceptRemoteControl(plaintext: Uint8Array): void {
+    const response = decodeJsonRecord<{
+      readonly request_id: number;
+      readonly outcome: unknown;
+    }>(plaintext, REMOTE_CONTROL_RESPONSE, MAX_REMOTE_CONTROL_RESPONSE_BYTES);
+    if (
+      !hasExactKeys(response, ["outcome", "request_id"]) ||
+      !Number.isSafeInteger(response.request_id) ||
+      response.request_id < 1 ||
+      response.request_id > 0xffff_ffff
+    ) {
+      throw new Error("invalid remote security response");
+    }
+    const pending = this.pendingControls.get(response.request_id);
+    if (pending === undefined) throw new Error("unexpected remote security response");
+    clearTimeout(pending.timer);
+    this.pendingControls.delete(response.request_id);
+    const outcome = validateControlOutcome(response.outcome);
+    if (outcome.type === "error") {
+      pending.reject(new Error(outcome.message));
+    } else {
+      pending.resolve(outcome);
+    }
+  }
+
+  private allocateControlId(): number {
+    for (let attempts = 0; attempts < MAX_PENDING_REMOTE_CONTROLS + 1; attempts += 1) {
+      const candidate = this.nextControlId;
+      this.nextControlId = candidate === 0xffff_ffff ? 1 : candidate + 1;
+      if (!this.pendingControls.has(candidate)) return candidate;
+    }
+    throw new Error("remote security operation IDs are exhausted");
+  }
+
+  private rejectPendingControls(error: Error): void {
+    for (const pending of this.pendingControls.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(error);
+    }
+    this.pendingControls.clear();
   }
 }
 
@@ -684,10 +793,61 @@ function encodeJsonRecord(magic: Uint8Array, value: unknown): Uint8Array {
   return framed(magic, new TextEncoder().encode(JSON.stringify(value)));
 }
 
-function decodeJsonRecord<T>(message: Uint8Array, magic: Uint8Array): T {
+function decodeJsonRecord<T>(
+  message: Uint8Array,
+  magic: Uint8Array,
+  maximumBytes = 2 * 1024,
+): T {
   const encoded = payload(message, magic);
-  if (encoded.byteLength > 2 * 1024) throw new Error("JSON record exceeds size limit");
+  if (encoded.byteLength > maximumBytes) throw new Error("JSON record exceeds size limit");
   return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(encoded)) as T;
+}
+
+function validateControlOutcome(
+  value: unknown,
+): RemoteControlOutcome | { readonly type: "error"; readonly message: string } {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("invalid remote security response");
+  }
+  const candidate = value as { type?: unknown; [key: string]: unknown };
+  switch (candidate.type) {
+    case "security":
+      if (!hasExactKeys(value, ["security", "type"])) break;
+      return { type: "security", security: candidate.security };
+    case "count":
+      if (
+        hasExactKeys(value, ["count", "type"]) &&
+        Number.isSafeInteger(candidate.count) &&
+        (candidate.count as number) >= 0
+      ) {
+        return { type: "count", count: candidate.count as number };
+      }
+      break;
+    case "complete":
+      if (hasExactKeys(value, ["type"])) return { type: "complete" };
+      break;
+    case "signed_out":
+      if (
+        hasExactKeys(value, ["authorization_revoked", "type"]) &&
+        typeof candidate.authorization_revoked === "boolean"
+      ) {
+        return {
+          type: "signed_out",
+          authorization_revoked: candidate.authorization_revoked,
+        };
+      }
+      break;
+    case "error":
+      if (
+        hasExactKeys(value, ["message", "type"]) &&
+        typeof candidate.message === "string" &&
+        candidate.message.length <= 160
+      ) {
+        return { type: "error", message: candidate.message };
+      }
+      break;
+  }
+  throw new Error("invalid remote security response");
 }
 
 function rejectUnsupportedApplicationBreadth(encoded: string): void {
@@ -841,4 +1001,8 @@ function required<T>(value: T | undefined, label: string): T {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function asError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
 }
