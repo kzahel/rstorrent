@@ -58,16 +58,11 @@ impl AuthorityStore {
     }
 
     pub fn load(&self) -> Result<Option<RemoteAuthority>> {
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         {
-            match fs::symlink_metadata(&self.path) {
-                Ok(metadata) => validate_authority_metadata(&metadata)?,
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-                Err(error) => return Err(error.into()),
-            }
-            let file = File::open(&self.path)?;
-            let metadata = file.metadata()?;
-            validate_authority_metadata(&metadata)?;
+            let Some(file) = open_protected(&self.path)? else {
+                return Ok(None);
+            };
             let mut encoded = Vec::new();
             file.take((MAX_AUTHORITY_BYTES + 1) as u64)
                 .read_to_end(&mut encoded)?;
@@ -77,7 +72,7 @@ impl AuthorityStore {
             RemoteAuthority::decode(&encoded).map(Some)
         }
 
-        #[cfg(not(unix))]
+        #[cfg(not(any(unix, windows)))]
         Err(RemoteAccessError::PersistenceUnsupported)
     }
 
@@ -126,24 +121,22 @@ impl AuthorityStore {
     /// Callers must first export the non-authorizing history they intend to
     /// retain. This operation never touches torrent or profile state.
     pub fn remove(&self) -> Result<bool> {
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         {
-            match fs::symlink_metadata(&self.path) {
-                Ok(metadata) => validate_authority_metadata(&metadata)?,
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-                Err(error) => return Err(error.into()),
+            if open_protected(&self.path)?.is_none() {
+                return Ok(false);
             }
             fs::remove_file(&self.path)?;
             sync_directory(&self.root)?;
             Ok(true)
         }
 
-        #[cfg(not(unix))]
+        #[cfg(not(any(unix, windows)))]
         Err(RemoteAccessError::PersistenceUnsupported)
     }
 
     pub fn load_history(&self) -> Result<Option<SecuritySnapshot>> {
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         {
             let Some(encoded) = read_protected(&self.history_path)? else {
                 return Ok(None);
@@ -157,7 +150,7 @@ impl AuthorityStore {
             Ok(Some(persisted.snapshot))
         }
 
-        #[cfg(not(unix))]
+        #[cfg(not(any(unix, windows)))]
         Err(RemoteAccessError::PersistenceUnsupported)
     }
 
@@ -214,28 +207,28 @@ impl AuthorityStore {
     }
 
     pub fn clear_history(&self) -> Result<bool> {
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         {
-            match fs::symlink_metadata(&self.history_path) {
-                Ok(metadata) => validate_authority_metadata(&metadata)?,
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-                Err(error) => return Err(error.into()),
+            if open_protected(&self.history_path)?.is_none() {
+                return Ok(false);
             }
             fs::remove_file(&self.history_path)?;
             sync_directory(&self.root)?;
             Ok(true)
         }
 
-        #[cfg(not(unix))]
+        #[cfg(not(any(unix, windows)))]
         Err(RemoteAccessError::PersistenceUnsupported)
     }
 
     fn commit(&self, authority: &RemoteAuthority, crash: Option<CommitCrashPoint>) -> Result<()> {
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         {
             ensure_protected_root(&self.root)?;
-            if let Ok(metadata) = fs::symlink_metadata(&self.path) {
-                validate_authority_metadata(&metadata)?;
+            if self.path.exists() {
+                open_protected(&self.path)?.ok_or(RemoteAccessError::Corrupt(
+                    "authority file disappeared during validation",
+                ))?;
             }
             let encoded = authority.encode()?;
             if encoded.len() > MAX_AUTHORITY_BYTES {
@@ -258,7 +251,7 @@ impl AuthorityStore {
             Ok(())
         }
 
-        #[cfg(not(unix))]
+        #[cfg(not(any(unix, windows)))]
         {
             let _ = authority;
             let _ = crash;
@@ -266,14 +259,16 @@ impl AuthorityStore {
         }
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     fn commit_history(&self, encoded: &[u8], crash: Option<CommitCrashPoint>) -> Result<()> {
         ensure_protected_root(&self.root)?;
         if encoded.len() > MAX_AUTHORITY_BYTES {
             return Err(RemoteAccessError::Capacity("security history file"));
         }
-        if let Ok(metadata) = fs::symlink_metadata(&self.history_path) {
-            validate_authority_metadata(&metadata)?;
+        if self.history_path.exists() {
+            open_protected(&self.history_path)?.ok_or(RemoteAccessError::Corrupt(
+                "security history disappeared during validation",
+            ))?;
         }
         let mut temporary = tempfile::NamedTempFile::new_in(&self.root)?;
         set_owner_only_file(temporary.path())?;
@@ -289,7 +284,7 @@ impl AuthorityStore {
         Ok(())
     }
 
-    #[cfg(not(unix))]
+    #[cfg(not(any(unix, windows)))]
     fn commit_history(&self, _encoded: &[u8], _crash: Option<CommitCrashPoint>) -> Result<()> {
         Err(RemoteAccessError::PersistenceUnsupported)
     }
@@ -412,15 +407,11 @@ fn validate_history(history: &SecuritySnapshot) -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn read_protected(path: &Path) -> Result<Option<Vec<u8>>> {
-    match fs::symlink_metadata(path) {
-        Ok(metadata) => validate_authority_metadata(&metadata)?,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error.into()),
-    }
-    let file = File::open(path)?;
-    validate_authority_metadata(&file.metadata()?)?;
+    let Some(file) = open_protected(path)? else {
+        return Ok(None);
+    };
     let mut encoded = Vec::new();
     file.take((MAX_AUTHORITY_BYTES + 1) as u64)
         .read_to_end(&mut encoded)?;
@@ -428,6 +419,20 @@ fn read_protected(path: &Path) -> Result<Option<Vec<u8>>> {
         return Err(RemoteAccessError::Corrupt("record exceeds size limit"));
     }
     Ok(Some(encoded))
+}
+
+#[cfg(any(unix, windows))]
+fn open_protected(path: &Path) -> Result<Option<File>> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    validate_authority_metadata(&metadata)?;
+    let file = File::open(path)?;
+    validate_authority_metadata(&file.metadata()?)?;
+    validate_owner_only_file(path)?;
+    Ok(Some(file))
 }
 
 #[cfg(unix)]
@@ -462,7 +467,38 @@ fn ensure_protected_root(root: &Path) -> Result<()> {
         }
         Err(error) => return Err(error.into()),
     }
+    validate_owner_only_root(root)?;
     Ok(())
+}
+
+#[cfg(windows)]
+fn ensure_protected_root(root: &Path) -> Result<()> {
+    use std::os::windows::fs::MetadataExt as _;
+
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
+    match fs::symlink_metadata(root) {
+        Ok(metadata)
+            if metadata.is_dir()
+                && metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT == 0 => {}
+        Ok(_) => {
+            return Err(RemoteAccessError::Corrupt(
+                "authority root type or reparse point",
+            ));
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            fs::create_dir_all(root)?;
+            let metadata = fs::symlink_metadata(root)?;
+            if !metadata.is_dir() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+            {
+                return Err(RemoteAccessError::Corrupt(
+                    "authority root type or reparse point",
+                ));
+            }
+        }
+        Err(error) => return Err(error.into()),
+    }
+    set_windows_owner_only_acl(root, true)?;
+    validate_owner_only_root(root)
 }
 
 #[cfg(unix)]
@@ -481,6 +517,19 @@ fn validate_authority_metadata(metadata: &fs::Metadata) -> Result<()> {
     Ok(())
 }
 
+#[cfg(windows)]
+fn validate_authority_metadata(metadata: &fs::Metadata) -> Result<()> {
+    use std::os::windows::fs::MetadataExt as _;
+
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
+    if !metadata.is_file() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        return Err(RemoteAccessError::Corrupt(
+            "authority file type or reparse point",
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(unix)]
 fn set_owner_only_file(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt as _;
@@ -488,9 +537,142 @@ fn set_owner_only_file(path: &Path) -> Result<()> {
     Ok(())
 }
 
+#[cfg(windows)]
+fn set_owner_only_file(path: &Path) -> Result<()> {
+    set_windows_owner_only_acl(path, false)
+}
+
+#[cfg(unix)]
+fn validate_owner_only_file(_path: &Path) -> Result<()> {
+    Ok(())
+}
+
+#[cfg(unix)]
+fn validate_owner_only_root(_path: &Path) -> Result<()> {
+    Ok(())
+}
+
+#[cfg(windows)]
+fn validate_owner_only_file(path: &Path) -> Result<()> {
+    validate_windows_owner_only_acl(path, false)
+}
+
+#[cfg(windows)]
+fn validate_owner_only_root(path: &Path) -> Result<()> {
+    validate_windows_owner_only_acl(path, true)
+}
+
+#[cfg(windows)]
+fn current_windows_user_sid() -> Result<&'static str> {
+    use std::sync::OnceLock;
+    use windows_permissions::constants::{SeObjectType, SecurityInformation};
+
+    static CURRENT_USER_SID: OnceLock<String> = OnceLock::new();
+    if let Some(sid) = CURRENT_USER_SID.get() {
+        return Ok(sid);
+    }
+    let probe = tempfile::NamedTempFile::new()?;
+    let descriptor = windows_permissions::wrappers::GetNamedSecurityInfo(
+        &probe.path(),
+        SeObjectType::SE_FILE_OBJECT,
+        SecurityInformation::Owner,
+    )?;
+    let sid = descriptor
+        .owner()
+        .ok_or(RemoteAccessError::Corrupt("current Windows owner SID"))?
+        .to_string();
+    if !sid.starts_with("S-1-") {
+        return Err(RemoteAccessError::Corrupt("current Windows owner SID"));
+    }
+    let _ = CURRENT_USER_SID.set(sid);
+    CURRENT_USER_SID
+        .get()
+        .map(String::as_str)
+        .ok_or(RemoteAccessError::Corrupt("current Windows owner SID"))
+}
+
+#[cfg(windows)]
+fn set_windows_owner_only_acl(path: &Path, directory: bool) -> Result<()> {
+    use windows_permissions::constants::{SeObjectType, SecurityInformation};
+    use windows_permissions::{LocalBox, SecurityDescriptor};
+
+    let sid = current_windows_user_sid()?;
+    let inheritance = if directory { "OICI" } else { "" };
+    let descriptor: LocalBox<SecurityDescriptor> =
+        format!("D:P(A;{inheritance};FA;;;{sid})").parse()?;
+    let dacl = descriptor
+        .dacl()
+        .ok_or(RemoteAccessError::Corrupt("Windows authority DACL"))?;
+    windows_permissions::wrappers::SetNamedSecurityInfo(
+        &path,
+        SeObjectType::SE_FILE_OBJECT,
+        SecurityInformation::Dacl | SecurityInformation::ProtectedDacl,
+        None,
+        None,
+        Some(dacl),
+        None,
+    )?;
+    validate_windows_owner_only_acl(path, directory)
+}
+
+#[cfg(windows)]
+fn validate_windows_owner_only_acl(path: &Path, directory: bool) -> Result<()> {
+    use windows_permissions::constants::{
+        AccessRights, AceFlags, AceType, SeObjectType, SecurityInformation,
+    };
+
+    let sid = current_windows_user_sid()?;
+    let security_information = SecurityInformation::Owner | SecurityInformation::Dacl;
+    let descriptor = windows_permissions::wrappers::GetNamedSecurityInfo(
+        &path,
+        SeObjectType::SE_FILE_OBJECT,
+        security_information,
+    )?;
+    if descriptor.owner().map(ToString::to_string).as_deref() != Some(sid) {
+        return Err(RemoteAccessError::Corrupt("Windows authority owner SID"));
+    }
+    let dacl = descriptor
+        .dacl()
+        .ok_or(RemoteAccessError::Corrupt("Windows authority DACL"))?;
+    let Some(ace) = (dacl.len() == 1).then(|| dacl.get_ace(0)).flatten() else {
+        return Err(RemoteAccessError::Corrupt("Windows authority DACL entries"));
+    };
+    let expected_flags = if directory {
+        AceFlags::ContainerInherit | AceFlags::ObjectInherit
+    } else {
+        AceFlags::empty()
+    };
+    if ace.ace_type() != AceType::ACCESS_ALLOWED_ACE_TYPE
+        || ace.flags() != expected_flags
+        || ace.mask() != AccessRights::FileAllAccess
+        || ace.sid().map(ToString::to_string).as_deref() != Some(sid)
+    {
+        return Err(RemoteAccessError::Corrupt(
+            "Windows authority DACL permissions",
+        ));
+    }
+    let sddl = windows_permissions::wrappers::ConvertSecurityDescriptorToStringSecurityDescriptor(
+        &descriptor,
+        security_information,
+    )?;
+    if !sddl.to_string_lossy().contains("D:P") {
+        return Err(RemoteAccessError::Corrupt(
+            "Windows authority DACL inheritance",
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(unix)]
 fn sync_directory(path: &Path) -> Result<()> {
     File::open(path)?.sync_all()?;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn sync_directory(_path: &Path) -> Result<()> {
+    // Windows has no stable safe directory-fsync operation. The temporary
+    // file is flushed before the atomic replacement.
     Ok(())
 }
 
@@ -592,6 +774,45 @@ mod tests {
         assert!(matches!(store.load(), Err(RemoteAccessError::Corrupt(_))));
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn authority_file_has_one_protected_user_ace_and_rejects_weakened_acl() {
+        use windows_permissions::constants::{SeObjectType, SecurityInformation};
+        use windows_permissions::{LocalBox, SecurityDescriptor};
+
+        let root = tempdir().unwrap();
+        let store = AuthorityStore::new(root.path().join("remote"));
+        store.create(&provision(Timestamp::from_millis(1))).unwrap();
+        validate_windows_owner_only_acl(store.path(), false).unwrap();
+
+        let descriptor: LocalBox<SecurityDescriptor> = "D:P(A;;FR;;;WD)".parse().unwrap();
+        windows_permissions::wrappers::SetNamedSecurityInfo(
+            &store.path(),
+            SeObjectType::SE_FILE_OBJECT,
+            SecurityInformation::Dacl | SecurityInformation::ProtectedDacl,
+            None,
+            None,
+            descriptor.dacl(),
+            None,
+        )
+        .unwrap();
+        assert!(matches!(store.load(), Err(RemoteAccessError::Corrupt(_))));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn authority_file_rejects_a_reparse_point() {
+        use std::os::windows::fs::symlink_file;
+
+        let root = tempdir().unwrap();
+        let store = AuthorityStore::new(root.path().join("remote"));
+        store.create(&provision(Timestamp::from_millis(1))).unwrap();
+        let target = root.path().join("target.json");
+        fs::rename(store.path(), &target).unwrap();
+        symlink_file(&target, store.path()).expect("Windows test host must permit file symlinks");
+        assert!(matches!(store.load(), Err(RemoteAccessError::Corrupt(_))));
+    }
+
     #[test]
     fn oversized_and_malformed_records_fail_closed() {
         let root = tempdir().unwrap();
@@ -600,7 +821,7 @@ mod tests {
         let mut file = File::create(store.path()).unwrap();
         file.write_all(&vec![b'x'; MAX_AUTHORITY_BYTES + 1])
             .unwrap();
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         set_owner_only_file(store.path()).unwrap();
         assert!(matches!(store.load(), Err(RemoteAccessError::Corrupt(_))));
     }
