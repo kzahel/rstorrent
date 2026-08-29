@@ -1,9 +1,10 @@
 # Tactical 192: Local Production-Shaped Owner Relay Access
 
-Status: **Ready, not active.** Completed controlled foundation Tactical
+Status: **Active as of 2026-08-29.** Completed controlled foundation Tactical
 [`190`](190-opaque-wasm-relay-foundation.md) supplies the selected cryptographic
 construction, Wasm boundary, dumb-relay behavior, real application trace and
-measured proof limits. Starting this tactical requires explicit user direction.
+measured proof limits. The user explicitly activated end-to-end implementation
+on 2026-08-29 and requested incremental commits.
 This tactical is strictly local-only: it may productionize relay/client/host
 code and exercise distinct loopback HTTPS/WSS origins, but it must not create or
 use an external account or host, mutate public DNS/TLS, publish a release or
@@ -211,6 +212,64 @@ passphrase, OPAQUE record, raw private/public credential bytes, resume secret,
 traffic key, protocol payload, torrent data or unbounded attacker text and are
 excluded from ordinary diagnostics/support export. Revoked records and ledger
 entries are audit evidence only and can never authorize a connection.
+
+### Selected resume construction (2026-08-29)
+
+The pre-persistence gate is closed. The current YepAnywhere checkout is
+`b8b6987b1466a35ff818483002eea31472bed8c9`; its only local modification is an
+unrelated `README.md`, and every audited resume/security-client path is
+unchanged from the recorded clean `506ce0528ffe3ef44c5e4ee90780b44eb80d4a15`
+checkpoint. RSTorrent adopts its separation of authenticated session, client
+continuity, live connection and audit record. It does not adopt the persisted
+symmetric SRP base key, session-file shape or wire messages.
+
+The exact RSTorrent construction is:
+
+- each private browser creates one origin-scoped, non-extractable WebCrypto
+  P-256 ECDSA/SHA-256 continuity key and stores its handle in IndexedDB; the
+  host stores only its 65-byte uncompressed SEC1 public key and SHA-256
+  fingerprint;
+- enabling remote access creates a separate random host P-256 ECDSA/SHA-256
+  resume-signing key. Its 32-byte secret is authority-bearing protected state;
+  its 65-byte public key is delivered only inside a successful OPAQUE record
+  channel and retained beside the authenticated 64-byte OPAQUE host pin;
+- private-browser authorization uses a fresh 32-byte host challenge inside the
+  full-login record channel. The client signs a fixed length-prefixed transcript
+  binding the protocol/operation domain, complete canonical OPAQUE binding,
+  host pin, host resume public key, authorization generation, challenge,
+  client public key and proof-excluded bounded authorization metadata;
+- resume creates independent ephemeral P-256 ECDH keys and independent
+  32-byte nonces on both endpoints. Distinct host and client ECDSA transcripts
+  bind both nonces and ephemeral public keys, the complete canonical OPAQUE
+  binding and host pin, host resume public key, client ID, global and client
+  authorization generations, and protocol/suite floor;
+- the host signs first. The browser verifies that signature with the public key
+  retained through full OPAQUE login before releasing its client signature.
+  The host rechecks current, unexpired, generation-matching authorization
+  immediately before accepting the client proof;
+- both sides derive a 64-byte intermediate secret with HKDF-SHA-512 from the
+  32-byte ephemeral P-256 ECDH result, the SHA-512 resume-transcript digest as
+  salt and `rstorrent.remote.resume.session.v1` as the expansion label. That
+  intermediate enters the existing binding-scoped directional record
+  derivation, then is erased; and
+- ECDSA signatures use the WebCrypto-compatible fixed 64-byte `r || s` form.
+  Every P-256 public value uses the exact 65-byte uncompressed SEC1 form and is
+  fully validated before state changes or ECDH.
+
+Fresh ephemeral ECDH supplies new record keys and forward secrecy for each
+resume connection. Separate role domains, both fresh nonces, both ephemeral
+keys and generation binding reject replay, reflection, cross-client,
+cross-route and stale-authorization use. A copied browser profile without the
+non-extractable key cannot resume; a compromised origin may still invoke that
+key while it controls the browser and remains inside the documented hosted-
+client threat boundary.
+
+The native implementation uses exact `p256` `0.13.2` with only `ecdsa` and
+`ecdh`, reusing the already-resolved RustCrypto `elliptic-curve` `0.13` graph
+rather than adding the new parallel `0.14` graph. The inspected source and
+tests are recorded in `docs/references.md`. RFC `9807` currently has no
+verified erratum: its sole erratum `8675` is rejected and changes none of the
+selected OPAQUE behavior.
 
 ## Client Delivery And Trust
 

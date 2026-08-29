@@ -833,13 +833,6 @@ exactly.
 
 ### Active
 
-- Resume **Tactical `158`** and close the clean Windows and Linux x86_64
-  signed replacement/relaunch evidence plus Windows firewall-consent
-  characterization. Prove clean launch or bounded reset and payload safety,
-  not retention of disposable `0.1.x` application state.
-
-### Ready
-
 - Execute **Tactical `192`** to turn the passing ephemeral OPAQUE/relay proof
   into one local production-shaped desktop/configured-headless owner-password
   path with durable authority, explicit lifecycle/recovery UX, automatic
@@ -847,6 +840,13 @@ exactly.
   a release-built browser profile and a separate loopback-only relay service.
   No external service, publication or supported remote capability is in scope;
   accounts, passkeys, delegated roles and remote media remain excluded.
+- Resume **Tactical `158`** and close the clean Windows and Linux x86_64
+  signed replacement/relaunch evidence plus Windows firewall-consent
+  characterization. Prove clean launch or bounded reset and payload safety,
+  not retention of disposable `0.1.x` application state.
+
+### Ready
+
 - Declare the future first supported version and freeze its fresh application
   identities and persistence/API baseline only from that version forward.
   Complete changelog, privacy/support presentation, and the repeatable beta

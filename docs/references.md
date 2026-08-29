@@ -415,10 +415,35 @@ Tactical `192` refreshed the clean sibling at commit
 the accepted separation among server identity, client continuity, expiring
 resume authority, live connections, route selection, revocation and operator
 audit. RSTorrent adopts the product and failure lessons, not YepAnywhere's SRP,
-symmetric resume construction, P-256 client proof, storage format, identifiers
-or wire contract. Tactical `192` declares its own initial expiry bounds; the
-exact RSTorrent resume construction remains a source-first pre-persistence
-decision inside that tactical.
+symmetric resume construction, exact P-256 proof transcript, storage format,
+identifiers or wire contract. The active tactical re-audited current sibling
+commit
+`b8b6987b1466a35ff818483002eea31472bed8c9`; the listed paths are unchanged
+since the clean checkpoint, and an unrelated dirty `README.md` was excluded.
+
+Tactical `192` independently selects P-256 ECDSA/SHA-256 continuity proof and
+ephemeral P-256 ECDH. The normative inputs are
+[FIPS 186-5](https://csrc.nist.gov/pubs/fips/186-5/final),
+[NIST SP 800-186](https://csrc.nist.gov/pubs/sp/800/186/final),
+[NIST SP 800-56A revision 3](https://csrc.nist.gov/pubs/sp/800/56/a/r3/final),
+[RFC 5869](https://www.rfc-editor.org/rfc/rfc5869.html), and
+[Web Cryptography Level 2](https://www.w3.org/TR/webcrypto/). The exact native
+candidate is `p256` `0.13.2`, crates.io SHA-256
+`c9863ad85fa8f4460f9c48cb909d38a0d689dba1f6f6988a5e3e0d31071bcd4b`, tag
+`p256/v0.13.2` commit `6e6886563bb066cbaea4f59f89459341af6879af`, licensed
+`MIT OR Apache-2.0`, with Rust 1.65 minimum. `src/ecdh.rs`, `src/ecdsa.rs`,
+`src/arithmetic.rs`, `tests/ecdsa.rs`, `tests/affine.rs`, and the Wycheproof-
+backed `src/test_vectors/ecdsa.rs` cover ephemeral agreement, fixed signature
+encoding, strict SEC1 point handling, deterministic signatures and hostile
+signature vectors. Only `ecdsa` and `ecdh` features are selected; this reuses
+the `elliptic-curve` `0.13` generation already resolved by OPAQUE instead of
+adding the parallel `p256` `0.14` dependency generation.
+
+The RFC Editor showed one RFC `9807` erratum on 2026-08-29: technical erratum
+`8675` is rejected, with no verified erratum changing the selected OPAQUE
+construction. The current `opaque-ke` repository still describes `4.0.1` as
+the final-RFC release and offers only the separately rejected `4.1.0-pre.2`
+prerelease; no new source or fixture was imported.
 
 No external source, fixture, test vector, dependency or generated asset was
 imported by the tactical design or this reference record.
