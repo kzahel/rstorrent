@@ -9003,6 +9003,7 @@ async fn run_selective_download(
         };
         (storage, Some(resumed))
     } else {
+        let part_location = control.path_part_location();
         match (descriptors, &resume) {
             (Some(descriptors), None) => {
                 let v1 =
@@ -9028,13 +9029,14 @@ async fn run_selective_download(
                 let content = Arc::new(content.clone());
                 let (storage, resumed) = match control.storage_file_pool() {
                     Some(pool) => {
-                        SelectiveStorage::resume_content_with_pool(
+                        SelectiveStorage::resume_content_with_pool_and_part_location(
                             config.output_path.clone(),
                             config.artifact_identity,
                             content,
                             &config.skip_files,
                             verified_pieces.clone(),
                             pool,
+                            &part_location,
                         )
                         .await
                     }
@@ -9056,12 +9058,13 @@ async fn run_selective_download(
                 let content = Arc::new(content.clone());
                 let storage = match control.storage_file_pool() {
                     Some(pool) => {
-                        SelectiveStorage::create_content_with_pool(
+                        SelectiveStorage::create_content_with_pool_and_part_location(
                             config.output_path.clone(),
                             config.artifact_identity,
                             content,
                             &config.skip_files,
                             pool,
+                            &part_location,
                         )
                         .await
                     }

@@ -157,7 +157,7 @@ pub use selective_storage::{
     DescriptorStoragePlanFile, plan_descriptor_storage,
 };
 pub use selective_storage::{
-    FastResumeValidation, MAX_ACTIVE_FILE_READ_BYTES, MAX_UPLOAD_READ_SEGMENTS,
+    FastResumeValidation, MAX_ACTIVE_FILE_READ_BYTES, MAX_UPLOAD_READ_SEGMENTS, PathPartLocation,
     PlatformStorageSpec, ResumedStorage, SelectionReconcileReport, SelectiveFileReadPlan,
     SelectiveStorage, SelectiveStorageError, SelectiveUploadReadPlan, SelectiveWriteStats,
     TorrentArtifactIdentity, TorrentStoragePaths, remove_selective_part_if_present,

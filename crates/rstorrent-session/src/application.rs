@@ -268,6 +268,9 @@ pub struct ApplicationConfig {
     pub profile_id: String,
     pub storage_roots: Vec<ConfiguredStorageRoot>,
     pub path_root_startup_policy: PathRootStartupPolicy,
+    /// Optional caller-owned directory for path-backed selective part files.
+    /// Platform-capability roots retain their adapter-owned part placement.
+    pub path_part_directory: Option<PathBuf>,
     pub network: NetworkConfig,
     pub initial_client_settings: crate::ClientSettings,
     pub peer_transport_policy: PeerTransportPolicy,
@@ -373,6 +376,7 @@ impl ApplicationConfig {
             profile_id,
             storage_roots,
             path_root_startup_policy: PathRootStartupPolicy::CreateMissing,
+            path_part_directory: None,
             network,
             initial_client_settings: crate::ClientSettings::default(),
             peer_transport_policy: PeerTransportPolicy::PreferUtp,
@@ -418,6 +422,11 @@ impl ApplicationConfig {
 
     pub fn with_path_root_startup_policy(mut self, policy: PathRootStartupPolicy) -> Self {
         self.path_root_startup_policy = policy;
+        self
+    }
+
+    pub fn with_path_part_directory(mut self, directory: PathBuf) -> Self {
+        self.path_part_directory = Some(directory);
         self
     }
 }
@@ -473,6 +482,7 @@ pub struct ApplicationService {
     checkpoint_commit_delay_for_testing: Duration,
     checkpoint_stage_trace_for_testing: bool,
     storage_file_pool: StorageFilePool,
+    path_part_directory: Option<PathBuf>,
     media: MediaCapabilities,
     healthy_platform_roots: BTreeSet<String>,
     session_network: Option<SessionNetworkRuntime>,
@@ -540,6 +550,15 @@ impl ApplicationService {
         {
             return Err(ApplicationError::Configuration(
                 "test storage concurrency must be between 1 and 8".to_owned(),
+            ));
+        }
+        if config
+            .path_part_directory
+            .as_ref()
+            .is_some_and(|directory| !directory.is_absolute())
+        {
+            return Err(ApplicationError::Configuration(
+                "path part directory must be absolute".to_owned(),
             ));
         }
         let mut configured_root_ids = BTreeMap::new();
@@ -673,6 +692,7 @@ impl ApplicationService {
             checkpoint_commit_delay_for_testing: config.checkpoint_commit_delay_for_testing,
             checkpoint_stage_trace_for_testing: config.checkpoint_stage_trace_for_testing,
             storage_file_pool,
+            path_part_directory: config.path_part_directory,
             media: MediaCapabilities::new(),
             healthy_platform_roots,
             session_network: Some(session_network),
@@ -3274,6 +3294,9 @@ impl ApplicationService {
             &storage_root,
         ));
         control.set_storage_file_pool(self.storage_file_pool.clone());
+        if let Some(directory) = self.path_part_directory.clone() {
+            control.set_path_part_directory(directory);
+        }
         control.set_incoming_peer_handle(self.session_network().incoming_peer_handle());
         if let Some(utp) = self.session_network().utp_handle() {
             control.set_utp_handle(utp);
@@ -6049,9 +6072,9 @@ mod tests {
     use tokio::net::{TcpListener, TcpStream, UdpSocket};
 
     use super::{
-        ApplicationConfig, ApplicationService, DirectPayloadManifest, PathRootStartupPolicy,
-        PlatformRemovalPath, delete_path_artifacts, handle_task_outcome, magnet_runtime_identity,
-        runtime_identity,
+        ApplicationConfig, ApplicationError, ApplicationService, DirectPayloadManifest,
+        PathRootStartupPolicy, PlatformRemovalPath, delete_path_artifacts, handle_task_outcome,
+        magnet_runtime_identity, runtime_identity,
     };
     use crate::{
         AddTorrentBytesRequest, ApplicationCall, ApplicationCallResult, CONTROL_VERSION,
@@ -6168,6 +6191,23 @@ mod tests {
             offline.initial_client_settings.port_mapping,
             crate::PortMappingPolicy::Disabled
         );
+    }
+
+    #[tokio::test]
+    async fn path_part_directory_requires_an_absolute_capability() {
+        let root = test_root("relative-path-part-directory");
+        let error = ApplicationService::open(
+            default_config(&root).with_path_part_directory(PathBuf::from("relative-parts")),
+        )
+        .await
+        .expect_err("reject relative part directory");
+
+        assert!(matches!(
+            error,
+            ApplicationError::Configuration(message)
+                if message == "path part directory must be absolute"
+        ));
+        assert!(!root.exists());
     }
 
     #[tokio::test]

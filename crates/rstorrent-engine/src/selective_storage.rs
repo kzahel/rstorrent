@@ -281,6 +281,17 @@ pub struct TorrentStoragePaths {
     pub part: PathBuf,
 }
 
+/// Placement policy for the selective boundary-byte part artifact used by
+/// path-backed storage.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub enum PathPartLocation {
+    /// Keep the opaque owner-keyed part artifact beside ordinary content.
+    #[default]
+    AdjacentToPayload,
+    /// Keep the same artifact in a caller-owned auxiliary directory.
+    AuxiliaryDirectory(PathBuf),
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TorrentArtifactIdentity {
     pub torrent_id: TorrentId,
@@ -1325,12 +1336,32 @@ impl SelectiveStorage {
         skipped: &[usize],
         pool: StorageFilePool,
     ) -> Result<Self, SelectiveStorageError> {
+        Self::create_content_with_pool_and_part_location(
+            output_root,
+            artifact_identity,
+            content,
+            skipped,
+            pool,
+            &PathPartLocation::AdjacentToPayload,
+        )
+        .await
+    }
+
+    pub(crate) async fn create_content_with_pool_and_part_location(
+        output_root: PathBuf,
+        artifact_identity: TorrentArtifactIdentity,
+        content: Arc<TorrentContent>,
+        skipped: &[usize],
+        pool: StorageFilePool,
+        part_location: &PathPartLocation,
+    ) -> Result<Self, SelectiveStorageError> {
         let layout = ContentLayout::from_content(&content);
         let selection = FileSelection::new_content(&layout, skipped)?;
-        let paths = torrent_storage_paths_for_output_with_shape(
+        let paths = torrent_storage_paths_for_output_with_shape_and_part_location(
             output_root,
             artifact_identity.torrent_id,
             ContentShape::from_content(&content),
+            part_location,
         )?;
         let mut storage =
             Self::create_with_paths_and_pool(paths, artifact_identity, layout, selection, pool)
@@ -1348,40 +1379,34 @@ impl SelectiveStorage {
     ) -> Result<(Self, ResumedStorage), SelectiveStorageError> {
         let pool = StorageFilePool::new(DEFAULT_STORAGE_FILE_LIMIT, None)
             .expect("default storage file limit is nonzero");
-        let layout = ContentLayout::from_content(&content);
-        let selection = FileSelection::new_content(&layout, skipped)?;
-        let paths = torrent_storage_paths_for_output_with_shape(
+        Self::resume_content_with_pool_and_part_location(
             output_root,
-            artifact_identity.torrent_id,
-            ContentShape::from_content(&content),
-        )?;
-        let (mut storage, resumed) = Self::resume_with_paths_and_pool(
-            paths,
             artifact_identity,
-            layout,
-            selection,
+            content,
+            skipped,
             verified,
             pool,
+            &PathPartLocation::AdjacentToPayload,
         )
-        .await?;
-        storage.content = Some(content);
-        Ok((storage, resumed))
+        .await
     }
 
-    pub(crate) async fn resume_content_with_pool(
+    pub(crate) async fn resume_content_with_pool_and_part_location(
         output_root: PathBuf,
         artifact_identity: TorrentArtifactIdentity,
         content: Arc<TorrentContent>,
         skipped: &[usize],
         verified: Vec<bool>,
         pool: StorageFilePool,
+        part_location: &PathPartLocation,
     ) -> Result<(Self, ResumedStorage), SelectiveStorageError> {
         let layout = ContentLayout::from_content(&content);
         let selection = FileSelection::new_content(&layout, skipped)?;
-        let paths = torrent_storage_paths_for_output_with_shape(
+        let paths = torrent_storage_paths_for_output_with_shape_and_part_location(
             output_root,
             artifact_identity.torrent_id,
             ContentShape::from_content(&content),
+            part_location,
         )?;
         let (mut storage, resumed) = Self::resume_with_paths_and_pool(
             paths,
@@ -3791,10 +3816,28 @@ pub(crate) fn torrent_storage_paths_for_output_with_shape(
     torrent_id: TorrentId,
     content_shape: ContentShape,
 ) -> Result<TorrentStoragePaths, SelectiveStorageError> {
+    torrent_storage_paths_for_output_with_shape_and_part_location(
+        content,
+        torrent_id,
+        content_shape,
+        &PathPartLocation::AdjacentToPayload,
+    )
+}
+
+pub(crate) fn torrent_storage_paths_for_output_with_shape_and_part_location(
+    content: PathBuf,
+    torrent_id: TorrentId,
+    content_shape: ContentShape,
+    part_location: &PathPartLocation,
+) -> Result<TorrentStoragePaths, SelectiveStorageError> {
     let parent = content
         .parent()
         .ok_or(SelectiveStorageError::InvalidOutputPath)?;
-    let artifact_base = parent.join(torrent_id.to_string());
+    let part_parent = match part_location {
+        PathPartLocation::AdjacentToPayload => parent,
+        PathPartLocation::AuxiliaryDirectory(directory) => directory,
+    };
+    let artifact_base = part_parent.join(torrent_id.to_string());
     let part = selective_part_path(&artifact_base)?;
     if content == part {
         return Err(SelectiveStorageError::InvalidContentName);
@@ -3936,13 +3979,14 @@ mod tests {
     use crate::storage_file_pool::{StorageFileAccess, StorageFilePool, platform_storage_channel};
 
     use super::{
-        BlockingHashResult, ComputedPieceHash, ContentShape, DescriptorFile, DescriptorStorage,
-        PlatformStorageSpec, ResumedStorage, SelectiveStorage, SelectiveStorageError,
-        SelectiveWriteDestination, SelectiveWritePlan, SelectiveWriteSpan, SelectiveWriteStats,
-        TorrentArtifactIdentity, VERIFICATION_CHUNK_LENGTH, await_blocking_hash,
-        collect_descriptors, remove_selective_part_if_present, storage_instance_id,
-        torrent_storage_paths, torrent_storage_paths_for_metainfo,
-        torrent_storage_paths_for_output_with_shape,
+        BlockingHashResult, ComputedPieceHash, ContentShape, DEFAULT_STORAGE_FILE_LIMIT,
+        DescriptorFile, DescriptorStorage, PathPartLocation, PlatformStorageSpec, ResumedStorage,
+        SelectiveStorage, SelectiveStorageError, SelectiveWriteDestination, SelectiveWritePlan,
+        SelectiveWriteSpan, SelectiveWriteStats, TorrentArtifactIdentity,
+        VERIFICATION_CHUNK_LENGTH, await_blocking_hash, collect_descriptors,
+        remove_selective_part_if_present, storage_instance_id, torrent_storage_paths,
+        torrent_storage_paths_for_metainfo, torrent_storage_paths_for_output_with_shape,
+        torrent_storage_paths_for_output_with_shape_and_part_location,
     };
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -4627,6 +4671,80 @@ mod tests {
                 .content_shape,
             ContentShape::Tree
         );
+    }
+
+    #[test]
+    fn auxiliary_part_location_changes_only_the_part_parent() {
+        let root = test_path("auxiliary-part-paths");
+        let auxiliary = test_path("auxiliary-part-directory");
+        let content = root.join("Visible Name");
+        let paths = torrent_storage_paths_for_output_with_shape_and_part_location(
+            content.clone(),
+            test_torrent_id(),
+            ContentShape::Tree,
+            &PathPartLocation::AuxiliaryDirectory(auxiliary.clone()),
+        )
+        .expect("plan auxiliary part path");
+
+        assert_eq!(paths.content, content);
+        assert_eq!(paths.content_shape, ContentShape::Tree);
+        assert_eq!(
+            paths.part,
+            auxiliary.join(format!(".{}.rstorrent-parts", test_torrent_id()))
+        );
+    }
+
+    #[tokio::test]
+    async fn path_storage_writes_skipped_boundaries_to_auxiliary_directory() {
+        let root = test_path("auxiliary-part-storage");
+        let auxiliary = root.join("work");
+        tokio::fs::create_dir_all(&auxiliary)
+            .await
+            .expect("create auxiliary directory");
+        let metainfo = fixture();
+        let content = Arc::new(TorrentContent::from_v1_metainfo(metainfo.clone()));
+        let output = root.join(&metainfo.name);
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let selection = FileSelection::new(&layout, &[1, 2]).expect("selection");
+        let bytes = torrent_bytes(&metainfo);
+        let pool =
+            StorageFilePool::new(DEFAULT_STORAGE_FILE_LIMIT, None).expect("storage file pool");
+        let mut storage = SelectiveStorage::create_content_with_pool_and_part_location(
+            output.clone(),
+            test_artifact_identity(),
+            content,
+            &[1, 2],
+            pool,
+            &PathPartLocation::AuxiliaryDirectory(auxiliary.clone()),
+        )
+        .await
+        .expect("create storage with auxiliary part location");
+
+        for request in layout.request_ranges(0, &selection).expect("requests") {
+            let begin = request.begin as usize;
+            storage
+                .write_block(
+                    0,
+                    request.begin,
+                    bytes[begin..begin + request.length as usize].to_vec(),
+                )
+                .await
+                .expect("write boundary piece");
+        }
+
+        let expected_part = auxiliary.join(format!(".{}.rstorrent-parts", test_torrent_id()));
+        assert_eq!(storage.part_path(), Some(expected_part.as_path()));
+        assert!(expected_part.is_file());
+        assert!(
+            !root
+                .join(format!(".{}.rstorrent-parts", test_torrent_id()))
+                .exists()
+        );
+
+        drop(storage);
+        tokio::fs::remove_dir_all(root)
+            .await
+            .expect("remove auxiliary storage fixture");
     }
 
     fn torrent_bytes(metainfo: &Metainfo) -> Vec<u8> {

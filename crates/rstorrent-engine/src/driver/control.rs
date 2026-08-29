@@ -7,6 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -29,7 +30,7 @@ use crate::peer::{PeerRegistry, PeerSelectionContext};
 use crate::peer_runtime::PeerConnectionObservation;
 use crate::piece_picker::PieceActivationPolicy;
 use crate::resume_validation::ResumeValidationRejectReason;
-use crate::selective_storage::PlatformStorageSpec;
+use crate::selective_storage::{PathPartLocation, PlatformStorageSpec};
 use crate::session_resources::{
     SessionExecutionPermit, SessionSemaphorePermit, SessionTorrentResources,
 };
@@ -525,6 +526,7 @@ struct DownloadControlInner {
     last_metadata_progress: Mutex<Option<MetadataAcquisitionProgress>>,
     last_integrity_preparation: Mutex<Option<IntegrityPreparationProgress>>,
     storage_file_pool: Mutex<Option<StorageFilePool>>,
+    path_part_location: Mutex<PathPartLocation>,
     active_content_reader: Mutex<Option<ActiveContentReader>>,
     platform_storage: Mutex<Option<PlatformStorageSpec>>,
     incoming_peers: Mutex<Option<IncomingPeerHandle>>,
@@ -896,6 +898,7 @@ impl DownloadControl {
                 last_metadata_progress: Mutex::new(None),
                 last_integrity_preparation: Mutex::new(None),
                 storage_file_pool: Mutex::new(None),
+                path_part_location: Mutex::new(PathPartLocation::AdjacentToPayload),
                 active_content_reader: Mutex::new(None),
                 platform_storage: Mutex::new(None),
                 incoming_peers: Mutex::new(None),
@@ -950,6 +953,15 @@ impl DownloadControl {
             .storage_file_pool
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(pool);
+    }
+
+    pub fn set_path_part_directory(&self, directory: PathBuf) {
+        *self
+            .inner
+            .path_part_location
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+            PathPartLocation::AuxiliaryDirectory(directory);
     }
 
     pub(super) fn set_active_content_reader(&self, reader: ActiveContentReader) {
@@ -1059,6 +1071,14 @@ impl DownloadControl {
     pub(super) fn storage_file_pool(&self) -> Option<StorageFilePool> {
         self.inner
             .storage_file_pool
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    pub(super) fn path_part_location(&self) -> PathPartLocation {
+        self.inner
+            .path_part_location
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
