@@ -1769,7 +1769,7 @@ def wait_product_completion(
     deadline = time.monotonic() + 90
     high_water_fds = baseline_fds
     metric_pattern = re.compile(
-        rf"saf_storage_metrics torrent={re.escape(torrent_id)} "
+        rf"saf_direct_complete torrent={re.escape(torrent_id)} "
         r"limit=(\d+) owned_high_water=(\d+) pending_high_water=(\d+)"
     )
     logs = ""
@@ -1826,6 +1826,29 @@ def wait_product_torrent_progress(
 ) -> str:
     pattern = re.compile(
         rf"torrent={re.escape(torrent_id)} .*state={re.escape(state)} .*verified={verified}\b"
+    )
+    deadline = time.monotonic() + timeout
+    logs = ""
+    while time.monotonic() < deadline:
+        logs = product_logs(target)
+        if any(pattern.search(line) for line in logs.splitlines()):
+            return logs
+        if "product service initialization failed" in logs:
+            break
+        time.sleep(0.1)
+    raise BootstrapFailure(f"timed out waiting for {description}\n{logs}")
+
+
+def wait_product_torrent_state(
+    target: Any,
+    torrent_id: str,
+    *,
+    state: str,
+    description: str,
+    timeout: float = 30,
+) -> str:
+    pattern = re.compile(
+        rf"torrent={re.escape(torrent_id)} .*state={re.escape(state)}\b"
     )
     deadline = time.monotonic() + timeout
     logs = ""
@@ -2444,10 +2467,11 @@ def run_product_dynamic_saf_profile(
             "saf_root_health source=startup available=true",
             "healthy SAF root after process restart",
         )
-        restart_logs = wait_product_log(
+        restart_logs = wait_product_torrent_state(
             target,
-            f"torrent={torrent_id} kind=patch state=COMPLETE",
-            "complete torrent after restart recheck",
+            torrent_id,
+            state="COMPLETE",
+            description="complete torrent after restart recheck",
             timeout=30,
         )
         if (
@@ -2501,6 +2525,14 @@ def run_product_dynamic_saf_profile(
         selective_torrent_id = wait_product_torrent_id(
             target, fixture.info_hash, add_count
         )
+        staging_root = (
+            f"{probe.grant_path(grant_storage)}/"
+            f".{selective_torrent_id}.rstorrent-staging"
+        )
+        part_path = (
+            f"{probe.grant_path(grant_storage)}/"
+            f".{selective_torrent_id}.rstorrent-parts"
+        )
         wait_product_completion(
             target, selective_torrent_id, product_fd_count(target)
         )
@@ -2547,10 +2579,19 @@ def run_product_dynamic_saf_profile(
         cancelling_torrent_id = wait_product_torrent_id(
             target, fixture.info_hash, add_count
         )
-        wait_product_log(
+        staging_root = (
+            f"{probe.grant_path(grant_storage)}/"
+            f".{cancelling_torrent_id}.rstorrent-staging"
+        )
+        part_path = (
+            f"{probe.grant_path(grant_storage)}/"
+            f".{cancelling_torrent_id}.rstorrent-parts"
+        )
+        wait_product_torrent_state(
             target,
-            f"torrent={cancelling_torrent_id} kind=patch state=DOWNLOADING",
-            "active product download before cancellation",
+            cancelling_torrent_id,
+            state="DOWNLOADING",
+            description="active product download before cancellation",
         )
         request_product_torrent_action(target, cancelling_torrent_id, "pause")
         request_product_torrent_action(target, cancelling_torrent_id, "remove")
@@ -2605,7 +2646,18 @@ def run_product_dynamic_saf_profile(
             target.shell(["rm", sentinel], check=False)
         for exact_path in (output_root, staging_root, part_path):
             target.shell(["rm", "-rf", exact_path], check=False)
-        probe.remove_grant_folder(target, grant_storage)
+        try:
+            probe.remove_grant_folder(target, grant_storage)
+        except probe.ProbeFailure as error:
+            grant_root = probe.grant_path(grant_storage)
+            remaining = target.shell(
+                ["find", grant_root, "-maxdepth", "6", "-print"],
+                timeout=15,
+                check=False,
+            ).stdout
+            raise BootstrapFailure(
+                f"{error}; remaining run-owned objects:\n{remaining}"
+            ) from error
         if tracker_transport is not None:
             tracker_transport.close()
         if controlled_tracker is not None:
@@ -2727,10 +2779,11 @@ def run_product_pure_v2_saf_profile(
             "saf_root_health source=startup available=true",
             "healthy SAF root after pure-v2 restart",
         )
-        restart_logs = wait_product_log(
+        restart_logs = wait_product_torrent_state(
             target,
-            f"torrent={torrent_id} kind=patch state=COMPLETE",
-            "complete pure-v2 torrent after restart recheck",
+            torrent_id,
+            state="COMPLETE",
+            description="complete pure-v2 torrent after restart recheck",
             timeout=30,
         )
         if (
