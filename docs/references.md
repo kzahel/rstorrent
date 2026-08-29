@@ -403,6 +403,23 @@ inform username routing, one inner protocol, opaque forwarding, fairness,
 generation ownership and cleanup. RSTorrent does not adopt YepAnywhere's SRP,
 NaCl, resume, HTTP-like messages, limits or hosted deployment.
 
+Tactical `192` refreshed the clean sibling at commit
+`506ce0528ffe3ef44c5e4ee90780b44eb80d4a15`, especially
+`topics/mobile-server-pairing.md`, `topics/security-client-audit.md`,
+`topics/client-source-runtime-topology.md`,
+`topics/trusted-client-packaging.md`,
+`docs/project/mobile-companion-app.md`,
+`docs/project/ws-auth-state-model.md`,
+`packages/server/src/routes/ws-srp-handlers.ts`, and
+`packages/server/src/remote-access/RemoteSessionService.ts`. These paths inform
+the accepted separation among server identity, client continuity, expiring
+resume authority, live connections, route selection, revocation and operator
+audit. RSTorrent adopts the product and failure lessons, not YepAnywhere's SRP,
+symmetric resume construction, P-256 client proof, storage format, identifiers
+or wire contract. Tactical `192` declares its own initial expiry bounds; the
+exact RSTorrent resume construction remains a source-first pre-persistence
+decision inside that tactical.
+
 No external source, fixture, test vector, dependency or generated asset was
 imported by the tactical design or this reference record.
 

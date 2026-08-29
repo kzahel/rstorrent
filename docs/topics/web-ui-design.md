@@ -189,6 +189,31 @@ access owns immediate browser approval, session listing and revocation,
 sign-out, and restart-pairing recovery. Tauri, demo, Basic-only, and bearer
 surfaces do not show an inert cookie-session category.
 
+Ready Tactical
+[`192`](../tactical/192-production-owner-relay-access.md) adds a distinct
+capability-gated **Remote access security** category rather than overloading
+that loopback **Web access** panel. After the first successful remote password
+login, the browser offers an explicit primary **Private browser — stay
+authorized** choice and a secondary **Shared browser — this page only** choice.
+A returning private browser shows bounded **Reconnecting securely** progress
+while it attempts challenge-bound resume before presenting the password form;
+expiry or ordinary resume rejection explains that the password is required,
+while host-identity mismatch remains a separate blocking warning.
+
+The security category is available to local desktop/headless administration
+and the authenticated remote capability profile. It shows every current
+authorized browser before retained expired/revoked history, marks **This
+browser**, exposes resume deadlines and live circuits, and offers rename,
+individual revoke, **Revoke all other browsers**, **Require password on every
+browser**, current-browser sign-out and explicit history clearing. A second
+bounded activity section distinguishes full password login, automatic resume,
+authorization changes, circuit open/close, relay status and aggregated failed
+attempt pressure. Destructive actions identify exactly which live circuits and
+future resumes they terminate, require proportionate confirmation and report
+completion only after server-side invalidation. Client-supplied labels and
+browser descriptions remain escaped bounded display metadata, not trust
+badges.
+
 Tactical
 [`178`](../tactical/178-crostini-storage-guidance.md) applies the same
 capability-gating rule to storage help. Only an exact `rstorrent-crostini`

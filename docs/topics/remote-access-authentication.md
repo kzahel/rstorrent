@@ -10,7 +10,9 @@ dumb relay and unchanged application trace pass as a controlled local proof.
 It does not authorize a production listener, public relay, durable owner
 authority or stable remote wire contract. Decision-ready Tactical
 [`192`](../tactical/192-production-owner-relay-access.md) owns that next
-boundary. Completed Tactical `174` separately permits one
+boundary, including required challenge-bound browser resume and a bounded
+owner-visible authorization/security ledger. Completed Tactical `174`
+separately permits one
 trusted Tailscale operator deployment; tailnet admission is not the owner
 authentication designed here.
 
@@ -21,7 +23,10 @@ acknowledgement and benign call identically to the direct adapter. Changed
 pin, wrong password, unknown route and modified handshake cases fail, while
 joined shutdown leaves zero circuits and pumps. The complete Argon2id,
 bundle, message and owner high-water results live in Tactical `190`. No
-supported remote-access capability exists yet.
+supported remote-access capability exists yet. Tactical `192` now requires a
+private browser to resume ordinary reconnects without another password entry
+and requires the host to list and revoke every authorization and live circuit
+before that claim can change.
 
 ## Purpose And Scope
 
@@ -126,9 +131,13 @@ The desired ordinary owner experience is:
    transmitting the passphrase to the relay or making the relay the identity
    authority.
 4. Establish an authenticated end-to-end encrypted application connection.
-5. Optionally remember that installation as a named, individually revocable
-   device.
-6. Retain passphrase login as the universal path when a remembered credential
+5. On a private browser, authorize that installation once and resume ordinary
+   socket loss, reload, browser restart and route reattachment without entering
+   the passphrase again; a shared-browser choice retains no durable authority.
+6. Inspect every authorized browser, resume deadline and live circuit on the
+   host; rename or revoke one, revoke every other browser, require passwords
+   everywhere, and review a bounded security-event history.
+7. Retain passphrase login as the universal path when a remembered credential
    is absent, expired, revoked or cleared.
 
 Mandatory QR pairing is not the root of owner access. A QR code may later
@@ -233,16 +242,19 @@ username/passphrase model while keeping its relay-scoped routing name, random
 host ID, OPAQUE host setup and relay registration credential distinct.
 
 The completed proof uses a portable-profile host-key tier and requires a
-complete password login after every disconnect. Account delegation,
-Google/OIDC login, cloud sync, remembered devices, resumption and
-hardware-backed host keys remain
-separate later decisions. Tactical `190` has closed the source-first dependency
+complete password login after every disconnect. Tactical `192` deliberately
+supersedes that proof limitation for the first production slice: it requires
+one bounded registry of named browser authorizations, challenge-bound automatic
+resume, exact expiry/revocation and an owner-visible security ledger. Account
+delegation, Google/OIDC login, cloud sync, account-wide device identity,
+passkeys and hardware-backed host keys remain separate later decisions.
+Tactical `190` has closed the source-first dependency
 gate and fixed RFC 9807 Ristretto255/SHA-512/3DH, Argon2id 64 MiB/three
 passes/parallelism one, HKDF-SHA-512 and directional ChaCha20-Poly1305 records.
 Its real Chrome matrix keeps that KSF point within the controlled proof bounds.
-Public-relay, representative low-end-device and durable-authority evidence
-remain explicitly outside that proof; Tactical `192` fixes their production
-decision boundary without activating it.
+Public-relay, representative low-end-device, durable-authority, resume and
+authorization-audit evidence remain explicitly outside that proof; Tactical
+`192` fixes their production decision boundary without activating it.
 
 ## SRP And OPAQUE Background
 
@@ -371,9 +383,9 @@ without moving long-term private bytes through Rust, Kotlin or JavaScript.
 
 ## Device Identity And Resumption
 
-PAKE authenticates password knowledge, not a physical device. After a
-successful password login, an installation may offer to become a remembered
-device:
+PAKE authenticates password knowledge, not a physical device. Tactical `192`
+requires a supported private browser to become a named authorized client after
+a successful password login:
 
 1. Generate a device key using the best available local platform facility.
 2. Prove possession of the device private key inside the authenticated E2E
@@ -381,20 +393,34 @@ device:
 3. Ask the host to create a bounded device record with a stable random ID,
    public key, user-visible label, creation time, last-use state and revocation
    state.
-4. Authenticate later connections with that device key through a reviewed AKE
-   or signature-bound exchange.
+4. Authenticate later connections with that client proof through a reviewed
+   challenge-bound exchange that mutually proves the host and client before
+   the application connection becomes ready.
 
 A displayed device fingerprint is a human representation of the public key,
 not the authority itself. Browser or hardware characteristics, user-agent
 strings and probabilistic fingerprinting are not cryptographic device
 identity.
 
-Session resumption is a connection optimization beneath the same device
-principal. It must not persist the root PAKE traffic key as a transferable
-full-owner bearer credential. Resume proof must be fresh, challenge-bound,
-replay-resistant, expiry-bounded, independently revocable and cryptographically
-bound to the host identity, device identity, protocol floor and parent
-authorization.
+Session resumption is a connection optimization beneath the same authorized
+client principal. It must not persist the root PAKE traffic key as a
+transferable full-owner bearer credential. Resume proof must be fresh,
+challenge-bound, replay-resistant, expiry-bounded, independently revocable and
+cryptographically bound to the host identity, client identity, relay
+deployment and username, protocol floor, authorization generation and parent
+authorization. A supported private browser attempts it automatically before
+showing the password form; a shared-browser login may keep only page-lifetime
+resume state.
+
+Tactical `192` bounds the initial host registry at 32 current authorized
+clients and 128 non-authorizing expired/revoked tombstones retained for 180
+days. Each record exposes owner-safe label, creation, last-full-login,
+last-resume, last-seen, expiry, client build, route, active-circuit and
+revocation facts. A separate bounded security ledger retains authenticated
+authorization and circuit transitions while failed attempts use aggregate
+buckets so hostile traffic cannot evict owner actions. Public keys or verifiers
+establish proof; user agent, browser description, label and a client-asserted ID
+do not.
 
 Changing the passphrase, revoking one device, signing out everywhere and
 replacing the host are distinct operations. Their invalidation matrix must be
@@ -489,9 +515,11 @@ before selecting parameters.
 ### YepAnywhere
 
 The local `~/code/yepanywhere` sibling was inspected during the 2026-08-04
-discussion at commit `cc4732bf8d4ca9d0b4cce1c8eaf13de1ea4f11be` and its
+discussion at commit `cc4732bf8d4ca9d0b4cce1c8eaf13de1ea4f11be`, its
 relay-relevant paths were refreshed for Tactical `190` at commit
-`dcf0449d5336c866d37c50cb1f2e1df66ed50663`. It is a product, architecture and
+`dcf0449d5336c866d37c50cb1f2e1df66ed50663`, and its clean resume/mobile audit
+direction was refreshed for Tactical `192` at commit
+`506ce0528ffe3ef44c5e4ee90780b44eb80d4a15`. It is a product, architecture and
 failure reference, not an RSTorrent dependency or wire contract. Relevant
 paths include:
 
@@ -507,7 +535,20 @@ paths include:
   session ownership and expiry;
 - `packages/shared/src/crypto/srp-types.ts`: handshake and resume messages;
 - `docs/project/ws-auth-state-model.md`: trusted-local and SRP-established
-  authentication remain distinct; and
+  authentication remain distinct;
+- `topics/mobile-server-pairing.md`: Android keeps one logical paired-server
+  profile across direct and relay routes, stores expiring resume material under
+  Android Keystore and requires fresh server proof before attaching a route;
+- `topics/security-client-audit.md`: a bounded server registry distinguishes
+  client identity, authentication observations, resume credentials, active
+  transport and revocation while Android proves a per-server continuity key;
+- `docs/project/mobile-companion-app.md` and
+  `topics/trusted-client-packaging.md`: packaged Android assets, private
+  credential ownership, challenge-bound mutual resume and hosted-client
+  compromise remain distinct trust boundaries;
+- `topics/client-source-runtime-topology.md`: one future logical server identity
+  may survive direct/relay route changes while the current route-scoped key is
+  explicitly not server identity; and
 - `topics/relay-origin-and-share-gating.md`: owner Remote Access is E2E while
   the current public-share exception is relay-readable;
 - `docs/project/relay-design.md`, `topics/relay-client-mux.md`,
@@ -521,6 +562,10 @@ Lessons adopted as investigation inputs:
   avoids central-account recovery dependence;
 - password authentication, device identity and resume state are different
   concerns even when one implementation initially combines them;
+- a logical server/client relationship should survive an authenticated route
+  change without treating a relay route as server identity;
+- an operator needs durable client, authentication, resume, circuit and
+  revocation facts rather than one opaque "logged in" flag;
 - encrypted transport must wrap the same inner semantic application protocol
   used by direct connections;
 - challenge-bound resume and protocol-floor pinning are security behavior, not
@@ -528,7 +573,8 @@ Lessons adopted as investigation inputs:
 - relay routing, authentication, record encryption and application authority
   require separate state owners; and
 - persisted symmetric resume material can enlarge profile-clone and client
-  impersonation consequences.
+  impersonation consequences; a client continuity key identifies the client to
+  the server but is not itself a server public-key identity.
 
 RSTorrent does not adopt YepAnywhere's SRP library, NaCl construction,
 session-file shape, field names, protocol versions, limits or public-share
@@ -602,15 +648,20 @@ not a stopping condition for Tactical `190`'s explicit portable-profile tier.
 ### Product and recovery evidence
 
 New-device login, blocking host-identity change, secret handling and honest
-user-facing claims apply proportionately to Tactical `190`. Remembered-device
-and complete invalidation-matrix behavior belongs to the later
-production/device tactical rather than being implied by the proof.
+user-facing claims apply proportionately to Tactical `190`. Authorized-client,
+resume, audit and complete invalidation-matrix behavior now belongs to
+production Tactical `192` rather than being implied by the proof.
 
 - New-device passphrase login works without a central account or an existing
   paired device when the original host is healthy.
 - Remembering a device creates an independently named and revocable identity.
+- Ordinary private-browser reconnect, reload, restart and route reattachment
+  resume without password entry while shared-browser state does not persist.
 - Password change, single-device revocation, sign-out-everywhere, host reset,
   profile restore and host replacement have an explicit invalidation matrix.
+- The host lists every authority-bearing client and live circuit, preserves a
+  bounded non-authorizing security history and prevents failed-attempt floods
+  from displacing authenticated owner actions.
 - Existing clients present a blocking host-identity change rather than
   repinning or falling back silently.
 - Logs, diagnostics, crashes and support exports contain no password,
@@ -634,8 +685,9 @@ enable/disable/change/recovery UX, desktop and configured-headless host
 lifecycle, an independently delivered remote-only browser capability profile,
 challenge-bound public-relay operation and representative external evidence.
 It requires explicit activation and separate authority before any public
-deployment. Remembered devices and account delegation remain separate
-decisions even after the password path succeeds.
+deployment. Its bounded browser authorization/resume registry and security
+ledger are required, while passkeys, account-wide identity, account delegation
+and multi-user roles remain separate decisions.
 
 Friend sharing, fragment-held capability links, offline encrypted snapshots,
 UPnP/NAT traversal, wake-up delivery, public accounts and multi-user

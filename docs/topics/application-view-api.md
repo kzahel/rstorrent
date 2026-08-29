@@ -16,7 +16,11 @@ cursor, acknowledgement or reducer rule. Its controlled encrypted relay trace
 uses the existing application WebSocket client and `ViewController`; direct
 and relayed negotiation, initial snapshot, view replacement/update, exact
 acknowledgement and benign command reduce identically across three observed
-states. Bulk attachment and media breadth remain outside that proof.
+states. Bulk attachment and media breadth remain outside that proof. Ready
+Tactical [`192`](../tactical/192-production-owner-relay-access.md) adds a
+bounded generated remote-security projection for authorized clients and live
+circuits plus bounded security-ledger retrieval; those values remain
+application semantics rather than properties inferred from a WebSocket.
 
 Completed Tactical
 [`143`](../tactical/143-dual-identity-and-persistence-foundation.md) changes
@@ -327,6 +331,23 @@ A view set is:
 
 A view set is not authentication, durable user data, or the engine session.
 Its identifier locates a resource but never grants authority to use it.
+
+Tactical `192`'s remote-security projection follows the same rule. It may show
+bounded client/circuit IDs, labels, authentication method, timestamps, expiry,
+route/build observations, a non-authorizing public-key fingerprint when
+applicable, and current/revoked state only after the adapter has already
+admitted an owner. The complete current authorization set is one
+coherent bounded snapshot at a security-authority generation; live circuit and
+authorization changes may use typed deltas. The retained event ledger uses
+bounded newest-first pagination or another explicitly bounded retrieval rather
+than forcing historical rows into every reactive update. No projected ID,
+client-supplied label or **This browser** field is accepted back as proof of
+authority; the verified transport context owns that distinction.
+
+Every live remote circuit is projected even when a shared-browser password
+login deliberately created no durable client authorization. That circuit uses
+a bounded ephemeral marker and authentication method rather than inventing a
+remembered-client record merely to make the table uniform.
 
 ## Accepted Architecture
 
@@ -1428,7 +1449,8 @@ interactive machine.
    decode/reduce cost, rendering, and memory before selecting binary encoding.
 8. Tactical `190` proves the same generated contract and reducer over an
    OPAQUE-authenticated encrypted relay record without adding a remote view
-   variant. This step is complete; Tactical `192` owns production delivery.
+   variant. This step is complete; Tactical `192` owns production delivery,
+   resumable authorized-client context and its bounded security projection.
 
 Tacticals `033`, `034`, `035`, `048`, `060`, and `065` completed the first six
 steps. Further views should follow observed inspection value. Binary encoding

@@ -19,7 +19,8 @@ and system-wide service ownership do not exist yet. Completed Tactical
 ephemeral OPAQUE native/Wasm dumb-relay composition. It does not broaden these
 deployment claims. Ready Tactical
 [`192`](../tactical/192-production-owner-relay-access.md) owns the future
-desktop/configured-headless host lifecycle and durable authority boundary.
+desktop/configured-headless host lifecycle, durable authority, authorized-
+browser resume and operator security-audit boundary.
 
 ## Purpose And Scope
 
@@ -241,7 +242,7 @@ combinations that look secure but are not.
 | Private reverse-proxy host | One explicit unicast backend address | Bounded Basic credential, with password from a secret file | Public HTTPS/WSS terminated by an operator-owned proxy | Implemented maintainer preview |
 | Trusted private LAN | One exact non-loopback RFC 1918 IPv4 authority | None; every reachable client has full owner control | Plain HTTP/WS with exact Host and Origin, no confidentiality | Implemented operator mode |
 | Trusted Tailscale overlay | Exact loopback backend plus one exact HTTPS `*.ts.net` authority | None; every identity admitted by tailnet policy has full owner control | Tailscale transport and Serve HTTPS/WSS | Implemented operator mode |
-| Owner remote access | Direct or relay-mediated host | Passphrase bootstrap plus eventual remembered-device identity | Authenticated end-to-end records; relay remains opaque | Direction recorded, not implemented |
+| Owner remote access | Direct or relay-mediated host | Passphrase bootstrap plus bounded named-browser authorization, automatic resume and exact revocation | Authenticated end-to-end records; relay remains opaque | Tactical `192` ready, not implemented |
 | Development-none | Ephemeral loopback only | None | Local test traffic only | Implemented development mode |
 
 The immediate operator deployment may place RSTorrent behind Caddy, nginx, or
@@ -456,8 +457,8 @@ The important remaining gaps are:
 - persistent extension application control rather than one-shot launch;
 - generic private-overlay behavior and per-identity product authorization
   beyond the implemented Tailscale trusted-network operator mode;
-- owner remote authentication, remembered devices, host identity, and direct
-  versus relay delivery;
+- owner remote authentication, host identity, authorized-browser resume,
+  complete authorization/circuit audit, and direct versus relay delivery;
 - ratio/time seeding goals and seed admission/ranking policy; and
 - release, update, compatibility, and recovery evidence for an unattended
   headless installation.
@@ -484,7 +485,9 @@ invariants but a different OS shell and local authentication boundary.
 Completed Tactical `190` remains separate from both and used an ephemeral
 loopback application owner rather than changing a package. Ready Tactical
 `192` must integrate a durable remote owner into the desktop and configured
-headless lifecycles explicitly; proof success does not enable either host.
+headless lifecycles explicitly, including persistent resume authorization,
+revocation-driven live closure and the bounded operator security ledger; proof
+success does not enable either host.
 
 ## Non-Goals
 

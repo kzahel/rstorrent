@@ -303,6 +303,20 @@ capabilities to dispatch, apply replay and rate limits, and redact sensitive
 source data. The application service must not trust an `is_admin`-style value
 inside an envelope.
 
+Ready Tactical
+[`192`](../tactical/192-production-owner-relay-access.md) makes remote-security
+management an application-owned semantic domain above that rule. A capable
+local or authenticated-owner adapter may list bounded authorized-client,
+resume-expiry, live-circuit and security-ledger views and may rename or revoke
+one authorization, revoke all others, require passwords everywhere, sign out
+the verified current browser or clear retained non-authorizing history. Client
+and circuit IDs locate records but never grant access; **this browser** and
+**other browsers** derive from verified transport context rather than caller
+claims. Revocation commits before owned connection generations close, and a
+successful receipt means future resume proof is already fenced. These security
+operations use their own authority generation and receipts rather than the
+torrent/profile revision or the complete client-settings draft.
+
 ## Compatibility Posture
 
 The Rust semantic types may evolve while there is only an in-process client

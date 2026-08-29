@@ -12,6 +12,9 @@ Topics:
 [`remote-access-authentication`](../topics/remote-access-authentication.md),
 [`application-connection-architecture`](../topics/application-connection-architecture.md),
 [`runtime-configurations-and-headless-deployment`](../topics/runtime-configurations-and-headless-deployment.md),
+[`application-control`](../topics/application-control.md),
+[`application-view-api`](../topics/application-view-api.md),
+[`web-ui-design`](../topics/web-ui-design.md),
 [`client-surfaces`](../topics/client-surfaces.md), and
 [`capability-readiness`](../topics/capability-readiness.md).
 
@@ -26,20 +29,33 @@ slice turns that evidence into one deliberately narrow supported capability:
 > Linux headless host, then a freshly loaded supported browser uses the owner's
 > relay-scoped username and passphrase to establish the existing bounded
 > application connection through the operated relay with end-to-end encryption
-> and blocking host pinning.
+> and blocking host pinning. A private browser may then retain one revocable
+> authorization and resume ordinary reconnects without another password entry,
+> while the owner can inspect and terminate every authorization and live
+> circuit from the RSTorrent host.
 
-This tactical stops only when enable, login, ordinary reconnect, passphrase
-change, disable, local recovery, host-identity warning, relay outage and release
-rollback pass on the declared hosts and representative external browsers. The
-proof harness is removed from product selection and remains an internal gate.
+This tactical stops only when enable, first login, private-versus-shared-browser
+choice, automatic resume, expiry, individual and global revocation, complete
+authorization inspection, passphrase change, disable, local recovery,
+host-identity warning, relay outage and release rollback pass on the declared
+hosts and representative external browsers. The proof harness is removed from
+product selection and remains an internal gate.
 
 ## Accepted Product Boundary
 
 - The user model remains **username plus passphrase**. There is no Google/OIDC
   login, RSTorrent account, email recovery, account delegation, encrypted cloud
   sync, friend sharing or multi-user role.
-- A complete password login is required for every connection. Remembered
-  devices, passkeys, resume credentials and QR enrollment remain later work.
+- A complete password login remains the universal new-browser, expired-session
+  and recovery path. After one successful login, a private browser may create a
+  distinct named authorization and use fresh challenge-bound resume for routine
+  socket loss, reload, browser restart and relay-route reattachment until that
+  authorization expires or is revoked. A shared-browser choice retains only
+  page-lifetime resume state and requires the password after the page closes.
+- Authorized browsers are distinct revocable client identities, but every one
+  has the same single-owner authority in this slice. Passkeys, QR enrollment,
+  delegated roles and authorization without an initial password remain later
+  work.
 - Initial supported hosts are the ordinary desktop application and configured
   Linux headless service. Android, iOS, an extension-owned backend and a generic
   remote daemon are not host surfaces in this slice.
@@ -54,6 +70,10 @@ proof harness is removed from product selection and remains an internal gate.
   clonable; no hardware-backed, non-exportable or attested identity is claimed.
 - A public relay is an untrusted rendezvous and opaque byte forwarder. It never
   terminates application encryption or becomes an application principal.
+- The application owner exposes one security surface that lists every current
+  authorized browser and live circuit, supports exact revocation, and retains a
+  bounded security-event history. A transport identifier, browser label or
+  application-frame field never creates authority by itself.
 
 ## Durable Authority And State Transitions
 
@@ -65,7 +85,8 @@ One versioned application-private remote-authority record owns:
 - relay deployment ID and selected route;
 - independently random relay registration credential;
 - protocol/suite floor; and
-- enabled/disabled generation plus last bounded operational status.
+- enabled/disabled and authorization generations plus last bounded operational
+  status.
 
 The record never stores the passphrase. It is written with owner-only platform
 permissions using the repository's existing protected-secret and atomic-replace
@@ -74,28 +95,114 @@ by the application owner. Desktop and headless paths must prove their exact
 permission and backup/restore behavior; a portable profile containing the full
 record is explicitly a clonable authority.
 
-The only state transitions in this slice are:
+The remote-authority domain also owns at most 32 current authorized-client
+records. A record contains a random client ID, bounded user-visible label, the
+selected resume verifier or public key, creation and last-full-login times,
+last-resume and last-seen times, idle and absolute expiry, authorization
+generation, client-build and route observations, a non-authorizing public-key
+fingerprint when the selected construction supplies one, active-circuit count,
+and current state. Expired or revoked clients lose their proof material and
+become at most 128 non-authorizing tombstones retained for 180 days. User agent,
+label and browser description remain bounded client-reported metadata rather
+than proof of identity. No private client key, raw public key or reusable client
+credential enters a generated DTO, log, metric, diagnostic capture or support
+export.
+
+The state transitions in this slice are:
 
 1. **Enable:** local authenticated UI validates the route and confirmed
    passphrase, creates a complete candidate generation, registers it, and
    atomically makes it current only after the relay and password record are
    complete.
-2. **Passphrase change:** a locally authenticated owner performs a fresh OPAQUE
+2. **Authorize browser:** after a complete password login and an explicit
+   private-browser choice, the browser proves possession of fresh client
+   credential material inside the authenticated circuit. The host commits one
+   named authorization before returning its resume handle. Shared-browser login
+   creates no durable authorization.
+3. **Resume:** client and host prove fresh possession through a reviewed,
+   challenge-bound exchange that binds the host identity, client ID, relay
+   deployment and username, authorization generation, protocol/suite floor and
+   fresh client/server nonces. Only successful mutual proof creates new record
+   keys and touches last-used state; an old traffic key is never persisted as a
+   transferable resume credential.
+4. **Revoke, sign out or expire:** invalidate the exact authorization before
+   closing all of its circuits, fence late proofs by generation, and retain a
+   non-authorizing audit tombstone. **Revoke all other browsers** and **Require
+   password on every browser** are bounded compositions over the same
+   transition, not distinct authority paths.
+5. **Passphrase change:** a locally authenticated owner performs a fresh OPAQUE
    registration under the existing host identity, atomically replaces the
-   password file, and terminates every old circuit. There is no remote-only
-   forgotten-password change.
-3. **Relay credential rotation:** register a fresh credential before retiring
+   password file, revokes every resume authorization and terminates every old
+   circuit. There is no remote-only forgotten-password change.
+6. **Relay credential rotation:** register a fresh credential before retiring
    the prior generation; late old sockets are generation-fenced.
-4. **Disable:** stop and join the host owner, release the route, terminate live
-   circuits, durably remove all remote authority, and report whether protected
-   file removal completed. Torrent/profile data remains untouched.
-5. **Local recovery/reset:** a locally authenticated owner who lost the
+7. **Disable:** stop and join the host owner, release the route, revoke every
+   client, terminate live circuits, durably remove all authority-bearing
+   material, and report whether protected file removal completed.
+   Non-authorizing security history remains under its declared retention until
+   the owner explicitly clears it. Torrent/profile data remains untouched.
+8. **Local recovery/reset:** a locally authenticated owner who lost the
    passphrase disables and reprovisions. Existing clients see a blocking host
    identity change if reset creates a new host authority; they never silently
    repin.
 
 Crash/restart at every transition must resolve to the complete prior or complete
-new generation. A partial record cannot enable a route.
+new generation. A partial record cannot enable a route, authorize a browser or
+resume a circuit.
+
+## Resume And Security Audit
+
+Resume is required product behavior rather than a later convenience. A
+supported private browser generates its client credential through a
+non-exportable WebCrypto key where the selected construction and browser permit
+that claim, stores only the minimum credential and public identifiers in the
+dedicated remote-client origin, and automatically attempts resume before
+showing the password form. A valid authorization uses a seven-day sliding idle
+deadline and a 30-day absolute lifetime from the last complete password login;
+successful activity advances the idle time with at most one durable touch per
+hour. Expiry, explicit sign-out, individual revocation, passphrase change,
+disable, reset or authorization-generation replacement makes the next
+connection require the password. Resume rejection never silently creates a
+new authorization or weakens a host-identity warning.
+
+Before persisted formats freeze, implementation must re-audit the current
+YepAnywhere challenge-bound resume, Android paired-server and security-client
+registry as product and failure references, then select and record the exact
+reviewed RSTorrent resume construction. The construction must provide fresh
+mutual proof, fresh record keys, replay and reflection rejection, client and
+host binding, key separation, bounded server state and prompt revocation. A raw
+OPAQUE traffic key, an unbound bearer token or a client-asserted device ID is
+not an acceptable shortcut.
+
+The owner-facing **Remote access security** surface is available through local
+desktop/headless administration and the authenticated remote capability
+profile. It shows, without a default filter that can hide authority:
+
+- every current authorization with label, **This browser** marker, created,
+  last password login, last resume, last seen, idle/absolute expiry, current
+  versus expired/revoked state, active circuit count, authentication method,
+  client build, bounded route/browser observations and the public-key
+  fingerprint when applicable;
+- every live circuit with connection generation, start/last-activity time,
+  route, its client authorization or shared-browser ephemeral marker, and
+  eventual close reason; and
+- individual rename/revoke, **Revoke all other browsers**, **Require password
+  on every browser**, **Sign out this browser**, and explicit history-clear
+  actions with proportionate confirmation.
+
+One local security ledger retains at most 1,024 authenticated state-changing
+events for 180 days: enable/disable/reset, password changes, authorization
+creation/rename/revocation/expiry, successful full login/resume, circuit
+open/close, host-identity recovery and relay-credential generation changes.
+Failed authentication and rate-limit pressure use at most 256 aggregate time
+buckets retained for 30 days, so an attacker cannot create one durable row per
+attempt or evict owner actions. Events have stable random IDs, timestamps,
+applicable client/circuit IDs, authentication method, result, route/deployment,
+client-build observation and bounded reason/close class. They contain no
+passphrase, OPAQUE record, raw private/public credential bytes, resume secret,
+traffic key, protocol payload, torrent data or unbounded attacker text and are
+excluded from ordinary diagnostics/support export. Revoked records and ledger
+entries are audit evidence only and can never authorize a connection.
 
 ## Client Delivery And Trust
 
@@ -114,9 +221,11 @@ version without sending either value inside OPAQUE secrets.
 
 The browser retains a host pin only after authenticated readiness. Pin storage
 is scoped by relay deployment ID plus username. Clearing browser storage
-returns to password-authenticated first use; an existing mismatched pin remains
-a blocking identity warning requiring an explicit local recovery explanation,
-not another password prompt.
+removes both that browser's local resume ability and its local trust record but
+does not erase the server-side authorization or audit entry; the owner can
+identify and revoke the abandoned authorization. A surviving mismatched pin
+remains a blocking identity warning requiring an explicit local recovery
+explanation, not a resume fallback or another password prompt.
 
 ## Relay Operation And Bounds
 
@@ -133,7 +242,7 @@ application DTOs. It adds only the operational breadth needed for one service:
   per process shard initially, and exact aggregate admission before upgrade;
 - the proof message/queue/deadline/lifetime bounds or conservative tightening;
 - per-route, per-source and aggregate token buckets for claims, pairing and
-  unauthenticated attempts, with bounded expiry and no attacker-created task;
+  password/resume attempts, with bounded expiry and no attacker-created task;
 - generic client-facing unknown/offline/busy/authentication failure; and
 - metadata-only metrics, retention limits and incident diagnostics with no
   opaque payload capture by default.
@@ -149,9 +258,10 @@ wire-compatibility promise remain absent.
 | --- | --- | --- |
 | Application remote owner | durable generation, local commands, host loop and status | disable, application shutdown or fatal authority error cancels and joins all children |
 | Host route generation | one challenged relay claim and one waiting socket | replacement, timeout, relay failure or owner shutdown releases only its generation |
-| Authentication attempt | bounded OPAQUE state and deadline permit | success, generic failure, disconnect or 20-second deadline wipes state and releases permit |
+| Authorized client registry | at most 32 current named client proofs, 128 non-authorizing tombstones, resume deadlines, revocation and security ledger | disable/reset removes authority; expiry/revocation fences proofs and closes owned circuits; shutdown flushes bounded state |
+| Authentication attempt | bounded OPAQUE or resume state and deadline permit | success, generic failure, disconnect or 20-second deadline wipes state and releases permit |
 | Secure circuit | record state and one existing application connection | authenticated close, 24 hours, sequence exhaustion, application/relay close or owner shutdown |
-| Browser transport | passphrase input, Wasm states, host pin and application adapter | failure/page close wipes best-effort state and requires a new password login |
+| Browser transport | passphrase input when needed, Wasm states, host pin, client credential, resume attempt and application adapter | failure/page close wipes ephemeral state; a private authorization may resume through a fresh proof while shared-browser state cannot |
 | Relay route/pair | durable reservation metadata and bounded opaque pumps | generation replacement, timeout, either close or relay shutdown cancels and joins both pumps |
 
 The application protocol still receives an authenticated owner context and
@@ -161,21 +271,26 @@ principal asserted inside a client frame.
 ## Validation Sequence
 
 1. Re-audit the exact Tactical `190` dependency graph, current RFC errata and
-   advisories; pin any justified update before changing persisted formats.
-2. Add the versioned durable-authority state machine and crash matrix without a
-   public listener.
-3. Add local desktop/headless enable, change, disable and recovery commands plus
-   truthful status UI. Prove no secret reaches generated DTOs or diagnostics.
+   advisories plus the pinned YepAnywhere resume/security-client paths; select
+   and record the exact resume/client-proof construction before changing
+   persisted formats.
+2. Add the versioned durable-authority, authorized-client and security-ledger
+   state machines and their crash matrix without a public listener.
+3. Add local desktop/headless enable, change, disable, recovery, authorization
+   inspection/revocation and audit commands plus truthful status UI. Prove no
+   secret reaches generated DTOs, the ledger or diagnostics.
 4. Turn the proof host adapter into a product-owned task beneath both declared
    host lifecycles; retain exact cancellation, deadlines and bulk rejection.
 5. Build the remote-only React capability profile and independently delivered
-   immutable client bundle. Prove first-use/repeated/mismatched pin behavior in
-   real browsers.
+   immutable client bundle. Prove first-use/repeated/mismatched pin,
+   private/shared choice, reload/restart/relay-route-reattachment resume,
+   expiry, sign-out, revocation and audit behavior in real browsers.
 6. Replace proof claim registration with challenge-bound durable relay routing,
    rate limits and operational cleanup. Run locally and in an isolated staging
    environment before any public mutation.
-7. Run the complete direct-versus-relayed trace, active relay, clone, crash,
-   flood, restart, outage and rollback matrices.
+7. Run the complete direct-versus-relayed trace, active relay, password/resume
+   clone, crash, replay, revocation race, audit-retention, flood, restart,
+   outage and rollback matrices.
 8. With separate deployment authorization, perform bounded external desktop
    and headless campaigns from at least two network paths and supported desktop
    plus phone-sized browsers. Remove or roll back all staging resources unless
@@ -185,15 +300,26 @@ principal asserted inside a client frame.
 
 - Pure core, Wasm/browser and dependency gates from Tactical `190` remain green.
 - Authority enable/change/disable/reset passes atomic crash injection at every
-  write and task transition, with exact secret-file permissions and cleanup.
+  write and task transition, with exact secret-file permissions and cleanup;
+  authorization/audit commits and revocations have the same prior-or-new rule.
 - Fresh, repeated and changed-pin browsers produce the documented results;
   wrong/unknown/offline/busy outcomes remain generic and bounded.
+- Private browsers resume without password entry across ordinary socket loss,
+  reload, process restart and relay-route reattachment; shared browsers do not
+  persist authority. Expired, signed-out, revoked, replayed, reflected, copied and
+  generation-stale resume attempts fail closed and require the documented full
+  login or identity-recovery path.
+- The local and remote security surface lists every authority-bearing record
+  and live circuit, closes revoked circuits promptly, keeps revoked state
+  non-authorizing, and preserves owner events under failed-attempt pressure
+  within the declared record and retention ceilings.
 - Direct and relayed negotiation, view snapshot/update/ack and benign command
   reduce identically on production adapters.
 - Active modification, replay, reordering, reflection, route/relay substitution
   and record attacks fail closed without partially admitted application state.
-- Password-file-only, relay-credential-only, portable-profile and complete
-  live-process clone scenarios retain the documented distinctions.
+- Password-file-only, relay-credential-only, resume-only, client-key-only,
+  portable-profile and complete live-process clone scenarios retain the
+  documented distinctions.
 - Slow/flood/name-churn pressure records CPU, resident memory, allocations,
   queues, task counts and rate-limit high waters; shutdown reaches zero owners.
 - Desktop and configured headless restart/update/rollback preserve torrents and
@@ -211,7 +337,9 @@ external staging runner.
 
 - Google/OIDC, cloud accounts, delegation, sync, email recovery or social
   identity.
-- Remembered devices, passkeys, QR enrollment, session resumption or roles.
+- Passkeys, QR enrollment, passwordless authorization, delegated roles or an
+  account-wide device identity spanning more than one RSTorrent host. The
+  bounded browser authorization and resume registry required above is in scope.
 - Hardware-backed host identity, attestation or non-exportable key migration.
 - Remote media/file serving, torrent byte upload, arbitrary HTTP/filesystem
   proxying or payload relay.
@@ -222,10 +350,12 @@ external staging runner.
 
 ## Escalation Contract
 
-Routine refactoring, fixtures, local listeners, isolated staging construction
-and conservative tightening inside these decisions are implementation work once
-the tactical is activated. Stop for direction before changing the selected
-OPAQUE construction, weakening password/pin behavior, adding an authority or
-recovery provider, broadening remote payload/media access, claiming a stronger
-key tier, publishing client/relay artifacts, mutating public DNS/TLS, or
-retaining a staging/public service beyond its authorized campaign.
+Routine refactoring, fixtures, local listeners, isolated staging construction,
+the source-first resume selection, and conservative tightening inside these
+decisions are implementation work once the tactical is activated. Stop for
+direction before changing the selected OPAQUE construction, weakening
+password/pin/resume behavior, making resume a transferable unbound bearer,
+adding an authority or recovery provider, broadening remote payload/media
+access, claiming a stronger key tier, publishing client/relay artifacts,
+mutating public DNS/TLS, or retaining a staging/public service beyond its
+authorized campaign.

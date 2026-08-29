@@ -16,7 +16,9 @@ encrypted circuit rather than creating another application API. Its native
 host, Wasm/browser transport and dumb relay are opt-in proof infrastructure,
 not production remote access; decision-ready Tactical
 [`192`](../tactical/192-production-owner-relay-access.md) owns that next
-boundary. Tactical `076` adds one
+boundary, including automatic challenge-bound reconnect for authorized
+browsers and an owner-visible authorization/circuit audit. Tactical `076` adds
+one
 deliberately limited maintainer-operated private host: bounded Basic
 authentication covers static, health, HTTP, and WebSocket routes; the gateway
 still enforces the exact public HTTPS Origin; and the production React build
@@ -531,8 +533,11 @@ connection, directional ChaCha20-Poly1305 records and no compression. Its
 direct and relayed React traces produce the same negotiation, three normalized
 reducer states, view update/acknowledgement and benign command result. The
 relay records routing/message metrics but has no OPAQUE or application
-dependency. Pairing, remembered devices, key rotation, padding, resumption and
-relay discovery remain later decisions.
+dependency. Production Tactical `192` now owns a bounded named-client registry,
+fresh mutual resume beneath the same application connection, exact
+expiry/revocation and the security ledger needed to inspect every authorization
+and live circuit. Key rotation beyond that fixed lifecycle, padding, relay
+discovery, multi-host identity and delegated roles remain later decisions.
 The investigation background and evidence gates live in
 [`remote-access-authentication.md`](remote-access-authentication.md). The
 application connection must not need to know whether an encrypted record
@@ -543,8 +548,9 @@ traveled directly or through a relay.
 | Owner | State and work | Termination |
 | --- | --- | --- |
 | Application service | Commands, durable revision, ViewHub and leased view sets | Joined product shutdown closes all sets and wakes waiters |
-| Logical client owner | Authenticated principal plus bounded client-instance identity | Explicit client close, principal revocation or application shutdown |
-| Connection generation | Negotiation, call registry, attachment map and global bounds | Socket/channel close, replacement generation or application shutdown |
+| Remote authorization registry | Bounded client proofs, resume generations, expiry/revocation and security ledger | Disable/reset removes authority; expiry or revocation fences proofs and closes every owned connection generation |
+| Logical client owner | Authenticated principal plus verified bounded client identity and authentication method | Explicit client close, authorization revocation or application shutdown |
+| Connection generation | Negotiation, call registry, attachment map, fresh record keys and global bounds | Socket/channel close, replacement generation, authorization revocation or application shutdown |
 | Call owner | Unique call ID, validated operation, result/error completion and timeout | Result, cancellation, disconnect or bounded timeout |
 | View attachment | Stream ID, view-set handle, applied cursor, pump, expected acknowledgement and queue accounting | Detach, takeover, view-set close, disconnect or shutdown |
 | Outbound scheduler | Fair per-stream queues, control lane and writer backpressure | Connection-generation cancellation and awaited writer join |
@@ -661,7 +667,8 @@ Steps one through six are complete in Tactical `060`. Future bounded work may:
    routing native calls through HTTP or JSON unnecessarily.
 8. Execute accepted Tactical `190` as the controlled relay-authentication and
    encryption proof using the already-proven direct application frames, then
-   authorize production exposure only through a separate tactical.
+   execute Tactical `192` for durable authority, challenge-bound resume,
+   authorization/circuit audit and separately authorized production exposure.
 
 Browser WebSocket work must not silently introduce a production remote
 listener. Relay work must not be combined into the initial local transport
@@ -696,8 +703,10 @@ Before WebSocket delivery is called implemented, prove:
 
 Future relay claims additionally require opaque-relay inspection evidence,
 end-to-end authentication and encryption tests, replay/tamper rejection,
-reconnect/resume, per-circuit isolation, ciphertext and queue bounds and a
-controlled direct-versus-relay semantic trace comparison.
+automatic private-browser reconnect/resume, shared-browser non-persistence,
+expiry and live revocation, complete authorization/circuit inspection,
+audit-retention pressure, per-circuit isolation, ciphertext and queue bounds
+and a controlled direct-versus-relay semantic trace comparison.
 
 ## Durable Drift Guards
 
