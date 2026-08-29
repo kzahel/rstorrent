@@ -893,10 +893,12 @@ remote access remain important. Completed Tactical
 OPAQUE native/Wasm dumb-relay composition. Completed Tactical
 [`192`](../tactical/192-production-owner-relay-access.md) implements the
 narrower local production-shaped password path, including bounded named-browser
-authorization, automatic resume and complete owner security review. A later
-separately authorized tactical must own public relay/client deployment,
-DNS/TLS, external-path evidence, operations and the first supported
-remote-access claim.
+authorization, automatic resume and complete owner security review. The
+follow-on fixed product profile, trusted-proxy/operator relay surface, Windows
+protected store and atomic `/remote/` Pages pipeline are implemented. Public
+activation, DNS/TLS evidence, external browser/ISP coverage, rollback/restore,
+soak and the first supported remote-access claim remain open in the active
+deployment/finalization work.
 Tactical
 `112` now owns IPv6 DHT operation and dual-stack
 listening. Closed Tactical `113` implements IPv6 firewall-pinhole control but

@@ -259,7 +259,7 @@ combinations that look secure but are not.
 | Private reverse-proxy host | One explicit unicast backend address | Bounded Basic credential, with password from a secret file | Public HTTPS/WSS terminated by an operator-owned proxy | Implemented maintainer preview |
 | Trusted private LAN | One exact non-loopback RFC 1918 IPv4 authority | None; every reachable client has full owner control | Plain HTTP/WS with exact Host and Origin, no confidentiality | Implemented operator mode |
 | Trusted Tailscale overlay | Exact loopback backend plus one exact HTTPS `*.ts.net` authority | None; every identity admitted by tailnet policy has full owner control | Tailscale transport and Serve HTTPS/WSS | Implemented operator mode |
-| Owner remote access | Direct or relay-mediated host | Passphrase bootstrap plus bounded named-browser authorization, automatic resume and exact revocation | Authenticated end-to-end records; relay remains opaque | Tactical `192` local validation implemented; deployment later |
+| Owner remote access | Direct or relay-mediated host | Passphrase bootstrap plus bounded named-browser authorization, automatic resume and exact revocation | Authenticated end-to-end records; relay remains opaque | Product/Pages/relay deployment code implemented; public activation and external support evidence pending |
 | Development-none | Ephemeral loopback only | None | Local test traffic only | Implemented development mode |
 
 The immediate operator deployment may place RSTorrent behind Caddy, nginx, or
@@ -503,9 +503,10 @@ Completed Tactical `190` remains the ephemeral foundation. Completed Tactical
 `192` integrates a durable remote owner into the desktop and configured
 headless lifecycles, including persistent resume authorization,
 revocation-driven live closure and the bounded operator security ledger. Its
-real-browser/package evidence remains an explicit local validation mode and
-does not enable either host for public remote access. A later tactical owns
-service deployment, external paths and support.
+real-browser/package evidence remains the local baseline. The fixed WebPKI
+product profile, explicit headless opt-in and private deploy/operations
+machinery are now implemented, but no retained public service has been
+activated and external-path/support evidence remains open.
 
 ## Non-Goals
 

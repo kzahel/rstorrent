@@ -829,12 +829,15 @@ streaming demand, expiry, and revocation remain unchanged.
   iOS have no corresponding derived-media presentation.
 
 - The loopback WebSocket gateway and configured private-host Basic service are
-  not a production owner-remote-access design. Tactical `190` proves an
-  account-free passphrase, host pin, bounded local relay and unchanged React
-  trace only in an opt-in ephemeral harness. RSTorrent still has no enabled
-  product owner, durable remote authority, operated relay/client origin,
-  resumable authorized-browser registry, authorization/circuit audit, wake-up
-  path or public wire compatibility promise.
+  not a production owner-remote-access design. Tacticals `190` and `192`
+  establish the account-free passphrase/host-pin protocol plus a durable
+  product owner, resumable named-browser registry, exact revocation and full
+  authorization/circuit audit. Desktop composition and explicit headless
+  opt-in now select a fixed WebPKI product relay, and the website build owns an
+  atomic `/remote/` React/Wasm artifact. The relay/client origins have not been
+  activated and no external browser/ISP matrix, rollback soak, wake-up path or
+  public wire compatibility promise exists, so owner remote access remains an
+  implemented but unsupported capability.
 - The configured Linux headless surface now also supports exact RFC 1918
   `lan-none`, with a one-time per-origin notice that authentication is absent
   and every LAN client has full owner control. Dismissal survives reload while

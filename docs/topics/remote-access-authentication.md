@@ -10,8 +10,12 @@ production-shaped Tactical
 2026-08-29. Tactical `192` implements the deliberately local boundary: durable
 OPAQUE host authority, challenge-bound named-browser resume, complete bounded
 security audit, exact revocation, a separately supervised opaque TLS relay and
-a release-built remote React client. Deployment and support remain a later
-separately authorized tactical. Completed Tactical `174` separately permits one
+a release-built remote React client. The production owner profile, platform
+WebPKI trust, Windows protected authority store, trusted-proxy relay boundary,
+operator admission/aggregate surface and atomic `/remote/` Pages artifact are
+also implemented as of 2026-08-29. Public activation, external-path evidence,
+rollback drills, soak and support remain gated in a separately retained
+deployment tactical. Completed Tactical `174` separately permits one
 trusted Tailscale operator deployment; tailnet admission is not the owner
 authentication designed here.
 
@@ -35,10 +39,11 @@ browser restart, phone viewport, shared non-persistence, relay restart, local
 layout rollback, full audit, exact revocation and changed-host recovery, then
 removes every temporary process and authority root.
 
-This does not change the supported product claim. No public relay/client,
-external account, DNS/certificate operation, Internet abuse evidence, stable
-wire promise or remote media/file path exists. Tactical `192` is an internal
-validation mode, not production deployment authorization.
+This does not yet change the supported product claim. No public relay/client
+deployment, DNS/certificate mutation, Internet abuse evidence, external
+browser matrix, soak, stable wire promise or remote media/file path has landed.
+The production code and deployment-safe artifact are not authorization to
+activate or advertise the service.
 
 ## Purpose And Scope
 
@@ -267,9 +272,9 @@ passes/parallelism one, HKDF-SHA-512 and directional ChaCha20-Poly1305 records.
 Its real Chrome matrix keeps that KSF point within the controlled proof bounds.
 Public-relay, representative low-end-device, durable-authority, resume and
 authorization-audit evidence remain explicitly outside that proof. Tactical
-`192` owns durable authority, resume and audit only in a production-shaped
-local composition; public relay/client operation and external evidence remain a
-later tactical.
+`192` owns durable authority, resume and audit in a production-shaped local
+composition. The follow-on production profile and deployment machinery are
+implemented, while public operation and external evidence remain gated.
 
 ## SRP And OPAQUE Background
 
@@ -698,10 +703,12 @@ Completed Tactical
 application-private authority, local enable/disable/change/recovery UX,
 desktop and configured-headless lifecycle, independently built remote browser,
 separate loopback TLS relay and complete local package/browser evidence. The
-next remote-access tactical, if authorized, must own public relay/client
-deployment, DNS/TLS, external paths, operations and support claims. Passkeys,
-account-wide identity, delegation and multi-user roles remain separate
-decisions and are not implied by the local implementation.
+active deployment/finalization work now owns public relay/client activation,
+DNS/TLS, external paths, operations, rollback, soak and support claims. Its
+portable product and atomic Pages portions are committed; retained
+infrastructure has not been activated. Passkeys, account-wide identity,
+delegation and multi-user roles remain separate decisions and are not implied
+by this implementation.
 
 Friend sharing, fragment-held capability links, offline encrypted snapshots,
 UPnP/NAT traversal, wake-up delivery, public accounts and multi-user

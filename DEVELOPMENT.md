@@ -365,6 +365,32 @@ relay state and processes in a `finally` path. Its older layout generation uses
 the same working-tree binary and is lifecycle evidence, not signed
 cross-version compatibility.
 
+### Remote Pages artifact without deployment
+
+Build the exact production remote controller and atomically assemble it with
+the project website without publishing either surface:
+
+```bash
+source ~/.profile
+BUILD_ID=$(git rev-parse HEAD)
+VITE_RSTORRENT_REMOTE_RELAY_URL=wss://relay.rstorrent.com/client \
+VITE_RSTORRENT_REMOTE_BUILD_ID="$BUILD_ID" \
+  npm run build:remote --prefix clients/web
+npm run check --prefix website
+npm run build --prefix website
+node scripts/assemble-pages-site.mjs "$BUILD_ID"
+```
+
+The assembler replaces only `website/dist/remote`, requires content-hashed
+JS/CSS/Wasm, rejects service-worker files and registration, and writes a
+public digest/build manifest. The website workflow performs this same build
+before its existing pinned Wrangler deployment and then runs
+`scripts/verify-remote-deployment.mjs` against the unique deployment URL. That
+verifier checks the exact build/relay identity, every file digest and byte
+count, remote-only CSP, no-store entry points, immutable assets, Wasm content
+type and 404 service-worker paths. A local build does not activate remote
+access or authorize a Cloudflare deployment.
+
 ## Launching The Desktop App
 
 Install the locked web dependencies when necessary, build the static web
