@@ -8,7 +8,7 @@ use p256::ecdsa::{
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 use rand::{RngCore, SeedableRng};
 use rand_chacha::ChaCha20Rng;
-use sha2::{Digest, Sha512};
+use sha2::{Digest, Sha256, Sha512};
 use zeroize::Zeroizing;
 
 use crate::{Binding, HostPin, OperationSeed, RemoteCryptoError, Result, Role, SecureChannel};
@@ -17,6 +17,7 @@ const CLIENT_HELLO_MAGIC: &[u8; 4] = b"RSU1";
 const SERVER_CHALLENGE_MAGIC: &[u8; 4] = b"RSU2";
 const CLIENT_PROOF_MAGIC: &[u8; 4] = b"RSU3";
 const AUTHORIZATION_DOMAIN: &[u8] = b"rstorrent.remote.authorize.client.v1";
+const AUTHORIZATION_METADATA_DOMAIN: &[u8] = b"rstorrent.remote.authorization.metadata.v1";
 const RESUME_TRANSCRIPT_DOMAIN: &[u8] = b"rstorrent.remote.resume.transcript.v1";
 const RESUME_HOST_PROOF_DOMAIN: &[u8] = b"rstorrent.remote.resume.host-proof.v1";
 const RESUME_CLIENT_PROOF_DOMAIN: &[u8] = b"rstorrent.remote.resume.client-proof.v1";
@@ -516,6 +517,35 @@ pub fn authorization_transcript(
     append_field(&mut output, client_public_key.as_bytes());
     append_field(&mut output, &metadata_digest);
     output
+}
+
+pub fn authorization_metadata_digest(
+    label: &str,
+    client_build: Option<&str>,
+    route_observation: Option<&str>,
+    browser_observation: Option<&str>,
+) -> [u8; 32] {
+    let mut digest = Sha256::new();
+    append_digest_field(&mut digest, AUTHORIZATION_METADATA_DOMAIN);
+    append_digest_field(&mut digest, label.as_bytes());
+    for value in [client_build, route_observation, browser_observation] {
+        match value {
+            Some(value) => {
+                Digest::update(&mut digest, [1]);
+                append_digest_field(&mut digest, value.as_bytes());
+            }
+            None => Digest::update(&mut digest, [0]),
+        }
+    }
+    digest.finalize().into()
+}
+
+fn append_digest_field(digest: &mut Sha256, value: &[u8]) {
+    Digest::update(
+        digest,
+        u32::try_from(value.len()).unwrap_or(u32::MAX).to_be_bytes(),
+    );
+    Digest::update(digest, value);
 }
 
 pub fn verify_authorization_signature(

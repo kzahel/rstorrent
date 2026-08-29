@@ -43,6 +43,16 @@ requires a private browser to resume ordinary reconnects without another
 password entry and requires the host to list and revoke every authorization
 and live circuit before a later deployment tactical can change that claim.
 
+The product-host runtime core has also replaced the proof's ephemeral host
+state. It durably creates a private authorization only after password login,
+keeps shared login ephemeral, resumes with the selected P-256 construction,
+reuses the bounded application frame contract and closes a resumed circuit
+after durable revocation. Its safe snapshot combines the bounded authority
+ledger with all live circuits without serializing passphrases, relay/internal
+credentials or raw client public keys. This remains internal runtime evidence:
+desktop/headless attachment, full local administration and browser persistence
+are not yet present.
+
 ## Purpose And Scope
 
 This topic owns the security background and decision boundary for authenticating

@@ -4371,6 +4371,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "rstorrent-remote-host"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "futures-util",
+ "getrandom 0.3.4",
+ "p256",
+ "rand 0.8.8",
+ "rcgen",
+ "reqwest",
+ "rstorrent-gateway",
+ "rstorrent-remote-access",
+ "rstorrent-remote-crypto",
+ "rstorrent-remote-relay",
+ "rstorrent-session",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-rustls",
+ "tokio-tungstenite",
+ "tokio-util",
+ "url",
+ "zeroize",
+]
+
+[[package]]
 name = "rstorrent-remote-proof"
 version = "0.1.0"
 dependencies = [

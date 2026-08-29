@@ -28,8 +28,8 @@ pub use resume::{
     AuthorizationChallenge, AuthorizationGeneration, ClientId, ClientResumeFinish,
     ClientResumeProof, HostResumeKey, P256PublicKey, P256Signature, ResumeClientHello,
     ResumeClientStart, ResumeContext, ResumeServerChallenge, ResumeServerStart,
-    authorization_transcript, finish_client_resume, finish_server_resume, start_client_resume,
-    start_server_resume, verify_authorization_signature,
+    authorization_metadata_digest, authorization_transcript, finish_client_resume,
+    finish_server_resume, start_client_resume, start_server_resume, verify_authorization_signature,
 };
 
 #[cfg(feature = "ksf-bench")]

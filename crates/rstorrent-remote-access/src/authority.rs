@@ -7,9 +7,10 @@ use rstorrent_remote_crypto::{
     AuthorizationChallenge, AuthorizationGeneration, Binding, ClientId, ClientResumeProof, HostId,
     HostPin, HostResumeKey, OperationSeed, P256PublicKey, P256Signature, PasswordFile, RelayId,
     ResumeClientHello, ResumeContext, ResumeServerChallenge, ResumeServerStart, SecureChannel,
-    ServerAuthority, Username, authorization_transcript, finish_client_registration,
-    finish_server_registration, finish_server_resume, start_client_registration,
-    start_server_registration, start_server_resume, verify_authorization_signature,
+    ServerAuthority, Username, authorization_metadata_digest, authorization_transcript,
+    finish_client_registration, finish_server_registration, finish_server_resume,
+    start_client_registration, start_server_registration, start_server_resume,
+    verify_authorization_signature,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -26,7 +27,6 @@ use crate::model::{
 use crate::{RemoteAccessError, Result};
 
 const AUTHORITY_VERSION: u16 = 1;
-const METADATA_DOMAIN: &[u8] = b"rstorrent.remote.authorization.metadata.v1";
 const MAX_ROUTE_BYTES: usize = 64;
 const MAX_REASON_BYTES: usize = 64;
 
@@ -974,28 +974,12 @@ fn register_password(
 }
 
 fn metadata_digest(metadata: &AuthorizationMetadata) -> [u8; 32] {
-    let mut digest = Sha256::new();
-    append_digest_field(&mut digest, METADATA_DOMAIN);
-    append_digest_field(&mut digest, metadata.label().as_bytes());
-    for value in [
+    authorization_metadata_digest(
+        metadata.label(),
         metadata.client_build(),
         metadata.route_observation(),
         metadata.browser_observation(),
-    ] {
-        match value {
-            Some(value) => {
-                digest.update([1]);
-                append_digest_field(&mut digest, value.as_bytes());
-            }
-            None => digest.update([0]),
-        }
-    }
-    digest.finalize().into()
-}
-
-fn append_digest_field(digest: &mut Sha256, value: &[u8]) {
-    digest.update(u32::try_from(value.len()).unwrap_or(u32::MAX).to_be_bytes());
-    digest.update(value);
+    )
 }
 
 fn is_expired(client: &AuthorizedClient, now: Timestamp) -> bool {

@@ -413,10 +413,26 @@ principal asserted inside a client frame.
   does not block valid clients and shutdown aborts pending handshakes. The
   isolated local-authority/client runner is still part of unfinished Step 6;
   the service never creates or installs a trust root itself.
+- The first Step 4 runtime boundary now lives in `rstorrent-remote-host` rather
+  than the proof harness. Its product owner reserves and claims the durable
+  P-256 relay identity, emits a relay/host greeting needed for account-free
+  OPAQUE binding, completes password login plus explicit private/shared choice,
+  commits private authorization before acknowledgement, completes fresh
+  challenge-bound resume, records circuit open/close, lists live circuits and
+  invalidates an authorization durably before cancellation. It injects a
+  process-private credential only into the reused internal application adapter
+  and rejects remote torrent-byte upload and media-capability creation. Native
+  end-to-end tests carry the real application `Connect`/`Connected` exchange
+  through password and resumed circuits, prove shared mode retains no
+  authorization, prove revocation closes the resumed circuit and prove the
+  serialized security view excludes passphrase, internal gateway token and raw
+  client public key. Desktop/headless lifecycle attachment and the remaining
+  local administration operations are still unfinished Steps 3 and 4.
 
-No desktop/headless command, host task, browser persistence, TLS relay service
-or supported product surface is implied by these internal checkpoints. Steps
-3 through 5, the remainder of Step 6, and Steps 7 and 8 remain required.
+No desktop/headless command, browser persistence or supported product surface
+is implied by these internal checkpoints. Steps 3 and 5, desktop/headless
+attachment in Step 4, the remainder of Step 6, and Steps 7 and 8 remain
+required.
 
 ## Required Evidence
 
