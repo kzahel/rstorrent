@@ -33,6 +33,8 @@ export default defineConfig(({ mode }) => {
     preview: { proxy },
     ...(remote
       ? {
+          base: "/remote/",
+          publicDir: false,
           resolve: {
             alias: {
               "rstorrent-remote-wasm-client": resolve(
@@ -42,6 +44,7 @@ export default defineConfig(({ mode }) => {
             },
           },
           build: {
+            outDir: "dist/remote",
             rollupOptions: {
               input: resolve(process.cwd(), "remote.html"),
             },

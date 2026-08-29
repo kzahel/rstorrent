@@ -4,12 +4,34 @@ on:
   pull_request:
     paths:
       - ".github/workflows/deploy-website.yml"
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "clients/web/**"
+      - "crates/rstorrent-remote-access/**"
+      - "crates/rstorrent-remote-crypto/**"
+      - "crates/rstorrent-remote-host/**"
+      - "crates/rstorrent-remote-relay/**"
+      - "crates/rstorrent-remote-wasm/**"
+      - "rust-toolchain.toml"
+      - "scripts/assemble-pages-site.mjs"
+      - "scripts/verify-remote-deployment.mjs"
       - "website/**"
   push:
     branches:
       - main
     paths:
       - ".github/workflows/deploy-website.yml"
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "clients/web/**"
+      - "crates/rstorrent-remote-access/**"
+      - "crates/rstorrent-remote-crypto/**"
+      - "crates/rstorrent-remote-host/**"
+      - "crates/rstorrent-remote-relay/**"
+      - "crates/rstorrent-remote-wasm/**"
+      - "rust-toolchain.toml"
+      - "scripts/assemble-pages-site.mjs"
+      - "scripts/verify-remote-deployment.mjs"
       - "website/**"
   workflow_dispatch:
 
@@ -28,7 +50,7 @@ jobs:
   build-and-deploy:
     name: Build${{ github.event_name == 'pull_request' && '' || ' and deploy' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
 
     steps:
       - name: Check out source
@@ -39,7 +61,26 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: website/package-lock.json
+          cache-dependency-path: |
+            clients/web/package-lock.json
+            website/package-lock.json
+
+      - name: Install Rust 1.97.0 and WebAssembly target
+        uses: dtolnay/rust-toolchain@889fac408b4da0905346410f253f0c55fbcb6613 # 1.97.0
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache remote WebAssembly builds
+        uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7 # v2.9.2
+        with:
+          shared-key: website-remote-ubuntu-24.04
+
+      - name: Install pinned wasm-bindgen CLI
+        run: cargo install wasm-bindgen-cli --version 0.2.127 --locked
+
+      - name: Install remote client dependencies
+        working-directory: clients/web
+        run: npm ci
 
       - name: Install website dependencies
         working-directory: website
@@ -49,11 +90,26 @@ jobs:
         working-directory: website
         run: npm run check
 
+      - name: Type-check remote client
+        working-directory: clients/web
+        run: npm run typecheck
+
+      - name: Build remote client
+        working-directory: clients/web
+        env:
+          VITE_RSTORRENT_REMOTE_BUILD_ID: ${{ github.sha }}
+          VITE_RSTORRENT_REMOTE_RELAY_URL: wss://relay.rstorrent.com/client
+        run: npm run build:remote
+
       - name: Build website
         working-directory: website
         run: npm run build
 
+      - name: Assemble immutable Pages artifact
+        run: node scripts/assemble-pages-site.mjs "$GITHUB_SHA"
+
       - name: Deploy to Cloudflare Pages
+        id: deploy
         if: github.event_name != 'pull_request'
         uses: cloudflare/wrangler-action@da0e0dfe58b7a431659754fdf3f186c529afbe65 # v3.14.1
         with:
@@ -61,3 +117,9 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy website/dist --project-name=rstorrent-site
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify deployed remote client
+        if: github.event_name != 'pull_request'
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
+        run: node scripts/verify-remote-deployment.mjs "$DEPLOYMENT_URL" "$GITHUB_SHA"

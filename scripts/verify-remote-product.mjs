@@ -95,7 +95,7 @@ try {
   });
   const privatePage = await privateContext.newPage();
   privatePage.on("pageerror", (error) => browserErrors.push(String(error)));
-  const response = await privatePage.goto(`${clientOrigin}/remote.html`);
+  const response = await privatePage.goto(`${clientOrigin}/remote/`);
   assertClientHeaders(response?.headers() ?? {}, relayUrl);
   await assertImmutableAssets(privateContext, clientOrigin);
   await signIn(privatePage, true, "Owner laptop");
@@ -116,7 +116,7 @@ try {
   });
   let restartedPage = await privateContext.newPage();
   restartedPage.on("pageerror", (error) => browserErrors.push(String(error)));
-  await restartedPage.goto(`${clientOrigin}/remote.html`);
+  await restartedPage.goto(`${clientOrigin}/remote/`);
   await expectProduct(restartedPage);
   await assertNoPasswordPrompt(restartedPage);
   await privateContext.close();
@@ -128,7 +128,7 @@ try {
   });
   let sharedPage = await sharedContext.newPage();
   sharedPage.on("pageerror", (error) => browserErrors.push(String(error)));
-  await sharedPage.goto(`${clientOrigin}/remote.html`);
+  await sharedPage.goto(`${clientOrigin}/remote/`);
   await signIn(sharedPage, false);
   await expectProduct(sharedPage);
   await sharedContext.close();
@@ -138,7 +138,7 @@ try {
     height: 844,
   });
   sharedPage = await sharedContext.newPage();
-  await sharedPage.goto(`${clientOrigin}/remote.html`);
+  await sharedPage.goto(`${clientOrigin}/remote/`);
   await expectPasswordPrompt(sharedPage);
   const afterShared = remoteStatus(headlessCommand);
   if (currentClients(afterShared).length !== 1) {
@@ -153,7 +153,7 @@ try {
   });
   restartedPage = await privateContext.newPage();
   restartedPage.on("pageerror", (error) => browserErrors.push(String(error)));
-  await restartedPage.goto(`${clientOrigin}/remote.html`);
+  await restartedPage.goto(`${clientOrigin}/remote/`);
   await expectProduct(restartedPage);
   await assertNoPasswordPrompt(restartedPage);
 
@@ -459,7 +459,9 @@ async function serveRemoteClient(port, relayUrl) {
   const server = createHttpsServer({ key, cert }, async (request, response) => {
     try {
       const pathname = decodeURIComponent(new URL(request.url ?? "/", "https://local").pathname);
-      const requested = pathname === "/" ? "/remote.html" : pathname;
+      const requested = pathname === "/" || pathname === "/remote/"
+        ? "/remote/index.html"
+        : pathname;
       const candidate = resolve(dist, `.${normalize(requested)}`);
       const pathRelative = relative(dist, candidate);
       if (pathRelative.startsWith(`..${sep}`) || pathRelative === "..") {
@@ -476,7 +478,7 @@ async function serveRemoteClient(port, relayUrl) {
       response.setHeader("Content-Type", contentType(candidate));
       response.setHeader(
         "Cache-Control",
-        requested.startsWith("/assets/")
+        requested.startsWith("/remote/assets/")
           ? "public, max-age=31536000, immutable"
           : "no-store",
       );
@@ -598,8 +600,8 @@ function assertClientHeaders(headers, relayUrl) {
 }
 
 async function assertImmutableAssets(context, clientOrigin) {
-  const html = await readFile(join(webRoot, "dist/remote.html"), "utf8");
-  const asset = html.match(/(?:src|href)="(\/assets\/[^"]+)"/)?.[1];
+  const html = await readFile(join(webRoot, "dist/remote/index.html"), "utf8");
+  const asset = html.match(/(?:src|href)="(\/remote\/assets\/[^"]+)"/)?.[1];
   if (asset === undefined) throw new Error("remote HTML references no hashed asset");
   const response = await context.request.get(`${clientOrigin}${asset}`);
   if (!response.ok()) throw new Error("remote hashed asset was unavailable");
