@@ -192,6 +192,22 @@ describe("remote application WebSocket", () => {
     expect(socket.readyState).toBe(3);
     expect(relay?.closes[0]?.code).toBe(4_008);
   });
+
+  it("reports a relay close during authentication as a generic failure", () => {
+    let relay: FakeSocket | undefined;
+    let failure: RemoteConnectionFailure | undefined;
+    const socket = new RemoteApplicationWebSocket({
+      ...options(),
+      socketFactory: (url) => (relay = new FakeSocket(url)),
+      onFailure: (value) => {
+        failure = value;
+      },
+    });
+    relay?.open();
+    relay?.close(4_004, "unavailable");
+    expect(failure).toBe("connection_failed");
+    expect(socket.readyState).toBe(3);
+  });
 });
 
 describe("remote password provisioning", () => {

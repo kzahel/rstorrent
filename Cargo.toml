@@ -13,6 +13,7 @@ members = [
     "crates/rstorrent-platform",
     "crates/rstorrent-protocol",
     "crates/rstorrent-remote-crypto",
+    "crates/rstorrent-remote-proof",
     "crates/rstorrent-remote-relay",
     "crates/rstorrent-remote-wasm",
     "crates/rstorrent-session",

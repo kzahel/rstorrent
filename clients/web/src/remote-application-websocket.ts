@@ -129,7 +129,14 @@ export class RemoteApplicationWebSocket implements ApplicationWebSocket {
     };
     this.socket.onmessage = (event) => this.receive(event.data);
     this.socket.onerror = () => this.fail(new Error("relay transport failed"));
-    this.socket.onclose = (event) => this.closed(event);
+    this.socket.onclose = (event) => {
+      if (this.state === SOCKET_CONNECTING && !this.failed) {
+        this.failed = true;
+        this.options.onFailure?.("connection_failed");
+        this.onerror?.(new Event("error"));
+      }
+      this.closed(event);
+    };
     this.timer = setTimeout(
       () => this.fail(new Error("remote login timed out")),
       HANDSHAKE_TIMEOUT_MILLIS,
