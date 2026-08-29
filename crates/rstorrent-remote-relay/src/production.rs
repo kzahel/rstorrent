@@ -5,7 +5,7 @@ use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use axum::body::{Body, Bytes};
@@ -14,13 +14,14 @@ use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{ConnectInfo, DefaultBodyLimit, Path as AxumPath, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use base64::Engine as _;
 use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
 use p256::ecdsa::{Signature, VerifyingKey, signature::Verifier};
 use serde::{Deserialize, Serialize};
+use subtle::ConstantTimeEq as _;
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore, oneshot};
 use tokio::task::JoinSet;
@@ -28,6 +29,7 @@ use tokio_rustls::TlsAcceptor;
 use tokio_rustls::rustls::ServerConfig;
 use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use tokio_util::sync::CancellationToken;
+use zeroize::Zeroizing;
 
 use crate::{
     MAX_ACTIVE_CIRCUITS, MAX_CIRCUIT_LIFETIME, MAX_REGISTERED_ROUTES, MAX_RELAY_MESSAGE_BYTES,
@@ -56,6 +58,58 @@ const MAX_CERTIFICATE_BYTES: usize = 64 * 1024;
 const MAX_PRIVATE_KEY_BYTES: usize = 16 * 1024;
 const MAX_PENDING_TLS_HANDSHAKES: usize = 64;
 const TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+const FORWARDED_SOURCE_HEADER: &str = "x-rstorrent-client-ip";
+const MIN_OPERATOR_TOKEN_BYTES: usize = 32;
+const MAX_OPERATOR_TOKEN_BYTES: usize = 256;
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct ProductRelayOptions {
+    allowed_client_origin: String,
+    trusted_proxy: Option<IpAddr>,
+    operator_token: Option<Zeroizing<String>>,
+}
+
+impl fmt::Debug for ProductRelayOptions {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ProductRelayOptions")
+            .field("allowed_client_origin", &self.allowed_client_origin)
+            .field("trusted_proxy", &self.trusted_proxy)
+            .field(
+                "operator_token",
+                &self.operator_token.as_ref().map(|_| "[redacted]"),
+            )
+            .finish()
+    }
+}
+
+impl ProductRelayOptions {
+    pub fn validation(allowed_client_origin: impl Into<String>) -> Self {
+        Self {
+            allowed_client_origin: allowed_client_origin.into(),
+            trusted_proxy: None,
+            operator_token: None,
+        }
+    }
+
+    pub fn production(
+        trusted_proxy: IpAddr,
+        operator_token: String,
+    ) -> Result<Self, ProductRelayError> {
+        let trusted_proxy = normalize_ip(trusted_proxy);
+        if !trusted_proxy.is_loopback() {
+            return Err(ProductRelayError::Configuration(
+                "trusted proxy must be loopback",
+            ));
+        }
+        validate_operator_token(&operator_token)?;
+        Ok(Self {
+            allowed_client_origin: "https://rstorrent.com".to_owned(),
+            trusted_proxy: Some(trusted_proxy),
+            operator_token: Some(Zeroizing::new(operator_token)),
+        })
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -71,7 +125,7 @@ pub struct ReserveRouteResponse {
     pub reserved: bool,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct ProductRelayMetricsSnapshot {
     pub registered_routes: usize,
     pub registered_routes_high_water: usize,
@@ -261,6 +315,9 @@ impl fmt::Debug for ProductRelay {
 struct ProductRelayInner {
     deployment_id: [u8; 32],
     allowed_client_origin: String,
+    trusted_proxy: Option<IpAddr>,
+    operator_token: Option<Zeroizing<String>>,
+    admission_enabled: AtomicBool,
     store: RelayStore,
     routes: Mutex<BTreeMap<String, ProductRoute>>,
     next_generation: AtomicU64,
@@ -384,8 +441,14 @@ impl ProductRelay {
         root: impl Into<PathBuf>,
         allowed_client_origin: impl Into<String>,
     ) -> Result<Self, ProductRelayError> {
-        let allowed_client_origin = allowed_client_origin.into();
-        validate_origin(&allowed_client_origin)?;
+        Self::open_with_options(root, ProductRelayOptions::validation(allowed_client_origin))
+    }
+
+    pub fn open_with_options(
+        root: impl Into<PathBuf>,
+        options: ProductRelayOptions,
+    ) -> Result<Self, ProductRelayError> {
+        validate_origin(&options.allowed_client_origin)?;
         let store = RelayStore::new(root.into());
         let persisted = store.load_or_create()?;
         let mut routes = BTreeMap::new();
@@ -409,7 +472,10 @@ impl ProductRelay {
         Ok(Self {
             inner: Arc::new(ProductRelayInner {
                 deployment_id: persisted.deployment_id,
-                allowed_client_origin,
+                allowed_client_origin: options.allowed_client_origin,
+                trusted_proxy: options.trusted_proxy,
+                operator_token: options.operator_token,
+                admission_enabled: AtomicBool::new(true),
                 store,
                 routes: Mutex::new(routes),
                 next_generation: AtomicU64::new(1),
@@ -435,10 +501,13 @@ impl ProductRelay {
 
     pub fn router(&self) -> Router {
         Router::new()
+            .route("/healthz", get(health))
             .route("/v1/reservations", post(reserve_route))
             .route("/v1/release/{username}", get(release_upgrade))
             .route("/host/{username}", get(host_upgrade))
             .route("/client", get(client_upgrade))
+            .route("/operator/v1/status", get(operator_status))
+            .route("/operator/v1/admission", put(set_operator_admission))
             .layer(DefaultBodyLimit::max(PREAUTH_MESSAGE_BYTES))
             .with_state(self.inner.clone())
     }
@@ -474,6 +543,27 @@ impl ProductRelayServer {
             ));
         }
         let relay = ProductRelay::open(root, allowed_client_origin)?;
+        Self::bind_relay(address, relay).await
+    }
+
+    pub async fn bind_with_options(
+        address: SocketAddr,
+        root: impl Into<PathBuf>,
+        options: ProductRelayOptions,
+    ) -> Result<Self, ProductRelayError> {
+        if !address.ip().is_loopback() {
+            return Err(ProductRelayError::Configuration(
+                "product relay address must be loopback",
+            ));
+        }
+        let relay = ProductRelay::open_with_options(root, options)?;
+        Self::bind_relay(address, relay).await
+    }
+
+    async fn bind_relay(
+        address: SocketAddr,
+        relay: ProductRelay,
+    ) -> Result<Self, ProductRelayError> {
         let listener = TcpListener::bind(address).await?;
         let address = listener.local_addr()?;
         if !address.ip().is_loopback() {
@@ -553,6 +643,48 @@ impl TlsProductRelayServer {
         configuration.alpn_protocols = vec![b"http/1.1".to_vec()];
 
         let relay = ProductRelay::open(root, allowed_client_origin)?;
+        Self::bind_relay(address, relay, configuration).await
+    }
+
+    pub async fn bind_with_options(
+        address: SocketAddr,
+        root: impl Into<PathBuf>,
+        options: ProductRelayOptions,
+        certificate_der: impl AsRef<Path>,
+        private_key_der: impl AsRef<Path>,
+    ) -> Result<Self, ProductRelayError> {
+        if !address.ip().is_loopback() {
+            return Err(ProductRelayError::Configuration(
+                "TLS relay address must be loopback",
+            ));
+        }
+        let certificate_der = certificate_der.as_ref();
+        let private_key_der = private_key_der.as_ref();
+        if !certificate_der.is_absolute() || !private_key_der.is_absolute() {
+            return Err(ProductRelayError::Configuration(
+                "TLS certificate and key paths must be absolute",
+            ));
+        }
+        let certificate = read_public_file(certificate_der, MAX_CERTIFICATE_BYTES)?;
+        let private_key = read_private_file(private_key_der, MAX_PRIVATE_KEY_BYTES)?;
+        let mut configuration =
+            ServerConfig::builder_with_protocol_versions(&[&tokio_rustls::rustls::version::TLS13])
+                .with_no_client_auth()
+                .with_single_cert(
+                    vec![CertificateDer::from(certificate)],
+                    PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(private_key)),
+                )
+                .map_err(|_| ProductRelayError::Configuration("TLS certificate or private key"))?;
+        configuration.alpn_protocols = vec![b"http/1.1".to_vec()];
+        let relay = ProductRelay::open_with_options(root, options)?;
+        Self::bind_relay(address, relay, configuration).await
+    }
+
+    async fn bind_relay(
+        address: SocketAddr,
+        relay: ProductRelay,
+        configuration: ServerConfig,
+    ) -> Result<Self, ProductRelayError> {
         let listener = TcpListener::bind(address).await?;
         let address = listener.local_addr()?;
         if !address.ip().is_loopback() {
@@ -794,23 +926,91 @@ pub fn encode_host_proof(signature: &[u8]) -> Result<Vec<u8>, ProductRelayError>
     Ok(message)
 }
 
+#[derive(Serialize)]
+struct HealthResponse {
+    status: &'static str,
+}
+
+#[derive(Serialize)]
+struct OperatorStatusResponse {
+    status: &'static str,
+    accepting: bool,
+    metrics: ProductRelayMetricsSnapshot,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OperatorAdmissionRequest {
+    accepting: bool,
+}
+
+async fn health() -> Json<HealthResponse> {
+    Json(HealthResponse { status: "ok" })
+}
+
+async fn operator_status(
+    State(relay): State<Arc<ProductRelayInner>>,
+    headers: HeaderMap,
+) -> Response {
+    if !operator_authorized(&relay, &headers) {
+        return generic_http_failure();
+    }
+    Json(OperatorStatusResponse {
+        status: "ok",
+        accepting: relay.admission_enabled.load(Ordering::Acquire),
+        metrics: relay.metrics.snapshot(),
+    })
+    .into_response()
+}
+
+async fn set_operator_admission(
+    State(relay): State<Arc<ProductRelayInner>>,
+    headers: HeaderMap,
+    Json(request): Json<OperatorAdmissionRequest>,
+) -> Response {
+    if !operator_authorized(&relay, &headers) {
+        return generic_http_failure();
+    }
+    relay
+        .admission_enabled
+        .store(request.accepting, Ordering::Release);
+    if !request.accepting {
+        let mut routes = relay.routes.lock().await;
+        for route in routes.values_mut() {
+            if let Some(waiting) = route.waiting.take() {
+                waiting.cancellation.cancel();
+                relay.metrics.waiting_stopped();
+            }
+        }
+    }
+    Json(OperatorStatusResponse {
+        status: "ok",
+        accepting: request.accepting,
+        metrics: relay.metrics.snapshot(),
+    })
+    .into_response()
+}
+
 async fn reserve_route(
     State(relay): State<Arc<ProductRelayInner>>,
     ConnectInfo(source): ConnectInfo<RelayConnectInfo>,
+    headers: HeaderMap,
     encoded: Bytes,
 ) -> Response {
     let Ok(request) = serde_json::from_slice::<ReserveRouteRequest>(&encoded) else {
         return generic_http_failure();
     };
-    if !admit(&relay, source.0.ip(), Some(&request.username)).await {
+    let Some(source) = public_source(&relay, source.0, &headers) else {
+        return generic_http_failure();
+    };
+    if validate_username(&request.username).is_err()
+        || !admit(&relay, source, Some(&request.username)).await
+    {
         return generic_http_failure();
     }
     let Ok(public_key) = decode_public_key(&request.public_key) else {
         return generic_http_failure();
     };
-    if validate_username(&request.username).is_err() {
-        return generic_http_failure();
-    }
     let mut routes = relay.routes.lock().await;
     if let Some(route) = routes.get(&request.username) {
         if route.public_key == public_key {
@@ -868,10 +1068,13 @@ async fn host_upgrade(
     State(relay): State<Arc<ProductRelayInner>>,
     ConnectInfo(source): ConnectInfo<RelayConnectInfo>,
     AxumPath(username): AxumPath<String>,
+    headers: HeaderMap,
     websocket: WebSocketUpgrade,
 ) -> Response {
-    if validate_username(&username).is_err() || !admit(&relay, source.0.ip(), Some(&username)).await
-    {
+    let Some(source) = public_source(&relay, source.0, &headers) else {
+        return generic_http_failure();
+    };
+    if validate_username(&username).is_err() || !admit(&relay, source, Some(&username)).await {
         return generic_http_failure();
     }
     websocket
@@ -885,10 +1088,13 @@ async fn release_upgrade(
     State(relay): State<Arc<ProductRelayInner>>,
     ConnectInfo(source): ConnectInfo<RelayConnectInfo>,
     AxumPath(username): AxumPath<String>,
+    headers: HeaderMap,
     websocket: WebSocketUpgrade,
 ) -> Response {
-    if validate_username(&username).is_err() || !admit(&relay, source.0.ip(), Some(&username)).await
-    {
+    let Some(source) = public_source(&relay, source.0, &headers) else {
+        return generic_http_failure();
+    };
+    if validate_username(&username).is_err() || !admit(&relay, source, Some(&username)).await {
         return generic_http_failure();
     }
     websocket
@@ -904,9 +1110,12 @@ async fn client_upgrade(
     headers: HeaderMap,
     websocket: WebSocketUpgrade,
 ) -> Response {
+    let Some(source) = public_source(&relay, source.0, &headers) else {
+        return generic_http_failure();
+    };
     if headers.get("origin").and_then(|value| value.to_str().ok())
         != Some(relay.allowed_client_origin.as_str())
-        || !admit(&relay, source.0.ip(), None).await
+        || !admit(&relay, source, None).await
     {
         return generic_http_failure();
     }
@@ -1189,6 +1398,69 @@ async fn admit(relay: &ProductRelayInner, source: IpAddr, route: Option<&str>) -
     admitted
 }
 
+fn public_source(
+    relay: &ProductRelayInner,
+    immediate: SocketAddr,
+    headers: &HeaderMap,
+) -> Option<IpAddr> {
+    if !relay.admission_enabled.load(Ordering::Acquire) {
+        return None;
+    }
+    derive_source(relay.trusted_proxy, immediate, headers)
+}
+
+fn derive_source(
+    trusted_proxy: Option<IpAddr>,
+    immediate: SocketAddr,
+    headers: &HeaderMap,
+) -> Option<IpAddr> {
+    let immediate = normalize_ip(immediate.ip());
+    if trusted_proxy.map(normalize_ip) != Some(immediate) {
+        return Some(immediate);
+    }
+    let mut values = headers.get_all(FORWARDED_SOURCE_HEADER).iter();
+    let value = values.next()?.to_str().ok()?;
+    if values.next().is_some() {
+        return None;
+    }
+    let parsed = normalize_ip(value.parse().ok()?);
+    (parsed.to_string() == value).then_some(parsed)
+}
+
+fn normalize_ip(source: IpAddr) -> IpAddr {
+    match source {
+        IpAddr::V6(source) => source
+            .to_ipv4_mapped()
+            .map_or(IpAddr::V6(source), IpAddr::V4),
+        source => source,
+    }
+}
+
+fn operator_authorized(relay: &ProductRelayInner, headers: &HeaderMap) -> bool {
+    let Some(expected) = relay.operator_token.as_ref() else {
+        return false;
+    };
+    let Some(provided) = headers
+        .get("authorization")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+    else {
+        return false;
+    };
+    provided.len() == expected.len() && bool::from(provided.as_bytes().ct_eq(expected.as_bytes()))
+}
+
+fn validate_operator_token(token: &str) -> Result<(), ProductRelayError> {
+    if !(MIN_OPERATOR_TOKEN_BYTES..=MAX_OPERATOR_TOKEN_BYTES).contains(&token.len())
+        || !token
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    {
+        return Err(ProductRelayError::Configuration("operator token"));
+    }
+    Ok(())
+}
+
 fn generic_http_failure() -> Response {
     Response::builder()
         .status(StatusCode::NOT_FOUND)
@@ -1348,6 +1620,21 @@ fn reservations(routes: &BTreeMap<String, ProductRoute>) -> Vec<PersistedReserva
 }
 
 fn validate_username(username: &str) -> Result<(), ProductRelayError> {
+    const BLOCKED_LABELS: &[&str] = &[
+        "admin",
+        "api",
+        "client",
+        "fuck",
+        "host",
+        "nazi",
+        "operator",
+        "relay",
+        "remote",
+        "root",
+        "rstorrent",
+        "support",
+        "www",
+    ];
     let bytes = username.as_bytes();
     if !(MIN_USERNAME_BYTES..=MAX_USERNAME_BYTES).contains(&bytes.len())
         || !bytes
@@ -1359,6 +1646,9 @@ fn validate_username(username: &str) -> Result<(), ProductRelayError> {
         || !bytes
             .iter()
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
+        || username
+            .split('-')
+            .any(|label| BLOCKED_LABELS.binary_search(&label).is_ok())
     {
         return Err(ProductRelayError::Configuration("username"));
     }
@@ -1374,14 +1664,17 @@ fn validate_origin(origin: &str) -> Result<(), ProductRelayError> {
         || url.query().is_some()
         || url.fragment().is_some()
         || url.path() != "/"
+        || url.origin().ascii_serialization() != origin
         || !url.host().is_some_and(|host| match host {
-            url::Host::Domain(name) => name == "localhost",
+            url::Host::Domain(name) => {
+                (name == "rstorrent.com" && url.port().is_none()) || name == "localhost"
+            }
             url::Host::Ipv4(address) => address.is_loopback(),
             url::Host::Ipv6(address) => address.is_loopback(),
         })
     {
         return Err(ProductRelayError::Configuration(
-            "client origin must be exact loopback HTTPS",
+            "client origin must be the product or exact loopback HTTPS origin",
         ));
     }
     Ok(())
@@ -1558,25 +1851,30 @@ impl RelayStore {
 fn read_public_file(path: &Path, maximum: usize) -> Result<Vec<u8>, ProductRelayError> {
     let metadata = fs::symlink_metadata(path)?;
     validate_public_file(&metadata)?;
-    read_bounded_file(path, maximum, false)
+    read_bounded_file(path, maximum, FileProtection::Public)
 }
 
 fn read_private_file(path: &Path, maximum: usize) -> Result<Vec<u8>, ProductRelayError> {
     let metadata = fs::symlink_metadata(path)?;
-    validate_file(&metadata)?;
-    read_bounded_file(path, maximum, true)
+    validate_secret_file(&metadata)?;
+    read_bounded_file(path, maximum, FileProtection::Secret)
+}
+
+#[derive(Clone, Copy)]
+enum FileProtection {
+    Public,
+    Secret,
 }
 
 fn read_bounded_file(
     path: &Path,
     maximum: usize,
-    private: bool,
+    protection: FileProtection,
 ) -> Result<Vec<u8>, ProductRelayError> {
     let file = File::open(path)?;
-    if private {
-        validate_file(&file.metadata()?)?;
-    } else {
-        validate_public_file(&file.metadata()?)?;
+    match protection {
+        FileProtection::Public => validate_public_file(&file.metadata()?)?,
+        FileProtection::Secret => validate_secret_file(&file.metadata()?)?,
     }
     let mut bytes = Vec::new();
     file.take((maximum + 1) as u64).read_to_end(&mut bytes)?;
@@ -1653,10 +1951,32 @@ fn validate_file(metadata: &fs::Metadata) -> Result<(), ProductRelayError> {
     Ok(())
 }
 
+#[cfg(unix)]
+fn validate_secret_file(metadata: &fs::Metadata) -> Result<(), ProductRelayError> {
+    use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+
+    let mode = metadata.permissions().mode() & 0o777;
+    if !metadata.is_file()
+        || metadata.file_type().is_symlink()
+        || metadata.uid() != rustix::process::getuid().as_raw()
+        || !matches!(mode, 0o400 | 0o600)
+    {
+        return Err(ProductRelayError::Corrupt("TLS private key file"));
+    }
+    Ok(())
+}
+
 #[cfg(not(unix))]
 fn validate_file(_metadata: &fs::Metadata) -> Result<(), ProductRelayError> {
     Err(ProductRelayError::Configuration(
         "protected relay persistence is unsupported",
+    ))
+}
+
+#[cfg(not(unix))]
+fn validate_secret_file(_metadata: &fs::Metadata) -> Result<(), ProductRelayError> {
+    Err(ProductRelayError::Configuration(
+        "protected TLS files are unsupported",
     ))
 }
 
@@ -1726,5 +2046,55 @@ mod tests {
         admission.aggregate = TokenBucket::new(10, 10, now);
         assert!(admission.admit(source, Some("new-route"), now));
         assert_eq!(admission.routes.len(), 1);
+    }
+
+    #[test]
+    fn trusted_proxy_uses_one_canonical_normalized_header_and_ignores_spoofing() {
+        let trusted: IpAddr = "127.0.0.1".parse().unwrap();
+        let immediate = SocketAddr::new(trusted, 44321);
+        let mut headers = HeaderMap::new();
+        assert_eq!(derive_source(Some(trusted), immediate, &headers), None);
+
+        headers.insert(FORWARDED_SOURCE_HEADER, "198.51.100.7".parse().unwrap());
+        assert_eq!(
+            derive_source(Some(trusted), immediate, &headers),
+            Some("198.51.100.7".parse().unwrap())
+        );
+        headers.append(FORWARDED_SOURCE_HEADER, "198.51.100.8".parse().unwrap());
+        assert_eq!(derive_source(Some(trusted), immediate, &headers), None);
+
+        let untrusted: IpAddr = "192.0.2.40".parse().unwrap();
+        assert_eq!(
+            derive_source(Some(trusted), SocketAddr::new(untrusted, 44321), &headers),
+            Some(untrusted)
+        );
+
+        let mut noncanonical = HeaderMap::new();
+        noncanonical.insert(FORWARDED_SOURCE_HEADER, "2001:0db8::1".parse().unwrap());
+        assert_eq!(derive_source(Some(trusted), immediate, &noncanonical), None);
+    }
+
+    #[test]
+    fn product_origin_operator_token_and_route_namespace_are_exact() {
+        assert!(validate_origin("https://rstorrent.com").is_ok());
+        assert!(validate_origin("https://rstorrent.com/").is_err());
+        assert!(
+            ProductRelayOptions::production(
+                "127.0.0.1".parse().unwrap(),
+                "abcdefghijklmnopqrstuvwxyz012345".to_owned()
+            )
+            .is_ok()
+        );
+        assert!(
+            ProductRelayOptions::production(
+                "192.0.2.1".parse().unwrap(),
+                "abcdefghijklmnopqrstuvwxyz012345".to_owned()
+            )
+            .is_err()
+        );
+        for route in ["admin", "my-support", "rstorrent", "nazi-box"] {
+            assert!(validate_username(route).is_err(), "accepted {route}");
+        }
+        assert!(validate_username("my-torrent-box").is_ok());
     }
 }

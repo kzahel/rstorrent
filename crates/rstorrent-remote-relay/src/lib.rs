@@ -10,8 +10,9 @@ mod production;
 
 pub use production::{
     HOST_CHALLENGE_MAGIC, HOST_PROOF_MAGIC, ProductRelay, ProductRelayError,
-    ProductRelayMetricsSnapshot, ProductRelayServer, RELEASE_COMPLETE_MAGIC, ReserveRouteRequest,
-    ReserveRouteResponse, TlsProductRelayServer, encode_host_proof, host_claim_transcript,
+    ProductRelayMetricsSnapshot, ProductRelayOptions, ProductRelayServer, RELEASE_COMPLETE_MAGIC,
+    ReserveRouteRequest, ReserveRouteResponse, TlsProductRelayServer, encode_host_proof,
+    host_claim_transcript,
 };
 
 use std::collections::BTreeMap;

@@ -6,9 +6,9 @@ use futures_util::{SinkExt, StreamExt};
 use p256::ecdsa::signature::Signer as _;
 use p256::ecdsa::{Signature, SigningKey};
 use rstorrent_remote_relay::{
-    HOST_CHALLENGE_MAGIC, PAIRED_CONTROL, ProductRelay, ProductRelayServer, RELEASE_COMPLETE_MAGIC,
-    ReserveRouteRequest, ReserveRouteResponse, encode_client_select, encode_host_proof,
-    host_claim_transcript,
+    HOST_CHALLENGE_MAGIC, PAIRED_CONTROL, ProductRelay, ProductRelayOptions, ProductRelayServer,
+    RELEASE_COMPLETE_MAGIC, ReserveRouteRequest, ReserveRouteResponse, encode_client_select,
+    encode_host_proof, host_claim_transcript,
 };
 use tempfile::TempDir;
 use tokio::time::timeout;
@@ -17,6 +17,7 @@ use tokio_tungstenite::tungstenite::{Error as WebSocketError, Message};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
 
 const ORIGIN: &str = "https://127.0.0.1:7443";
+const OPERATOR_TOKEN: &str = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG";
 
 type Socket = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 
@@ -222,6 +223,122 @@ async fn non_loopback_bind_and_non_https_origin_are_rejected() {
             .is_err()
     );
     assert!(ProductRelay::open(root.path(), "http://127.0.0.1:7443").is_err());
+}
+
+#[tokio::test]
+async fn production_proxy_health_operator_metrics_and_kill_switch_are_bounded() {
+    let root = TempDir::new().unwrap();
+    let options =
+        ProductRelayOptions::production("127.0.0.1".parse().unwrap(), OPERATOR_TOKEN.to_owned())
+            .unwrap();
+    let server =
+        ProductRelayServer::bind_with_options("127.0.0.1:0".parse().unwrap(), root.path(), options)
+            .await
+            .unwrap();
+    let address = server.local_addr();
+    let relay = server.relay();
+    let task = tokio::spawn(async move { server.serve().await.unwrap() });
+    let base = format!("http://{address}");
+    let client = reqwest::Client::new();
+
+    let health = client.get(format!("{base}/healthz")).send().await.unwrap();
+    assert_eq!(health.status(), reqwest::StatusCode::OK);
+    assert_eq!(health.text().await.unwrap(), r#"{"status":"ok"}"#);
+    assert_eq!(
+        client
+            .get(format!("{base}/operator/v1/status"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        reqwest::StatusCode::NOT_FOUND
+    );
+
+    let key = signing_key(9);
+    let public_key = key.verifying_key().to_encoded_point(false);
+    let reservation = serde_json::to_vec(&ReserveRouteRequest {
+        username: "proxy-owner".to_owned(),
+        public_key: base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(public_key.as_bytes()),
+    })
+    .unwrap();
+    assert_eq!(
+        client
+            .post(format!("{base}/v1/reservations"))
+            .header("content-type", "application/json")
+            .body(reservation.clone())
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        reqwest::StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        client
+            .post(format!("{base}/v1/reservations"))
+            .header("content-type", "application/json")
+            .header("x-rstorrent-client-ip", "198.51.100.7")
+            .body(reservation.clone())
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        reqwest::StatusCode::CREATED
+    );
+
+    let disabled = client
+        .put(format!("{base}/operator/v1/admission"))
+        .bearer_auth(OPERATOR_TOKEN)
+        .header("content-type", "application/json")
+        .body(r#"{"accepting":false}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(disabled.status(), reqwest::StatusCode::OK);
+    let disabled: serde_json::Value =
+        serde_json::from_str(&disabled.text().await.unwrap()).unwrap();
+    assert_eq!(disabled["accepting"], false);
+    assert_eq!(disabled["metrics"]["registered_routes"], 1);
+    assert!(disabled.get("deployment_id").is_none());
+    assert_eq!(
+        client
+            .post(format!("{base}/v1/reservations"))
+            .header("content-type", "application/json")
+            .header("x-rstorrent-client-ip", "198.51.100.7")
+            .body(reservation.clone())
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        reqwest::StatusCode::NOT_FOUND
+    );
+
+    let enabled = client
+        .put(format!("{base}/operator/v1/admission"))
+        .bearer_auth(OPERATOR_TOKEN)
+        .header("content-type", "application/json")
+        .body(r#"{"accepting":true}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(enabled.status(), reqwest::StatusCode::OK);
+    assert_eq!(
+        client
+            .post(format!("{base}/v1/reservations"))
+            .header("content-type", "application/json")
+            .header("x-rstorrent-client-ip", "198.51.100.7")
+            .body(reservation)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        reqwest::StatusCode::OK
+    );
+
+    relay.shutdown();
+    timeout(Duration::from_secs(2), task)
+        .await
+        .unwrap()
+        .unwrap();
 }
 
 async fn start(root: &std::path::Path) -> RunningRelay {
