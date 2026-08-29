@@ -73,14 +73,15 @@ try {
   buildArtifacts(relayUrl, buildId);
   await createLocalCertificate();
   const installed = await createInstalledHeadlessLayout();
+  let headlessCommand = installed.headless;
   await createHeadlessConfiguration(headlessPort, relayPort);
 
   clientServer = await serveRemoteClient(clientPort, relayUrl);
   relayProcess = await startRelay(relayPort, clientOrigin);
   await waitForRelayHttps(relayPort, relayProcess);
-  headlessProcess = startManaged(installed.headless, ["--config", configPath]);
+  headlessProcess = startManaged(headlessCommand, ["--config", configPath]);
   await waitForPath(join(profileRoot, "remote-admin-v1.sock"), headlessProcess);
-  remoteCommand(installed.headless, [
+  remoteCommand(headlessCommand, [
     "enable",
     username,
     "--passphrase-file",
@@ -99,7 +100,7 @@ try {
   await assertImmutableAssets(privateContext, clientOrigin);
   await signIn(privatePage, true, "Owner laptop");
   await expectProduct(privatePage);
-  const firstAudit = remoteStatus(installed.headless);
+  const firstAudit = remoteStatus(headlessCommand);
   const originalClient = onlyCurrentClient(firstAudit);
   await expectRemoteAudit(privatePage, "Owner laptop");
 
@@ -139,7 +140,7 @@ try {
   sharedPage = await sharedContext.newPage();
   await sharedPage.goto(`${clientOrigin}/remote.html`);
   await expectPasswordPrompt(sharedPage);
-  const afterShared = remoteStatus(installed.headless);
+  const afterShared = remoteStatus(headlessCommand);
   if (currentClients(afterShared).length !== 1) {
     throw new Error("shared browser created a durable authorization");
   }
@@ -166,11 +167,24 @@ try {
   await expectProduct(restartedPage);
   await assertNoPasswordPrompt(restartedPage);
 
-  remoteCommand(installed.headless, ["revoke", originalClient.client_id]);
+  const rollbackReload = restartedPage.waitForEvent("domcontentloaded", {
+    timeout: 20_000,
+  });
+  await stopChild(headlessProcess.child);
+  await rm(installed.current);
+  await symlink(installed.rollbackTarget, installed.current);
+  headlessCommand = installed.rollbackHeadless;
+  headlessProcess = startManaged(headlessCommand, ["--config", configPath]);
+  await waitForPath(join(profileRoot, "remote-admin-v1.sock"), headlessProcess);
+  await rollbackReload;
+  await expectProduct(restartedPage);
+  await assertNoPasswordPrompt(restartedPage);
+
+  remoteCommand(headlessCommand, ["revoke", originalClient.client_id]);
   await restartedPage.reload();
   await expectPasswordPrompt(restartedPage);
   await expectText(restartedPage, "authorization is no longer valid");
-  const revokedAudit = remoteStatus(installed.headless);
+  const revokedAudit = remoteStatus(headlessCommand);
   if (currentClients(revokedAudit).length !== 0) {
     throw new Error("revoked browser remained authorized");
   }
@@ -180,8 +194,8 @@ try {
     throw new Error("revocation did not retain its audit tombstone");
   }
 
-  remoteCommand(installed.headless, ["disable"]);
-  remoteCommand(installed.headless, [
+  remoteCommand(headlessCommand, ["disable"]);
+  remoteCommand(headlessCommand, [
     "recover",
     username,
     "--passphrase-file",
@@ -202,7 +216,7 @@ try {
     throw new Error(`browser page errors: ${browserErrors.join("; ")}`);
   }
 
-  const finalAudit = remoteStatus(installed.headless);
+  const finalAudit = remoteStatus(headlessCommand);
   process.stdout.write(`${JSON.stringify({
     environment: {
       browser: privateContext.browser()?.version() ?? "unknown",
@@ -225,6 +239,7 @@ try {
       phoneViewportResume: true,
       sharedBrowserDidNotPersist: true,
       relayRestartResume: true,
+      packageRollbackResume: true,
       completeRemoteAuditRendered: true,
       exactRevocationRejectedResume: true,
       revocationTombstoneRetained: true,
@@ -287,6 +302,11 @@ async function createInstalledHeadlessLayout() {
   const match = /^rstorrent-headless ([0-9A-Za-z.-]+)$/.exec(versionOutput);
   if (match === null) throw new Error("could not read the headless build version");
   const version = match[1];
+  const versionParts = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+  if (versionParts === null || Number(versionParts[3]) === 0) {
+    throw new Error("local rollback evidence requires a positive patch version");
+  }
+  const rollbackVersion = `${versionParts[1]}.${versionParts[2]}.${Number(versionParts[3]) - 1}`;
   const applicationRoot = join(temporaryRoot, "headless-application");
   const releaseRoot = join(applicationRoot, "versions", version);
   const binRoot = join(releaseRoot, "bin");
@@ -305,8 +325,36 @@ async function createInstalledHeadlessLayout() {
     0o600,
   );
   await writeProtected(join(web, "index.html"), "<!doctype html><title>local</title>", 0o600);
-  await symlink(join("versions", version), join(applicationRoot, "current"));
-  return { headless, version };
+  const rollbackRoot = join(applicationRoot, "versions", rollbackVersion);
+  const rollbackBin = join(rollbackRoot, "bin");
+  const rollbackWeb = join(rollbackRoot, "web");
+  await mkdir(rollbackBin, { recursive: true, mode: 0o700 });
+  await mkdir(rollbackWeb, { recursive: true, mode: 0o700 });
+  const rollbackHeadless = join(rollbackBin, "rstorrent-headless");
+  await copyFile(sourceHeadless, rollbackHeadless);
+  await copyFile(sourceGateway, join(rollbackBin, "rstorrent-gateway"));
+  await chmod(rollbackHeadless, 0o700);
+  await chmod(join(rollbackBin, "rstorrent-gateway"), 0o700);
+  await writeProtected(join(rollbackRoot, "VERSION"), rollbackVersion, 0o600);
+  await writeProtected(
+    join(rollbackRoot, "PACKAGE_ID"),
+    "com.jstorrent.rstorrent.headless",
+    0o600,
+  );
+  await writeProtected(
+    join(rollbackWeb, "index.html"),
+    "<!doctype html><title>local rollback</title>",
+    0o600,
+  );
+  const current = join(applicationRoot, "current");
+  await symlink(join("versions", version), current);
+  return {
+    current,
+    headless,
+    rollbackHeadless,
+    rollbackTarget: join("versions", rollbackVersion),
+    version,
+  };
 }
 
 async function createHeadlessConfiguration(headlessPort, relayPort) {
