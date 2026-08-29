@@ -6,11 +6,13 @@
 //! opaque router. This crate owns sockets, tasks, live circuits and the local
 //! application adapter beneath desktop/headless lifecycles.
 
+mod application;
 mod error;
 mod owner;
 mod runtime;
 mod wire;
 
+pub use application::RemoteApplicationRuntime;
 pub use error::RemoteHostError;
 pub use owner::{
     DisableRemoteAccessOutcome, LiveCircuitView, RemoteAccessOwner, RemoteHostConfig,

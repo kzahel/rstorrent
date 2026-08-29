@@ -436,13 +436,25 @@ principal asserted inside a client frame.
   circuit cancellation. End-to-end tests prove the actual route appears in
   live-circuit inspection, explicit shared-circuit termination, protected
   authority removal, relay reservation release, retained disable evidence and
-  successful reprovisioning. Desktop/headless command attachment and local
-  presentation remain unfinished Steps 3 and 4.
+  successful reprovisioning.
+- Desktop and configured headless now own the same product composition beneath
+  their incumbent `ApplicationService`: an ephemeral process-private bearer
+  gateway, one durable remote owner and joined remote-before-application
+  shutdown. Desktop admits the composition only when both explicit validation
+  relay environment values are present and exposes local Tauri administration
+  commands. Headless configuration version 3 adds one exact loopback HTTPS
+  relay/certificate block without changing its separately selected hosted
+  access mode; versions 1 and 2 remain accepted and cannot opt in accidentally.
+  Its CLI reaches the running owner only through an owner-mode Unix socket with
+  same-UID checking, bounded requests/responses and deadlines, and accepts
+  passphrases only from protected absolute files. A real TLS-relay test enables
+  through that socket, joins shutdown, reopens the configured headless service,
+  reloads the same authority and reclaims the route. The desktop React
+  presentation and browser controller remain unfinished.
 
-No desktop/headless command, browser persistence or supported product surface
-is implied by these internal checkpoints. Steps 3 and 5, desktop/headless
-attachment in Step 4, the remainder of Step 6, and Steps 7 and 8 remain
-required.
+No browser persistence or supported product surface is implied by these
+internal checkpoints. Step 5, desktop presentation work in Step 3, the
+remainder of Step 6, and Steps 7 and 8 remain required.
 
 ## Required Evidence
 

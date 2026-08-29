@@ -11,13 +11,18 @@ use rstorrent_session::{
 };
 use serde::Deserialize;
 use url::Url;
+use zeroize::Zeroizing;
 
-pub const CONFIG_VERSION: u32 = 2;
+pub const CONFIG_VERSION: u32 = 3;
+pub const TRUSTED_NETWORK_CONFIG_VERSION: u32 = 2;
 pub const LEGACY_CONFIG_VERSION: u32 = 1;
 pub const MAX_CONFIG_BYTES: usize = 64 * 1024;
 pub const MAX_ENDPOINTS: usize = 4;
 pub const MAX_USERNAME_BYTES: usize = 64;
 pub const MAX_PASSWORD_BYTES: usize = 128;
+pub const MAX_REMOTE_CERTIFICATE_BYTES: usize = 64 * 1024;
+pub const MIN_REMOTE_PASSPHRASE_BYTES: usize = 12;
+pub const MAX_REMOTE_PASSPHRASE_BYTES: usize = 256;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HeadlessConfig {
@@ -26,6 +31,13 @@ pub struct HeadlessConfig {
     pub endpoints: Vec<HeadlessEndpoint>,
     pub storage_roots: Vec<ConfiguredStorageRoot>,
     pub authentication: AuthenticationConfig,
+    pub remote_validation: Option<RemoteValidationConfig>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RemoteValidationConfig {
+    pub relay_base: String,
+    pub certificate_file: PathBuf,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -99,10 +111,15 @@ impl HeadlessConfig {
             .collect::<Vec<_>>()
             .join(",");
         format!(
-            "config_version={} profile_root={} endpoints=[{endpoints}] authentication={} storage_roots=[{roots}]",
+            "config_version={} profile_root={} endpoints=[{endpoints}] authentication={} remote_validation={} storage_roots=[{roots}]",
             self.version,
             self.profile_root.display(),
             self.authentication.mode_name(),
+            if self.remote_validation.is_some() {
+                "enabled"
+            } else {
+                "disabled"
+            },
         )
     }
 }
@@ -192,6 +209,25 @@ struct RawConfigV2 {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct RawConfigV3 {
+    version: u32,
+    profile_root: String,
+    listen: String,
+    public_origin: String,
+    storage_roots: Vec<RawStorageRoot>,
+    authentication: RawAuthentication,
+    remote_validation: RawRemoteValidation,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawRemoteValidation {
+    relay_base: String,
+    certificate_file: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RawEndpoint {
     kind: String,
     listen: String,
@@ -226,9 +262,10 @@ pub fn parse(bytes: &[u8]) -> Result<HeadlessConfig, ConfigError> {
         .map_err(|error| invalid(format!("invalid configuration: {error}")))?;
     match version.version {
         LEGACY_CONFIG_VERSION => parse_v1(source),
-        CONFIG_VERSION => parse_v2(source),
+        TRUSTED_NETWORK_CONFIG_VERSION => parse_network(source),
+        CONFIG_VERSION => parse_v3(source),
         _ => Err(invalid(format!(
-            "configuration version must be {LEGACY_CONFIG_VERSION} or {CONFIG_VERSION}"
+            "configuration version must be {LEGACY_CONFIG_VERSION}, {TRUSTED_NETWORK_CONFIG_VERSION}, or {CONFIG_VERSION}"
         ))),
     }
 }
@@ -267,15 +304,16 @@ fn parse_v1(source: &str) -> Result<HeadlessConfig, ConfigError> {
         }],
         storage_roots,
         authentication,
+        remote_validation: None,
     })
 }
 
-fn parse_v2(source: &str) -> Result<HeadlessConfig, ConfigError> {
+fn parse_network(source: &str) -> Result<HeadlessConfig, ConfigError> {
     let raw: RawConfigV2 = toml::from_str(source)
         .map_err(|error| invalid(format!("invalid configuration: {error}")))?;
-    if raw.version != CONFIG_VERSION {
+    if raw.version != TRUSTED_NETWORK_CONFIG_VERSION {
         return Err(invalid(format!(
-            "configuration version must be {CONFIG_VERSION}"
+            "configuration version must be {TRUSTED_NETWORK_CONFIG_VERSION}"
         )));
     }
     if raw.authentication.mode != "trusted-network-none"
@@ -340,6 +378,79 @@ fn parse_v2(source: &str) -> Result<HeadlessConfig, ConfigError> {
         endpoints,
         storage_roots,
         authentication: AuthenticationConfig::TrustedNetworkNone,
+        remote_validation: None,
+    })
+}
+
+fn parse_v3(source: &str) -> Result<HeadlessConfig, ConfigError> {
+    let raw: RawConfigV3 = toml::from_str(source)
+        .map_err(|error| invalid(format!("invalid configuration: {error}")))?;
+    if raw.version != CONFIG_VERSION {
+        return Err(invalid(format!(
+            "configuration version must be {CONFIG_VERSION}"
+        )));
+    }
+    let profile_root = validate_path(&raw.profile_root, "profile_root")?;
+    let listen = raw
+        .listen
+        .parse::<SocketAddr>()
+        .map_err(|_| invalid("listen must be one concrete IP socket address"))?;
+    validate_listener_basics(listen)?;
+    let public_origin = validate_origin(&raw.public_origin)?;
+    let authentication = validate_v1_authentication(raw.authentication, listen, &public_origin)?;
+    let kind = if matches!(authentication, AuthenticationConfig::LanNone) {
+        HeadlessEndpointKind::DirectLan
+    } else {
+        HeadlessEndpointKind::Standard
+    };
+    let storage_roots = validate_storage_roots(&profile_root, raw.storage_roots)?;
+    Ok(HeadlessConfig {
+        version: raw.version,
+        profile_root,
+        endpoints: vec![HeadlessEndpoint {
+            kind,
+            listen,
+            public_origin,
+        }],
+        storage_roots,
+        authentication,
+        remote_validation: Some(validate_remote_validation(raw.remote_validation)?),
+    })
+}
+
+fn validate_remote_validation(
+    raw: RawRemoteValidation,
+) -> Result<RemoteValidationConfig, ConfigError> {
+    let relay = Url::parse(&raw.relay_base)
+        .map_err(|_| invalid("remote_validation relay_base is invalid"))?;
+    if relay.scheme() != "https"
+        || !relay.username().is_empty()
+        || relay.password().is_some()
+        || relay.path() != "/"
+        || relay.query().is_some()
+        || relay.fragment().is_some()
+        || !relay.host().is_some_and(|host| match host {
+            url::Host::Domain(name) => name == "localhost",
+            url::Host::Ipv4(address) => address.is_loopback(),
+            url::Host::Ipv6(address) => address.is_loopback(),
+        })
+    {
+        return Err(invalid(
+            "remote_validation relay_base must be one exact loopback HTTPS origin",
+        ));
+    }
+    let relay_base = relay.origin().ascii_serialization() + "/";
+    if relay_base != raw.relay_base {
+        return Err(invalid(format!(
+            "remote_validation relay_base must use its exact canonical form {relay_base}"
+        )));
+    }
+    Ok(RemoteValidationConfig {
+        relay_base,
+        certificate_file: validate_path(
+            &raw.certificate_file,
+            "remote_validation certificate_file",
+        )?,
     })
 }
 
@@ -432,7 +543,65 @@ pub fn validate_runtime_paths(
             )));
         }
     }
+    if config.remote_validation.is_some() {
+        load_remote_certificate(config)?;
+    }
     Ok(())
+}
+
+pub fn load_remote_certificate(config: &HeadlessConfig) -> Result<Vec<u8>, ConfigError> {
+    let remote = config
+        .remote_validation
+        .as_ref()
+        .ok_or_else(|| invalid("remote validation is not configured"))?;
+    let mut file = open_checked(&remote.certificate_file, CheckedFileKind::Configuration)?;
+    let mut bytes = Vec::with_capacity(4096);
+    file.by_ref()
+        .take((MAX_REMOTE_CERTIFICATE_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|source| ConfigError::Io {
+            operation: "read remote relay certificate",
+            path: remote.certificate_file.clone(),
+            source,
+        })?;
+    if bytes.is_empty() || bytes.len() > MAX_REMOTE_CERTIFICATE_BYTES {
+        return Err(invalid(format!(
+            "remote relay certificate must be 1..={MAX_REMOTE_CERTIFICATE_BYTES} bytes"
+        )));
+    }
+    Ok(bytes)
+}
+
+pub fn load_remote_passphrase(path: &Path) -> Result<Zeroizing<String>, ConfigError> {
+    let mut file = open_checked(path, CheckedFileKind::Secret)?;
+    let mut bytes = Zeroizing::new(Vec::with_capacity(MAX_REMOTE_PASSPHRASE_BYTES + 2));
+    file.by_ref()
+        .take((MAX_REMOTE_PASSPHRASE_BYTES + 3) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|source| ConfigError::Io {
+            operation: "read remote passphrase file",
+            path: path.to_path_buf(),
+            source,
+        })?;
+    if bytes.ends_with(b"\r\n") {
+        let length = bytes.len() - 2;
+        bytes.truncate(length);
+    } else if bytes.ends_with(b"\n") {
+        let length = bytes.len() - 1;
+        bytes.truncate(length);
+    }
+    if !(MIN_REMOTE_PASSPHRASE_BYTES..=MAX_REMOTE_PASSPHRASE_BYTES).contains(&bytes.len())
+        || bytes.contains(&b'\r')
+        || bytes.contains(&b'\n')
+    {
+        return Err(invalid(format!(
+            "remote passphrase must be {MIN_REMOTE_PASSPHRASE_BYTES}..={MAX_REMOTE_PASSPHRASE_BYTES} bytes with at most one final line ending"
+        )));
+    }
+    let source = std::mem::take(&mut *bytes);
+    String::from_utf8(source)
+        .map(Zeroizing::new)
+        .map_err(|_| invalid("remote passphrase must be valid UTF-8"))
 }
 
 pub fn load_basic_credentials(config: &HeadlessConfig) -> Result<BasicCredentials, ConfigError> {
@@ -814,10 +983,12 @@ mod tests {
 
     fn test_root(label: &str) -> PathBuf {
         let sequence = NEXT_TEST.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!(
-            "rstorrent-headless-config-{label}-{}-{sequence}",
-            std::process::id()
-        ))
+        std::fs::canonicalize(std::env::temp_dir())
+            .expect("canonical temporary root")
+            .join(format!(
+                "rstorrent-headless-config-{label}-{}-{sequence}",
+                std::process::id()
+            ))
     }
 
     fn basic_config() -> String {
@@ -889,6 +1060,15 @@ mode = "trusted-network-none"
         .to_owned()
     }
 
+    fn remote_validation_config() -> String {
+        local_config().replace("version = 1", "version = 3")
+            + r#"
+[remote_validation]
+relay_base = "https://localhost:7444/"
+certificate_file = "/var/lib/rstorrent/relay-certificate.der"
+"#
+    }
+
     #[test]
     fn parses_valid_authentication_configurations() {
         let basic = parse(basic_config().as_bytes()).expect("valid Basic configuration");
@@ -912,6 +1092,41 @@ mode = "trusted-network-none"
         assert_eq!(
             trusted.endpoints[1].kind,
             HeadlessEndpointKind::TailscaleServe
+        );
+        let remote = parse(remote_validation_config().as_bytes())
+            .expect("valid remote validation configuration");
+        assert_eq!(remote.version, 3);
+        assert_eq!(
+            remote.remote_validation.as_ref().unwrap().relay_base,
+            "https://localhost:7444/"
+        );
+    }
+
+    #[test]
+    fn remote_validation_is_versioned_and_loopback_only() {
+        assert!(
+            parse(
+                remote_validation_config()
+                    .replace("version = 3", "version = 1")
+                    .as_bytes()
+            )
+            .is_err()
+        );
+        assert!(
+            parse(
+                remote_validation_config()
+                    .replace("localhost:7444", "example.com:7444")
+                    .as_bytes()
+            )
+            .is_err()
+        );
+        assert!(
+            parse(
+                remote_validation_config()
+                    .replace("https://localhost:7444/", "http://localhost:7444/")
+                    .as_bytes()
+            )
+            .is_err()
         );
     }
 

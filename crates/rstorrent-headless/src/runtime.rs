@@ -10,6 +10,7 @@ use rstorrent_gateway::{
     GatewayAuthentication, GatewayConfig, GatewayError, HostedAccessMode, HostedAssets,
     WebAuthenticationConfig, prepare_hosted,
 };
+use rstorrent_remote_host::RemoteApplicationRuntime;
 use rstorrent_session::{
     ApplicationConfig, ApplicationError, ApplicationService, NetworkConfig, NetworkPolicy,
     PathRootStartupPolicy,
@@ -19,8 +20,9 @@ use tokio_util::sync::CancellationToken;
 
 use crate::config::{
     AuthenticationConfig, ConfigError, HeadlessConfig, HeadlessEndpoint, HeadlessEndpointKind,
-    load, load_basic_credentials, validate_runtime_paths,
+    load, load_basic_credentials, load_remote_certificate, validate_runtime_paths,
 };
+use crate::remote_admin::RemoteAdminServer;
 use crate::updater::{HeadlessUpdateProvider, UpdateError};
 use crate::{PACKAGE_ID, PRODUCT_ID};
 
@@ -201,6 +203,7 @@ impl InstalledLayout {
 pub struct ServiceReport {
     pub listeners: Vec<SocketAddr>,
     pub version: String,
+    pub remote_validation: bool,
     pub shutdown_elapsed: Duration,
 }
 
@@ -215,6 +218,11 @@ pub async fn run_installed_service(
         config_path,
         &[&layout.application_root, &layout.release_root],
     )?;
+    let remote_certificate = config
+        .remote_validation
+        .as_ref()
+        .map(|_| load_remote_certificate(&config))
+        .transpose()?;
     let access_mode = hosted_access_mode(&config.authentication);
     let browser_sessions = matches!(config.authentication, AuthenticationConfig::LocalBrowser);
     if browser_sessions {
@@ -259,10 +267,47 @@ pub async fn run_installed_service(
         .await
         .map_err(configuration_application_error)?;
     let application = Arc::new(Mutex::new(application));
+    let remote_runtime = if let Some(remote) = &config.remote_validation {
+        let opened = RemoteApplicationRuntime::open(
+            config.profile_root.join("remote-access"),
+            &remote.relay_base,
+            remote_certificate
+                .clone()
+                .ok_or_else(|| HeadlessError::configuration("remote certificate missing"))?,
+            format!("rstorrent-headless/{}", layout.version),
+            application.clone(),
+        )
+        .await;
+        match opened {
+            Ok(runtime) => Some(runtime),
+            Err(error) => {
+                let _ = application.lock().await.shutdown().await;
+                return Err(HeadlessError::configuration(format!(
+                    "start remote access validation owner: {error}"
+                )));
+            }
+        }
+    } else {
+        None
+    };
+    let remote_admin = match &remote_runtime {
+        Some(remote) => match RemoteAdminServer::bind(&config.profile_root, remote.owner()) {
+            Ok(admin) => Some(admin),
+            Err(error) => {
+                let _ = remote.shutdown().await;
+                let _ = application.lock().await.shutdown().await;
+                return Err(error);
+            }
+        },
+        None => None,
+    };
     let first = prepared.remove(0);
     let first_server = match first.attach(application.clone()).await {
         Ok(server) => server,
         Err(error) => {
+            if let Some(remote) = &remote_runtime {
+                let _ = remote.shutdown().await;
+            }
             let _ = application.lock().await.shutdown().await;
             return Err(configuration_gateway_error(error));
         }
@@ -275,6 +320,9 @@ pub async fn run_installed_service(
         {
             Ok(server) => server,
             Err(error) => {
+                if let Some(remote) = &remote_runtime {
+                    let _ = remote.shutdown().await;
+                }
                 let _ = application.lock().await.shutdown().await;
                 return Err(configuration_gateway_error(error));
             }
@@ -287,9 +335,10 @@ pub async fn run_installed_service(
         .map(|server| server.local_addr())
         .collect::<Vec<_>>();
     eprintln!(
-        "headless product={} version={} listening={}",
+        "headless product={} version={} remote_validation={} listening={}",
         PRODUCT_ID,
         layout.version,
+        remote_runtime.is_some(),
         listeners
             .iter()
             .map(SocketAddr::to_string)
@@ -305,22 +354,50 @@ pub async fn run_installed_service(
         );
     }
 
+    let admin_task = remote_admin.map(|admin| {
+        let admin_shutdown = shutdown.clone();
+        let failure_shutdown = shutdown.clone();
+        tokio::spawn(async move {
+            let result = admin.serve(admin_shutdown).await;
+            if result.is_err() {
+                failure_shutdown.cancel();
+            }
+            result
+        })
+    });
     let serve_result = try_join_all(
         servers
             .into_iter()
             .map(|server| server.serve(shutdown.clone())),
     )
     .await;
+    shutdown.cancel();
+    let admin_result = match admin_task {
+        Some(task) => match task.await {
+            Ok(result) => result,
+            Err(_) => Err(HeadlessError::runtime("remote administration task failed")),
+        },
+        None => Ok(()),
+    };
     let shutdown_started = Instant::now();
+    let remote_shutdown = match &remote_runtime {
+        Some(remote) => remote.shutdown().await,
+        None => Ok(()),
+    };
     let application_shutdown = application.lock().await.shutdown().await;
     let shutdown_elapsed = shutdown_started.elapsed();
     if let Err(error) = serve_result {
         return Err(HeadlessError::runtime(error.to_string()));
     }
+    admin_result?;
+    remote_shutdown.map_err(|error| {
+        HeadlessError::runtime(format!("shutdown remote access validation owner: {error}"))
+    })?;
     application_shutdown.map_err(runtime_application_error)?;
     Ok(ServiceReport {
         listeners,
         version: layout.version.clone(),
+        remote_validation: remote_runtime.is_some(),
         shutdown_elapsed,
     })
 }
@@ -553,19 +630,25 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::Duration;
 
+    use rcgen::{CertifiedKey, generate_simple_self_signed};
+    use rstorrent_remote_relay::TlsProductRelayServer;
+    use serde_json::Value;
     use tokio_util::sync::CancellationToken;
 
     use super::{InstalledLayout, run_installed_service};
     use crate::PACKAGE_ID;
+    use crate::remote_admin::{RemoteAdminRequest, admin_socket_path, request as remote_request};
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
 
     fn test_root(label: &str) -> PathBuf {
         let sequence = NEXT_TEST.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!(
-            "rstorrent-headless-runtime-{label}-{}-{sequence}",
-            std::process::id()
-        ))
+        std::fs::canonicalize(std::env::temp_dir())
+            .expect("canonical temporary root")
+            .join(format!(
+                "rstorrent-headless-runtime-{label}-{}-{sequence}",
+                std::process::id()
+            ))
     }
 
     #[cfg(unix)]
@@ -662,6 +745,39 @@ mod tests {
         );
         write_file(&config_path, source.as_bytes(), 0o600);
         (config_path, profile, payload)
+    }
+
+    #[cfg(unix)]
+    fn remote_configuration(
+        root: &Path,
+        listen: SocketAddr,
+        relay_address: SocketAddr,
+        certificate: &Path,
+    ) -> (PathBuf, PathBuf) {
+        let config_path = root.join("config/headless.toml");
+        let profile = root.join("state/profile");
+        let payload = root.join("missing-payload");
+        let source = format!(
+            "version = 3\n\
+             profile_root = {:?}\n\
+             listen = \"{listen}\"\n\
+             public_origin = \"http://{listen}\"\n\n\
+             [[storage_roots]]\n\
+             id = \"downloads\"\n\
+             label = \"Downloads\"\n\
+             path = {:?}\n\n\
+             [authentication]\n\
+             mode = \"local-browser\"\n\n\
+             [remote_validation]\n\
+             relay_base = \"https://127.0.0.1:{}/\"\n\
+             certificate_file = {:?}\n",
+            profile.to_str().expect("profile path"),
+            payload.to_str().expect("payload path"),
+            relay_address.port(),
+            certificate.to_str().expect("certificate path"),
+        );
+        write_file(&config_path, source.as_bytes(), 0o600);
+        (config_path, profile)
     }
 
     async fn request_health(
@@ -917,6 +1033,108 @@ mod tests {
             .expect("joined multi-endpoint shutdown");
         assert_eq!(report.listeners, vec![first, second]);
         assert!(report.shutdown_elapsed < Duration::from_secs(5));
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn configured_remote_owner_is_administered_locally_and_survives_restart() {
+        let sequence = NEXT_TEST.fetch_add(1, Ordering::Relaxed);
+        let root = std::fs::canonicalize("/tmp")
+            .expect("canonical short temporary root")
+            .join(format!("rh-{}-{sequence}", std::process::id()));
+        let executable = installed_fixture(&root.join("install"));
+        let layout = InstalledLayout::discover_from_executable(&executable)
+            .expect("discover installed layout");
+
+        let CertifiedKey { cert, signing_key } =
+            generate_simple_self_signed(["localhost".to_owned(), "127.0.0.1".to_owned()])
+                .expect("relay certificate");
+        let certificate_path = root.join("relay/certificate.der");
+        let private_key_path = root.join("relay/private-key.der");
+        write_file(&certificate_path, cert.der(), 0o600);
+        write_file(&private_key_path, &signing_key.serialize_der(), 0o600);
+        let relay_server = TlsProductRelayServer::bind(
+            "127.0.0.1:0".parse().unwrap(),
+            root.join("relay/state"),
+            "https://localhost:7443",
+            &certificate_path,
+            &private_key_path,
+        )
+        .await
+        .expect("bind relay");
+        let relay_address = relay_server.local_addr();
+        let relay = relay_server.relay();
+        let relay_task = tokio::spawn(async move { relay_server.serve().await });
+
+        let endpoint_reservation = TcpListener::bind("127.0.0.1:0").expect("reserve endpoint");
+        let endpoint = endpoint_reservation.local_addr().expect("endpoint");
+        drop(endpoint_reservation);
+        let (config_path, profile) =
+            remote_configuration(&root, endpoint, relay_address, &certificate_path);
+
+        for restart in 0..2 {
+            let shutdown = CancellationToken::new();
+            let task_shutdown = shutdown.clone();
+            let task_config = config_path.clone();
+            let task_layout = layout.clone();
+            let mut task = tokio::spawn(async move {
+                run_installed_service(&task_config, &task_layout, task_shutdown).await
+            });
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while !admin_socket_path(&profile).exists() {
+                    if task.is_finished() {
+                        panic!(
+                            "headless remote service ended early: {:?}",
+                            (&mut task).await
+                        );
+                    }
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            })
+            .await
+            .expect("remote administration socket");
+
+            let state = if restart == 0 {
+                remote_request(
+                    &profile,
+                    RemoteAdminRequest::Enable {
+                        username: "headless-owner".to_owned(),
+                        passphrase: "correct horse battery staple".to_owned(),
+                    },
+                )
+                .await
+                .expect("enable remote access")
+            } else {
+                remote_request(&profile, RemoteAdminRequest::Status)
+                    .await
+                    .expect("inspect restored remote access")
+            };
+            assert_eq!(state.get("enabled").and_then(Value::as_bool), Some(true));
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while relay.metrics().waiting_hosts != 1 {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            })
+            .await
+            .expect("headless host claimed relay route");
+
+            shutdown.cancel();
+            let report = tokio::time::timeout(Duration::from_secs(5), task)
+                .await
+                .expect("headless remote shutdown timeout")
+                .expect("headless task")
+                .expect("headless remote service");
+            assert!(report.remote_validation);
+            assert!(!admin_socket_path(&profile).exists());
+        }
+
+        relay.shutdown();
+        tokio::time::timeout(Duration::from_secs(5), relay_task)
+            .await
+            .expect("relay shutdown timeout")
+            .expect("relay task")
+            .expect("relay service");
         fs::remove_dir_all(root).expect("remove fixture");
     }
 }

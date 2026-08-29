@@ -38,6 +38,8 @@ const PROTOCOL_FLOOR: u16 = 1;
 const MAX_RELAY_CERTIFICATE_BYTES: usize = 64 * 1024;
 const MIN_PASSPHRASE_BYTES: usize = 12;
 const MAX_PASSPHRASE_BYTES: usize = 256;
+const RESERVATION_ATTEMPTS: usize = 5;
+const RESERVATION_RETRY_DELAY: Duration = Duration::from_millis(50);
 
 pub struct RemoteHostConfig {
     relay_base: Url,
@@ -291,16 +293,31 @@ impl RemoteAccessOwner {
             public_key: base64::engine::general_purpose::URL_SAFE_NO_PAD
                 .encode(relay_public.as_bytes()),
         };
-        let response = self
-            .shared
-            .config
-            .relay_http
-            .post(self.shared.config.relay_http_url("/v1/reservations"))
-            .header("content-type", "application/json")
-            .body(serde_json::to_vec(&reservation).map_err(|_| RemoteHostError::Protocol)?)
-            .send()
-            .await
-            .map_err(|_| RemoteHostError::Relay)?;
+        let reservation =
+            serde_json::to_vec(&reservation).map_err(|_| RemoteHostError::Protocol)?;
+        let mut response = None;
+        for attempt in 0..RESERVATION_ATTEMPTS {
+            match self
+                .shared
+                .config
+                .relay_http
+                .post(self.shared.config.relay_http_url("/v1/reservations"))
+                .header("content-type", "application/json")
+                .body(reservation.clone())
+                .send()
+                .await
+            {
+                Ok(candidate) => {
+                    response = Some(candidate);
+                    break;
+                }
+                Err(_) if attempt + 1 < RESERVATION_ATTEMPTS => {
+                    tokio::time::sleep(RESERVATION_RETRY_DELAY).await;
+                }
+                Err(_) => return Err(RemoteHostError::Relay),
+            }
+        }
+        let response = response.ok_or(RemoteHostError::Relay)?;
         if !response.status().is_success() {
             return Err(RemoteHostError::Relay);
         }

@@ -4,6 +4,7 @@
 
 pub mod config;
 pub mod installer;
+pub mod remote_admin;
 pub mod runtime;
 pub mod updater;
 

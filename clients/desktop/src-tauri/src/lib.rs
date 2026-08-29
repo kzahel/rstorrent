@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 use std::collections::BTreeMap;
+use std::io::Read as _;
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 use std::sync::Arc;
@@ -9,6 +10,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use rstorrent_media::LoopbackMediaServer;
+use rstorrent_remote_host::{
+    DisableRemoteAccessOutcome, RemoteAccessOwner, RemoteApplicationRuntime, RemoteSecurityView,
+};
 use rstorrent_session::{
     AddTorrentBytesRequest, ApplicationConfig, ApplicationService, CONTROL_VERSION, Command,
     DeliveryPolicy, ErrorCode, FileIndexRange, FileSelectionIntent, MediaUrlResponse,
@@ -29,6 +33,7 @@ use tokio::sync::{Mutex, Semaphore, watch};
 #[cfg(target_os = "linux")]
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
+use zeroize::Zeroizing;
 
 mod desktop_lifecycle;
 mod desktop_notifications;
@@ -72,6 +77,9 @@ const PEER_IO_TIMEOUT: Duration = Duration::from_secs(60);
 #[cfg(target_os = "linux")]
 const MAX_ACTIVE_NOTIFICATION_ACTIVATIONS: usize = 64;
 const MAX_TORRENT_SOURCE_BYTES: usize = external_intake::MAX_TORRENT_SOURCE_BYTES;
+const REMOTE_VALIDATION_RELAY_ENV: &str = "RSTORRENT_REMOTE_VALIDATION_RELAY";
+const REMOTE_VALIDATION_CERT_ENV: &str = "RSTORRENT_REMOTE_VALIDATION_CERT";
+const MAX_REMOTE_CERTIFICATE_BYTES: u64 = 64 * 1024;
 
 const HEADER_REQUEST_ID: &str = "x-rstorrent-request-id";
 const HEADER_EXPECTED_REVISION: &str = "x-rstorrent-expected-revision";
@@ -82,6 +90,7 @@ const HEADER_WANTED_RANGES: &str = "x-rstorrent-wanted-ranges";
 
 struct DesktopState {
     service: Arc<Mutex<ApplicationService>>,
+    remote_runtime: Option<Arc<RemoteApplicationRuntime>>,
     subscriptions: Arc<Mutex<BTreeMap<(String, String), DesktopSubscription>>>,
     view_resources: Arc<DesktopViewResources>,
     torrent_uploads: Arc<Semaphore>,
@@ -101,6 +110,12 @@ struct DesktopState {
     external_activations: StdMutex<DesktopActivationState>,
 }
 
+#[derive(serde::Serialize)]
+struct DesktopRemoteAccessState {
+    configured: bool,
+    security: Option<RemoteSecurityView>,
+}
+
 struct DesktopNotificationOwner {
     cancellation: CancellationToken,
     task: tauri::async_runtime::JoinHandle<()>,
@@ -116,6 +131,149 @@ struct DesktopSubscription {
     subscription: ViewSubscription,
     cancellation: CancellationToken,
     task: tauri::async_runtime::JoinHandle<()>,
+}
+
+fn remote_access_owner(state: &DesktopState) -> Result<Arc<RemoteAccessOwner>, String> {
+    state
+        .remote_runtime
+        .as_ref()
+        .map(|runtime| runtime.owner())
+        .ok_or_else(|| "remote access validation is not configured for this process".to_owned())
+}
+
+#[tauri::command]
+async fn desktop_remote_access_state(
+    state: State<'_, DesktopState>,
+) -> Result<DesktopRemoteAccessState, String> {
+    let Some(runtime) = &state.remote_runtime else {
+        return Ok(DesktopRemoteAccessState {
+            configured: false,
+            security: None,
+        });
+    };
+    Ok(DesktopRemoteAccessState {
+        configured: true,
+        security: Some(
+            runtime
+                .owner()
+                .security_view()
+                .await
+                .map_err(|error| error.to_string())?,
+        ),
+    })
+}
+
+#[tauri::command]
+async fn desktop_remote_access_enable(
+    state: State<'_, DesktopState>,
+    username: String,
+    passphrase: String,
+) -> Result<RemoteSecurityView, String> {
+    let passphrase = Zeroizing::new(passphrase);
+    remote_access_owner(&state)?
+        .enable(&username, passphrase.as_bytes())
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn desktop_remote_access_rename(
+    state: State<'_, DesktopState>,
+    client_id: String,
+    label: String,
+) -> Result<(), String> {
+    remote_access_owner(&state)?
+        .rename(&client_id, &label)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn desktop_remote_access_revoke(
+    state: State<'_, DesktopState>,
+    client_id: String,
+) -> Result<(), String> {
+    remote_access_owner(&state)?
+        .revoke(&client_id)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn desktop_remote_access_revoke_all_other(
+    state: State<'_, DesktopState>,
+    retained_client_id: String,
+) -> Result<usize, String> {
+    remote_access_owner(&state)?
+        .revoke_all_other(&retained_client_id)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn desktop_remote_access_close_circuit(
+    state: State<'_, DesktopState>,
+    circuit_id: String,
+) -> Result<(), String> {
+    remote_access_owner(&state)?
+        .close_circuit(&circuit_id)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn desktop_remote_access_require_password(
+    state: State<'_, DesktopState>,
+) -> Result<usize, String> {
+    remote_access_owner(&state)?
+        .require_password_everywhere()
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn desktop_remote_access_change_passphrase(
+    state: State<'_, DesktopState>,
+    passphrase: String,
+) -> Result<usize, String> {
+    let passphrase = Zeroizing::new(passphrase);
+    remote_access_owner(&state)?
+        .change_passphrase(passphrase.as_bytes())
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn desktop_remote_access_disable(
+    state: State<'_, DesktopState>,
+) -> Result<DisableRemoteAccessOutcome, String> {
+    remote_access_owner(&state)?
+        .disable()
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn desktop_remote_access_recover(
+    state: State<'_, DesktopState>,
+    username: String,
+    passphrase: String,
+) -> Result<RemoteSecurityView, String> {
+    let passphrase = Zeroizing::new(passphrase);
+    remote_access_owner(&state)?
+        .recover(&username, passphrase.as_bytes())
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn desktop_remote_access_clear_history(
+    state: State<'_, DesktopState>,
+) -> Result<bool, String> {
+    remote_access_owner(&state)?
+        .clear_history()
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -1176,6 +1334,10 @@ async fn perform_application_shutdown(app: AppHandle) {
         stop_subscription(subscription).await;
     }
     state.view_resources.close_all().await;
+    let remote_result = match &state.remote_runtime {
+        Some(runtime) => runtime.shutdown().await.map_err(|error| error.to_string()),
+        None => Ok(()),
+    };
     let service_result = state
         .service
         .lock()
@@ -1191,13 +1353,20 @@ async fn perform_application_shutdown(app: AppHandle) {
     } else {
         Ok(())
     };
-    let result = match (service_result, media_result) {
-        (Ok(()), Ok(())) => Ok(()),
-        (Err(service), Ok(())) => Err(format!("application service shutdown: {service}")),
-        (Ok(()), Err(media)) => Err(format!("media server shutdown: {media}")),
-        (Err(service), Err(media)) => Err(format!(
-            "application service shutdown: {service}; media server shutdown: {media}"
-        )),
+    let mut failures = Vec::new();
+    if let Err(remote) = remote_result {
+        failures.push(format!("remote access shutdown: {remote}"));
+    }
+    if let Err(service) = service_result {
+        failures.push(format!("application service shutdown: {service}"));
+    }
+    if let Err(media) = media_result {
+        failures.push(format!("media server shutdown: {media}"));
+    }
+    let result = if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join("; "))
     };
     match result {
         Ok(()) => {
@@ -1563,6 +1732,62 @@ fn is_magnet_argument(value: &str) -> bool {
         .is_some_and(|prefix| prefix.eq_ignore_ascii_case("magnet:"))
 }
 
+fn remote_validation_parameters() -> Result<Option<(String, Vec<u8>)>, String> {
+    let relay = std::env::var_os(REMOTE_VALIDATION_RELAY_ENV);
+    let certificate = std::env::var_os(REMOTE_VALIDATION_CERT_ENV);
+    let (relay, certificate) = match (relay, certificate) {
+        (Some(relay), Some(certificate)) => (relay, certificate),
+        (None, None) => return Ok(None),
+        _ => {
+            return Err(format!(
+                "{REMOTE_VALIDATION_RELAY_ENV} and {REMOTE_VALIDATION_CERT_ENV} must be set together"
+            ));
+        }
+    };
+    let relay = relay
+        .into_string()
+        .map_err(|_| format!("{REMOTE_VALIDATION_RELAY_ENV} must be UTF-8"))?;
+    let certificate = PathBuf::from(certificate);
+    if !certificate.is_absolute() {
+        return Err(format!("{REMOTE_VALIDATION_CERT_ENV} must be absolute"));
+    }
+    let metadata = std::fs::symlink_metadata(&certificate)
+        .map_err(|error| format!("inspect remote validation certificate: {error}"))?;
+    if !metadata.file_type().is_file() || metadata.len() > MAX_REMOTE_CERTIFICATE_BYTES {
+        return Err("remote validation certificate must be one bounded regular file".to_owned());
+    }
+    let mut bytes = Vec::with_capacity(usize::try_from(metadata.len()).unwrap_or(0));
+    std::fs::File::open(&certificate)
+        .map_err(|error| format!("open remote validation certificate: {error}"))?
+        .take(MAX_REMOTE_CERTIFICATE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("read remote validation certificate: {error}"))?;
+    if bytes.is_empty() || bytes.len() as u64 > MAX_REMOTE_CERTIFICATE_BYTES {
+        return Err("remote validation certificate has an invalid size".to_owned());
+    }
+    Ok(Some((relay, bytes)))
+}
+
+async fn open_desktop_remote_runtime(
+    app_data: &Path,
+    service: Arc<Mutex<ApplicationService>>,
+) -> Result<Option<Arc<RemoteApplicationRuntime>>, String> {
+    let Some((relay, certificate)) = remote_validation_parameters()? else {
+        return Ok(None);
+    };
+    RemoteApplicationRuntime::open(
+        app_data.join("remote-access"),
+        &relay,
+        certificate,
+        format!("rstorrent-desktop/{}", env!("CARGO_PKG_VERSION")),
+        service,
+    )
+    .await
+    .map(Arc::new)
+    .map(Some)
+    .map_err(|error| format!("start remote access validation owner: {error}"))
+}
+
 pub fn run() {
     let application = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(
@@ -1629,6 +1854,10 @@ pub fn run() {
             .map_err(|error| error.to_string())?;
             let service = Arc::new(Mutex::new(service));
             tauri::async_runtime::block_on(ApplicationService::ensure_maintenance_owner(&service));
+            let remote_runtime = tauri::async_runtime::block_on(open_desktop_remote_runtime(
+                &app_data,
+                service.clone(),
+            ))?;
             let notification_subscription = tauri::async_runtime::block_on(async {
                 service
                     .lock()
@@ -1667,6 +1896,7 @@ pub fn run() {
             );
             let state = DesktopState {
                 service,
+                remote_runtime,
                 subscriptions: Arc::new(Mutex::new(BTreeMap::new())),
                 view_resources: Arc::new(DesktopViewResources::new()),
                 torrent_uploads: Arc::new(Semaphore::new(1)),
@@ -1728,6 +1958,17 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            desktop_remote_access_state,
+            desktop_remote_access_enable,
+            desktop_remote_access_rename,
+            desktop_remote_access_revoke,
+            desktop_remote_access_revoke_all_other,
+            desktop_remote_access_close_circuit,
+            desktop_remote_access_require_password,
+            desktop_remote_access_change_passphrase,
+            desktop_remote_access_disable,
+            desktop_remote_access_recover,
+            desktop_remote_access_clear_history,
             application_dispatch,
             application_create_media_url,
             application_open_media_url,

@@ -17,6 +17,7 @@ tauri-build = { version = "2.6.3", features = [] }
 rstorrent-session = { path = "../../../crates/rstorrent-session" }
 rstorrent-media = { path = "../../../crates/rstorrent-media" }
 rstorrent-native-host = { path = "../../../crates/rstorrent-native-host" }
+rstorrent-remote-host = { path = "../../../crates/rstorrent-remote-host" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
@@ -31,6 +32,7 @@ tokio = { workspace = true, features = ["net", "rt", "sync"] }
 tokio-util = { workspace = true }
 url = { workspace = true }
 uuid = { version = "1.24.0", features = ["v4"] }
+zeroize = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 futures-util = { workspace = true }

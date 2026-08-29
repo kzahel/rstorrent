@@ -6,6 +6,7 @@ use std::process::ExitCode;
 use rstorrent_headless::runtime::{ErrorClass, InstalledLayout, run_installed_service};
 use rstorrent_headless::updater::UpdateClient;
 use rstorrent_headless::{SERVICE_NAME, installer};
+use rstorrent_headless::{config, remote_admin};
 use tokio_util::sync::CancellationToken;
 
 const CONFIGURATION_EXIT: u8 = 78;
@@ -27,6 +28,12 @@ async fn main() -> ExitCode {
 
 async fn execute() -> Result<(), rstorrent_headless::runtime::HeadlessError> {
     let arguments = env::args().skip(1).collect::<Vec<_>>();
+    if arguments
+        .first()
+        .is_some_and(|argument| argument == "remote")
+    {
+        return execute_remote(&arguments[1..]).await;
+    }
     match arguments.as_slice() {
         [argument] if argument == "--version" => {
             println!("rstorrent-headless {}", env!("CARGO_PKG_VERSION"));
@@ -74,6 +81,110 @@ async fn execute() -> Result<(), rstorrent_headless::runtime::HeadlessError> {
         report.shutdown_elapsed.as_millis()
     );
     Ok(())
+}
+
+async fn execute_remote(
+    arguments: &[String],
+) -> Result<(), rstorrent_headless::runtime::HeadlessError> {
+    let (config_path, command) = if let [flag, path, command @ ..] = arguments
+        && flag == "--config"
+    {
+        let path = PathBuf::from(path);
+        if !path.is_absolute() {
+            return Err(configuration_error(
+                "remote --config requires an absolute path",
+            ));
+        }
+        (path, command)
+    } else {
+        (default_config_path()?, arguments)
+    };
+    let config = config::load(&config_path)?;
+    if config.remote_validation.is_none() {
+        return Err(configuration_error(
+            "remote administration requires a version 3 remote_validation configuration",
+        ));
+    }
+    let request = parse_remote_request(command)?;
+    let result = remote_admin::request(&config.profile_root, request).await?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&result)
+            .map_err(|_| configuration_error("serialize remote administration result"))?
+    );
+    Ok(())
+}
+
+fn parse_remote_request(
+    command: &[String],
+) -> Result<remote_admin::RemoteAdminRequest, rstorrent_headless::runtime::HeadlessError> {
+    use remote_admin::RemoteAdminRequest;
+
+    let request = match command {
+        [operation] if operation == "status" => RemoteAdminRequest::Status,
+        [operation, username, flag, path]
+            if operation == "enable" && flag == "--passphrase-file" =>
+        {
+            RemoteAdminRequest::Enable {
+                username: username.clone(),
+                passphrase: read_remote_passphrase(path)?,
+            }
+        }
+        [operation, client_id, label] if operation == "rename" => RemoteAdminRequest::Rename {
+            client_id: client_id.clone(),
+            label: label.clone(),
+        },
+        [operation, client_id] if operation == "revoke" => RemoteAdminRequest::Revoke {
+            client_id: client_id.clone(),
+        },
+        [operation, client_id] if operation == "revoke-all-other" => {
+            RemoteAdminRequest::RevokeAllOther {
+                retained_client_id: client_id.clone(),
+            }
+        }
+        [operation, circuit_id] if operation == "close-circuit" => {
+            RemoteAdminRequest::CloseCircuit {
+                circuit_id: circuit_id.clone(),
+            }
+        }
+        [operation] if operation == "require-password" => RemoteAdminRequest::RequirePassword,
+        [operation, flag, path]
+            if operation == "change-passphrase" && flag == "--passphrase-file" =>
+        {
+            RemoteAdminRequest::ChangePassphrase {
+                passphrase: read_remote_passphrase(path)?,
+            }
+        }
+        [operation] if operation == "disable" => RemoteAdminRequest::Disable,
+        [operation, username, flag, path]
+            if operation == "recover" && flag == "--passphrase-file" =>
+        {
+            RemoteAdminRequest::Recover {
+                username: username.clone(),
+                passphrase: read_remote_passphrase(path)?,
+            }
+        }
+        [operation] if operation == "clear-history" => RemoteAdminRequest::ClearHistory,
+        _ => {
+            return Err(configuration_error(
+                "usage: rstorrent-headless remote [--config ABSOLUTE_PATH] status|enable USERNAME --passphrase-file ABSOLUTE_PATH|rename CLIENT_ID LABEL|revoke CLIENT_ID|revoke-all-other CLIENT_ID|close-circuit CIRCUIT_ID|require-password|change-passphrase --passphrase-file ABSOLUTE_PATH|disable|recover USERNAME --passphrase-file ABSOLUTE_PATH|clear-history",
+            ));
+        }
+    };
+    Ok(request)
+}
+
+fn read_remote_passphrase(
+    source: &str,
+) -> Result<String, rstorrent_headless::runtime::HeadlessError> {
+    let path = PathBuf::from(source);
+    if !path.is_absolute() {
+        return Err(configuration_error(
+            "--passphrase-file requires an absolute path",
+        ));
+    }
+    let mut passphrase = config::load_remote_passphrase(&path)?;
+    Ok(std::mem::take(&mut *passphrase))
 }
 
 async fn update(apply: bool) -> Result<(), rstorrent_headless::runtime::HeadlessError> {
@@ -229,7 +340,7 @@ async fn wait_for_shutdown_signal() {
 mod tests {
     use std::path::PathBuf;
 
-    use super::parse_config_path;
+    use super::{parse_config_path, parse_remote_request};
 
     #[test]
     fn explicit_config_path_is_absolute_and_singular() {
@@ -242,5 +353,21 @@ mod tests {
             parse_config_path(["--config".to_owned(), "relative".to_owned()].into_iter()).is_err()
         );
         assert!(parse_config_path(["--unknown".to_owned()].into_iter()).is_err());
+    }
+
+    #[test]
+    fn remote_cli_never_accepts_a_literal_passphrase_argument() {
+        assert!(
+            parse_remote_request(&[
+                "enable".to_owned(),
+                "owner".to_owned(),
+                "literal-secret".to_owned(),
+            ])
+            .is_err()
+        );
+        assert!(
+            parse_remote_request(&["change-passphrase".to_owned(), "literal-secret".to_owned(),])
+                .is_err()
+        );
     }
 }

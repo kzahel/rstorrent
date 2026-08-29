@@ -4188,6 +4188,7 @@ dependencies = [
  "notify-rust",
  "rstorrent-media",
  "rstorrent-native-host",
+ "rstorrent-remote-host",
  "rstorrent-session",
  "serde",
  "serde_json",
@@ -4206,6 +4207,7 @@ dependencies = [
  "uuid",
  "winreg",
  "zbus",
+ "zeroize",
 ]
 
 [[package]]
@@ -4266,8 +4268,11 @@ dependencies = [
  "flate2",
  "futures-util",
  "minisign-verify",
+ "rcgen",
  "reqwest",
  "rstorrent-gateway",
+ "rstorrent-remote-host",
+ "rstorrent-remote-relay",
  "rstorrent-session",
  "rustix",
  "serde",
@@ -4279,6 +4284,7 @@ dependencies = [
  "tokio-util",
  "toml 1.1.4+spec-1.1.0",
  "url",
+ "zeroize",
 ]
 
 [[package]]

@@ -17,7 +17,7 @@ authentication, relay delivery, promoted signed public headless artifacts,
 and system-wide service ownership do not exist yet. Completed Tactical
 [`190`](../tactical/190-opaque-wasm-relay-foundation.md) proves only a local,
 ephemeral OPAQUE native/Wasm dumb-relay composition. It does not broaden these
-deployment claims. Ready Tactical
+deployment claims. Active Tactical
 [`192`](../tactical/192-production-owner-relay-access.md) owns the future
 desktop/configured-headless host lifecycle, durable authority, authorized-
 browser resume and operator security-audit boundary only in a production-shaped
@@ -27,6 +27,16 @@ Ready Tactical
 foreground native command over an ephemeral in-process application owner. It
 is not a headless service, daemon, remote-control endpoint, or durable runtime
 configuration.
+
+Tactical `192` now attaches its local-only validation owner beneath the actual
+desktop and configured-headless application lifecycles. Headless configuration
+version 3 carries an explicit loopback relay/certificate block while retaining
+the independently selected version-1 hosted access policy; prior versions
+cannot start this owner. A protected same-UID Unix socket and
+`rstorrent-headless remote ...` commands provide local inspection and
+administration without adding those operations to a hosted HTTP listener. This
+is production-shaped local evidence, not a deployed owner-remote mode or a
+supported public listener.
 
 ## Purpose And Scope
 
