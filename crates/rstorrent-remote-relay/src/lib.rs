@@ -370,7 +370,7 @@ async fn host_connection(relay: Arc<RelayInner>, mut socket: WebSocket) {
     let accepted = {
         let mut routes = relay.routes.lock().await;
         let is_new = !routes.contains_key(&username);
-        if is_new && routes.len() >= MAX_REGISTERED_ROUTES {
+        if !route_registration_available(routes.len(), !is_new) {
             false
         } else {
             let route = routes.entry(username.clone()).or_insert_with(|| {
@@ -677,6 +677,10 @@ fn validate_username(username: &str) -> Result<(), ClaimError> {
     Ok(())
 }
 
+fn route_registration_available(route_count: usize, route_exists: bool) -> bool {
+    route_exists || route_count < MAX_REGISTERED_ROUTES
+}
+
 async fn close(socket: &mut WebSocket, code: u16, reason: &'static str) {
     let _ = socket
         .send(Message::Close(Some(CloseFrame {
@@ -708,6 +712,46 @@ mod tests {
         assert_eq!(
             parse_client_select(&trailing),
             Err(ClaimError::InvalidMessage)
+        );
+    }
+
+    #[test]
+    fn route_registration_limit_is_exact_and_preserves_existing_routes() {
+        assert!(route_registration_available(
+            MAX_REGISTERED_ROUTES - 1,
+            false
+        ));
+        assert!(!route_registration_available(MAX_REGISTERED_ROUTES, false));
+        assert!(route_registration_available(MAX_REGISTERED_ROUTES, true));
+    }
+
+    #[tokio::test]
+    async fn active_circuit_limit_is_exact_and_releases_capacity() {
+        let relay = ProofRelay::new([7; 32]);
+        let mut permits = Vec::with_capacity(MAX_ACTIVE_CIRCUITS);
+        for _ in 0..MAX_ACTIVE_CIRCUITS {
+            permits.push(
+                relay
+                    .inner
+                    .circuit_slots
+                    .clone()
+                    .try_acquire_owned()
+                    .expect("slot below the global limit"),
+            );
+        }
+        assert!(
+            relay
+                .inner
+                .circuit_slots
+                .clone()
+                .try_acquire_owned()
+                .is_err()
+        );
+
+        drop(permits);
+        assert_eq!(
+            relay.inner.circuit_slots.available_permits(),
+            MAX_ACTIVE_CIRCUITS
         );
     }
 }

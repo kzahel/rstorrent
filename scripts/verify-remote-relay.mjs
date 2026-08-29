@@ -413,21 +413,18 @@ function run(command, args) {
 }
 
 function startVite(port) {
+  const viteCli = join(webRoot, "node_modules/vite/bin/vite.js");
   const child = spawn(
-    "npm",
+    process.execPath,
     [
-      "run",
-      "dev",
-      "--prefix",
-      "clients/web",
-      "--",
+      viteCli,
       "--host",
       "127.0.0.1",
       "--port",
       String(port),
       "--strictPort",
     ],
-    { cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"] },
+    { cwd: webRoot, stdio: ["ignore", "pipe", "pipe"] },
   );
   child.stderr.on("data", (chunk) => process.stderr.write(chunk));
   return child;
@@ -610,16 +607,27 @@ function closeServer(server) {
 async function stopChild(child) {
   if (child.exitCode !== null) return;
   child.kill("SIGTERM");
-  await waitForExit(child, 5_000).catch(() => child.kill("SIGKILL"));
+  try {
+    await waitForExit(child, 5_000);
+  } catch {
+    child.kill("SIGKILL");
+    await waitForExit(child, 5_000);
+  }
 }
 
 function waitForExit(child, timeoutMillis) {
-  return Promise.race([
-    new Promise((resolveExit) => child.once("exit", resolveExit)),
-    new Promise((_, rejectTimeout) =>
-      setTimeout(() => rejectTimeout(new Error("child exit timed out")), timeoutMillis),
-    ),
-  ]);
+  if (child.exitCode !== null) return Promise.resolve(child.exitCode);
+  return new Promise((resolveExit, rejectTimeout) => {
+    const timer = setTimeout(() => {
+      child.off("exit", onExit);
+      rejectTimeout(new Error("child exit timed out"));
+    }, timeoutMillis);
+    const onExit = (code) => {
+      clearTimeout(timer);
+      resolveExit(code);
+    };
+    child.once("exit", onExit);
+  });
 }
 
 await main();
