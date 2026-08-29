@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 base64.workspace = true
+p256.workspace = true
 rstorrent-remote-crypto = { path = "../rstorrent-remote-crypto" }
 rustix.workspace = true
 serde.workspace = true
@@ -20,4 +21,3 @@ zeroize.workspace = true
 p256.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
-

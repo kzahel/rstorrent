@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 
 use base64::Engine as _;
+use p256::ecdsa::signature::Signer as _;
+use p256::ecdsa::{Signature, SigningKey};
 use rstorrent_remote_crypto::{
     AuthorizationChallenge, AuthorizationGeneration, Binding, ClientId, ClientResumeProof, HostId,
     HostPin, HostResumeKey, OperationSeed, P256PublicKey, P256Signature, PasswordFile, RelayId,
@@ -186,6 +188,7 @@ impl RemoteAuthority {
         if protocol_floor == 0 {
             return Err(RemoteAccessError::InvalidInput("protocol floor"));
         }
+        validate_relay_credential(&material.relay_credential)?;
         let binding = Binding::new(material.relay_id, username, material.host_id);
         let opaque_authority = ServerAuthority::generate(material.authority_seed);
         let password_file = register_password(
@@ -243,8 +246,16 @@ impl RemoteAuthority {
         &self.route
     }
 
-    pub fn relay_credential(&self) -> &[u8; 32] {
-        &self.relay_credential
+    pub fn relay_public_key(&self) -> P256PublicKey {
+        let key = relay_signing_key(&self.relay_credential);
+        P256PublicKey::from_bytes(key.verifying_key().to_encoded_point(false).as_bytes())
+            .expect("validated relay signing key has a valid public key")
+    }
+
+    pub fn sign_relay_transcript(&self, transcript: &[u8]) -> P256Signature {
+        let signature: Signature = relay_signing_key(&self.relay_credential).sign(transcript);
+        P256Signature::from_bytes(signature.to_bytes().as_slice())
+            .expect("P-256 signer returns a fixed valid signature")
     }
 
     pub fn protocol_floor(&self) -> u16 {
@@ -494,6 +505,7 @@ impl RemoteAuthority {
         event_id: EventId,
     ) -> Result<()> {
         self.ensure_event_id_available(event_id)?;
+        validate_relay_credential(&credential)?;
         self.relay_credential = Zeroizing::new(credential);
         self.push_event(SecurityEvent {
             event_id,
@@ -581,6 +593,38 @@ impl RemoteAuthority {
         Ok(channel)
     }
 
+    pub fn record_full_login(
+        &mut self,
+        client_id: Option<ClientId>,
+        now: Timestamp,
+        event_id: EventId,
+        client_build: Option<String>,
+    ) -> Result<()> {
+        if let Some(client_id) = client_id
+            && !self
+                .clients
+                .iter()
+                .any(|client| client.client_id == client_id)
+        {
+            return Err(RemoteAccessError::NotFound);
+        }
+        if let Some(client_build) = &client_build {
+            validate_bounded_text(client_build, 1, MAX_OBSERVATION_BYTES, "client build")?;
+        }
+        self.push_event(SecurityEvent {
+            event_id,
+            timestamp: now,
+            kind: EventKind::FullLoginSucceeded,
+            result: EventResult::Succeeded,
+            client_id,
+            circuit_id: None,
+            authentication_method: Some(AuthenticationMethod::Password),
+            route: Some(self.route.clone()),
+            client_build,
+            reason_class: None,
+        })
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn record_circuit_event(
         &mut self,
@@ -592,13 +636,19 @@ impl RemoteAuthority {
         event_id: EventId,
         reason_class: Option<String>,
     ) -> Result<()> {
-        if let Some(client_id) = client_id
-            && !self
+        if let Some(client_id) = client_id {
+            let current = self
                 .clients
                 .iter()
-                .any(|client| client.client_id == client_id)
-        {
-            return Err(RemoteAccessError::NotFound);
+                .any(|client| client.client_id == client_id);
+            let historical = !opened
+                && self
+                    .tombstones
+                    .iter()
+                    .any(|client| client.client_id == client_id);
+            if !current && !historical {
+                return Err(RemoteAccessError::NotFound);
+            }
         }
         if let Some(reason) = &reason_class {
             validate_bounded_text(reason, 1, MAX_REASON_BYTES, "circuit reason class")?;
@@ -1203,6 +1253,8 @@ impl PersistedAuthority {
             HostId::new(decode_fixed(&self.host_id)?),
         );
         let relay_credential = Zeroizing::new(decode_fixed(&self.relay_credential.0)?);
+        validate_relay_credential(&relay_credential)
+            .map_err(|_| RemoteAccessError::Corrupt("relay credential"))?;
         let opaque_authority =
             ServerAuthority::from_bytes(&decode_secret(&self.opaque_authority.0)?)?;
         let password_file = PasswordFile::from_bytes(&decode_secret(&self.password_file.0)?)?;
@@ -1346,6 +1398,16 @@ impl PersistedAuthority {
     }
 }
 
+fn validate_relay_credential(credential: &[u8; 32]) -> Result<()> {
+    SigningKey::from_slice(credential)
+        .map(|_| ())
+        .map_err(|_| RemoteAccessError::InvalidInput("relay credential"))
+}
+
+fn relay_signing_key(credential: &[u8; 32]) -> SigningKey {
+    SigningKey::from_slice(credential).expect("validated relay credential remains valid")
+}
+
 fn decode_secret(value: &str) -> Result<Zeroizing<Vec<u8>>> {
     base64::engine::general_purpose::URL_SAFE_NO_PAD
         .decode(value)
@@ -1452,13 +1514,90 @@ pub(crate) mod test_support {
 
 #[cfg(test)]
 mod tests {
-    use p256::ecdsa::{Signature, signature::Signer};
+    use p256::ecdsa::{Signature, VerifyingKey, signature::Signer, signature::Verifier};
     use rstorrent_remote_crypto::{
         ClientResumeProof, P256Signature, finish_client_resume, start_client_resume,
     };
 
     use super::test_support::*;
     use super::*;
+
+    #[test]
+    fn relay_credential_is_a_valid_signing_identity() {
+        let mut authority = provision(Timestamp::from_millis(1));
+        let transcript = b"challenge-bound relay claim";
+        let signature =
+            Signature::from_slice(authority.sign_relay_transcript(transcript).as_bytes()).unwrap();
+        let key = VerifyingKey::from_sec1_bytes(authority.relay_public_key().as_bytes()).unwrap();
+        key.verify(transcript, &signature).unwrap();
+
+        let before = authority.security_snapshot();
+        assert!(
+            authority
+                .rotate_relay_credential(
+                    [0; 32],
+                    Timestamp::from_millis(2),
+                    EventId::new([91; 16]),
+                )
+                .is_err()
+        );
+        assert_eq!(authority.security_snapshot(), before);
+    }
+
+    #[test]
+    fn full_login_and_revoked_circuit_close_remain_auditable() {
+        let now = Timestamp::from_millis(1_000);
+        let mut authority = provision(now);
+        let client_id = authorize(&mut authority, &signing_key(92), 93, now, 94);
+        authority
+            .record_full_login(
+                Some(client_id),
+                now,
+                EventId::new([95; 16]),
+                Some("test-build".to_owned()),
+            )
+            .unwrap();
+        authority
+            .revoke_client(client_id, now, EventId::new([96; 16]))
+            .unwrap();
+        authority
+            .record_circuit_event(
+                false,
+                Some(client_id),
+                [97; 16],
+                AuthenticationMethod::Password,
+                now,
+                EventId::new([98; 16]),
+                Some("owner_revoked".to_owned()),
+            )
+            .unwrap();
+        assert!(
+            authority
+                .record_circuit_event(
+                    true,
+                    Some(client_id),
+                    [99; 16],
+                    AuthenticationMethod::Password,
+                    now,
+                    EventId::new([100; 16]),
+                    None,
+                )
+                .is_err()
+        );
+        let snapshot = authority.security_snapshot();
+        assert!(
+            snapshot
+                .events
+                .iter()
+                .any(|event| event.kind == EventKind::FullLoginSucceeded)
+        );
+        assert!(
+            snapshot
+                .events
+                .iter()
+                .any(|event| event.kind == EventKind::CircuitClosed)
+        );
+    }
 
     #[test]
     fn authorization_resume_expiry_and_revocation_are_fenced() {
