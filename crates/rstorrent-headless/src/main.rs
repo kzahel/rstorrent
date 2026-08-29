@@ -100,9 +100,9 @@ async fn execute_remote(
         (default_config_path()?, arguments)
     };
     let config = config::load(&config_path)?;
-    if config.remote_validation.is_none() {
+    if config.remote_access.is_none() {
         return Err(configuration_error(
-            "remote administration requires a version 3 remote_validation configuration",
+            "remote administration requires configured remote access",
         ));
     }
     let request = parse_remote_request(command)?;

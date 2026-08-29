@@ -20,7 +20,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::config::{
     AuthenticationConfig, ConfigError, HeadlessConfig, HeadlessEndpoint, HeadlessEndpointKind,
-    load, load_basic_credentials, load_remote_certificate, validate_runtime_paths,
+    RemoteAccessConfig, load, load_basic_credentials, load_remote_certificate,
+    validate_runtime_paths,
 };
 use crate::remote_admin::RemoteAdminServer;
 use crate::updater::{HeadlessUpdateProvider, UpdateError};
@@ -203,7 +204,7 @@ impl InstalledLayout {
 pub struct ServiceReport {
     pub listeners: Vec<SocketAddr>,
     pub version: String,
-    pub remote_validation: bool,
+    pub remote_access: bool,
     pub shutdown_elapsed: Duration,
 }
 
@@ -219,8 +220,9 @@ pub async fn run_installed_service(
         &[&layout.application_root, &layout.release_root],
     )?;
     let remote_certificate = config
-        .remote_validation
+        .remote_access
         .as_ref()
+        .filter(|remote| matches!(remote, RemoteAccessConfig::Validation(_)))
         .map(|_| load_remote_certificate(&config))
         .transpose()?;
     let access_mode = hosted_access_mode(&config.authentication);
@@ -267,23 +269,37 @@ pub async fn run_installed_service(
         .await
         .map_err(configuration_application_error)?;
     let application = Arc::new(Mutex::new(application));
-    let remote_runtime = if let Some(remote) = &config.remote_validation {
-        let opened = RemoteApplicationRuntime::open(
-            config.profile_root.join("remote-access"),
-            &remote.relay_base,
-            remote_certificate
-                .clone()
-                .ok_or_else(|| HeadlessError::configuration("remote certificate missing"))?,
-            format!("rstorrent-headless/{}", layout.version),
-            application.clone(),
-        )
-        .await;
+    let remote_runtime = if let Some(remote) = &config.remote_access {
+        let authority_root = config.profile_root.join("remote-access");
+        let host_build = format!("rstorrent-headless/{}", layout.version);
+        let opened = match remote {
+            RemoteAccessConfig::Product => {
+                RemoteApplicationRuntime::open_product(
+                    authority_root,
+                    host_build,
+                    application.clone(),
+                )
+                .await
+            }
+            RemoteAccessConfig::Validation(validation) => {
+                RemoteApplicationRuntime::open_validation(
+                    authority_root,
+                    &validation.relay_base,
+                    remote_certificate.clone().ok_or_else(|| {
+                        HeadlessError::configuration("remote validation certificate missing")
+                    })?,
+                    host_build,
+                    application.clone(),
+                )
+                .await
+            }
+        };
         match opened {
             Ok(runtime) => Some(runtime),
             Err(error) => {
                 let _ = application.lock().await.shutdown().await;
                 return Err(HeadlessError::configuration(format!(
-                    "start remote access validation owner: {error}"
+                    "start remote access owner: {error}"
                 )));
             }
         }
@@ -335,7 +351,7 @@ pub async fn run_installed_service(
         .map(|server| server.local_addr())
         .collect::<Vec<_>>();
     eprintln!(
-        "headless product={} version={} remote_validation={} listening={}",
+        "headless product={} version={} remote_access={} listening={}",
         PRODUCT_ID,
         layout.version,
         remote_runtime.is_some(),
@@ -391,13 +407,13 @@ pub async fn run_installed_service(
     }
     admin_result?;
     remote_shutdown.map_err(|error| {
-        HeadlessError::runtime(format!("shutdown remote access validation owner: {error}"))
+        HeadlessError::runtime(format!("shutdown remote access owner: {error}"))
     })?;
     application_shutdown.map_err(runtime_application_error)?;
     Ok(ServiceReport {
         listeners,
         version: layout.version.clone(),
-        remote_validation: remote_runtime.is_some(),
+        remote_access: remote_runtime.is_some(),
         shutdown_elapsed,
     })
 }
@@ -1125,7 +1141,7 @@ mod tests {
                 .expect("headless remote shutdown timeout")
                 .expect("headless task")
                 .expect("headless remote service");
-            assert!(report.remote_validation);
+            assert!(report.remote_access);
             assert!(!admin_socket_path(&profile).exists());
         }
 

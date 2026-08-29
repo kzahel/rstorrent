@@ -25,12 +25,52 @@ pub struct RemoteApplicationRuntime {
 }
 
 impl RemoteApplicationRuntime {
-    pub async fn open(
+    pub async fn open_validation(
         authority_root: impl Into<PathBuf>,
         relay_base: &str,
         relay_certificate_der: Vec<u8>,
         host_build: impl Into<String>,
         service: Arc<Mutex<ApplicationService>>,
+    ) -> Result<Self> {
+        Self::open_with_config(
+            authority_root,
+            host_build,
+            service,
+            |gateway, token, build| {
+                RemoteHostConfig::validation(
+                    relay_base,
+                    relay_certificate_der,
+                    gateway,
+                    INTERNAL_GATEWAY_ORIGIN,
+                    token,
+                    build,
+                )
+            },
+        )
+        .await
+    }
+
+    pub async fn open_product(
+        authority_root: impl Into<PathBuf>,
+        host_build: impl Into<String>,
+        service: Arc<Mutex<ApplicationService>>,
+    ) -> Result<Self> {
+        Self::open_with_config(
+            authority_root,
+            host_build,
+            service,
+            |gateway, token, build| {
+                RemoteHostConfig::product(gateway, INTERNAL_GATEWAY_ORIGIN, token, build)
+            },
+        )
+        .await
+    }
+
+    async fn open_with_config(
+        authority_root: impl Into<PathBuf>,
+        host_build: impl Into<String>,
+        service: Arc<Mutex<ApplicationService>>,
+        config: impl FnOnce(String, String, String) -> Result<RemoteHostConfig>,
     ) -> Result<Self> {
         let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(random_array::<32>()?);
         let gateway = bind(
@@ -52,13 +92,10 @@ impl RemoteApplicationRuntime {
         let gateway_shutdown = CancellationToken::new();
         let task_shutdown = gateway_shutdown.clone();
         let gateway_task = tokio::spawn(async move { gateway.serve(task_shutdown).await });
-        let config = match RemoteHostConfig::new(
-            relay_base,
-            relay_certificate_der,
+        let config = match config(
             format!("ws://{gateway_address}/api/v1/connect"),
-            INTERNAL_GATEWAY_ORIGIN,
             token,
-            host_build,
+            host_build.into(),
         ) {
             Ok(config) => config,
             Err(error) => {

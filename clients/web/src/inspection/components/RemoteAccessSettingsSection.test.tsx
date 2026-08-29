@@ -47,13 +47,14 @@ describe("desktop remote security settings", () => {
     expect(revoke).toHaveBeenCalledWith("client-one");
   });
 
-  it("truthfully reports when validation was not configured for the process", async () => {
+  it("truthfully reports when the remote owner is unavailable", async () => {
     render(
       <RemoteAccessSettingsSection
         remoteAccess={remoteAccess({ configured: false, security: null })}
       />,
     );
-    expect(await screen.findByText("Not configured for this launch")).toBeVisible();
+    expect(await screen.findByText("Unavailable")).toBeVisible();
+    expect(screen.getByText(/could not establish protected remote-access storage/)).toBeVisible();
     expect(screen.queryByRole("button", { name: /Enable remote/ })).not.toBeInTheDocument();
   });
 });

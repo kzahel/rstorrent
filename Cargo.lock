@@ -4394,6 +4394,7 @@ dependencies = [
  "rstorrent-remote-crypto",
  "rstorrent-remote-relay",
  "rstorrent-session",
+ "rustls-platform-verifier",
  "serde",
  "serde_json",
  "tempfile",

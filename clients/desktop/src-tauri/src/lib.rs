@@ -138,7 +138,7 @@ fn remote_access_owner(state: &DesktopState) -> Result<Arc<RemoteAccessOwner>, S
         .remote_runtime
         .as_ref()
         .map(|runtime| runtime.owner())
-        .ok_or_else(|| "remote access validation is not configured for this process".to_owned())
+        .ok_or_else(|| "remote access is unavailable for this process".to_owned())
 }
 
 #[tauri::command]
@@ -1771,13 +1771,19 @@ fn remote_validation_parameters() -> Result<Option<(String, Vec<u8>)>, String> {
 async fn open_desktop_remote_runtime(
     app_data: &Path,
     service: Arc<Mutex<ApplicationService>>,
-) -> Result<Option<Arc<RemoteApplicationRuntime>>, String> {
-    let Some((relay, certificate)) = remote_validation_parameters()? else {
-        return Ok(None);
-    };
-    open_configured_desktop_remote_runtime(app_data, &relay, certificate, service)
-        .await
-        .map(Some)
+) -> Result<Arc<RemoteApplicationRuntime>, String> {
+    if let Some((relay, certificate)) = remote_validation_parameters()? {
+        return open_configured_desktop_remote_runtime(app_data, &relay, certificate, service)
+            .await;
+    }
+    RemoteApplicationRuntime::open_product(
+        app_data.join("remote-access"),
+        format!("rstorrent-desktop/{}", env!("CARGO_PKG_VERSION")),
+        service,
+    )
+    .await
+    .map(Arc::new)
+    .map_err(|error| format!("start remote access owner: {error}"))
 }
 
 async fn open_configured_desktop_remote_runtime(
@@ -1786,7 +1792,7 @@ async fn open_configured_desktop_remote_runtime(
     certificate: Vec<u8>,
     service: Arc<Mutex<ApplicationService>>,
 ) -> Result<Arc<RemoteApplicationRuntime>, String> {
-    RemoteApplicationRuntime::open(
+    RemoteApplicationRuntime::open_validation(
         app_data.join("remote-access"),
         relay,
         certificate,
@@ -1867,7 +1873,8 @@ pub fn run() {
             let remote_runtime = tauri::async_runtime::block_on(open_desktop_remote_runtime(
                 &app_data,
                 service.clone(),
-            ))?;
+            ))
+            .map(Some)?;
             let notification_subscription = tauri::async_runtime::block_on(async {
                 service
                     .lock()

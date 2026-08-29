@@ -53,12 +53,11 @@ export function RemoteAccessSettingsSection({
     return (
       <div className={styles.panel}>
         <section className={styles.statusCard}>
-          <span>Validation mode</span>
-          <strong>Not configured for this launch</strong>
+          <span>Remote access</span>
+          <strong>Unavailable</strong>
           <p>
-            Remote access remains off. This internal build only exposes it when
-            the desktop process starts with an explicit loopback relay and local
-            certificate configuration.
+            This application could not establish protected remote-access
+            storage or its relay connection owner. Remote access remains off.
           </p>
         </section>
       </div>
@@ -126,7 +125,7 @@ export function RemoteAccessSettingsSection({
 
       {!security.enabled && local ? (
         <section className={styles.section}>
-          <h3>Enable local validation access</h3>
+          <h3>Enable remote access</h3>
           <p className={styles.note}>
             Choose the relay route username and a password of at least 12 characters.
             The password is not stored.

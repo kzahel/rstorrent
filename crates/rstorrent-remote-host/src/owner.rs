@@ -16,6 +16,7 @@ use rstorrent_remote_crypto::{
     ClientId, HostId, OperationSeed, RelayId, Username, random_operation_seed,
 };
 use rstorrent_remote_relay::{ReserveRouteRequest, ReserveRouteResponse};
+use rustls_platform_verifier::ConfigVerifierExt as _;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
@@ -40,6 +41,7 @@ const MIN_PASSPHRASE_BYTES: usize = 12;
 const MAX_PASSPHRASE_BYTES: usize = 256;
 const RESERVATION_ATTEMPTS: usize = 5;
 const RESERVATION_RETRY_DELAY: Duration = Duration::from_millis(50);
+pub const PRODUCT_RELAY_BASE: &str = "https://relay.rstorrent.com/";
 
 pub struct RemoteHostConfig {
     relay_base: Url,
@@ -53,7 +55,7 @@ pub struct RemoteHostConfig {
 
 impl RemoteHostConfig {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub fn validation(
         relay_base: &str,
         relay_certificate_der: Vec<u8>,
         gateway_websocket_url: impl Into<String>,
@@ -61,24 +63,7 @@ impl RemoteHostConfig {
         gateway_token: String,
         host_build: impl Into<String>,
     ) -> Result<Self> {
-        let relay_base =
-            Url::parse(relay_base).map_err(|_| RemoteHostError::Configuration("relay URL"))?;
-        if relay_base.scheme() != "https"
-            || relay_base.username() != ""
-            || relay_base.password().is_some()
-            || relay_base.path() != "/"
-            || relay_base.query().is_some()
-            || relay_base.fragment().is_some()
-            || !relay_base.host().is_some_and(|host| match host {
-                url::Host::Domain(name) => name == "localhost",
-                url::Host::Ipv4(address) => address.is_loopback(),
-                url::Host::Ipv6(address) => address.is_loopback(),
-            })
-        {
-            return Err(RemoteHostError::Configuration(
-                "relay must be one exact loopback HTTPS origin",
-            ));
-        }
+        let relay_base = parse_relay_base(relay_base, RelayProfile::Validation)?;
         if relay_certificate_der.is_empty()
             || relay_certificate_der.len() > MAX_RELAY_CERTIFICATE_BYTES
         {
@@ -92,11 +77,45 @@ impl RemoteHostConfig {
         let relay_tls = ClientConfig::builder()
             .with_root_certificates(roots)
             .with_no_client_auth();
-        let relay_http_certificate = reqwest::tls::Certificate::from_der(&relay_certificate_der)
-            .map_err(|_| RemoteHostError::Configuration("relay certificate"))?;
+        Self::finish(
+            relay_base,
+            relay_tls,
+            gateway_websocket_url,
+            gateway_origin,
+            gateway_token,
+            host_build,
+        )
+    }
+
+    pub fn product(
+        gateway_websocket_url: impl Into<String>,
+        gateway_origin: impl Into<String>,
+        gateway_token: String,
+        host_build: impl Into<String>,
+    ) -> Result<Self> {
+        let relay_base = parse_relay_base(PRODUCT_RELAY_BASE, RelayProfile::Product)?;
+        let relay_tls = ClientConfig::with_platform_verifier()
+            .map_err(|_| RemoteHostError::Configuration("platform relay certificate trust"))?;
+        Self::finish(
+            relay_base,
+            relay_tls,
+            gateway_websocket_url,
+            gateway_origin,
+            gateway_token,
+            host_build,
+        )
+    }
+
+    fn finish(
+        relay_base: Url,
+        relay_tls: ClientConfig,
+        gateway_websocket_url: impl Into<String>,
+        gateway_origin: impl Into<String>,
+        gateway_token: String,
+        host_build: impl Into<String>,
+    ) -> Result<Self> {
         let relay_http = reqwest::Client::builder()
-            .use_rustls_tls()
-            .add_root_certificate(relay_http_certificate)
+            .tls_backend_preconfigured(relay_tls.clone())
             .https_only(true)
             .build()
             .map_err(|_| RemoteHostError::Configuration("relay HTTP client"))?;
@@ -182,6 +201,38 @@ impl RemoteHostConfig {
     pub(crate) fn host_build(&self) -> &str {
         &self.host_build
     }
+}
+
+#[derive(Clone, Copy)]
+enum RelayProfile {
+    Product,
+    Validation,
+}
+
+fn parse_relay_base(source: &str, profile: RelayProfile) -> Result<Url> {
+    let relay = Url::parse(source).map_err(|_| RemoteHostError::Configuration("relay URL"))?;
+    let common = relay.scheme() == "https"
+        && relay.username().is_empty()
+        && relay.password().is_none()
+        && relay.path() == "/"
+        && relay.query().is_none()
+        && relay.fragment().is_none()
+        && relay.origin().ascii_serialization() + "/" == source;
+    let host_matches = match profile {
+        RelayProfile::Product => relay.host_str() == Some("relay.rstorrent.com"),
+        RelayProfile::Validation => relay.host().is_some_and(|host| match host {
+            url::Host::Domain(name) => name == "localhost",
+            url::Host::Ipv4(address) => address.is_loopback(),
+            url::Host::Ipv6(address) => address.is_loopback(),
+        }),
+    };
+    if !common || !host_matches {
+        return Err(RemoteHostError::Configuration(match profile {
+            RelayProfile::Product => "product relay origin",
+            RelayProfile::Validation => "validation relay origin",
+        }));
+    }
+    Ok(relay)
 }
 
 pub(crate) struct SharedOwner {

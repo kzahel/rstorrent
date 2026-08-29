@@ -429,7 +429,7 @@ async fn start_harness() -> Harness {
     let task_shutdown = gateway_shutdown.clone();
     let gateway_task = tokio::spawn(async move { gateway.serve(task_shutdown).await.unwrap() });
 
-    let config = RemoteHostConfig::new(
+    let config = RemoteHostConfig::validation(
         &format!("https://localhost:{}/", relay_address.port()),
         certificate.clone(),
         format!("ws://127.0.0.1:{}/api/v1/connect", gateway_address.port()),
