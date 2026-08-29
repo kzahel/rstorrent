@@ -11,8 +11,8 @@ RSTorrent-specific saturated-cohort adaptation. Tactical `176` is complete
 and release/updater Tactical `158` remains active; this topic remains the
 durable comparison ledger. Maintainer direction on 2026-08-29 accepts
 `LPA-009`: Tactical
-[`191`](../tactical/191-direct-filesystem-storage.md) will remove RSTorrent's
-managed-publication delta and adopt direct final-path storage.
+[`191`](../tactical/191-direct-filesystem-storage.md) removed RSTorrent's
+managed-publication delta and adopted direct final-path storage.
 
 ## Scope
 
@@ -275,7 +275,7 @@ thermal, lifecycle, memory, and cleanup bounds.
 
 ### LPA-009: Direct Filesystem Storage
 
-Disposition: **Accepted; Tactical `191` is Ready.**
+Disposition: **Aligned by completed Tactical `191`.**
 
 Pinned libtorrent treats `save_path` plus metainfo-relative paths as the
 ordinary content namespace. Both sparse and allocate storage modes write at
@@ -285,11 +285,11 @@ priority-zero files. Wanted completion is distinct from whole-torrent seeding;
 there is no default hidden whole-payload staging namespace or automatic
 completion publication.
 
-RSTorrent currently stages a single file or tree under a hidden owner-keyed
-name, persists namespace/publication state, and publishes the selected set by
-rename after all wanted pieces are durable. The extra lifecycle delays
-independently completed wanted files and leaks into platform and product
-contracts without a demonstrated need.
+Before Tactical `191`, RSTorrent staged a single file or tree under a hidden
+owner-keyed name, persisted namespace/publication state, and renamed the
+selected set after all wanted pieces were durable. That removed lifecycle
+delayed independently completed wanted files and leaked into platform and
+product contracts without a demonstrated need.
 
 Tactical `191` removes this delta rather than preserving it as an option. It
 writes wanted bytes directly to final safe paths, reuses the existing

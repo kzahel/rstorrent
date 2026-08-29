@@ -703,7 +703,7 @@ file selection, completes exact wanted bytes over uTP, forces a recheck, and
 restarts without uploading the source again. A second phase adds a pure-v2
 `btmh` magnet with one peer hint and select-only intent, captures metadata/hash
 wire use, checks skipped output and canonical export, restarts from local
-verified content, and removes exact managed data. It also checks accessibility,
+verified content, and removes exact downloaded data. It also checks accessibility,
 semantic transport use, gateway resource bounds, part-artifact absence, and
 temporary cleanup:
 
@@ -726,7 +726,8 @@ uv run --project tests/interop --locked \
 The incomplete-file streaming profile uses a throttled pinned-libtorrent seed
 and a TCP capture proxy. It proves exact concurrent head, tail, seek, and
 overlap ranges while content is incomplete, then keeps one full active body
-alive across immutable publication and records bounded demand/request order:
+alive as the final bytes become verified and records bounded demand/request
+order:
 
 ```bash
 uv run --project tests/interop --locked \
@@ -751,8 +752,8 @@ uv run --project tests/interop --locked \
 ```
 
 The representative selective-hash profile downloads 32 MiB in 128 pieces
-across three unaligned wanted files. It checks exact publication and cleanup
-while retaining transfer-only timings for storage-operation changes:
+across three unaligned wanted files. It checks exact final-path content and
+cleanup while retaining transfer-only timings for storage-operation changes:
 
 ```bash
 uv run --project tests/interop --locked \
@@ -769,7 +770,7 @@ uv run --project tests/interop --locked \
 
 The application-service checkpoint profile exercises the same piece count
 through SQLite-backed durable resume and reports the durable revision
-amplification from metadata checkpoint to verified publication:
+amplification from metadata checkpoint to verified completion:
 
 ```bash
 uv run --project tests/interop --locked \
@@ -791,8 +792,8 @@ uv run --project tests/interop --locked \
 The ordinary-resume/Force scenario also proves the intentional trust boundary:
 same-length external mutation can pass structural fast resume, while explicit
 Force performs a fresh full check and clears it. The unified oracle combines
-that behavior with BEP 3 topology, publication-death, and pinned-libtorrent
-comparison phases:
+that behavior with BEP 3 topology, direct-file crash recovery, and
+pinned-libtorrent comparison phases:
 
 ```bash
 uv run --project tests/interop --locked \
@@ -1029,11 +1030,11 @@ uv run --project tests/interop --locked \
   --profile product-concurrent-downloads --runs 1 --no-build
 ```
 
-The Android SAF incomplete-duplex profile stages a two-piece partial torrent,
-revokes and repairs its provider grant across process restart, then exchanges
-complementary Fast payload with pinned libtorrent before completion. It checks
-exact wanted hashes, absent skipped/padding files, resource high waters, and
-managed cleanup:
+The Android SAF incomplete-duplex profile stores a two-piece partial torrent
+directly, revokes and repairs its provider grant across process restart, then
+exchanges complementary Fast payload with pinned libtorrent before completion.
+It checks exact wanted hashes, absent skipped/padding files, resource high
+waters, and exact data cleanup:
 
 ```bash
 clients/android/build.sh

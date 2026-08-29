@@ -2,7 +2,14 @@
 
 Topic: `download-roots`
 
-Status: Completed Tactical
+Status: Tactical
+[`191`](../tactical/191-direct-filesystem-storage.md) completes the direct
+root-relative content model across path, Android SAF, and qualified iOS roots.
+Wanted files are final-path files from their first write, existing bytes enter
+the common checker, and exact delete-data removal preserves unrelated root
+content. Earlier publication tacticals below remain historical evidence.
+
+Completed Tactical
 [`188`](../tactical/188-existing-payload-adoption-and-recheck.md) replaces a
 fresh-row destination collision with automatic metainfo-exact discovery and
 the common complete checker. Discovered bytes remain unverified until hashing
@@ -382,11 +389,10 @@ independently shows the selected folder at zero items in Apple Files.
 
 ## User-Visible Content Layout
 
-Accepted direction on 2026-08-29 replaces the implemented publication model
-with [`direct-filesystem-storage.md`](direct-filesystem-storage.md). Tactical
-[`191`](../tactical/191-direct-filesystem-storage.md) is Ready; until it lands,
-the product still follows the historical staging/publication behavior recorded
-by Tacticals `062`, `073`, and `188`.
+Tactical [`191`](../tactical/191-direct-filesystem-storage.md) implements the
+accepted model in [`direct-filesystem-storage.md`](direct-filesystem-storage.md).
+Tacticals `062`, `073`, and `188` remain historical records of the removed
+staging/publication design and the checker behavior carried forward.
 
 The accepted root-relative layout is direct:
 

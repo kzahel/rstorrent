@@ -102,9 +102,10 @@ that scope and its cleanup or compatibility rules explicitly.
   Deployment and every supported-public-capability claim remain a later
   separately authorized tactical.
 - [`191-direct-filesystem-storage.md`](191-direct-filesystem-storage.md):
-  ready; removes hidden staging and publication machinery across storage,
+  complete; removes hidden staging and publication machinery across storage,
   persistence, platform adapters, generated contracts, and UI, making direct
-  libtorrent-shaped final paths the sole ordinary payload model.
+  libtorrent-shaped final paths the sole ordinary payload model with path,
+  API 34 SAF, simulator/archive, and physical-iPhone evidence.
 - [`190-opaque-wasm-relay-foundation.md`](190-opaque-wasm-relay-foundation.md):
   complete; proves an account-free username/passphrase OPAQUE flow through one
   native/Wasm Rust core and bounded dumb relay, carries the unchanged React

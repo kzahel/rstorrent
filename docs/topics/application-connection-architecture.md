@@ -53,7 +53,7 @@ Completed Tactical
 [`139`](../tactical/139-incomplete-file-streaming-demand.md) preserves that
 transport split for active files. Only the semantic capability call crosses
 the application connection; progressive verified bytes, range waits, body
-cancellation, and the active-to-published handoff remain entirely on the
+cancellation, and the active-to-complete handoff remain entirely on the
 separate capability-authorized media route. Completed Tactical
 [`167`](../tactical/167-chromeos-crostini-bundled-web-launcher.md) adds one
 explicit ChromeOS Linux local mode without broadening the other adapters: the

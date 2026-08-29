@@ -2,14 +2,14 @@
 
 Topic: `application-control`
 
-Status: Direct-storage application-contract replacement accepted on
-2026-08-29. Tactical
-[`191`](../tactical/191-direct-filesystem-storage.md) removes
+Status: Direct-storage application-contract replacement completed on
+2026-08-29 by Tactical
+[`191`](../tactical/191-direct-filesystem-storage.md). It removes
 `AwaitingPublication`, publication storage/progress/media facts, and
 `DeleteManaged` across generated first-party boundaries. Replacement facts
 name checking, incomplete, missing, root-unavailable, repair, wanted
-completion, full seeding, and plain exact data deletion. The current contract
-history below remains implemented until that tactical lands.
+completion, full seeding, and plain exact data deletion. Earlier contract
+history below remains as an implementation record.
 
 Completed Tactical
 [`188`](../tactical/188-existing-payload-adoption-and-recheck.md) makes

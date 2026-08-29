@@ -2,12 +2,11 @@
 
 Topic: `direct-filesystem-storage`
 
-Status: **Accepted on 2026-08-29; not yet implemented.** Tactical
-[`191`](../tactical/191-direct-filesystem-storage.md) is ready to replace the
-current hidden staging, whole-selection publication, and managed-artifact
-lifecycle. Until that tactical lands, the implemented product still follows
-the staging/publication behavior recorded by Tacticals `062`, `073`, `116`,
-and `188`.
+Status: **Implemented on 2026-08-29 by Tactical
+[`191`](../tactical/191-direct-filesystem-storage.md).** Path, Android SAF,
+and qualified iOS storage now write wanted bytes directly at final safe
+metainfo paths. Schema 22 and every generated first-party boundary remove the
+former publication lifecycle and managed-deletion policy.
 
 ## Decision
 
@@ -18,7 +17,7 @@ for the normal piece checker, not destination collisions. Verified wanted
 files are usable as soon as their own bytes are complete; they do not wait for
 another selected file or for the whole torrent to finish.
 
-The current managed-publication model is removed rather than retained as an
+The former managed-publication model is removed rather than retained as an
 option or renamed:
 
 - no hidden per-torrent staging file or staging tree;
@@ -310,9 +309,15 @@ a future single-blob backend would be a distinct storage representation, and
 a future per-file temporary suffix would need explicit partial-selection,
 external-reader, collision, crash, and rename semantics.
 
-## Next Work
+## Landed Evidence And Next Work
 
-Execute Tactical [`191`](../tactical/191-direct-filesystem-storage.md) as one
-cross-platform removal and direct-storage slice. Reconcile this topic and all
-affected readiness/product claims with landed evidence before calling the
-direction implemented.
+Tactical `191` records the exact deterministic, crash, pinned-libtorrent,
+production-browser, Android API 34, iOS simulator/archive, and physical-iPhone
+evidence. The controlled browser and physical iOS cases both opened a verified
+direct file while the rest of the selected torrent was incomplete, then
+removed only exact torrent paths while preserving or independently observing
+the surrounding root.
+
+Future packed storage, temporary suffixes, relocation, and legacy-artifact
+cleanup remain separate capabilities. No follow-up storage representation is
+implied by completion of this direct model.

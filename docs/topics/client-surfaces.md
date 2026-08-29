@@ -2,12 +2,11 @@
 
 Topic: `client-surfaces`
 
-Status: Direct-storage presentation replacement accepted on 2026-08-29.
-Tactical [`191`](../tactical/191-direct-filesystem-storage.md) removes
+Status: Direct-storage presentation replacement completed on 2026-08-29 by
+Tactical [`191`](../tactical/191-direct-filesystem-storage.md). It removes
 publication and managed-storage jargon from React/Tauri, Compose, and SwiftUI,
 and makes a completed wanted file usable without another selected file's
-completion. The following surface history remains current until that tactical
-lands.
+completion. The following surface history remains as an implementation record.
 
 Completed Tactical
 [`190`](../tactical/190-opaque-wasm-relay-foundation.md) adds no selectable

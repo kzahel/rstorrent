@@ -5,8 +5,8 @@ Rust engine. Public signed desktop incubation builds exist, but the product is
 not yet a supported beta and is not feature-complete.
 
 The current product can perform real v1 downloads from magnet intake through
-verified publication, with tracker and DHT discovery, multiple peers, durable
-session state, selective multi-file storage, and maintained first-party
+verified direct content, with tracker and DHT discovery, multiple peers,
+durable session state, selective multi-file storage, and maintained first-party
 desktop, Android, and iOS clients. Exact support claims and their evidence live
 in the [feature-completeness scoreboard](docs/topics/capability-readiness.md)
 and [protocol support matrix](docs/topics/protocol-support.md).
@@ -109,7 +109,7 @@ Incubation changes do not need compatibility readers or migrations solely to
 preserve an older preview. They must still handle incompatible state safely:
 recognized obsolete application-private state may follow a bounded documented
 reset, while malformed, ambiguous, busy, or future state fails closed. No
-automatic reset may delete a user-selected payload root or published content,
+automatic reset may delete a user-selected payload root or direct content,
 and old state cannot establish verified-content authority. Package signing,
 update authenticity, and interoperability with external BitTorrent peers and
 protocols remain correctness requirements rather than compatibility promises

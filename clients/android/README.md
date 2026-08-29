@@ -86,23 +86,23 @@ python3 clients/android/run_bootstrap.py \
 Available targets are `avd`, `motox4`, `chromeos`, and the optional `pixel7a`.
 Storage modes are `private`, `saf-internal`, and the Moto-only `saf-sdcard`.
 The SAF success profile obtains an exact persisted grant through the system
-picker, creates the Rust-generated document plan, waits for native
-`PREPARED`, publishes by provider rename, force-stops the process, reopens
-every final document in a fresh process, verifies exact length and SHA-1 in
-Rust, then removes the published and part documents and releases the grant.
+picker, creates the Rust-generated direct-document plan, force-stops the
+process, reopens every final document in a fresh process, verifies exact
+length and SHA-1 in Rust, then removes the payload and part documents and
+releases the grant.
 
 The `product-dynamic-saf` profile exercises the real application service. It
 grants a tree, adds a controlled loopback magnet, serves provider requests
-through the four Kotlin workers, performs payload I/O in Rust, publishes by
-name-only namespace acknowledgement, and verifies every non-padding file. It
+through the four Kotlin workers, performs direct final-document payload I/O in
+Rust, and verifies every non-padding file. It
 then force-stops and restores the product, proves conservative verification
 reconstruction, completes an explicit Force recheck, serves the exact torrent
-back to pinned libtorrent through the Android listener, and removes the
-managed namespace through the application command. It rejects info-hash
-output directories, eager/empty part artifacts, staging survivors, and
-inexact removal. It then re-adds the torrent with one skipped file and proves
-exact selective publication, followed by an in-flight product Pause and
-managed removal. The profile records the 40-handle native pool, 16-request
+back to pinned libtorrent through the Android listener, and removes exact
+torrent files through the application command. It rejects info-hash output
+directories, eager/empty part artifacts, staging survivors, and inexact
+removal. It then re-adds the torrent with one skipped file and proves exact
+selective direct storage, followed by an in-flight product Pause and exact
+removal. The profile records the 40-handle native pool, 16-request
 channel, and whole-process descriptor high water.
 
 The `product-saf-grant-repair` profile exercises platform-root health rather
@@ -111,14 +111,14 @@ the stable root identity after debug-only grant revocation, observes the root
 as unavailable after process restart, repairs it through the system picker,
 and observes it as healthy across another restart.
 
-The `product-incomplete-duplex` profile stages exactly two verified pieces
+The `product-incomplete-duplex` profile stores exactly two verified pieces
 through a capped seed, revokes the SAF grant, force-stops and restarts the
 product, observes unavailable storage, and repairs the same stable root. A
 complementary pinned-libtorrent peer then exchanges Fast Piece frames with
 Android in both directions before completion, including cross-file and
 part-backed second blocks. The profile verifies exact wanted and oracle hashes,
-absent skipped/padding publication, handle/provider/descriptor high waters,
-and exact managed, reverse-transport, application, and fresh-AVD cleanup.
+absent skipped/padding documents, handle/provider/descriptor high waters, and
+exact data, reverse-transport, application, and fresh-AVD cleanup.
 
 The `product-hybrid-saf` profile adds a controlled aligned six-file hybrid to
 the ordinary product service. It downloads an exact selected subset, promotes
@@ -137,11 +137,11 @@ The `product-https-tracker` profile uses the same dynamic product storage path
 but omits an explicit peer hint. It reaches a host-owned HTTPS tracker through
 an owned reverse transport, accepts its deliberately untrusted wrong-host
 certificate under the tracker-only unauthenticated TLS policy, consumes the
-returned libtorrent seed, and verifies the published files.
+returned libtorrent seed, and verifies the direct files.
 
 The `product-mse` profile selects an internal SAF tree, applies the live
 `required` peer-obfuscation policy, and downloads from five controlled host
-seeds forced to RC4. It verifies every published file hash, observes all five
+seeds forced to RC4. It verifies every direct file hash, observes all five
 oracle connections as RC4, checks the session-wide four-job DH ceiling and
 complete drain, and removes device and host artifacts. The deterministic Rust
 owner test proves exact `4 active + 1 waiting` saturation; the device profile

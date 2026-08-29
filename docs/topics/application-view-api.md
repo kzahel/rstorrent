@@ -2,13 +2,13 @@
 
 Topic: `application-view-api`
 
-Status: Direct-storage contract replacement accepted on 2026-08-29. Tactical
-[`191`](../tactical/191-direct-filesystem-storage.md) removes publication-only
-states, progress, reasons, media availability, and managed-deletion values
-from the generated view/command schema without a compatibility alias. Existing
-checking, root health, verified-range, wanted-completion, seeding, and repair
-facts become the sole authority. The current generated contract history below
-remains implemented until that tactical lands.
+Status: Direct-storage contract replacement completed on 2026-08-29 by
+Tactical [`191`](../tactical/191-direct-filesystem-storage.md). It removes
+publication-only states, progress, reasons, media availability, and
+managed-deletion values from the generated view/command schema without a
+compatibility alias. Existing checking, root health, verified-range,
+wanted-completion, seeding, and repair facts are the sole authority. Earlier
+generated-contract history below remains as an implementation record.
 
 Completed remote-foundation Tactical
 [`190`](../tactical/190-opaque-wasm-relay-foundation.md) changes no view DTO,

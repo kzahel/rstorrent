@@ -2,13 +2,12 @@
 
 Topic: `android-saf-storage`
 
-Status: Direct-final-document replacement accepted on 2026-08-29. Tactical
-[`191`](../tactical/191-direct-filesystem-storage.md) must preserve SAF root
+Status: Direct-final-document replacement completed on 2026-08-29 by Tactical
+[`191`](../tactical/191-direct-filesystem-storage.md). SAF retains root
 authority, lazy acquisition, exact path safety, provider repair, and the shared
-40-handle/16-request bounds while removing staging documents, provider
-publication plans, completion rename, and publication-specific generated
-facts. The implemented publication-era behavior below remains current until
-that tactical lands.
+40-handle/16-request bounds. Staging documents, provider publication plans,
+completion rename, and publication-specific generated facts are removed.
+Earlier tactical descriptions below remain historical evidence.
 
 Completed Tactical
 [`188`](../tactical/188-existing-payload-adoption-and-recheck.md) applies the
@@ -91,14 +90,14 @@ This topic owns the continuing Android Storage Access Framework boundary:
   identities;
 - descriptor lifetime and session-wide resource bounds;
 - the division between Android namespace work and Rust payload I/O;
-- lazy payload, part-file, restart, and publication behavior beneath a SAF
+- lazy direct payload, part-file, and restart behavior beneath a SAF
   root; and
 - provider failure, cancellation, observability, and validation requirements.
 
 It complements:
 
 - [`download-roots.md`](download-roots.md), which owns user-visible root
-  selection, stable root identity, repair, and publication layout;
+  selection, stable root identity, repair, and direct content layout;
 - [`client-persistence.md`](client-persistence.md), which owns the durable
   catalog, selected root, file intent, verified state, and restart authority;
 - [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
@@ -128,9 +127,9 @@ facts that remain in force:
 - Rust synchronously duplicates a borrowed descriptor before Kotlin closes
   its `ParcelFileDescriptor`; payload buffers never cross the Kotlin boundary.
 - Rust owns torrent-coordinate mapping, verification, selective part storage,
-  durability, and prepared state.
-- Kotlin owns provider document creation, deletion, and rename. Publication is
-  not successful until the renamed documents are reopened and validated.
+  durability, and direct file state.
+- Kotlin owns provider document creation and exact deletion. There is no
+  completion rename or provider publication confirmation.
 - Grant loss and provider refusal are availability failures, not evidence that
   metadata or verified client state is corrupt.
 
@@ -164,7 +163,7 @@ remain shared Rust behavior for path and Android destinations:
 - part-file slot allocation and verified-span materialization;
 - routing-generation fences;
 - durability checkpoints and conservative recheck; and
-- publication preparation and verified published-content reads for seeding.
+- verified direct-content reads for upload and seeding.
 
 The platform-specific difference is intentionally narrow: how a safe logical
 file identity becomes one owned, seekable file descriptor, and how namespace
@@ -186,7 +185,6 @@ operations:
 - open an existing document without creating it;
 - open or create a document and its exact parent directories;
 - remove an engine-owned document after Rust releases its handle;
-- perform the existing fenced staging-to-publication rename; and
 - resolve bounded provider observations needed for restart or repair.
 
 The broker receives a stable root ID, torrent/storage identity, trusted role,
@@ -240,9 +238,9 @@ profile.
 
 Keys identify both storage ownership and file role. Payload keys include a
 torrent/storage identity, namespace generation, and file index. Auxiliary keys
-include at least the selective part file. Publication or root repair advances
-the namespace generation and invalidates entries that can no longer name the
-same provider documents.
+include at least the selective part file. Root repair advances the namespace
+generation and invalidates entries that can no longer name the same provider
+documents.
 
 The pool follows the pinned libtorrent behavior:
 
@@ -306,37 +304,20 @@ document.
 Part payload and metadata remain Rust-owned. Kotlin neither interprets part
 slots nor copies bytes between the part document and payload documents.
 
-## Publication, Restart, And Repair
+## Direct Restart And Repair
 
-Provider publication remains an explicit joined namespace transition:
+Wanted writes find or create their exact final documents and remain there
+through completion. A synchronized ordinary resume may trust committed have
+evidence only after the accepted structural observations. Missing or
+disagreeing documents, Force recheck, and no-state existing data enter the
+common bounded checker against those same direct documents. Matching pieces
+survive; missing, short, or corrupt spans remain work. No restart path renames
+a provider document or waits for namespace confirmation.
 
-1. stop admitting writes for the storage generation;
-2. join positional work and complete the required durability checkpoint;
-3. remove affected handles from the pool and wait for in-flight references;
-4. let Android rename the exact owned staging document;
-5. advance the namespace generation; and
-6. reopen published documents dynamically with a new namespace generation;
-7. atomically enter published checking and replace have state from the common
-   bounded all-wanted piece checker; and
-8. commit complete only after that recheck finishes successfully.
-
-A crash on either side of the provider rename retains the durable two-phase
-state established by Tactical `009`. Dynamic acquisition changes how files are
-reopened, not what constitutes published success.
-
-Tactical `120` does not weaken this boundary. Pending provider publication is
-not an ordinary eligible resume: after namespace confirmation it enters the
-fresh common checker before completion. Only a coherent staging or already
-published ordinary resume may trust committed bits after exact observation.
-Force always uses the same complete checker.
-
-The final Tactical 073 API 34 no-window AVD run force-stopped during download,
-rechecked and repaired one corrupted piece, killed the process after provider
-rename, and restarted through `checking/published`, `recheck_started`, and
-`have_rechecked` before `complete`. The 16-piece/256 KiB payload matched its
-SHA-1, the run recovered the persisted grant-loss path, provider request high
-water was one, Rust-owned handle high water remained at the configured 40,
-and joined shutdown plus owned cleanup passed.
+Tactical `191`'s API 34 no-window profile proves fresh multifile direct
+download, process restart, Force recheck, exact upload from final documents,
+selective skipped-file absence and part storage, exact removal, cancellation,
+schema reset, and grant repair under the established bounds.
 
 Repair preserves the stable root ID while replacing or refreshing its platform
 locator. It invalidates every pool entry under the old capability before work
@@ -377,7 +358,7 @@ The shared storage owner must expose bounded structured counters for:
 - pending and high-water platform requests;
 - provider open/create latency and result class by storage root;
 - part-file acquisitions and deletions;
-- invalidations caused by publication, repair, provider errors, or external
+- invalidations caused by repair, provider errors, or external
   disappearance; and
 - resource-limit retries and terminal exhaustion.
 
@@ -439,6 +420,13 @@ bridge; after acquisition, payload I/O remains in Rust.
 
 ## Current Evidence And Known Gaps
 
+- Tactical `191`'s API 34 `jstorrent-tablet` product profiles pass direct
+  multifile download, restart reconstruction, Force recheck, 133,304-byte
+  upload from final documents, selective skipped-file absence, exact removal,
+  cancellation, schema 21-to-22 reset with byte-exact external sentinels, and
+  grant loss/repair. The direct lifecycle peaks at 6/40 owned handles, 2/16
+  pending requests, and 139 process descriptors from a 118 baseline; the
+  schema-reset profile peaks at 6/40 and 3/16.
 - Deterministic pool coverage proves 10,000 logical file keys across 100
   torrent identities, compatible single-flight, access upgrade, stale
   completion fencing, late responses, and exact handle accounting.
@@ -495,7 +483,8 @@ bridge; after acquisition, payload I/O remains in Rust.
 
 ## Recommended Next Work
 
-Do not extend the diagnostic-only fixed-manifest APIs. General root
+Do not restore or extend the diagnostic-only fixed-manifest or publication
+APIs. General root
 management, cloud/removable provider support, relocation, and an exposed
 advanced file-pool setting still require their own product decisions.
 Completed Tactical `120` consumes exact existence, kind, and length as

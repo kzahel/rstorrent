@@ -2,12 +2,12 @@
 
 Topic: `storage-throughput-architecture`
 
-Status: Direct-filesystem replacement accepted on 2026-08-29. Tactical
-[`191`](../tactical/191-direct-filesystem-storage.md) removes staging and
-publication routing while preserving this topic's positional plans,
-independent write/hash execution, durability order, fairness, watermarks, and
-shared resource ceilings. The implemented publication-era architecture
-described below remains current until that tactical lands.
+Status: Tactical [`191`](../tactical/191-direct-filesystem-storage.md)
+completed the direct-filesystem replacement on 2026-08-29. Direct final-path
+plans preserve this topic's independent write/hash execution, durability
+order, fairness, watermarks, and shared resource ceilings while removing
+staging and publication routing. Publication-era wording below records the
+historical tacticals that established the retained executor.
 
 Completed Tactical
 [`188`](../tactical/188-existing-payload-adoption-and-recheck.md) reuses the

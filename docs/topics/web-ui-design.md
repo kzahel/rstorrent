@@ -3,13 +3,13 @@
 Topic: `web-ui-design`
 
 Status: Product, presentation, application-view, and client-store direction
-accepted. Direct-storage Tactical
-[`191`](../tactical/191-direct-filesystem-storage.md) is Ready to remove
+accepted. Completed direct-storage Tactical
+[`191`](../tactical/191-direct-filesystem-storage.md) removes
 `published`, `not published`, waiting-for-publication, and RSTorrent-managed
-storage wording, replace the removal choice with plain keep/delete downloaded
-files, and expose independently completed wanted files. The existing UI
-history below remains current until it lands. Tactical `033` implements the
-generated contract, polling client,
+storage wording, replaces the removal choice with plain keep/delete downloaded
+files, and exposes independently completed wanted files. The existing UI
+history below remains as an implementation record. Tactical `033` implements
+the generated contract, polling client,
 lifecycle controller, and pure reducer. Tactical `034` implements the fresh
 React/Zustand/CSS Modules application, adaptive inspection hierarchy, virtual
 tables, and permanent named demo adapter. Tactical `035` connects stable Rust

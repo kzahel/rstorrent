@@ -1,8 +1,9 @@
 # Tactical 191: Direct Filesystem Storage
 
-Status: **Ready (accepted 2026-08-29).** This tactical removes the managed
-publication architecture and makes direct libtorrent-shaped final-path
-storage the only ordinary payload model. No implementation has started.
+Status: **Complete (2026-08-29).** Direct libtorrent-shaped final-path storage
+is the sole ordinary payload model across path, Android SAF, and qualified iOS
+roots. Schema 22, generated contracts, and first-party clients contain no
+managed-publication lifecycle.
 
 Topics: `direct-filesystem-storage`, `download-roots`, `client-persistence`,
 `storage-throughput-architecture`, `android-saf-storage`,
@@ -36,13 +37,13 @@ must preserve while deleting the publication layer.
 
 ## Motivation And Accepted Outcome
 
-RSTorrent currently downloads into a hidden owner-keyed staging file or tree,
-tracks prepared/publishing/published lifecycle facts, and atomically renames a
-whole selected namespace only after every wanted piece is verified and
-durable. That policy is not a libtorrent storage mode and no current product
-requirement justifies its complexity.
+Before this tactical, RSTorrent downloaded into a hidden owner-keyed staging
+file or tree, tracked prepared/publishing/published lifecycle facts, and
+atomically renamed a whole selected namespace only after every wanted piece
+was verified and durable. That policy was not a libtorrent storage mode and no
+current product requirement justified its complexity.
 
-It also produces undesirable user behavior. In a selected TV-series download,
+It also produced undesirable user behavior. In a selected TV-series download,
 one complete episode may remain hidden until every other currently selected
 file is complete. The implementation model leaks into first-party surfaces as
 `published storage`, `Not published`, `managed data`, and publication progress
@@ -660,9 +661,100 @@ Stop for maintainer direction if evidence requires:
 
 ## Completion Record
 
-When the slice lands, replace the Ready status with the exact commit range,
-schema and contract result, source/test deltas discovered during
-implementation, commands and platform environments actually run, controlled
-oracle outcomes, resource high waters, deliberate deferrals, and the next
-recommended slice. Do not claim implementation from this accepted document
-alone.
+The implementation landed in commits `1e4874b`, `d9287f8`, `4e62fff`,
+`5d693a8`, `41b5e53`, `ec37043`, and `0b26160`; this completion record closes
+the owning documentation. The slice:
+
+- replaces `ArtifactLayout`, staging trees, namespace transitions, and
+  publication jobs with one safe direct-content layout and direct positional
+  read/write/hash plans;
+- removes publication state from engine/session persistence, generated
+  Rust/TypeScript/UniFFI contracts, React/Tauri, Compose, SwiftUI, media,
+  notifications, and platform adapters;
+- advances recognized incubation profiles through bounded schema-22 reset
+  without touching external payload, legacy hidden artifacts, or unrelated
+  sentinels;
+- keeps only the exact lazy `.<torrent_id>.rstorrent-parts` auxiliary file for
+  skipped-file boundary bytes; and
+- fixes complete-torrent Force recheck so corrupt or missing wanted evidence
+  requeues a non-archived running torrent while intact and paused torrents
+  retain their accepted admission state.
+
+Implementation exposed two evidence defects and two product defects. The
+Android harness still matched retired storage metrics and reused stale torrent
+IDs after re-add; it now observes direct completion and each fresh opaque
+owner. The crash oracle expected pre-checkpoint bytes to be re-downloaded; in
+the direct model those bytes remain final-path candidates and the checker
+recovers all 256 valid pieces with zero peer upload. Physical iOS Quick Look
+also exposed that app Documents was incorrectly excluded from the platform
+file plan. The corrected plan validates and coordinates app-owned direct files
+without fabricating a security scope, while selected external roots retain
+their existing scoped lease. The new live playback action also exposed an
+ARIA live-status element nested illegally inside the content tablist; moving
+that status to the catalog's dedicated row restores the zero-serious/critical
+Axe result without changing tab semantics.
+
+### Recorded Validation
+
+- `cargo fmt --all -- --check` and
+  `cargo clippy --workspace -- -D warnings` pass.
+- `cargo test --workspace` passes with a canonicalized macOS `TMPDIR`. The
+  literal `/var/...` spelling fails four unrelated headless path-safety tests
+  because macOS resolves it to `/private/var/...`; rerunning the same workspace
+  suite with that real path passes.
+- `npm run generate --prefix clients/web`,
+  `npm run typecheck --prefix clients/web`, and
+  `npm run test --prefix clients/web` pass with 343 tests and two intentional
+  skips.
+- The unified pinned-libtorrent `2.0.13` oracle passes direct single-file,
+  one-entry-tree, and cross-file topology. Complete existing content is reused;
+  one 32 KiB repair is requested for the first two shapes and two for the
+  cross-file shape; a 24-byte oversized suffix survives where applicable.
+  Pre-sync and post-sync/pre-commit 64 MiB crashes retain zero durable bits but
+  recover 256 final-path pieces by checking with zero peer upload. Post-commit
+  retains all 256 bits; the completed neighbor never enters checking.
+- The selective 133,304-byte profile verifies four of five pieces, writes
+  73,000 selected bytes directly, retains exactly 24,232 skipped-boundary
+  bytes in two part slots, and stays within 32,768 buffered payload bytes,
+  two active writes, two active hashes, and a 16,384-byte verification buffer.
+- The 80 MiB session restart/Force scenario retains 281 physically valid
+  pieces after the controlled kill, requests exactly 16 MiB of missing work,
+  then detects and repairs one externally corrupted 256 KiB piece. The
+  selective first-piece and hash profiles, Python bytecode compilation,
+  focused desktop notification, Rust file-handoff, Android, iOS, media, and
+  gateway tests pass. The
+  production React/WebSocket media scenario records an independently completed
+  direct file open before the rest of the wanted tree, exact aggregate SHA-1,
+  publication-free removal copy, exact tree deletion, and preservation of an
+  unrelated root sibling.
+- Android Rust/UniFFI cross-builds for both maintained ABIs and Gradle
+  `assembleDebug testDebugUnitTest` pass. On an API 34 no-window
+  `jstorrent-tablet` AVD, `product-dynamic-saf`, `product-identity-reset`, and
+  `product-saf-grant-repair` pass. The direct lifecycle downloads and restarts
+  a multifile torrent, Force rechecks, uploads 133,304 bytes from final
+  documents, leaves a skipped file absent, removes exactly, and cancels cleanly
+  at 6/40 owned handles, 2/16 pending requests, and process descriptors
+  118 baseline / 139 high / 133 final. Schema 21 resets to 22 while byte-exact
+  external sentinels survive; that profile peaks at 6/40 handles and 3/16
+  requests. Grant loss fails closed and picker repair retains the stable root.
+- The maintained iOS simulator suite passes 27 unit and two UI tests, including
+  the new app-owned direct lease; the unsigned device archive succeeds. On the
+  wired physical iPhone, an 8 MiB transfer froze exactly across termination,
+  resumed, reached Seeding, Force rechecked, and opened its 2.1 MB direct file
+  in Apple Quick Look. A separate controlled 9 MiB multifile transfer opened a
+  completed 2.4 MB final file while the torrent remained Stopped/99%, then
+  exact delete-data removal left the independently inspected RSTorrent folder
+  empty. The bounded controlled seed observed one peer.
+
+The machine-control common doctor found the physical Android API 37 handset
+authorized but protected by its secure PIN keyguard. No credential boundary
+was crossed. Physical Android was not required because the accepted API 34
+provider settled every applicable direct-storage behavior; this is an explicit
+environment limitation, not additional product evidence.
+
+All controlled roots, browser profiles, AVD state, seeds, archives, captures,
+and temporary files were bounded to their owning runs and removed after
+validation. Packed storage, temporary suffixes, relocation, cloud/provider
+breadth, migration, and legacy-hidden-artifact import/deletion remain the
+stated non-goals. No next storage-model tactical is implied; future work must
+start from a separately accepted capability.

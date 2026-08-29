@@ -1147,14 +1147,17 @@ checkpoint profile, Android cross-build, SAF rename-death AVD, reactive AVD,
 workspace, and web gates pass. The accepted same-length mutation risk remains
 explicit and Force-detectable.
 
-Accepted Tactical
-[`191`](../tactical/191-direct-filesystem-storage.md) is the next storage-model
-replacement checkpoint. It retains `073`/`120`'s common checker, synchronized
-have evidence, Force behavior, positional execution, and resource bounds while
-removing hidden full-payload staging, publication transitions, and provider
-completion rename. Until it lands, `073` plus `120` remains the implemented
-restart checkpoint; afterward this campaign must describe verified direct
-content rather than publication as the completion evidence.
+Completed Tactical
+[`191`](../tactical/191-direct-filesystem-storage.md) is the current
+storage-model restart checkpoint. It retains `073`/`120`'s common checker,
+synchronized have evidence, Force behavior, positional execution, and
+resource bounds while removing hidden full-payload staging, publication
+transitions, and provider completion rename. Verified direct final-path
+content is now the completion evidence across path, Android SAF, and qualified
+iOS roots. Schema 22 and every first-party generated boundary omit the removed
+lifecycle. The next storage action must come from a separately bounded
+capability; no staging, publication, packed, suffix, or relocation follow-up
+is implied.
 
 Tacticals `086`--`098` subsequently completed the long-lived torrent peer
 runtime, incoming reachability and coordinated transport foundations,

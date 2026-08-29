@@ -2,13 +2,12 @@
 
 Topic: `client-persistence`
 
-Status: Direct-filesystem replacement accepted on 2026-08-29. Tactical
-[`191`](../tactical/191-direct-filesystem-storage.md) is Ready to establish a
-fresh schema-22 epoch and remove publication names/states, namespace intents,
-and managed-deletion policy rather than migrate them. The reset remains
-application-private and must preserve every external final, legacy staging,
-part, and unrelated root artifact. The current implementation described below
-still applies until that tactical lands.
+Status: Tactical [`191`](../tactical/191-direct-filesystem-storage.md)
+completed the direct-filesystem replacement on 2026-08-29. Fresh schema 22
+contains no publication name/state, namespace intent, or managed-deletion
+policy. Recognized pre-22 state resets only application-private database files
+and preserves external final files, legacy hidden artifacts, part files, and
+unrelated root content. Earlier schema history below remains historical.
 
 Completed Tactical
 [`188`](../tactical/188-existing-payload-adoption-and-recheck.md) changes no
@@ -705,7 +704,7 @@ open without paying these policy costs now.
 
 ## Schema Direction
 
-The accepted successor is a fresh direct-storage schema, not a migration of
+The implemented successor is a fresh direct-storage schema, not a migration of
 publication-era ownership. Tactical `191` advances schema 21 to disposable
 schema 22, removes publication-specific columns/constraints and compatibility
 readers, and replaces `delete_managed` with a plain exact delete-data job.
