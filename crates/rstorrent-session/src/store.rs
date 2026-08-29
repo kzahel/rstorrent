@@ -425,7 +425,7 @@ impl SessionStore {
 
         if let Some(maximum_bytes) = ephemeral_maximum_bytes {
             configure_ephemeral_connection(&connection, maximum_bytes)?;
-            create_or_validate_schema_21(
+            create_or_validate_schema_22(
                 &mut connection,
                 profile_id,
                 initial_client_settings,
@@ -438,7 +438,7 @@ impl SessionStore {
             match preparation {
                 CatalogPreparation::Current => {
                     configure_durable_connection(&connection)?;
-                    create_or_validate_schema_21(
+                    create_or_validate_schema_22(
                         &mut connection,
                         profile_id,
                         initial_client_settings,
@@ -447,7 +447,7 @@ impl SessionStore {
                 }
                 CatalogPreparation::Create { reset_report } => {
                     connection.pragma_update(None, "synchronous", "FULL")?;
-                    create_or_validate_schema_21(
+                    create_or_validate_schema_22(
                         &mut connection,
                         profile_id,
                         initial_client_settings,
@@ -1806,6 +1806,28 @@ impl SessionStore {
                 "completed verification generation has different evidence".to_owned(),
             ));
         }
+        let (raw_info, desired_state, archived, retained) = transaction.query_row(
+            "SELECT raw_info, desired_state, archived,
+                    NOT EXISTS(SELECT 1 FROM removal_jobs r
+                               WHERE r.torrent_id = torrents.torrent_id)
+             FROM torrents WHERE torrent_id = ?1",
+            [torrent_id.as_bytes()],
+            |row| {
+                Ok((
+                    row.get::<_, Vec<u8>>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, bool>(2)?,
+                    row.get::<_, bool>(3)?,
+                ))
+            },
+        )?;
+        let skip_files = read_selection(&transaction, &torrent_id)?;
+        let metainfo_source = read_verbatim_metainfo_source(&transaction, &torrent_id)?;
+        let (_, all_wanted_verified) =
+            wanted_piece_evidence(&raw_info, metainfo_source.as_deref(), &skip_files, have)?;
+        if desired_state == "running" && !all_wanted_verified && !archived && retained {
+            download_queue::append(&transaction, &torrent_id)?;
+        }
         let revision = increment_revision(&transaction)?;
         let revision_sql = sql_revision(revision)?;
         transaction.execute(
@@ -2380,7 +2402,7 @@ fn pragma_u64(connection: &Connection, pragma: &str) -> Result<u64, StoreError> 
     u64::try_from(value).map_err(|_| StoreError::DurableState(format!("negative SQLite {pragma}")))
 }
 
-fn create_or_validate_schema_21(
+fn create_or_validate_schema_22(
     connection: &mut Connection,
     profile_id: &str,
     initial_client_settings: &ClientSettings,
@@ -2388,7 +2410,7 @@ fn create_or_validate_schema_21(
 ) -> Result<(), StoreError> {
     let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version != 0 {
-        return validate_schema_21(connection, profile_id);
+        return validate_schema_22(connection, profile_id);
     }
     let transaction = connection.transaction()?;
     transaction.execute_batch(
@@ -2555,10 +2577,10 @@ fn create_or_validate_schema_21(
     transaction.execute_batch(FILE_PRIORITIES_TABLE_SQL)?;
     transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     transaction.commit()?;
-    validate_schema_21(connection, profile_id)
+    validate_schema_22(connection, profile_id)
 }
 
-fn validate_schema_21(connection: &Connection, profile_id: &str) -> Result<(), StoreError> {
+fn validate_schema_22(connection: &Connection, profile_id: &str) -> Result<(), StoreError> {
     let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version != SCHEMA_VERSION {
         return Err(StoreError::UnsupportedSchema {
@@ -8396,6 +8418,97 @@ mod tests {
                 .download_queue_position
                 .is_none()
         );
+        drop(store);
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
+    fn running_complete_recheck_requeues_only_when_wanted_content_is_missing() {
+        let root = test_root("recheck-requeue");
+        let mut store =
+            SessionStore::open(&root, "default", &[configured_root(&root)]).expect("open");
+        let mut raw_info = b"d6:lengthi8e4:name6:repair12:piece lengthi4e6:pieces40:".to_vec();
+        raw_info.extend_from_slice(&[b'a'; 20]);
+        raw_info.extend_from_slice(&[b'b'; 20]);
+        raw_info.push(b'e');
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        let info_hash = crate::control::encode_info_hash(info_hash);
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "add-recheck-requeue".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!("magnet:?xt=urn:btih:{info_hash}"),
+                    storage_root: "downloads".to_owned(),
+                    start_content: true,
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("add repair source");
+        let torrent_id = only_torrent_id(&store);
+        store
+            .record_metadata(&torrent_id, &raw_info)
+            .expect("record repair metadata");
+        store
+            .record_pieces(&torrent_id, &[0, 1])
+            .expect("record complete have");
+        store.mark_complete(&torrent_id).expect("mark complete");
+        assert!(
+            store
+                .load_resume(&torrent_id)
+                .expect("complete resume")
+                .download_queue_position
+                .is_none()
+        );
+
+        let (_, generation) = store
+            .begin_recheck_with_generation(&torrent_id)
+            .expect("begin repair check");
+        let previous = store
+            .load_resume(&torrent_id)
+            .expect("checking resume")
+            .have
+            .expect("checking have");
+        let missing = HaveState::from_pieces(
+            previous.torrent_id(),
+            previous.content_fingerprint(),
+            vec![true, false],
+        )
+        .expect("missing wanted evidence");
+        store
+            .complete_recheck_generation(&torrent_id, generation, &missing)
+            .expect("complete repair check");
+        let repair = store.load_resume(&torrent_id).expect("repair resume");
+        assert_eq!(repair.state, TorrentState::Downloading);
+        assert!(repair.download_queue_position.is_some());
+
+        store
+            .record_piece(&torrent_id, 1)
+            .expect("record repaired piece");
+        store
+            .mark_complete(&torrent_id)
+            .expect("mark repaired complete");
+        let (_, generation) = store
+            .begin_recheck_with_generation(&torrent_id)
+            .expect("begin complete check");
+        let complete = store
+            .load_resume(&torrent_id)
+            .expect("second checking resume")
+            .have
+            .expect("second checking have");
+        store
+            .complete_recheck_generation(&torrent_id, generation, &complete)
+            .expect("complete intact check");
+        assert!(
+            store
+                .load_resume(&torrent_id)
+                .expect("intact resume")
+                .download_queue_position
+                .is_none(),
+            "an intact complete torrent must remain outside the download queue"
+        );
+
         drop(store);
         fs::remove_dir_all(root).expect("remove test profile");
     }

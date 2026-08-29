@@ -487,7 +487,7 @@ fn parse_arguments(
                 }
                 set_once(&mut info_hash, value.to_ascii_lowercase(), name)?;
             }
-            "--publication-name" => {
+            "--content-name" => {
                 let value = utf8(value, name)?;
                 if value.is_empty()
                     || value.len() > 255
@@ -496,7 +496,7 @@ fn parse_arguments(
                         .bytes()
                         .any(|byte| matches!(byte, 0 | b'/' | b'\\' | b':'))
                 {
-                    return Err(invalid_input("--publication-name is invalid"));
+                    return Err(invalid_input("--content-name is invalid"));
                 }
                 set_once(&mut content_name, value.to_owned(), name)?;
             }
@@ -532,8 +532,7 @@ fn parse_arguments(
         payload_root: payload_root.ok_or_else(|| invalid_input("--payload-root is required"))?,
         magnet: magnet.ok_or_else(|| invalid_input("--magnet is required"))?,
         info_hash: info_hash.ok_or_else(|| invalid_input("--info-hash is required"))?,
-        content_name: content_name
-            .ok_or_else(|| invalid_input("--publication-name is required"))?,
+        content_name: content_name.ok_or_else(|| invalid_input("--content-name is required"))?,
         payload_bytes: payload_bytes.ok_or_else(|| invalid_input("--payload-bytes is required"))?,
         mode,
         timeout,

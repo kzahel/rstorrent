@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import gc
 import hashlib
+import re
 import shutil
 import subprocess
 import sys
@@ -421,8 +422,6 @@ def run_selective_diagnostic(
         "1",
         "--skip-file",
         "2",
-        "--materialize-file",
-        "2",
     ]
     try:
         return subprocess.run(
@@ -511,9 +510,7 @@ def parse_selective_diagnostic(output: str) -> dict[str, str]:
         "padding_bytes": "3304",
         "selected_written_bytes": "73000",
         "part_written_bytes": "24232",
-        "materialized_bytes": "7000",
-        "part_slots_before": "2",
-        "part_slots_after": "2",
+        "part_slots": "2",
         "part_reopened": "true",
     }
     required = {*expected_values, "sha1", "info_hash", "payload_high_water", "part_path"}
@@ -713,9 +710,9 @@ def run_selective_once(binary: Path, ordinal: int) -> SelectiveRunResult:
             )
 
         actual_hashes: dict[str, str] = {}
-        for relative_path, _, padding in SELECTIVE_FILES:
+        for file_index, (relative_path, _, padding) in enumerate(SELECTIVE_FILES):
             output_path = output_root / relative_path
-            if padding or relative_path == "skip/large.bin":
+            if padding or file_index in (1, 2):
                 if output_path.exists():
                     raise ScenarioFailure(
                         f"skipped or padding path was created: {relative_path}"
@@ -726,21 +723,28 @@ def run_selective_once(binary: Path, ordinal: int) -> SelectiveRunResult:
             actual_hashes[relative_path] = hash_file(output_path)
             if actual_hashes[relative_path] != expected_file_hashes[relative_path]:
                 raise ScenarioFailure(
-                    f"published file differs from seed: {relative_path}\n"
+                    f"direct file differs from seed: {relative_path}\n"
                     f"expected_sha1={expected_file_hashes[relative_path]}\n"
                     f"actual_sha1={actual_hashes[relative_path]}"
                 )
 
-        expected_part_path = run_path / ".downloaded.rstorrent-parts"
-        if Path(diagnostic["part_path"]) != expected_part_path:
+        expected_part_path = Path(diagnostic["part_path"])
+        if (
+            expected_part_path.parent != run_path
+            or re.fullmatch(
+                r"\.t1-[0-9a-f]{32}\.rstorrent-parts",
+                expected_part_path.name,
+            )
+            is None
+        ):
             raise ScenarioFailure(
-                f"diagnostic part path is {diagnostic['part_path']}, "
-                f"expected {expected_part_path}"
+                f"diagnostic part path is not an opaque owner artifact: "
+                f"{diagnostic['part_path']}"
             )
         if not expected_part_path.is_file():
             raise ScenarioFailure("validated part file did not survive the successful run")
-        if (run_path / ".downloaded.rstorrent-staging").exists():
-            raise ScenarioFailure("selected staging root survived publication")
+        if list(run_path.glob(".*.rstorrent-staging")):
+            raise ScenarioFailure("legacy staging root was created")
 
         result = SelectiveRunResult(
             ordinal=ordinal,

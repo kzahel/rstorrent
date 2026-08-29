@@ -2513,7 +2513,7 @@ impl ApplicationService {
             category::PLATFORM_ADAPTER,
             "torrent_removal_failed",
             Some(&torrent_id),
-            "Platform-managed torrent data could not be removed",
+            "Platform torrent data could not be removed",
             &[("detail", message)],
         )?;
         Ok(())
@@ -3963,7 +3963,7 @@ fn preflight_direct_payload(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(source) => {
             return Err(ApplicationError::Io {
-                operation: "inspect managed torrent directory",
+                operation: "inspect torrent data directory",
                 source,
             });
         }
@@ -3976,7 +3976,7 @@ fn preflight_direct_payload(
         }
     {
         return Err(ApplicationError::Configuration(format!(
-            "managed torrent artifact has an unexpected type: {}",
+            "torrent data artifact has an unexpected type: {}",
             namespace.display()
         )));
     }
@@ -4015,7 +4015,7 @@ fn remove_preflighted_payload(
 ) -> Result<(), ApplicationError> {
     for path in prepared.files {
         std::fs::remove_file(path).map_err(|source| ApplicationError::Io {
-            operation: "remove managed payload file",
+            operation: "remove torrent payload file",
             source,
         })?;
     }
@@ -4039,14 +4039,14 @@ fn resolve_expected_payload_path(
             Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
             Ok(_) => {
                 return Err(ApplicationError::Configuration(format!(
-                    "managed payload parent has an unexpected type: {}",
+                    "torrent payload parent has an unexpected type: {}",
                     path.display()
                 )));
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(source) => {
                 return Err(ApplicationError::Io {
-                    operation: "inspect managed payload parent",
+                    operation: "inspect torrent payload parent",
                     source,
                 });
             }
@@ -4067,14 +4067,14 @@ fn validate_exact_payload_file(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(source) => {
             return Err(ApplicationError::Io {
-                operation: "inspect managed payload file",
+                operation: "inspect torrent payload file",
                 source,
             });
         }
     };
     if metadata.file_type().is_symlink() || !metadata.is_file() {
         return Err(ApplicationError::Configuration(format!(
-            "managed payload file has an unexpected type: {}",
+            "torrent payload file has an unexpected type: {}",
             path.display()
         )));
     }
@@ -4087,14 +4087,14 @@ fn remove_empty_payload_directory(path: &Path) -> Result<(), ApplicationError> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(source) => {
             return Err(ApplicationError::Io {
-                operation: "inspect managed payload directory",
+                operation: "inspect torrent payload directory",
                 source,
             });
         }
     };
     if metadata.file_type().is_symlink() || !metadata.is_dir() {
         return Err(ApplicationError::Configuration(format!(
-            "managed payload directory has an unexpected type: {}",
+            "torrent payload directory has an unexpected type: {}",
             path.display()
         )));
     }
@@ -4109,7 +4109,7 @@ fn remove_empty_payload_directory(path: &Path) -> Result<(), ApplicationError> {
             Ok(())
         }
         Err(source) => Err(ApplicationError::Io {
-            operation: "remove empty managed payload directory",
+            operation: "remove empty torrent payload directory",
             source,
         }),
     }
@@ -4121,14 +4121,14 @@ fn preflight_direct_file(path: &Path) -> Result<Option<PathBuf>, ApplicationErro
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(source) => {
             return Err(ApplicationError::Io {
-                operation: "inspect managed torrent part file",
+                operation: "inspect torrent part file",
                 source,
             });
         }
     };
     if metadata.file_type().is_symlink() || !metadata.is_file() {
         return Err(ApplicationError::Configuration(format!(
-            "managed part-file path has an unexpected type: {}",
+            "torrent part-file path has an unexpected type: {}",
             path.display()
         )));
     }
@@ -11724,6 +11724,176 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn restarted_pending_recheck_repairs_a_corrupt_piece_from_the_saved_peer_hint() {
+        let root = test_root("pending-recheck-repair");
+        let configuration = config(&root);
+        let piece_length = 16_384;
+        let payload = (0..(2 * piece_length))
+            .map(|offset| ((offset * 31 + offset / 13) & 0xff) as u8)
+            .collect::<Vec<_>>();
+        let raw_info = single_file_info("repair.bin", &payload, piece_length);
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        let torrent_id = super::encode_info_hash(info_hash);
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind recheck repair peer");
+        let address = listener.local_addr().expect("recheck repair peer address");
+        let peer_payload = payload.clone();
+        let (request_started_sender, request_started_receiver) = tokio::sync::oneshot::channel();
+        let (payload_release_sender, payload_release_receiver) = tokio::sync::oneshot::channel();
+        let peer_task = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept repair peer");
+            let mut handshake = [0; HANDSHAKE_LENGTH];
+            stream
+                .read_exact(&mut handshake)
+                .await
+                .expect("read repair handshake");
+            decode_handshake(&handshake, info_hash).expect("repair handshake identity");
+            stream
+                .write_all(&encode_handshake(info_hash, *b"-RS-RECHECK-REPAIR-0"))
+                .await
+                .expect("write repair handshake");
+            stream
+                .write_all(&encode_message(&PeerMessage::Bitfield(vec![0xc0])).expect("bitfield"))
+                .await
+                .expect("write repair bitfield");
+            stream
+                .write_all(&encode_message(&PeerMessage::Unchoke).expect("unchoke"))
+                .await
+                .expect("write repair unchoke");
+            let mut decoder = FrameDecoder::new();
+            let mut pending = std::collections::VecDeque::new();
+            let mut uploaded = 0_usize;
+            let mut request_started_sender = Some(request_started_sender);
+            let mut payload_release_receiver = Some(payload_release_receiver);
+            while uploaded < piece_length {
+                match read_peer_message(&mut stream, &mut decoder, &mut pending).await {
+                    PeerMessage::Interested | PeerMessage::KeepAlive | PeerMessage::Bitfield(_) => {
+                    }
+                    PeerMessage::Request(request) => {
+                        assert_eq!(request.index, 1, "only the corrupt piece is reacquired");
+                        if let Some(sender) = request_started_sender.take() {
+                            sender.send(()).expect("report repair request");
+                        }
+                        if let Some(receiver) = payload_release_receiver.take() {
+                            receiver.await.expect("release repair payload");
+                        }
+                        let begin = usize::try_from(request.begin).expect("request begin");
+                        let length = usize::try_from(request.length).expect("request length");
+                        let start = piece_length.checked_add(begin).expect("payload start");
+                        let end = start.checked_add(length).expect("payload end");
+                        stream
+                            .write_all(
+                                &encode_message(&PeerMessage::Piece {
+                                    index: request.index,
+                                    begin: request.begin,
+                                    block: peer_payload[start..end].to_vec(),
+                                })
+                                .expect("piece response"),
+                            )
+                            .await
+                            .expect("write repair piece");
+                        uploaded += length;
+                    }
+                    message => panic!("unexpected repair peer message: {message:?}"),
+                }
+            }
+            uploaded
+        });
+
+        let mut store = SessionStore::open(
+            configuration
+                .durable_profile_root()
+                .expect("durable profile root"),
+            &configuration.profile_id,
+            &configuration.storage_roots,
+        )
+        .expect("open setup store");
+        let response = store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "add-pending-recheck-repair".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe={address}"),
+                    storage_root: "downloads".to_owned(),
+                    start_content: true,
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("add repair torrent");
+        let torrent_id = match response.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("repair add result"),
+        };
+        store
+            .record_metadata(&torrent_id, &raw_info)
+            .expect("record repair metadata");
+        store
+            .record_pieces(&torrent_id, &[0, 1])
+            .expect("record stale complete have");
+        store.mark_complete(&torrent_id).expect("mark complete");
+        store
+            .begin_recheck(&torrent_id)
+            .expect("begin pending recheck");
+        drop(store);
+
+        let output = root.join("payload/repair.bin");
+        fs::create_dir_all(output.parent().expect("payload parent")).expect("create payload root");
+        let mut corrupt = payload.clone();
+        corrupt[piece_length] ^= 0xff;
+        fs::write(&output, &corrupt).expect("write corrupt direct payload");
+
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("restart pending recheck");
+        tokio::time::timeout(Duration::from_secs(5), request_started_receiver)
+            .await
+            .expect("repair request did not start")
+            .expect("repair request sender dropped");
+        let repair = service
+            .load_resume_conservative(&torrent_id)
+            .expect("load admitted repair");
+        assert_eq!(repair.state, TorrentState::Downloading);
+        assert!(repair.download_queue_position.is_some());
+        service
+            .reconcile_admission()
+            .await
+            .expect("reconcile active repair admission");
+        assert!(service.active_download_for(&torrent_id).is_some());
+        payload_release_sender
+            .send(())
+            .expect("release repair payload");
+        wait_for_torrent_state(
+            &mut service,
+            &torrent_id,
+            TorrentState::Complete,
+            "pending-recheck-repair",
+        )
+        .await;
+        assert_eq!(fs::read(&output).expect("read repaired payload"), payload);
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(2), peer_task)
+                .await
+                .expect("repair peer timed out")
+                .expect("repair peer task"),
+            piece_length
+        );
+        let resume = service
+            .store_mut()
+            .expect("store")
+            .load_resume(&torrent_id)
+            .expect("repaired resume");
+        assert_eq!(resume.verification.requested(), 1);
+        assert_eq!(resume.verification.completed(), 1);
+        assert_eq!(resume.have.expect("repaired have").pieces(), &[true, true]);
+
+        service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
     async fn complete_startup_structural_mismatch_runs_only_its_full_checker() {
         let root = test_root("complete-fast-resume-mismatch");
         let configuration = config(&root);
@@ -13076,7 +13246,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn delete_managed_removal_joins_and_deletes_only_owned_path_artifacts() {
+    async fn delete_data_removal_joins_and_deletes_only_exact_path_artifacts() {
         let root = test_root("remove-path");
         let config = config(&root);
         let raw_info =
@@ -13279,7 +13449,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn keep_data_removal_preserves_managed_path_artifacts() {
+    async fn keep_data_removal_preserves_path_artifacts() {
         let root = test_root("remove-keep");
         let info_hash = "000102030405060708090a0b0c0d0e0f10111213";
         let payload = root.join("payload");

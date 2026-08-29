@@ -339,14 +339,14 @@ def make_fixture(root: Path) -> RuntimeFixture:
     if torrent_info.num_pieces() != independent.expected["logical_pieces"]:
         raise ScenarioFailure("pinned libtorrent changed hybrid logical geometry")
 
-    storage_root = fixture_root / "rstorrent-published"
+    storage_root = fixture_root / "rstorrent-content"
     for source in files:
         path = storage_root / "root" / Path(
             *(component.decode("utf-8") for component in source.path)
         )
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(source.data)
-    libtorrent_storage_root = fixture_root / "libtorrent-published"
+    libtorrent_storage_root = fixture_root / "libtorrent-content"
     payload_index = 0
     storage = torrent_info.files()
     for index in range(storage.num_files()):

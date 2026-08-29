@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove durable Android SAF resume and publication against libtorrent."""
+"""Prove durable Android SAF direct-file resume against libtorrent."""
 
 from __future__ import annotations
 
@@ -42,7 +42,6 @@ PAYLOAD_SIZE = 256 * 1024
 UPLOAD_RATE_LIMIT = 12 * 1024
 DOWNLOAD_TIMEOUT_SECONDS = 90
 SAF_RESUME_TIMEOUT_SECONDS = 45
-CRASH_AFTER_RENAME_EXTRA = "product_crash_after_saf_rename"
 RELEASE_GRANT_EXTRA = "product_release_saf_grant"
 STORAGE_SELECTION_LABELS = {
     "Choose a download folder",
@@ -312,44 +311,22 @@ def force_stop_and_resume(adb: Adb) -> tuple[int, str]:
         "-W",
         "-n",
         ACTIVITY,
-        "--ez",
-        CRASH_AFTER_RENAME_EXTRA,
-        "true",
         timeout=30,
     )
     if "Status: ok" not in started.stdout:
         raise ScenarioFailure(f"product did not restart:\n{started.stdout}")
-    restarted_pid = adb.shell("pidof", PACKAGE).stdout.strip()
-    if not restarted_pid:
+    if not adb.shell("pidof", PACKAGE).stdout.strip():
         raise ScenarioFailure("product restart has no process")
     deadline = time.monotonic() + DOWNLOAD_TIMEOUT_SECONDS
     restart_trace = ""
-    rename_crashed = False
-    crash_restarted = False
     while time.monotonic() < deadline:
         restart_trace = product_logs(adb)
         if "FATAL EXCEPTION" in restart_trace or f"E/{TRACE_TAG}" in restart_trace:
             raise ScenarioFailure(f"Android SAF restart failed:\n{restart_trace}")
-        if "saf_test_crash_after_rename" in restart_trace:
-            rename_crashed = True
-        if rename_crashed and not crash_restarted:
-            current_pid = adb.shell("pidof", PACKAGE, check=False).stdout.strip()
-            if current_pid != restarted_pid:
-                crash_restarted = True
-                if not current_pid:
-                    resumed = adb.shell("am", "start", "-W", "-n", ACTIVITY, timeout=30)
-                    if "Status: ok" not in resumed.stdout:
-                        raise ScenarioFailure(
-                            f"product did not restart after provider rename:\n{resumed.stdout}"
-                        )
         if (
-            crash_restarted
-            and "saf_publication_confirmed" in restart_trace
-            and "state=CHECKING storage=PUBLISHED" in restart_trace
-            and "diagnostic=recheck_started" in restart_trace
-            and "diagnostic=have_rechecked" in restart_trace
+            "saf_direct_complete" in restart_trace
             and "state=COMPLETE" in restart_trace
-            and restart_trace.count("saf_publication_begin") >= 2
+            and "storage=AVAILABLE" in restart_trace
         ):
             return claims, restart_trace
         time.sleep(0.1)
@@ -362,8 +339,21 @@ def verify_shared_payload(adb: Adb, expected_hash: str) -> None:
     actual = completed.stdout.split(maxsplit=1)[0] if completed.stdout else ""
     if actual != expected_hash:
         raise ScenarioFailure(
-            f"published SAF payload differs: expected {expected_hash}, got {actual}"
+            f"direct SAF payload differs: expected {expected_hash}, got {actual}"
         )
+    hidden = adb.shell(
+        "find",
+        GRANT_PATH,
+        "-maxdepth",
+        "1",
+        "-type",
+        "f",
+        "-name",
+        "*.rstorrent-*",
+        check=False,
+    ).stdout.strip()
+    if hidden:
+        raise ScenarioFailure(f"unexpected SAF side artifact survived: {hidden}")
 
 
 def cleanup(adb: Adb) -> None:
@@ -453,8 +443,8 @@ def run(arguments: argparse.Namespace) -> None:
         uploaded_after_restart = int(handle.status().total_upload) - uploaded_before_restart
         if uploaded_after_restart <= 0:
             raise ScenarioFailure("libtorrent uploaded no payload after process restart")
-        if "storage=PREPARED" not in after:
-            raise ScenarioFailure("Android trace did not expose prepared storage")
+        if "storage=AVAILABLE" not in after:
+            raise ScenarioFailure("Android trace did not expose available direct storage")
         verify_shared_payload(adb, fixture.payload_hash)
         stop_foreground_service(adb)
         shutdown_trace = product_logs(adb)
@@ -474,8 +464,8 @@ def run(arguments: argparse.Namespace) -> None:
             f"checkpoint_claims={claims} restart_upload_bytes={uploaded_after_restart} "
             f"view_updates={before.count('view_update') + after.count('view_update')} "
             f"activity_recreation=ok activity_background=ok pause_resume=ok "
-            f"grant_loss=fail_closed rename_crash=recovered "
-            f"publication=fresh_piece_rechecked payload_sha1={fixture.payload_hash} "
+            f"grant_loss=fail_closed direct_restart=complete "
+            f"payload_sha1={fixture.payload_hash} "
             "foreground_stop=joined cleanup=ok"
         )
     finally:

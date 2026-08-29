@@ -7,6 +7,7 @@ import argparse
 import gc
 import hashlib
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -169,9 +170,7 @@ def parse_diagnostic(output: str, config: ProfileConfig) -> dict[str, str]:
         "padding_bytes": "0",
         "selected_written_bytes": str(config.total_size),
         "part_written_bytes": "0",
-        "materialized_bytes": "0",
-        "part_slots_before": "0",
-        "part_slots_after": "0",
+        "part_slots": "0",
         "part_reopened": "false",
     }
     required = {
@@ -304,17 +303,21 @@ def run_once(
         for relative_path, _ in config.files:
             output_path = output_root / relative_path
             if not output_path.is_file():
-                raise ScenarioFailure(f"published file is absent: {relative_path}")
+                raise ScenarioFailure(f"direct file is absent: {relative_path}")
             actual_hashes[relative_path] = hash_file(output_path)
             if actual_hashes[relative_path] != expected_hashes[relative_path]:
-                raise ScenarioFailure(f"published file differs: {relative_path}")
+                raise ScenarioFailure(f"direct file differs: {relative_path}")
         part_path = Path(diagnostic["part_path"])
-        if part_path != run_path / ".downloaded.rstorrent-parts":
+        if (
+            part_path.parent != run_path
+            or re.fullmatch(r"\.t1-[0-9a-f]{32}\.rstorrent-parts", part_path.name)
+            is None
+        ):
             raise ScenarioFailure(f"unexpected part path: {part_path}")
         if part_path.exists():
-            raise ScenarioFailure("unused selective part file survived publication")
-        if (run_path / ".downloaded.rstorrent-staging").exists():
-            raise ScenarioFailure("selective staging root survived publication")
+            raise ScenarioFailure("unused selective part file survived completion")
+        if list(run_path.glob(".*.rstorrent-staging")):
+            raise ScenarioFailure("legacy staging root was created")
         result = ProfileResult(
             ordinal=ordinal,
             transfer_seconds=transfer_seconds,

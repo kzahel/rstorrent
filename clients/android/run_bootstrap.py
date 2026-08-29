@@ -340,7 +340,7 @@ class PureV2SeedFixture:
         self.handle = interop.add_seed(
             self.session,
             lt.torrent_info(str(self.torrent_path)),
-            self.torrent_path.parent / "libtorrent-published",
+            self.torrent_path.parent / "libtorrent-content",
             self.alerts,
         )
 
@@ -695,9 +695,6 @@ def launch(
                 "skip_files",
                 "1,2",
                 "--es",
-                "materialize_files",
-                "2",
-                "--es",
                 "storage",
                 storage,
             ]
@@ -916,9 +913,7 @@ def validate_success(
         "padding_bytes": 3_304,
         "selected_written_bytes": 73_000,
         "part_written_bytes": 24_232,
-        "materialized_bytes": 7_000,
-        "part_slots_before": 2,
-        "part_slots_after": 2,
+        "part_slots": 2,
         "part_reopened": True,
     }
     for key, value in expected.items():
@@ -937,12 +932,12 @@ def validate_success(
             )
 
     root = f"files/sessions/{run_id}"
-    for relative_path, _, padding in fixture_files():
+    for file_index, (relative_path, _, padding) in enumerate(fixture_files()):
         output_path = f"{root}/downloaded/{relative_path}"
-        if padding or relative_path == "skip/large.bin":
+        if padding or file_index in (1, 2):
             if app_exists(target, output_path):
                 raise BootstrapFailure(
-                    f"skipped or padding path was published: {relative_path}"
+                    f"skipped or padding path was created: {relative_path}"
                 )
             continue
         payload = app_bytes(target, output_path)
@@ -951,12 +946,12 @@ def validate_success(
         if sha1_bytes(payload) != fixture.expected_file_hashes[relative_path]:
             raise BootstrapFailure(f"wanted output hash differs: {relative_path}")
     if app_exists(target, f"{root}/.downloaded.rstorrent-staging"):
-        raise BootstrapFailure("published staging root survived")
+        raise BootstrapFailure("legacy staging root was created")
     if not app_exists(target, f"{root}/.downloaded.rstorrent-parts"):
         raise BootstrapFailure("validated part file is absent")
 
 
-def validate_saf_prepared(
+def validate_saf_direct(
     target: Any,
     result: dict[str, Any],
     fixture: SeedFixture,
@@ -965,15 +960,15 @@ def validate_saf_prepared(
 ) -> None:
     validate_common(result, identity)
     terminal = result.get("terminal", {})
-    if terminal.get("outcome") != "PREPARED":
+    if terminal.get("outcome") != "SUCCEEDED":
         raise BootstrapFailure(
-            "SAF native execution was not prepared: "
+            "SAF native execution did not complete: "
             f"{json.dumps(terminal, sort_keys=True)}; "
             f"events={json.dumps(read_events(target, run_id), sort_keys=True)}"
         )
     if result.get("platform", {}).get("status") != "AWAITING_RESTART":
         raise BootstrapFailure(
-            f"SAF provider publication failed: {result.get('platform')}"
+            f"SAF direct-content verification failed: {result.get('platform')}"
         )
     report = terminal.get("report", {})
     expected_scalars = {
@@ -991,9 +986,7 @@ def validate_saf_prepared(
         "padding_bytes": 3_304,
         "selected_written_bytes": 73_000,
         "part_written_bytes": 24_232,
-        "materialized_bytes": 7_000,
-        "part_slots_before": 2,
-        "part_slots_after": 2,
+        "part_slots": 2,
         "part_reopened": True,
         "part_path": None,
     }
@@ -1002,19 +995,8 @@ def validate_saf_prepared(
             raise BootstrapFailure(
                 f"SAF report {key}={report.get(key)!r}, expected {expected!r}"
             )
-    expected_hashes = {
-        index: fixture.expected_file_hashes[path]
-        for index, (path, _, padding) in enumerate(fixture_files())
-        if not padding and index != 1
-    }
-    prepared = {
-        entry["file_index"]: entry["sha1"]
-        for entry in report.get("prepared_files", [])
-    }
-    if prepared != expected_hashes:
-        raise BootstrapFailure(
-            f"prepared hash manifest differs: {prepared!r} != {expected_hashes!r}"
-        )
+    if result.get("platform", {}).get("file_count") != 4:
+        raise BootstrapFailure("SAF direct content omitted wanted files")
 
 
 def validate_saf_restart(
@@ -1038,7 +1020,7 @@ def validate_saf_restart(
     expected_hashes = {
         index: fixture.expected_file_hashes[path]
         for index, (path, _, padding) in enumerate(fixture_files())
-        if not padding and index != 1
+        if not padding and index not in (1, 2)
     }
     verified = {
         entry["file_index"]: entry["sha1"]
@@ -1048,7 +1030,7 @@ def validate_saf_restart(
         raise BootstrapFailure(
             f"restart hash manifest differs: {verified!r} != {expected_hashes!r}"
         )
-    if not result.get("published_deleted") or not result.get("part_deleted"):
+    if not result.get("content_deleted") or not result.get("part_deleted"):
         raise BootstrapFailure("restart did not clean exact SAF artifacts")
 
 
@@ -1221,7 +1203,7 @@ def run_standard_profile(
                 assert_unverified_cleanup(target, run_id)
         else:
             if saf_storage:
-                validate_saf_prepared(target, result, fixture, run_id, identity)
+                validate_saf_direct(target, result, fixture, run_id, identity)
                 target.shell(["am", "force-stop", PACKAGE])
                 launch(target, ACTION_VERIFY, run_id=run_id)
                 restart_result = wait_result(target, run_id, restart=True)
@@ -1778,7 +1760,7 @@ def launch_product_tracker_magnet(
         raise BootstrapFailure("could not add Android product tracker magnet")
 
 
-def wait_product_publication(
+def wait_product_completion(
     target: Any,
     torrent_id: str,
     baseline_fds: int,
@@ -1800,10 +1782,10 @@ def wait_product_publication(
             timeout=15,
             check=False,
         ).stdout
-        if f"saf_publication_confirmed torrent={torrent_id}" in logs:
+        if f"saf_direct_complete torrent={torrent_id}" in logs:
             match = metric_pattern.search(logs)
             if match is None:
-                raise BootstrapFailure("dynamic SAF publication omitted storage metrics")
+                raise BootstrapFailure("direct SAF completion omitted storage metrics")
             return (
                 {
                     "limit": int(match.group(1)),
@@ -1816,7 +1798,7 @@ def wait_product_publication(
             raise BootstrapFailure(f"product service failed\n{logs}")
         time.sleep(0.2)
     raise BootstrapFailure(
-        "dynamic SAF product download did not publish before timeout\n" + logs
+        "direct SAF product download did not complete before timeout\n" + logs
     )
 
 
@@ -2183,12 +2165,30 @@ def run_product_dynamic_saf_profile(
     output_root = f"{probe.grant_path(grant_storage)}/{fixture.name}"
     staging_root = f"{probe.grant_path(grant_storage)}/.{fixture.name}.rstorrent-staging"
     part_path = f"{probe.grant_path(grant_storage)}/.{fixture.name}.rstorrent-parts"
+    unrelated_path = f"{output_root}/unrelated-sentinel.bin"
+    unrelated_content = b"unrelated-descendant-survives-exact-removal"
+    unrelated_hash = hashlib.sha256(unrelated_content).hexdigest()
     reset_sentinels: dict[str, str] = {}
+
+    def assert_exact_data_removed() -> None:
+        for relative_path, _, padding in fixture_files():
+            if padding:
+                continue
+            path = f"{output_root}/{relative_path}"
+            if target.shell(["test", "-e", path], check=False).returncode == 0:
+                raise BootstrapFailure(f"metainfo file survived removal: {relative_path}")
+        for hidden_path in (staging_root, part_path):
+            if target.shell(["test", "-e", hidden_path], check=False).returncode == 0:
+                raise BootstrapFailure(f"side artifact survived removal: {hidden_path}")
+        digest = target.shell(["sha256sum", unrelated_path]).stdout.split()[0]
+        if digest != unrelated_hash:
+            raise BootstrapFailure("removal changed an unrelated descendant")
+
     try:
         clear_application(target)
         probe.prepare_grant_folder(target, grant_storage)
         if identity_reset:
-            legacy_database = fixture.run_path / "schema-18-session.db"
+            legacy_database = fixture.run_path / "schema-21-session.db"
             with sqlite3.connect(legacy_database) as connection:
                 connection.execute(
                     "CREATE TABLE request_receipts(request_id TEXT PRIMARY KEY)"
@@ -2196,8 +2196,8 @@ def run_product_dynamic_saf_profile(
                 connection.execute(
                     "INSERT INTO request_receipts VALUES ('legacy-request')"
                 )
-                connection.execute("PRAGMA user_version = 18")
-            remote_database = f"/data/local/tmp/rstorrent-schema18-{ordinal}.db"
+                connection.execute("PRAGMA user_version = 21")
+            remote_database = f"/data/local/tmp/rstorrent-schema21-{ordinal}.db"
             target.run(["push", str(legacy_database), remote_database])
             target.shell(
                 ["run-as", PACKAGE, "mkdir", "-p", "files/product-profile"]
@@ -2213,11 +2213,16 @@ def run_product_dynamic_saf_profile(
             )
             target.shell(["rm", remote_database], check=False)
             for name, content in (
-                ("legacy-published-sentinel.bin", b"published-before-schema-reset"),
+                ("existing-final-sentinel.bin", b"final-content-before-schema-reset"),
+                (
+                    ".legacy-owner.rstorrent-staging",
+                    b"legacy-staging-before-schema-reset",
+                ),
                 (
                     ".t1-11111111111111111111111111111111.rstorrent-parts",
                     b"partial-before-schema-reset",
                 ),
+                ("unrelated-root-sentinel.bin", b"unrelated-before-schema-reset"),
             ):
                 source = fixture.run_path / name
                 source.write_bytes(content)
@@ -2273,7 +2278,7 @@ def run_product_dynamic_saf_profile(
             wait_product_log(
                 target,
                 "diagnostic=profile_catalog_reset",
-                "schema 18 identity-epoch catalog reset",
+                "schema 21 direct-storage catalog reset",
             )
             for path, expected_hash in reset_sentinels.items():
                 actual_hash = target.shell(["sha256sum", path]).stdout.split()[0]
@@ -2345,7 +2350,7 @@ def run_product_dynamic_saf_profile(
         torrent_id = wait_product_torrent_id(target, fixture.info_hash, add_count)
         staging_root = f"{probe.grant_path(grant_storage)}/.{torrent_id}.rstorrent-staging"
         part_path = f"{probe.grant_path(grant_storage)}/.{torrent_id}.rstorrent-parts"
-        metrics, fd_high_water = wait_product_publication(
+        metrics, fd_high_water = wait_product_completion(
             target,
             torrent_id,
             baseline_fds,
@@ -2413,7 +2418,7 @@ def run_product_dynamic_saf_profile(
             exists = target.shell(["test", "-f", path], check=False).returncode == 0
             if padding:
                 if exists:
-                    raise BootstrapFailure(f"padding file was published: {relative_path}")
+                    raise BootstrapFailure(f"padding file was created: {relative_path}")
                 continue
             if not exists:
                 raise BootstrapFailure(f"product output is absent: {relative_path}")
@@ -2461,15 +2466,17 @@ def run_product_dynamic_saf_profile(
         request_product_torrent_action(target, torrent_id, "enable_upload")
         uploaded_bytes = verify_product_upload(target, fixture)
 
+        unrelated_source = fixture.run_path / "unrelated-sentinel.bin"
+        unrelated_source.write_bytes(unrelated_content)
+        target.run(["push", str(unrelated_source), unrelated_path])
+
         request_product_torrent_action(target, torrent_id, "remove")
         wait_product_log(
             target,
             f"saf_removal_confirmed torrent={torrent_id}",
             "application-owned SAF removal",
         )
-        for exact_path in (output_root, staging_root, part_path):
-            if target.shell(["test", "-e", exact_path], check=False).returncode == 0:
-                raise BootstrapFailure(f"managed artifact survived removal: {exact_path}")
+        assert_exact_data_removed()
 
         target.run(["logcat", "-c"], check=False)
         add_count = 0
@@ -2494,7 +2501,7 @@ def run_product_dynamic_saf_profile(
         selective_torrent_id = wait_product_torrent_id(
             target, fixture.info_hash, add_count
         )
-        wait_product_publication(
+        wait_product_completion(
             target, selective_torrent_id, product_fd_count(target)
         )
         for file_index, (relative_path, _, padding) in enumerate(fixture_files()):
@@ -2502,19 +2509,22 @@ def run_product_dynamic_saf_profile(
             exists = target.shell(["test", "-f", path], check=False).returncode == 0
             if padding or file_index == 1:
                 if exists:
-                    raise BootstrapFailure(f"selective product published {relative_path}")
+                    raise BootstrapFailure(f"selective product created {relative_path}")
                 continue
             if not exists:
                 raise BootstrapFailure(f"selective product omitted {relative_path}")
             digest = target.shell(["sha1sum", path]).stdout.split()[0]
             if digest != fixture.expected_file_hashes[relative_path]:
                 raise BootstrapFailure(f"selective product hash differs: {relative_path}")
+        if target.shell(["test", "-f", part_path], check=False).returncode != 0:
+            raise BootstrapFailure("selective SAF download omitted its boundary part file")
         request_product_torrent_action(target, selective_torrent_id, "remove")
         wait_product_log(
             target,
             f"saf_removal_confirmed torrent={selective_torrent_id}",
             "selective SAF removal",
         )
+        assert_exact_data_removed()
 
         target.run(["logcat", "-c"], check=False)
         add_count = 0
@@ -2550,11 +2560,7 @@ def run_product_dynamic_saf_profile(
             "cancelled SAF cleanup",
         )
         fixture.handle.set_upload_limit(0)
-        for exact_path in (output_root, staging_root, part_path):
-            if target.shell(["test", "-e", exact_path], check=False).returncode == 0:
-                raise BootstrapFailure(
-                    f"cancelled managed artifact survived removal: {exact_path}"
-                )
+        assert_exact_data_removed()
 
         return {
             "target": target_kind,
@@ -2563,7 +2569,7 @@ def run_product_dynamic_saf_profile(
             "identity": identity,
             "torrent_id": torrent_id,
             "v1_info_hash": fixture.info_hash,
-            "publication_name": fixture.name,
+            "content_name": fixture.name,
             "storage_metrics": metrics,
             "process_fds": {
                 "baseline": baseline_fds,
@@ -2575,9 +2581,10 @@ def run_product_dynamic_saf_profile(
             "force_recheck": "complete",
             "uploaded_bytes": uploaded_bytes,
             "removal": "exact",
+            "unrelated_descendant": "byte_exact",
             "selection": "skip_exact",
             "cancellation": "joined_and_removed",
-            "schema_reset": "18_to_19" if identity_reset else None,
+            "schema_reset": "21_to_22" if identity_reset else None,
             "external_reset_sentinels": (
                 "byte_exact" if identity_reset else None
             ),
@@ -2682,7 +2689,7 @@ def run_product_pure_v2_saf_profile(
         torrent_id = wait_product_unknown_torrent_id(target, add_count)
         staging_root = f"{grant_root}/.{torrent_id}.rstorrent-staging"
         part_path = f"{grant_root}/.{torrent_id}.rstorrent-parts"
-        metrics, fd_high_water = wait_product_publication(
+        metrics, fd_high_water = wait_product_completion(
             target,
             torrent_id,
             baseline_fds,
@@ -2825,7 +2832,7 @@ def run_product_pure_v2_saf_profile(
             "saf_root_health source=startup available=true",
             "healthy SAF root after v2 magnet candidate restart",
         )
-        selective_metrics, restarted_fd_high_water = wait_product_publication(
+        selective_metrics, restarted_fd_high_water = wait_product_completion(
             target,
             selective_torrent_id,
             product_fd_count(target),
@@ -2930,7 +2937,7 @@ def run_product_pure_v2_saf_profile(
             "v2_info_hash": fixture.info_hash,
             "wire_info_hash": fixture.wire_info_hash,
             "v1_info_hash": None,
-            "publication_name": fixture.name,
+            "content_name": fixture.name,
             "files": len(fixture.expected_file_hashes),
             "pieces": fixture.piece_count,
             "storage_metrics": metrics,
@@ -3042,7 +3049,7 @@ def run_product_hybrid_saf_profile(
         torrent_id = wait_product_unknown_torrent_id(target, add_count)
         staging_root = f"{grant_root}/.{torrent_id}.rstorrent-staging"
         part_path = f"{grant_root}/.{torrent_id}.rstorrent-parts"
-        metrics, fd_high_water = wait_product_publication(
+        metrics, fd_high_water = wait_product_completion(
             target,
             torrent_id,
             baseline_fds,
@@ -3088,7 +3095,7 @@ def run_product_hybrid_saf_profile(
             exists = target.shell(["test", "-f", path], check=False).returncode == 0
             if file_index == fixture.skipped_file:
                 if exists:
-                    raise BootstrapFailure("selected hybrid published its skipped file")
+                    raise BootstrapFailure("selected hybrid created its skipped file")
                 continue
             if not exists:
                 raise BootstrapFailure(f"hybrid SAF output is absent: {relative_path}")
@@ -3215,7 +3222,7 @@ def run_product_hybrid_saf_profile(
             "torrent_id": torrent_id,
             "v1_info_hash": fixture.wire_info_hash,
             "v2_info_hash": fixture.info_hash,
-            "publication_name": fixture.name,
+            "content_name": fixture.name,
             "files": len(fixture.expected_file_hashes),
             "pieces": fixture.piece_count,
             "selected_pieces": selected_pieces,
@@ -3472,10 +3479,12 @@ def run_product_incomplete_duplex_profile(
         retained_pieces = stage_proxy.retained_pieces
         if len(retained_pieces) != 2:
             raise BootstrapFailure(
-                f"staging proxy retained {retained_pieces}, expected two pieces"
+                f"partial proxy retained {retained_pieces}, expected two pieces"
             )
         if not stage_handle.status().is_seeding:
-            raise BootstrapFailure("the staging oracle left seed state")
+            raise BootstrapFailure("the partial source left seed state")
+        if target.shell(["test", "-d", output_root], check=False).returncode != 0:
+            raise BootstrapFailure("direct SAF content was not visible while incomplete")
 
         close_partial(stage_session, stage_handle)
         stage_session = None
@@ -3575,7 +3584,7 @@ def run_product_incomplete_duplex_profile(
             "saf_root_health source=selection available=true",
             "repaired incomplete SAF root",
         )
-        metrics, fd_high_water = wait_product_publication(
+        metrics, fd_high_water = wait_product_completion(
             target,
             torrent_id,
             baseline_fds,
@@ -3606,7 +3615,7 @@ def run_product_incomplete_duplex_profile(
             if spec.padding or file_index in duplex.SKIP_FILES:
                 if exists:
                     raise BootstrapFailure(
-                        f"Android incomplete SAF published excluded file {spec.path}"
+                        f"Android incomplete SAF created excluded file {spec.path}"
                     )
                 continue
             if not exists:
@@ -3638,7 +3647,8 @@ def run_product_incomplete_duplex_profile(
             "v1_info_hash": fixture.info_hash,
             "provider_failure": "awaiting_storage",
             "provider_repair": "resumed",
-            "staged_pieces": retained_pieces,
+            "retained_pieces": retained_pieces,
+            "direct_visible_before_completion": True,
             "piece_evidence": evidence,
             "storage_metrics": metrics,
             "process_fds": {
@@ -3747,7 +3757,7 @@ def run_product_mse_profile(
                 except Exception:
                     pass
 
-        metrics, fd_high_water = wait_product_publication(
+        metrics, fd_high_water = wait_product_completion(
             target,
             torrent_id,
             baseline_fds,
@@ -3809,7 +3819,7 @@ def run_product_mse_profile(
             exists = target.shell(["test", "-f", path], check=False).returncode == 0
             if padding:
                 if exists:
-                    raise BootstrapFailure(f"padding file was published: {relative_path}")
+                    raise BootstrapFailure(f"padding file was created: {relative_path}")
                 continue
             if not exists:
                 raise BootstrapFailure(f"product MSE output is absent: {relative_path}")
@@ -3827,7 +3837,7 @@ def run_product_mse_profile(
             "identity": identity,
             "torrent_id": torrent_id,
             "v1_info_hash": fixture.info_hash,
-            "publication_name": fixture.name,
+            "content_name": fixture.name,
             "forced_rc4_attempts": len(observed_rc4),
             "mse_dh": {
                 "waiting": waiting,
@@ -4044,7 +4054,7 @@ def run_product_concurrent_downloads_profile(
         storage_metrics = []
         fd_high_water = baseline_fds
         for torrent_id in torrent_ids:
-            metrics, observed_fds = wait_product_publication(
+            metrics, observed_fds = wait_product_completion(
                 target,
                 torrent_id,
                 baseline_fds,
@@ -4057,7 +4067,7 @@ def run_product_concurrent_downloads_profile(
             or terminal.get("queued") != 0
             or terminal.get("registered") != 0
             # Android admits at most two downloads. One separately bounded
-            # publication checker may overlap the next promoted download.
+            # Completion observation may overlap the next promoted download.
             or terminal.get("registered_high") != 3
         ):
             raise BootstrapFailure(f"Android terminal admission did not drain: {terminal}")
@@ -4093,7 +4103,7 @@ def run_product_concurrent_downloads_profile(
                 exists = target.shell(["test", "-f", path], check=False).returncode == 0
                 if padding:
                     if exists:
-                        raise BootstrapFailure(f"padding file was published: {path}")
+                        raise BootstrapFailure(f"padding file was created: {path}")
                     continue
                 if not exists:
                     raise BootstrapFailure(f"concurrent product output is absent: {path}")

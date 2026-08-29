@@ -98,7 +98,7 @@ class EngineService : Service() {
             BootstrapContract.ACTION_OBSERVE ->
                 commandExecutor.execute { observeRun(intent) }
             BootstrapContract.ACTION_VERIFY ->
-                commandExecutor.execute { verifyPublishedRun(intent) }
+                commandExecutor.execute { verifyCompletedRun(intent) }
             else ->
                 Log.w(TAG, "ignoring unknown action ${intent.action}")
         }
@@ -434,7 +434,7 @@ class EngineService : Service() {
         stopAfterTerminal()
     }
 
-    private fun verifyPublishedRun(intent: Intent) {
+    private fun verifyCompletedRun(intent: Intent) {
         val runId = BootstrapContract.requireRunId(intent.getStringExtra("run_id"))
         val resultsRoot = File(filesDir, "results")
         check(resultsRoot.mkdirs() || resultsRoot.isDirectory)

@@ -122,7 +122,7 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
                 and utp.get("worker_panics") == 0
                 and isinstance(torrent_summary, dict)
                 and torrent_summary.get("state") == "complete"
-                and torrent_summary.get("storage_state") == "published"
+                and torrent_summary.get("storage_state") == "available"
             ):
                 raise AndroidUtpFailure("Android product snapshot is not ready and bounded")
 

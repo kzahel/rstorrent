@@ -375,14 +375,14 @@ def make_fixture(
     if torrent_info.num_pieces() != independent.expected["logical_pieces"]:
         raise ScenarioFailure(f"{name} logical piece geometry changed")
     wire_info_hash = full_info_hash[:40]
-    storage_root = fixture_root / "rstorrent-published"
+    storage_root = fixture_root / "rstorrent-content"
     for source in files:
         path = storage_root / "root" / Path(
             *(component.decode("utf-8") for component in source.path)
         )
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(source.data)
-    libtorrent_storage_root = fixture_root / "libtorrent-published"
+    libtorrent_storage_root = fixture_root / "libtorrent-content"
     payload_index = 0
     storage = torrent_info.files()
     for index in range(storage.num_files()):
@@ -619,7 +619,7 @@ def compare_files(
         )
         if index in skipped:
             if path.exists():
-                raise ScenarioFailure(f"skipped v2 file was materialized: {path}")
+                raise ScenarioFailure(f"skipped v2 file was created: {path}")
             continue
         if not path.is_file():
             raise ScenarioFailure(f"downloaded v2 file is missing: {path}")
@@ -1378,7 +1378,7 @@ def wait_rstorrent_download(
         if (
             isinstance(torrent, dict)
             and torrent.get("state") == "complete"
-            and torrent.get("storage_state") == "published"
+            and torrent.get("storage_state") == "available"
         ):
             compare_files(fixture, fixture.storage_root)
             matching = [

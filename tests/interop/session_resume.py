@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -107,9 +108,6 @@ def start_process(
     checkpoint_sync_delay_millis: int = 0,
     checkpoint_commit_delay_millis: int = 0,
     trace_checkpoint_stages: bool = False,
-    publication_delay_stage: str | None = None,
-    publication_delay_millis: int = 0,
-    trace_publication_stages: bool = False,
     storage_write_concurrency: int = 4,
     storage_hash_concurrency: int = 4,
 ) -> subprocess.Popen[str]:
@@ -140,13 +138,6 @@ def start_process(
         )
     if trace_checkpoint_stages:
         command.extend(["--trace-checkpoint-stages", "true"])
-    if publication_delay_stage is not None:
-        command.extend(["--publication-delay-stage", publication_delay_stage])
-        command.extend(
-            ["--publication-delay-millis", str(publication_delay_millis)]
-        )
-    if trace_publication_stages:
-        command.extend(["--trace-publication-stages", "true"])
     return subprocess.Popen(
         command,
         stdin=subprocess.PIPE,
@@ -202,11 +193,11 @@ def read_durable_state(
     database_path: Path,
     torrent_id: str,
 ) -> tuple[bytes | None, int, int, str]:
-    with sqlite3.connect(database_path, timeout=1) as connection:
+    with closing(sqlite3.connect(database_path, timeout=1)) as connection:
         row = connection.execute(
             """
             SELECT raw_info, piece_count, have_state, desired_state,
-                   payload_state, verification_requested,
+                   verification_requested,
                    verification_completed, quarantine_reason
             FROM torrents
             WHERE torrent_id = ?
@@ -220,7 +211,6 @@ def read_durable_state(
         piece_count,
         have_state,
         desired_state,
-        payload_state,
         verification_requested,
         verification_completed,
         quarantine_reason,
@@ -231,7 +221,6 @@ def read_durable_state(
             0,
             0,
             desired_state,
-            payload_state,
             verification_requested,
             verification_completed,
             quarantine_reason,
@@ -250,7 +239,6 @@ def read_durable_state(
         piece_count,
         verified,
         desired_state,
-        payload_state,
         verification_requested,
         verification_completed,
         quarantine_reason,
@@ -263,7 +251,6 @@ def derive_durable_state(
     piece_count: int,
     verified: int,
     desired_state: str,
-    payload_state: str,
     verification_requested: int,
     verification_completed: int,
     quarantine_reason: str | None,
@@ -276,19 +263,13 @@ def derive_durable_state(
         return "checking"
     if desired_state != "running":
         return "paused"
-    if payload_state == "publication_pending":
-        return "awaiting_publication"
-    if (
-        piece_count > 0
-        and verified == piece_count
-        and payload_state in {"legacy_owned", "final_owned"}
-    ):
+    if piece_count > 0 and verified == piece_count:
         return "complete"
     return "downloading"
 
 
 def read_durable_piece_indices(database_path: Path, torrent_id: str) -> set[int]:
-    with sqlite3.connect(database_path, timeout=1) as connection:
+    with closing(sqlite3.connect(database_path, timeout=1)) as connection:
         row = connection.execute(
             """
             SELECT piece_count, have_state FROM torrents
@@ -308,7 +289,7 @@ def read_durable_piece_indices(database_path: Path, torrent_id: str) -> set[int]
 
 
 def read_verification_generation(database_path: Path, torrent_id: str) -> tuple[int, int]:
-    with sqlite3.connect(database_path, timeout=1) as connection:
+    with closing(sqlite3.connect(database_path, timeout=1)) as connection:
         row = connection.execute(
             """
             SELECT verification_requested, verification_completed FROM torrents
@@ -505,23 +486,19 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
         process.wait(timeout=5)
         process = None
 
-        staging_payload = (
-            payload_root
-            / f".{torrent_id}.rstorrent-staging"
-            / "payload.bin"
-        )
-        if not staging_payload.is_file():
-            raise ScenarioFailure("forced death did not retain staging payload")
+        direct_payload = payload_root / fixture.torrent_info.name() / "payload.bin"
+        if not direct_payload.is_file():
+            raise ScenarioFailure("forced death did not retain direct payload")
         durable_indices = read_durable_piece_indices(database_path, torrent_id)
         if len(durable_indices) != pieces_before_kill:
             raise ScenarioFailure("durable checkpoint count and bitmap disagree")
         corrupt_piece = min(durable_indices)
         corrupt_offset = corrupt_piece * RESUME_PIECE_SIZE
-        with staging_payload.open("r+b") as payload:
+        with direct_payload.open("r+b") as payload:
             payload.seek(corrupt_offset)
             first = payload.read(1)
             if len(first) != 1:
-                raise ScenarioFailure("staging payload is unexpectedly empty")
+                raise ScenarioFailure("direct payload is unexpectedly empty")
             payload.seek(corrupt_offset)
             payload.write(bytes([first[0] ^ 0xFF]))
             payload.flush()
@@ -529,7 +506,7 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
         upload_before_restart = handle.status().total_payload_upload
         process = start_process(binary, profile_root, payload_root)
         valid_after_crash = valid_payload_pieces(
-            staging_payload,
+            direct_payload,
             fixture.torrent_info,
         )
         physically_valid_after_crash = len(valid_after_crash)

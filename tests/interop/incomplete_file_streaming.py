@@ -135,7 +135,7 @@ def media_url(
             return str(outcome["url"])
         if outcome.get("reason") not in {
             "metadata_unavailable",
-            "not_published",
+            "incomplete",
             "storage_unavailable",
         }:
             raise ScenarioFailure(f"active media URL was rejected: {outcome}")
@@ -181,13 +181,13 @@ def head_range(url: str) -> None:
             raise ScenarioFailure("range HEAD did not retain the empty 206 contract")
 
 
-def wait_published(gateway: Gateway, torrent_id: str) -> float:
+def wait_complete(gateway: Gateway, torrent_id: str) -> float:
     started = time.monotonic()
     deadline = started + TIMEOUT_SECONDS
     ordinal = 0
     torrent: dict[str, object] | None = None
     while time.monotonic() < deadline:
-        snapshot = gateway.snapshot(f"streaming-published-{ordinal}")
+        snapshot = gateway.snapshot(f"streaming-complete-{ordinal}")
         torrent = next(
             (
                 item
@@ -198,12 +198,12 @@ def wait_published(gateway: Gateway, torrent_id: str) -> float:
         )
         if torrent is not None and (
             torrent["state"] == "complete"
-            and torrent["storage_state"] == "published"
+            and torrent["storage_state"] == "available"
         ):
             return time.monotonic() - started
         ordinal += 1
         time.sleep(0.05)
-    raise ScenarioFailure(f"streaming fixture did not publish: {torrent}")
+    raise ScenarioFailure(f"streaming fixture did not complete: {torrent}")
 
 
 def parse_requests(trace: bytes) -> list[tuple[int, int, int]]:
@@ -318,7 +318,7 @@ def run(output: Path | None) -> dict[str, object]:
                     f"received={len(error.partial)} missing={error.expected} "
                     f"snapshot={snapshot}"
                 ) from error
-            publication_seconds = wait_published(gateway, torrent_id)
+            completion_seconds = wait_complete(gateway, torrent_id)
 
             all_requests = [
                 request
@@ -351,7 +351,7 @@ def run(output: Path | None) -> dict[str, object]:
                         )
                     ],
                     "full_sha1": hashlib.sha1(full).hexdigest(),
-                    "publication_seconds_after_full": publication_seconds,
+                    "completion_seconds_after_full": completion_seconds,
                 },
                 "peer_requests": {
                     "baseline_count": baseline,

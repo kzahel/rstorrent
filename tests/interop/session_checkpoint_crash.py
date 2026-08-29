@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -122,7 +123,7 @@ def parse_checkpoint_marker(line: str) -> dict[str, str] | None:
 
 
 def read_durable_piece_indices(database: Path, torrent_id: str) -> set[int]:
-    with sqlite3.connect(database, timeout=1) as connection:
+    with closing(sqlite3.connect(database, timeout=1)) as connection:
         row = connection.execute(
             """
             SELECT piece_count, have_state FROM torrents
@@ -142,7 +143,7 @@ def read_durable_piece_indices(database: Path, torrent_id: str) -> set[int]:
 
 
 def read_verification_generation(database: Path, torrent_id: str) -> tuple[int, int]:
-    with sqlite3.connect(database, timeout=1) as connection:
+    with closing(sqlite3.connect(database, timeout=1)) as connection:
         row = connection.execute(
             """
             SELECT verification_requested, verification_completed FROM torrents
@@ -362,13 +363,9 @@ def run_once(binary: Path, scenario: CrashScenario) -> CrashResult:
         if len(durable_indices) != verified:
             raise ScenarioFailure("durable have count and bitmap disagree")
 
-        staging_payload = (
-            payload_root
-            / f".{torrent_id}.rstorrent-staging"
-            / "payload.bin"
-        )
+        direct_payload = payload_root / fixture.torrent_info.name() / "payload.bin"
         valid_after_crash = valid_payload_pieces(
-            staging_payload,
+            direct_payload,
             fixture.torrent_info,
         )
         upload_before_restart = handle.status().total_payload_upload

@@ -768,7 +768,7 @@ mod tests {
     }
 
     #[test]
-    fn published_media_availability_requires_verified_pieces_but_not_wanted_selection() {
+    fn media_availability_requires_verified_pieces_but_not_wanted_selection() {
         let model = FileProgressModel::new_with_media(
             &fixture(),
             &[2],
@@ -776,7 +776,7 @@ mod tests {
             None,
             MediaFileAvailability::Available,
         )
-        .expect("published model");
+        .expect("verified model");
         let rows = model.rows();
         assert_eq!(rows[0].media_availability, MediaFileAvailability::Available);
         assert_eq!(rows[1].media_availability, MediaFileAvailability::Available);
@@ -794,7 +794,7 @@ mod tests {
             None,
             MediaFileAvailability::Available,
         )
-        .expect("published model");
+        .expect("verified model");
         model.piece_verified(0).expect("first piece");
         let changes = model.piece_verified(1).expect("second piece");
         let wanted = changes

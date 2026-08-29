@@ -106,6 +106,7 @@ class ProductEngineService : Service() {
     @Volatile private var safStorageJobs: List<Job> = emptyList()
     @Volatile private var safTreeUri: Uri? = null
     private val safWork = ConcurrentHashMap.newKeySet<String>()
+    private val safDirectCompletions = ConcurrentHashMap.newKeySet<String>()
     private val clientSettingsRequestActive = AtomicBoolean(false)
     private val torrentSettingsRequestActive = AtomicBoolean(false)
     private var powerLock: PowerManager.WakeLock? = null
@@ -1470,7 +1471,27 @@ class ProductEngineService : Service() {
 
     private fun advanceSaf(product: ProductState) {
         val treeUri = safTreeUri ?: return
+        safDirectCompletions.retainAll(product.torrents.keys)
         for (torrent in product.torrents.values) {
+            if (torrent.state == TorrentState.COMPLETE && torrent.removalState == null) {
+                if (safDirectCompletions.add(torrent.torrentId)) {
+                    scope.launch {
+                        try {
+                            val snapshot = client.safStoragePoolSnapshot()
+                            Log.i(
+                                TAG,
+                                "saf_direct_complete torrent=${torrent.torrentId} " +
+                                    "limit=${snapshot.limit} " +
+                                    "owned_high_water=${snapshot.ownedHighWater} " +
+                                    "pending_high_water=${snapshot.platformPendingHighWater}",
+                            )
+                        } catch (error: Throwable) {
+                            safDirectCompletions.remove(torrent.torrentId)
+                            reportError(error)
+                        }
+                    }
+                }
+            }
             if (torrent.removalState != RemovalState.AWAITING_PLATFORM) continue
             val action = "removal"
             val key = "${torrent.torrentId}:$action"
@@ -1487,6 +1508,7 @@ class ProductEngineService : Service() {
                                 plan,
                             )
                             client.confirmSafRemoval(torrent.torrentId, plan.operationId)
+                            safDirectCompletions.remove(torrent.torrentId)
                             Log.i(TAG, "saf_removal_confirmed torrent=${torrent.torrentId}")
                         }
                         else -> error("unknown SAF action $action")

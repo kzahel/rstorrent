@@ -252,7 +252,7 @@ def run_case(
         magnet_uri(fixture.info_hash, f"127.0.0.1:{peer_port}"),
         "--info-hash",
         fixture.info_hash,
-        "--publication-name",
+        "--content-name",
         fixture.torrent_info.name(),
         "--payload-bytes",
         str(fixture.torrent_info.total_size()),
@@ -304,9 +304,9 @@ def run_case(
             r"t1-[0-9a-f]{32}", torrent_id
         ) is None:
             raise ScenarioFailure("application profile returned an invalid torrent owner")
-        publication_name = report.get("publication_name")
-        if publication_name != fixture.torrent_info.name():
-            raise ScenarioFailure("application profile returned the wrong publication name")
+        content_name = report.get("content_name")
+        if content_name != fixture.torrent_info.name():
+            raise ScenarioFailure("application profile returned the wrong content name")
         expected_bytes = fixture.torrent_info.total_size()
         if report.get("payload_bytes") != expected_bytes:
             raise ScenarioFailure("application profile returned the wrong payload size")
@@ -314,11 +314,11 @@ def run_case(
             raise ScenarioFailure("application profile returned the wrong piece count")
         if report.get("verified_piece_count") != report.get("piece_count"):
             raise ScenarioFailure("application profile did not verify every piece")
-        published_root = payload_root / publication_name
-        candidates = list(published_root.rglob("payload.bin"))
+        content_root = payload_root / content_name
+        candidates = list(content_root.rglob("payload.bin"))
         if len(candidates) != 1:
             raise ScenarioFailure(
-                f"application profile published {len(candidates)} payload.bin files"
+                f"application profile wrote {len(candidates)} payload.bin files"
             )
         payload_hash = compare_payloads(fixture.payload_path, candidates[0])
         if payload_hash != fixture.payload_hash:

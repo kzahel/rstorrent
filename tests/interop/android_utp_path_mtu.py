@@ -215,9 +215,9 @@ def validate_application_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     if (
         not isinstance(torrent, dict)
         or torrent.get("state") != "complete"
-        or torrent.get("storage_state") != "published"
+        or torrent.get("storage_state") != "available"
     ):
-        raise AndroidUtpFailure(f"Android application did not publish: {torrent}")
+        raise AndroidUtpFailure(f"Android application did not complete: {torrent}")
     utp = snapshot.get("utp")
     if (
         not isinstance(utp, dict)
@@ -332,7 +332,7 @@ def run_application_transfer(
             if (
                 isinstance(torrent, dict)
                 and torrent.get("state") == "complete"
-                and torrent.get("storage_state") == "published"
+                and torrent.get("storage_state") == "available"
             ):
                 break
             time.sleep(POLL_SECONDS)

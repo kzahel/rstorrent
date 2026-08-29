@@ -281,8 +281,8 @@ def validate_application_summary(snapshot: dict[str, Any]) -> None:
     torrent = projection.get("torrent")
     if not isinstance(torrent, dict):
         raise ProductInteropFailure("application summary has no torrent")
-    if torrent.get("state") != "complete" or torrent.get("storage_state") != "published":
-        raise ProductInteropFailure(f"application did not publish exact completion: {torrent}")
+    if torrent.get("state") != "complete" or torrent.get("storage_state") != "available":
+        raise ProductInteropFailure(f"application did not expose exact completion: {torrent}")
 
 
 def validate_utp_snapshot(
@@ -440,7 +440,7 @@ def wait_application_completion(
         if (
             isinstance(torrent, dict)
             and torrent.get("state") == "complete"
-            and torrent.get("storage_state") == "published"
+            and torrent.get("storage_state") == "available"
             and payload_path.is_file()
         ):
             return snapshot

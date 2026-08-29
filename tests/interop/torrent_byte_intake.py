@@ -288,7 +288,7 @@ def remove(gateway: Gateway, torrent_id: str, request_id: str) -> None:
         {
             "type": "remove_torrent",
             "torrent_id": torrent_id,
-            "data": "delete_managed",
+            "data": "delete_data",
         },
     )
     wait_removed(gateway, torrent_id)
@@ -342,15 +342,15 @@ def tracker_intake_case(
         )
         if added_torrent_id(duplicate) != torrent_id:
             raise ScenarioFailure("duplicate .torrent upload changed its opaque owner")
-        published = storage / ROOT_NAME / payload_path.name
-        actual_hash = compare_payloads(payload_path, published)
+        direct_file = storage / ROOT_NAME / payload_path.name
+        actual_hash = compare_payloads(payload_path, direct_file)
         gateway.stop()
         gateway = Gateway(gateway_binary, profile, storage, "offline")
         restarted = torrent(gateway.snapshot("restart-tracker-torrent"), torrent_id)
         if restarted is None or restarted["state"] != "complete":
             raise ScenarioFailure(f"tracker torrent did not restart complete: {restarted}")
         remove(gateway, torrent_id, "remove-tracker-torrent")
-        if published.exists():
+        if direct_file.exists():
             raise ScenarioFailure("managed tracker-intake payload survived removal")
         return {
             "info_hash": info_hash,

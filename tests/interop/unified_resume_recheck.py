@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise unified v1 storage, recheck, and publication against libtorrent."""
+"""Exercise direct v1 storage, recheck, and repair against libtorrent."""
 
 from __future__ import annotations
 
@@ -7,9 +7,7 @@ import argparse
 import gc
 import hashlib
 import json
-import selectors
 import shutil
-import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -20,11 +18,7 @@ from typing import Any
 
 import libtorrent as lt
 
-from application_identity import (
-    HAVE_STATE_HEADER_LENGTH,
-    torrent_id_blob,
-    torrent_id_from_add,
-)
+from application_identity import torrent_id_from_add
 from first_verified_piece import (
     ScenarioFailure,
     add_seed,
@@ -36,7 +30,6 @@ from session_checkpoint_crash import SCENARIOS as CHECKPOINT_SCENARIOS
 from session_checkpoint_crash import run_once as run_checkpoint_crash
 from session_resume import (
     build_binary,
-    derive_durable_state,
     envelope,
     exchange,
     start_process,
@@ -47,14 +40,8 @@ from session_resume import (
 
 PIECE_SIZE = 32 * 1024
 PROCESS_TIMEOUT_SECONDS = 45
-PUBLICATION_DELAY_MILLIS = 60_000
 REFERENCE_REVISION = "7d7fc38fac61177fa5e02148f791b2f65250b09d"
 OVERSIZED_SUFFIX = b"ignored oversized suffix"
-PUBLICATION_STAGES = (
-    "intent_durable",
-    "renamed",
-    "namespace_durable",
-)
 
 
 @dataclass(frozen=True)
@@ -89,19 +76,6 @@ class TopologyResult:
     final_file_hashes: dict[str, str]
     libtorrent_recheck_pieces: int
     oversized_suffix_bytes: int
-    cleanup: bool = False
-
-
-@dataclass
-class PublicationCrashResult:
-    stage: str
-    durable_state: str
-    durable_storage_state: str
-    durable_have: list[int]
-    artifact_side: str
-    restart_have: list[int]
-    seed_unavailable: bool
-    final_hashes: dict[str, str]
     cleanup: bool = False
 
 
@@ -218,10 +192,6 @@ def final_file(root: Path, fixture: Fixture, file: FixtureFile) -> Path:
     return root.joinpath(fixture.name, *file.path)
 
 
-def staging_root(root: Path, torrent_id: str) -> Path:
-    return root / f".{torrent_id}.rstorrent-staging"
-
-
 def verify_final(
     root: Path, fixture: Fixture, *, preserve_oversized_suffix: bool = False
 ) -> dict[str, str]:
@@ -254,84 +224,6 @@ def verify_final(
     if singular:
         raise ScenarioFailure(f"singular bring-up artifacts survived: {singular}")
     return hashes
-
-
-def read_sqlite_state(database: Path, torrent_id: str) -> tuple[str, str, list[int]]:
-    with sqlite3.connect(database, timeout=1) as connection:
-        row = connection.execute(
-            """
-            SELECT raw_info, piece_count, have_state, desired_state,
-                   payload_state, verification_requested,
-                   verification_completed, quarantine_reason
-            FROM torrents WHERE torrent_id = ?
-            """,
-            (torrent_id_blob(torrent_id),),
-        ).fetchone()
-    if row is None:
-        raise ScenarioFailure("durable torrent row is missing")
-    (
-        raw_info,
-        piece_count,
-        have_state,
-        desired_state,
-        payload_state,
-        verification_requested,
-        verification_completed,
-        quarantine_reason,
-    ) = row
-    if have_state is None:
-        have: list[int] = []
-    else:
-        have = [
-            index
-            for index in range(piece_count)
-            if have_state[HAVE_STATE_HEADER_LENGTH + index // 8]
-            & (1 << (7 - index % 8))
-        ]
-    state = derive_durable_state(
-        raw_info,
-        int(piece_count or 0),
-        len(have),
-        desired_state,
-        payload_state,
-        verification_requested,
-        verification_completed,
-        quarantine_reason,
-    )
-    return (
-        state,
-        payload_state,
-        have,
-    )
-
-
-def wait_for_publication_stage(
-    process: subprocess.Popen[str], stage: str, diagnostics: list[str]
-) -> None:
-    if process.stderr is None:
-        raise ScenarioFailure("publication diagnostic stderr is unavailable")
-    selector = selectors.DefaultSelector()
-    selector.register(process.stderr, selectors.EVENT_READ)
-    deadline = time.monotonic() + PROCESS_TIMEOUT_SECONDS
-    try:
-        while time.monotonic() < deadline:
-            if process.poll() is not None:
-                raise ScenarioFailure("session exited before publication gate")
-            if not selector.select(0.25):
-                continue
-            line = process.stderr.readline().rstrip()
-            if line:
-                diagnostics.append(line)
-            if line == f"publication_gate={stage}":
-                return
-    finally:
-        selector.close()
-    try:
-        snapshot = exchange(process, envelope("stage-timeout", {"type": "snapshot"}))
-        diagnostics.append(f"stage_timeout_snapshot={snapshot}")
-    except BaseException as error:
-        diagnostics.append(f"stage_timeout_snapshot_failed={error}")
-    raise ScenarioFailure(f"session did not reach publication stage {stage}")
 
 
 def add_fixture(
@@ -558,105 +450,11 @@ def run_topology_case(binary: Path, shape: str) -> TopologyResult:
     return result
 
 
-def run_publication_crash(binary: Path, stage: str) -> PublicationCrashResult:
-    run_path = Path(tempfile.mkdtemp(prefix=f"rstorrent-t073-publish-{stage}-"))
-    diagnostics: list[str] = []
-    process: subprocess.Popen[str] | None = None
-    seed_session: lt.session | None = None
-    seed_handle: lt.torrent_handle | None = None
-    result: PublicationCrashResult | None = None
-    failure: BaseException | None = None
-    try:
-        fixture = create_fixture(run_path, "length")
-        profile = run_path / "profile"
-        payload = run_path / "payload"
-        database = profile / "session.db"
-        seed_session = create_session()
-        port = wait_for_listener(seed_session, diagnostics)
-        seed_handle = add_seed(
-            seed_session, fixture.torrent_info, fixture.seed_directory, diagnostics
-        )
-        process = start_process(
-            binary,
-            profile,
-            payload,
-            publication_delay_stage=stage,
-            publication_delay_millis=PUBLICATION_DELAY_MILLIS,
-            trace_publication_stages=True,
-        )
-        torrent_id = add_fixture(process, fixture, port, "add")
-        wait_for_publication_stage(process, stage, diagnostics)
-        process.kill()
-        process.wait(timeout=5)
-        process = None
-        state, storage_state, old_have = read_sqlite_state(database, torrent_id)
-        staging = staging_root(payload, torrent_id)
-        final = payload / fixture.name
-        if staging.exists() == final.exists():
-            raise ScenarioFailure("publication crash retained neither or both primary sides")
-        artifact_side = "staging" if staging.exists() else "final"
-        expected_side = "staging" if stage == "intent_durable" else "final"
-        if artifact_side != expected_side:
-            raise ScenarioFailure(
-                f"publication stage {stage} retained {artifact_side}, expected {expected_side}"
-            )
-        if seed_handle.is_valid():
-            seed_session.remove_torrent(seed_handle)
-        seed_session.pause()
-        seed_handle = None
-        seed_session = None
-        gc.collect()
-        process = start_process(binary, profile, payload)
-        wait_for_complete(process, fixture, torrent_id)
-        final_hashes = verify_final(payload, fixture)
-        _, _, restart_have = read_sqlite_state(database, torrent_id)
-        stop_process(process, graceful=True)
-        process = None
-        result = PublicationCrashResult(
-            stage,
-            state,
-            storage_state,
-            old_have,
-            artifact_side,
-            restart_have,
-            True,
-            final_hashes,
-        )
-    except BaseException as error:
-        failure = error
-    finally:
-        if process is not None:
-            stop_process(process, graceful=False)
-        if seed_session is not None:
-            if seed_handle is not None and seed_handle.is_valid():
-                seed_session.remove_torrent(seed_handle)
-            seed_session.pause()
-        seed_handle = None
-        seed_session = None
-        gc.collect()
-        try:
-            shutil.rmtree(run_path)
-            cleaned = not run_path.exists()
-        except OSError as error:
-            cleaned = False
-            failure = failure or error
-        if result is not None:
-            result.cleanup = cleaned
-    if failure is not None:
-        raise ScenarioFailure(
-            f"publication crash {stage} failed: {failure}\n"
-            f"diagnostics:\n" + "\n".join(diagnostics[-100:])
-        ) from failure
-    if result is None or not result.cleanup:
-        raise ScenarioFailure(f"publication crash {stage} did not clean up")
-    return result
-
-
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--phase",
-        choices=("all", "topology", "publication", "checkpoint"),
+        choices=("all", "topology", "checkpoint"),
         default="all",
     )
     parser.add_argument("--binary", type=Path)
@@ -680,7 +478,6 @@ def main() -> int:
         "libtorrent_reference_revision": REFERENCE_REVISION,
         "piece_size": PIECE_SIZE,
         "topology": [],
-        "publication_crashes": [],
         "checkpoint_crashes": [],
         "cleanup": True,
     }
@@ -695,17 +492,12 @@ def main() -> int:
                 asdict(run_topology_case(binary, shape))
                 for shape in shapes
             ]
-        if arguments.phase in {"all", "publication"}:
-            result["publication_crashes"] = [
-                asdict(run_publication_crash(binary, stage))
-                for stage in PUBLICATION_STAGES
-            ]
         if arguments.phase in {"all", "checkpoint"}:
             result["checkpoint_crashes"] = [
                 asdict(run_checkpoint_crash(binary, scenario))
                 for scenario in CHECKPOINT_SCENARIOS
             ]
-    except (ScenarioFailure, OSError, sqlite3.Error, subprocess.SubprocessError) as error:
+    except (ScenarioFailure, OSError, subprocess.SubprocessError) as error:
         result["result"] = "fail"
         result["error"] = str(error)
         print(json.dumps(result, sort_keys=True), file=sys.stderr)
