@@ -473,7 +473,7 @@ function applyTorrentUpdate(
       case "checking": next.checking = field.value; break;
       case "archived": next.archived = field.value; break;
       case "removal_state": next.removal_state = field.value; break;
-      case "delete_managed_data_supported": next.delete_managed_data_supported = field.value; break;
+      case "delete_data_supported": next.delete_data_supported = field.value; break;
       case "force_recheck_available": next.force_recheck_available = field.value; break;
       case "error": next.error = field.value; break;
     }

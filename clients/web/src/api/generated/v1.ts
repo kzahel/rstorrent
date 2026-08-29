@@ -67,7 +67,7 @@ export const DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW: ClientSettingsRuntimeView = {
 
 export type FilePriority = "normal" | "high" | "skip";
 
-export type RemovalDataPolicy = "keep" | "delete_managed";
+export type RemovalDataPolicy = "keep" | "delete_data";
 
 export type RemovalState = "pending" | "awaiting_platform" | "failed";
 
@@ -97,13 +97,13 @@ export type ResponseOutcome = { "status": "success", snapshot: ServiceSnapshot, 
 
 export type ResponseEnvelope = { version: number, request_id: string, revision: string, result?: CommandResult | null, } & ({ "status": "success", snapshot: ServiceSnapshot, } | { "status": "error", error: ErrorResponse, });
 
-export type TorrentState = "awaiting_metadata" | "awaiting_storage" | "checking" | "downloading" | "awaiting_publication" | "paused" | "complete" | "needs_repair" | "error";
+export type TorrentState = "awaiting_metadata" | "awaiting_storage" | "checking" | "downloading" | "paused" | "complete" | "needs_repair" | "error";
 
-export type StorageState = "none" | "staging" | "prepared" | "published" | "needs_repair";
+export type StorageState = "available" | "unavailable" | "needs_repair";
 
 export type TorrentProtocolIdentities = { v1?: string | null, v2?: string | null, };
 
-export type TorrentSnapshot = { torrent_id: string, protocol_identities: TorrentProtocolIdentities, storage_root: string, state: TorrentState, storage_state: StorageState, metadata_available: boolean, piece_count: number, verified_piece_count: number, desired_running: boolean, download_queue_position?: number | null, transfer_limits: TorrentTransferLimits, skip_files: Array<number>, high_priority_files: Array<number>, selection_default: FilePriority, selection_exceptions: Array<number>, archived: boolean, removal_state?: RemovalState | null, delete_managed_data_supported: boolean, force_recheck_available: boolean, error?: string | null, };
+export type TorrentSnapshot = { torrent_id: string, protocol_identities: TorrentProtocolIdentities, storage_root: string, state: TorrentState, storage_state: StorageState, metadata_available: boolean, piece_count: number, verified_piece_count: number, desired_running: boolean, download_queue_position?: number | null, transfer_limits: TorrentTransferLimits, skip_files: Array<number>, high_priority_files: Array<number>, selection_default: FilePriority, selection_exceptions: Array<number>, archived: boolean, removal_state?: RemovalState | null, delete_data_supported: boolean, force_recheck_available: boolean, error?: string | null, };
 
 export type StorageRootAvailability = "available" | "unavailable";
 
@@ -139,9 +139,9 @@ export type DiagnosticRetention = { source_evicted_count: string, retained_from_
 
 export type ProgressDisposition = "active" | "waiting" | "blocked" | "inactive";
 
-export type ProgressPhase = "discovery" | "metadata" | "storage" | "transfer" | "verification" | "publication";
+export type ProgressPhase = "discovery" | "metadata" | "storage" | "transfer" | "verification" | "complete";
 
-export type ProgressReason = "network_disabled" | "discovering_peers" | "waiting_for_discovery" | "no_enabled_discovery_source" | "acquiring_metadata" | "preparing_storage" | "waiting_for_storage" | "preparing_integrity" | "transferring_pieces" | "verifying_pieces" | "waiting_for_publication" | "paused" | "complete" | "needs_repair" | "failed";
+export type ProgressReason = "network_disabled" | "discovering_peers" | "waiting_for_discovery" | "no_enabled_discovery_source" | "acquiring_metadata" | "preparing_storage" | "waiting_for_storage" | "preparing_integrity" | "transferring_pieces" | "verifying_pieces" | "paused" | "complete" | "needs_repair" | "failed";
 
 export type ProgressAction = "enable_network" | "enable_discovery" | "select_storage" | "resume" | "repair_storage";
 
@@ -225,9 +225,9 @@ export type TorrentPreparationView = { generation: string, metadata?: MetadataAc
 
 export type TorrentOperationalState = "queued" | "starting" | "downloading" | "checking" | "stopping" | "seeding" | "paused" | "error";
 
-export type TorrentView = { torrent_id: string, protocol_identities: TorrentProtocolIdentities, display_name?: string | null, source_display_name?: string | null, state: TorrentState, operational_state: TorrentOperationalState, download_queue_position?: number | null, transfer_limits: TorrentTransferLimits, storage_state: StorageState, metadata_available: boolean, piece_count: number, total_size_bytes: string | null, verified_piece_count: number, requested_bytes: string, received_bytes: string, stored_bytes: string, active_peer_connections: number, configured_tracker_count?: number | null, payload_download_rate_bytes: string, required_payload_bytes: string | null, remaining_payload_bytes: string | null, eta_payload_download_rate_bytes: string, eta: TorrentEtaView, progress: ProgressAssessment, checking?: CheckingProgressView | null, archived: boolean, removal_state?: RemovalState | null, delete_managed_data_supported: boolean, force_recheck_available: boolean, error?: string | null, };
+export type TorrentView = { torrent_id: string, protocol_identities: TorrentProtocolIdentities, display_name?: string | null, source_display_name?: string | null, state: TorrentState, operational_state: TorrentOperationalState, download_queue_position?: number | null, transfer_limits: TorrentTransferLimits, storage_state: StorageState, metadata_available: boolean, piece_count: number, total_size_bytes: string | null, verified_piece_count: number, requested_bytes: string, received_bytes: string, stored_bytes: string, active_peer_connections: number, configured_tracker_count?: number | null, payload_download_rate_bytes: string, required_payload_bytes: string | null, remaining_payload_bytes: string | null, eta_payload_download_rate_bytes: string, eta: TorrentEtaView, progress: ProgressAssessment, checking?: CheckingProgressView | null, archived: boolean, removal_state?: RemovalState | null, delete_data_supported: boolean, force_recheck_available: boolean, error?: string | null, };
 
-export type TorrentFieldUpdate = { "field": "protocol_identities", value: TorrentProtocolIdentities, } | { "field": "display_name", value: string | null, } | { "field": "source_display_name", value: string | null, } | { "field": "state", value: TorrentState, } | { "field": "operational_state", value: TorrentOperationalState, } | { "field": "download_queue_position", value: number | null, } | { "field": "transfer_limits", value: TorrentTransferLimits, } | { "field": "storage_state", value: StorageState, } | { "field": "metadata_available", value: boolean, } | { "field": "piece_count", value: number, } | { "field": "total_size_bytes", value: string | null, } | { "field": "verified_piece_count", value: number, } | { "field": "requested_bytes", value: string, } | { "field": "received_bytes", value: string, } | { "field": "stored_bytes", value: string, } | { "field": "active_peer_connections", value: number, } | { "field": "configured_tracker_count", value: number | null, } | { "field": "payload_download_rate_bytes", value: string, } | { "field": "required_payload_bytes", value: string | null, } | { "field": "remaining_payload_bytes", value: string | null, } | { "field": "eta_payload_download_rate_bytes", value: string, } | { "field": "eta", value: TorrentEtaView, } | { "field": "progress", value: ProgressAssessment, } | { "field": "checking", value: CheckingProgressView | null, } | { "field": "archived", value: boolean, } | { "field": "removal_state", value: RemovalState | null, } | { "field": "delete_managed_data_supported", value: boolean, } | { "field": "force_recheck_available", value: boolean, } | { "field": "error", value: string | null, };
+export type TorrentFieldUpdate = { "field": "protocol_identities", value: TorrentProtocolIdentities, } | { "field": "display_name", value: string | null, } | { "field": "source_display_name", value: string | null, } | { "field": "state", value: TorrentState, } | { "field": "operational_state", value: TorrentOperationalState, } | { "field": "download_queue_position", value: number | null, } | { "field": "transfer_limits", value: TorrentTransferLimits, } | { "field": "storage_state", value: StorageState, } | { "field": "metadata_available", value: boolean, } | { "field": "piece_count", value: number, } | { "field": "total_size_bytes", value: string | null, } | { "field": "verified_piece_count", value: number, } | { "field": "requested_bytes", value: string, } | { "field": "received_bytes", value: string, } | { "field": "stored_bytes", value: string, } | { "field": "active_peer_connections", value: number, } | { "field": "configured_tracker_count", value: number | null, } | { "field": "payload_download_rate_bytes", value: string, } | { "field": "required_payload_bytes", value: string | null, } | { "field": "remaining_payload_bytes", value: string | null, } | { "field": "eta_payload_download_rate_bytes", value: string, } | { "field": "eta", value: TorrentEtaView, } | { "field": "progress", value: ProgressAssessment, } | { "field": "checking", value: CheckingProgressView | null, } | { "field": "archived", value: boolean, } | { "field": "removal_state", value: RemovalState | null, } | { "field": "delete_data_supported", value: boolean, } | { "field": "force_recheck_available", value: boolean, } | { "field": "error", value: string | null, };
 
 export type TorrentRowUpdate = { torrent_id: string, fields: Array<TorrentFieldUpdate>, };
 
@@ -325,7 +325,7 @@ export type ChooseDownloadRootResponse = { root: StorageRootSnapshot | null, };
 
 export type CreateMediaUrlRequest = { torrent_id: string, file_index: number, };
 
-export type MediaFileAvailability = "available" | "streamable" | "metadata_unavailable" | "invalid_file" | "padding" | "not_published" | "checking" | "unverified" | "storage_unavailable" | "removing" | "server_unavailable" | "resource_limit";
+export type MediaFileAvailability = "available" | "streamable" | "metadata_unavailable" | "invalid_file" | "padding" | "incomplete" | "checking" | "unverified" | "storage_unavailable" | "removing" | "server_unavailable" | "resource_limit";
 
 export type MediaUrlOutcome = { "type": "created", url: string, idle_timeout_millis: string, absolute_timeout_millis: string, } | { "type": "unavailable", reason: MediaFileAvailability, };
 

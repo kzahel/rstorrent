@@ -386,7 +386,7 @@ export class LiveApplication implements InspectionApplication {
                   ? {
                       type: "remove_torrent",
                       torrent_id: command.torrentId,
-                      data: command.deleteData ? "delete_managed" : "keep",
+                      data: command.deleteData ? "delete_data" : "keep",
                     }
                   : {
                       type:
@@ -1269,7 +1269,7 @@ function mapTorrent(torrent: TorrentView): TorrentRow {
     addedAtMs: null,
     archived: torrent.archived,
     removalState: torrent.removal_state ?? null,
-    deleteManagedDataSupported: torrent.delete_managed_data_supported,
+    deleteDataSupported: torrent.delete_data_supported,
     forceRecheckAvailable: torrent.force_recheck_available,
     infoHash,
     protocolIdentities: torrent.protocol_identities,
@@ -1377,7 +1377,6 @@ function mapTorrentState(state: TorrentState): TorrentRow["status"] {
       return "error";
     case "awaiting_storage":
     case "downloading":
-    case "awaiting_publication":
       return "downloading";
   }
 }
@@ -1678,14 +1677,18 @@ function mapMediaItem(torrentId: string, item: MediaItemView): MediaRow {
 
 function mediaUnavailableMessage(reason: import("../../api").MediaFileAvailability): string {
   switch (reason) {
+    case "available":
+      return "The file is available";
+    case "streamable":
+      return "The file is ready to stream";
     case "metadata_unavailable":
       return "File metadata is unavailable";
     case "invalid_file":
       return "The selected file no longer exists";
     case "padding":
       return "Padding files cannot be opened";
-    case "not_published":
-      return "The file is not available in published storage";
+    case "incomplete":
+      return "The file has not finished downloading";
     case "checking":
       return "The file cannot be opened while its torrent is checking";
     case "unverified":

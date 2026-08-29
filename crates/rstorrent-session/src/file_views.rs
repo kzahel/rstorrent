@@ -139,7 +139,7 @@ impl FileProgressModel {
             skipped,
             verified_pieces,
             filesystem_content_base,
-            MediaFileAvailability::NotPublished,
+            MediaFileAvailability::Incomplete,
         )
     }
 
@@ -711,7 +711,7 @@ mod tests {
             &[1],
             &[],
             Some("/tmp/content".to_owned()),
-            MediaFileAvailability::NotPublished,
+            MediaFileAvailability::Incomplete,
         )
         .expect("model");
         let rows = model.rows();
@@ -729,7 +729,7 @@ mod tests {
         assert_eq!(rows[3].media_availability, MediaFileAvailability::Padding);
         assert_eq!(
             rows[1].media_availability,
-            MediaFileAvailability::NotPublished
+            MediaFileAvailability::Incomplete
         );
         assert_eq!(model.filesystem_content_base(), Some("/tmp/content"));
     }

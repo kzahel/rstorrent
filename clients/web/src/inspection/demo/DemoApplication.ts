@@ -686,7 +686,7 @@ function applyOverlays(
       addedAtMs: DEMO_BASE_TIME_MS + source.demo!.elapsedMs,
       archived: false,
       removalState: null,
-      deleteManagedDataSupported: true,
+      deleteDataSupported: true,
       forceRecheckAvailable: false,
       infoHash,
       error: null,

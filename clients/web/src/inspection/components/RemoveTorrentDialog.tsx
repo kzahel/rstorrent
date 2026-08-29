@@ -33,7 +33,7 @@ export function RemoveTorrentDialog({
   const confirmRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLFormElement>(null);
   const unsupportedDeleteCount = targets.filter(
-    (target) => !target.deleteManagedDataSupported,
+    (target) => !target.deleteDataSupported,
   ).length;
 
   useEffect(() => {
@@ -145,7 +145,7 @@ export function RemoveTorrentDialog({
         ) : null}
         {deleteData ? (
           <p className={styles.warning} role="alert">
-            This permanently deletes RSTorrent-managed payload, staging, and part data. It cannot be undone.
+            This permanently deletes this torrent's downloaded files and part data. It cannot be undone.
           </p>
         ) : null}
         {error === "" ? null : (

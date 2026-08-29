@@ -22,9 +22,8 @@ use rstorrent_session::{
     EncryptionPolicy, FileIndexRange, FileSelectionIntent, Ipv6PinholeDiagnosticResult,
     Ipv6PinholeStatus, ListenerPolicy, NetworkConfig, NetworkPolicy, PeerTransportPolicy,
     PortMappingPolicy, PortMappingStatus, RequestEnvelope, ResponseOutcome, SessionStore,
-    SessionUdpStatus, StorageState, StoreError, SubscriptionSpec, TorrentTransferLimits,
-    TransferRateLimit, TransportAddressFamily, ViewProjection, ViewSelector, ViewSnapshot,
-    ViewUpdatePayload,
+    SessionUdpStatus, StoreError, SubscriptionSpec, TorrentTransferLimits, TransferRateLimit,
+    TransportAddressFamily, ViewProjection, ViewSelector, ViewSnapshot, ViewUpdatePayload,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::time::timeout;
@@ -449,11 +448,8 @@ fn initialize_catalog(
         if (downloading && resume.state != rstorrent_session::TorrentState::Complete)
             || (!partial
                 && !downloading
-                && resume.state == rstorrent_session::TorrentState::Complete
-                && resume.storage_state == StorageState::Published)
-            || (partial
-                && resume.state != rstorrent_session::TorrentState::Complete
-                && resume.storage_state == StorageState::Staging)
+                && resume.state == rstorrent_session::TorrentState::Complete)
+            || (partial && resume.state != rstorrent_session::TorrentState::Complete)
         {
             ensure_transfer_limits(&mut store, &torrent_id, arguments)?;
             return Ok(resume.torrent_id);
@@ -536,13 +532,11 @@ fn initialize_catalog(
     if downloading {
         // Exact byte intake already owns metadata, selection, desired-running
         // state, and the empty have set. The application runtime performs the
-        // ordinary discovery, storage, checkpoint, and publication path.
+        // ordinary discovery, storage, and checkpoint path.
     } else if partial {
         store.record_pieces(&torrent_id, &arguments.initial_pieces)?;
-        store.mark_storage_prepared(&torrent_id, StorageState::Staging)?;
     } else {
         store.record_pieces(&torrent_id, &(0..content.piece_count()).collect::<Vec<_>>())?;
-        store.mark_storage_prepared(&torrent_id, StorageState::Published)?;
         store.mark_complete(&torrent_id)?;
     }
     ensure_transfer_limits(&mut store, &torrent_id, arguments)?;
@@ -687,7 +681,7 @@ async fn stage_partial_fixture(
         content_fingerprint: ContentFingerprint::for_info_bytes(raw_info),
     };
     let mut storage = SelectiveStorage::create(
-        paths.output.clone(),
+        paths.content.clone(),
         artifact_identity,
         metainfo,
         layout.clone(),
@@ -741,7 +735,6 @@ async fn stage_partial_fixture(
             )));
         }
     }
-    debug_assert!(paths.staging.exists());
     Ok(())
 }
 

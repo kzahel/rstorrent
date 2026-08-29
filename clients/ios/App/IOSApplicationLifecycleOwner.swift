@@ -296,7 +296,7 @@ final class IOSApplicationLifecycleOwner: ObservableObject {
     private func currentWork() -> WorkProgress {
         let active = model.presentation.torrents.filter {
             switch $0.state {
-            case .awaitingMetadata, .checking, .downloading, .awaitingPublication:
+            case .awaitingMetadata, .checking, .downloading:
                 return true
             case .awaitingStorage, .paused, .complete, .needsRepair, .error:
                 return false

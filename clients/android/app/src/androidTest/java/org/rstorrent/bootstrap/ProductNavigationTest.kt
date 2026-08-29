@@ -234,7 +234,7 @@ class ProductNavigationTest {
                     TransferRateLimit.Unlimited,
                     TransferRateLimit.Unlimited,
                 ),
-            storageState = StorageState.STAGING,
+            storageState = StorageState.AVAILABLE,
             metadataAvailable = true,
             pieceCount = 4U,
             totalSizeBytes = "65536",
@@ -259,7 +259,7 @@ class ProductNavigationTest {
             checking = null,
             archived = false,
             removalState = null,
-            deleteManagedDataSupported = true,
+            deleteDataSupported = true,
             forceRecheckAvailable = true,
             error = null,
         )

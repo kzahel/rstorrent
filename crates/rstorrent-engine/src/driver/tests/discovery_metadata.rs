@@ -658,7 +658,6 @@ async fn pure_v2_magnet_authenticates_piece_layer_before_payload() {
             resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
             skip_files: Vec::new(),
             high_priority_files: Vec::new(),
-            materialize_files: Vec::new(),
             dht: None,
         }),
     )
@@ -732,7 +731,6 @@ async fn pure_v2_leaf_proof_repairs_only_the_corrupt_block() {
             resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
             skip_files: Vec::new(),
             high_priority_files: Vec::new(),
-            materialize_files: Vec::new(),
             dht: None,
         }),
     )
@@ -827,7 +825,6 @@ async fn pure_v2_leaf_reject_falls_back_to_whole_piece_repair() {
             resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
             skip_files: Vec::new(),
             high_priority_files: Vec::new(),
-            materialize_files: Vec::new(),
             dht: None,
         }),
     )
@@ -920,7 +917,6 @@ async fn pure_v2_leaf_stall_falls_back_to_whole_piece_repair() {
             resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
             skip_files: Vec::new(),
             high_priority_files: Vec::new(),
-            materialize_files: Vec::new(),
             dht: None,
         }),
     )
@@ -1430,7 +1426,6 @@ async fn tracker_only_magnet_discovers_registry_peers_and_downloads() {
             resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
             skip_files: Vec::new(),
             high_priority_files: Vec::new(),
-            materialize_files: Vec::new(),
             dht: None,
         },
         control,
@@ -1548,7 +1543,6 @@ async fn http_tracker_only_magnet_discovers_peer_and_verifies_download() {
             resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
             skip_files: Vec::new(),
             high_priority_files: Vec::new(),
-            materialize_files: Vec::new(),
             dht: None,
         },
         control,
@@ -3566,7 +3560,6 @@ async fn magnet_registry_fails_over_and_hands_same_peer_to_content_download() {
             resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
             skip_files: Vec::new(),
             high_priority_files: Vec::new(),
-            materialize_files: Vec::new(),
             dht: None,
         },
         DownloadControl::new(),
@@ -3680,7 +3673,6 @@ async fn public_magnet_entry_starts_tracker_and_uses_peer_registry_path() {
         resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
         skip_files: Vec::new(),
         high_priority_files: Vec::new(),
-        materialize_files: Vec::new(),
         dht: None,
     })
     .await
@@ -3825,7 +3817,6 @@ async fn trackerless_dht_peer_completes_metadata_and_content_path() {
         resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
         skip_files: Vec::new(),
         high_priority_files: Vec::new(),
-        materialize_files: Vec::new(),
         dht: Some(dht.handle()),
     })
     .await
@@ -3877,7 +3868,6 @@ async fn verified_private_metadata_purges_dht_only_peer_before_content() {
         resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
         skip_files: Vec::new(),
         high_priority_files: Vec::new(),
-        materialize_files: Vec::new(),
         dht: Some(dht.handle()),
     })
     .await;
@@ -3915,7 +3905,6 @@ async fn invalid_premetadata_bitfield_fails_before_storage_creation() {
         resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
         skip_files: Vec::new(),
         high_priority_files: Vec::new(),
-        materialize_files: Vec::new(),
         dht: None,
     })
     .await;
@@ -3970,7 +3959,6 @@ async fn magnet_peer_without_extension_support_fails_before_storage() {
         resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
         skip_files: Vec::new(),
         high_priority_files: Vec::new(),
-        materialize_files: Vec::new(),
         dht: None,
     })
     .await;
@@ -4022,7 +4010,6 @@ async fn magnet_peer_disconnect_during_metadata_fails_before_storage() {
         resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
         skip_files: Vec::new(),
         high_priority_files: Vec::new(),
-        materialize_files: Vec::new(),
         dht: None,
     })
     .await;

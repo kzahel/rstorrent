@@ -106,7 +106,6 @@ class ProductEngineService : Service() {
     @Volatile private var safStorageJobs: List<Job> = emptyList()
     @Volatile private var safTreeUri: Uri? = null
     private val safWork = ConcurrentHashMap.newKeySet<String>()
-    private val crashAfterSafRename = AtomicBoolean(false)
     private val clientSettingsRequestActive = AtomicBoolean(false)
     private val torrentSettingsRequestActive = AtomicBoolean(false)
     private var powerLock: PowerManager.WakeLock? = null
@@ -772,13 +771,6 @@ class ProductEngineService : Service() {
         }
     }
 
-    fun enableCrashAfterSafRenameForTest() {
-        check(ProductSafDocuments.isDebuggable(this)) {
-            "SAF publication crash injection is debug-only"
-        }
-        crashAfterSafRename.set(true)
-    }
-
     fun exerciseTorrentActionForTest(
         torrentId: String,
         action: String,
@@ -803,7 +795,7 @@ class ProductEngineService : Service() {
                         dispatchAwait(
                             Command.RemoveTorrent(
                                 torrentId,
-                                RemovalDataPolicy.DELETE_MANAGED,
+                                RemovalDataPolicy.DELETE_DATA,
                             ),
                         )
                     action == "enable_upload" -> {
@@ -994,8 +986,8 @@ class ProductEngineService : Service() {
                         listOf(torrentName) + file.path
                     }
                 val document =
-                    ProductSafDocuments.publishedDocument(this@ProductEngineService, tree, path)
-                        ?: error("Published file is unavailable")
+                    ProductSafDocuments.contentDocument(this@ProductEngineService, tree, path)
+                        ?: error("Completed file is unavailable")
                 val mime = contentResolver.getType(document) ?: "application/octet-stream"
                 startActivity(
                     Intent(Intent.ACTION_VIEW).apply {
@@ -1479,55 +1471,17 @@ class ProductEngineService : Service() {
     private fun advanceSaf(product: ProductState) {
         val treeUri = safTreeUri ?: return
         for (torrent in product.torrents.values) {
-            val action =
-                if (torrent.removalState == RemovalState.AWAITING_PLATFORM) {
-                    "removal"
-                } else {
-                    when (torrent.state) {
-                        TorrentState.AWAITING_PUBLICATION -> "publication"
-                        else -> continue
-                    }
-                }
+            if (torrent.removalState != RemovalState.AWAITING_PLATFORM) continue
+            val action = "removal"
             val key = "${torrent.torrentId}:$action"
             if (!safWork.add(key)) continue
             scope.launch {
                 try {
                     when (action) {
-                        "publication" -> {
-                            Log.i(TAG, "saf_publication_begin torrent=${torrent.torrentId}")
-                            check(client.preparedSafFiles(torrent.torrentId).isNotEmpty()) {
-                                "native prepared publication manifest is empty"
-                            }
-                            val name = client.prepareDynamicSafPublication(torrent.torrentId)
-                            ProductSafDocuments.publish(
-                                this@ProductEngineService,
-                                treeUri,
-                                torrent.torrentId,
-                                name,
-                            )
-                            if (crashAfterSafRename.compareAndSet(true, false)) {
-                                Log.i(
-                                    TAG,
-                                    "saf_test_crash_after_rename torrent=${torrent.torrentId}",
-                                )
-                                android.os.Process.killProcess(android.os.Process.myPid())
-                                error("process survived SAF publication crash injection")
-                            }
-                            client.confirmDynamicSafPublication(torrent.torrentId)
-                            val storageMetrics = client.safStoragePoolSnapshot()
-                            Log.i(
-                                TAG,
-                                "saf_storage_metrics torrent=${torrent.torrentId} " +
-                                    "limit=${storageMetrics.limit} " +
-                                    "owned_high_water=${storageMetrics.ownedHighWater} " +
-                                    "pending_high_water=${storageMetrics.platformPendingHighWater}",
-                            )
-                            Log.i(TAG, "saf_publication_confirmed torrent=${torrent.torrentId}")
-                        }
                         "removal" -> {
                             Log.i(TAG, "saf_removal_begin torrent=${torrent.torrentId}")
                             val plan = client.safRemovalPlan(torrent.torrentId)
-                            ProductSafDocuments.deleteManaged(
+                            ProductSafDocuments.deleteData(
                                 this@ProductEngineService,
                                 treeUri,
                                 plan,

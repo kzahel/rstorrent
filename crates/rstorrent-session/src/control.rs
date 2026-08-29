@@ -215,21 +215,21 @@ pub enum FilePriority {
 #[serde(rename_all = "snake_case")]
 pub enum RemovalDataPolicy {
     Keep,
-    DeleteManaged,
+    DeleteData,
 }
 
 impl RemovalDataPolicy {
     pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::Keep => "keep",
-            Self::DeleteManaged => "delete_managed",
+            Self::DeleteData => "delete_data",
         }
     }
 
     pub(crate) fn parse(value: &str) -> Option<Self> {
         match value {
             "keep" => Some(Self::Keep),
-            "delete_managed" => Some(Self::DeleteManaged),
+            "delete_data" => Some(Self::DeleteData),
             _ => None,
         }
     }
@@ -439,7 +439,7 @@ pub struct TorrentSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub removal_state: Option<RemovalState>,
     #[serde(default)]
-    pub delete_managed_data_supported: bool,
+    pub delete_data_supported: bool,
     #[serde(default)]
     pub force_recheck_available: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -454,7 +454,6 @@ pub enum TorrentState {
     AwaitingStorage,
     Checking,
     Downloading,
-    AwaitingPublication,
     Paused,
     Complete,
     NeedsRepair,
@@ -465,10 +464,8 @@ pub enum TorrentState {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum StorageState {
-    None,
-    Staging,
-    Prepared,
-    Published,
+    Available,
+    Unavailable,
     NeedsRepair,
 }
 

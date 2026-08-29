@@ -40,7 +40,7 @@ Options:\n\
   [--max-buffered-payload-bytes BYTES] \\
   [--encryption disabled|allow|prefer|required] \\
   [--dht-bootstrap IP:PORT] \\
-  [--skip-file INDEX]... [--materialize-file INDEX]...";
+  [--skip-file INDEX]...";
 
 #[derive(Debug)]
 enum DownloadCommand {
@@ -59,7 +59,6 @@ struct PendingMetainfoDownload {
     network: NetworkConfig,
     resource_limits: DownloadResourceLimits,
     skip_files: Vec<usize>,
-    materialize_files: Vec<usize>,
 }
 
 #[derive(Debug, Default)]
@@ -195,20 +194,10 @@ async fn main() -> ExitCode {
                         resource_limits: config.resource_limits,
                         skip_files: config.skip_files,
                         high_priority_files: Vec::new(),
-                        materialize_files: config.materialize_files,
                     };
                     download_verified_piece_with_control(config, control.clone()).await
                 }
                 content @ (TorrentContent::V2(_) | TorrentContent::Hybrid(_)) => {
-                    if !config.materialize_files.is_empty() {
-                        return report_result(
-                            Err(DownloadError::InvalidTorrentIdentity(
-                                "v2 diagnostics do not use part-file materialization",
-                            )),
-                            control.snapshot(),
-                            activity.first_verified_piece(),
-                        );
-                    }
                     let peers = match TorrentPeerHandle::new(Arc::new(control.clone())) {
                         Ok(peers) => peers,
                         Err(error) => {
@@ -319,7 +308,7 @@ fn report_result(
 payload_limit={} payload_high_water={} outstanding_request_limit={} \
 outstanding_request_high_water={} active_piece_limit={} verification_buffer={} selected_file_bytes={} \
 skipped_file_bytes={} padding_bytes={} selected_written_bytes={} part_written_bytes={} \
-materialized_bytes={} part_slots_before={} part_slots_after={} part_reopened={} part_path={} \
+part_slots={} part_reopened={} part_path={} \
 storage_write_operations={} storage_write_blocks={} storage_write_batch_blocks_high_water={} \
 storage_write_batch_bytes_high_water={} storage_write_service_micros={} \
 storage_write_active_high_water={} storage_hash_operations={} \
@@ -343,9 +332,7 @@ storage_hash_service_micros={} storage_hash_active_high_water={}",
                 report.padding_bytes,
                 report.selected_written_bytes,
                 report.part_written_bytes,
-                report.materialized_bytes,
-                report.part_slots_before_materialization,
-                report.part_slots_after_materialization,
+                report.part_slots,
                 report.part_reopened,
                 report
                     .part_path
@@ -405,7 +392,6 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadCommand, String> 
     let mut encryption = PeerEncryptionPolicy::Allow;
     let mut resource_limits = DownloadResourceLimits::DESKTOP;
     let mut skip_files = Vec::new();
-    let mut materialize_files = Vec::new();
     let mut index = 0;
 
     while index < arguments.len() {
@@ -498,10 +484,6 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadCommand, String> 
                 let file_index = parse_file_index(value, flag)?;
                 push_unique(&mut skip_files, file_index, flag)?;
             }
-            "--materialize-file" => {
-                let file_index = parse_file_index(value, flag)?;
-                push_unique(&mut materialize_files, file_index, flag)?;
-            }
             _ => return Err(format!("unknown argument {flag}")),
         }
     }
@@ -522,7 +504,6 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadCommand, String> 
                 network,
                 resource_limits,
                 skip_files,
-                materialize_files,
             }))
         }
         (None, Some(magnet), None) => {
@@ -539,7 +520,6 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadCommand, String> 
                     resource_limits,
                     skip_files,
                     high_priority_files: Vec::new(),
-                    materialize_files,
                     dht: None,
                 },
                 dht_bootstrap,
@@ -630,7 +610,6 @@ mod tests {
         );
         assert_eq!(config.resource_limits, DownloadResourceLimits::DESKTOP);
         assert!(config.skip_files.is_empty());
-        assert!(config.materialize_files.is_empty());
     }
 
     #[test]
@@ -748,15 +727,12 @@ mod tests {
             "3",
             "--skip-file",
             "7",
-            "--materialize-file",
-            "7",
         ]))
         .expect("selected arguments");
         let DownloadCommand::Metainfo(selected) = selected else {
             panic!("expected metainfo command");
         };
         assert_eq!(selected.skip_files, [3, 7]);
-        assert_eq!(selected.materialize_files, [7]);
         assert!(
             parse_arguments(strings(&[
                 "--metainfo",

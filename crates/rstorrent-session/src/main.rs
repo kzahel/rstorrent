@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use rstorrent_engine::PathPublicationStage;
 use rstorrent_session::{
     ApplicationConfig, ApplicationService, BandwidthRuntimeView, Command, ConfiguredStorageRoot,
     DownloadResourceLimits, ErrorCode, NetworkConfig, NetworkPolicy, RequestEnvelope,
@@ -154,9 +153,6 @@ fn parse_arguments(
     let mut checkpoint_sync_delay = Duration::ZERO;
     let mut checkpoint_commit_delay = Duration::ZERO;
     let mut trace_checkpoint_stages = false;
-    let mut publication_delay_stage = None;
-    let mut publication_delay = Duration::ZERO;
-    let mut trace_publication_stages = false;
     let mut index = 0;
     while index < arguments.len() {
         let name = arguments[index]
@@ -247,32 +243,6 @@ fn parse_arguments(
                     }
                 };
             }
-            "--publication-delay-stage" => {
-                publication_delay_stage = Some(match value.to_str() {
-                    Some("intent_durable") => PathPublicationStage::IntentDurable,
-                    Some("renamed") => PathPublicationStage::Renamed,
-                    Some("namespace_durable") => PathPublicationStage::NamespaceDurable,
-                    _ => {
-                        return Err(DiagnosticError::Arguments(
-                            "--publication-delay-stage has an invalid stage".to_owned(),
-                        ));
-                    }
-                });
-            }
-            "--publication-delay-millis" => {
-                publication_delay = Duration::from_millis(parse_positive_u64(value, name)?);
-            }
-            "--trace-publication-stages" => {
-                trace_publication_stages = match value.to_str() {
-                    Some("true") => true,
-                    Some("false") => false,
-                    _ => {
-                        return Err(DiagnosticError::Arguments(
-                            "--trace-publication-stages must be true or false".to_owned(),
-                        ));
-                    }
-                };
-            }
             _ => {
                 return Err(DiagnosticError::Arguments(format!(
                     "unknown diagnostic argument {name}"
@@ -280,11 +250,6 @@ fn parse_arguments(
             }
         }
         index += 2;
-    }
-    if publication_delay_stage.is_some() != !publication_delay.is_zero() {
-        return Err(DiagnosticError::Arguments(
-            "publication delay stage and milliseconds must be specified together".to_owned(),
-        ));
     }
     if storage_roots.is_empty() {
         return Err(DiagnosticError::Arguments(
@@ -317,9 +282,6 @@ fn parse_arguments(
     config.checkpoint_sync_delay_for_testing = checkpoint_sync_delay;
     config.checkpoint_commit_delay_for_testing = checkpoint_commit_delay;
     config.checkpoint_stage_trace_for_testing = trace_checkpoint_stages;
-    config.publication_delay_stage_for_testing = publication_delay_stage;
-    config.publication_delay_for_testing = publication_delay;
-    config.publication_stage_trace_for_testing = trace_publication_stages;
     Ok((config, resource_report))
 }
 
@@ -407,8 +369,6 @@ mod tests {
     use std::ffi::OsString;
     use std::path::PathBuf;
 
-    use rstorrent_engine::PathPublicationStage;
-
     use rstorrent_session::ApplicationPersistence;
 
     use super::{NetworkPolicy, parse_arguments};
@@ -480,33 +440,5 @@ mod tests {
             )
             .is_err()
         );
-    }
-
-    #[test]
-    fn parses_publication_fault_gate() {
-        let (config, report) = parse_arguments(
-            [
-                "--profile-root",
-                "/tmp/profile",
-                "--storage-root",
-                "downloads=/tmp/payload",
-                "--publication-delay-stage",
-                "namespace_durable",
-                "--publication-delay-millis",
-                "60000",
-                "--trace-publication-stages",
-                "true",
-            ]
-            .into_iter()
-            .map(OsString::from),
-        )
-        .expect("parse publication gate");
-        assert!(report.is_none());
-        assert_eq!(
-            config.publication_delay_stage_for_testing,
-            Some(PathPublicationStage::NamespaceDurable)
-        );
-        assert_eq!(config.publication_delay_for_testing.as_secs(), 60);
-        assert!(config.publication_stage_trace_for_testing);
     }
 }

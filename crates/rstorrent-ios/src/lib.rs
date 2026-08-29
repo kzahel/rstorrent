@@ -1,6 +1,6 @@
 //! Coarse Apple control plane for an in-process RSTorrent engine.
 
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek};
 use std::os::fd::FromRawFd;
 use std::os::unix::fs::FileExt;
@@ -16,11 +16,9 @@ use rstorrent_engine::{
 };
 use rstorrent_session::{
     AddTorrentBytesRequest, ApplicationConfig, ApplicationService, ConfiguredStorageRoot,
-    PlatformPublicationPlan, PlatformPublishedFilePlan, PlatformRemovalNamespace,
-    PlatformRemovalPlan, RequestEnvelope, ResponseEnvelope, StorageRootAvailability,
-    SubscriptionSpec, ViewSubscription, ViewUpdate,
+    PlatformFilePlan, PlatformRemovalPlan, RequestEnvelope, ResponseEnvelope,
+    StorageRootAvailability, SubscriptionSpec, ViewSubscription, ViewUpdate,
 };
-use rustix::fs::{CWD, RenameFlags, renameat_with};
 use sha1::{Digest, Sha1};
 use tokio::sync::Mutex as AsyncMutex;
 
@@ -96,7 +94,7 @@ pub struct IosViewSubscription {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, uniffi::Enum)]
 pub enum IosDynamicFileRole {
-    Namespace,
+    ContentRoot,
     Payload,
     Part,
 }
@@ -150,7 +148,7 @@ pub struct IosStorageRequest {
     pub request_id: u64,
     pub root_id: String,
     pub storage_id: String,
-    pub namespace_generation: u64,
+    pub storage_generation: u64,
     pub role: IosDynamicFileRole,
     pub file_index: u32,
     pub path: Vec<String>,
@@ -171,24 +169,8 @@ pub struct IosStoragePoolSnapshot {
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
-pub struct IosPreparedFile {
-    pub file_index: u32,
-    pub length: u64,
-    pub sha1_hex: String,
-}
-
-#[derive(Clone, Debug, uniffi::Record)]
 pub struct IosRemovalPath {
     pub components: Vec<String>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, uniffi::Enum)]
-pub enum IosRemovalNamespace {
-    None,
-    Legacy,
-    Staging,
-    Publishing,
-    Published,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -197,21 +179,13 @@ pub struct IosRemovalPlan {
     pub torrent_id: String,
     pub storage_root: String,
     pub name: String,
-    pub namespace: IosRemovalNamespace,
     pub tree: bool,
     pub files: Vec<IosRemovalPath>,
     pub directories: Vec<IosRemovalPath>,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
-pub struct IosPublicationPlan {
-    pub torrent_id: String,
-    pub storage_root: String,
-    pub name: String,
-}
-
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct IosPublishedFilePlan {
+pub struct IosFilePlan {
     pub torrent_id: String,
     pub storage_root: String,
     pub components: Vec<String>,
@@ -223,7 +197,7 @@ pub struct IosRootQualification {
     pub sha1_hex: String,
     pub initial_length: u64,
     pub truncated_length: u64,
-    pub rename_collision_rejected: bool,
+    pub name_collision_rejected: bool,
     pub handle_high_water: u64,
     pub cached_after_shutdown: u64,
     pub owned_after_shutdown: u64,
@@ -337,59 +311,6 @@ impl IosApplicationClient {
             .map_err(|error| IosClientError::message(error.to_string()))
     }
 
-    pub async fn prepared_files(
-        &self,
-        torrent_id: String,
-    ) -> Result<Vec<IosPreparedFile>, IosClientError> {
-        self.service
-            .lock()
-            .await
-            .as_mut()
-            .ok_or_else(|| IosClientError::message("application client is shut down"))?
-            .prepared_files(&torrent_id)
-            .await
-            .map_err(|error| IosClientError::message(error.to_string()))?
-            .into_iter()
-            .map(|file| {
-                Ok(IosPreparedFile {
-                    file_index: u32::try_from(file.file_index)
-                        .map_err(|_| IosClientError::message("file index exceeds u32"))?,
-                    length: file.length,
-                    sha1_hex: hex(&file.sha1),
-                })
-            })
-            .collect()
-    }
-
-    pub async fn prepare_platform_publication(
-        &self,
-        torrent_id: String,
-    ) -> Result<IosPublicationPlan, IosClientError> {
-        self.service
-            .lock()
-            .await
-            .as_mut()
-            .ok_or_else(|| IosClientError::message("application client is shut down"))?
-            .prepare_platform_publication(&torrent_id)
-            .await
-            .map(map_publication_plan)
-            .map_err(|error| IosClientError::message(error.to_string()))
-    }
-
-    pub async fn confirm_platform_publication(
-        &self,
-        torrent_id: String,
-    ) -> Result<(), IosClientError> {
-        self.service
-            .lock()
-            .await
-            .as_mut()
-            .ok_or_else(|| IosClientError::message("application client is shut down"))?
-            .confirm_platform_publication(&torrent_id)
-            .await
-            .map_err(|error| IosClientError::message(error.to_string()))
-    }
-
     pub async fn prepare_platform_root_replacement(
         &self,
         root_id: String,
@@ -416,19 +337,19 @@ impl IosApplicationClient {
             .map_err(|error| IosClientError::message(error.to_string()))
     }
 
-    pub async fn published_file_plan(
+    pub async fn file_plan(
         &self,
         torrent_id: String,
         file_index: u32,
-    ) -> Result<IosPublishedFilePlan, IosClientError> {
+    ) -> Result<IosFilePlan, IosClientError> {
         self.service
             .lock()
             .await
             .as_mut()
             .ok_or_else(|| IosClientError::message("application client is shut down"))?
-            .platform_published_file_plan(&torrent_id, file_index)
+            .platform_file_plan(&torrent_id, file_index)
             .await
-            .map(map_published_file_plan)
+            .map(map_file_plan)
             .map_err(|error| IosClientError::message(error.to_string()))
     }
 
@@ -615,8 +536,6 @@ async fn run_root_qualification(root: PathBuf) -> Result<IosRootQualification, S
     let nested = workspace.join("nested").join("deeper");
     fs::create_dir_all(&nested).map_err(|error| format!("create qualification tree: {error}"))?;
     let source = nested.join("payload.bin");
-    let published = nested.join("published.bin");
-    let collision = nested.join("collision.bin");
     let pool = StorageFilePool::new(IOS_STORAGE_FILE_LIMIT, None).map_err(str::to_owned)?;
     let source_reference = qualification_reference(&pool, source.clone(), 0, 0);
     let handle = source_reference
@@ -658,44 +577,42 @@ async fn run_root_qualification(root: PathBuf) -> Result<IosRootQualification, S
     pool.invalidate_storage("ios-root-qualification");
     let sha1_hex = qualification_sha1(&source)?;
 
-    fs::write(&collision, b"foreign")
-        .map_err(|error| format!("create qualification collision: {error}"))?;
-    let rename_collision_rejected =
-        renameat_with(CWD, &source, CWD, &collision, RenameFlags::NOREPLACE).is_err();
-    if !rename_collision_rejected {
-        return Err("no-replace rename overwrote qualification collision".to_owned());
+    let name_collision_rejected = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&source)
+        .is_err();
+    if !name_collision_rejected {
+        return Err("exclusive create replaced the qualification file".to_owned());
     }
-    fs::remove_file(&collision).map_err(|error| format!("remove collision: {error}"))?;
-    renameat_with(CWD, &source, CWD, &published, RenameFlags::NOREPLACE)
-        .map_err(|error| format!("publish qualification file: {error}"))?;
 
-    let published_reference = qualification_reference(&pool, published.clone(), 0, 1);
-    let published_handle = published_reference
+    let direct_reference = qualification_reference(&pool, source.clone(), 0, 1);
+    let direct_handle = direct_reference
         .open(StorageFileAccess::ReadWriteExisting)
         .await
-        .map_err(|error| format!("reopen qualification publication: {error}"))?;
+        .map_err(|error| format!("reopen qualification file: {error}"))?;
     let mut reopened = vec![0; second.len()];
-    published_handle
+    direct_handle
         .file()
         .read_exact_at(&mut reopened, 37 * 1024)
-        .map_err(|error| format!("read qualification publication: {error}"))?;
+        .map_err(|error| format!("read qualification file: {error}"))?;
     if reopened != second {
-        return Err("reopened qualification publication changed bytes".to_owned());
+        return Err("reopened qualification file changed bytes".to_owned());
     }
-    published_handle
+    direct_handle
         .file()
         .set_len(TRUNCATED_LENGTH)
-        .map_err(|error| format!("truncate qualification publication: {error}"))?;
-    published_handle
+        .map_err(|error| format!("truncate qualification file: {error}"))?;
+    direct_handle
         .file()
         .sync_all()
-        .map_err(|error| format!("sync qualification publication: {error}"))?;
-    drop(published_handle);
+        .map_err(|error| format!("sync qualification file: {error}"))?;
+    drop(direct_handle);
     pool.invalidate_storage("ios-root-qualification");
-    published_reference
+    direct_reference
         .delete()
         .await
-        .map_err(|error| format!("delete qualification publication: {error}"))?;
+        .map_err(|error| format!("delete qualification file: {error}"))?;
 
     let before_shutdown = pool.snapshot();
     pool.shutdown()
@@ -711,7 +628,7 @@ async fn run_root_qualification(root: PathBuf) -> Result<IosRootQualification, S
         sha1_hex,
         initial_length: INITIAL_LENGTH,
         truncated_length: TRUNCATED_LENGTH,
-        rename_collision_rejected,
+        name_collision_rejected,
         handle_high_water: before_shutdown.owned_high_water as u64,
         cached_after_shutdown: after_shutdown.cached_entries as u64,
         owned_after_shutdown: after_shutdown.current_owned as u64,
@@ -729,7 +646,7 @@ fn qualification_reference(
         pool.clone(),
         StorageFileKey {
             storage_id: "ios-root-qualification".to_owned(),
-            namespace_generation: generation,
+            storage_generation: generation,
             role: StorageFileRole::Payload(file_index),
         },
         StorageFileLocator::Path(path),
@@ -846,7 +763,7 @@ fn absolute_path(value: String, label: &str) -> Result<PathBuf, IosClientError> 
 
 fn map_request(request: rstorrent_engine::PlatformStorageRequest) -> IosStorageRequest {
     let (role, file_index) = match request.role {
-        StorageFileRole::Namespace => (IosDynamicFileRole::Namespace, 0),
+        StorageFileRole::ContentRoot => (IosDynamicFileRole::ContentRoot, 0),
         StorageFileRole::Payload(file_index) => (
             IosDynamicFileRole::Payload,
             u32::try_from(file_index).unwrap_or(u32::MAX),
@@ -857,7 +774,7 @@ fn map_request(request: rstorrent_engine::PlatformStorageRequest) -> IosStorageR
         request_id: request.request_id,
         root_id: request.root_id,
         storage_id: request.storage_id,
-        namespace_generation: request.namespace_generation,
+        storage_generation: request.storage_generation,
         role,
         file_index,
         path: request.path,
@@ -926,13 +843,6 @@ fn map_removal_plan(plan: PlatformRemovalPlan) -> IosRemovalPlan {
         torrent_id: plan.torrent_id,
         storage_root: plan.storage_root,
         name: plan.name,
-        namespace: match plan.namespace {
-            PlatformRemovalNamespace::None => IosRemovalNamespace::None,
-            PlatformRemovalNamespace::Legacy => IosRemovalNamespace::Legacy,
-            PlatformRemovalNamespace::Staging => IosRemovalNamespace::Staging,
-            PlatformRemovalNamespace::Publishing => IosRemovalNamespace::Publishing,
-            PlatformRemovalNamespace::Published => IosRemovalNamespace::Published,
-        },
         tree: plan.tree,
         files: plan
             .files
@@ -951,16 +861,8 @@ fn map_removal_plan(plan: PlatformRemovalPlan) -> IosRemovalPlan {
     }
 }
 
-fn map_publication_plan(plan: PlatformPublicationPlan) -> IosPublicationPlan {
-    IosPublicationPlan {
-        torrent_id: plan.torrent_id,
-        storage_root: plan.storage_root,
-        name: plan.name,
-    }
-}
-
-fn map_published_file_plan(plan: PlatformPublishedFilePlan) -> IosPublishedFilePlan {
-    IosPublishedFilePlan {
+fn map_file_plan(plan: PlatformFilePlan) -> IosFilePlan {
+    IosFilePlan {
         torrent_id: plan.torrent_id,
         storage_root: plan.storage_root,
         components: plan.components,
@@ -1003,16 +905,6 @@ fn validate_descriptor_access(fd: i32, access: IosStorageAccess) -> Result<(), S
         .ok_or_else(|| "descriptor mode is incompatible with the request".to_owned())
 }
 
-fn hex(bytes: &[u8]) -> String {
-    const DIGITS: &[u8; 16] = b"0123456789abcdef";
-    let mut output = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        output.push(char::from(DIGITS[usize::from(byte >> 4)]));
-        output.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
-    }
-    output
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1024,7 +916,6 @@ mod tests {
             torrent_id: "t1-owner".to_owned(),
             storage_root: "downloads".to_owned(),
             name: "show".to_owned(),
-            namespace: PlatformRemovalNamespace::Published,
             tree: true,
             files: vec![rstorrent_session::PlatformRemovalPath {
                 components: vec!["Season 01".to_owned(), "Episode 01.mkv".to_owned()],
@@ -1034,7 +925,6 @@ mod tests {
             }],
         });
 
-        assert_eq!(plan.namespace, IosRemovalNamespace::Published);
         assert!(plan.tree);
         assert_eq!(plan.files[0].components, ["Season 01", "Episode 01.mkv"]);
         assert_eq!(plan.directories[0].components, ["Season 01"]);
@@ -1104,7 +994,7 @@ mod tests {
         assert_eq!(report.handle_high_water, 1);
         assert_eq!(report.cached_after_shutdown, 0);
         assert_eq!(report.owned_after_shutdown, 0);
-        assert!(report.rename_collision_rejected);
+        assert!(report.name_collision_rejected);
         assert!(report.cleanup_complete);
         std::fs::remove_dir(root).expect("remove root");
     }

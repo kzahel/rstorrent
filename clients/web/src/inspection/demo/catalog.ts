@@ -141,7 +141,7 @@ export const DEMO_SCENARIOS: readonly DemoScenarioSummary[] = [
   {
     id: "speed-bursty",
     title: "Speed · bursty",
-    description: "Short payload bursts separate receive, staging, and verification.",
+    description: "Short payload bursts separate receive, storage, and verification.",
     durationMs: 90_000,
     autoplay: true,
   },
@@ -1136,7 +1136,7 @@ function fileProgress(elapsedMs: number): ScenarioContent {
       BUNNY_ID,
       [
         [0, "info", "metadata", "Metadata verified: 4,096 files"],
-        [2, "info", "storage", "Managed file layout prepared"],
+        [2, "info", "storage", "Content file layout opened"],
         [8, "debug", "piece", "Stored blocks crossed a file boundary"],
         [18, "debug", "integrity", "Verified piece advanced two file rows"],
         [36, "warning", "piece", "Hash failure regressed unverified Done bytes"],
@@ -1204,7 +1204,7 @@ function demoFileSet(
       padding,
       doneBytes: done.toString(),
       verifiedBytes: verified.toString(),
-      mediaAvailability: "not_published",
+      mediaAvailability: "incomplete",
       storagePath: `/Users/demo/Downloads/${torrentId}/${path.join("/")}`,
     });
     offset += length;
@@ -1773,7 +1773,7 @@ function diskError(elapsedMs: number): ScenarioContent {
       error: failed ? "Write failed: destination has no free space" : null,
     }),
     logs: timelineLogs(BUNNY_ID, [
-      [0, "info", "storage", "Opened staging files"],
+      [0, "info", "storage", "Opened content files"],
       [5, "warning", "storage", "Write latency exceeded 2 seconds"],
       [7, "error", "storage", "Write failed: no free space on destination"],
       [7, "info", "lifecycle", "Content peers stopped; torrent intent retained"],
@@ -1985,7 +1985,7 @@ function torrent(input: Partial<TorrentRow> & Pick<TorrentRow, "id" | "name" | "
     addedAtMs: input.addedAtMs ?? BASE_TIME_MS - 3_600_000,
     archived: input.archived ?? false,
     removalState: input.removalState ?? null,
-    deleteManagedDataSupported: input.deleteManagedDataSupported ?? true,
+    deleteDataSupported: input.deleteDataSupported ?? true,
     forceRecheckAvailable: input.forceRecheckAvailable ?? false,
     infoHash:
       input.infoHash ??

@@ -9,7 +9,6 @@ import android.os.CancellationSignal
 import android.provider.DocumentsContract
 import java.security.MessageDigest
 import org.rstorrent.bootstrap.uniffi.SafDynamicFileRole
-import org.rstorrent.bootstrap.uniffi.SafRemovalNamespace
 import org.rstorrent.bootstrap.uniffi.SafRemovalPlan
 import org.rstorrent.bootstrap.uniffi.SafStorageAccess
 import org.rstorrent.bootstrap.uniffi.SafStorageFailureKind
@@ -88,7 +87,7 @@ object ProductSafDocuments {
                     } else {
                         throw SafStorageRequestException(
                             SafStorageFailureKind.MISSING,
-                            "managed SAF parent is absent",
+                            "SAF content parent is absent",
                         )
                     }
         }
@@ -103,7 +102,7 @@ object ProductSafDocuments {
                 } else {
                     throw SafStorageRequestException(
                         SafStorageFailureKind.MISSING,
-                        "managed SAF file is absent",
+                        "SAF content file is absent",
                     )
                 }
         val mode =
@@ -125,7 +124,7 @@ object ProductSafDocuments {
     ) {
         require(hasGrant(context, treeUri)) { "persisted SAF grant is unavailable" }
         require(request.role == SafDynamicFileRole.PART) {
-            "only the managed part file may be deleted dynamically"
+            "only the boundary part file may be deleted dynamically"
         }
         require(request.path.isNotEmpty()) { "SAF request path is empty" }
         request.path.forEach(::requireValidComponent)
@@ -134,7 +133,7 @@ object ProductSafDocuments {
             current = findUniqueChild(context, current, component) ?: return
         }
         check(DocumentsContract.deleteDocument(context.contentResolver, current)) {
-            "provider refused managed SAF file deletion"
+            "provider refused SAF part-file deletion"
         }
     }
 
@@ -154,44 +153,16 @@ object ProductSafDocuments {
         return observeDocument(context, current)
     }
 
-    fun publish(
-        context: Context,
-        treeUri: Uri,
-        torrentId: String,
-        name: String,
-    ) {
-        require(hasGrant(context, treeUri)) { "persisted SAF grant is unavailable" }
-        requireValidComponent(torrentId)
-        requireValidComponent(name)
-        val root = documentUri(treeUri)
-        val staging = findUniqueChild(context, root, ".$torrentId.rstorrent-staging")
-        val existingFinal = findUniqueChild(context, root, name)
-        check(staging == null || existingFinal == null) {
-            "both staging and published SAF outputs exist"
-        }
-        if (existingFinal == null) {
-            requireNotNull(staging) { "SAF staging output is absent" }
-            requireNotNull(
-                DocumentsContract.renameDocument(
-                    context.contentResolver,
-                    staging,
-                    name,
-                ),
-            ) { "provider refused final SAF publication" }
-        }
-    }
-
-    fun deleteManaged(
+    fun deleteData(
         context: Context,
         treeUri: Uri,
         plan: SafRemovalPlan,
     ) {
         require(hasGrant(context, treeUri)) { "persisted SAF grant is unavailable" }
         val root = documentUri(treeUri)
-        deleteManagedArtifacts(
+        deleteDataArtifacts(
             name = plan.name,
             torrentId = plan.torrentId,
-            namespace = plan.namespace,
             tree = plan.tree,
             files = plan.files.map { it.components },
             directories = plan.directories.map { it.components },
@@ -205,13 +176,13 @@ object ProductSafDocuments {
         )
     }
 
-    fun publishedDocument(
+    fun contentDocument(
         context: Context,
         treeUri: Uri,
         path: List<String>,
     ): Uri? {
         require(hasGrant(context, treeUri)) { "persisted SAF grant is unavailable" }
-        require(path.isNotEmpty()) { "published path is empty" }
+        require(path.isNotEmpty()) { "content path is empty" }
         path.forEach(::requireValidComponent)
         var current = documentUri(treeUri)
         for (component in path) {
@@ -383,10 +354,9 @@ object ProductSafDocuments {
             .getString(TREE_URI, null)
 }
 
-internal fun <T> deleteManagedArtifacts(
+internal fun <T> deleteDataArtifacts(
     name: String,
     torrentId: String,
-    namespace: SafRemovalNamespace,
     tree: Boolean,
     files: List<List<String>>,
     directories: List<List<String>>,
@@ -396,65 +366,26 @@ internal fun <T> deleteManagedArtifacts(
     isEmptyDirectory: (T) -> Boolean,
     delete: (T) -> Boolean,
 ) {
-    val stagingName = ".$torrentId.rstorrent-staging"
     val partName = ".$torrentId.rstorrent-parts"
-    val staging =
-        if (namespace == SafRemovalNamespace.LEGACY ||
-            namespace == SafRemovalNamespace.STAGING ||
-            namespace == SafRemovalNamespace.PUBLISHING ||
-            namespace == SafRemovalNamespace.PUBLISHED
-        ) {
-            find(root, stagingName)
-        } else {
-            null
-        }
-    val publication =
-        if (namespace == SafRemovalNamespace.PUBLISHING ||
-            namespace == SafRemovalNamespace.PUBLISHED
-        ) {
-            find(root, name)
-        } else {
-            null
-        }
-    val namespaceDocuments =
-        when (namespace) {
-            SafRemovalNamespace.NONE -> emptyList()
-            SafRemovalNamespace.LEGACY -> listOfNotNull(find(root, torrentId), staging)
-            SafRemovalNamespace.STAGING -> listOfNotNull(staging)
-            SafRemovalNamespace.PUBLISHING -> {
-                check(staging == null || publication == null) {
-                    "both staging and published SAF outputs exist"
-                }
-                listOfNotNull(publication ?: staging)
-            }
-            SafRemovalNamespace.PUBLISHED -> {
-                check(staging == null) { "published SAF storage has a staging artifact" }
-                listOfNotNull(publication)
-            }
-        }
-    val part =
-        if (namespace == SafRemovalNamespace.NONE) {
-            null
-        } else {
-            find(root, partName)
-        }
+    val content = find(root, name)
+    val part = find(root, partName)
     part?.let {
         check(kind(it) == SafStorageObjectKind.FILE) {
-            "managed SAF part artifact is not a file"
+            "SAF part artifact is not a file"
         }
     }
-    namespaceDocuments.forEach {
+    content?.let {
         val expected = if (tree) SafStorageObjectKind.DIRECTORY else SafStorageObjectKind.FILE
-        check(kind(it) == expected) { "managed SAF namespace has an unexpected type" }
+        check(kind(it) == expected) { "SAF content has an unexpected type" }
     }
 
-    fun resolve(namespaceDocument: T, components: List<String>): T? {
-        var current = namespaceDocument
+    fun resolve(contentRoot: T, components: List<String>): T? {
+        var current = contentRoot
         for ((index, component) in components.withIndex()) {
             current = find(current, component) ?: return null
             if (index + 1 < components.size) {
                 check(kind(current) == SafStorageObjectKind.DIRECTORY) {
-                    "managed SAF payload parent has an unexpected type"
+                    "SAF content parent has an unexpected type"
                 }
             }
         }
@@ -463,37 +394,37 @@ internal fun <T> deleteManagedArtifacts(
 
     val payloadFiles =
         if (tree) {
-            namespaceDocuments.flatMap { namespaceDocument ->
+            content?.let { contentRoot ->
                 files.mapNotNull { components ->
-                    resolve(namespaceDocument, components)?.also { document ->
+                    resolve(contentRoot, components)?.also { document ->
                         check(kind(document) == SafStorageObjectKind.FILE) {
-                            "managed SAF payload leaf has an unexpected type"
+                            "SAF content leaf has an unexpected type"
                         }
                     }
                 }
-            }
+            }.orEmpty()
         } else {
-            namespaceDocuments
+            listOfNotNull(content)
         }
     val payloadDirectories =
         if (tree) {
-            namespaceDocuments.flatMap { namespaceDocument ->
+            content?.let { contentRoot ->
                 directories.mapNotNull { components ->
-                    resolve(namespaceDocument, components)?.also { document ->
+                    resolve(contentRoot, components)?.also { document ->
                         check(kind(document) == SafStorageObjectKind.DIRECTORY) {
-                            "managed SAF payload directory has an unexpected type"
+                            "SAF content directory has an unexpected type"
                         }
                     }
                 }
-            }
+            }.orEmpty()
         } else {
             emptyList()
         }
     for (document in payloadFiles) {
-        check(delete(document)) { "provider refused managed SAF payload deletion" }
+        check(delete(document)) { "provider refused SAF content deletion" }
     }
     if (part != null) {
-        check(delete(part)) { "provider refused managed SAF part deletion" }
+        check(delete(part)) { "provider refused SAF part-file deletion" }
     }
     for (directory in payloadDirectories) {
         if (isEmptyDirectory(directory)) {

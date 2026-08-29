@@ -402,7 +402,6 @@ pub struct DownloadConfig {
     pub resource_limits: DownloadResourceLimits,
     pub skip_files: Vec<usize>,
     pub high_priority_files: Vec<usize>,
-    pub materialize_files: Vec<usize>,
 }
 
 #[derive(Clone, Debug)]
@@ -414,7 +413,6 @@ pub struct MagnetDownloadConfig {
     pub resource_limits: DownloadResourceLimits,
     pub skip_files: Vec<usize>,
     pub high_priority_files: Vec<usize>,
-    pub materialize_files: Vec<usize>,
     pub dht: Option<DhtHandle>,
 }
 
@@ -519,7 +517,6 @@ struct ContentDownloadConfig {
     swarm_config: SwarmConfig,
     skip_files: Vec<usize>,
     high_priority_files: Vec<usize>,
-    materialize_files: Vec<usize>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -571,9 +568,7 @@ pub struct DownloadReport {
     pub padding_bytes: u64,
     pub selected_written_bytes: usize,
     pub part_written_bytes: usize,
-    pub materialized_bytes: u64,
-    pub part_slots_before_materialization: usize,
-    pub part_slots_after_materialization: usize,
+    pub part_slots: usize,
     pub part_reopened: bool,
     pub part_path: Option<PathBuf>,
 }
@@ -4199,7 +4194,6 @@ async fn run_magnet_download_with_peers(
         swarm_config: config.resource_limits.swarm_config(),
         skip_files,
         high_priority_files: config.high_priority_files,
-        materialize_files: config.materialize_files,
     };
     run_content_download(content_config, content, control, None, peers, None).await
 }
@@ -4411,7 +4405,6 @@ async fn run_resumable_magnet_download(
             swarm_config: config.resource_limits.swarm_config(),
             skip_files,
             high_priority_files: config.high_priority_files,
-            materialize_files: Vec::new(),
         };
         let result = run_content_download(
             content_config,
@@ -4488,7 +4481,6 @@ async fn run_resumable_magnet_download(
             swarm_config: config.resource_limits.swarm_config(),
             skip_files,
             high_priority_files: config.high_priority_files,
-            materialize_files: Vec::new(),
         };
         run_content_download(
             content_config,
@@ -4571,7 +4563,6 @@ async fn run_resumable_metainfo_download(
         swarm_config: config.resource_limits.swarm_config(),
         skip_files: config.skip_files,
         high_priority_files: config.high_priority_files,
-        materialize_files: Vec::new(),
     };
     let result = run_content_download(
         content_config,
@@ -4919,7 +4910,6 @@ async fn run_download(
         swarm_config: config.resource_limits.swarm_config(),
         skip_files: config.skip_files,
         high_priority_files: config.high_priority_files,
-        materialize_files: config.materialize_files,
     };
     let result = run_content_download(
         content_config,
@@ -8934,20 +8924,6 @@ async fn run_selective_download(
     layout
         .piece_priorities(&selection, &config.high_priority_files)
         .map_err(DownloadError::Layout)?;
-    for &file_index in &config.materialize_files {
-        let file = layout.files().get(file_index).ok_or(DownloadError::Layout(
-            LayoutError::InvalidFileIndex {
-                index: file_index,
-                file_count: layout.files().len(),
-            },
-        ))?;
-        if file.padding || selection.is_wanted(file_index) {
-            return Err(DownloadError::Metainfo(MetainfoError::Unsupported(
-                "materialized files must be initially skipped non-padding files",
-            )));
-        }
-    }
-
     let mut wanted_pieces = Vec::new();
     let mut skipped_piece_count = 0;
     for piece_index in 0..layout.piece_count() {
@@ -9041,7 +9017,6 @@ async fn run_selective_download(
                         &v1.metainfo,
                         v1.layout.clone(),
                         selection.clone(),
-                        &config.materialize_files,
                         descriptors,
                     )
                     .await
@@ -9126,7 +9101,6 @@ async fn run_selective_download(
                         &v1.metainfo,
                         v1.layout.clone(),
                         selection.clone(),
-                        &[],
                         descriptors,
                     )
                     .await
@@ -9496,9 +9470,7 @@ async fn run_selective_download(
             padding_bytes,
             selected_written_bytes: 0,
             part_written_bytes: 0,
-            materialized_bytes: 0,
-            part_slots_before_materialization: storage.part_slots(),
-            part_slots_after_materialization: storage.part_slots(),
+            part_slots: storage.part_slots(),
             part_reopened: storage.has_part_file(),
             part_path,
         });
@@ -9594,9 +9566,7 @@ async fn run_selective_download(
             padding_bytes,
             selected_written_bytes,
             part_written_bytes,
-            materialized_bytes: 0,
-            part_slots_before_materialization: part_slots,
-            part_slots_after_materialization: part_slots,
+            part_slots,
             part_reopened: storage.has_part_file(),
             part_path,
         });
@@ -9606,7 +9576,7 @@ async fn run_selective_download(
         .finish_content()
         .await
         .map_err(DownloadError::SelectiveStorage)?;
-    let part_slots_before_materialization = storage.part_slots();
+    let part_slots = storage.part_slots();
     let part_reopened = storage.has_part_file();
     if content.v1().is_some() {
         storage
@@ -9614,15 +9584,6 @@ async fn run_selective_download(
             .await
             .map_err(DownloadError::SelectiveStorage)?;
     }
-    let mut materialized_bytes = 0_u64;
-    for file_index in config.materialize_files {
-        materialized_bytes += storage
-            .materialize_file(file_index)
-            .await
-            .map_err(DownloadError::SelectiveStorage)?
-            .bytes;
-    }
-    let part_slots_after_materialization = storage.part_slots();
     Ok(DownloadReport {
         info_hash: content.swarm_key().into_bytes(),
         // Selective pieces may complete in any order. Keep the diagnostic
@@ -9645,9 +9606,7 @@ async fn run_selective_download(
         padding_bytes,
         selected_written_bytes,
         part_written_bytes,
-        materialized_bytes,
-        part_slots_before_materialization,
-        part_slots_after_materialization,
+        part_slots,
         part_reopened,
         part_path,
     })

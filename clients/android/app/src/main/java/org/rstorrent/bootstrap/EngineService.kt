@@ -40,7 +40,7 @@ class EngineService : Service() {
         val startResult: StartResult,
         val startedElapsed: Long,
         val fdCountBefore: Int,
-        val saf: PreparedSafRun? = null,
+        val saf: DirectSafRun? = null,
         val completed: AtomicBoolean = AtomicBoolean(false),
     )
 
@@ -239,8 +239,6 @@ class EngineService : Service() {
         }
 
         val skipFiles = parseIndexes(intent.getStringExtra("skip_files"))
-        val materializeFiles =
-            parseIndexes(intent.getStringExtra("materialize_files"))
         val saf =
             if (storage.startsWith("saf-")) {
                 val treeUri =
@@ -254,7 +252,6 @@ class EngineService : Service() {
                     treeUri,
                     metainfo,
                     skipFiles,
-                    materializeFiles,
                 )
             } else {
                 null
@@ -272,7 +269,6 @@ class EngineService : Service() {
             ).toULong(),
             intent.getLongExtra("storage_write_delay_millis", 0).toULong(),
             skipFiles,
-            materializeFiles,
         )
         return ActiveRun(
             runId = runId,
@@ -387,21 +383,14 @@ class EngineService : Service() {
         val platform =
             if (run.saf != null) {
                 val terminal = joined.terminal
-                val preparedReport = terminal?.report
                 if (
                     joined.joined &&
-                    terminal?.outcome == TerminalOutcome.PREPARED &&
-                    preparedReport != null
+                    terminal?.outcome == TerminalOutcome.SUCCEEDED
                 ) {
                     try {
-                        val published =
-                            SafDocuments.publishAndPersist(
-                                this,
-                                run.saf,
-                                preparedReport,
-                            )
+                        val completed = SafDocuments.persistCompleted(this, run.saf)
                         SafDocuments.bindRunId(this, run.runId)
-                        published.put("status", "AWAITING_RESTART")
+                        completed.put("status", "AWAITING_RESTART")
                     } catch (error: Throwable) {
                         SafDocuments.cleanup(this, run.saf)
                         JSONObject()
@@ -411,7 +400,7 @@ class EngineService : Service() {
                     }
                 } else {
                     SafDocuments.cleanup(this, run.saf)
-                    JSONObject().put("status", "NOT_PREPARED")
+                    JSONObject().put("status", "INCOMPLETE")
                 }
             } else {
                 JSONObject().put("status", "PATH_BACKED")
@@ -690,32 +679,11 @@ class EngineService : Service() {
                 report.partWrittenBytes.toLong(),
             )
             .put(
-                "materialized_bytes",
-                report.materializedBytes.toLong(),
-            )
-            .put(
-                "part_slots_before",
-                report.partSlotsBeforeMaterialization.toLong(),
-            )
-            .put(
-                "part_slots_after",
-                report.partSlotsAfterMaterialization.toLong(),
+                "part_slots",
+                report.partSlots.toLong(),
             )
             .put("part_reopened", report.partReopened)
             .put("part_path", report.partPath)
-            .put(
-                "prepared_files",
-                JSONArray().also { files ->
-                    report.preparedFiles.forEach { file ->
-                        files.put(
-                            JSONObject()
-                                .put("file_index", file.fileIndex.toLong())
-                                .put("length", file.length.toLong())
-                                .put("sha1", file.sha1Hex),
-                        )
-                    }
-                },
-            )
     }
 
     private fun deviceJson(): JSONObject =

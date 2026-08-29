@@ -1049,8 +1049,8 @@ impl ViewHub {
         next.view.verified_piece_count =
             range_cardinality(&next.verified).min(u64::from(u32::MAX)) as u32;
         next.snapshot.verified_piece_count = next.view.verified_piece_count;
-        next.view.storage_state = StorageState::Staging;
-        next.snapshot.storage_state = StorageState::Staging;
+        next.view.storage_state = StorageState::Available;
+        next.snapshot.storage_state = StorageState::Available;
         let next_view = next.view.clone();
         let next_verified = next.verified.clone();
         let next_active = next.active.clone();

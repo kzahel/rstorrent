@@ -163,7 +163,7 @@ liveDescribe("authenticated polling gateway interop", () => {
               : torrentFrom(state.views.library, torrentId);
           return (
             torrent?.state === "complete" &&
-            torrent.storage_state === "published"
+            torrent.storage_state === "available"
           );
         },
         () =>
@@ -174,7 +174,7 @@ liveDescribe("authenticated polling gateway interop", () => {
 
       const summary = state && torrentFrom(state.views.library, torrentId);
       expect(summary?.verified_piece_count).toBe(3);
-      expect(summary?.storage_state).toBe("published");
+      expect(summary?.storage_state).toBe("available");
       expect(state?.views.details?.type).toBe("torrent");
       expect(state?.views.pieces?.type).toBe("piece_activity");
       expect(requested).toBeGreaterThan(0);

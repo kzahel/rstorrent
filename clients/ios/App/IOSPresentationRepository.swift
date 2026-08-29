@@ -431,7 +431,7 @@ final class IOSPresentationRepository: ObservableObject {
             case .checking(let value): next.checking = value
             case .archived(let value): next.archived = value
             case .removalState(let value): next.removalState = value
-            case .deleteManagedDataSupported(let value): next.deleteManagedDataSupported = value
+            case .deleteDataSupported(let value): next.deleteDataSupported = value
             case .forceRecheckAvailable(let value): next.forceRecheckAvailable = value
             case .error(let value): next.error = value
             }
@@ -467,7 +467,7 @@ final class IOSPresentationRepository: ObservableObject {
         case .checking: return 22
         case .archived: return 23
         case .removalState: return 24
-        case .deleteManagedDataSupported: return 25
+        case .deleteDataSupported: return 25
         case .forceRecheckAvailable: return 26
         case .error: return 27
         }

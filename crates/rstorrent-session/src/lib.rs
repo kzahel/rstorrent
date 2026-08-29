@@ -33,8 +33,8 @@ mod views;
 
 pub use application::{
     ApplicationConfig, ApplicationError, ApplicationPersistence, ApplicationService,
-    PathRootStartupPolicy, PlatformPublicationPlan, PlatformPublishedFilePlan,
-    PlatformRemovalNamespace, PlatformRemovalPath, PlatformRemovalPlan, application_error_response,
+    PathRootStartupPolicy, PlatformFilePlan, PlatformRemovalPath, PlatformRemovalPlan,
+    application_error_response,
 };
 pub use application_connection::{
     AcknowledgedViewStream, AcknowledgedViewStreamError, ApplicationCall, ApplicationCallError,
@@ -86,9 +86,9 @@ pub use speed::{
     SpeedSeriesAppend, SpeedSeriesView,
 };
 pub use store::{
-    ConfiguredStorageRoot, MAX_STORAGE_ROOT_LOCATOR_LENGTH, MAX_STORAGE_ROOTS, PreparedFileRecord,
-    RemovalRecord, ResumeRecord, SessionStore, StorageRootLocation, StoreError, StoredStorageRoot,
-    StoredTracker, StoredTrackerSource, StoredTrackerTransport,
+    ConfiguredStorageRoot, MAX_STORAGE_ROOT_LOCATOR_LENGTH, MAX_STORAGE_ROOTS, RemovalRecord,
+    ResumeRecord, SessionStore, StorageRootLocation, StoreError, StoredStorageRoot, StoredTracker,
+    StoredTrackerSource, StoredTrackerTransport,
 };
 pub use tracker_views::{
     TrackerAnnounceEventView, TrackerCatalogState, TrackerConnectionFamilyView,

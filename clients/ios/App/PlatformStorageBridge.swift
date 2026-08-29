@@ -46,142 +46,50 @@ final class PlatformStorageBridge: @unchecked Sendable {
         )
     }
 
-    func publish(torrentID: String, storageRoot: String, name: String) throws {
-        guard let record = roots[storageRoot] else {
-            throw NamespaceTransitionError.unregisteredRoot(storageRoot)
-        }
-        let root = try RootAccess.resolveBookmark(record.bookmarkData)
-        try RootAccess.withSecurityScope(root) {
-            let staging = try Self.storageTarget(
-                root: root,
-                components: [".\(torrentID).rstorrent-staging"]
-            )
-            let published = try Self.storageTarget(root: root, components: [name])
-            try withCoordinatedMove(source: staging, destination: published) {
-                coordinatedStaging,
-                coordinatedPublished in
-                let stagingExists = FileManager.default.fileExists(
-                    atPath: coordinatedStaging.path
-                )
-                let publishedExists = FileManager.default.fileExists(
-                    atPath: coordinatedPublished.path
-                )
-                guard !(stagingExists && publishedExists) else {
-                    throw NamespaceTransitionError.bothPublicationSidesExist
-                }
-                guard !publishedExists else { return }
-                guard stagingExists else { throw NamespaceTransitionError.stagingMissing }
-                let status = coordinatedStaging.path.withCString { source in
-                    coordinatedPublished.path.withCString { destination in
-                        renameatx_np(
-                            AT_FDCWD,
-                            source,
-                            AT_FDCWD,
-                            destination,
-                            UInt32(RENAME_EXCL)
-                        )
-                    }
-                }
-                guard status == 0 else {
-                    throw POSIXFailure(operation: "publish torrent", code: errno)
-                }
-            }
-        }
-    }
-
-    func removeManaged(_ plan: IosRemovalPlan) throws {
+    func removeData(_ plan: IosRemovalPlan) throws {
         guard let record = roots[plan.storageRoot] else {
-            throw NamespaceTransitionError.unregisteredRoot(plan.storageRoot)
+            throw StorageBridgeError.unregisteredRoot(plan.storageRoot)
         }
         let root = try RootAccess.resolveBookmark(record.bookmarkData)
         try RootAccess.withSecurityScope(root) {
-            let staging = try Self.storageTarget(
-                root: root,
-                components: [".\(plan.torrentId).rstorrent-staging"]
-            )
-            let published = try Self.storageTarget(root: root, components: [plan.name])
-            let namespaces: [URL]
-            let hasManagedArtifacts: Bool
-            switch plan.namespace {
-            case .none:
-                namespaces = []
-                hasManagedArtifacts = false
-            case .legacy:
-                namespaces = [
-                    try Self.storageTarget(
-                        root: root,
-                        components: [plan.torrentId]
-                    ),
-                    staging,
-                ]
-                hasManagedArtifacts = true
-            case .staging:
-                namespaces = [staging]
-                hasManagedArtifacts = true
-            case .publishing:
-                let stagingKind = try Self.storageItemKind(at: staging)
-                let publishedKind = try Self.storageItemKind(at: published)
-                guard stagingKind == nil || publishedKind == nil else {
-                    throw NamespaceTransitionError.bothPublicationSidesExist
-                }
-                namespaces = [publishedKind == nil ? staging : published]
-                hasManagedArtifacts = true
-            case .published:
-                guard try Self.storageItemKind(at: staging) == nil else {
-                    throw NamespaceTransitionError.publishedHasStagingArtifact
-                }
-                namespaces = [published]
-                hasManagedArtifacts = true
-            }
+            let content = try Self.storageTarget(root: root, components: [plan.name])
             let part = try Self.storageTarget(
                 root: root,
                 components: [".\(plan.torrentId).rstorrent-parts"]
             )
-            if hasManagedArtifacts,
-                let partKind = try Self.storageItemKind(at: part),
-                partKind != .file
-            {
-                throw NamespaceTransitionError.removalTargetHasWrongKind
+            if let partKind = try Self.storageItemKind(at: part), partKind != .file {
+                throw StorageBridgeError.removalTargetHasWrongKind
             }
             var payloadFiles: [URL] = []
             var payloadDirectories: [URL] = []
-            for namespace in namespaces {
-                guard let namespaceKind = try Self.storageItemKind(at: namespace) else {
-                    continue
-                }
-                guard namespaceKind == (plan.tree ? .directory : .file) else {
-                    throw NamespaceTransitionError.removalTargetHasWrongKind
+            if let contentKind = try Self.storageItemKind(at: content) {
+                guard contentKind == (plan.tree ? .directory : .file) else {
+                    throw StorageBridgeError.removalTargetHasWrongKind
                 }
                 if plan.tree {
                     for path in plan.files {
                         if let target = try Self.resolveRemovalTarget(
-                            namespace: namespace,
+                            root: content,
                             components: path.components,
                             leafKind: .file
-                        ) {
-                            payloadFiles.append(target)
-                        }
+                        ) { payloadFiles.append(target) }
                     }
                     for path in plan.directories {
                         if let target = try Self.resolveRemovalTarget(
-                            namespace: namespace,
+                            root: content,
                             components: path.components,
                             leafKind: .directory
-                        ) {
-                            payloadDirectories.append(target)
-                        }
+                        ) { payloadDirectories.append(target) }
                     }
                 } else {
-                    payloadFiles.append(namespace)
+                    payloadFiles.append(content)
                 }
             }
             for file in payloadFiles {
                 try removeExactFile(file)
             }
-            if hasManagedArtifacts {
-                if try Self.storageItemKind(at: part) != nil {
-                    try removeExactFile(part)
-                }
+            if try Self.storageItemKind(at: part) != nil {
+                try removeExactFile(part)
             }
             for directory in payloadDirectories {
                 try removeEmptyDirectory(directory)
@@ -189,9 +97,9 @@ final class PlatformStorageBridge: @unchecked Sendable {
         }
     }
 
-    func openShareableFile(_ plan: IosPublishedFilePlan) throws -> ShareableFileLease {
+    func openShareableFile(_ plan: IosFilePlan) throws -> ShareableFileLease {
         guard let record = roots[plan.storageRoot] else {
-            throw NamespaceTransitionError.unregisteredRoot(plan.storageRoot)
+            throw StorageBridgeError.unregisteredRoot(plan.storageRoot)
         }
         let root = try RootAccess.resolveBookmark(record.bookmarkData)
         guard root.startAccessingSecurityScopedResource() else {
@@ -216,10 +124,10 @@ final class PlatformStorageBridge: @unchecked Sendable {
                         components: plan.components
                     )
                     guard observation.exists, observation.kind == .file else {
-                        throw NamespaceTransitionError.shareTargetIsNotFile
+                        throw StorageBridgeError.shareTargetIsNotFile
                     }
                     guard observation.length == plan.length else {
-                        throw NamespaceTransitionError.shareTargetLengthChanged
+                        throw StorageBridgeError.shareTargetLengthChanged
                     }
                     return coordinatedURL
                 }
@@ -243,7 +151,7 @@ final class PlatformStorageBridge: @unchecked Sendable {
         try withCoordinatedWriting(at: target, options: .forDeleting) { coordinatedTarget in
             let status = coordinatedTarget.path.withCString { unlink($0) }
             guard status == 0 || errno == ENOENT else {
-                throw POSIXFailure(operation: "remove managed torrent file", code: errno)
+                throw POSIXFailure(operation: "remove torrent data file", code: errno)
             }
         }
     }
@@ -252,7 +160,7 @@ final class PlatformStorageBridge: @unchecked Sendable {
         try withCoordinatedWriting(at: target, options: .forDeleting) { coordinatedTarget in
             let status = coordinatedTarget.path.withCString { rmdir($0) }
             guard status == 0 || errno == ENOENT || errno == ENOTEMPTY else {
-                throw POSIXFailure(operation: "remove empty managed torrent directory", code: errno)
+                throw POSIXFailure(operation: "remove empty torrent data directory", code: errno)
             }
         }
     }
@@ -278,38 +186,6 @@ final class PlatformStorageBridge: @unchecked Sendable {
             result = Result {
                 try Self.validateCoordinatedTarget(coordinatedTarget, requested: target)
                 return try body(coordinatedTarget)
-            }
-        }
-        if let coordinationError {
-            throw RootAccessError.coordinationFailed(coordinationError.localizedDescription)
-        }
-        guard let result else {
-            throw RootAccessError.coordinationAccessorDidNotRun
-        }
-        return try result.get()
-    }
-
-    private func withCoordinatedMove<T>(
-        source: URL,
-        destination: URL,
-        body: (URL, URL) throws -> T
-    ) throws -> T {
-        var coordinationError: NSError?
-        var result: Result<T, Error>?
-        NSFileCoordinator(filePresenter: nil).coordinate(
-            writingItemAt: source,
-            options: .forMoving,
-            writingItemAt: destination,
-            options: .forReplacing,
-            error: &coordinationError
-        ) { coordinatedSource, coordinatedDestination in
-            result = Result {
-                try Self.validateCoordinatedTarget(coordinatedSource, requested: source)
-                try Self.validateCoordinatedTarget(
-                    coordinatedDestination,
-                    requested: destination
-                )
-                return try body(coordinatedSource, coordinatedDestination)
             }
         }
         if let coordinationError {
@@ -518,14 +394,14 @@ final class PlatformStorageBridge: @unchecked Sendable {
     }
 
     private static func resolveRemovalTarget(
-        namespace: URL,
+        root: URL,
         components: [String],
         leafKind: StorageItemKind
     ) throws -> URL? {
-        var target = namespace
+        var target = root
         if components.isEmpty {
             guard try storageItemKind(at: target) == leafKind else {
-                throw NamespaceTransitionError.removalTargetHasWrongKind
+                throw StorageBridgeError.removalTargetHasWrongKind
             }
             return target
         }
@@ -534,7 +410,7 @@ final class PlatformStorageBridge: @unchecked Sendable {
             guard let kind = try storageItemKind(at: target) else { return nil }
             let expected = index + 1 == components.count ? leafKind : .directory
             guard kind == expected else {
-                throw NamespaceTransitionError.removalTargetHasWrongKind
+                throw StorageBridgeError.removalTargetHasWrongKind
             }
         }
         return target
@@ -565,7 +441,7 @@ final class PlatformStorageBridge: @unchecked Sendable {
             coordinated.isFileURL,
             coordinated.standardizedFileURL.path == requested.standardizedFileURL.path
         else {
-            throw NamespaceTransitionError.coordinatedTargetChanged
+            throw StorageBridgeError.coordinatedTargetChanged
         }
     }
 
@@ -796,11 +672,8 @@ private enum StorageItemKind: Equatable {
     case other
 }
 
-private enum NamespaceTransitionError: Error, LocalizedError {
-    case bothPublicationSidesExist
+private enum StorageBridgeError: Error, LocalizedError {
     case coordinatedTargetChanged
-    case stagingMissing
-    case publishedHasStagingArtifact
     case removalTargetHasWrongKind
     case unregisteredRoot(String)
     case shareTargetIsNotFile
@@ -808,22 +681,16 @@ private enum NamespaceTransitionError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .bothPublicationSidesExist:
-            return "both staging and published torrent outputs exist"
         case .coordinatedTargetChanged:
             return "file coordination changed the requested storage target"
-        case .stagingMissing:
-            return "torrent staging output is absent"
-        case .publishedHasStagingArtifact:
-            return "published torrent storage also has a staging artifact"
         case .removalTargetHasWrongKind:
-            return "managed torrent removal target has an unexpected type"
+            return "torrent data removal target has an unexpected type"
         case .unregisteredRoot(let rootID):
             return "storage root \(rootID) is not registered with the platform bridge"
         case .shareTargetIsNotFile:
-            return "the published item is not a regular file"
+            return "the completed item is not a regular file"
         case .shareTargetLengthChanged:
-            return "the published file length changed after verification"
+            return "the completed file length changed after verification"
         }
     }
 }

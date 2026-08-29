@@ -542,7 +542,7 @@ function availabilityLabel(
     case "metadata_unavailable": return "Metadata pending";
     case "invalid_file": return "Invalid file";
     case "padding": return "Padding";
-    case "not_published": return "Not published";
+    case "incomplete": return "Incomplete";
     case "checking": return "Checking";
     case "unverified": return "Not verified";
     case "storage_unavailable": return "Storage unavailable";

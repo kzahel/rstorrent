@@ -2109,7 +2109,7 @@ export function validateTorrentView(value: unknown): asserts value is TorrentVie
     "storage",
     "transfer",
     "verification",
-    "publication",
+    "complete",
   ]);
   boundedString(progress.reason, "progress reason", 64);
   array(progress.actions, "progress actions").forEach((action) =>
@@ -2306,11 +2306,18 @@ function validateMediaItemView(value: unknown): void {
   decimal(item.done_bytes, "media done bytes");
   decimal(item.verified_bytes, "media verified bytes");
   oneOf(item.media_availability, "media availability", [
-    "not_published",
-    "unverified",
-    "streamable",
     "available",
+    "streamable",
+    "metadata_unavailable",
+    "invalid_file",
     "padding",
+    "incomplete",
+    "checking",
+    "unverified",
+    "storage_unavailable",
+    "removing",
+    "server_unavailable",
+    "resource_limit",
   ]);
   const length = BigInt(string(item.length_bytes, "media length"));
   const done = BigInt(string(item.done_bytes, "media done bytes"));

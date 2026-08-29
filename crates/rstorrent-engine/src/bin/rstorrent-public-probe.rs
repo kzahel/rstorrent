@@ -1870,7 +1870,6 @@ async fn run(config: Config) -> ProbeResult {
             resource_limits,
             skip_files: Vec::new(),
             high_priority_files: Vec::new(),
-            materialize_files: Vec::new(),
         };
         tokio::spawn(download_verified_piece_with_peer_state(
             direct_config,

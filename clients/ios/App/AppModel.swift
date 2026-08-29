@@ -239,7 +239,7 @@ final class AppModel: ObservableObject {
 
     func shareableFile(torrentID: String, fileIndex: UInt32) async throws -> ShareableFileLease {
         guard let client, let storageBridge else { throw AppModelError.notReady }
-        let plan = try await client.publishedFilePlan(
+        let plan = try await client.filePlan(
             torrentId: torrentID,
             fileIndex: fileIndex
         )
@@ -341,54 +341,30 @@ final class AppModel: ObservableObject {
     private func advanceNamespaceTransitions(_ torrents: [TorrentView]) async {
         guard let client, let storageBridge else { return }
         for torrent in torrents {
-            let action: String?
-            if torrent.removalState == .awaitingPlatform {
-                action = "remove"
-            } else if torrent.state == .awaitingPublication {
-                action = "publish"
-            } else {
-                action = nil
-            }
-            guard let action else { continue }
+            guard torrent.removalState == .awaitingPlatform else { continue }
+            let action = "remove"
             let key = "\(torrent.torrentId):\(action)"
             guard namespaceWork.insert(key).inserted else { continue }
             Task { @MainActor [weak self] in
                 defer { self?.namespaceWork.remove(key) }
                 guard let self else { return }
                 do {
-                    if action == "publish" {
-                        guard !(try await client.preparedFiles(torrentId: torrent.torrentId)).isEmpty else {
-                            throw AppModelError.emptyPublicationManifest
-                        }
-                        let plan = try await client.preparePlatformPublication(
-                            torrentId: torrent.torrentId
-                        )
+                    let plan = try await client.removalPlan(torrentId: torrent.torrentId)
+                    do {
                         try await Task.detached {
-                            try storageBridge.publish(
-                                torrentID: plan.torrentId,
-                                storageRoot: plan.storageRoot,
-                                name: plan.name
-                            )
+                            try storageBridge.removeData(plan)
                         }.value
-                        try await client.confirmPlatformPublication(torrentId: torrent.torrentId)
-                    } else {
-                        let plan = try await client.removalPlan(torrentId: torrent.torrentId)
-                        do {
-                            try await Task.detached {
-                                try storageBridge.removeManaged(plan)
-                            }.value
-                            try await client.confirmRemoval(
-                                torrentId: torrent.torrentId,
-                                operationId: plan.operationId
-                            )
-                        } catch {
-                            try? await client.failRemoval(
-                                torrentId: torrent.torrentId,
-                                operationId: plan.operationId,
-                                message: String(error.localizedDescription.prefix(1_024))
-                            )
-                            throw error
-                        }
+                        try await client.confirmRemoval(
+                            torrentId: torrent.torrentId,
+                            operationId: plan.operationId
+                        )
+                    } catch {
+                        try? await client.failRemoval(
+                            torrentId: torrent.torrentId,
+                            operationId: plan.operationId,
+                            message: String(error.localizedDescription.prefix(1_024))
+                        )
+                        throw error
                     }
                 } catch {
                     self.presentationError(error)
@@ -456,7 +432,6 @@ enum AppModelError: Error, LocalizedError {
     case command(String)
     case missingAddResult
     case invalidTorrentLength(Int)
-    case emptyPublicationManifest
     case unknownStorageRoot
 
     var errorDescription: String? {
@@ -469,8 +444,6 @@ enum AppModelError: Error, LocalizedError {
             return "The engine did not return an add result."
         case .invalidTorrentLength(let count):
             return "The selected torrent file has an unsupported size (\(count) bytes)."
-        case .emptyPublicationManifest:
-            return "The engine prepared no files for publication."
         case .unknownStorageRoot:
             return "The storage root is no longer registered."
         }

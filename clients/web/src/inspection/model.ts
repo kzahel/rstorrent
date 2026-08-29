@@ -225,7 +225,7 @@ export interface TorrentRow {
   readonly addedAtMs: number | null;
   readonly archived: boolean | null;
   readonly removalState: "pending" | "awaiting_platform" | "failed" | null;
-  readonly deleteManagedDataSupported: boolean;
+  readonly deleteDataSupported: boolean;
   readonly forceRecheckAvailable: boolean;
   readonly infoHash: string;
   readonly protocolIdentities?: {

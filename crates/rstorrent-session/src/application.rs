@@ -8,27 +8,24 @@ use std::time::{Duration, Instant};
 
 use rstorrent_engine::dht::{DhtConfig, DhtError};
 use rstorrent_engine::{
-    ActiveFileError, DEFAULT_INCOMING_HANDSHAKE_TIMEOUT, DEFAULT_INCOMING_INACTIVITY_TIMEOUT,
-    DEFAULT_INCOMING_KEEPALIVE_INTERVAL, DEFAULT_INCOMING_NO_REQUEST_TIMEOUT,
-    DEFAULT_INCOMING_PEER_ACTIVITY_TIMEOUT, DEFAULT_PEER_ID, DEFAULT_STORAGE_FILE_LIMIT,
-    DEFAULT_UPLOAD_READ_JOBS, DiscoveryAdvertisementError, DiscoveryAdvertisementHandle,
-    DiscoveryAdvertisementRegistration, DiskCheckpointStage, DownloadActivityEvent,
-    DownloadActivitySink, DownloadCheckpointSink, DownloadControl, DownloadError,
-    DownloadResourceLimits, ExternalMagnetMetadataDownloadConfig, FileSelectionUpdate,
-    IncomingPeerError, IncomingPeerServiceSnapshot, MseHandshakeObservation, MseHandshakeOutcome,
-    MseHandshakeSink, NamespaceAction, NamespaceState, NamespaceTransitionInput,
-    NamespaceTransitionOutcome, NetworkConfig, NetworkPolicy, PathPublicationStage,
-    PeerEncryptionPolicy, PeerTransportPolicy, PlatformStorageClient, PlatformStorageFailureKind,
-    PlatformStorageSpec, PreparedFileHash, PublicationShape, PublishedArtifactLayout,
-    ResumableMagnetDownloadConfig, ResumableMetainfoDownloadConfig, ResumeArtifactExpectation,
-    ResumeArtifactState, ResumeValidationIntent, ResumedStorage, SelectiveStorageError,
-    SessionDownloadResourceSnapshot, SessionDownloadResources, SessionSocketError, SessionUdpError,
-    StorageFileKey, StorageFileLocator, StorageFilePool, StorageFilePoolSnapshot,
-    StorageFileReference, StorageFileRole, StorageObjectKind, TorrentId, TorrentIdentityContext,
-    TorrentPrivacy, TrackerConfig, TrackerEndpoint, TrackerSource, TrackerTransport,
-    VerifiedFileError, VerifiedFileReader, decide_namespace_transition,
-    download_magnet_metadata_with_external_discovery, resume_magnet_with_control,
-    resume_metainfo_with_control, torrent_storage_paths, verify_prepared_platform_content_files,
+    ActiveFileError, ContentShape, DEFAULT_INCOMING_HANDSHAKE_TIMEOUT,
+    DEFAULT_INCOMING_INACTIVITY_TIMEOUT, DEFAULT_INCOMING_KEEPALIVE_INTERVAL,
+    DEFAULT_INCOMING_NO_REQUEST_TIMEOUT, DEFAULT_INCOMING_PEER_ACTIVITY_TIMEOUT, DEFAULT_PEER_ID,
+    DEFAULT_STORAGE_FILE_LIMIT, DEFAULT_UPLOAD_READ_JOBS, DirectContentLayout,
+    DiscoveryAdvertisementError, DiscoveryAdvertisementHandle, DiscoveryAdvertisementRegistration,
+    DiskCheckpointStage, DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink,
+    DownloadControl, DownloadError, DownloadResourceLimits, ExternalMagnetMetadataDownloadConfig,
+    FileSelectionUpdate, IncomingPeerError, IncomingPeerServiceSnapshot, MseHandshakeObservation,
+    MseHandshakeOutcome, MseHandshakeSink, NetworkConfig, NetworkPolicy, PeerEncryptionPolicy,
+    PeerTransportPolicy, PlatformStorageClient, PlatformStorageFailureKind, PlatformStorageSpec,
+    ResumableMagnetDownloadConfig, ResumableMetainfoDownloadConfig, ResumeValidationIntent,
+    ResumedStorage, SelectiveStorageError, SessionDownloadResourceSnapshot,
+    SessionDownloadResources, SessionSocketError, SessionUdpError, StorageFileKey,
+    StorageFileLocator, StorageFilePool, StorageFilePoolSnapshot, StorageFileReference,
+    StorageFileRole, StorageObjectKind, TorrentId, TorrentIdentityContext, TorrentPrivacy,
+    TrackerConfig, TrackerEndpoint, TrackerSource, TrackerTransport, VerifiedFileError,
+    VerifiedFileReader, download_magnet_metadata_with_external_discovery,
+    resume_magnet_with_control, resume_metainfo_with_control, torrent_storage_paths,
 };
 use rstorrent_protocol::content::{TorrentContent, TorrentContentProjection};
 use rstorrent_protocol::identity::{InfoHashes, SwarmKey};
@@ -56,15 +53,15 @@ use crate::have::HaveState;
 use crate::incoming_seeding::{IncomingSeeding, IncomingSeedingError, SeedReconcileOutcome};
 use crate::media::{
     MediaCapabilities, MediaFileAvailability, MediaOriginError, MediaRegistryError,
-    MediaResolveError, MediaUrlResponse, PublishedMediaSource,
+    MediaResolveError, MediaUrlResponse, VerifiedMediaSource,
 };
 use crate::session_network::{SessionNetworkConfig, SessionNetworkError, SessionNetworkRuntime};
 use crate::settings::{StorageRootSnapshot, TorrentTransferLimits};
 use crate::speed::{PreparedSpeedHistory, SessionSpeedRecorder, SpeedHistoryRuntime};
 use crate::store::{
-    ConfiguredStorageRoot, ManagedArtifactState, PreparedFileRecord, RemovalRecord, ResumeRecord,
-    SessionStore, StorageRootLocation, StoreError, StoredStorageRoot, StoredTracker,
-    StoredTrackerSource, StoredTrackerTransport, prepare_torrent_bytes,
+    ConfiguredStorageRoot, RemovalRecord, ResumeRecord, SessionStore, StorageRootLocation,
+    StoreError, StoredStorageRoot, StoredTracker, StoredTrackerSource, StoredTrackerTransport,
+    prepare_torrent_bytes,
 };
 use crate::torrent_runtime::{ActiveDownload, TorrentRuntime, TorrentRuntimeHandle};
 use crate::tracker_views::TrackerViewModel;
@@ -174,7 +171,7 @@ fn media_reader_unavailable_reason(error: &VerifiedFileError) -> MediaFileAvaila
             MediaFileAvailability::Unverified
         }
         VerifiedFileError::UnexpectedArtifact(_)
-        | VerifiedFileError::InvalidPlatformNamespace
+        | VerifiedFileError::InvalidPlatformContentRoot
         | VerifiedFileError::ReadOwnerClosed
         | VerifiedFileError::Storage { .. }
         | VerifiedFileError::Io { .. } => MediaFileAvailability::StorageUnavailable,
@@ -184,7 +181,7 @@ fn media_reader_unavailable_reason(error: &VerifiedFileError) -> MediaFileAvaila
         | VerifiedFileError::Layout(_)
         | VerifiedFileError::ArtifactLayout(_)
         | VerifiedFileError::StoragePlan(_)
-        | VerifiedFileError::TaskJoin(_) => MediaFileAvailability::NotPublished,
+        | VerifiedFileError::TaskJoin(_) => MediaFileAvailability::Incomplete,
     }
 }
 
@@ -198,7 +195,7 @@ fn active_media_reader_unavailable_reason(error: &ActiveFileError) -> MediaFileA
         }
         ActiveFileError::InvalidRange { .. }
         | ActiveFileError::ReadTooLarge { .. }
-        | ActiveFileError::ArithmeticOverflow => MediaFileAvailability::NotPublished,
+        | ActiveFileError::ArithmeticOverflow => MediaFileAvailability::Incomplete,
     }
 }
 
@@ -305,12 +302,6 @@ pub struct ApplicationConfig {
     #[doc(hidden)]
     pub checkpoint_stage_trace_for_testing: bool,
     #[doc(hidden)]
-    pub publication_delay_stage_for_testing: Option<PathPublicationStage>,
-    #[doc(hidden)]
-    pub publication_delay_for_testing: Duration,
-    #[doc(hidden)]
-    pub publication_stage_trace_for_testing: bool,
-    #[doc(hidden)]
     pub platform_storage_client: Option<PlatformStorageClient>,
 }
 
@@ -405,9 +396,6 @@ impl ApplicationConfig {
             checkpoint_sync_delay_for_testing: Duration::ZERO,
             checkpoint_commit_delay_for_testing: Duration::ZERO,
             checkpoint_stage_trace_for_testing: false,
-            publication_delay_stage_for_testing: None,
-            publication_delay_for_testing: Duration::ZERO,
-            publication_stage_trace_for_testing: false,
             platform_storage_client: None,
         }
     }
@@ -446,15 +434,6 @@ enum ResumableDownloadConfig {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum PlatformRemovalNamespace {
-    None,
-    Legacy,
-    Staging,
-    Publishing,
-    Published,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PlatformRemovalPath {
     pub components: Vec<String>,
 }
@@ -465,21 +444,13 @@ pub struct PlatformRemovalPlan {
     pub torrent_id: String,
     pub storage_root: String,
     pub name: String,
-    pub namespace: PlatformRemovalNamespace,
     pub tree: bool,
     pub files: Vec<PlatformRemovalPath>,
     pub directories: Vec<PlatformRemovalPath>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PlatformPublicationPlan {
-    pub torrent_id: String,
-    pub storage_root: String,
-    pub name: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PlatformPublishedFilePlan {
+pub struct PlatformFilePlan {
     pub torrent_id: String,
     pub storage_root: String,
     pub components: Vec<String>,
@@ -501,9 +472,6 @@ pub struct ApplicationService {
     checkpoint_sync_delay_for_testing: Duration,
     checkpoint_commit_delay_for_testing: Duration,
     checkpoint_stage_trace_for_testing: bool,
-    publication_delay_stage_for_testing: Option<PathPublicationStage>,
-    publication_delay_for_testing: Duration,
-    publication_stage_trace_for_testing: bool,
     storage_file_pool: StorageFilePool,
     media: MediaCapabilities,
     healthy_platform_roots: BTreeSet<String>,
@@ -562,7 +530,6 @@ impl ApplicationService {
             || config.storage_hash_delay_for_testing > Duration::from_secs(10)
             || config.checkpoint_sync_delay_for_testing > Duration::from_secs(60)
             || config.checkpoint_commit_delay_for_testing > Duration::from_secs(60)
-            || config.publication_delay_for_testing > Duration::from_secs(60)
         {
             return Err(ApplicationError::Configuration(
                 "test storage delay exceeds its fixed maximum".to_owned(),
@@ -705,9 +672,6 @@ impl ApplicationService {
             checkpoint_sync_delay_for_testing: config.checkpoint_sync_delay_for_testing,
             checkpoint_commit_delay_for_testing: config.checkpoint_commit_delay_for_testing,
             checkpoint_stage_trace_for_testing: config.checkpoint_stage_trace_for_testing,
-            publication_delay_stage_for_testing: config.publication_delay_stage_for_testing,
-            publication_delay_for_testing: config.publication_delay_for_testing,
-            publication_stage_trace_for_testing: config.publication_stage_trace_for_testing,
             storage_file_pool,
             media: MediaCapabilities::new(),
             healthy_platform_roots,
@@ -932,8 +896,8 @@ impl ApplicationService {
                     MediaFileAvailability::StorageUnavailable,
                 ));
             };
-            let published = match storage_root {
-                StorageRootLocation::Path(root) => Some(PublishedMediaSource::path(
+            let verified = match storage_root {
+                StorageRootLocation::Path(root) => Some(VerifiedMediaSource::path(
                     root.clone(),
                     content.clone(),
                     file_index_usize,
@@ -941,33 +905,26 @@ impl ApplicationService {
                     resume.torrent_id,
                     self.media.read_jobs(),
                 )),
-                StorageRootLocation::PlatformCapability
-                    if resume.storage_state == StorageState::Published =>
-                {
-                    Some(PublishedMediaSource::platform(
-                        PlatformStorageSpec {
-                            pool: self.storage_file_pool.clone(),
-                            root_id: resume.storage_root.clone(),
-                            storage_id: torrent_id.clone(),
-                            publication_shape: PublicationShape::from_content(&content),
-                            publication_name: content.name().to_owned(),
-                            namespace_generation: 1,
-                            managed: true,
-                            published: true,
-                        },
-                        content.clone(),
-                        file_index_usize,
-                        self.media.read_jobs(),
-                    ))
-                }
-                StorageRootLocation::PlatformCapability => None,
+                StorageRootLocation::PlatformCapability => Some(VerifiedMediaSource::platform(
+                    PlatformStorageSpec {
+                        pool: self.storage_file_pool.clone(),
+                        root_id: resume.storage_root.clone(),
+                        storage_id: torrent_id.clone(),
+                        content_shape: ContentShape::from_content(&content),
+                        content_name: content.name().to_owned(),
+                        storage_generation: 1,
+                    },
+                    content.clone(),
+                    file_index_usize,
+                    self.media.read_jobs(),
+                )),
             };
             let outcome = match self.media.create_active(
                 torrent_id.clone(),
                 file_index,
                 reader,
                 control,
-                published,
+                verified,
             ) {
                 Ok(outcome) => outcome,
                 Err(MediaRegistryError::ServerUnavailable) => {
@@ -996,22 +953,14 @@ impl ApplicationService {
                 outcome,
             });
         }
-        if resume.storage_state != StorageState::Published
-            || !matches!(
-                resume.payload_state,
-                crate::durable_state::PayloadState::LegacyOwned
-                    | crate::durable_state::PayloadState::FinalOwned
-            )
-            || matches!(
-                resume.state,
-                TorrentState::NeedsRepair | TorrentState::Error
-            )
-            || resume.publication_name.as_deref() != Some(content.name())
-        {
+        if matches!(
+            resume.state,
+            TorrentState::NeedsRepair | TorrentState::Error
+        ) {
             return Ok(MediaUrlResponse::unavailable(
                 torrent_id,
                 file_index,
-                MediaFileAvailability::NotPublished,
+                MediaFileAvailability::Incomplete,
             ));
         }
         let Some(have) = resume.have.as_ref() else {
@@ -1031,7 +980,7 @@ impl ApplicationService {
         let read_jobs = self.media.read_jobs();
         let reader = match storage_root {
             StorageRootLocation::Path(root) => {
-                VerifiedFileReader::open_published_content_with_pool(
+                VerifiedFileReader::open_verified_content_with_pool(
                     root,
                     &content,
                     have.pieces(),
@@ -1043,16 +992,14 @@ impl ApplicationService {
                 .await
             }
             StorageRootLocation::PlatformCapability => {
-                VerifiedFileReader::open_published_content_with_platform(
+                VerifiedFileReader::open_verified_content_with_platform(
                     &PlatformStorageSpec {
                         pool: self.storage_file_pool.clone(),
                         root_id: resume.storage_root,
                         storage_id: torrent_id.clone(),
-                        publication_shape: PublicationShape::from_content(&content),
-                        publication_name: content.name().to_owned(),
-                        namespace_generation: 1,
-                        managed: true,
-                        published: true,
+                        content_shape: ContentShape::from_content(&content),
+                        content_name: content.name().to_owned(),
+                        storage_generation: 1,
                     },
                     &content,
                     have.pieces(),
@@ -1804,14 +1751,14 @@ impl ApplicationService {
                 self.storage_file_pool.clone(),
                 StorageFileKey {
                     storage_id: storage_id.clone(),
-                    namespace_generation: 0,
-                    role: StorageFileRole::Namespace,
+                    storage_generation: 0,
+                    role: StorageFileRole::ContentRoot,
                 },
                 StorageFileLocator::Platform(rstorrent_engine::PlatformStorageTarget {
                     root_id: root_id.clone(),
                     storage_id,
-                    namespace_generation: 0,
-                    role: StorageFileRole::Namespace,
+                    storage_generation: 0,
+                    role: StorageFileRole::ContentRoot,
                     path: Vec::new(),
                 }),
             );
@@ -1853,13 +1800,7 @@ impl ApplicationService {
                 .map(|torrent| torrent.torrent_id)
                 .collect::<Vec<_>>();
             for torrent_id in affected {
-                let resume = self.load_resume_conservative(&torrent_id)?;
-                let transition =
-                    decide_resume_namespace_transition(&resume, NamespaceAction::RepairRoot)?;
-                debug_assert!(transition.observation_required);
-                if transition.revoke_access {
-                    self.storage_file_pool.invalidate_storage(&torrent_id);
-                }
+                self.storage_file_pool.invalidate_storage(&torrent_id);
             }
         }
         if !lost.is_empty() {
@@ -1873,13 +1814,9 @@ impl ApplicationService {
                 .collect::<Vec<_>>();
             for torrent_id in affected {
                 let resume = self.load_resume_conservative(&torrent_id)?;
-                let transition =
-                    decide_resume_namespace_transition(&resume, NamespaceAction::LoseRoot)?;
                 self.unregister_incoming(&torrent_id).await?;
                 self.join_active_content(&torrent_id).await?;
-                if transition.revoke_access {
-                    self.storage_file_pool.invalidate_storage(&torrent_id);
-                }
+                self.storage_file_pool.invalidate_storage(&torrent_id);
                 let detail = failures
                     .get(&resume.storage_root)
                     .map_or("platform storage root is unavailable", String::as_str);
@@ -1942,14 +1879,9 @@ impl ApplicationService {
             .map(|torrent| (torrent.torrent_id, torrent.storage_root))
             .collect::<Vec<_>>();
         for (torrent_id, root_id) in affected {
-            let resume = self.load_resume_conservative(&torrent_id)?;
-            let transition =
-                decide_resume_namespace_transition(&resume, NamespaceAction::LoseRoot)?;
             self.unregister_incoming(&torrent_id).await?;
             self.join_active_content(&torrent_id).await?;
-            if transition.revoke_access {
-                self.storage_file_pool.invalidate_storage(&torrent_id);
-            }
+            self.storage_file_pool.invalidate_storage(&torrent_id);
             let detail = failures
                 .iter()
                 .find(|(failed_root, _)| failed_root == &root_id)
@@ -2371,131 +2303,15 @@ impl ApplicationService {
         self.views.close_all_view_sets();
     }
 
-    pub async fn prepared_files(
-        &mut self,
-        torrent_id: &str,
-    ) -> Result<Vec<PreparedFileRecord>, ApplicationError> {
-        self.reap_finished().await?;
-        Ok(self
-            .store_mut()?
-            .load_prepared_files(&torrent_id.to_ascii_lowercase())?)
-    }
-
-    pub fn storage_file_pool_snapshot(&self) -> StorageFilePoolSnapshot {
-        self.storage_file_pool.snapshot()
-    }
-
-    pub async fn prepare_platform_publication(
-        &mut self,
-        torrent_id: &str,
-    ) -> Result<PlatformPublicationPlan, ApplicationError> {
-        self.reap_finished().await?;
-        let torrent_id = torrent_id.to_ascii_lowercase();
-        let resume = self.load_resume_conservative(&torrent_id)?;
-        if resume.state != TorrentState::AwaitingPublication
-            || !matches!(
-                self.storage_roots.get(&resume.storage_root),
-                Some(StorageRootLocation::PlatformCapability)
-            )
-        {
-            return Err(ApplicationError::Configuration(
-                "torrent is not awaiting platform publication".to_owned(),
-            ));
-        }
-        let transition =
-            decide_resume_namespace_transition(&resume, NamespaceAction::PreparePublication)?;
-        let content = parse_resume_content(&resume)
-            .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
-        if transition.revoke_access {
-            self.storage_file_pool.invalidate_storage(&torrent_id);
-        }
-        Ok(PlatformPublicationPlan {
-            torrent_id,
-            storage_root: resume.storage_root,
-            name: content.name().to_owned(),
-        })
-    }
-
-    pub async fn confirm_platform_publication(
-        &mut self,
-        torrent_id: &str,
-    ) -> Result<(), ApplicationError> {
-        self.reap_finished().await?;
-        let torrent_id = torrent_id.to_ascii_lowercase();
-        let resume = self.load_resume_conservative(&torrent_id)?;
-        let transition =
-            decide_resume_namespace_transition(&resume, NamespaceAction::ConfirmPublication)?;
-        if resume.state == TorrentState::Complete && resume.storage_state == StorageState::Published
-        {
-            debug_assert_eq!(
-                transition.disposition,
-                rstorrent_engine::NamespaceDisposition::AlreadyApplied
-            );
-            return Ok(());
-        }
-        if resume.state != TorrentState::AwaitingPublication
-            || !matches!(
-                self.storage_roots.get(&resume.storage_root),
-                Some(StorageRootLocation::PlatformCapability)
-            )
-        {
-            return Err(ApplicationError::Configuration(
-                "torrent is not awaiting platform publication".to_owned(),
-            ));
-        }
-        let content = parse_resume_content(&resume)
-            .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
-        let expected = self
-            .store_mut()?
-            .load_prepared_files(&torrent_id)?
-            .into_iter()
-            .map(|file| PreparedFileHash {
-                file_index: file.file_index,
-                length: file.length,
-                sha1: file.sha1,
-            })
-            .collect::<Vec<_>>();
-        if expected.is_empty() {
-            return Err(ApplicationError::Configuration(
-                "torrent has no prepared publication manifest".to_owned(),
-            ));
-        }
-        verify_prepared_platform_content_files(
-            &PlatformStorageSpec {
-                pool: self.storage_file_pool.clone(),
-                root_id: resume.storage_root,
-                storage_id: torrent_id.clone(),
-                publication_shape: PublicationShape::from_content(&content),
-                publication_name: content.name().to_owned(),
-                namespace_generation: transition.generation,
-                managed: true,
-                published: true,
-            },
-            &content,
-            &expected,
-        )
-        .await
-        .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
-        debug_assert!(transition.observation_required);
-        self.store_mut()?.begin_published_recheck(&torrent_id)?;
-        if transition.revoke_access {
-            self.storage_file_pool.invalidate_storage(&torrent_id);
-        }
-        self.refresh_views()?;
-        self.start_recheck_if_possible(&torrent_id).await?;
-        Ok(())
-    }
-
-    pub async fn platform_published_file_plan(
+    pub async fn platform_file_plan(
         &mut self,
         torrent_id: &str,
         file_index: u32,
-    ) -> Result<PlatformPublishedFilePlan, ApplicationError> {
+    ) -> Result<PlatformFilePlan, ApplicationError> {
         self.reap_finished().await?;
         let torrent_id = torrent_id.to_ascii_lowercase();
         let resume = self.load_resume_conservative(&torrent_id)?;
-        if resume.storage_state != StorageState::Published
-            || resume.verification.is_pending()
+        if resume.verification.is_pending()
             || matches!(
                 resume.state,
                 TorrentState::Checking | TorrentState::NeedsRepair | TorrentState::Error
@@ -2506,7 +2322,7 @@ impl ApplicationService {
             )
         {
             return Err(ApplicationError::Configuration(
-                "torrent has no shareable published platform file".to_owned(),
+                "torrent has no shareable verified platform file".to_owned(),
             ));
         }
         let content = parse_resume_content(&resume)
@@ -2542,20 +2358,24 @@ impl ApplicationService {
                 "file is not completely verified".to_owned(),
             ));
         }
-        let artifact = PublishedArtifactLayout::from_content(&content)
+        let artifact = DirectContentLayout::from_content(&content)
             .map_err(|error| ApplicationError::Configuration(error.to_string()))?
             .files
             .into_iter()
             .find(|artifact| artifact.file_index == index)
             .ok_or_else(|| {
-                ApplicationError::Configuration("published file layout is absent".to_owned())
+                ApplicationError::Configuration("verified file layout is absent".to_owned())
             })?;
-        Ok(PlatformPublishedFilePlan {
+        Ok(PlatformFilePlan {
             torrent_id,
             storage_root: resume.storage_root,
             components: artifact.qualified_components,
             length: file.length,
         })
+    }
+
+    pub fn storage_file_pool_snapshot(&self) -> StorageFilePoolSnapshot {
+        self.storage_file_pool.snapshot()
     }
 
     pub async fn mark_storage_unavailable(
@@ -2568,13 +2388,10 @@ impl ApplicationService {
         if self.active_download_for(&torrent_id).is_some() {
             return Err(ApplicationError::Busy(torrent_id));
         }
-        let resume = self.load_resume_conservative(&torrent_id)?;
-        let transition = decide_resume_namespace_transition(&resume, NamespaceAction::LoseRoot)?;
+        self.load_resume_conservative(&torrent_id)?;
         self.store_mut()?
             .mark_awaiting_storage(&torrent_id, Some(message))?;
-        if transition.revoke_access {
-            self.storage_file_pool.invalidate_storage(&torrent_id);
-        }
+        self.storage_file_pool.invalidate_storage(&torrent_id);
         self.refresh_views()?;
         Ok(())
     }
@@ -2617,7 +2434,7 @@ impl ApplicationService {
         self.reap_finished().await?;
         let torrent_id = torrent_id.to_ascii_lowercase();
         let removal = self.store_mut()?.load_removal(&torrent_id)?;
-        if removal.policy != RemovalDataPolicy::DeleteManaged
+        if removal.policy != RemovalDataPolicy::DeleteData
             || removal.state != RemovalState::AwaitingPlatform
             || !self.configured_platform_root(&removal.storage_root)?
         {
@@ -2625,28 +2442,16 @@ impl ApplicationService {
                 "torrent is not awaiting platform data removal".to_owned(),
             ));
         }
-        let transition =
-            decide_removal_namespace_transition(&removal, NamespaceAction::BeginRemoval)?;
         let resume = self.load_resume_conservative(&torrent_id)?;
         let content = parse_resume_content(&resume)
             .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
-        if removal.publication_name.as_deref() != Some(content.name()) {
-            return Err(ApplicationError::Configuration(
-                "stored publication name is missing or does not match verified metadata".to_owned(),
-            ));
-        }
-        if transition.revoke_access {
-            self.storage_file_pool.invalidate_storage(&torrent_id);
-        }
-        let namespace = platform_removal_namespace(&removal);
-        let manifest =
-            managed_payload_manifest(&content, namespace == PlatformRemovalNamespace::Legacy)?;
+        self.storage_file_pool.invalidate_storage(&torrent_id);
+        let manifest = direct_payload_manifest(&content)?;
         Ok(PlatformRemovalPlan {
             operation_id: removal.operation_id,
             torrent_id,
             storage_root: removal.storage_root,
             name: content.name().to_owned(),
-            namespace,
             tree: manifest.tree,
             files: manifest.files,
             directories: manifest.directories,
@@ -2666,12 +2471,6 @@ impl ApplicationService {
                 "platform removal confirmation is stale".to_owned(),
             ));
         }
-        let transition =
-            decide_removal_namespace_transition(&removal, NamespaceAction::ConfirmRemoval)?;
-        debug_assert!(
-            transition.observation_required
-                || removal_namespace_state(&removal) == NamespaceState::None
-        );
         self.prepare_torrent_runtime_removal(&torrent_id)?;
         self.store_mut()?
             .finalize_removal(&torrent_id, operation_id)?;
@@ -2682,7 +2481,7 @@ impl ApplicationService {
             category::PLATFORM_ADAPTER,
             "torrent_removal_completed",
             Some(&torrent_id),
-            "Platform-managed torrent data and catalog entry removed",
+            "Torrent data and catalog entry removed from platform storage",
             &[],
         )?;
         Ok(())
@@ -2871,20 +2670,14 @@ impl ApplicationService {
         }
         match removal.policy {
             RemovalDataPolicy::Keep => self.complete_removal(&removal),
-            RemovalDataPolicy::DeleteManaged if removal.raw_info.is_none() => {
+            RemovalDataPolicy::DeleteData if removal.raw_info.is_none() => {
                 self.complete_removal(&removal)
             }
-            RemovalDataPolicy::DeleteManaged => {
+            RemovalDataPolicy::DeleteData => {
                 match self.storage_roots.get(&removal.storage_root).cloned() {
                     Some(StorageRootLocation::Path(root)) => {
-                        let transition = decide_removal_namespace_transition(
-                            &removal,
-                            NamespaceAction::BeginRemoval,
-                        )?;
-                        if transition.revoke_access {
-                            self.storage_file_pool.invalidate_storage(torrent_id);
-                        }
-                        let manifest =
+                        self.storage_file_pool.invalidate_storage(torrent_id);
+                        let deletion =
                             match self
                                 .load_resume_conservative(torrent_id)
                                 .and_then(|resume| {
@@ -2892,48 +2685,32 @@ impl ApplicationService {
                                         ApplicationError::Configuration(error.to_string())
                                     })
                                 }) {
-                                Ok(content) => managed_payload_manifest(
-                                    &content,
-                                    removal.managed_artifacts == ManagedArtifactState::Legacy,
-                                ),
+                                Ok(content) => direct_payload_manifest(&content)
+                                    .map(|manifest| (content.name().to_owned(), manifest)),
                                 Err(error) => {
                                     return self.fail_removal(&removal, &error.to_string());
                                 }
                             };
-                        let manifest = match manifest {
-                            Ok(manifest) => manifest,
+                        let (content_name, manifest) = match deletion {
+                            Ok(deletion) => deletion,
                             Err(error) => return self.fail_removal(&removal, &error.to_string()),
                         };
                         let owned_torrent_id = torrent_id.to_owned();
-                        let publication_name = removal.publication_name.clone();
                         match tokio::task::spawn_blocking(move || {
                             delete_path_artifacts(
                                 &root,
                                 &owned_torrent_id,
-                                publication_name.as_deref(),
+                                &content_name,
                                 &manifest,
-                                removal.storage_state,
-                                removal.managed_artifacts,
                             )
                         })
                         .await
                         {
-                            Ok(Ok(())) => {
-                                let transition = decide_removal_namespace_transition(
-                                    &removal,
-                                    NamespaceAction::ConfirmRemoval,
-                                )?;
-                                debug_assert!(
-                                    transition.observation_required
-                                        || removal_namespace_state(&removal)
-                                            == NamespaceState::None
-                                );
-                                self.complete_removal(&removal)
-                            }
+                            Ok(Ok(())) => self.complete_removal(&removal),
                             Ok(Err(error)) => self.fail_removal(&removal, &error.to_string()),
                             Err(error) => self.fail_removal(
                                 &removal,
-                                &format!("managed-data cleanup task failed: {error}"),
+                                &format!("data cleanup task failed: {error}"),
                             ),
                         }
                     }
@@ -3056,11 +2833,6 @@ impl ApplicationService {
             };
             let is_checking = resume.state == TorrentState::Checking;
             let active = self.active_download_for(&torrent.torrent_id).is_some();
-            let awaiting_external_publication = resume.state == TorrentState::AwaitingPublication
-                && matches!(
-                    self.storage_roots.get(&resume.storage_root),
-                    Some(StorageRootLocation::PlatformCapability)
-                );
             if is_checking {
                 checking.push((
                     resume.download_queue_position.unwrap_or(i64::MAX),
@@ -3094,8 +2866,7 @@ impl ApplicationService {
                     || matches!(
                         resume.state,
                         TorrentState::NeedsRepair | TorrentState::Error
-                    )
-                    || awaiting_external_publication,
+                    ),
                 active_generation,
             });
         }
@@ -3172,13 +2943,6 @@ impl ApplicationService {
                 )?;
                 return Ok(());
             }
-            if resume.publication_name.as_deref() != Some(content.name()) {
-                self.store_mut()?.mark_needs_repair(
-                    torrent_id,
-                    "stored publication name is missing or does not match verified metadata",
-                )?;
-                return Ok(());
-            }
         }
         let root = match self.storage_roots.get(&resume.storage_root).cloned() {
             Some(root) => root,
@@ -3192,9 +2956,6 @@ impl ApplicationService {
         };
         let platform_root = matches!(root, StorageRootLocation::PlatformCapability);
         if platform_root {
-            if resume.state == TorrentState::AwaitingPublication {
-                return Ok(());
-            }
             if resume.raw_info.is_none() {
                 let identity = magnet_runtime_identity(identity, &resume.magnet)?;
                 let checkpoints = Arc::new(StoreCheckpointSink {
@@ -3284,11 +3045,9 @@ impl ApplicationService {
                         pool: storage_pool,
                         root_id,
                         storage_id,
-                        publication_shape: PublicationShape::from_content(&content),
-                        publication_name: content.name().to_owned(),
-                        namespace_generation: 0,
-                        managed: false,
-                        published: false,
+                        content_shape: ContentShape::from_content(&content),
+                        content_name: content.name().to_owned(),
+                        storage_generation: 0,
                     });
                     resume_magnet_with_control(
                         ResumableMagnetDownloadConfig {
@@ -3305,7 +3064,6 @@ impl ApplicationService {
                             high_priority_files,
                             verified_info: Some(raw_info),
                             verified_pieces: Vec::new(),
-                            artifact_expectation: ResumeArtifactExpectation::Discover,
                             resume_validation: ResumeValidationIntent::FastEligible,
                             download_missing: true,
                             dht: None,
@@ -3402,13 +3160,6 @@ impl ApplicationService {
             .have
             .as_ref()
             .map_or_else(Vec::new, |have| have.pieces().to_vec());
-        let artifact_state = resume_artifact_state(&resume)?;
-        let artifact_expectation =
-            if resume.payload_state == crate::durable_state::PayloadState::Absent {
-                ResumeArtifactExpectation::Discover
-            } else {
-                ResumeArtifactExpectation::Exact(artifact_state)
-            };
         let resume_validation = if resume.verification.is_pending() {
             ResumeValidationIntent::Full
         } else {
@@ -3436,11 +3187,9 @@ impl ApplicationService {
                 pool: self.storage_file_pool.clone(),
                 root_id: resume.storage_root.clone(),
                 storage_id: torrent_id.to_owned(),
-                publication_shape: PublicationShape::from_content(content),
-                publication_name: content.name().to_owned(),
-                namespace_generation: u64::from(resume.storage_state == StorageState::Published),
-                managed: resume.storage_state != StorageState::None,
-                published: resume.storage_state == StorageState::Published,
+                content_shape: ContentShape::from_content(content),
+                content_name: content.name().to_owned(),
+                storage_generation: 0,
             });
         }
         let common_peer_budget = self.session_network().peer_budget();
@@ -3466,7 +3215,6 @@ impl ApplicationService {
                 skip_files,
                 high_priority_files,
                 verified_pieces,
-                artifact_expectation,
                 resume_validation,
                 download_missing: resume.desired_running,
                 dht: None,
@@ -3488,7 +3236,6 @@ impl ApplicationService {
                 high_priority_files,
                 verified_info: resume.raw_info,
                 verified_pieces,
-                artifact_expectation,
                 resume_validation,
                 download_missing: resume.desired_running,
                 dht: None,
@@ -3981,9 +3728,6 @@ impl ApplicationService {
             eta_generation,
             views: self.views.clone(),
             trace_checkpoint_stages: self.checkpoint_stage_trace_for_testing,
-            trace_publication_stages: self.publication_stage_trace_for_testing,
-            publication_delay_stage: self.publication_delay_stage_for_testing,
-            publication_delay: self.publication_delay_for_testing,
             last_checkpoint_stage: Mutex::new(None),
         })
     }
@@ -4133,25 +3877,24 @@ impl Drop for ApplicationService {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct ManagedPayloadManifest {
+struct DirectPayloadManifest {
     tree: bool,
     files: Vec<PlatformRemovalPath>,
     directories: Vec<PlatformRemovalPath>,
 }
 
 #[derive(Debug)]
-struct PreparedManagedPayloadRemoval {
+struct PreparedDirectPayloadRemoval {
     files: Vec<PathBuf>,
     directories: Vec<PathBuf>,
 }
 
-fn managed_payload_manifest(
+fn direct_payload_manifest(
     content: &TorrentContent,
-    force_tree: bool,
-) -> Result<ManagedPayloadManifest, ApplicationError> {
-    let layout = PublishedArtifactLayout::from_content(content)
+) -> Result<DirectPayloadManifest, ApplicationError> {
+    let layout = DirectContentLayout::from_content(content)
         .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
-    let tree = force_tree || layout.shape == PublicationShape::Tree;
+    let tree = layout.shape == ContentShape::Tree;
     let files = layout
         .files
         .into_iter()
@@ -4180,113 +3923,41 @@ fn managed_payload_manifest(
             .cmp(&left.components.len())
             .then_with(|| left.components.cmp(&right.components))
     });
-    Ok(ManagedPayloadManifest {
+    Ok(DirectPayloadManifest {
         tree,
         files,
         directories,
     })
 }
 
-fn platform_removal_namespace(removal: &RemovalRecord) -> PlatformRemovalNamespace {
-    match removal.managed_artifacts {
-        ManagedArtifactState::None => PlatformRemovalNamespace::None,
-        ManagedArtifactState::Legacy => PlatformRemovalNamespace::Legacy,
-        ManagedArtifactState::Staging if removal.storage_state == StorageState::Prepared => {
-            PlatformRemovalNamespace::Publishing
-        }
-        ManagedArtifactState::Staging => PlatformRemovalNamespace::Staging,
-        ManagedArtifactState::Published => PlatformRemovalNamespace::Published,
-    }
-}
-
 fn delete_path_artifacts(
     root: &Path,
     torrent_id: &str,
-    publication_name: Option<&str>,
-    manifest: &ManagedPayloadManifest,
-    storage_state: StorageState,
-    managed_artifacts: ManagedArtifactState,
+    content_name: &str,
+    manifest: &DirectPayloadManifest,
 ) -> Result<(), ApplicationError> {
-    let (namespaces, part) = match managed_artifacts {
-        ManagedArtifactState::None => return Ok(()),
-        ManagedArtifactState::Legacy => {
-            let output = root.join(torrent_id);
-            let staging = rstorrent_engine::selective_staging_path(&output)
-                .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
-            let part = rstorrent_engine::selective_part_path(&output)
-                .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
-            (vec![output, staging], part)
-        }
-        ManagedArtifactState::Staging | ManagedArtifactState::Published => {
-            let publication_name = publication_name.ok_or_else(|| {
-                ApplicationError::Configuration(
-                    "managed storage has no durable publication name".to_owned(),
-                )
-            })?;
-            let torrent_id = torrent_id.parse::<TorrentId>().map_err(|_| {
-                ApplicationError::Configuration("invalid torrent identity".to_owned())
-            })?;
-            let paths = torrent_storage_paths(root, publication_name, torrent_id)
-                .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
-            let output_exists = std::fs::symlink_metadata(&paths.output).is_ok();
-            let staging_exists = std::fs::symlink_metadata(&paths.staging).is_ok();
-            let ambiguous_both = matches!(
-                (storage_state, managed_artifacts),
-                (StorageState::Prepared, ManagedArtifactState::Staging)
-                    | (StorageState::Published, ManagedArtifactState::Published)
-            );
-            if output_exists && staging_exists && ambiguous_both {
-                return Err(ApplicationError::Configuration(
-                    "managed publication has both staging and final artifacts".to_owned(),
-                ));
-            }
-            let namespace = match (storage_state, managed_artifacts) {
-                (StorageState::Prepared, ManagedArtifactState::Staging) => {
-                    if output_exists {
-                        paths.output
-                    } else {
-                        paths.staging
-                    }
-                }
-                (StorageState::Published, ManagedArtifactState::Published) => {
-                    if staging_exists {
-                        return Err(ApplicationError::Configuration(
-                            "published managed storage has only a staging artifact".to_owned(),
-                        ));
-                    }
-                    paths.output
-                }
-                (_, ManagedArtifactState::Staging) => paths.staging,
-                (_, ManagedArtifactState::Published) => paths.output,
-                (_, ManagedArtifactState::None | ManagedArtifactState::Legacy) => {
-                    unreachable!("managed artifact state was matched above")
-                }
-            };
-            (vec![namespace], paths.part)
-        }
-    };
-
-    let prepared_payloads = namespaces
-        .iter()
-        .map(|namespace| preflight_managed_payload(namespace, manifest))
-        .collect::<Result<Vec<_>, _>>()?;
-    let prepared_part = preflight_managed_file(&part)?;
-    for payload in prepared_payloads.into_iter().flatten() {
+    let torrent_id = torrent_id
+        .parse::<TorrentId>()
+        .map_err(|_| ApplicationError::Configuration("invalid torrent identity".to_owned()))?;
+    let paths = torrent_storage_paths(root, content_name, torrent_id)
+        .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+    let prepared_payload = preflight_direct_payload(&paths.content, manifest)?;
+    let prepared_part = preflight_direct_file(&paths.part)?;
+    if let Some(payload) = prepared_payload {
         remove_preflighted_payload(payload)?;
     }
     if let Some(part) = prepared_part {
         std::fs::remove_file(part).map_err(|source| ApplicationError::Io {
-            operation: "remove managed torrent part file",
+            operation: "remove torrent part file",
             source,
         })?;
     }
     Ok(())
 }
-
-fn preflight_managed_payload(
+fn preflight_direct_payload(
     namespace: &Path,
-    manifest: &ManagedPayloadManifest,
-) -> Result<Option<PreparedManagedPayloadRemoval>, ApplicationError> {
+    manifest: &DirectPayloadManifest,
+) -> Result<Option<PreparedDirectPayloadRemoval>, ApplicationError> {
     let metadata = match std::fs::symlink_metadata(namespace) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -4310,7 +3981,7 @@ fn preflight_managed_payload(
         )));
     }
     if !manifest.tree {
-        return Ok(Some(PreparedManagedPayloadRemoval {
+        return Ok(Some(PreparedDirectPayloadRemoval {
             files: vec![namespace.to_path_buf()],
             directories: Vec::new(),
         }));
@@ -4333,14 +4004,14 @@ fn preflight_managed_payload(
                 })
         })
         .collect();
-    Ok(Some(PreparedManagedPayloadRemoval {
+    Ok(Some(PreparedDirectPayloadRemoval {
         files: exact_files,
         directories,
     }))
 }
 
 fn remove_preflighted_payload(
-    prepared: PreparedManagedPayloadRemoval,
+    prepared: PreparedDirectPayloadRemoval,
 ) -> Result<(), ApplicationError> {
     for path in prepared.files {
         std::fs::remove_file(path).map_err(|source| ApplicationError::Io {
@@ -4444,7 +4115,7 @@ fn remove_empty_payload_directory(path: &Path) -> Result<(), ApplicationError> {
     }
 }
 
-fn preflight_managed_file(path: &Path) -> Result<Option<PathBuf>, ApplicationError> {
+fn preflight_direct_file(path: &Path) -> Result<Option<PathBuf>, ApplicationError> {
     let metadata = match std::fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -4578,9 +4249,6 @@ fn tracker_activity_sink(torrent_id: &str, views: &ViewHub) -> Arc<dyn DownloadA
         eta_generation: None,
         views: views.clone(),
         trace_checkpoint_stages: false,
-        trace_publication_stages: false,
-        publication_delay_stage: None,
-        publication_delay: Duration::ZERO,
         last_checkpoint_stage: Mutex::new(None),
     })
 }
@@ -4999,17 +4667,10 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
     }
 
     fn storage_prepared(&self, storage: ResumedStorage) -> Result<(), String> {
-        let storage_state = match storage {
-            ResumedStorage::Created | ResumedStorage::Staging => StorageState::Staging,
-            ResumedStorage::Published => StorageState::Published,
+        let storage_kind = match storage {
+            ResumedStorage::Created => "created",
+            ResumedStorage::Existing => "existing",
         };
-        self.store().and_then(|mut store| {
-            store
-                .mark_storage_prepared(&self.torrent_id, storage_state)
-                .map(|_| ())
-                .map_err(|error| error.to_string())
-        })?;
-        self.refresh()?;
         self.views
             .record_diagnostic(
                 DiagnosticSeverity::Info,
@@ -5017,7 +4678,7 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
                 "storage_prepared",
                 Some(&self.torrent_id),
                 "Torrent storage prepared",
-                &[],
+                &[("storage_kind", storage_kind)],
             )
             .map_err(|error| error.to_string())
     }
@@ -5029,16 +4690,15 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
         present_files: usize,
         oversized_files: usize,
     ) -> Result<u64, String> {
-        let storage_state = match storage {
+        match storage {
             ResumedStorage::Created => {
                 return Err("new storage cannot be committed as discovered".to_owned());
             }
-            ResumedStorage::Staging => StorageState::Staging,
-            ResumedStorage::Published => StorageState::Published,
-        };
+            ResumedStorage::Existing => {}
+        }
         let generation = self.store().and_then(|mut store| {
             store
-                .adopt_storage_for_recheck(&self.torrent_id, storage_state)
+                .begin_recheck_with_generation(&self.torrent_id)
                 .map(|(_, generation)| generation)
                 .map_err(|error| error.to_string())
         })?;
@@ -5056,7 +4716,7 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
                 category::INTEGRITY_HASH,
                 "storage_discovered",
                 Some(&self.torrent_id),
-                "Existing torrent storage discovered; managed content recheck started",
+                "Existing torrent storage discovered; content recheck started",
                 &[
                     ("expected_files", expected_files.as_str()),
                     ("present_files", present_files.as_str()),
@@ -5085,7 +4745,7 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
                 category::INTEGRITY_HASH,
                 "recheck_started",
                 Some(&self.torrent_id),
-                "Managed content recheck started",
+                "Content recheck started",
                 &[],
             )
             .map_err(|error| error.to_string())?;
@@ -5115,8 +4775,18 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
         self.store().and_then(|mut store| {
             store
                 .complete_recheck_generation(&self.torrent_id, generation, &replacement)
-                .map(|_| ())
-                .map_err(|error| error.to_string())
+                .map_err(|error| error.to_string())?;
+            if store
+                .load_resume(&self.torrent_id)
+                .map_err(|error| error.to_string())?
+                .state
+                == TorrentState::Complete
+            {
+                store
+                    .mark_complete(&self.torrent_id)
+                    .map_err(|error| error.to_string())?;
+            }
+            Ok(())
         })?;
         *self
             .recheck_generation
@@ -5151,9 +4821,21 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
             })
             .collect::<Result<Vec<_>, _>>()?;
         let revision = self.store().and_then(|mut store| {
-            store
+            let revision = store
                 .record_pieces(&self.torrent_id, &durable_indices)
-                .map_err(|error| error.to_string())
+                .map_err(|error| error.to_string())?;
+            if store
+                .load_resume(&self.torrent_id)
+                .map_err(|error| error.to_string())?
+                .state
+                == TorrentState::Complete
+            {
+                store
+                    .mark_complete(&self.torrent_id)
+                    .map_err(|error| error.to_string())
+            } else {
+                Ok(revision)
+            }
         })?;
         self.views
             .record_pieces_durable(&self.torrent_id, &view_indices, revision)
@@ -5197,66 +4879,6 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
             )
             .map_err(|error| error.to_string())
     }
-
-    fn descriptor_prepared(&self, files: &[PreparedFileHash]) -> Result<(), String> {
-        self.store().and_then(|mut store| {
-            store
-                .record_prepared_files(&self.torrent_id, files)
-                .map(|_| ())
-                .map_err(|error| error.to_string())
-        })?;
-        self.refresh()?;
-        self.views
-            .record_diagnostic(
-                DiagnosticSeverity::Info,
-                category::STORAGE_IO,
-                "publication_prepared",
-                Some(&self.torrent_id),
-                "Payload files prepared for publication",
-                &[],
-            )
-            .map_err(|error| error.to_string())
-    }
-
-    fn publication_prepared(&self) -> Result<(), String> {
-        self.store().and_then(|mut store| {
-            store
-                .mark_publication_prepared(&self.torrent_id)
-                .map(|_| ())
-                .map_err(|error| error.to_string())
-        })?;
-        self.refresh()?;
-        self.views
-            .record_diagnostic(
-                DiagnosticSeverity::Info,
-                category::STORAGE_IO,
-                "path_publication_prepared",
-                Some(&self.torrent_id),
-                "Path publication intent became durable",
-                &[],
-            )
-            .map_err(|error| error.to_string())
-    }
-
-    fn published(&self) -> Result<(), String> {
-        self.store().and_then(|mut store| {
-            store
-                .mark_complete(&self.torrent_id)
-                .map(|_| ())
-                .map_err(|error| error.to_string())
-        })?;
-        self.refresh()?;
-        self.views
-            .record_diagnostic(
-                DiagnosticSeverity::Info,
-                category::LIFECYCLE_TORRENT,
-                "torrent_completed",
-                Some(&self.torrent_id),
-                "Torrent completed",
-                &[],
-            )
-            .map_err(|error| error.to_string())
-    }
 }
 
 #[derive(Debug)]
@@ -5265,9 +4887,6 @@ struct ViewActivitySink {
     eta_generation: Option<u64>,
     views: ViewHub,
     trace_checkpoint_stages: bool,
-    trace_publication_stages: bool,
-    publication_delay_stage: Option<PathPublicationStage>,
-    publication_delay: Duration,
     last_checkpoint_stage: Mutex<Option<DiskCheckpointStage>>,
 }
 
@@ -5277,14 +4896,6 @@ const fn checkpoint_stage_name(stage: DiskCheckpointStage) -> &'static str {
         DiskCheckpointStage::Syncing => "syncing",
         DiskCheckpointStage::Committing => "committing",
         DiskCheckpointStage::Error => "error",
-    }
-}
-
-const fn publication_stage_name(stage: PathPublicationStage) -> &'static str {
-    match stage {
-        PathPublicationStage::IntentDurable => "intent_durable",
-        PathPublicationStage::Renamed => "renamed",
-        PathPublicationStage::NamespaceDurable => "namespace_durable",
     }
 }
 
@@ -5350,15 +4961,6 @@ impl DownloadActivitySink for ViewActivitySink {
                 self.eta_generation,
                 *progress,
             );
-            return;
-        }
-        if let DownloadActivityEvent::PathPublicationStage(stage) = &event {
-            if self.publication_delay_stage == Some(*stage) && !self.publication_delay.is_zero() {
-                eprintln!("publication_gate={}", publication_stage_name(*stage));
-                std::thread::sleep(self.publication_delay);
-            } else if self.trace_publication_stages && self.publication_delay_stage.is_none() {
-                eprintln!("publication_stage={}", publication_stage_name(*stage));
-            }
             return;
         }
         if let DownloadActivityEvent::PeerConnections { captured_at, peers } = &event {
@@ -6040,9 +5642,6 @@ impl ViewActivitySink {
             DownloadActivityEvent::StorageState(_) => {
                 unreachable!("disk projections are handled before diagnostic events")
             }
-            DownloadActivityEvent::PathPublicationStage(_) => {
-                unreachable!("publication stages are handled before diagnostic events")
-            }
             DownloadActivityEvent::CheckerProgress(_)
             | DownloadActivityEvent::CheckerFinished { .. } => {
                 unreachable!("checker projections are handled before diagnostic events")
@@ -6088,6 +5687,7 @@ fn apply_runtime_storage_availability(
             && torrent.state != TorrentState::NeedsRepair
         {
             torrent.state = TorrentState::AwaitingStorage;
+            torrent.storage_state = StorageState::Unavailable;
             torrent.verified_piece_count = 0;
         }
     }
@@ -6174,7 +5774,7 @@ fn durable_view_state(
             let filesystem_content_base = filesystem_content_base(
                 storage_roots.get(&resume.storage_root),
                 &torrent.torrent_id,
-                resume.publication_name.as_deref(),
+                content.name(),
             )?;
             FileProgressModel::new_content_with_media(
                 content,
@@ -6228,18 +5828,11 @@ fn media_catalog_availability(
         MediaFileAvailability::StorageUnavailable
     } else if torrent.state == TorrentState::Downloading {
         MediaFileAvailability::Streamable
-    } else if resume.storage_state != StorageState::Published
-        || !matches!(
-            resume.payload_state,
-            crate::durable_state::PayloadState::LegacyOwned
-                | crate::durable_state::PayloadState::FinalOwned
-        )
-        || matches!(
-            resume.state,
-            TorrentState::NeedsRepair | TorrentState::Error
-        )
-    {
-        MediaFileAvailability::NotPublished
+    } else if matches!(
+        resume.state,
+        TorrentState::NeedsRepair | TorrentState::Error
+    ) {
+        MediaFileAvailability::Incomplete
     } else {
         MediaFileAvailability::Available
     }
@@ -6248,7 +5841,7 @@ fn media_catalog_availability(
 fn filesystem_content_base(
     storage_root: Option<&StorageRootLocation>,
     torrent_id: &str,
-    publication_name: Option<&str>,
+    content_name: &str,
 ) -> Result<Option<String>, ApplicationError> {
     let Some(StorageRootLocation::Path(root)) = storage_root else {
         return Ok(None);
@@ -6263,76 +5856,16 @@ fn filesystem_content_base(
             })?
             .join(root)
     };
-    let path = if let Some(publication_name) = publication_name {
-        let torrent_id = torrent_id
-            .parse::<TorrentId>()
-            .map_err(|_| ApplicationError::Configuration("invalid torrent identity".to_owned()))?;
-        torrent_storage_paths(&root, publication_name, torrent_id)
-            .map_err(|error| ApplicationError::Configuration(error.to_string()))?
-            .output
-    } else {
-        root.join(torrent_id)
-    };
+    let torrent_id = torrent_id
+        .parse::<TorrentId>()
+        .map_err(|_| ApplicationError::Configuration("invalid torrent identity".to_owned()))?;
+    let path = torrent_storage_paths(&root, content_name, torrent_id)
+        .map_err(|error| ApplicationError::Configuration(error.to_string()))?
+        .content;
     path.into_os_string()
         .into_string()
         .map(Some)
         .map_err(|_| ApplicationError::Configuration("storage path is not UTF-8".to_owned()))
-}
-
-fn resume_artifact_state(resume: &ResumeRecord) -> Result<ResumeArtifactState, ApplicationError> {
-    match resume.payload_state {
-        crate::durable_state::PayloadState::Absent => Ok(ResumeArtifactState::None),
-        crate::durable_state::PayloadState::LegacyOwned
-        | crate::durable_state::PayloadState::FinalOwned => Ok(ResumeArtifactState::Published),
-        crate::durable_state::PayloadState::WorkOwned => Ok(ResumeArtifactState::Staging),
-        crate::durable_state::PayloadState::PublicationPending => {
-            Ok(ResumeArtifactState::Publishing)
-        }
-    }
-}
-
-fn decide_resume_namespace_transition(
-    resume: &ResumeRecord,
-    action: NamespaceAction,
-) -> Result<NamespaceTransitionOutcome, ApplicationError> {
-    let state = resume_artifact_state(resume)?;
-    decide_namespace_transition(NamespaceTransitionInput {
-        state,
-        current_generation: state.initial_generation(),
-        expected_generation: state.initial_generation(),
-        action,
-    })
-    .map_err(|error| ApplicationError::Configuration(error.to_string()))
-}
-
-fn removal_namespace_state(removal: &RemovalRecord) -> NamespaceState {
-    match removal.storage_state {
-        StorageState::None => NamespaceState::None,
-        StorageState::Staging => NamespaceState::Staging,
-        StorageState::Prepared => NamespaceState::Publishing,
-        StorageState::Published => NamespaceState::Published,
-        StorageState::NeedsRepair => match removal.managed_artifacts {
-            ManagedArtifactState::None => NamespaceState::None,
-            ManagedArtifactState::Staging => NamespaceState::Staging,
-            ManagedArtifactState::Legacy | ManagedArtifactState::Published => {
-                NamespaceState::Published
-            }
-        },
-    }
-}
-
-fn decide_removal_namespace_transition(
-    removal: &RemovalRecord,
-    action: NamespaceAction,
-) -> Result<NamespaceTransitionOutcome, ApplicationError> {
-    let state = removal_namespace_state(removal);
-    decide_namespace_transition(NamespaceTransitionInput {
-        state,
-        current_generation: state.initial_generation(),
-        expected_generation: state.initial_generation(),
-        action,
-    })
-    .map_err(|error| ApplicationError::Configuration(error.to_string()))
 }
 
 #[derive(Debug)]
@@ -6499,9 +6032,9 @@ mod tests {
     use rstorrent_engine::peer::{PeerEndpoint, PeerObservation, PeerSource};
     use rstorrent_engine::{
         ByteMetric, ByteMetricSink, CheckerPhase, DEFAULT_PEER_ID, DownloadError, NetworkConfig,
-        NetworkPolicy, PathPublicationStage, PeerBudgetDirection, PlatformStorageFailure,
-        PlatformStorageFailureKind, PlatformStorageOperation, StorageFileKey, StorageFileLocator,
-        StorageFileReference, StorageFileRole, StorageObjectKind, StorageObservation, TorrentId,
+        NetworkPolicy, PeerBudgetDirection, PlatformStorageFailure, PlatformStorageFailureKind,
+        PlatformStorageOperation, StorageFileKey, StorageFileLocator, StorageFileReference,
+        StorageFileRole, StorageObjectKind, StorageObservation, TorrentId,
         platform_storage_channel, torrent_storage_paths,
     };
     use rstorrent_protocol::content::TorrentContentProjection;
@@ -6517,9 +6050,8 @@ mod tests {
     use rstorrent_protocol::metainfo::DURABLE_METAINFO_LIMITS;
     use rstorrent_protocol::peer_wire::{
         BlockRequest, EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX,
-        FrameDecoder, HANDSHAKE_LENGTH, HYBRID_V2_RESERVED_BIT, HYBRID_V2_RESERVED_INDEX,
-        PeerMessage, PeerProtocol, decode_handshake, decode_hybrid_response, encode_handshake,
-        encode_handshake_with_reserved, encode_message,
+        FrameDecoder, HANDSHAKE_LENGTH, PeerMessage, PeerProtocol, decode_handshake,
+        encode_handshake, encode_handshake_with_reserved, encode_message,
     };
     use rusqlite::Connection;
     use sha1::{Digest, Sha1};
@@ -6527,9 +6059,9 @@ mod tests {
     use tokio::net::{TcpListener, TcpStream, UdpSocket};
 
     use super::{
-        ApplicationConfig, ApplicationService, ManagedArtifactState, ManagedPayloadManifest,
-        PathRootStartupPolicy, PlatformRemovalPath, delete_path_artifacts, handle_task_outcome,
-        magnet_runtime_identity, runtime_identity,
+        ApplicationConfig, ApplicationService, DirectPayloadManifest, PathRootStartupPolicy,
+        PlatformRemovalPath, delete_path_artifacts, handle_task_outcome, magnet_runtime_identity,
+        runtime_identity,
     };
     use crate::{
         AddTorrentBytesRequest, ApplicationCall, ApplicationCallResult, CONTROL_VERSION,
@@ -6556,7 +6088,7 @@ mod tests {
         ))
     }
 
-    fn tree_cleanup_manifest(files: &[&[&str]]) -> ManagedPayloadManifest {
+    fn tree_cleanup_manifest(files: &[&[&str]]) -> DirectPayloadManifest {
         let files = files
             .iter()
             .map(|components| PlatformRemovalPath {
@@ -6577,15 +6109,15 @@ mod tests {
             .map(|components| PlatformRemovalPath { components })
             .collect::<Vec<_>>();
         directories.sort_by_key(|directory| std::cmp::Reverse(directory.components.len()));
-        ManagedPayloadManifest {
+        DirectPayloadManifest {
             tree: true,
             files,
             directories,
         }
     }
 
-    fn file_cleanup_manifest() -> ManagedPayloadManifest {
-        ManagedPayloadManifest {
+    fn file_cleanup_manifest() -> DirectPayloadManifest {
+        DirectPayloadManifest {
             tree: false,
             files: vec![PlatformRemovalPath {
                 components: Vec::new(),
@@ -7779,9 +7311,6 @@ mod tests {
             store
                 .record_pieces(&torrent_id, &[0, 1])
                 .expect("record complete seed pieces");
-            store
-                .mark_storage_prepared(&torrent_id, StorageState::Published)
-                .expect("record complete seed publication");
             store.mark_complete(&torrent_id).expect("complete seed row");
             fs::write(root.join("payload").join(name), payload)
                 .expect("write complete seed payload");
@@ -8853,7 +8382,7 @@ mod tests {
         .await
         .expect("metadata-only tracker deadline");
         assert_eq!(snapshot.torrents[0].state, TorrentState::Paused);
-        assert_eq!(snapshot.torrents[0].storage_state, StorageState::None);
+        assert_eq!(snapshot.torrents[0].storage_state, StorageState::Available);
 
         let stopped = tokio::time::timeout(Duration::from_secs(2), announce_receiver.recv())
             .await
@@ -8874,8 +8403,7 @@ mod tests {
             .expect("opaque owner");
         let paths =
             torrent_storage_paths(&root.join("payload"), "multi", owner).expect("storage paths");
-        assert!(!paths.output.exists());
-        assert!(!paths.staging.exists());
+        assert!(!paths.content.exists());
         assert!(!paths.part.exists());
 
         peer_task.await.expect("metadata peer task");
@@ -8958,8 +8486,7 @@ mod tests {
             torrent_id.parse().expect("opaque owner"),
         )
         .expect("storage paths");
-        assert!(!paths.output.exists());
-        assert!(!paths.staging.exists());
+        assert!(!paths.content.exists());
         assert!(!paths.part.exists());
         service.shutdown().await.expect("shutdown application");
         drop(service);
@@ -8974,8 +8501,7 @@ mod tests {
             .expect("restart imported torrent");
         assert_eq!(resume.raw_info.as_deref(), Some(raw_info.as_slice()));
         assert_eq!(resume.state, TorrentState::Paused);
-        assert!(!paths.output.exists());
-        assert!(!paths.staging.exists());
+        assert!(!paths.content.exists());
         assert!(!paths.part.exists());
         reopened.shutdown().await.expect("shutdown reopened");
         drop(reopened);
@@ -9132,7 +8658,7 @@ mod tests {
         let owner = torrent_id.parse::<TorrentId>().expect("pure-v2 owner");
         let paths = torrent_storage_paths(&root.join("payload"), "root", owner)
             .expect("pure-v2 storage paths");
-        assert_eq!(fs::read(paths.output.join("a")).unwrap(), b"x");
+        assert_eq!(fs::read(paths.content.join("a")).unwrap(), b"x");
         assert!(!paths.part.exists());
         service.shutdown().await.expect("shutdown application");
         drop(service);
@@ -9210,7 +8736,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn hybrid_application_selective_download_restarts_and_seeds_both_aliases() {
+    async fn hybrid_selective_wanted_completion_restarts_without_full_seeding() {
         let root = test_root("hybrid-application-download");
         let configuration = config(&root);
         persist_client_settings(
@@ -9329,8 +8855,8 @@ mod tests {
         let owner = torrent_id.parse::<TorrentId>().expect("hybrid owner");
         let paths = torrent_storage_paths(&root.join("payload"), "root", owner)
             .expect("hybrid storage paths");
-        assert_eq!(fs::read(paths.output.join("a")).unwrap(), [1]);
-        assert!(!paths.output.join("b").exists());
+        assert_eq!(fs::read(paths.content.join("a")).unwrap(), [1]);
+        assert!(!paths.content.join("b").exists());
         assert!(!paths.part.exists());
         let snapshot = service.store_mut().expect("store").snapshot().unwrap();
         assert_eq!(snapshot.torrents.len(), 1);
@@ -9359,106 +8885,14 @@ mod tests {
         assert!(resumed.info_hashes.is_hybrid());
         assert_eq!(resumed.metainfo_source, Some(source));
         assert!(!paths.part.exists());
-        wait_for_seed_registrations(&reopened, 2).await;
-
-        let incoming_address = reopened
-            .incoming_peer_snapshot()
-            .expect("incoming hybrid service")
-            .listen_address;
-        let mut upgraded = tokio::net::TcpStream::connect(incoming_address)
-            .await
-            .expect("connect hybrid upgrade seed");
-        let mut reserved = [0; 8];
-        reserved[HYBRID_V2_RESERVED_INDEX] = HYBRID_V2_RESERVED_BIT;
-        upgraded
-            .write_all(&encode_handshake_with_reserved(
-                v1_key,
-                *b"-RS-HYB-UPGRADE-0000",
-                reserved,
-            ))
-            .await
-            .expect("offer incoming hybrid upgrade");
-        let mut response = [0; HANDSHAKE_LENGTH];
-        upgraded
-            .read_exact(&mut response)
-            .await
-            .expect("read incoming hybrid upgrade");
-        let selection = decode_hybrid_response(&response, v1_swarm, v2_swarm, true)
-            .expect("incoming seed accepted v2 upgrade");
-        assert_eq!(selection.protocol, PeerProtocol::V2);
-        let mut upgraded_decoder = FrameDecoder::new();
-        upgraded_decoder.set_protocol(PeerProtocol::V2);
-        let mut upgraded_pending = std::collections::VecDeque::new();
+        tokio::task::yield_now().await;
         assert_eq!(
-            read_peer_message(&mut upgraded, &mut upgraded_decoder, &mut upgraded_pending,).await,
-            PeerMessage::Bitfield(vec![0x80])
+            reopened
+                .incoming_peer_snapshot()
+                .map_or(0, |snapshot| snapshot.registrations),
+            0,
+            "wanted completion must not advertise unavailable unwanted pieces"
         );
-        upgraded
-            .write_all(&encode_message(&PeerMessage::Interested).unwrap())
-            .await
-            .expect("interest upgraded hybrid seed");
-        assert_eq!(
-            read_peer_message(&mut upgraded, &mut upgraded_decoder, &mut upgraded_pending).await,
-            PeerMessage::Unchoke
-        );
-        upgraded
-            .write_all(
-                &encode_message(&PeerMessage::Request(BlockRequest {
-                    index: 0,
-                    begin: 0,
-                    length: 5,
-                }))
-                .unwrap(),
-            )
-            .await
-            .expect("request upgraded hybrid payload and padding");
-        assert_eq!(
-            read_peer_message(&mut upgraded, &mut upgraded_decoder, &mut upgraded_pending).await,
-            PeerMessage::Piece {
-                index: 0,
-                begin: 0,
-                block: vec![1, 0, 0, 0, 0],
-            }
-        );
-        drop(upgraded);
-
-        let (mut legacy, mut legacy_decoder, mut legacy_pending) =
-            connect_application_seed_with_expected_availability(
-                &reopened,
-                v1_key,
-                *b"-RS-HYB-LEGACY-00000",
-                false,
-                vec![0x80],
-            )
-            .await;
-        legacy
-            .write_all(&encode_message(&PeerMessage::Interested).unwrap())
-            .await
-            .expect("interest legacy hybrid seed");
-        assert_eq!(
-            read_peer_message(&mut legacy, &mut legacy_decoder, &mut legacy_pending).await,
-            PeerMessage::Unchoke
-        );
-        legacy
-            .write_all(
-                &encode_message(&PeerMessage::Request(BlockRequest {
-                    index: 0,
-                    begin: 0,
-                    length: 5,
-                }))
-                .unwrap(),
-            )
-            .await
-            .expect("request hybrid payload and padding");
-        assert_eq!(
-            read_peer_message(&mut legacy, &mut legacy_decoder, &mut legacy_pending).await,
-            PeerMessage::Piece {
-                index: 0,
-                begin: 0,
-                block: vec![1, 0, 0, 0, 0],
-            }
-        );
-        drop(legacy);
         reopened.shutdown().await.expect("shutdown reopened hybrid");
         drop(reopened);
         fs::remove_dir_all(root).expect("remove hybrid application root");
@@ -10052,7 +9486,7 @@ mod tests {
             .expect("active pure-v2 owner");
         let paths = torrent_storage_paths(&root.join("payload"), "root", owner)
             .expect("active pure-v2 storage paths");
-        assert_eq!(fs::read(paths.output.join("a")).unwrap(), payload);
+        assert_eq!(fs::read(paths.content.join("a")).unwrap(), payload);
         assert!(!paths.part.exists());
         let terminal = service
             .incoming_peer_snapshot()
@@ -10186,15 +9620,14 @@ mod tests {
         .await
         .expect("metadata-only add timed out");
         assert_eq!(snapshot.torrents[0].state, TorrentState::Paused);
-        assert_eq!(snapshot.torrents[0].storage_state, StorageState::None);
+        assert_eq!(snapshot.torrents[0].storage_state, StorageState::Available);
         let owner = snapshot.torrents[0]
             .torrent_id
             .parse::<TorrentId>()
             .expect("opaque owner");
         let paths = torrent_storage_paths(&root.join("payload"), "multi", owner)
             .expect("plan content paths");
-        assert!(!paths.output.exists());
-        assert!(!paths.staging.exists());
+        assert!(!paths.content.exists());
         assert!(!paths.part.exists());
         tokio::time::timeout(std::time::Duration::from_secs(1), peer_task)
             .await
@@ -11634,9 +11067,6 @@ mod tests {
             .record_pieces(&torrent_id, &[0, 1, 2])
             .expect("record verified media pieces");
         store
-            .mark_storage_prepared(&torrent_id, StorageState::Published)
-            .expect("record media publication");
-        store
             .mark_complete(&torrent_id)
             .expect("mark media complete");
         drop(store);
@@ -11923,12 +11353,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn active_media_capability_hands_off_to_exact_publication() {
+    async fn active_media_capability_hands_off_to_verified_direct_file() {
         let root = test_root("active-media-publication-handoff");
-        let mut configuration = config(&root);
-        configuration.publication_delay_stage_for_testing =
-            Some(PathPublicationStage::IntentDurable);
-        configuration.publication_delay_for_testing = Duration::from_millis(200);
+        let configuration = config(&root);
         let payload = (0..16_384)
             .map(|offset| ((offset * 23 + offset / 11) & 0xff) as u8)
             .collect::<Vec<_>>();
@@ -12097,7 +11524,7 @@ mod tests {
         {
             assert!(
                 tokio::time::Instant::now() < completion_deadline,
-                "handoff torrent did not publish"
+                "handoff torrent did not complete"
             );
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
@@ -12105,32 +11532,32 @@ mod tests {
             .reap_finished()
             .await
             .expect("reap handoff download");
-        let mut published = service
+        let mut verified = service
             .resolve_media_capability(&capability)
-            .expect("resolve published handoff capability");
-        assert!(published.is_active());
-        published
+            .expect("resolve verified handoff capability");
+        assert!(verified.is_active());
+        verified
             .wait_for_range(100, 64)
             .await
-            .expect("handoff to published reader");
-        assert!(!published.is_active());
+            .expect("handoff to verified reader");
+        assert!(!verified.is_active());
         assert_eq!(
-            published
+            verified
                 .read_range(100, 64)
                 .await
-                .expect("read published handoff range"),
+                .expect("read verified handoff range"),
             payload[100..164]
         );
-        published.touch_served(64);
+        verified.touch_served(64);
         let completed_resources = service.media_resource_snapshot();
         assert_eq!(completed_resources.body_high_water, 1);
         assert_eq!(completed_resources.active_streaming_leases, 0);
         assert_eq!(completed_resources.active_streaming_reads, 0);
-        assert_eq!(completed_resources.streaming_read_high_water, 1);
+        assert_eq!(completed_resources.streaming_read_high_water, 0);
         assert_eq!(completed_resources.demanded_bytes_read, 128);
         assert_eq!(completed_resources.demanded_bytes_served, 64);
-        assert_eq!(completed_resources.publication_handoffs, 2);
-        drop(published);
+        assert_eq!(completed_resources.verified_handoffs, 2);
+        drop(verified);
         assert_eq!(service.media_resource_snapshot().active_bodies, 0);
         tokio::time::timeout(Duration::from_secs(2), peer_task)
             .await
@@ -12142,7 +11569,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unowned_existing_publication_is_adopted_and_checked() {
+    async fn unowned_existing_direct_file_is_checked() {
         let root = test_root("existing-publication-adoption");
         let configuration = config(&root);
         let payload = (0..32_768)
@@ -12183,8 +11610,7 @@ mod tests {
             .expect("store")
             .load_resume(&torrent_id)
             .expect("load adopted resume");
-        assert_eq!(resume.storage_state, StorageState::Published);
-        assert_eq!(resume.managed_artifacts, ManagedArtifactState::Published);
+        assert_eq!(resume.storage_state, StorageState::Available);
         assert_eq!(resume.have.expect("adopted have").pieces(), &[true, true]);
         assert_eq!(resume.verification.requested(), 1);
         assert_eq!(resume.verification.completed(), 1);
@@ -12220,9 +11646,6 @@ mod tests {
         store
             .record_pieces(&torrent_id, &[0, 1])
             .expect("record old complete have");
-        store
-            .mark_storage_prepared(&torrent_id, StorageState::Published)
-            .expect("record published ownership");
         store.mark_complete(&torrent_id).expect("mark complete");
         drop(store);
         let output = root.join("payload/complete.bin");
@@ -12301,80 +11724,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn startup_finishes_durable_path_publication_intent_without_recheck() {
-        let root = test_root("pending-path-publication");
-        let configuration = config(&root);
-        let payload = (0..32_768)
-            .map(|offset| ((offset * 19 + offset / 5) & 0xff) as u8)
-            .collect::<Vec<_>>();
-        let raw_info = single_file_info("pending.bin", &payload, 16_384);
-        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
-        let torrent_id = super::encode_info_hash(info_hash);
-        let mut store = SessionStore::open(
-            configuration
-                .durable_profile_root()
-                .expect("durable profile root"),
-            &configuration.profile_id,
-            &configuration.storage_roots,
-        )
-        .expect("open setup store");
-        let add_response = store
-            .handle_durable(&add_request("add-pending-publication", &torrent_id))
-            .expect("add pending publication");
-        let torrent_id = match add_response.result {
-            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
-            _ => panic!("pending publication add result"),
-        };
-        store
-            .record_metadata(&torrent_id, &raw_info)
-            .expect("record pending metadata");
-        store
-            .record_pieces(&torrent_id, &[0, 1])
-            .expect("record durable pending pieces");
-        store
-            .mark_storage_prepared(&torrent_id, StorageState::Staging)
-            .expect("record staging ownership");
-        store
-            .mark_publication_prepared(&torrent_id)
-            .expect("record publication intent");
-        drop(store);
-
-        let payload_root = root.join("payload");
-        fs::create_dir_all(&payload_root).expect("create payload root");
-        let paths = torrent_storage_paths(
-            &payload_root,
-            "pending.bin",
-            torrent_id.parse().expect("opaque owner"),
-        )
-        .expect("plan pending publication paths");
-        fs::write(&paths.staging, &payload).expect("write durable staging payload");
-
-        let mut service = ApplicationService::open(configuration)
-            .await
-            .expect("open pending publication application");
-        wait_for_torrent_state(
-            &mut service,
-            &torrent_id,
-            TorrentState::Complete,
-            "pending-publication",
-        )
-        .await;
-        let resume = service
-            .store_mut()
-            .expect("store")
-            .load_resume(&torrent_id)
-            .expect("completed publication resume");
-        assert_eq!(resume.verification.requested(), 0);
-        assert_eq!(resume.verification.completed(), 0);
-        assert!(!paths.staging.exists());
-        assert_eq!(fs::read(&paths.output).expect("published payload"), payload);
-
-        service.shutdown().await.expect("shutdown");
-        drop(service);
-        fs::remove_dir_all(root).expect("remove test root");
-    }
-
-    #[tokio::test]
     async fn complete_startup_structural_mismatch_runs_only_its_full_checker() {
         let root = test_root("complete-fast-resume-mismatch");
         let configuration = config(&root);
@@ -12399,9 +11748,6 @@ mod tests {
         store
             .record_pieces(&torrent_id, &[0, 1])
             .expect("record old complete have");
-        store
-            .mark_storage_prepared(&torrent_id, StorageState::Published)
-            .expect("record published ownership");
         store.mark_complete(&torrent_id).expect("mark complete");
         drop(store);
         let output = root.join("payload/mismatch.bin");
@@ -12467,9 +11813,6 @@ mod tests {
         store
             .record_pieces(&torrent_id, &[0, 1])
             .expect("record old have");
-        store
-            .mark_storage_prepared(&torrent_id, StorageState::Published)
-            .expect("record published ownership");
         store.mark_complete(&torrent_id).expect("mark complete");
         store
             .handle_durable(&RequestEnvelope {
@@ -12543,9 +11886,6 @@ mod tests {
         store
             .record_pieces(&torrent_id, &(0..8).collect::<Vec<_>>())
             .expect("record old have");
-        store
-            .mark_storage_prepared(&torrent_id, StorageState::Published)
-            .expect("record published ownership");
         store.mark_complete(&torrent_id).expect("mark complete");
         store.begin_recheck(&torrent_id).expect("begin recheck");
         drop(store);
@@ -12720,9 +12060,6 @@ mod tests {
         store
             .record_pieces(&torrent_id, &[0, 1])
             .expect("record stale complete have");
-        store
-            .mark_storage_prepared(&torrent_id, StorageState::Published)
-            .expect("record published ownership");
         store.mark_complete(&torrent_id).expect("mark complete");
         store
             .handle_durable(&RequestEnvelope {
@@ -13756,9 +13093,6 @@ mod tests {
         store
             .record_metadata(&torrent_id, raw_info)
             .expect("record metadata");
-        store
-            .mark_storage_prepared(&torrent_id, StorageState::Published)
-            .expect("record published storage ownership");
         drop(store);
 
         let payload = root.join("payload");
@@ -13780,7 +13114,7 @@ mod tests {
             expected_revision: None,
             command: Command::RemoveTorrent {
                 torrent_id: torrent_id.clone(),
-                data: RemovalDataPolicy::DeleteManaged,
+                data: RemovalDataPolicy::DeleteData,
             },
         };
         service.dispatch(request.clone()).await.expect("remove");
@@ -13805,256 +13139,88 @@ mod tests {
     }
 
     #[test]
-    fn staging_cleanup_preserves_an_unowned_final_destination() {
-        let root = test_root("staging-cleanup-conflict");
+    fn direct_single_file_cleanup_removes_exact_file_and_part() {
+        let root = test_root("direct-single-cleanup");
         let payload = root.join("payload");
         let torrent_id = "t1-000102030405060708090a0b0c0d0e0f";
-        let output = payload.join("named");
-        let staging = payload.join(format!(".{torrent_id}.rstorrent-staging"));
-        let part = payload.join(format!(".{torrent_id}.rstorrent-parts"));
-        fs::create_dir_all(&output).expect("create conflicting output");
-        fs::write(output.join("preserve"), b"unowned").expect("write conflicting output");
-        fs::create_dir_all(&staging).expect("create owned staging");
-        fs::write(staging.join("partial"), b"owned").expect("write staging");
-        fs::write(&part, b"owned").expect("write part");
+        let paths = torrent_storage_paths(
+            &payload,
+            "named.bin",
+            torrent_id.parse().expect("torrent ID"),
+        )
+        .expect("direct paths");
+        fs::create_dir_all(paths.content.parent().expect("content parent"))
+            .expect("create content parent");
+        fs::write(&paths.content, b"downloaded").expect("write direct content");
+        fs::create_dir_all(paths.part.parent().expect("part parent")).expect("create part parent");
+        fs::write(&paths.part, b"boundary").expect("write part");
+
+        delete_path_artifacts(&payload, torrent_id, "named.bin", &file_cleanup_manifest())
+            .expect("delete exact direct artifacts");
+
+        assert!(!paths.content.exists());
+        assert!(!paths.part.exists());
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn direct_tree_cleanup_preserves_unrelated_descendants() {
+        let root = test_root("direct-tree-cleanup");
+        let payload = root.join("payload");
+        let torrent_id = "t1-000102030405060708090a0b0c0d0e0f";
+        let content = payload.join("named");
+        fs::create_dir_all(content.join("season")).expect("create direct tree");
+        fs::write(content.join("season/episode.bin"), b"downloaded").expect("write expected file");
+        fs::create_dir_all(content.join("unrelated")).expect("create unrelated directory");
+        fs::write(content.join("unrelated/sentinel"), b"preserve").expect("write sentinel");
 
         delete_path_artifacts(
             &payload,
             torrent_id,
-            Some("named"),
-            &tree_cleanup_manifest(&[&["partial"]]),
-            StorageState::Staging,
-            ManagedArtifactState::Staging,
+            "named",
+            &tree_cleanup_manifest(&[&["season", "episode.bin"]]),
         )
-        .expect("clean staging-owned artifacts");
+        .expect("delete exact direct tree files");
 
+        assert!(!content.join("season/episode.bin").exists());
         assert_eq!(
-            fs::read(output.join("preserve")).expect("preserve conflicting output"),
-            b"unowned"
+            fs::read(content.join("unrelated/sentinel")).unwrap(),
+            b"preserve"
         );
-        assert!(!staging.exists());
-        assert!(!part.exists());
-        fs::remove_dir_all(root).expect("remove test root");
-    }
-
-    #[test]
-    fn publishing_cleanup_deletes_whichever_owned_side_survived() {
-        for final_visible in [false, true] {
-            let root = test_root(if final_visible {
-                "publishing-cleanup-final"
-            } else {
-                "publishing-cleanup-staging"
-            });
-            let payload = root.join("payload");
-            let torrent_id = "t1-000102030405060708090a0b0c0d0e0f";
-            let owned = if final_visible {
-                payload.join("named")
-            } else {
-                payload.join(format!(".{torrent_id}.rstorrent-staging"))
-            };
-            let part = payload.join(format!(".{torrent_id}.rstorrent-parts"));
-            fs::create_dir_all(&owned).expect("create owned publication side");
-            fs::write(owned.join("payload"), b"owned").expect("write owned payload");
-            fs::write(&part, b"owned").expect("write owned part");
-
-            delete_path_artifacts(
-                &payload,
-                torrent_id,
-                Some("named"),
-                &tree_cleanup_manifest(&[&["payload"]]),
-                StorageState::Prepared,
-                ManagedArtifactState::Staging,
-            )
-            .expect("clean publishing-owned artifacts");
-
-            assert!(!owned.exists());
-            assert!(!part.exists());
-            fs::remove_dir_all(root).expect("remove test root");
-        }
-    }
-
-    #[test]
-    fn publishing_cleanup_fails_closed_when_both_sides_exist() {
-        let root = test_root("publishing-cleanup-ambiguous");
-        let payload = root.join("payload");
-        let torrent_id = "t1-000102030405060708090a0b0c0d0e0f";
-        let output = payload.join("named");
-        let staging = payload.join(format!(".{torrent_id}.rstorrent-staging"));
-        fs::create_dir_all(&output).expect("create final");
-        fs::create_dir_all(&staging).expect("create staging");
-
-        let error = delete_path_artifacts(
-            &payload,
-            torrent_id,
-            Some("named"),
-            &tree_cleanup_manifest(&[&["payload"]]),
-            StorageState::Prepared,
-            ManagedArtifactState::Staging,
-        )
-        .expect_err("ambiguous artifacts must be preserved");
-
-        assert!(error.to_string().contains("both staging and final"));
-        assert!(output.exists());
-        assert!(staging.exists());
-        fs::remove_dir_all(root).expect("remove test root");
-    }
-
-    #[test]
-    fn published_single_file_cleanup_uses_the_recorded_file_shape() {
-        let root = test_root("published-single-cleanup");
-        let payload = root.join("payload");
-        let torrent_id = "t1-000102030405060708090a0b0c0d0e0f";
-        let output = payload.join("named.bin");
-        fs::create_dir_all(&payload).expect("create payload root");
-        fs::write(&output, b"owned").expect("write owned final file");
-
-        delete_path_artifacts(
-            &payload,
-            torrent_id,
-            Some("named.bin"),
-            &file_cleanup_manifest(),
-            StorageState::Published,
-            ManagedArtifactState::Published,
-        )
-        .expect("clean published single file");
-
-        assert!(!output.exists());
         fs::remove_dir_all(root).expect("remove test root");
     }
 
     #[cfg(unix)]
     #[test]
-    fn managed_cleanup_preserves_a_replacement_symlink() {
+    fn direct_cleanup_preflights_all_expected_files_before_mutation() {
         use std::os::unix::fs::symlink;
 
-        let root = test_root("cleanup-symlink");
+        let root = test_root("direct-cleanup-preflight");
         let payload = root.join("payload");
-        let outside = root.join("outside");
-        let torrent_id = "t1-000102030405060708090a0b0c0d0e0f";
-        let staging = payload.join(format!(".{torrent_id}.rstorrent-staging"));
-        fs::create_dir_all(&payload).expect("create payload root");
-        fs::create_dir_all(&outside).expect("create outside directory");
-        fs::write(outside.join("preserve"), b"foreign").expect("write outside file");
-        symlink(&outside, &staging).expect("replace staging with symlink");
-
-        let error = delete_path_artifacts(
-            &payload,
-            torrent_id,
-            Some("named"),
-            &tree_cleanup_manifest(&[&["payload"]]),
-            StorageState::Staging,
-            ManagedArtifactState::Staging,
-        )
-        .expect_err("replacement symlink must fail closed");
-
-        assert!(error.to_string().contains("unexpected type"));
-        assert!(
-            fs::symlink_metadata(&staging)
-                .expect("preserved link")
-                .file_type()
-                .is_symlink()
-        );
-        assert_eq!(
-            fs::read(outside.join("preserve")).expect("outside file"),
-            b"foreign"
-        );
-        fs::remove_file(staging).expect("remove fixture symlink");
-        fs::remove_dir_all(root).expect("remove test root");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn managed_cleanup_preflights_every_expected_leaf_before_mutation() {
-        use std::os::unix::fs::symlink;
-
-        let root = test_root("cleanup-expected-symlink");
-        let payload = root.join("payload");
+        let content = payload.join("named");
         let outside = root.join("outside.bin");
         let torrent_id = "t1-000102030405060708090a0b0c0d0e0f";
-        let staging = payload.join(format!(".{torrent_id}.rstorrent-staging"));
-        fs::create_dir_all(&staging).expect("create staging tree");
-        fs::write(staging.join("first.bin"), b"owned first").expect("write first payload");
-        fs::write(&outside, b"foreign").expect("write outside payload");
-        symlink(&outside, staging.join("linked.bin")).expect("create expected-path symlink");
+        fs::create_dir_all(&content).expect("create direct tree");
+        fs::write(content.join("first.bin"), b"downloaded").expect("write first file");
+        fs::write(&outside, b"foreign").expect("write outside file");
+        symlink(&outside, content.join("linked.bin")).expect("create hostile expected link");
 
         let error = delete_path_artifacts(
             &payload,
             torrent_id,
-            Some("named"),
+            "named",
             &tree_cleanup_manifest(&[&["first.bin"], &["linked.bin"]]),
-            StorageState::Staging,
-            ManagedArtifactState::Staging,
         )
-        .expect_err("expected-path symlink must fail before deletion");
+        .expect_err("expected-path link must fail closed");
 
         assert!(error.to_string().contains("unexpected type"));
-        assert_eq!(
-            fs::read(staging.join("first.bin")).expect("first expected file remains"),
-            b"owned first"
-        );
-        assert_eq!(
-            fs::read(&outside).expect("outside file remains"),
-            b"foreign"
-        );
-        assert!(
-            fs::symlink_metadata(staging.join("linked.bin"))
-                .expect("expected symlink remains")
-                .file_type()
-                .is_symlink()
-        );
-        fs::remove_dir_all(root).expect("remove test root");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn legacy_cleanup_preflights_both_namespaces_and_part_before_mutation() {
-        use std::os::unix::fs::symlink;
-
-        let root = test_root("cleanup-legacy-preflight");
-        let payload = root.join("payload");
-        let outside = root.join("outside.bin");
-        let torrent_id = "t1-000102030405060708090a0b0c0d0e0f";
-        let output = payload.join(torrent_id);
-        let staging = payload.join(format!(".{torrent_id}.rstorrent-staging"));
-        let part = payload.join(format!(".{torrent_id}.rstorrent-parts"));
-        fs::create_dir_all(&output).expect("create legacy final tree");
-        fs::create_dir_all(&staging).expect("create legacy staging tree");
-        fs::write(output.join("payload.bin"), b"owned final").expect("write final payload");
-        fs::write(staging.join("payload.bin"), b"owned staging").expect("write staging payload");
-        fs::write(&outside, b"foreign").expect("write foreign payload");
-        symlink(&outside, &part).expect("replace part with symlink");
-
-        let error = delete_path_artifacts(
-            &payload,
-            torrent_id,
-            Some("ignored"),
-            &tree_cleanup_manifest(&[&["payload.bin"]]),
-            StorageState::Published,
-            ManagedArtifactState::Legacy,
-        )
-        .expect_err("all legacy targets must be preflighted before deletion");
-
-        assert!(error.to_string().contains("part-file"));
-        assert_eq!(
-            fs::read(output.join("payload.bin")).unwrap(),
-            b"owned final"
-        );
-        assert_eq!(
-            fs::read(staging.join("payload.bin")).unwrap(),
-            b"owned staging"
-        );
-        assert_eq!(fs::read(&outside).unwrap(), b"foreign");
-        assert!(
-            fs::symlink_metadata(&part)
-                .expect("part symlink remains")
-                .file_type()
-                .is_symlink()
-        );
+        assert_eq!(fs::read(content.join("first.bin")).unwrap(), b"downloaded");
+        assert_eq!(fs::read(outside).unwrap(), b"foreign");
         fs::remove_dir_all(root).expect("remove test root");
     }
 
     #[tokio::test]
-    async fn delete_managed_removal_does_not_adopt_legacy_hash_named_artifacts() {
+    async fn delete_data_removal_does_not_adopt_legacy_hash_named_artifacts() {
         let root = test_root("remove-legacy-path");
         let config = config(&root);
         let raw_info = b"d5:filesld6:lengthi4e4:pathl8:file.bineee4:name5:named12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
@@ -14089,7 +13255,7 @@ mod tests {
                 expected_revision: None,
                 command: Command::RemoveTorrent {
                     torrent_id,
-                    data: RemovalDataPolicy::DeleteManaged,
+                    data: RemovalDataPolicy::DeleteData,
                 },
             })
             .await
@@ -14182,9 +13348,6 @@ mod tests {
         store
             .record_metadata(&torrent_id, raw_info)
             .expect("record metadata");
-        store
-            .mark_storage_prepared(&torrent_id, StorageState::Staging)
-            .expect("record staging ownership");
         drop(store);
         let part = root
             .join("payload")
@@ -14201,7 +13364,7 @@ mod tests {
                 expected_revision: None,
                 command: Command::RemoveTorrent {
                     torrent_id: torrent_id.clone(),
-                    data: RemovalDataPolicy::DeleteManaged,
+                    data: RemovalDataPolicy::DeleteData,
                 },
             })
             .await
@@ -14225,7 +13388,7 @@ mod tests {
                 expected_revision: None,
                 command: Command::RemoveTorrent {
                     torrent_id: torrent_id.clone(),
-                    data: RemovalDataPolicy::DeleteManaged,
+                    data: RemovalDataPolicy::DeleteData,
                 },
             })
             .await
@@ -14265,16 +13428,13 @@ mod tests {
             .record_metadata(&torrent_id, raw_info)
             .expect("record metadata");
         store
-            .mark_storage_prepared(&torrent_id, StorageState::Published)
-            .expect("record published storage ownership");
-        store
             .handle_durable(&RequestEnvelope {
                 version: CONTROL_VERSION,
                 request_id: "remove-before-restart".to_owned(),
                 expected_revision: None,
                 command: Command::RemoveTorrent {
                     torrent_id: torrent_id.clone(),
-                    data: RemovalDataPolicy::DeleteManaged,
+                    data: RemovalDataPolicy::DeleteData,
                 },
             })
             .expect("persist pending removal");
@@ -14332,7 +13492,7 @@ mod tests {
                 expected_revision: None,
                 command: Command::RemoveTorrent {
                     torrent_id: torrent_id.clone(),
-                    data: RemovalDataPolicy::DeleteManaged,
+                    data: RemovalDataPolicy::DeleteData,
                 },
             })
             .await
@@ -14386,7 +13546,7 @@ mod tests {
                 expected_revision: None,
                 command: Command::RemoveTorrent {
                     torrent_id: torrent_id.clone(),
-                    data: RemovalDataPolicy::DeleteManaged,
+                    data: RemovalDataPolicy::DeleteData,
                 },
             })
             .await
@@ -14444,7 +13604,7 @@ mod tests {
                 expected_revision: None,
                 command: Command::RemoveTorrent {
                     torrent_id: metadata_pending,
-                    data: RemovalDataPolicy::DeleteManaged,
+                    data: RemovalDataPolicy::DeleteData,
                 },
             })
             .await
@@ -14907,75 +14067,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn legacy_metadata_without_publication_name_enters_repair() {
-        let root = test_root("legacy-publication-name");
-        let configuration = config(&root);
-        let raw_info = b"d5:filesld6:lengthi4e4:pathl8:file.bineee4:name5:named12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
-        let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
-        let torrent_id = super::encode_info_hash(info_hash);
-        let configured_root = configuration.storage_roots[0].clone();
-        let mut store = SessionStore::open(
-            configuration
-                .durable_profile_root()
-                .expect("durable profile root"),
-            &configuration.profile_id,
-            &[configured_root],
-        )
-        .expect("open store");
-        let torrent_id = add_store_torrent(&mut store, "add", &torrent_id);
-        store
-            .record_metadata(&torrent_id, raw_info)
-            .expect("record metadata");
-        let database = store
-            .database_path()
-            .expect("durable database path")
-            .to_owned();
-        drop(store);
-
-        let connection = Connection::open(database).expect("open raw database");
-        let torrent_owner = owner_bytes(&torrent_id);
-        connection
-            .execute(
-                "UPDATE torrents SET publication_name = NULL WHERE torrent_id = ?1",
-                [torrent_owner.as_slice()],
-            )
-            .expect("clear publication name");
-        drop(connection);
-
-        let mut service = ApplicationService::open(configuration)
-            .await
-            .expect("open service with legacy metadata");
-        let response = service
-            .dispatch(RequestEnvelope {
-                version: CONTROL_VERSION,
-                request_id: "snapshot".to_owned(),
-                expected_revision: None,
-                command: Command::Snapshot,
-            })
-            .await
-            .expect("snapshot");
-        let ResponseOutcome::Success { snapshot } = response.outcome else {
-            panic!("snapshot should succeed");
-        };
-        assert_eq!(snapshot.torrents[0].state, TorrentState::NeedsRepair);
-        assert!(
-            snapshot.torrents[0]
-                .error
-                .as_deref()
-                .is_some_and(|error| error.contains("publication name"))
-        );
-        assert_eq!(
-            fs::read_dir(root.join("payload"))
-                .expect("read empty payload root")
-                .count(),
-            0
-        );
-        service.shutdown().await.expect("shutdown");
-        drop(service);
-        fs::remove_dir_all(root).expect("remove test root");
-    }
-
-    #[tokio::test]
     async fn malformed_have_state_is_cleared_conservatively() {
         let root = test_root("have-corruption");
         let configuration = config(&root);
@@ -15095,8 +14186,7 @@ mod tests {
             .expect("store")
             .load_resume(&torrent_id)
             .expect("load adopted partial tree");
-        assert_eq!(resume.storage_state, StorageState::Published);
-        assert_eq!(resume.managed_artifacts, ManagedArtifactState::Published);
+        assert_eq!(resume.storage_state, StorageState::Available);
         assert_eq!(resume.have.expect("adopted have").pieces(), &[true]);
         assert_eq!(resume.verification.requested(), 1);
         assert_eq!(resume.verification.completed(), 1);
@@ -15112,7 +14202,7 @@ mod tests {
                 expected_revision: None,
                 command: Command::RemoveTorrent {
                     torrent_id,
-                    data: RemovalDataPolicy::DeleteManaged,
+                    data: RemovalDataPolicy::DeleteData,
                 },
             })
             .await
@@ -15191,13 +14281,13 @@ mod tests {
             service.storage_file_pool.clone(),
             StorageFileKey {
                 storage_id: "torrent".to_owned(),
-                namespace_generation: 1,
+                storage_generation: 1,
                 role: StorageFileRole::Payload(0),
             },
             StorageFileLocator::Platform(rstorrent_engine::PlatformStorageTarget {
                 root_id: "downloads".to_owned(),
                 storage_id: "torrent".to_owned(),
-                namespace_generation: 1,
+                storage_generation: 1,
                 role: StorageFileRole::Payload(0),
                 path: vec!["payload.bin".to_owned()],
             }),
@@ -15241,9 +14331,6 @@ mod tests {
             store
                 .record_pieces(&torrent_id, &[0, 1])
                 .expect("record verified pieces");
-            store
-                .mark_storage_prepared(&torrent_id, StorageState::Published)
-                .expect("record publication");
             store.mark_complete(&torrent_id).expect("record completion");
             torrent_id
         };
@@ -15271,19 +14358,14 @@ mod tests {
         );
         provider.await.expect("provider task");
         let plan = service
-            .platform_published_file_plan(&torrent_id, 0)
+            .platform_file_plan(&torrent_id, 0)
             .await
             .expect("published file plan");
         assert_eq!(plan.torrent_id, torrent_id);
         assert_eq!(plan.storage_root, "downloads");
         assert_eq!(plan.components, ["seed.bin"]);
         assert_eq!(plan.length, payload.len() as u64);
-        assert!(
-            service
-                .platform_published_file_plan(&torrent_id, 1)
-                .await
-                .is_err()
-        );
+        assert!(service.platform_file_plan(&torrent_id, 1).await.is_err());
 
         service.shutdown().await.expect("shutdown");
         drop(service);
@@ -15332,9 +14414,6 @@ mod tests {
             store
                 .record_pieces(&torrent_id, &[0, 1])
                 .expect("record verified pieces");
-            store
-                .mark_storage_prepared(&torrent_id, StorageState::Published)
-                .expect("record published storage");
             store.mark_complete(&torrent_id).expect("complete seed");
             torrent_id
         };

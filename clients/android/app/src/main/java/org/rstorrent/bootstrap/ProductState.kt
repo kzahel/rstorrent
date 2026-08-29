@@ -638,8 +638,8 @@ internal object ProductStateReducer {
                 is TorrentFieldUpdate.Checking -> next.checking = field.value
                 is TorrentFieldUpdate.Archived -> next.archived = field.value
                 is TorrentFieldUpdate.RemovalState -> next.removalState = field.value
-                is TorrentFieldUpdate.DeleteManagedDataSupported ->
-                    next.deleteManagedDataSupported = field.value
+                is TorrentFieldUpdate.DeleteDataSupported ->
+                    next.deleteDataSupported = field.value
                 is TorrentFieldUpdate.ForceRecheckAvailable -> next.forceRecheckAvailable = field.value
                 is TorrentFieldUpdate.Error -> next.error = field.value
             }

@@ -16,8 +16,7 @@ use rstorrent_protocol::storage_layout::{
     ContentLayout, FileSelection, LayoutError, LayoutSegment, SegmentTarget, TorrentLayout,
 };
 use sha1::{Digest, Sha1};
-use tokio::fs::{File, OpenOptions};
-use tokio::io::AsyncWriteExt;
+use tokio::fs::File;
 
 use crate::checkpoint::DurabilityTarget;
 use crate::direct_content_layout::ContentShape;
@@ -59,14 +58,6 @@ pub(crate) struct StorageDiscoverySummary {
 pub struct SelectiveWriteStats {
     pub wanted_bytes: usize,
     pub skipped_bytes: usize,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct MaterializationReport {
-    pub file_index: usize,
-    pub bytes: u64,
-    pub slots_before: usize,
-    pub slots_after: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -252,7 +243,6 @@ pub struct DescriptorStorage {
     pub wanted_files: Vec<DescriptorFile>,
     pub part_file: std::fs::File,
     pub reopened_part_file: std::fs::File,
-    pub materialization_files: Vec<DescriptorFile>,
 }
 
 #[cfg_attr(not(feature = "descriptor-storage-diagnostics"), allow(dead_code))]
@@ -270,7 +260,6 @@ pub struct DescriptorStoragePlanFile {
     pub path: Vec<String>,
     pub length: u64,
     pub role: DescriptorFileRole,
-    pub materialize: bool,
 }
 
 #[cfg_attr(not(feature = "descriptor-storage-diagnostics"), allow(dead_code))]
@@ -278,6 +267,7 @@ pub struct DescriptorStoragePlanFile {
 pub struct DescriptorStoragePlan {
     pub info_hash: [u8; 20],
     pub name: String,
+    pub content_shape: ContentShape,
     pub files: Vec<DescriptorStoragePlanFile>,
 }
 
@@ -330,7 +320,6 @@ pub enum SelectiveStorageError {
     InvalidOutputPath,
     InvalidContentName,
     ExistingPartFile(PathBuf),
-    ExistingMaterialization(PathBuf),
     UnexpectedFileType {
         path: PathBuf,
     },
@@ -366,13 +355,6 @@ pub enum SelectiveStorageError {
         piece_index: usize,
     },
     InvalidStorageOperation(&'static str),
-    AlreadyWanted {
-        file_index: usize,
-    },
-    IncompleteMaterialization {
-        file_index: usize,
-        piece_index: usize,
-    },
     Io {
         operation: &'static str,
         source: io::Error,
@@ -389,11 +371,6 @@ impl fmt::Display for SelectiveStorageError {
             Self::ExistingPartFile(path) => {
                 write!(formatter, "part file already exists: {}", path.display())
             }
-            Self::ExistingMaterialization(path) => write!(
-                formatter,
-                "materialization path already exists: {}",
-                path.display()
-            ),
             Self::UnexpectedFileType { path } => {
                 write!(
                     formatter,
@@ -446,16 +423,6 @@ impl fmt::Display for SelectiveStorageError {
             Self::InvalidStorageOperation(operation) => {
                 write!(formatter, "{operation} is invalid for this storage backing")
             }
-            Self::AlreadyWanted { file_index } => {
-                write!(formatter, "file {file_index} is already wanted")
-            }
-            Self::IncompleteMaterialization {
-                file_index,
-                piece_index,
-            } => write!(
-                formatter,
-                "file {file_index} cannot be materialized without verified piece {piece_index}"
-            ),
             Self::Io { operation, source } => write!(formatter, "{operation}: {source}"),
         }
     }
@@ -583,7 +550,6 @@ enum StorageBacking {
     },
     Descriptors {
         reopened_part_file: Option<std::fs::File>,
-        materialization_files: Vec<Option<std::fs::File>>,
     },
 }
 
@@ -1735,17 +1701,11 @@ impl SelectiveStorage {
         metainfo: &Metainfo,
         layout: TorrentLayout,
         selection: FileSelection,
-        materialize_files: &[usize],
         descriptors: DescriptorStorage,
     ) -> Result<Self, SelectiveStorageError> {
         let layout = ContentLayout::from(layout);
         let mut wanted_files =
             collect_descriptors(layout.files().len(), "wanted", descriptors.wanted_files)?;
-        let mut materialization_files = collect_descriptors(
-            layout.files().len(),
-            "materialization",
-            descriptors.materialization_files,
-        )?;
 
         let mut files = Vec::with_capacity(layout.files().len());
         for (file_index, metainfo_file) in layout.files().iter().enumerate() {
@@ -1785,58 +1745,6 @@ impl SelectiveStorage {
             }
         }
 
-        let mut materialization_expected = vec![false; layout.files().len()];
-        for &file_index in materialize_files {
-            let expected = materialization_expected.get_mut(file_index).ok_or(
-                SelectiveStorageError::InvalidDescriptorManifest {
-                    role: "materialization",
-                    file_index,
-                    reason: "file index is out of range",
-                },
-            )?;
-            if *expected {
-                return Err(SelectiveStorageError::InvalidDescriptorManifest {
-                    role: "materialization",
-                    file_index,
-                    reason: "file index is duplicated",
-                });
-            }
-            *expected = true;
-        }
-        for (file_index, metainfo_file) in layout.files().iter().enumerate() {
-            let provided = materialization_files[file_index].take();
-            match (materialization_expected[file_index], provided) {
-                (true, Some(file)) => {
-                    materialization_files[file_index] =
-                        Some(validate_empty_descriptor(file, "materialization", file_index).await?);
-                }
-                (true, None) => {
-                    return Err(SelectiveStorageError::InvalidDescriptorManifest {
-                        role: "materialization",
-                        file_index,
-                        reason: "required descriptor is missing",
-                    });
-                }
-                (false, Some(_)) => {
-                    return Err(SelectiveStorageError::InvalidDescriptorManifest {
-                        role: "materialization",
-                        file_index,
-                        reason: "descriptor is not expected",
-                    });
-                }
-                (false, None) => {}
-            }
-            if materialization_expected[file_index]
-                && (metainfo_file.padding || selection.is_wanted(file_index))
-            {
-                return Err(SelectiveStorageError::InvalidDescriptorManifest {
-                    role: "materialization",
-                    file_index,
-                    reason: "file is padding or already wanted",
-                });
-            }
-        }
-
         let identity = artifact_identity.part_file(&layout);
         let part_file = PartFile::create_preopened(descriptors.part_file, identity).await?;
         let validation_reopen = descriptors
@@ -1854,7 +1762,6 @@ impl SelectiveStorage {
             content: None,
             backing: StorageBacking::Descriptors {
                 reopened_part_file: Some(descriptors.reopened_part_file),
-                materialization_files,
             },
             identity,
             content_shape: ContentShape::from_metainfo(metainfo),
@@ -1887,14 +1794,6 @@ impl SelectiveStorage {
         }
         let mut wanted_files =
             collect_descriptors(layout.files().len(), "wanted", descriptors.wanted_files)?;
-        if !descriptors.materialization_files.is_empty() {
-            return Err(SelectiveStorageError::InvalidDescriptorManifest {
-                role: "materialization",
-                file_index: descriptors.materialization_files[0].file_index,
-                reason: "materialization is not supported while resuming",
-            });
-        }
-
         let mut files = Vec::with_capacity(layout.files().len());
         for (file_index, metainfo_file) in layout.files().iter().enumerate() {
             let expected = !metainfo_file.padding && selection.is_wanted(file_index);
@@ -1944,7 +1843,6 @@ impl SelectiveStorage {
             content: None,
             backing: StorageBacking::Descriptors {
                 reopened_part_file: Some(descriptors.reopened_part_file),
-                materialization_files: (0..layout.files().len()).map(|_| None).collect(),
             },
             identity,
             content_shape: ContentShape::from_metainfo(metainfo),
@@ -3416,226 +3314,6 @@ impl SelectiveStorage {
         })
     }
 
-    pub async fn materialize_file(
-        &mut self,
-        file_index: usize,
-    ) -> Result<MaterializationReport, SelectiveStorageError> {
-        let metainfo_file = self
-            .layout
-            .files()
-            .get(file_index)
-            .ok_or(LayoutError::InvalidFileIndex {
-                index: file_index,
-                file_count: self.layout.files().len(),
-            })?
-            .clone();
-        if self.selection.is_wanted(file_index) {
-            return Err(SelectiveStorageError::AlreadyWanted { file_index });
-        }
-        for piece_index in self
-            .layout
-            .file_piece_range(file_index)?
-            .into_iter()
-            .flatten()
-        {
-            let piece_index_usize = usize::try_from(piece_index)
-                .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?;
-            if !self.verified[piece_index_usize] {
-                return Err(SelectiveStorageError::IncompleteMaterialization {
-                    file_index,
-                    piece_index: piece_index_usize,
-                });
-            }
-        }
-
-        if let StorageBacking::Platform { spec, .. } = &self.backing {
-            self.files[file_index] = Some(RetainedFile::dynamic(
-                platform_storage_reference(
-                    spec,
-                    StorageFileRole::Payload(file_index),
-                    metainfo_file.path.clone(),
-                ),
-                file_index,
-                metainfo_file.length,
-            ));
-            self.restore_promoted_file(file_index, false).await?;
-            let slots_before = self.part_slots();
-            self.selection
-                .set_wanted_content(&self.layout, file_index, true)?;
-            self.release_unused_part_slots().await?;
-            return Ok(MaterializationReport {
-                file_index,
-                bytes: metainfo_file.length,
-                slots_before,
-                slots_after: self.part_slots(),
-            });
-        }
-
-        let (mut output, direct_destination) = match &mut self.backing {
-            StorageBacking::Paths { content_root, .. } => {
-                let destination = payload_path(
-                    self.content_shape,
-                    content_root,
-                    &metainfo_file.path,
-                    file_index,
-                    self.layout.files().len(),
-                )?;
-                if path_exists(&destination, "inspect materialized output").await? {
-                    return Err(SelectiveStorageError::ExistingMaterialization(destination));
-                }
-                let parent = destination
-                    .parent()
-                    .ok_or(SelectiveStorageError::InvalidOutputPath)?;
-                tokio::fs::create_dir_all(parent).await.map_err(|source| {
-                    SelectiveStorageError::Io {
-                        operation: "create materialized file parent",
-                        source,
-                    }
-                })?;
-                let output = OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .open(&destination)
-                    .await
-                    .map_err(|source| SelectiveStorageError::Io {
-                        operation: "create promoted direct content file",
-                        source,
-                    })?;
-                (output, Some(destination))
-            }
-            StorageBacking::Descriptors {
-                materialization_files,
-                ..
-            } => {
-                let file = materialization_files
-                    .get_mut(file_index)
-                    .and_then(Option::take)
-                    .ok_or(SelectiveStorageError::InvalidDescriptorManifest {
-                        role: "materialization",
-                        file_index,
-                        reason: "descriptor was already consumed",
-                    })?;
-                (File::from_std(file), None)
-            }
-            StorageBacking::Platform { .. } => unreachable!("platform handled above"),
-        };
-        let write_result = async {
-            output
-                .set_len(metainfo_file.length)
-                .await
-                .map_err(|source| SelectiveStorageError::Io {
-                    operation: "size materialization content file",
-                    source,
-                })?;
-
-            let mut buffer = [0_u8; VERIFICATION_CHUNK_LENGTH];
-            let mut file_offset = 0_u64;
-            while file_offset < metainfo_file.length {
-                let torrent_offset = metainfo_file.offset.checked_add(file_offset).ok_or(
-                    SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow),
-                )?;
-                let piece_index = torrent_offset / u64::from(self.layout.piece_length());
-                let piece_offset_u64 = torrent_offset % u64::from(self.layout.piece_length());
-                let piece_offset = u32::try_from(piece_offset_u64)
-                    .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?;
-                let piece_remaining = u64::from(self.layout.piece_length()) - piece_offset_u64;
-                let length = usize::try_from(
-                    (metainfo_file.length - file_offset)
-                        .min(piece_remaining)
-                        .min(buffer.len() as u64),
-                )
-                .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?;
-                self.part_file_mut()?
-                    .read_piece_range(
-                        usize::try_from(piece_index).map_err(|_| {
-                            SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow)
-                        })?,
-                        piece_offset,
-                        &mut buffer[..length],
-                    )
-                    .await?;
-                output
-                    .write_all(&buffer[..length])
-                    .await
-                    .map_err(|source| SelectiveStorageError::Io {
-                        operation: "write materialization content file",
-                        source,
-                    })?;
-                file_offset += length as u64;
-            }
-            output
-                .sync_data()
-                .await
-                .map_err(|source| SelectiveStorageError::Io {
-                    operation: "flush materialization content file",
-                    source,
-                })
-        }
-        .await;
-        if let Err(error) = write_result {
-            drop(output);
-            if let Some(destination) = &direct_destination {
-                let _ = remove_file_if_present(destination).await;
-            }
-            return Err(error);
-        }
-        match &direct_destination {
-            Some(destination) => {
-                drop(output);
-                let StorageBacking::Paths {
-                    part_reference,
-                    storage_id,
-                    ..
-                } = &self.backing
-                else {
-                    unreachable!("direct destination belongs to path storage")
-                };
-                self.files[file_index] = Some(RetainedFile::dynamic(
-                    path_storage_reference(
-                        part_reference.pool(),
-                        storage_id,
-                        self.storage_generation,
-                        StorageFileRole::Payload(file_index),
-                        destination.clone(),
-                    ),
-                    file_index,
-                    metainfo_file.length,
-                ));
-            }
-            None => {
-                self.files[file_index] =
-                    Some(RetainedFile::new(output, "retain materialized descriptor").await?);
-            }
-        }
-
-        let slots_before = self.part_slots();
-        self.selection
-            .set_wanted_content(&self.layout, file_index, true)?;
-        for piece_index in self
-            .layout
-            .file_piece_range(file_index)?
-            .into_iter()
-            .flatten()
-        {
-            if !self.piece_requires_part_file(piece_index)?
-                && let Some(part_file) = self.part_file.as_mut()
-            {
-                part_file
-                    .release_piece(usize::try_from(piece_index).map_err(|_| {
-                        SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow)
-                    })?)
-                    .await?;
-            }
-        }
-        self.remove_empty_part_file().await?;
-        Ok(MaterializationReport {
-            file_index,
-            bytes: metainfo_file.length,
-            slots_before,
-            slots_after: self.part_slots(),
-        })
-    }
-
     fn part_file_mut(&mut self) -> Result<&mut PartFile, SelectiveStorageError> {
         self.part_file
             .as_mut()
@@ -3849,36 +3527,9 @@ impl SelectiveStorage {
 pub fn plan_descriptor_storage(
     metainfo: &Metainfo,
     skip_files: &[usize],
-    materialize_files: &[usize],
 ) -> Result<DescriptorStoragePlan, SelectiveStorageError> {
     let layout = TorrentLayout::from_metainfo(metainfo);
     let selection = FileSelection::new(&layout, skip_files)?;
-    let mut materialize = vec![false; layout.files().len()];
-    for &file_index in materialize_files {
-        let selected = materialize.get_mut(file_index).ok_or(
-            SelectiveStorageError::InvalidDescriptorManifest {
-                role: "materialization",
-                file_index,
-                reason: "file index is out of range",
-            },
-        )?;
-        if *selected {
-            return Err(SelectiveStorageError::InvalidDescriptorManifest {
-                role: "materialization",
-                file_index,
-                reason: "file index is duplicated",
-            });
-        }
-        let file = &layout.files()[file_index];
-        if file.padding || selection.is_wanted(file_index) {
-            return Err(SelectiveStorageError::InvalidDescriptorManifest {
-                role: "materialization",
-                file_index,
-                reason: "file is padding or already wanted",
-            });
-        }
-        *selected = true;
-    }
     let files = layout
         .files()
         .iter()
@@ -3894,12 +3545,12 @@ pub fn plan_descriptor_storage(
             } else {
                 DescriptorFileRole::Skipped
             },
-            materialize: materialize[file_index],
         })
         .collect();
     Ok(DescriptorStoragePlan {
         info_hash: metainfo.info_hash,
         name: metainfo.name.clone(),
+        content_shape: ContentShape::from_metainfo(metainfo),
         files,
     })
 }
@@ -4075,30 +3726,6 @@ async fn validate_descriptor_length(
         });
     }
     Ok(file)
-}
-
-async fn validate_empty_descriptor(
-    file: std::fs::File,
-    role: &'static str,
-    file_index: usize,
-) -> Result<std::fs::File, SelectiveStorageError> {
-    let file = File::from_std(file);
-    let length = file
-        .metadata()
-        .await
-        .map_err(|source| SelectiveStorageError::Io {
-            operation: "inspect descriptor content file",
-            source,
-        })?
-        .len();
-    if length != 0 {
-        return Err(SelectiveStorageError::NonemptyDescriptor {
-            role,
-            file_index,
-            length,
-        });
-    }
-    Ok(file.into_std().await)
 }
 
 pub fn selective_part_path(output_root: &Path) -> Result<PathBuf, SelectiveStorageError> {
@@ -5494,11 +5121,7 @@ mod tests {
             .expect("create descriptor file")
     }
 
-    fn descriptor_manifest(
-        root: &Path,
-        wanted_indices: &[usize],
-        materialization_indices: &[usize],
-    ) -> DescriptorStorage {
+    fn descriptor_manifest(root: &Path, wanted_indices: &[usize]) -> DescriptorStorage {
         let part_path = root.join("part");
         let part_file = new_descriptor(&part_path);
         let reopened_part_file = std::fs::OpenOptions::new()
@@ -5519,16 +5142,6 @@ mod tests {
                 .collect(),
             part_file,
             reopened_part_file,
-            materialization_files: materialization_indices
-                .iter()
-                .map(|&file_index| {
-                    let path = root.join(format!("materialization-{file_index}"));
-                    DescriptorFile {
-                        file_index,
-                        file: new_descriptor(&path),
-                    }
-                })
-                .collect(),
         }
     }
 
@@ -6055,7 +5668,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn writes_hashes_reopens_and_materializes_direct_content() {
+    async fn writes_hashes_and_reopens_direct_content() {
         let output = test_path("fixture");
         clean(&output).await;
         let metainfo = fixture();
@@ -6159,7 +5772,7 @@ mod tests {
         storage
             .finish_content()
             .await
-            .expect("publish selected tree");
+            .expect("finish selected tree");
         assert!(
             tokio::fs::try_exists(output.join("wanted/empty.bin"))
                 .await
@@ -6177,19 +5790,6 @@ mod tests {
         );
 
         storage.reopen_part_file().await.expect("reopen part file");
-        let report = storage
-            .materialize_file(2)
-            .await
-            .expect("materialize later file");
-        assert_eq!(report.bytes, 7_000);
-        assert_eq!(report.slots_before, 2);
-        assert_eq!(report.slots_after, 2);
-        assert_eq!(
-            tokio::fs::read(output.join("later.bin"))
-                .await
-                .expect("materialized bytes"),
-            bytes[70_000..77_000]
-        );
         assert!(
             tokio::fs::try_exists(&part_path)
                 .await
@@ -6977,7 +6577,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn descriptor_storage_reuses_mapping_reopen_and_materialization() {
+    async fn descriptor_storage_reuses_mapping_and_reopens_part_file() {
         let root = test_path("descriptors");
         tokio::fs::create_dir(&root)
             .await
@@ -6993,7 +6593,6 @@ mod tests {
                 (file_index, path.clone(), new_descriptor(&path))
             })
             .collect();
-        let materialized_path = root.join("materialized-2");
         let part_path = root.join("part");
         let part_file = new_descriptor(&part_path);
         let reopened_part_file = std::fs::OpenOptions::new()
@@ -7008,17 +6607,12 @@ mod tests {
                 .collect(),
             part_file,
             reopened_part_file,
-            materialization_files: vec![DescriptorFile {
-                file_index: 2,
-                file: new_descriptor(&materialized_path),
-            }],
         };
         let mut storage = SelectiveStorage::create_with_descriptors(
             test_artifact_identity(),
             &metainfo,
             layout.clone(),
             selection,
-            &[2],
             descriptors,
         )
         .await
@@ -7065,13 +6659,6 @@ mod tests {
             .reopen_part_file()
             .await
             .expect("reopen descriptor part file");
-        let report = storage
-            .materialize_file(2)
-            .await
-            .expect("materialize to descriptor");
-        assert_eq!(report.bytes, 7_000);
-        assert_eq!(report.slots_before, 2);
-        assert_eq!(report.slots_after, 2);
         drop(storage);
 
         for file_index in [0_usize, 3, 4, 6] {
@@ -7082,10 +6669,6 @@ mod tests {
                 bytes[file.offset as usize..(file.offset + file.length) as usize]
             );
         }
-        assert_eq!(
-            std::fs::read(&materialized_path).expect("read materialized descriptor"),
-            bytes[70_000..77_000]
-        );
         tokio::fs::remove_dir_all(root)
             .await
             .expect("remove descriptor root");
@@ -7101,13 +6684,12 @@ mod tests {
         let layout = TorrentLayout::from_metainfo(&metainfo);
         let selection = FileSelection::new(&layout, &[1, 2]).expect("selection");
         let bytes = torrent_bytes(&metainfo);
-        let descriptors = descriptor_manifest(&root, &[0, 3, 4, 6], &[]);
+        let descriptors = descriptor_manifest(&root, &[0, 3, 4, 6]);
         let mut storage = SelectiveStorage::create_with_descriptors(
             test_artifact_identity(),
             &metainfo,
             layout.clone(),
             selection.clone(),
-            &[],
             descriptors,
         )
         .await
@@ -7148,7 +6730,6 @@ mod tests {
                 .collect(),
             part_file: reopen(&part_path),
             reopened_part_file: reopen(&part_path),
-            materialization_files: Vec::new(),
         };
         let mut verified = vec![false; layout.piece_count()];
         verified[0] = true;
@@ -7202,10 +6783,10 @@ mod tests {
         std::fs::remove_file(first_path).expect("remove first manifest file");
         std::fs::remove_file(second_path).expect("remove second manifest file");
 
-        let range_path = test_path("manifest-range");
+        let range_path = test_path("wanted-manifest-range");
         let out_of_range = collect_descriptors(
             2,
-            "materialization",
+            "wanted",
             vec![DescriptorFile {
                 file_index: 2,
                 file: new_descriptor(&range_path),
@@ -7214,7 +6795,7 @@ mod tests {
         assert!(matches!(
             out_of_range,
             Err(SelectiveStorageError::InvalidDescriptorManifest {
-                role: "materialization",
+                role: "wanted",
                 file_index: 2,
                 reason: "file index is out of range",
             })
@@ -7226,23 +6807,16 @@ mod tests {
     async fn descriptor_manifest_rejects_missing_unexpected_and_nonempty_files() {
         let metainfo = fixture();
         let cases = [
-            ("missing-wanted", vec![3, 4, 6], vec![2], false),
-            ("unexpected-wanted", vec![0, 1, 3, 4, 6], vec![2], false),
-            ("missing-materialization", vec![0, 3, 4, 6], vec![], false),
-            (
-                "unexpected-materialization",
-                vec![0, 3, 4, 6],
-                vec![1, 2],
-                false,
-            ),
-            ("nonempty-wanted", vec![0, 3, 4, 6], vec![2], true),
+            ("missing-wanted", vec![3, 4, 6], false),
+            ("unexpected-wanted", vec![0, 1, 3, 4, 6], false),
+            ("nonempty-wanted", vec![0, 3, 4, 6], true),
         ];
-        for (name, wanted, materializations, make_nonempty) in cases {
+        for (name, wanted, make_nonempty) in cases {
             let root = test_path(name);
             tokio::fs::create_dir(&root)
                 .await
                 .expect("create manifest case root");
-            let descriptors = descriptor_manifest(&root, &wanted, &materializations);
+            let descriptors = descriptor_manifest(&root, &wanted);
             if make_nonempty {
                 std::fs::write(root.join("wanted-0"), b"preserve")
                     .expect("make wanted descriptor nonempty");
@@ -7254,7 +6828,6 @@ mod tests {
                 &metainfo,
                 layout,
                 selection,
-                &[2],
                 descriptors,
             )
             .await;
@@ -7273,22 +6846,6 @@ mod tests {
                         role: "wanted",
                         file_index: 1,
                         reason: "descriptor is not expected by the selection",
-                    })
-                )),
-                "missing-materialization" => assert!(matches!(
-                    result,
-                    Err(SelectiveStorageError::InvalidDescriptorManifest {
-                        role: "materialization",
-                        file_index: 2,
-                        reason: "required descriptor is missing",
-                    })
-                )),
-                "unexpected-materialization" => assert!(matches!(
-                    result,
-                    Err(SelectiveStorageError::InvalidDescriptorManifest {
-                        role: "materialization",
-                        file_index: 1,
-                        reason: "descriptor is not expected",
                     })
                 )),
                 "nonempty-wanted" => {
@@ -7312,82 +6869,6 @@ mod tests {
                 .await
                 .expect("remove manifest case root");
         }
-    }
-
-    #[tokio::test]
-    async fn releases_a_slot_after_the_last_skipped_file_is_materialized() {
-        let output = test_path("release");
-        clean(&output).await;
-        let metainfo = fixture();
-        let layout = TorrentLayout::from_metainfo(&metainfo);
-        let selection = FileSelection::new(&layout, &[2]).expect("selection");
-        let mut storage = SelectiveStorage::create(
-            output.clone(),
-            test_artifact_identity(),
-            &metainfo,
-            layout,
-            selection,
-        )
-        .await
-        .expect("create selected storage");
-
-        storage
-            .write_block(2, 0, vec![0; 16_384])
-            .await
-            .expect("store skipped file range");
-        assert_eq!(storage.part_slots(), 1);
-        for piece in 0..5 {
-            storage.record_verified(piece).expect("record verification");
-        }
-        storage.reopen_part_file().await.expect("reopen part file");
-        let report = storage
-            .materialize_file(2)
-            .await
-            .expect("materialize final skipped file");
-        assert_eq!(report.slots_before, 1);
-        assert_eq!(report.slots_after, 0);
-
-        storage
-            .reopen_part_file()
-            .await
-            .expect("reopen released map");
-        assert_eq!(storage.part_slots(), 0);
-        clean(&output).await;
-    }
-
-    #[tokio::test]
-    async fn rejects_incomplete_materialization_without_final_or_partial_file() {
-        let output = test_path("incomplete");
-        clean(&output).await;
-        let metainfo = fixture();
-        let layout = TorrentLayout::from_metainfo(&metainfo);
-        let selection = FileSelection::new(&layout, &[1, 2]).expect("selection");
-        let mut storage = SelectiveStorage::create(
-            output.clone(),
-            test_artifact_identity(),
-            &metainfo,
-            layout,
-            selection,
-        )
-        .await
-        .expect("create selected storage");
-        for piece in [0, 2, 3, 4] {
-            storage.record_verified(piece).expect("record verification");
-        }
-        assert!(matches!(
-            storage.materialize_file(1).await,
-            Err(SelectiveStorageError::IncompleteMaterialization {
-                file_index: 1,
-                piece_index: 1,
-            })
-        ));
-        let final_path = output.join("skip/large.bin");
-        assert!(
-            !tokio::fs::try_exists(&final_path)
-                .await
-                .expect("final state")
-        );
-        clean(&output).await;
     }
 
     #[tokio::test]

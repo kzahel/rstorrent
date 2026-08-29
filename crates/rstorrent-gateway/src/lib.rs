@@ -1930,7 +1930,7 @@ mod tests {
         ApplicationService, Command, CommandResult, ConfiguredStorageRoot, FileSelectionIntent,
         MediaUrlOutcome, MediaUrlResponse, NetworkConfig, NetworkPolicy, OpenViewSetOptions,
         OpenViewSetRequest, OpenViewSetResponse, RequestEnvelope, ResponseOutcome, SessionStore,
-        StorageState, UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy, ViewSetUpdate,
+        UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy, ViewSetUpdate,
         ViewSnapshot, ViewSpec,
     };
     use sha1::{Digest, Sha1};
@@ -2048,7 +2048,7 @@ mod tests {
         info_hash.iter().map(|byte| format!("{byte:02x}")).collect()
     }
 
-    async fn published_media_service(
+    async fn verified_media_service(
         root: &Path,
     ) -> (Arc<Mutex<ApplicationService>>, String, Vec<u8>) {
         let payload = b"gateway verified media".to_vec();
@@ -2083,9 +2083,6 @@ mod tests {
         store
             .record_pieces(&torrent_id, &[0, 1, 2, 3])
             .expect("record media pieces");
-        store
-            .mark_storage_prepared(&torrent_id, StorageState::Published)
-            .expect("publish media");
         store.mark_complete(&torrent_id).expect("complete media");
         drop(store);
         std::fs::create_dir_all(root.join("payload")).expect("create media root");
@@ -2498,7 +2495,7 @@ mod tests {
     #[tokio::test]
     async fn loopback_gateway_mounts_capability_media_without_api_bearer_or_cors() {
         let root = test_root("gateway-media");
-        let (service, torrent_id, payload) = published_media_service(&root).await;
+        let (service, torrent_id, payload) = verified_media_service(&root).await;
         let server = bind(
             GatewayConfig {
                 bind: "127.0.0.1:0".parse().expect("address"),

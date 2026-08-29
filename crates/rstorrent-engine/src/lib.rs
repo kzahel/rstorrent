@@ -158,11 +158,11 @@ pub use selective_storage::{
 };
 pub use selective_storage::{
     FastResumeValidation, MAX_ACTIVE_FILE_READ_BYTES, MAX_UPLOAD_READ_SEGMENTS,
-    MaterializationReport, PlatformStorageSpec, ResumedStorage, SelectionReconcileReport,
-    SelectiveFileReadPlan, SelectiveStorage, SelectiveStorageError, SelectiveUploadReadPlan,
-    SelectiveWriteStats, TorrentArtifactIdentity, TorrentStoragePaths,
-    remove_selective_part_if_present, selective_part_path, torrent_storage_paths,
-    torrent_storage_paths_for_metainfo, torrent_storage_paths_with_shape, validate_content_name,
+    PlatformStorageSpec, ResumedStorage, SelectionReconcileReport, SelectiveFileReadPlan,
+    SelectiveStorage, SelectiveStorageError, SelectiveUploadReadPlan, SelectiveWriteStats,
+    TorrentArtifactIdentity, TorrentStoragePaths, remove_selective_part_if_present,
+    selective_part_path, torrent_storage_paths, torrent_storage_paths_for_metainfo,
+    torrent_storage_paths_with_shape, validate_content_name,
     validate_direct_fast_resume_content_with_path,
     validate_direct_fast_resume_content_with_platform, validate_direct_fast_resume_with_path,
     validate_direct_fast_resume_with_platform,

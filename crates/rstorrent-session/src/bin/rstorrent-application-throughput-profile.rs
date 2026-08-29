@@ -129,7 +129,7 @@ struct Arguments {
     payload_root: PathBuf,
     magnet: String,
     info_hash: String,
-    publication_name: String,
+    content_name: String,
     payload_bytes: u64,
     mode: ViewMode,
     timeout: Duration,
@@ -160,7 +160,7 @@ struct RunReport {
     scenario: &'static str,
     mode: &'static str,
     torrent_id: String,
-    publication_name: String,
+    content_name: String,
     payload_bytes: u64,
     transfer_seconds: f64,
     throughput_mib_s: f64,
@@ -263,7 +263,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
         .await?;
     ensure_success(response)?;
 
-    let final_root = arguments.payload_root.join(&arguments.publication_name);
+    let final_root = arguments.payload_root.join(&arguments.content_name);
     let deadline = started + arguments.timeout;
     let mut next_status_poll = started;
     let mut completion_polls = 0_u64;
@@ -345,7 +345,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
         scenario: "sqlite-application-view-throughput",
         mode: arguments.mode.as_str(),
         torrent_id,
-        publication_name: arguments.publication_name,
+        content_name: arguments.content_name,
         payload_bytes: arguments.payload_bytes,
         transfer_seconds,
         throughput_mib_s: arguments.payload_bytes as f64 / (1024.0 * 1024.0) / transfer_seconds,
@@ -460,7 +460,7 @@ fn parse_arguments(
     let mut payload_root = None;
     let mut magnet = None;
     let mut info_hash = None;
-    let mut publication_name = None;
+    let mut content_name = None;
     let mut payload_bytes = None;
     let mut mode = None;
     let mut timeout = Duration::from_secs(600);
@@ -498,7 +498,7 @@ fn parse_arguments(
                 {
                     return Err(invalid_input("--publication-name is invalid"));
                 }
-                set_once(&mut publication_name, value.to_owned(), name)?;
+                set_once(&mut content_name, value.to_owned(), name)?;
             }
             "--payload-bytes" => {
                 let value = parse_u64(value, name, 1, MAX_PAYLOAD_BYTES)?;
@@ -532,7 +532,7 @@ fn parse_arguments(
         payload_root: payload_root.ok_or_else(|| invalid_input("--payload-root is required"))?,
         magnet: magnet.ok_or_else(|| invalid_input("--magnet is required"))?,
         info_hash: info_hash.ok_or_else(|| invalid_input("--info-hash is required"))?,
-        publication_name: publication_name
+        content_name: content_name
             .ok_or_else(|| invalid_input("--publication-name is required"))?,
         payload_bytes: payload_bytes.ok_or_else(|| invalid_input("--payload-bytes is required"))?,
         mode,

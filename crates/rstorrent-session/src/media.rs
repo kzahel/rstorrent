@@ -43,7 +43,7 @@ pub struct MediaResourceSnapshot {
     pub demanded_bytes_read: u64,
     pub demanded_bytes_served: u64,
     pub streaming_stall_timeouts: usize,
-    pub publication_handoffs: usize,
+    pub verified_handoffs: usize,
 }
 
 #[derive(Debug, Default)]
@@ -57,7 +57,7 @@ struct MediaMetrics {
     demanded_bytes_read: AtomicU64,
     demanded_bytes_served: AtomicU64,
     streaming_stall_timeouts: AtomicUsize,
-    publication_handoffs: AtomicUsize,
+    verified_handoffs: AtomicUsize,
 }
 
 impl MediaMetrics {
@@ -77,7 +77,7 @@ impl MediaMetrics {
             demanded_bytes_read: self.demanded_bytes_read.load(Ordering::Acquire),
             demanded_bytes_served: self.demanded_bytes_served.load(Ordering::Acquire),
             streaming_stall_timeouts: self.streaming_stall_timeouts.load(Ordering::Acquire),
-            publication_handoffs: self.publication_handoffs.load(Ordering::Acquire),
+            verified_handoffs: self.verified_handoffs.load(Ordering::Acquire),
         }
     }
 }
@@ -91,7 +91,7 @@ pub enum MediaFileAvailability {
     MetadataUnavailable,
     InvalidFile,
     Padding,
-    NotPublished,
+    Incomplete,
     Checking,
     Unverified,
     StorageUnavailable,
@@ -153,16 +153,16 @@ pub struct MediaCapabilityLease {
 
 #[derive(Clone, Debug)]
 enum MediaCapabilityReader {
-    Published(VerifiedFileReader),
+    Verified(VerifiedFileReader),
     Active {
         reader: ActiveFileReader,
         control: DownloadControl,
-        published: Option<PublishedMediaSource>,
+        verified: Option<VerifiedMediaSource>,
     },
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum PublishedMediaSource {
+pub(crate) enum VerifiedMediaSource {
     Path {
         root: PathBuf,
         content: Arc<TorrentContent>,
@@ -179,7 +179,7 @@ pub(crate) enum PublishedMediaSource {
     },
 }
 
-impl PublishedMediaSource {
+impl VerifiedMediaSource {
     pub(crate) fn path(
         root: PathBuf,
         content: TorrentContent,
@@ -245,7 +245,7 @@ impl PublishedMediaSource {
                 torrent_id,
                 read_jobs,
             } => {
-                VerifiedFileReader::open_published_content_with_pool(
+                VerifiedFileReader::open_verified_content_with_pool(
                     root,
                     content,
                     &verified,
@@ -262,7 +262,7 @@ impl PublishedMediaSource {
                 file_index,
                 read_jobs,
             } => {
-                VerifiedFileReader::open_published_content_with_platform(
+                VerifiedFileReader::open_verified_content_with_platform(
                     spec,
                     content,
                     &verified,
@@ -315,7 +315,7 @@ impl MediaCapabilityLease {
         offset: u64,
         length: usize,
     ) -> Result<(), MediaRangeError> {
-        if self.handoff_if_published().await? {
+        if self.handoff_to_verified().await? {
             return Ok(());
         }
         let MediaCapabilityReader::Active {
@@ -364,9 +364,8 @@ impl MediaCapabilityLease {
         };
         let mut deadline = Instant::now() + MEDIA_STREAMING_NO_PROGRESS_TIMEOUT;
         let active_cancellation = reader.cancellation();
-        let mut publication = control.content_publication_updates();
         loop {
-            if self.handoff_if_published().await? {
+            if self.handoff_to_verified().await? {
                 return Ok(());
             }
             if !self.is_live() || reader.cancellation().is_cancelled() {
@@ -386,7 +385,7 @@ impl MediaCapabilityLease {
                 biased;
                 _ = self.cancellation.cancelled() => return Err(MediaRangeError::Revoked),
                 _ = active_cancellation.cancelled() => {
-                    return if self.handoff_if_published().await? {
+                    return if self.handoff_to_verified().await? {
                         Ok(())
                     } else {
                         Err(MediaRangeError::Revoked)
@@ -396,12 +395,6 @@ impl MediaCapabilityLease {
                     self.metrics.streaming_stall_timeouts.fetch_add(1, Ordering::AcqRel);
                     return Err(MediaRangeError::NoProgress);
                 },
-                changed = publication.changed() => {
-                    changed.map_err(|_| MediaRangeError::Revoked)?;
-                    if self.handoff_if_published().await? {
-                        return Ok(());
-                    }
-                }
                 changed = updates.changed() => {
                     changed.map_err(|_| MediaRangeError::Revoked)?;
                     let next = updates
@@ -420,27 +413,31 @@ impl MediaCapabilityLease {
         }
     }
 
-    async fn handoff_if_published(&mut self) -> Result<bool, MediaRangeError> {
+    async fn handoff_to_verified(&mut self) -> Result<bool, MediaRangeError> {
         let MediaCapabilityReader::Active {
-            reader,
-            control,
-            published,
+            reader, verified, ..
         } = &self.reader
         else {
             return Ok(true);
         };
-        if !control.content_is_published() {
+        let file_length = usize::try_from(reader.length()).map_err(|_| MediaRangeError::Revoked)?;
+        if !reader
+            .is_range_verified(0, file_length)
+            .map_err(MediaRangeError::Active)?
+        {
             return Ok(false);
         }
         let reader = reader.clone();
-        let source = published.clone().ok_or(MediaRangeError::Revoked)?;
+        let Some(source) = verified.clone() else {
+            return Ok(false);
+        };
         if !reader.is_generation_current() {
             return Err(MediaRangeError::Revoked);
         }
-        let published = source.open().await.map_err(|_| MediaRangeError::Revoked)?;
+        let verified = source.open().await.map_err(|_| MediaRangeError::Revoked)?;
         if !reader.is_generation_current()
-            || published.length() != reader.length()
-            || published.file_name() != reader.file_name()
+            || verified.length() != reader.length()
+            || verified.file_name() != reader.file_name()
         {
             return Err(MediaRangeError::Revoked);
         }
@@ -452,9 +449,9 @@ impl MediaCapabilityLease {
             self.streaming_counted = false;
         }
         self.metrics
-            .publication_handoffs
+            .verified_handoffs
             .fetch_add(1, Ordering::AcqRel);
-        self.reader = MediaCapabilityReader::Published(published);
+        self.reader = MediaCapabilityReader::Verified(verified);
         Ok(true)
     }
 
@@ -464,11 +461,11 @@ impl MediaCapabilityLease {
         length: usize,
     ) -> Result<Vec<u8>, MediaReadError> {
         let active_reader = match &self.reader {
-            MediaCapabilityReader::Published(reader) => {
+            MediaCapabilityReader::Verified(reader) => {
                 let result = reader
                     .read_range(offset, length)
                     .await
-                    .map_err(MediaReadError::Published);
+                    .map_err(MediaReadError::Verified);
                 return self.record_read_result(result);
             }
             MediaCapabilityReader::Active { reader, .. } => reader.clone(),
@@ -500,64 +497,25 @@ impl MediaCapabilityLease {
             return self.record_read_result(active_result);
         }
 
-        self.wait_for_publication_after_active_close().await?;
-        let MediaCapabilityReader::Published(reader) = &self.reader else {
+        self.handoff_after_active_close().await?;
+        let MediaCapabilityReader::Verified(reader) = &self.reader else {
             return Err(MediaReadError::Closed);
         };
         let result = reader
             .read_range(offset, length)
             .await
-            .map_err(MediaReadError::Published);
+            .map_err(MediaReadError::Verified);
         self.record_read_result(result)
     }
 
-    async fn wait_for_publication_after_active_close(&mut self) -> Result<(), MediaReadError> {
-        let MediaCapabilityReader::Active {
-            reader, control, ..
-        } = &self.reader
-        else {
-            return Ok(());
-        };
-        let active_cancellation = reader.cancellation();
-        let control = control.clone();
-        let mut publication = control.content_publication_updates();
-        let deadline = Instant::now() + MEDIA_STREAMING_NO_PROGRESS_TIMEOUT;
-        loop {
-            match self.handoff_if_published().await {
-                Ok(true) => return Ok(()),
-                Ok(false) => {}
-                Err(MediaRangeError::Active(error)) => {
-                    return Err(MediaReadError::Active(error));
-                }
-                Err(
-                    MediaRangeError::NoProgress
-                    | MediaRangeError::Revoked
-                    | MediaRangeError::Saturated,
-                ) => return Err(MediaReadError::Closed),
-            }
-            if !self.is_live() {
-                return Err(MediaReadError::Closed);
-            }
-            let sleep = tokio::time::sleep_until(tokio::time::Instant::from_std(deadline));
-            tokio::pin!(sleep);
-            tokio::select! {
-                biased;
-                _ = self.cancellation.cancelled() => return Err(MediaReadError::Closed),
-                _ = active_cancellation.cancelled() => {
-                    return if self.handoff_if_published().await.unwrap_or(false) {
-                        Ok(())
-                    } else {
-                        Err(MediaReadError::Closed)
-                    };
-                },
-                _ = &mut sleep => {
-                    self.metrics.streaming_stall_timeouts.fetch_add(1, Ordering::AcqRel);
-                    return Err(MediaReadError::Closed);
-                },
-                changed = publication.changed() => {
-                    changed.map_err(|_| MediaReadError::Closed)?;
-                }
-            }
+    async fn handoff_after_active_close(&mut self) -> Result<(), MediaReadError> {
+        match self.handoff_to_verified().await {
+            Ok(true) => Ok(()),
+            Err(MediaRangeError::Active(error)) => Err(MediaReadError::Active(error)),
+            Ok(false)
+            | Err(
+                MediaRangeError::NoProgress | MediaRangeError::Revoked | MediaRangeError::Saturated,
+            ) => Err(MediaReadError::Closed),
         }
     }
 
@@ -602,14 +560,14 @@ impl Drop for MediaCapabilityLease {
 impl MediaCapabilityReader {
     fn file_name(&self) -> &str {
         match self {
-            Self::Published(reader) => reader.file_name(),
+            Self::Verified(reader) => reader.file_name(),
             Self::Active { reader, .. } => reader.file_name(),
         }
     }
 
     fn length(&self) -> u64 {
         match self {
-            Self::Published(reader) => reader.length(),
+            Self::Verified(reader) => reader.length(),
             Self::Active { reader, .. } => reader.length(),
         }
     }
@@ -626,7 +584,7 @@ pub enum MediaRangeError {
 #[derive(Debug)]
 pub enum MediaReadError {
     Closed,
-    Published(VerifiedFileError),
+    Verified(VerifiedFileError),
     Active(ActiveFileError),
 }
 
@@ -643,7 +601,7 @@ impl fmt::Display for MediaReadError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Closed => formatter.write_str("media read owner is closed"),
-            Self::Published(error) => write!(formatter, "published media read failed: {error}"),
+            Self::Verified(error) => write!(formatter, "verified media read failed: {error}"),
             Self::Active(error) => write!(formatter, "active media read failed: {error}"),
         }
     }
@@ -766,7 +724,7 @@ impl MediaCapabilities {
         self.create_reader(
             torrent_id,
             file_index,
-            MediaCapabilityReader::Published(reader),
+            MediaCapabilityReader::Verified(reader),
         )
     }
 
@@ -776,7 +734,7 @@ impl MediaCapabilities {
         file_index: u32,
         reader: ActiveFileReader,
         control: DownloadControl,
-        published: Option<PublishedMediaSource>,
+        verified: Option<VerifiedMediaSource>,
     ) -> Result<MediaUrlOutcome, MediaRegistryError> {
         self.create_reader(
             torrent_id,
@@ -784,7 +742,7 @@ impl MediaCapabilities {
             MediaCapabilityReader::Active {
                 reader,
                 control,
-                published,
+                verified,
             },
         )
     }

@@ -105,7 +105,7 @@ function row(id: string, overrides: Partial<TorrentRow> = {}): TorrentRow {
     addedAtMs: 1,
     archived: false,
     removalState: null,
-    deleteManagedDataSupported: true,
+    deleteDataSupported: true,
     forceRecheckAvailable: true,
     infoHash: id,
     error: null,

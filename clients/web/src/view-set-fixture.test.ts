@@ -37,7 +37,7 @@ describe("Rust view-set fixture", () => {
     const encoded = JSON.stringify({
       ...fixture.updates[0],
       future_server_field: { enabled: true },
-    }).replace('"storage_state":"staging"', '"storage_state":"prepared"');
+    }).replace('"storage_state":"available"', '"storage_state":"unavailable"');
     expect(decodeUpdateBatch(encoded).updates[0]?.type).toBe("patch");
   });
 
@@ -62,7 +62,7 @@ describe("Rust view-set fixture", () => {
 
   it("rejects unknown generated enum and tagged variants", () => {
     const unknownStorage = JSON.stringify(fixture.updates[0]).replace(
-      '"storage_state":"staging"',
+      '"storage_state":"available"',
       '"storage_state":"invented"',
     );
     expect(() => decodeUpdateBatch(unknownStorage)).toThrow(ContractError);

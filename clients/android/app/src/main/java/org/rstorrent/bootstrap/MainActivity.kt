@@ -44,7 +44,6 @@ class MainActivity : ComponentActivity() {
     private var pendingProductBandwidthPolicy: String? = null
     private var pendingProductIpv6Policy: String? = null
     private var pendingProductTorrentAction: Pair<String, String>? = null
-    private var pendingCrashAfterSafRename = false
     private val productTreePicker =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             val data = result.data
@@ -85,10 +84,6 @@ class MainActivity : ComponentActivity() {
                 val service = (binder as ProductEngineService.LocalBinder).service
                 ProductSafDocuments.selectedTree(this@MainActivity)?.let(service::setSafTree)
                 productService.value = service
-                if (pendingCrashAfterSafRename) {
-                    pendingCrashAfterSafRename = false
-                    service.enableCrashAfterSafRenameForTest()
-                }
                 pendingProductMagnet?.let {
                     pendingProductMagnet = null
                     val policy = pendingProductTrackerPolicy
@@ -248,18 +243,6 @@ class MainActivity : ComponentActivity() {
         ) {
             command.removeExtra(EXTRA_PRODUCT_RELEASE_SAF_GRANT)
             ProductSafDocuments.releaseSelectedTreeForTest(this)
-        }
-        if (
-            ProductSafDocuments.isDebuggable(this) &&
-            command.getBooleanExtra(EXTRA_PRODUCT_CRASH_AFTER_SAF_RENAME, false)
-        ) {
-            command.removeExtra(EXTRA_PRODUCT_CRASH_AFTER_SAF_RENAME)
-            val service = productService.value
-            if (service == null) {
-                pendingCrashAfterSafRename = true
-            } else {
-                service.enableCrashAfterSafRenameForTest()
-            }
         }
         if (!productMode) {
             productMode = true
@@ -643,7 +626,5 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_PRODUCT_TRACKER_EVIDENCE_TORRENT = "product_tracker_evidence_torrent"
         const val EXTRA_PRODUCT_SELECT_SAF = "product_select_saf"
         const val EXTRA_PRODUCT_RELEASE_SAF_GRANT = "product_release_saf_grant"
-        const val EXTRA_PRODUCT_CRASH_AFTER_SAF_RENAME =
-            "product_crash_after_saf_rename"
     }
 }

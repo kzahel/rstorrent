@@ -754,7 +754,7 @@ describe("LiveApplication", () => {
       {
         type: "remove_torrent",
         torrent_id: TORRENT_ID,
-        data: "delete_managed",
+        data: "delete_data",
       },
     ]);
     await application.close();
@@ -1487,7 +1487,7 @@ function torrent(): TorrentView {
       upload: { type: "unlimited" },
       download: { type: "unlimited" },
     },
-    storage_state: "prepared",
+    storage_state: "available",
     metadata_available: true,
     piece_count: 8,
     total_size_bytes: "131072",
@@ -1524,7 +1524,7 @@ function torrent(): TorrentView {
       oldest_active_job_age_millis: "700",
     },
     archived: false,
-    delete_managed_data_supported: true,
+    delete_data_supported: true,
     force_recheck_available: false,
   };
 }

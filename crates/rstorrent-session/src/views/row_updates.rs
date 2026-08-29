@@ -123,7 +123,7 @@ semantic_fields!(
         Checking => checking: Option<CheckingProgressView>,
         Archived => archived: bool,
         RemovalState => removal_state: Option<RemovalState>,
-        DeleteManagedDataSupported => delete_managed_data_supported: bool,
+        DeleteDataSupported => delete_data_supported: bool,
         ForceRecheckAvailable => force_recheck_available: bool,
         Error => error: Option<String>
     }
@@ -177,7 +177,7 @@ impl TorrentRowUpdate {
         changed!(Checking, checking);
         changed!(Archived, archived);
         changed!(RemovalState, removal_state);
-        changed!(DeleteManagedDataSupported, delete_managed_data_supported);
+        changed!(DeleteDataSupported, delete_data_supported);
         changed!(ForceRecheckAvailable, force_recheck_available);
         changed!(Error, error);
         (!fields.is_empty()).then(|| Self {
@@ -524,7 +524,7 @@ mod tests {
             operational_state: TorrentOperationalState::Downloading,
             download_queue_position: None,
             transfer_limits: TorrentTransferLimits::default(),
-            storage_state: StorageState::Staging,
+            storage_state: StorageState::Available,
             metadata_available: false,
             piece_count: 1,
             total_size_bytes: None,
@@ -548,7 +548,7 @@ mod tests {
             checking: None,
             archived: false,
             removal_state: None,
-            delete_managed_data_supported: false,
+            delete_data_supported: false,
             force_recheck_available: false,
             error: None,
         }
@@ -570,7 +570,7 @@ mod tests {
             },
             download: TransferRateLimit::Unlimited,
         };
-        current.storage_state = StorageState::Published;
+        current.storage_state = StorageState::Available;
         current.metadata_available = true;
         current.piece_count = 4;
         current.total_size_bytes = Some("32771".to_owned());
@@ -608,12 +608,12 @@ mod tests {
         });
         current.archived = true;
         current.removal_state = Some(RemovalState::Pending);
-        current.delete_managed_data_supported = true;
+        current.delete_data_supported = true;
         current.force_recheck_available = true;
         current.error = Some("failure".to_owned());
 
         let update = TorrentRowUpdate::between(&previous, &current).expect("all fields changed");
-        assert_eq!(update.fields.len(), 29);
+        assert_eq!(update.fields.len(), 28);
         let mut applied = previous;
         update.apply(&mut applied).expect("apply");
         assert_eq!(applied, current);

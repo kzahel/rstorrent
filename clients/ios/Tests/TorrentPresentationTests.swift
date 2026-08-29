@@ -2,10 +2,10 @@ import XCTest
 @testable import RSTorrent
 
 final class TorrentPresentationTests: XCTestCase {
-    func testAwaitingPublicationNeverDisplaysComplete() {
+    func testDownloadingWithAllReportedBytesNeverDisplaysComplete() {
         let progress = torrentDisplayProgress(
-            state: .awaitingPublication,
-            storageState: .prepared,
+            state: .downloading,
+            storageState: .available,
             requiredPayloadBytes: "276445467",
             remainingPayloadBytes: "0",
             pieceCount: 1_055,
@@ -14,15 +14,12 @@ final class TorrentPresentationTests: XCTestCase {
 
         XCTAssertEqual(progress, 0.99, accuracy: 0.000_001)
         XCTAssertEqual(formattedProgress(progress), "99%")
-        XCTAssertFalse(
-            torrentIsPublishedComplete(state: .awaitingPublication, storageState: .prepared)
-        )
     }
 
-    func testOnlyCompletePublishedStateDisplaysOneHundredPercent() {
+    func testCompleteStateDisplaysOneHundredPercent() {
         let progress = torrentDisplayProgress(
             state: .complete,
-            storageState: .published,
+            storageState: .available,
             requiredPayloadBytes: "100",
             remainingPayloadBytes: "0",
             pieceCount: 10,
@@ -31,13 +28,12 @@ final class TorrentPresentationTests: XCTestCase {
 
         XCTAssertEqual(progress, 1)
         XCTAssertEqual(formattedProgress(progress), "100%")
-        XCTAssertTrue(torrentIsPublishedComplete(state: .complete, storageState: .published))
     }
 
-    func testCompleteWithoutPublishedStorageRemainsIncomplete() {
+    func testRootUnavailableStateRemainsIncomplete() {
         let progress = torrentDisplayProgress(
-            state: .complete,
-            storageState: .staging,
+            state: .awaitingStorage,
+            storageState: .unavailable,
             requiredPayloadBytes: "100",
             remainingPayloadBytes: "0",
             pieceCount: 1,
@@ -57,7 +53,7 @@ final class TorrentPresentationTests: XCTestCase {
     func testMalformedByteCountsFallBackToVerifiedPieces() {
         let progress = torrentDisplayProgress(
             state: .downloading,
-            storageState: .staging,
+            storageState: .available,
             requiredPayloadBytes: "not-a-number",
             remainingPayloadBytes: "0",
             pieceCount: 8,
@@ -71,7 +67,7 @@ final class TorrentPresentationTests: XCTestCase {
         XCTAssertEqual(
             torrentDisplayProgress(
                 state: .downloading,
-                storageState: .staging,
+                storageState: .available,
                 requiredPayloadBytes: "100",
                 remainingPayloadBytes: "101",
                 pieceCount: 0,
@@ -82,7 +78,7 @@ final class TorrentPresentationTests: XCTestCase {
         XCTAssertEqual(
             torrentDisplayProgress(
                 state: .downloading,
-                storageState: .staging,
+                storageState: .available,
                 requiredPayloadBytes: "nan",
                 remainingPayloadBytes: "0",
                 pieceCount: 0,

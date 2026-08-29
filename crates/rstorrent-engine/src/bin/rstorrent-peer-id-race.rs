@@ -107,7 +107,6 @@ async fn run() -> Result<(), Box<dyn Error>> {
             resource_limits: DownloadResourceLimits::DESKTOP,
             skip_files: Vec::new(),
             high_priority_files: Vec::new(),
-            materialize_files: Vec::new(),
         },
         task_control,
         peer_budget,

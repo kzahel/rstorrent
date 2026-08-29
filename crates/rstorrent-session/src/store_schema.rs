@@ -1,6 +1,6 @@
 //! SQLite schema facts for the current disposable-incubation catalog epoch.
 
-pub(crate) const SCHEMA_VERSION: i64 = 21;
+pub(crate) const SCHEMA_VERSION: i64 = 22;
 
 pub(crate) const FILE_PRIORITIES_TABLE_SQL: &str = "CREATE TABLE file_priorities (
         torrent_id BLOB NOT NULL CHECK (
@@ -52,7 +52,7 @@ pub(crate) const REMOVAL_TABLE_SQL: &str = "CREATE TABLE removal_jobs (
         operation_id TEXT NOT NULL UNIQUE
             CHECK (length(operation_id) BETWEEN 1 AND 128),
         data_policy TEXT NOT NULL
-            CHECK (data_policy IN ('keep', 'delete_managed')),
+            CHECK (data_policy IN ('keep', 'delete_data')),
         state TEXT NOT NULL
             CHECK (state IN ('pending', 'awaiting_platform', 'failed')),
         error TEXT CHECK (error IS NULL OR length(error) <= 1024),

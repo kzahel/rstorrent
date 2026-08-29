@@ -117,11 +117,11 @@ fn inactive_dht_family(family: DhtAddressFamilyView) -> DhtFamilyInspectionView 
 pub fn assess_progress(snapshot: &TorrentSnapshot, inputs: ProgressInputs) -> ProgressAssessment {
     use ProgressAction::{EnableDiscovery, EnableNetwork, RepairStorage, Resume, SelectStorage};
     use ProgressDisposition::{Active, Blocked, Inactive, Waiting};
-    use ProgressPhase::{Discovery, Publication, Storage, Transfer, Verification};
+    use ProgressPhase::{Complete as CompletePhase, Discovery, Storage, Transfer, Verification};
     use ProgressReason::{
         AcquiringMetadata, Complete, DiscoveringPeers, Failed, NeedsRepair, NetworkDisabled,
         NoEnabledDiscoverySource, Paused, PreparingIntegrity, PreparingStorage, TransferringPieces,
-        VerifyingPieces, WaitingForDiscovery, WaitingForPublication, WaitingForStorage,
+        VerifyingPieces, WaitingForDiscovery, WaitingForStorage,
     };
 
     match snapshot.state {
@@ -133,7 +133,7 @@ pub fn assess_progress(snapshot: &TorrentSnapshot, inputs: ProgressInputs) -> Pr
         },
         TorrentState::Complete => ProgressAssessment {
             disposition: Inactive,
-            phase: Publication,
+            phase: CompletePhase,
             reason: Complete,
             actions: Vec::new(),
         },
@@ -160,12 +160,6 @@ pub fn assess_progress(snapshot: &TorrentSnapshot, inputs: ProgressInputs) -> Pr
             phase: Storage,
             reason: WaitingForStorage,
             actions: vec![SelectStorage],
-        },
-        TorrentState::AwaitingPublication => ProgressAssessment {
-            disposition: Waiting,
-            phase: Publication,
-            reason: WaitingForPublication,
-            actions: Vec::new(),
         },
         TorrentState::Checking => ProgressAssessment {
             disposition: if inputs.task_active { Active } else { Waiting },
@@ -280,7 +274,7 @@ fn phase_for(snapshot: &TorrentSnapshot) -> ProgressPhase {
         TorrentState::AwaitingStorage | TorrentState::NeedsRepair => ProgressPhase::Storage,
         TorrentState::Checking => ProgressPhase::Verification,
         TorrentState::Downloading => ProgressPhase::Transfer,
-        TorrentState::AwaitingPublication | TorrentState::Complete => ProgressPhase::Publication,
+        TorrentState::Complete => ProgressPhase::Complete,
         TorrentState::Paused | TorrentState::Error if snapshot.metadata_available => {
             ProgressPhase::Transfer
         }
@@ -737,7 +731,7 @@ impl TorrentModel {
                 checking: None,
                 archived: snapshot.archived,
                 removal_state: snapshot.removal_state,
-                delete_managed_data_supported: snapshot.delete_managed_data_supported,
+                delete_data_supported: snapshot.delete_data_supported,
                 force_recheck_available: snapshot.force_recheck_available,
                 error: snapshot.error.clone(),
             },

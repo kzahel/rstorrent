@@ -283,7 +283,6 @@ async fn multi_piece_single_file_uses_torrent_offsets_and_publishes() {
                 swarm_config: SwarmConfig::for_request_limit(2 * MIN_PAYLOAD_ALLOWANCE),
                 skip_files: Vec::new(),
                 high_priority_files: Vec::new(),
-                materialize_files: Vec::new(),
             },
             metainfo,
             DownloadControl::new(),
@@ -349,7 +348,6 @@ async fn one_entry_multi_file_uses_same_pipeline_and_publishes_a_tree() {
             swarm_config: SwarmConfig::for_request_limit(2 * MIN_PAYLOAD_ALLOWANCE),
             skip_files: Vec::new(),
             high_priority_files: Vec::new(),
-            materialize_files: Vec::new(),
         },
         metainfo,
         DownloadControl::new(),
@@ -1824,7 +1822,6 @@ async fn timeout_before_writes_leaves_no_content() {
         resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
         skip_files: Vec::new(),
         high_priority_files: Vec::new(),
-        materialize_files: Vec::new(),
     })
     .await;
 
@@ -1866,7 +1863,6 @@ async fn selective_timeout_before_writes_leaves_no_content_or_part() {
         resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
         skip_files: vec![1],
         high_priority_files: Vec::new(),
-        materialize_files: Vec::new(),
     })
     .await;
 
@@ -1920,7 +1916,6 @@ async fn cancellation_before_writes_leaves_no_content_or_part() {
             resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
             skip_files: vec![1],
             high_priority_files: Vec::new(),
-            materialize_files: Vec::new(),
         },
         download_control,
     ));
@@ -2022,7 +2017,6 @@ async fn preexisting_selective_part_file_is_preserved() {
         resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
         skip_files: vec![1],
         high_priority_files: Vec::new(),
-        materialize_files: Vec::new(),
     })
     .await;
     assert!(matches!(

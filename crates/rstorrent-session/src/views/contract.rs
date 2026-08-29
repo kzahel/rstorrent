@@ -758,7 +758,7 @@ pub enum ProgressPhase {
     Storage,
     Transfer,
     Verification,
-    Publication,
+    Complete,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -775,7 +775,6 @@ pub enum ProgressReason {
     PreparingIntegrity,
     TransferringPieces,
     VerifyingPieces,
-    WaitingForPublication,
     Paused,
     Complete,
     NeedsRepair,
@@ -1189,7 +1188,7 @@ pub struct TorrentView {
     pub archived: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub removal_state: Option<RemovalState>,
-    pub delete_managed_data_supported: bool,
+    pub delete_data_supported: bool,
     pub force_recheck_available: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,

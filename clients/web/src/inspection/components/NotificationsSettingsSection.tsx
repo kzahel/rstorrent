@@ -20,7 +20,7 @@ const OPTIONS: readonly {
   {
     setting: "notify_download_complete",
     label: "Download complete",
-    description: "Notify when a torrent finishes downloading and is published.",
+    description: "Notify when a torrent finishes downloading.",
   },
   {
     setting: "notify_needs_attention",

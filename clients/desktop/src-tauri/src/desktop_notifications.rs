@@ -168,7 +168,7 @@ impl DesktopNotificationPolicy {
                 None
             } else if attention_active {
                 Some(attention_notification(&observation))
-            } else if is_published_complete(&observation)
+            } else if is_download_complete(&observation)
                 && observation.received_bytes.is_some_and(|bytes| bytes > 0)
             {
                 Some(completion_notification(&observation))
@@ -197,7 +197,7 @@ impl DesktopNotificationPolicy {
         } else if observes_download_progress(&previous.observation, &observation) {
             completion_armed = true;
         }
-        let completion_edge = completion_armed && is_published_complete(&observation);
+        let completion_edge = completion_armed && is_download_complete(&observation);
         if completion_edge {
             completion_armed = false;
         }
@@ -223,13 +223,8 @@ impl DesktopNotificationPolicy {
 }
 
 fn observes_download_progress(previous: &TorrentObservation, current: &TorrentObservation) -> bool {
-    let transfer_generation = matches!(
-        previous.state,
-        TorrentState::Downloading | TorrentState::AwaitingPublication
-    ) || matches!(
-        current.state,
-        TorrentState::Downloading | TorrentState::AwaitingPublication
-    );
+    let transfer_generation = matches!(previous.state, TorrentState::Downloading)
+        || matches!(current.state, TorrentState::Downloading);
     increased(previous.received_bytes, current.received_bytes)
         || (transfer_generation && current.verified_piece_count > previous.verified_piece_count)
 }
@@ -238,9 +233,9 @@ fn increased(previous: Option<u128>, current: Option<u128>) -> bool {
     matches!((previous, current), (Some(previous), Some(current)) if current > previous)
 }
 
-fn is_published_complete(observation: &TorrentObservation) -> bool {
+fn is_download_complete(observation: &TorrentObservation) -> bool {
     observation.state == TorrentState::Complete
-        && observation.storage_state == StorageState::Published
+        && observation.storage_state == StorageState::Available
 }
 
 fn needs_attention(observation: &TorrentObservation) -> bool {
@@ -348,7 +343,7 @@ mod tests {
             observation(
                 "complete",
                 TorrentState::Complete,
-                StorageState::Published,
+                StorageState::Available,
                 100,
                 1,
             ),
@@ -359,7 +354,7 @@ mod tests {
                 observation(
                     "complete",
                     TorrentState::Complete,
-                    StorageState::Published,
+                    StorageState::Available,
                     100,
                     1,
                 )
@@ -373,7 +368,7 @@ mod tests {
             observation(
                 "zero-work",
                 TorrentState::Downloading,
-                StorageState::Staging,
+                StorageState::Available,
                 100,
                 1,
             ),
@@ -384,7 +379,7 @@ mod tests {
                 observation(
                     "zero-work",
                     TorrentState::Complete,
-                    StorageState::Published,
+                    StorageState::Available,
                     100,
                     1,
                 )
@@ -394,14 +389,14 @@ mod tests {
     }
 
     #[test]
-    fn observed_progress_arms_one_published_completion() {
+    fn observed_progress_arms_one_completion() {
         let mut policy = DesktopNotificationPolicy::default();
         establish(
             &mut policy,
             observation(
                 "download",
                 TorrentState::Downloading,
-                StorageState::Staging,
+                StorageState::Available,
                 10,
                 0,
             ),
@@ -412,20 +407,7 @@ mod tests {
                 observation(
                     "download",
                     TorrentState::Downloading,
-                    StorageState::Staging,
-                    20,
-                    1,
-                )
-            ),
-            None
-        );
-        assert_eq!(
-            apply(
-                &mut policy,
-                observation(
-                    "download",
-                    TorrentState::AwaitingPublication,
-                    StorageState::Prepared,
+                    StorageState::Available,
                     20,
                     1,
                 )
@@ -438,7 +420,7 @@ mod tests {
                 observation(
                     "download",
                     TorrentState::Complete,
-                    StorageState::Published,
+                    StorageState::Available,
                     20,
                     1,
                 )
@@ -451,7 +433,7 @@ mod tests {
                 observation(
                     "download",
                     TorrentState::Complete,
-                    StorageState::Published,
+                    StorageState::Available,
                     20,
                     1,
                 )
@@ -468,7 +450,7 @@ mod tests {
             observation(
                 "coalesced",
                 TorrentState::Downloading,
-                StorageState::Staging,
+                StorageState::Available,
                 10,
                 0,
             ),
@@ -479,7 +461,7 @@ mod tests {
                 observation(
                     "coalesced",
                     TorrentState::Complete,
-                    StorageState::Published,
+                    StorageState::Available,
                     20,
                     1,
                 )
@@ -496,7 +478,7 @@ mod tests {
             observation(
                 "metadata-coalesced",
                 TorrentState::AwaitingMetadata,
-                StorageState::Staging,
+                StorageState::Available,
                 0,
                 0,
             ),
@@ -507,7 +489,7 @@ mod tests {
                 observation(
                     "metadata-coalesced",
                     TorrentState::Complete,
-                    StorageState::Published,
+                    StorageState::Available,
                     4_195_035,
                     257,
                 )
@@ -521,7 +503,7 @@ mod tests {
             observation(
                 "coalesced-recheck",
                 TorrentState::Paused,
-                StorageState::Published,
+                StorageState::Available,
                 4_195_035,
                 0,
             ),
@@ -532,7 +514,7 @@ mod tests {
                 observation(
                     "coalesced-recheck",
                     TorrentState::Complete,
-                    StorageState::Published,
+                    StorageState::Available,
                     4_195_035,
                     257,
                 )
@@ -549,7 +531,7 @@ mod tests {
             observation(
                 "recheck",
                 TorrentState::Downloading,
-                StorageState::Staging,
+                StorageState::Available,
                 10,
                 0,
             ),
@@ -560,7 +542,7 @@ mod tests {
                 observation(
                     "recheck",
                     TorrentState::Downloading,
-                    StorageState::Staging,
+                    StorageState::Available,
                     20,
                     1,
                 )
@@ -573,7 +555,7 @@ mod tests {
                 observation(
                     "recheck",
                     TorrentState::Checking,
-                    StorageState::Published,
+                    StorageState::Available,
                     20,
                     0,
                 )
@@ -586,7 +568,7 @@ mod tests {
                 observation(
                     "recheck",
                     TorrentState::Complete,
-                    StorageState::Published,
+                    StorageState::Available,
                     20,
                     1,
                 )
@@ -599,7 +581,7 @@ mod tests {
                 observation(
                     "recheck",
                     TorrentState::Downloading,
-                    StorageState::Staging,
+                    StorageState::Available,
                     21,
                     1,
                 )
@@ -612,7 +594,7 @@ mod tests {
                 observation(
                     "recheck",
                     TorrentState::Complete,
-                    StorageState::Published,
+                    StorageState::Available,
                     22,
                     2,
                 )
@@ -629,7 +611,7 @@ mod tests {
             observation(
                 "attention",
                 TorrentState::Downloading,
-                StorageState::Staging,
+                StorageState::Available,
                 10,
                 0,
             ),
@@ -640,7 +622,7 @@ mod tests {
                 observation(
                     "attention",
                     TorrentState::Error,
-                    StorageState::Staging,
+                    StorageState::Available,
                     10,
                     0,
                 )
@@ -666,7 +648,7 @@ mod tests {
                 observation(
                     "attention",
                     TorrentState::Paused,
-                    StorageState::Staging,
+                    StorageState::Available,
                     10,
                     0,
                 )
@@ -679,7 +661,7 @@ mod tests {
                 observation(
                     "attention",
                     TorrentState::NeedsRepair,
-                    StorageState::Staging,
+                    StorageState::Available,
                     10,
                     0,
                 )
@@ -696,7 +678,7 @@ mod tests {
             observation(
                 "removed",
                 TorrentState::Downloading,
-                StorageState::Staging,
+                StorageState::Available,
                 10,
                 0,
             ),
@@ -708,7 +690,7 @@ mod tests {
                 observation(
                     "removed",
                     TorrentState::Complete,
-                    StorageState::Published,
+                    StorageState::Available,
                     20,
                     1,
                 )
@@ -741,7 +723,7 @@ mod tests {
         let mut torrent = observation(
             "new-error",
             TorrentState::Error,
-            StorageState::Staging,
+            StorageState::Available,
             0,
             0,
         );
@@ -767,7 +749,7 @@ mod tests {
                 observation(
                     "coalesced-new",
                     TorrentState::Complete,
-                    StorageState::Published,
+                    StorageState::Available,
                     4_195_035,
                     257,
                 )
@@ -785,7 +767,7 @@ mod tests {
                 observation(
                     "complete-new",
                     TorrentState::Complete,
-                    StorageState::Published,
+                    StorageState::Available,
                     0,
                     257,
                 )

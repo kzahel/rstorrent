@@ -988,7 +988,7 @@ describe("inspection application", () => {
     );
   });
 
-  it("shows Open only for a single verified published file", async () => {
+  it("shows Open only for a single verified available file", async () => {
     const user = userEvent.setup();
     const base = buildScenarioSnapshot("file-progress", 24_000, false, 1);
     const fileSet = base.filesByTorrent[DEMO_PRIMARY_TORRENT_ID]!;

@@ -427,7 +427,7 @@ private fun ProductNavHost(
                 removeTargets = emptySet()
             },
             onDelete = {
-                removeTargets.forEach { service?.removeTorrent(it, RemovalDataPolicy.DELETE_MANAGED) }
+                removeTargets.forEach { service?.removeTorrent(it, RemovalDataPolicy.DELETE_DATA) }
                 removeTargets = emptySet()
             },
         )

@@ -90,7 +90,7 @@ struct TorrentDetailScreen: View {
                             command(
                                 .removeTorrent(
                                     torrentId: torrent.id,
-                                    data: deleteFiles ? .deleteManaged : .keep
+                                    data: deleteFiles ? .deleteData : .keep
                                 ),
                                 dismissAfter: true
                             )

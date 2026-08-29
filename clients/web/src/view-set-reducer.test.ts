@@ -21,7 +21,7 @@ function torrent(verified: number): TorrentView {
       upload: { type: "unlimited" },
       download: { type: "unlimited" },
     },
-    storage_state: verified === 3 ? "published" : "staging",
+    storage_state: "available",
     metadata_available: true,
     piece_count: 3,
     total_size_bytes: "49152",
@@ -40,12 +40,12 @@ function torrent(verified: number): TorrentView {
         : { state: "estimate", seconds: "8" },
     progress: {
       disposition: verified === 3 ? "inactive" : "active",
-      phase: verified === 3 ? "publication" : "transfer",
+      phase: verified === 3 ? "complete" : "transfer",
       reason: verified === 3 ? "complete" : "transferring_pieces",
       actions: [],
     },
     archived: false,
-    delete_managed_data_supported: true,
+    delete_data_supported: true,
     force_recheck_available: true,
   };
 }

@@ -3,7 +3,6 @@ package org.rstorrent.bootstrap
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
-import org.rstorrent.bootstrap.uniffi.SafRemovalNamespace
 import org.rstorrent.bootstrap.uniffi.SafStorageObjectKind
 import org.rstorrent.session.uniffi.ActivePiece
 import org.rstorrent.session.uniffi.ActivePieceStageView
@@ -330,10 +329,9 @@ class ProductStateReducerTest {
                 ".t1-owner.rstorrent-parts" to SafStorageObjectKind.FILE,
             )
         val deleted = mutableListOf<String>()
-        deleteManagedArtifacts(
+        deleteDataArtifacts(
             name = "test",
             torrentId = "t1-owner",
-            namespace = SafRemovalNamespace.PUBLISHED,
             tree = true,
             files = listOf(listOf("episode.mkv")),
             directories = listOf(emptyList()),
@@ -360,10 +358,9 @@ class ProductStateReducerTest {
             documents,
         )
 
-        deleteManagedArtifacts(
+        deleteDataArtifacts(
             name = "test",
             torrentId = "t1-owner",
-            namespace = SafRemovalNamespace.PUBLISHED,
             tree = true,
             files = listOf(listOf("episode.mkv")),
             directories = listOf(emptyList()),
@@ -382,10 +379,9 @@ class ProductStateReducerTest {
     fun safRemovalSurfacesProviderRefusalWithoutContinuing() {
         val attempted = mutableListOf<String>()
         assertThrows(IllegalStateException::class.java) {
-            deleteManagedArtifacts(
+            deleteDataArtifacts(
                 name = "test.bin",
                 torrentId = "t1-owner",
-                namespace = SafRemovalNamespace.PUBLISHED,
                 tree = false,
                 files = listOf(emptyList()),
                 directories = emptyList(),
@@ -403,19 +399,18 @@ class ProductStateReducerTest {
     }
 
     @Test
-    fun safStagingRemovalPreservesAnUnownedFinalNamespace() {
+    fun safRemovalPreservesLegacyHiddenAndUnrelatedFiles() {
         val documents =
             mutableMapOf(
                 "test" to SafStorageObjectKind.DIRECTORY,
                 "test/preserve.txt" to SafStorageObjectKind.FILE,
                 ".t1-owner.rstorrent-staging" to SafStorageObjectKind.DIRECTORY,
-                ".t1-owner.rstorrent-staging/episode.mkv" to SafStorageObjectKind.FILE,
+                ".t1-owner.rstorrent-staging/sentinel" to SafStorageObjectKind.FILE,
                 ".t1-owner.rstorrent-parts" to SafStorageObjectKind.FILE,
             )
-        deleteManagedArtifacts(
+        deleteDataArtifacts(
             name = "test",
             torrentId = "t1-owner",
-            namespace = SafRemovalNamespace.STAGING,
             tree = true,
             files = listOf(listOf("episode.mkv")),
             directories = listOf(emptyList()),
@@ -434,70 +429,29 @@ class ProductStateReducerTest {
             mapOf(
                 "test" to SafStorageObjectKind.DIRECTORY,
                 "test/preserve.txt" to SafStorageObjectKind.FILE,
+                ".t1-owner.rstorrent-staging" to SafStorageObjectKind.DIRECTORY,
+                ".t1-owner.rstorrent-staging/sentinel" to SafStorageObjectKind.FILE,
             ),
             documents,
         )
     }
 
     @Test
-    fun safLegacyRemovalPreflightsAndDeletesBothOwnedNamespaces() {
+    fun safRemovalPreflightsAllExpectedFilesBeforeMutation() {
         val documents =
             mutableMapOf(
-                "t1-owner" to SafStorageObjectKind.DIRECTORY,
-                "t1-owner/episode.mkv" to SafStorageObjectKind.FILE,
-                ".t1-owner.rstorrent-staging" to SafStorageObjectKind.DIRECTORY,
-                ".t1-owner.rstorrent-staging/episode.mkv" to SafStorageObjectKind.FILE,
+                "test" to SafStorageObjectKind.DIRECTORY,
+                "test/first.mkv" to SafStorageObjectKind.FILE,
+                "test/wrong" to SafStorageObjectKind.DIRECTORY,
                 ".t1-owner.rstorrent-parts" to SafStorageObjectKind.FILE,
             )
         val deleted = mutableListOf<String>()
-        deleteManagedArtifacts(
-            name = "test",
-            torrentId = "t1-owner",
-            namespace = SafRemovalNamespace.LEGACY,
-            tree = true,
-            files = listOf(listOf("episode.mkv")),
-            directories = listOf(emptyList()),
-            root = "",
-            find = { parent, name ->
-                listOf(parent, name).filter(String::isNotEmpty).joinToString("/")
-                    .takeIf(documents::containsKey)
-            },
-            kind = { documents.getValue(it) },
-            isEmptyDirectory = { directory ->
-                documents.keys.none { it.startsWith("$directory/") }
-            },
-            delete = { document ->
-                deleted += document
-                documents.remove(document) != null
-            },
-        )
-        assertEquals(
-            listOf(
-                "t1-owner/episode.mkv",
-                ".t1-owner.rstorrent-staging/episode.mkv",
-                ".t1-owner.rstorrent-parts",
-                "t1-owner",
-                ".t1-owner.rstorrent-staging",
-            ),
-            deleted,
-        )
-        assertEquals(emptyMap<String, SafStorageObjectKind>(), documents)
-    }
-
-    @Test
-    fun safPublishingRemovalRejectsAmbiguousNamespaceSides() {
-        val documents =
-            mapOf(
-                "test" to SafStorageObjectKind.DIRECTORY,
-                ".t1-owner.rstorrent-staging" to SafStorageObjectKind.DIRECTORY,
-            )
         assertThrows(IllegalStateException::class.java) {
-            deleteManagedArtifacts(
+            deleteDataArtifacts(
                 name = "test",
                 torrentId = "t1-owner",
-                namespace = SafRemovalNamespace.PUBLISHING,
                 tree = true,
-                files = emptyList(),
+                files = listOf(listOf("first.mkv"), listOf("wrong")),
                 directories = listOf(emptyList()),
                 root = "",
                 find = { parent, name ->
@@ -506,9 +460,10 @@ class ProductStateReducerTest {
                 },
                 kind = { documents.getValue(it) },
                 isEmptyDirectory = { true },
-                delete = { true },
+                delete = { document -> deleted += document; true },
             )
         }
+        assertEquals(emptyList<String>(), deleted)
     }
 
     @Test
@@ -1187,7 +1142,7 @@ class ProductStateReducerTest {
                     TransferRateLimit.Unlimited,
                     TransferRateLimit.Unlimited,
                 ),
-            storageState = StorageState.STAGING,
+            storageState = StorageState.AVAILABLE,
             metadataAvailable = true,
             pieceCount = 100_000U,
             totalSizeBytes = "1638400000",
@@ -1211,7 +1166,7 @@ class ProductStateReducerTest {
             checking = null,
             archived = false,
             removalState = null,
-            deleteManagedDataSupported = true,
+            deleteDataSupported = true,
             forceRecheckAvailable = true,
             error = null,
         )

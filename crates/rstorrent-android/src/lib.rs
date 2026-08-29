@@ -23,8 +23,8 @@ use rstorrent_protocol::identity::V1InfoHash;
 use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo};
 use rstorrent_session::{
     AddTorrentBytesRequest, ApplicationConfig, ApplicationService, ConfiguredStorageRoot,
-    PlatformRemovalNamespace, PlatformRemovalPlan, RequestEnvelope, ResponseEnvelope,
-    SubscriptionSpec, ViewSubscription, ViewUpdate,
+    PlatformRemovalPlan, RequestEnvelope, ResponseEnvelope, SubscriptionSpec, ViewSubscription,
+    ViewUpdate,
 };
 use sha1::{Digest, Sha1};
 use tokio::sync::Mutex as AsyncMutex;
@@ -257,61 +257,6 @@ impl AndroidApplicationClient {
             .map_err(|error| AndroidClientError::message(error.to_string()))
     }
 
-    pub async fn prepared_saf_files(
-        &self,
-        torrent_id: String,
-    ) -> Result<Vec<PreparedFile>, AndroidClientError> {
-        let files = self
-            .service
-            .lock()
-            .await
-            .as_mut()
-            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
-            .prepared_files(&torrent_id)
-            .await
-            .map_err(|error| AndroidClientError::message(error.to_string()))?;
-        files
-            .into_iter()
-            .map(|file| {
-                Ok(PreparedFile {
-                    file_index: u32::try_from(file.file_index)
-                        .map_err(|_| AndroidClientError::message("file index exceeds u32"))?,
-                    length: file.length,
-                    sha1_hex: hex(&file.sha1),
-                })
-            })
-            .collect()
-    }
-
-    pub async fn prepare_dynamic_saf_publication(
-        &self,
-        torrent_id: String,
-    ) -> Result<String, AndroidClientError> {
-        self.service
-            .lock()
-            .await
-            .as_mut()
-            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
-            .prepare_platform_publication(&torrent_id)
-            .await
-            .map(|plan| plan.name)
-            .map_err(|error| AndroidClientError::message(error.to_string()))
-    }
-
-    pub async fn confirm_dynamic_saf_publication(
-        &self,
-        torrent_id: String,
-    ) -> Result<(), AndroidClientError> {
-        self.service
-            .lock()
-            .await
-            .as_mut()
-            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
-            .confirm_platform_publication(&torrent_id)
-            .await
-            .map_err(|error| AndroidClientError::message(error.to_string()))
-    }
-
     pub async fn mark_saf_unavailable(
         &self,
         torrent_id: String,
@@ -389,7 +334,7 @@ impl AndroidApplicationClient {
     pub async fn next_saf_storage_request(&self) -> Option<SafStorageRequest> {
         self.platform_storage.next_request().await.map(|request| {
             let (role, file_index) = match request.role {
-                StorageFileRole::Namespace => (SafDynamicFileRole::Namespace, 0),
+                StorageFileRole::ContentRoot => (SafDynamicFileRole::ContentRoot, 0),
                 StorageFileRole::Payload(file_index) => (
                     SafDynamicFileRole::Payload,
                     u32::try_from(file_index).unwrap_or(u32::MAX),
@@ -400,7 +345,7 @@ impl AndroidApplicationClient {
                 request_id: request.request_id,
                 root_id: request.root_id,
                 storage_id: request.storage_id,
-                namespace_generation: request.namespace_generation,
+                storage_generation: request.storage_generation,
                 role,
                 file_index,
                 path: request.path,
@@ -650,7 +595,6 @@ pub struct EngineConfig {
     pub max_buffered_payload_bytes: u64,
     pub storage_write_delay_millis: u64,
     pub skip_files: Vec<u32>,
-    pub materialize_files: Vec<u32>,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -664,12 +608,11 @@ pub struct SafStorage {
     pub wanted_files: Vec<SafDescriptor>,
     pub part_fd: i32,
     pub reopened_part_fd: i32,
-    pub materialization_files: Vec<SafDescriptor>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, uniffi::Enum)]
 pub enum SafDynamicFileRole {
-    Namespace,
+    ContentRoot,
     Payload,
     Part,
 }
@@ -723,7 +666,7 @@ pub struct SafStorageRequest {
     pub request_id: u64,
     pub root_id: String,
     pub storage_id: String,
-    pub namespace_generation: u64,
+    pub storage_generation: u64,
     pub role: SafDynamicFileRole,
     pub file_index: u32,
     pub path: Vec<String>,
@@ -762,7 +705,6 @@ pub struct SafPlanFile {
     pub path: Vec<String>,
     pub length: u64,
     pub role: SafFileRole,
-    pub materialize: bool,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -771,6 +713,7 @@ pub struct SafStoragePlan {
     pub message: Option<String>,
     pub info_hash_hex: String,
     pub name: String,
+    pub tree: bool,
     pub files: Vec<SafPlanFile>,
 }
 
@@ -779,22 +722,12 @@ pub struct SafRemovalPath {
     pub components: Vec<String>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, uniffi::Enum)]
-pub enum SafRemovalNamespace {
-    None,
-    Legacy,
-    Staging,
-    Publishing,
-    Published,
-}
-
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct SafRemovalPlan {
     pub operation_id: String,
     pub torrent_id: String,
     pub storage_root: String,
     pub name: String,
-    pub namespace: SafRemovalNamespace,
     pub tree: bool,
     pub files: Vec<SafRemovalPath>,
     pub directories: Vec<SafRemovalPath>,
@@ -806,13 +739,6 @@ fn map_saf_removal_plan(plan: PlatformRemovalPlan) -> SafRemovalPlan {
         torrent_id: plan.torrent_id,
         storage_root: plan.storage_root,
         name: plan.name,
-        namespace: match plan.namespace {
-            PlatformRemovalNamespace::None => SafRemovalNamespace::None,
-            PlatformRemovalNamespace::Legacy => SafRemovalNamespace::Legacy,
-            PlatformRemovalNamespace::Staging => SafRemovalNamespace::Staging,
-            PlatformRemovalNamespace::Publishing => SafRemovalNamespace::Publishing,
-            PlatformRemovalNamespace::Published => SafRemovalNamespace::Published,
-        },
         tree: plan.tree,
         files: plan
             .files
@@ -851,7 +777,6 @@ pub enum SessionState {
     Idle,
     Running,
     Cancelling,
-    Prepared,
     Succeeded,
     Failed,
     Cancelled,
@@ -859,7 +784,6 @@ pub enum SessionState {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, uniffi::Enum)]
 pub enum TerminalOutcome {
-    Prepared,
     Succeeded,
     Failed,
     Cancelled,
@@ -897,19 +821,9 @@ pub struct EngineReport {
     pub padding_bytes: u64,
     pub selected_written_bytes: u64,
     pub part_written_bytes: u64,
-    pub materialized_bytes: u64,
-    pub part_slots_before_materialization: u64,
-    pub part_slots_after_materialization: u64,
+    pub part_slots: u64,
     pub part_reopened: bool,
     pub part_path: Option<String>,
-    pub prepared_files: Vec<PreparedFile>,
-}
-
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct PreparedFile {
-    pub file_index: u32,
-    pub length: u64,
-    pub sha1_hex: String,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -1228,11 +1142,7 @@ pub fn interface_version() -> String {
 }
 
 #[uniffi::export]
-pub fn saf_storage_plan(
-    metainfo_bytes: Vec<u8>,
-    skip_files: Vec<u32>,
-    materialize_files: Vec<u32>,
-) -> SafStoragePlan {
+pub fn saf_storage_plan(metainfo_bytes: Vec<u8>, skip_files: Vec<u32>) -> SafStoragePlan {
     let result = (|| {
         if metainfo_bytes.len() > BEP9_METAINFO_LIMITS.max_outer_bytes {
             return Err(format!(
@@ -1240,7 +1150,7 @@ pub fn saf_storage_plan(
                 BEP9_METAINFO_LIMITS.max_outer_bytes
             ));
         }
-        if skip_files.len() > MAX_FILE_SELECTIONS || materialize_files.len() > MAX_FILE_SELECTIONS {
+        if skip_files.len() > MAX_FILE_SELECTIONS {
             return Err(format!(
                 "file selection lists may contain at most {MAX_FILE_SELECTIONS} entries"
             ));
@@ -1248,12 +1158,8 @@ pub fn saf_storage_plan(
         let metainfo = Metainfo::from_bytes_with_limits(&metainfo_bytes, BEP9_METAINFO_LIMITS)
             .map_err(|error| error.to_string())?;
         let skip_files: Vec<usize> = skip_files.into_iter().map(|index| index as usize).collect();
-        let materialize_files: Vec<usize> = materialize_files
-            .into_iter()
-            .map(|index| index as usize)
-            .collect();
-        let plan = plan_descriptor_storage(&metainfo, &skip_files, &materialize_files)
-            .map_err(|error| error.to_string())?;
+        let plan =
+            plan_descriptor_storage(&metainfo, &skip_files).map_err(|error| error.to_string())?;
         map_saf_storage_plan(plan).map_err(|error| error.to_string())
     })();
     result.unwrap_or_else(|message| SafStoragePlan {
@@ -1261,6 +1167,7 @@ pub fn saf_storage_plan(
         message: Some(message),
         info_hash_hex: String::new(),
         name: String::new(),
+        tree: false,
         files: Vec::new(),
     })
 }
@@ -1280,7 +1187,6 @@ fn map_saf_storage_plan(plan: DescriptorStoragePlan) -> Result<SafStoragePlan, A
                     DescriptorFileRole::Skipped => SafFileRole::Skipped,
                     DescriptorFileRole::Padding => SafFileRole::Padding,
                 },
-                materialize: file.materialize,
             })
         })
         .collect::<Result<Vec<_>, AndroidClientError>>()?;
@@ -1289,6 +1195,7 @@ fn map_saf_storage_plan(plan: DescriptorStoragePlan) -> Result<SafStoragePlan, A
         message: None,
         info_hash_hex: hex(&plan.info_hash),
         name: plan.name,
+        tree: plan.content_shape == rstorrent_engine::ContentShape::Tree,
         files,
     })
 }
@@ -1318,9 +1225,7 @@ pub fn inspect_borrowed_descriptor(
 }
 
 fn duplicate_saf_storage(storage: SafStorage) -> Result<DescriptorStorage, String> {
-    if storage.wanted_files.len() > MAX_FILE_SELECTIONS
-        || storage.materialization_files.len() > MAX_FILE_SELECTIONS
-    {
+    if storage.wanted_files.len() > MAX_FILE_SELECTIONS {
         return Err(format!(
             "SAF descriptor lists may contain at most {MAX_FILE_SELECTIONS} entries"
         ));
@@ -1340,7 +1245,6 @@ fn duplicate_saf_storage(storage: SafStorage) -> Result<DescriptorStorage, Strin
         wanted_files: files(storage.wanted_files)?,
         part_file: duplicate_descriptor(storage.part_fd)?,
         reopened_part_file: duplicate_descriptor(storage.reopened_part_fd)?,
-        materialization_files: files(storage.materialization_files)?,
     })
 }
 
@@ -1467,9 +1371,7 @@ fn validate_config(config: EngineConfig) -> Result<(DownloadConfig, Duration), S
              {MAX_PAYLOAD_BYTES} bytes"
         ));
     }
-    if config.skip_files.len() > MAX_FILE_SELECTIONS
-        || config.materialize_files.len() > MAX_FILE_SELECTIONS
-    {
+    if config.skip_files.len() > MAX_FILE_SELECTIONS {
         return Err(format!(
             "file selection lists may contain at most {MAX_FILE_SELECTIONS} entries"
         ));
@@ -1511,11 +1413,6 @@ fn validate_config(config: EngineConfig) -> Result<(DownloadConfig, Duration), S
                 .map(|index| index as usize)
                 .collect(),
             high_priority_files: Vec::new(),
-            materialize_files: config
-                .materialize_files
-                .into_iter()
-                .map(|index| index as usize)
-                .collect(),
         },
         Duration::from_millis(config.storage_write_delay_millis),
     ))
@@ -1528,7 +1425,6 @@ fn run_worker(
     control: DownloadControl,
     started: Instant,
 ) {
-    let descriptor_backed = descriptors.is_some();
     let result = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -1551,7 +1447,7 @@ fn run_worker(
         });
 
     let terminal = match result {
-        Ok(report) => success_result(report, started.elapsed(), descriptor_backed),
+        Ok(report) => success_result(report, started.elapsed()),
         Err(WorkerFailure::Engine(DownloadError::Cancelled)) => TerminalResult {
             outcome: TerminalOutcome::Cancelled,
             failure_kind: None,
@@ -1579,7 +1475,6 @@ fn run_worker(
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     inner.state = match terminal.outcome {
-        TerminalOutcome::Prepared => SessionState::Prepared,
         TerminalOutcome::Succeeded => SessionState::Succeeded,
         TerminalOutcome::Failed => SessionState::Failed,
         TerminalOutcome::Cancelled => SessionState::Cancelled,
@@ -1640,9 +1535,7 @@ fn classify_failure(error: &DownloadError) -> FailureKind {
         | DownloadError::InconsistentHybridHashes { .. }
         | DownloadError::Piece(_) => FailureKind::Protocol,
         DownloadError::SelectiveStorage(_) | DownloadError::Io { .. } => FailureKind::Storage,
-        DownloadError::CleanupAfterFailure { .. } | DownloadError::PeerCleanup { .. } => {
-            FailureKind::Cleanup
-        }
+        DownloadError::PeerCleanup { .. } => FailureKind::Cleanup,
         DownloadError::Entropy(_)
         | DownloadError::Dht(_)
         | DownloadError::Checkpoint(_)
@@ -1654,17 +1547,9 @@ fn classify_failure(error: &DownloadError) -> FailureKind {
     }
 }
 
-fn success_result(
-    report: DownloadReport,
-    elapsed: Duration,
-    descriptor_backed: bool,
-) -> TerminalResult {
+fn success_result(report: DownloadReport, elapsed: Duration) -> TerminalResult {
     TerminalResult {
-        outcome: if descriptor_backed {
-            TerminalOutcome::Prepared
-        } else {
-            TerminalOutcome::Succeeded
-        },
+        outcome: TerminalOutcome::Succeeded,
         failure_kind: None,
         failure_message: None,
         report: Some(EngineReport {
@@ -1686,20 +1571,9 @@ fn success_result(
             padding_bytes: report.padding_bytes,
             selected_written_bytes: report.selected_written_bytes as u64,
             part_written_bytes: report.part_written_bytes as u64,
-            materialized_bytes: report.materialized_bytes,
-            part_slots_before_materialization: report.part_slots_before_materialization as u64,
-            part_slots_after_materialization: report.part_slots_after_materialization as u64,
+            part_slots: report.part_slots as u64,
             part_reopened: report.part_reopened,
             part_path: report.part_path.map(|path| path.display().to_string()),
-            prepared_files: report
-                .prepared_files
-                .into_iter()
-                .map(|file| PreparedFile {
-                    file_index: file.file_index as u32,
-                    length: file.length,
-                    sha1_hex: hex(&file.sha1),
-                })
-                .collect(),
         }),
         elapsed_millis: millis(elapsed),
     }
@@ -1750,7 +1624,6 @@ mod tests {
             torrent_id: "t1-owner".to_owned(),
             storage_root: "downloads".to_owned(),
             name: "show".to_owned(),
-            namespace: PlatformRemovalNamespace::Published,
             tree: true,
             files: vec![rstorrent_session::PlatformRemovalPath {
                 components: vec!["Season 01".to_owned(), "Episode 01.mkv".to_owned()],
@@ -1760,7 +1633,6 @@ mod tests {
             }],
         });
 
-        assert_eq!(plan.namespace, SafRemovalNamespace::Published);
         assert!(plan.tree);
         assert_eq!(plan.files[0].components, ["Season 01", "Episode 01.mkv"]);
         assert_eq!(plan.directories[0].components, ["Season 01"]);
@@ -1785,7 +1657,6 @@ mod tests {
             max_buffered_payload_bytes: 32 * 1024,
             storage_write_delay_millis: 0,
             skip_files: Vec::new(),
-            materialize_files: Vec::new(),
         }
     }
 
@@ -1912,24 +1783,13 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
     }
 
     #[test]
-    fn plans_exact_saf_roles_and_materialization() {
-        let plan = saf_storage_plan(two_file_metainfo(), vec![1], vec![1]);
+    fn plans_exact_direct_saf_roles() {
+        let plan = saf_storage_plan(two_file_metainfo(), vec![1]);
         assert!(plan.valid, "{:?}", plan.message);
         assert_eq!(plan.name, "fixture");
         assert_eq!(plan.files.len(), 2);
         assert_eq!(plan.files[0].role, SafFileRole::Wanted);
-        assert!(!plan.files[0].materialize);
         assert_eq!(plan.files[1].role, SafFileRole::Skipped);
-        assert!(plan.files[1].materialize);
-
-        let duplicate = saf_storage_plan(two_file_metainfo(), vec![1], vec![1, 1]);
-        assert!(!duplicate.valid);
-        assert!(
-            duplicate
-                .message
-                .expect("invalid plan message")
-                .contains("duplicated")
-        );
     }
 
     #[cfg(unix)]
@@ -1978,7 +1838,6 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 wanted_files: Vec::new(),
                 part_fd: -1,
                 reopened_part_fd: -1,
-                materialization_files: Vec::new(),
             },
         );
         assert_eq!(result.disposition, StartDisposition::Rejected);

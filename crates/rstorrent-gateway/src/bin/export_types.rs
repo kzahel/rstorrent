@@ -542,11 +542,7 @@ fn fixture_torrent(torrent_id: &str, verified: u32) -> TorrentView {
         },
         download_queue_position: if verified == 3 { None } else { Some(1) },
         transfer_limits: TorrentTransferLimits::default(),
-        storage_state: if verified == 3 {
-            StorageState::Published
-        } else {
-            StorageState::Staging
-        },
+        storage_state: StorageState::Available,
         metadata_available: true,
         piece_count: 3,
         total_size_bytes: Some("49152".to_owned()),
@@ -574,7 +570,7 @@ fn fixture_torrent(torrent_id: &str, verified: u32) -> TorrentView {
                 ProgressDisposition::Active
             },
             phase: if verified == 3 {
-                ProgressPhase::Publication
+                ProgressPhase::Complete
             } else {
                 ProgressPhase::Transfer
             },
@@ -588,7 +584,7 @@ fn fixture_torrent(torrent_id: &str, verified: u32) -> TorrentView {
         checking: None,
         archived: false,
         removal_state: None,
-        delete_managed_data_supported: true,
+        delete_data_supported: true,
         force_recheck_available: true,
         error: None,
     }

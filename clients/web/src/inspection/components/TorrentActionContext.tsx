@@ -337,7 +337,7 @@ export function TorrentActionProvider({ children }: { readonly children: ReactNo
         <RemoveTorrentDialog
           targets={removeRequest.targets}
           deleteDataSupported={removeRequest.targets.every(
-            (target) => target.deleteManagedDataSupported,
+            (target) => target.deleteDataSupported,
           )}
           returnFocus={returnRemoveFocus}
           onCancel={() => setRemoveRequest(null)}

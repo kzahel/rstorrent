@@ -31,8 +31,8 @@ private enum TorrentListFilter: CaseIterable, Identifiable {
     func includes(_ torrent: TorrentListItem) -> Bool {
         switch self {
         case .all: return true
-        case .active: return !torrent.isStopped && !torrent.isPublishedComplete
-        case .finished: return torrent.isPublishedComplete
+        case .active: return !torrent.isStopped && !torrent.isComplete
+        case .finished: return torrent.isComplete
         }
     }
 }
@@ -136,7 +136,7 @@ struct TorrentListScreen: View {
                             _ = try await appModel.dispatch(
                                 .removeTorrent(
                                     torrentId: torrent.id,
-                                    data: deleteFiles ? .deleteManaged : .keep
+                                    data: deleteFiles ? .deleteData : .keep
                                 )
                             )
                         }

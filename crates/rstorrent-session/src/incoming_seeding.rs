@@ -7,17 +7,18 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use rstorrent_engine::{
-    FastResumeValidation, IncomingPeerError, IncomingPeerHandle, PlatformStorageFailureKind,
-    PlatformStorageSpec, PublicationShape, ResumeAdmissionOutcome, ResumeValidationIntent,
-    ResumeValidationRejectReason, SeedContent, SeedContentError, SeedRegistration,
-    SeedRegistrationToken, SelectiveStorageError, StorageFilePool, TorrentArtifactIdentity,
-    TorrentPeerHandle, decide_resume_admission, validate_published_fast_resume_content_with_path,
-    validate_published_fast_resume_content_with_platform,
+    ContentShape, FastResumeValidation, IncomingPeerError, IncomingPeerHandle,
+    PlatformStorageFailureKind, PlatformStorageSpec, ResumeAdmissionOutcome,
+    ResumeValidationIntent, ResumeValidationRejectReason, SeedContent, SeedContentError,
+    SeedRegistration, SeedRegistrationToken, SelectiveStorageError, StorageFilePool,
+    TorrentArtifactIdentity, TorrentPeerHandle, decide_resume_admission,
+    validate_direct_fast_resume_content_with_path,
+    validate_direct_fast_resume_content_with_platform,
 };
 use rstorrent_protocol::content::{TorrentContent, TorrentContentProjection};
 use rstorrent_protocol::metainfo::{DURABLE_METAINFO_LIMITS, Metainfo, MetainfoError};
 
-use crate::control::{StorageState, TorrentState};
+use crate::control::TorrentState;
 use crate::store::{ResumeRecord, StorageRootLocation};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -127,14 +128,6 @@ impl IncomingSeeding {
                 tokens: Vec::new(),
             });
         }
-        if resume.publication_name.as_deref() != Some(content.name()) {
-            return Ok(SeedReconcileResult {
-                outcome: SeedReconcileOutcome::Unavailable(
-                    "published name does not match verified metadata".to_owned(),
-                ),
-                tokens: Vec::new(),
-            });
-        }
         let have = resume
             .have
             .as_ref()
@@ -167,7 +160,7 @@ impl IncomingSeeding {
         let validation_started = Instant::now();
         let validation = match root {
             StorageRootLocation::Path(root) => {
-                validate_published_fast_resume_content_with_path(
+                validate_direct_fast_resume_content_with_path(
                     root,
                     artifact_identity,
                     content.clone(),
@@ -178,7 +171,7 @@ impl IncomingSeeding {
                 .await
             }
             StorageRootLocation::PlatformCapability => {
-                validate_published_fast_resume_content_with_platform(
+                validate_direct_fast_resume_content_with_platform(
                     platform_spec(resume, &content, storage_file_pool),
                     artifact_identity,
                     content.clone(),
@@ -214,7 +207,7 @@ impl IncomingSeeding {
             ResumeAdmissionOutcome::AwaitingStorage => {
                 return Ok(SeedReconcileResult {
                     outcome: SeedReconcileOutcome::AwaitingStorage(
-                        "published storage is unavailable".to_owned(),
+                        "direct storage is unavailable".to_owned(),
                     ),
                     tokens: Vec::new(),
                 });
@@ -222,7 +215,7 @@ impl IncomingSeeding {
             ResumeAdmissionOutcome::NeedsRepair => {
                 return Ok(SeedReconcileResult {
                     outcome: SeedReconcileOutcome::NeedsRepair(
-                        "published storage structure needs repair".to_owned(),
+                        "direct storage structure needs repair".to_owned(),
                     ),
                     tokens: Vec::new(),
                 });
@@ -230,7 +223,7 @@ impl IncomingSeeding {
         }
         let opened = match root {
             StorageRootLocation::Path(root) => {
-                SeedContent::open_published_content_with_pool(
+                SeedContent::open_verified_content_with_pool(
                     root,
                     resume.torrent_id,
                     &content,
@@ -241,7 +234,7 @@ impl IncomingSeeding {
                 .await
             }
             StorageRootLocation::PlatformCapability => {
-                SeedContent::open_published_content_with_platform(
+                SeedContent::open_verified_content_with_platform(
                     &platform_spec(resume, &content, storage_file_pool),
                     &content,
                     have.pieces(),
@@ -391,11 +384,9 @@ fn platform_spec(
         pool: storage_file_pool.clone(),
         root_id: resume.storage_root.clone(),
         storage_id: resume.torrent_id.to_string(),
-        publication_name: content.name().to_owned(),
-        publication_shape: PublicationShape::from_content(content),
-        namespace_generation: 1,
-        managed: true,
-        published: true,
+        content_name: content.name().to_owned(),
+        content_shape: ContentShape::from_content(content),
+        storage_generation: 1,
     }
 }
 
@@ -455,11 +446,18 @@ fn eligibility_reason(
     if !resume.desired_running {
         return Some("torrent is paused");
     }
-    if resume.state != TorrentState::Complete || resume.storage_state != StorageState::Published {
-        return Some("torrent is not durably complete and published");
-    }
     if resume.raw_info.is_none() || resume.have.is_none() {
         return Some("torrent lacks verified metadata or have state");
+    }
+    if matches!(
+        resume.state,
+        TorrentState::Checking | TorrentState::NeedsRepair | TorrentState::Error
+    ) || !resume
+        .have
+        .as_ref()
+        .is_some_and(|have| have.pieces().iter().all(|verified| *verified))
+    {
+        return Some("torrent does not have every protocol piece verified");
     }
     storage_root_eligibility_reason(root)
 }

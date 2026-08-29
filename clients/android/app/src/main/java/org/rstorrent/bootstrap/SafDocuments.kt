@@ -5,9 +5,9 @@ import android.content.Intent
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
+import java.security.MessageDigest
 import org.json.JSONArray
 import org.json.JSONObject
-import org.rstorrent.bootstrap.uniffi.EngineReport
 import org.rstorrent.bootstrap.uniffi.EngineSession
 import org.rstorrent.bootstrap.uniffi.SafDescriptor
 import org.rstorrent.bootstrap.uniffi.SafFileRole
@@ -17,13 +17,12 @@ import org.rstorrent.bootstrap.uniffi.StartResult
 import org.rstorrent.bootstrap.uniffi.inspectBorrowedDescriptor
 import org.rstorrent.bootstrap.uniffi.safStoragePlan
 
-data class PreparedSafRun(
+data class DirectSafRun(
     val treeUri: Uri,
     val plan: SafStoragePlan,
-    val stagingUri: Uri,
+    val contentUri: Uri,
     val partUri: Uri,
     val wantedUris: Map<UInt, Uri>,
-    val materializationUris: Map<UInt, Uri>,
     private val descriptors: List<ParcelFileDescriptor>,
     private val partDescriptor: ParcelFileDescriptor,
     private val reopenedPartDescriptor: ParcelFileDescriptor,
@@ -37,13 +36,10 @@ data class PreparedSafRun(
                 config,
                 SafStorage(
                     wantedUris.map { (index, _) ->
-                        SafDescriptor(index, descriptorFor(index, false).fd)
+                        SafDescriptor(index, descriptorFor(index).fd)
                     },
                     partDescriptor.fd,
                     reopenedPartDescriptor.fd,
-                    materializationUris.map { (index, _) ->
-                        SafDescriptor(index, descriptorFor(index, true).fd)
-                    },
                 ),
             )
         } finally {
@@ -53,19 +49,9 @@ data class PreparedSafRun(
         }
     }
 
-    private fun descriptorFor(
-        index: UInt,
-        materialization: Boolean,
-    ): ParcelFileDescriptor {
-        val ordered =
-            if (materialization) {
-                materializationUris.keys.toList()
-            } else {
-                wantedUris.keys.toList()
-            }
-        return descriptors[
-            (if (materialization) wantedUris.size else 0) + ordered.indexOf(index)
-        ]
+    private fun descriptorFor(index: UInt): ParcelFileDescriptor {
+        val ordered = wantedUris.keys.toList()
+        return descriptors[ordered.indexOf(index)]
     }
 }
 
@@ -79,39 +65,38 @@ object SafDocuments {
         treeUri: Uri,
         metainfo: ByteArray,
         skipFiles: List<UInt>,
-        materializeFiles: List<UInt>,
-    ): PreparedSafRun {
+    ): DirectSafRun {
         val resolver = context.contentResolver
-        val plan = safStoragePlan(metainfo, skipFiles, materializeFiles)
+        val plan = safStoragePlan(metainfo, skipFiles)
         check(plan.valid) { "native SAF plan rejected: ${plan.message}" }
         val grantRoot = documentUri(treeUri)
-        val stagingName = ".${plan.name}.rstorrent-staging"
-        val partName = ".${plan.name}.rstorrent-parts"
+        val partName = ".diagnostic-${plan.infoHashHex}.rstorrent-parts"
         check(findChild(context, grantRoot, plan.name) == null) {
             "final SAF output already exists"
-        }
-        check(findChild(context, grantRoot, stagingName) == null) {
-            "SAF staging directory already exists"
         }
         check(findChild(context, grantRoot, partName) == null) {
             "SAF part document already exists"
         }
 
-        var staging: Uri? = null
+        var content: Uri? = null
         var part: Uri? = null
         val opened = mutableListOf<ParcelFileDescriptor>()
         var partDescriptor: ParcelFileDescriptor? = null
         var reopenedPartDescriptor: ParcelFileDescriptor? = null
         try {
-            staging =
-                requireNotNull(
-                    DocumentsContract.createDocument(
-                        resolver,
-                        grantRoot,
-                        DocumentsContract.Document.MIME_TYPE_DIR,
-                        stagingName,
-                    ),
-                ) { "provider refused the SAF staging directory" }
+            content =
+                if (plan.tree) {
+                    requireNotNull(
+                        DocumentsContract.createDocument(
+                            resolver,
+                            grantRoot,
+                            DocumentsContract.Document.MIME_TYPE_DIR,
+                            plan.name,
+                        ),
+                    ) { "provider refused the SAF content directory" }
+                } else {
+                    null
+                }
             part =
                 requireNotNull(
                     DocumentsContract.createDocument(
@@ -122,18 +107,13 @@ object SafDocuments {
                     ),
                 ) { "provider refused the SAF part document" }
             val wanted = linkedMapOf<UInt, Uri>()
-            val materializations = linkedMapOf<UInt, Uri>()
             for (file in plan.files) {
-                when {
-                    file.role == SafFileRole.WANTED ->
-                        wanted[file.fileIndex] =
-                            createPath(context, staging, file.path, temporary = false)
-                    file.materialize ->
-                        materializations[file.fileIndex] =
-                            createPath(context, staging, file.path, temporary = true)
+                if (file.role == SafFileRole.WANTED) {
+                    val components = if (plan.tree) file.path else listOf(plan.name)
+                    wanted[file.fileIndex] = createPath(context, grantRoot, components)
                 }
             }
-            for (uri in wanted.values + materializations.values) {
+            for (uri in wanted.values) {
                 opened +=
                     requireNotNull(resolver.openFileDescriptor(uri, "rw")) {
                         "provider refused a SAF payload descriptor"
@@ -147,13 +127,13 @@ object SafDocuments {
                 requireNotNull(resolver.openFileDescriptor(part, "rw")) {
                     "provider refused an independent SAF part descriptor"
                 }
-            return PreparedSafRun(
+            val directContent = content ?: wanted.values.single()
+            return DirectSafRun(
                 treeUri,
                 plan,
-                staging,
+                directContent,
                 part,
                 wanted,
-                materializations,
                 opened,
                 partDescriptor,
                 reopenedPartDescriptor,
@@ -162,64 +142,50 @@ object SafDocuments {
             opened.forEach(ParcelFileDescriptor::close)
             partDescriptor?.close()
             reopenedPartDescriptor?.close()
-            staging?.let { delete(context, it) }
+            content?.let { delete(context, it) }
             part?.let { delete(context, it) }
             releaseGrant(context, treeUri)
             throw error
         }
     }
 
-    fun publishAndPersist(
+    fun persistCompleted(
         context: Context,
-        run: PreparedSafRun,
-        report: EngineReport,
+        run: DirectSafRun,
     ): JSONObject {
-        check(report.preparedFiles.isNotEmpty()) {
-            "native preparation returned no file hashes"
-        }
         val resolver = context.contentResolver
-        for (file in run.plan.files.filter { it.materialize }) {
-            val temporary =
-                requireNotNull(run.materializationUris[file.fileIndex]) {
-                    "materialization URI is absent"
-                }
-            val finalName = file.path.last()
-            check(findChild(context, parentOf(context, temporary), finalName) == null) {
-                "materialization final document already exists"
-            }
-            requireNotNull(
-                DocumentsContract.renameDocument(resolver, temporary, finalName),
-            ) { "provider refused materialization publication" }
-        }
-        val grantRoot = documentUri(run.treeUri)
-        check(findChild(context, grantRoot, run.plan.name) == null) {
-            "late final SAF output collision"
-        }
-        val published =
-            requireNotNull(
-                DocumentsContract.renameDocument(
-                    resolver,
-                    run.stagingUri,
-                    run.plan.name,
-                ),
-            ) { "provider refused final SAF publication" }
         val manifest = JSONArray()
-        for (prepared in report.preparedFiles) {
-            val planFile =
-                run.plan.files.single { it.fileIndex == prepared.fileIndex }
+        for ((fileIndex, uri) in run.wantedUris) {
+            val planFile = run.plan.files.single { it.fileIndex == fileIndex }
+            val digest = MessageDigest.getInstance("SHA-1")
+            var length = 0L
+            requireNotNull(resolver.openInputStream(uri)) { "provider refused content read" }
+                .use { input ->
+                    val buffer = ByteArray(16 * 1024)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        digest.update(buffer, 0, read)
+                        length += read
+                    }
+                }
+            check(length.toULong() == planFile.length) { "completed SAF file length changed" }
             manifest.put(
                 JSONObject()
-                    .put("file_index", prepared.fileIndex.toLong())
-                    .put("path", JSONArray(planFile.path))
-                    .put("length", prepared.length.toLong())
-                    .put("sha1", prepared.sha1Hex),
+                    .put("file_index", fileIndex.toLong())
+                    .put("path", JSONArray(if (run.plan.tree) planFile.path else emptyList<String>()))
+                    .put("length", length)
+                    .put(
+                        "sha1",
+                        digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) },
+                    ),
             )
         }
         val state =
             JSONObject()
                 .put("run_id", "")
                 .put("tree_uri", run.treeUri.toString())
-                .put("published_uri", published.toString())
+                .put("content_uri", run.contentUri.toString())
                 .put("part_uri", run.partUri.toString())
                 .put("manifest", manifest)
         check(
@@ -230,7 +196,7 @@ object SafDocuments {
                 .commit(),
         ) { "could not synchronously persist SAF restart state" }
         return JSONObject()
-            .put("published_uri", published.toString())
+            .put("content_uri", run.contentUri.toString())
             .put("part_uri", run.partUri.toString())
             .put("file_count", manifest.length())
     }
@@ -257,7 +223,7 @@ object SafDocuments {
         })
         check(state.getString("run_id") == runId) { "persisted SAF run ID differs" }
         val treeUri = Uri.parse(state.getString("tree_uri"))
-        val published = Uri.parse(state.getString("published_uri"))
+        val content = Uri.parse(state.getString("content_uri"))
         val part = Uri.parse(state.getString("part_uri"))
         val verified = JSONArray()
         val manifest = state.getJSONArray("manifest")
@@ -269,7 +235,7 @@ object SafDocuments {
                     .let { array ->
                         (0 until array.length()).map(array::getString)
                     }
-            val uri = requirePath(context, published, components)
+            val uri = if (components.isEmpty()) content else requirePath(context, content, components)
             val descriptor =
                 requireNotNull(context.contentResolver.openFileDescriptor(uri, "r")) {
                     "provider refused restart descriptor"
@@ -295,7 +261,7 @@ object SafDocuments {
                     .put("allocated_bytes", inspection.allocatedBytes.toLong()),
             )
         }
-        check(delete(context, published)) { "could not delete published SAF output" }
+        check(delete(context, content)) { "could not delete direct SAF content" }
         check(delete(context, part)) { "could not delete SAF part document" }
         try {
             context.contentResolver.releasePersistableUriPermission(
@@ -313,15 +279,15 @@ object SafDocuments {
         return JSONObject()
             .put("status", "SUCCEEDED")
             .put("verified_files", verified)
-            .put("published_deleted", true)
+            .put("content_deleted", true)
             .put("part_deleted", true)
     }
 
     fun cleanup(
         context: Context,
-        run: PreparedSafRun,
+        run: DirectSafRun,
     ) {
-        delete(context, run.stagingUri)
+        delete(context, run.contentUri)
         delete(context, run.partUri)
         releaseGrant(context, run.treeUri)
     }
@@ -330,7 +296,6 @@ object SafDocuments {
         context: Context,
         root: Uri,
         components: List<String>,
-        temporary: Boolean,
     ): Uri {
         check(components.isNotEmpty()) { "SAF file path is empty" }
         var parent = root
@@ -346,12 +311,7 @@ object SafDocuments {
                     ),
                 ) { "provider refused directory $component" }
         }
-        val finalName =
-            if (temporary) {
-                ".${components.last()}.rstorrent-materializing"
-            } else {
-                components.last()
-            }
+        val finalName = components.last()
         check(findChild(context, parent, finalName) == null) {
             "SAF document already exists: $finalName"
         }
@@ -374,7 +334,7 @@ object SafDocuments {
         for (component in components) {
             current =
                 requireNotNull(findChild(context, current, component)) {
-                    "published SAF path is absent: ${components.joinToString("/")}"
+                    "direct SAF path is absent: ${components.joinToString("/")}"
                 }
         }
         return current
@@ -409,19 +369,6 @@ object SafDocuments {
                 }
             }
         return null
-    }
-
-    private fun parentOf(
-        context: Context,
-        child: Uri,
-    ): Uri {
-        val documentId = DocumentsContract.getDocumentId(child)
-        val separator = documentId.lastIndexOf('/')
-        check(separator > 0) { "provider document has no parent" }
-        return DocumentsContract.buildDocumentUriUsingTree(
-            child,
-            documentId.substring(0, separator),
-        )
     }
 
     private fun documentUri(treeUri: Uri): Uri =

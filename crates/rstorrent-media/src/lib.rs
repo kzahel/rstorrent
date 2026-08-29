@@ -231,7 +231,7 @@ fn active_preflight_range_error(error: MediaRangeError) -> Response {
 
 fn active_preflight_read_error(error: MediaReadError) -> Response {
     match error {
-        MediaReadError::Closed | MediaReadError::Active(_) | MediaReadError::Published(_) => {
+        MediaReadError::Closed | MediaReadError::Active(_) | MediaReadError::Verified(_) => {
             empty_response(StatusCode::NOT_FOUND)
         }
     }
@@ -458,7 +458,7 @@ mod tests {
     use rstorrent_session::{
         ApplicationConfig, ApplicationService, CONTROL_VERSION, Command, CommandResult,
         ConfiguredStorageRoot, MediaRangeError, MediaUrlOutcome, NetworkConfig, NetworkPolicy,
-        RequestEnvelope, SessionStore, StorageState,
+        RequestEnvelope, SessionStore,
     };
     use sha1::{Digest, Sha1};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -553,9 +553,6 @@ mod tests {
         store
             .record_pieces(&torrent_id, &[0, 1, 2, 3])
             .expect("record pieces");
-        store
-            .mark_storage_prepared(&torrent_id, StorageState::Published)
-            .expect("publish fixture");
         store.mark_complete(&torrent_id).expect("complete fixture");
         drop(store);
         std::fs::write(payload_root.join("movie.MP4"), payload).expect("write payload");

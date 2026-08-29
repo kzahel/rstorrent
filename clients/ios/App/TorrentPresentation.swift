@@ -39,8 +39,8 @@ struct TorrentListItem: Identifiable, Equatable {
     var isStopped: Bool {
         value.operationalState == .paused || value.operationalState == .error
     }
-    var isPublishedComplete: Bool {
-        torrentIsPublishedComplete(state: value.state, storageState: value.storageState)
+    var isComplete: Bool {
+        value.state == .complete
     }
     var progress: Double {
         torrentDisplayProgress(
@@ -56,10 +56,6 @@ struct TorrentListItem: Identifiable, Equatable {
     var numPeers: Int { Int(value.activePeerConnections) }
 }
 
-func torrentIsPublishedComplete(state: TorrentState, storageState: StorageState) -> Bool {
-    state == .complete && storageState == .published
-}
-
 func torrentDisplayProgress(
     state: TorrentState,
     storageState: StorageState,
@@ -68,7 +64,7 @@ func torrentDisplayProgress(
     pieceCount: UInt32,
     verifiedPieceCount: UInt32
 ) -> Double {
-    if torrentIsPublishedComplete(state: state, storageState: storageState) {
+    if state == .complete {
         return 1
     }
 
