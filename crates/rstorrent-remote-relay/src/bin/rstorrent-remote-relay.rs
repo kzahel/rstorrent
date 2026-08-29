@@ -125,7 +125,8 @@ impl std::error::Error for ArgumentError {}
 struct Ready<'a> {
     event: &'a str,
     address: String,
-    relay_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    relay_id: Option<String>,
 }
 
 #[tokio::main]
@@ -138,6 +139,7 @@ async fn main() {
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let arguments = Arguments::parse(env::args_os().skip(1))?;
+    let production = arguments.trusted_proxy.is_some();
     let server = match (arguments.trusted_proxy, arguments.operator_token_file) {
         (Some(trusted_proxy), Some(operator_token_file)) => {
             let operator_token = read_operator_token(&operator_token_file)?;
@@ -170,8 +172,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         serde_json::to_string(&Ready {
             event: "ready",
             address: server.local_addr().to_string(),
-            relay_id: base64::engine::general_purpose::URL_SAFE_NO_PAD
-                .encode(relay.deployment_id()),
+            relay_id: (!production).then(|| {
+                base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(relay.deployment_id())
+            }),
         })?
     );
     std::io::stdout().flush()?;
@@ -314,6 +317,15 @@ mod tests {
         .unwrap();
         assert_eq!(parsed.trusted_proxy, Some("127.0.0.1".parse().unwrap()));
         assert_eq!(parsed.operator_token_file, Some(token));
+        let ready = serde_json::to_value(Ready {
+            event: "ready",
+            address: parsed.listen.to_string(),
+            relay_id: None,
+        })
+        .unwrap();
+        assert_eq!(ready["event"], "ready");
+        assert_eq!(ready["address"], "127.0.0.1:8443");
+        assert!(ready.get("relay_id").is_none());
         assert!(
             Arguments::parse(common.clone().into_iter().chain([
                 OsString::from("--trusted-proxy"),
