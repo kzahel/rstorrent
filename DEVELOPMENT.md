@@ -43,12 +43,16 @@ machine-control.
 ## Current Tactical State
 
 The authoritative **Now** is
-[`176-durable-high-file-priority.md`](docs/tactical/176-durable-high-file-priority.md),
-whose implementation is complete and whose only remaining gate is the
-macOS-hosted iOS simulator/archive compile. Completed Tactical `186` separates
-tiny latest-value current rates from interest-selected exact graph history,
-replaces repeated complete graph windows with bounded cursor-validated
-appends, and cuts the Tactical `185` residual server payload by 41.98%.
+[`158-desktop-signed-packaging-and-updater.md`](docs/tactical/158-desktop-signed-packaging-and-updater.md),
+whose remaining gates are clean signed Windows replacement/relaunch,
+Windows firewall-consent characterization, and installed Linux x86_64
+evidence. Completed Tactical `176` carries durable High/Normal/Skip file
+priority through persistence, scheduling, and every first-party client; its
+final macOS-hosted iOS simulator/archive gate passes. Completed Tactical `186`
+separates tiny latest-value current rates from interest-selected exact graph
+history, replaces repeated complete graph windows with bounded
+cursor-validated appends, and cuts the Tactical `185` residual server payload
+by 41.98%.
 Completed Tactical `185` replaces measured repeated Torrent, File, Peer, and
 active-piece rows with closed typed semantic deltas across all first-party
 reducers. Its clean retained run cuts another 36.77% from post-coalescing

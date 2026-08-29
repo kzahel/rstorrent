@@ -178,8 +178,10 @@ final class PlatformStorageBridge: @unchecked Sendable {
             for file in payloadFiles {
                 try removeExactFile(file)
             }
-            if hasManagedArtifacts && try Self.storageItemKind(at: part) != nil {
-                try removeExactFile(part)
+            if hasManagedArtifacts {
+                if try Self.storageItemKind(at: part) != nil {
+                    try removeExactFile(part)
+                }
             }
             for directory in payloadDirectories {
                 try removeEmptyDirectory(directory)

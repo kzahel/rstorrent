@@ -1,12 +1,10 @@
 # Tactical 176: Durable High File Priority
 
-Status: **Implementation complete; iOS host validation pending.** Completed
-disposable-incubation state Tactical
+Status: **Complete.** Completed disposable-incubation state Tactical
 [`179`](179-disposable-incubation-state-epoch.md) replaces the historical
-schema migration with fresh schema-21 persistence and returns this slice to the
-sole **Now**. All Linux-hosted repository, web, and Android gates pass; this
-Linux host has neither Xcode nor Swift, so the updated iOS SwiftUI presentation
-still needs its required simulator/archive compile.
+schema migration with fresh schema-21 persistence. The final Xcode 26.6
+simulator and unsigned device-archive gates passed on macOS on 2026-08-29;
+Tactical `158` resumes as the sole **Now**.
 
 Topics: `oracle-driven-engine-campaign`, `capability-readiness`,
 `download-correctness`, `client-persistence`, `application-control`,
@@ -279,6 +277,25 @@ Original implementation validation run on 2026-08-27:
 - the workspace suite builds and tests `rstorrent-ios` on Linux, but the
   SwiftUI/Xcode simulator/archive gate is unavailable on this host and remains
   the only stopping-condition gap.
+
+Closure validation run on macOS with Xcode 26.6 on 2026-08-29:
+
+- the first simulator compile found a Swift grammar regression introduced by
+  later existing-payload Tactical `188`: a throwing part-file probe appeared
+  on the right side of `&&`; nesting that probe beneath the existing
+  `hasManagedArtifacts` guard preserves its lazy behavior and compiles on the
+  maintained Swift toolchain;
+- `clients/ios/scripts/test.sh` regenerates both UniFFI boundaries and passes
+  all 26 Swift unit tests plus two product-surface UI tests on an iPhone
+  simulator with signing disabled; and
+- `clients/ios/scripts/archive.sh --unsigned` produces the generic arm64
+  device archive with the expected `RSTorrent.app` product.
+
+The common `machine-control` iOS doctor also reported the attached physical
+device ready and its signing-identity and cached-XCTest-runner checks passing.
+No device mutation was needed because the outstanding stopping-condition gate
+was the credential-free simulator/archive build, and physical installation
+remains a non-goal of this tactical.
 
 ## Stopping Condition
 

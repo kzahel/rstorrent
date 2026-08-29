@@ -125,8 +125,9 @@ Explicit user direction immediately activated disposable-incubation state
 Tactical [`179`](../tactical/179-disposable-incubation-state-epoch.md). It is
 complete with a fresh schema-21 catalog and removal of compatibility-only
 state readers while retaining bounded reset and external-payload safety.
-Tactical `176` resumes as the sole **Now**; signed release Tactical `158`
-follows it.
+Tactical `176` is also complete after its Xcode 26.6 simulator and unsigned
+device-archive gates passed on 2026-08-29. Signed release Tactical `158`
+resumes as the sole **Now**.
 
 ## Scope And Release Definition
 
@@ -657,7 +658,7 @@ no single optional BEP is mandatory.
    Windows x86_64/Linux arm64 proof pass. File/magnet handoff remains outside
    that completed slice and is now owned by Tactical `163`; autostart stays
    deferred.
-4. **Paused — Tactical `158`: desktop signed packaging and updater adoption.**
+4. **Now — Tactical `158`: desktop signed packaging and updater adoption.**
    The product-owned `desktop-update-v1` client, signed package workflow,
    release validation, per-app key, public configuration, production route,
    five-platform hosted rehearsal, three tagged publications, one installed
@@ -701,9 +702,10 @@ no single optional BEP is mandatory.
    startup. DHT-v1, desktop-settings-v1/v2, and browser-appearance-v1/v2
    readers are gone; current-format validation, crash convergence, fail-closed
    hostile/future handling, and external payload remain exact.
-11. **Now — Tactical `176`: durable High file priority.** Return only for the
-   outstanding macOS-hosted iOS simulator/archive compile. The implementation
-   and every available Linux/web/Android gate already pass.
+11. **Complete — Tactical `176`: durable High file priority.**
+   High/Normal/Skip persistence, weighted ordinary scheduling, streaming
+   composition, first-party presentation, Linux/web/Android gates, 28 iOS
+   simulator tests, and the unsigned arm64 device archive pass.
 12. **Next — supported-release boundary.** Keep all `0.1.x` and current
    previews explicitly disposable, then choose and declare the first supported
    version with a fresh persistence/API baseline. No migration from incubation

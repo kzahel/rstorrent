@@ -104,8 +104,9 @@ that scope and its cleanup or compatibility rules explicitly.
   coalescible appends, and cuts the preceding server-payload residual 41.98%
   without choosing a binary codec.
 - [`176-durable-high-file-priority.md`](176-durable-high-file-priority.md):
-  resumed as the sole **Now** with only its remaining macOS-hosted iOS
-  simulator/archive compile gate.
+  complete; carries durable High/Normal/Skip file priority through
+  persistence, weighted ordinary scheduling, and all first-party clients,
+  with final Xcode simulator and unsigned device-archive evidence.
 - [`185-typed-sparse-hot-view-patches.md`](185-typed-sparse-hot-view-patches.md):
   complete; replaces measured repeated Torrent, File, Peer, and active-piece
   rows with closed typed field deltas across every first-party reducer and

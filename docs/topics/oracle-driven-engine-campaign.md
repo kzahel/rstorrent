@@ -643,8 +643,10 @@ staging/part/publication generations, and no product verification-bypass flag.
 Managed removal is now metainfo-exact across path and platform storage, so
 adopting a torrent never grants authority over unrelated descendants. Its
 controlled oracle, repository, Android, package, and local-service evidence
-passes. Tactical `176` resumes as the sole **Now** with only its unchanged
-macOS-only iOS simulator/archive compile gate.
+passes. Tactical `176` subsequently closes its remaining macOS-only iOS gate
+with 28 passing simulator tests and an unsigned arm64 device archive.
+Release/updater Tactical `158` resumes as the sole **Now**; this engine
+campaign remains at its reconciled completed checkpoint.
 Completed Tactical
 [`182`](../tactical/182-bounded-outbound-attempt-and-metadata-turnover.md)
 makes 15 seconds one total preferred-uTP/TCP/MSE/plain-handshake attempt

@@ -318,6 +318,14 @@ workspace, web, Android, package, and local-service gates pass. Tactical `176`
 resumes as the sole **Now** with only its unchanged macOS-hosted iOS compile
 gate.
 
+Tactical `176` is complete on 2026-08-29. Xcode 26.6 regenerated and compiled
+the current Swift boundaries, all 26 iOS unit tests and two product-surface UI
+tests pass on the simulator, and the unsigned generic arm64 device archive
+contains the expected application. The gate also found and repaired one
+Swift grammar regression from later existing-payload Tactical `188` without
+changing cleanup semantics. Tactical `158` resumes as the sole **Now** with
+its signed Windows and installed Linux x86_64 gates unchanged.
+
 The updater tactical's client, production route, five-target signed hosted
 rehearsal, public `0.1.0`, `0.1.1`, and `0.1.2` releases, installed macOS arm64
 launch smoke, and exact macOS arm64 and Linux arm64 `0.1.0`-to-`0.1.1` updates
@@ -813,15 +821,12 @@ exactly.
 
 ### Now
 
-- Complete **Tactical `176`**'s remaining macOS-hosted iOS simulator/archive
-  compile gate for durable High/Normal/Skip file priority.
-
-### Next
-
 - Resume **Tactical `158`** and close the clean Windows and Linux x86_64
   signed replacement/relaunch evidence plus Windows firewall-consent
   characterization. Prove clean launch or bounded reset and payload safety,
   not retention of disposable `0.1.x` application state.
+
+### Next
 
 - Declare the future first supported version and freeze its fresh application
   identities and persistence/API baseline only from that version forward.
