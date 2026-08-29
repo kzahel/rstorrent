@@ -15,6 +15,7 @@ mod diagnostics;
 mod download_queue;
 mod durable_state;
 mod file_views;
+pub mod foreground_download;
 mod have;
 mod incoming_seeding;
 mod media;
