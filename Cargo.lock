@@ -4307,6 +4307,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rstorrent-remote-relay"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "futures-util",
+ "subtle",
+ "tokio",
+ "tokio-tungstenite",
+ "tokio-util",
+ "zeroize",
+]
+
+[[package]]
 name = "rstorrent-remote-wasm"
 version = "0.1.0"
 dependencies = [

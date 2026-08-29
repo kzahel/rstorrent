@@ -1,0 +1,18 @@
+[package]
+name = "rstorrent-remote-relay"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+axum = { workspace = true, features = ["ws"] }
+futures-util = { workspace = true, features = ["sink"] }
+subtle.workspace = true
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
+tokio-util.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+tokio-tungstenite.workspace = true

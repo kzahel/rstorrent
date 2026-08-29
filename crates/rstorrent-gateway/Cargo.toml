@@ -26,4 +26,4 @@ ts-rs = { workspace = true }
 
 [dev-dependencies]
 sha1 = { workspace = true }
-tokio-tungstenite = "0.29.0"
+tokio-tungstenite.workspace = true
