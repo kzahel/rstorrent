@@ -538,6 +538,43 @@ def run_contention_and_crash(
     )
 
 
+def run_independent_roots_and_permission_failure(
+    binary: Path,
+    fixture: V1Fixture,
+    port: int,
+    run_root: Path,
+) -> None:
+    waiting_uri = (
+        f"magnet:?xt=urn:btih:{fixture.info_hash}"
+        "&x.pe=192.0.2.1:1&dn=bounded-wait"
+    )
+    first_output = run_root / "independent-first"
+    second_output = run_root / "independent-second"
+    first = start_cli(binary, first_output, waiting_uri)
+    second = start_cli(binary, second_output, waiting_uri)
+    wait_for_workspace(first_output, first)
+    wait_for_workspace(second_output, second)
+    first.send_signal(signal.SIGINT)
+    second.send_signal(signal.SIGINT)
+    expect_exit(observe_process(first, first_output), 130, "first independent root")
+    expect_exit(observe_process(second, second_output), 130, "second independent root")
+    assert_workspace_clean(first_output)
+    assert_workspace_clean(second_output)
+
+    if os.geteuid() == 0:
+        raise ScenarioFailure("permission-failure scenario requires a non-root host")
+    denied_output = run_root / "permission-denied"
+    denied_output.mkdir()
+    denied_output.chmod(0o500)
+    try:
+        denied = run_cli(binary, denied_output, magnet(fixture, port))
+    finally:
+        denied_output.chmod(0o700)
+    expect_exit(denied, 5, "unwritable output")
+    assert_workspace_clean(denied_output)
+    assert_no_profile_artifacts(denied_output)
+
+
 def corrupt_and_repair(
     binary: Path,
     fixture: V1Fixture,
@@ -592,6 +629,9 @@ def run(arguments: argparse.Namespace) -> None:
             )
             crash_rss, crash_part = run_contention_and_crash(
                 binary, fixture, port, handle, run_root
+            )
+            run_independent_roots_and_permission_failure(
+                binary, fixture, port, run_root
             )
             corrupt_and_repair(binary, fixture, port, run_root)
             diagnostics.extend(alert.message() for alert in session.pop_alerts())

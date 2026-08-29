@@ -26,6 +26,7 @@ const CONTROL_DIRECTORY: &str = "rstorrent-download-v1";
 const LOCK_FILE: &str = "lock";
 const RUN_PREFIX: &str = "run-";
 const MARKER_FILE: &str = ".rstorrent-download-workspace-v1";
+const ACCESS_PROBE_PREFIX: &str = ".rstorrent-download-access-";
 const LOCK_DOMAIN: &[u8] = b"rstorrent-download-output-root-v1\0";
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
 const NON_TTY_INTERVAL: Duration = Duration::from_secs(10);
@@ -165,8 +166,9 @@ fn parse_arguments(arguments: impl Iterator<Item = OsString>) -> Result<Invocati
 async fn execute(arguments: DownloadArguments) -> Result<CompletionSummary, CliError> {
     let output_root = prepare_output_root(&arguments.output)?;
     let lease = OutputRootLease::acquire(&output_root)?;
+    validate_output_root_access(&output_root)?;
     let mut workspace = Workspace::prepare(&lease.control_root, &lease.key)?;
-    let mut signals = match SignalOwner::start() {
+    let mut signals = match SignalOwner::start().await {
         Ok(signals) => signals,
         Err(error) => {
             let cleanup = workspace.cleanup();
@@ -660,6 +662,45 @@ fn prepare_output_root(path: &Path) -> Result<PathBuf, CliError> {
     Ok(canonical)
 }
 
+fn validate_output_root_access(output_root: &Path) -> Result<(), CliError> {
+    for _ in 0..8 {
+        let mut random = [0_u8; 16];
+        getrandom::fill(&mut random)
+            .map_err(|error| CliError::runtime(format!("create output access probe: {error}")))?;
+        let path = output_root.join(format!("{ACCESS_PROBE_PREFIX}{}", hex(&random)));
+        let file = OpenOptions::new().write(true).create_new(true).open(&path);
+        let mut file = match file {
+            Ok(file) => file,
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) => {
+                return Err(CliError::runtime(format!(
+                    "output directory is not writable: {error}"
+                )));
+            }
+        };
+        let operation = file
+            .write_all(b"rstorrent-download-access-v1\n")
+            .and_then(|()| file.sync_all());
+        drop(file);
+        let cleanup = fs::remove_file(path);
+        return match (operation, cleanup) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(error), Ok(())) => Err(CliError::runtime(format!(
+                "output directory is not writable: {error}"
+            ))),
+            (Ok(()), Err(error)) => Err(CliError::runtime(format!(
+                "remove output access probe: {error}"
+            ))),
+            (Err(operation), Err(cleanup)) => Err(CliError::runtime(format!(
+                "output directory is not writable: {operation}; remove access probe: {cleanup}"
+            ))),
+        };
+    }
+    Err(CliError::runtime(
+        "could not allocate a unique output access probe",
+    ))
+}
+
 #[derive(Debug)]
 struct OutputRootLease {
     _lock: File,
@@ -990,30 +1031,52 @@ struct SignalOwner {
 }
 
 impl SignalOwner {
-    fn start() -> Result<Self, CliError> {
+    async fn start() -> Result<Self, CliError> {
         let (sender, receiver) = mpsc::channel(1);
+        #[cfg(unix)]
+        let mut interrupt =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
+                .map_err(|error| CliError::runtime(format!("install SIGINT handler: {error}")))?;
         #[cfg(unix)]
         let mut terminate =
             tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
                 .map_err(|error| CliError::runtime(format!("install SIGTERM handler: {error}")))?;
+        #[cfg(not(unix))]
+        let (ready_sender, ready_receiver) = tokio::sync::oneshot::channel();
         let task = tokio::spawn(async move {
             #[cfg(unix)]
             let signal = tokio::select! {
-                result = tokio::signal::ctrl_c() => {
-                    if result.is_ok() { ReceivedSignal::Interrupt } else { ReceivedSignal::SetupFailure }
+                signal = interrupt.recv() => {
+                    if signal.is_some() { ReceivedSignal::Interrupt } else { ReceivedSignal::SetupFailure }
                 }
                 signal = terminate.recv() => {
                     if signal.is_some() { ReceivedSignal::Terminate } else { ReceivedSignal::SetupFailure }
                 }
             };
             #[cfg(not(unix))]
-            let signal = if tokio::signal::ctrl_c().await.is_ok() {
-                ReceivedSignal::Interrupt
-            } else {
-                ReceivedSignal::SetupFailure
+            let signal = {
+                let mut interrupt = std::pin::pin!(tokio::signal::ctrl_c());
+                let initial = std::future::poll_fn(|context| {
+                    std::task::Poll::Ready(std::future::Future::poll(interrupt.as_mut(), context))
+                })
+                .await;
+                let _ = ready_sender.send(());
+                let result = match initial {
+                    std::task::Poll::Ready(result) => result,
+                    std::task::Poll::Pending => interrupt.await,
+                };
+                if result.is_ok() {
+                    ReceivedSignal::Interrupt
+                } else {
+                    ReceivedSignal::SetupFailure
+                }
             };
             let _ = sender.send(signal).await;
         });
+        #[cfg(not(unix))]
+        ready_receiver
+            .await
+            .map_err(|_| CliError::runtime("Ctrl-C handler task stopped during initialization"))?;
         Ok(Self { receiver, task })
     }
 
@@ -1394,6 +1457,16 @@ mod tests {
         drop(third);
         fs::remove_dir_all(root).expect("remove root");
         fs::remove_dir_all(control_root).expect("remove control root");
+    }
+
+    #[test]
+    fn output_root_access_probe_is_removed() {
+        let root = test_root("access-probe");
+        fs::create_dir_all(&root).expect("create root");
+        let canonical = fs::canonicalize(&root).expect("canonical root");
+        validate_output_root_access(&canonical).expect("validate access");
+        assert_eq!(fs::read_dir(&canonical).expect("read root").count(), 0);
+        fs::remove_dir_all(root).expect("remove root");
     }
 
     #[test]
