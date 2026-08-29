@@ -8262,7 +8262,7 @@ mod tests {
         let reserved_id = added_torrent_id(&reserved);
         store
             .record_metadata(&reserved_id, &reserved_info)
-            .expect("legacy hash-shaped publication names no longer collide with owned artifacts");
+            .expect("legacy hash-shaped artifact names no longer collide with owned artifacts");
         assert!(store.load_resume(&reserved_id).is_ok());
         drop(store);
         fs::remove_dir_all(root).expect("remove test profile");

@@ -7672,7 +7672,7 @@ mod tests {
         assert!(resources.active_pieces_high_water <= limits.max_active_pieces);
         for (name, payload) in &fixtures {
             assert_eq!(
-                fs::read(root.join("payload").join(name)).expect("read published payload"),
+                fs::read(root.join("payload").join(name)).expect("read direct payload"),
                 *payload
             );
         }
@@ -8076,46 +8076,46 @@ mod tests {
         assert!(!active_control.incoming_content_routable());
         assert!(service.active_download().is_none());
         wait_for_active_route(&service, 1).await;
-        let (mut published_peer, mut published_decoder, mut published_pending) =
+        let (mut completed_peer, mut completed_decoder, mut completed_pending) =
             connect_application_seed_with_expected_availability(
                 &service,
                 info_hash,
-                *b"-RS-PUBLICATION-0000",
+                *b"-RS-COMPLETED---0000",
                 false,
                 vec![0b1000_0000],
             )
             .await;
-        published_peer
+        completed_peer
             .write_all(&encode_message(&PeerMessage::Interested).expect("encode interest"))
             .await
-            .expect("send publication interest");
+            .expect("send completed interest");
         assert_eq!(
             read_peer_message(
-                &mut published_peer,
-                &mut published_decoder,
-                &mut published_pending,
+                &mut completed_peer,
+                &mut completed_decoder,
+                &mut completed_pending,
             )
             .await,
             PeerMessage::Unchoke
         );
-        published_peer
+        completed_peer
             .write_all(
                 &encode_message(&PeerMessage::Request(
                     rstorrent_protocol::peer_wire::BlockRequest {
                         index: 0,
                         begin: 0,
-                        length: u32::try_from(payload.len()).expect("published request length"),
+                        length: u32::try_from(payload.len()).expect("completed request length"),
                     },
                 ))
-                .expect("encode published request"),
+                .expect("encode completed request"),
             )
             .await
-            .expect("request published payload");
+            .expect("request completed payload");
         assert_eq!(
             read_peer_message(
-                &mut published_peer,
-                &mut published_decoder,
-                &mut published_pending,
+                &mut completed_peer,
+                &mut completed_decoder,
+                &mut completed_pending,
             )
             .await,
             PeerMessage::Piece {
@@ -8149,7 +8149,7 @@ mod tests {
                 && torrent.eta == crate::TorrentEtaView::Unavailable
         ));
         assert_eq!(
-            fs::read(root.join("payload/tracker-ipv6.bin")).expect("published payload"),
+            fs::read(root.join("payload/tracker-ipv6.bin")).expect("direct payload"),
             payload
         );
         let trackers = torrent_tracker_views(&service, &torrent_id).await;
@@ -8168,7 +8168,7 @@ mod tests {
             }
         );
 
-        drop(published_peer);
+        drop(completed_peer);
         service.shutdown().await.expect("shutdown application");
         drop(service);
         peer_task.await.expect("IPv6 peer task");
@@ -8672,7 +8672,7 @@ mod tests {
             .await
             .expect("create v2 media URL");
         let MediaUrlOutcome::Created { url, .. } = media.outcome else {
-            panic!("verified v2 publication was unavailable")
+            panic!("verified v2 direct file was unavailable")
         };
         let capability = url.rsplit('/').next().expect("v2 capability path");
         let mut lease = reopened
@@ -9469,7 +9469,7 @@ mod tests {
         )
         .await;
         source_task.await.expect("active pure-v2 source task");
-        wait_for_incoming_close(&mut active_peer, "pure-v2 publication").await;
+        wait_for_incoming_close(&mut active_peer, "pure-v2 completion").await;
         wait_for_seed_registrations(&service, 1).await;
         let owner = torrent_id
             .parse::<TorrentId>()
@@ -9480,7 +9480,7 @@ mod tests {
         assert!(!paths.part.exists());
         let terminal = service
             .incoming_peer_snapshot()
-            .expect("published pure-v2 incoming snapshot");
+            .expect("completed pure-v2 incoming snapshot");
         assert_eq!(terminal.established, 0);
         assert_eq!(terminal.payload_bytes_sent, u64::from(piece_length));
         service
@@ -11034,7 +11034,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn media_capability_reads_verified_publication_and_force_recheck_revokes_it() {
+    async fn media_capability_reads_verified_direct_file_and_force_recheck_revokes_it() {
         let root = test_root("media-capability");
         let configuration = config(&root);
         let payload = b"verified media bytes";
@@ -11061,7 +11061,7 @@ mod tests {
             .expect("mark media complete");
         drop(store);
         fs::create_dir_all(root.join("payload")).expect("create payload root");
-        fs::write(root.join("payload/media.bin"), payload).expect("write media publication");
+        fs::write(root.join("payload/media.bin"), payload).expect("write direct media file");
 
         let mut service = ApplicationService::open(configuration)
             .await
@@ -11084,7 +11084,7 @@ mod tests {
             panic!("wrong media result")
         };
         let MediaUrlOutcome::Created { url, .. } = response.outcome else {
-            panic!("verified publication was unavailable")
+            panic!("verified direct file was unavailable")
         };
         let capability = url.rsplit('/').next().expect("capability path").to_owned();
         let mut lease = service
@@ -11344,7 +11344,7 @@ mod tests {
 
     #[tokio::test]
     async fn active_media_capability_hands_off_to_verified_direct_file() {
-        let root = test_root("active-media-publication-handoff");
+        let root = test_root("active-media-direct-handoff");
         let configuration = config(&root);
         let payload = (0..16_384)
             .map(|offset| ((offset * 23 + offset / 11) & 0xff) as u8)
@@ -11560,7 +11560,7 @@ mod tests {
 
     #[tokio::test]
     async fn unowned_existing_direct_file_is_checked() {
-        let root = test_root("existing-publication-adoption");
+        let root = test_root("existing-direct-file-check");
         let configuration = config(&root);
         let payload = (0..32_768)
             .map(|offset| ((offset * 23 + offset / 17) & 0xff) as u8)
@@ -11583,16 +11583,16 @@ mod tests {
         drop(store);
         let output = root.join("payload/existing.bin");
         fs::create_dir_all(output.parent().expect("payload parent")).expect("create payload root");
-        fs::write(&output, &payload).expect("write existing publication");
+        fs::write(&output, &payload).expect("write existing direct file");
 
         let mut service = ApplicationService::open(configuration)
             .await
-            .expect("open application with existing publication");
+            .expect("open application with existing direct file");
         wait_for_torrent_state(
             &mut service,
             &torrent_id,
             TorrentState::Complete,
-            "existing-publication-adoption",
+            "existing-direct-file-check",
         )
         .await;
         let resume = service
@@ -11640,7 +11640,7 @@ mod tests {
         drop(store);
         let output = root.join("payload/complete.bin");
         fs::create_dir_all(output.parent().expect("payload parent")).expect("create payload root");
-        fs::write(&output, &payload).expect("write complete publication");
+        fs::write(&output, &payload).expect("write complete direct file");
 
         let mut service = ApplicationService::open(configuration)
             .await
@@ -11912,7 +11912,7 @@ mod tests {
         drop(store);
         let output = root.join("payload/mismatch.bin");
         fs::create_dir_all(output.parent().expect("payload parent")).expect("create payload root");
-        fs::write(&output, &payload[..payload.len() - 1]).expect("write short publication");
+        fs::write(&output, &payload[..payload.len() - 1]).expect("write short direct file");
 
         let mut service = ApplicationService::open(configuration)
             .await
@@ -11990,7 +11990,7 @@ mod tests {
         drop(store);
         let output = root.join("payload/paused-check.bin");
         fs::create_dir_all(output.parent().expect("payload parent")).expect("create payload root");
-        fs::write(&output, &payload).expect("write published payload");
+        fs::write(&output, &payload).expect("write direct payload");
 
         let mut service = ApplicationService::open(configuration)
             .await
@@ -12051,7 +12051,7 @@ mod tests {
         drop(store);
         let output = root.join("payload/pause-checker.bin");
         fs::create_dir_all(output.parent().expect("payload parent")).expect("create payload root");
-        fs::write(&output, &payload).expect("write published payload");
+        fs::write(&output, &payload).expect("write direct payload");
 
         let mut service = ApplicationService::open(configuration)
             .await
@@ -12236,7 +12236,7 @@ mod tests {
         fs::create_dir_all(output.parent().expect("payload parent")).expect("create payload root");
         let mut corrupt = payload.clone();
         corrupt[16_384] ^= 0xff;
-        fs::write(&output, &corrupt).expect("write corrupt publication");
+        fs::write(&output, &corrupt).expect("write corrupt direct file");
 
         let mut service = ApplicationService::open(configuration)
             .await
@@ -12271,7 +12271,7 @@ mod tests {
             &[true, false]
         );
         assert_eq!(
-            fs::read(&output).expect("read unrepaired publication"),
+            fs::read(&output).expect("read unrepaired direct file"),
             corrupt,
             "paused intent must not admit repair writes"
         );
@@ -14611,7 +14611,7 @@ mod tests {
             },
         );
         fs::create_dir_all(root.join("payload")).expect("create payload root");
-        fs::write(root.join("payload/seed.bin"), payload).expect("write published payload");
+        fs::write(root.join("payload/seed.bin"), payload).expect("write direct payload");
         let torrent_id = {
             let mut store = SessionStore::open(
                 configuration

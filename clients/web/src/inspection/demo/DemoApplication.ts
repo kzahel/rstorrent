@@ -157,7 +157,7 @@ export class DemoApplication implements InspectionApplication {
         this.addCommandLog(
           "lifecycle",
           command.deleteData
-            ? "Torrent and managed data removed in demo mode"
+            ? "Torrent and downloaded data removed in demo mode"
             : "Torrent removed while retaining data in demo mode",
           command.torrentId,
         );

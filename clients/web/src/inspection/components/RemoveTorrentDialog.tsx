@@ -139,7 +139,7 @@ export function RemoveTorrentDialog({
           <p className={styles.note}>
             {unsupportedDeleteCount.toLocaleString()} selected{" "}
             {unsupportedDeleteCount === 1 ? "torrent does" : "torrents do"}
-            {" "}not support managed data deletion. Keep downloaded data to
+            {" "}not support downloaded-data deletion. Keep downloaded data to
             remove the complete selection.
           </p>
         ) : null}

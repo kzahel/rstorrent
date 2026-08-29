@@ -820,7 +820,7 @@ function healthyDownload(elapsedMs: number): ScenarioContent {
       [62, "info", "piece", "Verified 50% of wanted payload"],
       [94, "debug", "scheduler", "Entering bounded endgame"],
       [98, "info", "integrity", "All pieces verified"],
-      [99, "info", "storage", "Published 3 files"],
+      [99, "info", "storage", "All 3 direct files verified"],
     ], elapsedMs),
   };
 }
@@ -1459,7 +1459,7 @@ function endgame(elapsedMs: number): ScenarioContent {
       [7, "debug", "protocol", "Cancel sent to losing request owner"],
       [14, "debug", "piece", "Late duplicate payload ignored safely"],
       [29, "info", "integrity", "All 1,055 pieces verified"],
-      [30, "info", "storage", "Publication complete; request owners drained"],
+      [30, "info", "storage", "Direct content complete; request owners drained"],
     ], elapsedMs),
   };
 }
