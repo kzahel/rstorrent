@@ -414,7 +414,7 @@ maximum import returns the typed resource limit, rolls back atomically, and
 leaves the first torrent, revision, and store usable. The independent 32-MiB
 metrics budget is unchanged.
 
-Ready Tactical
+Active Tactical
 [`193`](../tactical/193-stateless-foreground-downloader.md) composes this mode
 into one finite native downloader. Its torrent catalog, exact source, metadata,
 selection, have facts, DHT snapshot, and progress history remain in these same

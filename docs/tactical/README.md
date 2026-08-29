@@ -94,7 +94,7 @@ that scope and its cleanup or compatibility rules explicitly.
 ## Current Tacticals
 
 - [`193-stateless-foreground-downloader.md`](193-stateless-foreground-downloader.md):
-  ready; adds one finite native downloader that composes the existing
+  active; adds one finite native downloader that composes the existing
   ephemeral in-memory-SQLite application service, writes directly to final
   paths, selects all files except an explicit magnet BEP 53 `so` selection,
   cooperatively locks one canonical output root, and keeps selective boundary

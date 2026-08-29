@@ -6,7 +6,7 @@ Status: **Implemented on 2026-08-29 by Tactical
 [`191`](../tactical/191-direct-filesystem-storage.md).** Path, Android SAF,
 and qualified iOS storage now write wanted bytes directly at final safe
 metainfo paths. Schema 22 and every generated first-party boundary remove the
-former publication lifecycle and managed-deletion policy. Ready Tactical
+former publication lifecycle and managed-deletion policy. Active Tactical
 [`193`](../tactical/193-stateless-foreground-downloader.md) owns a finite
 path-only composition over this model; ordinary product storage remains
 unchanged until that separately bounded slice lands.

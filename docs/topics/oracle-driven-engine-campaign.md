@@ -1159,7 +1159,7 @@ lifecycle. The next storage action must come from a separately bounded
 capability; no staging, publication, packed, suffix, or relocation follow-up
 is implied.
 
-Ready Tactical
+Active Tactical
 [`193`](../tactical/193-stateless-foreground-downloader.md) is that separately
 bounded finite path-only composition. Its source-first record adopts the
 pinned libtorrent one-shot embedding lesson and BEP 53 priority behavior while

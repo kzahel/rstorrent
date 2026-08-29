@@ -22,7 +22,7 @@ deployment claims. Completed Tactical
 desktop/configured-headless host lifecycle, durable authority, authorized-
 browser resume and operator security-audit boundary only in a production-shaped
 loopback validation composition. Deployment remains later work. Independently,
-Ready Tactical
+Active Tactical
 [`193`](../tactical/193-stateless-foreground-downloader.md) owns one finite
 foreground native command over an ephemeral in-process application owner. It
 is not a headless service, daemon, remote-control endpoint, or durable runtime

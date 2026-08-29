@@ -1,10 +1,10 @@
 # Tactical 193: Stateless Foreground Downloader
 
-Status: **Ready as of 2026-08-29.** The user accepted a deliberately simple
+Status: **Active as of 2026-08-29.** The user accepted a deliberately simple
 one-source foreground downloader, all files by default, with the one exception
 that a magnet's BEP 53 `so` selection must behave like the same magnet added to
-the first-party client. This commit plans the slice only; implementation is not
-yet started.
+the first-party client, then explicitly authorized end-to-end autonomous
+implementation with logical commits.
 
 Topics:
 [`direct-filesystem-storage`](../topics/direct-filesystem-storage.md),
