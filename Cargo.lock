@@ -4404,24 +4404,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rstorrent-remote-proof"
-version = "0.1.0"
-dependencies = [
- "futures-util",
- "rand 0.8.8",
- "rstorrent-gateway",
- "rstorrent-remote-crypto",
- "rstorrent-remote-relay",
- "rstorrent-session",
- "serde_json",
- "tempfile",
- "tokio",
- "tokio-tungstenite",
- "tokio-util",
- "zeroize",
-]
-
-[[package]]
 name = "rstorrent-remote-relay"
 version = "0.1.0"
 dependencies = [
