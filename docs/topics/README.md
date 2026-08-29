@@ -96,6 +96,9 @@ Topics own the current truth for a continuing concern. Tactical docs under
 - [`download-roots.md`](download-roots.md): user-selected payload roots,
   first-add and default-root UX, platform capability ownership, desktop/WebUI
   picker behavior, and the deferred JSTorrent-like file-selection flow.
+- [`download-root-acquisition.md`](download-root-acquisition.md): exact
+  packaged-desktop, local-WebUI, Crostini, and headless path-acquisition
+  behavior; native picker availability; and validated Linux server-path entry.
 - [`application-control.md`](application-control.md): shared semantic commands,
   responses, snapshots, revisions, and the boundary between in-process
   application control and future transports.

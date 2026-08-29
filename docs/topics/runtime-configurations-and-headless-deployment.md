@@ -49,6 +49,9 @@ relay delivery adapters.
 [`remote-access-authentication.md`](remote-access-authentication.md) owns
 future owner passphrase login, host and device identity, remembered access,
 end-to-end record protection, and relay threat models.
+[`download-root-acquisition.md`](download-root-acquisition.md) owns the exact
+native-picker matrix and accepted validated absolute server-path entry for the
+Linux headless presentation.
 [`incoming-reachability-and-seeding.md`](incoming-reachability-and-seeding.md)
 owns peer-listener and upload behavior; durable ratio/time seeding goals remain
 separate application policy.

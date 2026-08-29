@@ -41,6 +41,11 @@ tradeoff visible only on the exact Crostini product. Tactical `076` lets a
 headless private host install one explicit
 configured payload root while making the native picker unavailable; it does
 not add ambient remote path authority or change durable root identity.
+Maintainer direction on 2026-08-29 accepts validated absolute server-path
+entry for the exact Linux headless product. That unimplemented platform
+operation and the current cross-runtime picker matrix are owned by
+[`download-root-acquisition.md`](download-root-acquisition.md); portable add
+commands continue to carry only opaque root IDs.
 Android already proves one user-selected persisted SAF root but not general
 multi-root management. The maintained iOS
 product now supports app Documents plus distinct qualified selected roots.
@@ -99,7 +104,10 @@ It complements:
   scheduling; and
 - [`android-saf-storage.md`](android-saf-storage.md), which owns dynamic SAF
   document acquisition, descriptor lifetime, and the platform namespace/Rust
-  payload boundary beneath an established root.
+  payload boundary beneath an established root; and
+- [`download-root-acquisition.md`](download-root-acquisition.md), which owns
+  exact picker implementations, availability by runtime, and the Linux
+  headless typed-path boundary.
 
 This topic does not implement torrent relocation, automatic content import,
 numeric or piece priorities, fast resume, browser filesystem I/O, or dynamic
@@ -249,10 +257,12 @@ application command, or browser-local persistence.
   operation over its authenticated or explicitly development-scoped
   connection. The gateway process, not the browser sandbox, resolves and owns
   the filesystem capability.
-- A future remote or relayed presentation may select an already established
-  root. It cannot register a path on the backend merely by submitting a string.
-  If that transport cannot safely invoke a local picker, it directs the user
-  to the native product to add or repair a root.
+- A generic remote or relayed presentation may select an already established
+  root. It cannot register a path merely by submitting a string or claiming a
+  product identity. The exact Linux headless runtime may advertise a distinct
+  validated server-path operation; the backend installs the locator and
+  returns an opaque root ID. Other transports without a safe acquisition
+  operation direct the user to the owning product to add or repair a root.
 
 Do not use the browser File System Access API as an engine storage backend and
 do not move piece payload through the web presentation. Browser directory
