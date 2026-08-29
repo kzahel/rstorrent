@@ -12,6 +12,7 @@ members = [
     "crates/rstorrent-native-host",
     "crates/rstorrent-platform",
     "crates/rstorrent-protocol",
+    "crates/rstorrent-remote-crypto",
     "crates/rstorrent-session",
 ]
 resolver = "3"
@@ -26,14 +27,20 @@ rusqlite = { version = "0.40.1", default-features = false, features = ["bundled"
 rustix = { version = "1.1.4", features = ["fs", "net", "process"] }
 dontfrag = { version = "1.0.1", features = ["tokio"] }
 axum = "0.8.4"
+argon2 = { version = "0.5.3", default-features = false, features = ["alloc", "zeroize"] }
 async-compression = { version = "0.4", default-features = false, features = ["gzip", "tokio"] }
 base64 = "0.22.1"
+chacha20poly1305 = { version = "0.10.1", default-features = false, features = ["alloc"] }
 crypto-bigint = { version = "=0.7.5", default-features = false }
 futures-util = "0.3.31"
 flate2 = "1.1.9"
 getrandom = "0.3.4"
+hkdf = "0.12.4"
 minisign-verify = "0.2.5"
 quick-xml = "0.41.0"
+opaque-ke = { version = "=4.0.1", default-features = false, features = ["ristretto255"] }
+rand = { version = "0.8", default-features = false }
+rand_chacha = { version = "0.3.1", default-features = false }
 reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "stream"] }
 regex = "1.13.1"
 rustls = { version = "0.23.43", default-features = false }
@@ -50,6 +57,7 @@ tempfile = "3.27.0"
 tower-http = "0.6.11"
 ts-rs = { version = "12.0.1", features = ["serde-compat", "no-serde-warnings"] }
 url = "2.5.8"
+zeroize = "1.9.0"
 
 # Keep ordinary engine and desktop runs representative enough for networking,
 # hashing, storage, and UI work. Preserve the dev profile's debug assertions

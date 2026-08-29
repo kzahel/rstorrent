@@ -342,6 +342,38 @@ The encrypted record construction is fixed as follows:
    the 24-hour lifetime and their asymmetric plaintext bounds. Records are not
    compressed, padded or resumed.
 
+### Pure-core implementation evidence (2026-08-29)
+
+The first implementation slice adds `rstorrent-remote-crypto` as a pure
+workspace crate. It has no Tokio, Axum, WebSocket, filesystem, database,
+platform, Wasm-binding or RSTorrent application dependency. The crate owns:
+
+- the separately length-prefixed protocol label and version, relay ID, exact
+  username and host ID plus four domain-separated OPAQUE inputs;
+- exact-length OPAQUE registration/login wrappers over the selected custom
+  Argon2id KSF, including the library's unknown-user dummy-record path;
+- a 128-byte zeroizing server-authority container, fixed password-file
+  container, non-printable operation-seed/export wrappers and first-login host
+  pin behavior; and
+- HKDF-SHA-512 directional derivation and the fixed ChaCha20-Poly1305 record
+  codec with asymmetric application bounds, sequence exhaustion, authenticated
+  close and immediate two-direction erasure on close or hostile input.
+
+Sixteen unit tests cover input policy, deterministic messages, exact
+serialization, registration/login, wrong versus unknown credentials,
+route/host/user substitution, first and repeated pinning, clone distinctions,
+the fixed KSF and the record tamper/reflection/sequence/close matrix. A separate
+manifest guard keeps runtime and product layers out. The targeted commands
+`cargo fmt --all -- --check`, `cargo clippy -p rstorrent-remote-crypto
+--all-targets -- -D warnings`, `cargo test -p rstorrent-remote-crypto` and
+`cargo check -p rstorrent-remote-crypto --no-default-features` pass. The
+resolved normal dependency tree matches the selected graph. `cargo audit`
+finds no vulnerability; it reports 18 allowed workspace warnings, all either
+pre-existing unmaintained/unsound GTK and Unicode-chain notices or a yanked
+unrelated `chacha20` `0.10.1`, while this crate resolves `chacha20` `0.9.1`.
+Browser/Wasm, RFC-vector composition and relay evidence remain open in their
+declared later steps.
+
 ## Owner, Task, Cancellation, And Dependency Map
 
 ```text
