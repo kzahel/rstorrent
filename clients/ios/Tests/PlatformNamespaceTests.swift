@@ -206,6 +206,36 @@ final class PlatformNamespaceTests: XCTestCase {
         )
     }
 
+    func testAppOwnedDirectFileCanBeLeasedWithoutSecurityScope() throws {
+        let root = try temporaryRoot(named: "app-owned-share")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let directory = root.appendingPathComponent("torrent", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: false
+        )
+        let target = directory.appendingPathComponent("finished.bin")
+        try Data([1, 2, 3, 4]).write(to: target)
+
+        let lease = try PlatformStorageBridge.coordinatedShareableFile(
+            root: root,
+            components: ["torrent", "finished.bin"],
+            length: 4,
+            scopedRoot: nil
+        )
+        XCTAssertEqual(lease.url.standardizedFileURL, target.standardizedFileURL)
+        lease.release()
+
+        XCTAssertThrowsError(
+            try PlatformStorageBridge.coordinatedShareableFile(
+                root: root,
+                components: ["torrent", "finished.bin"],
+                length: 5,
+                scopedRoot: nil
+            )
+        )
+    }
+
     func testRootObservationSupportsTheEmptyHealthProbePath() throws {
         let root = try temporaryRoot(named: "root-observation")
         defer { try? FileManager.default.removeItem(at: root) }

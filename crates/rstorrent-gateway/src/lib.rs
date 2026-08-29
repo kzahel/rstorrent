@@ -1930,8 +1930,8 @@ mod tests {
         ApplicationService, Command, CommandResult, ConfiguredStorageRoot, FileSelectionIntent,
         MediaUrlOutcome, MediaUrlResponse, NetworkConfig, NetworkPolicy, OpenViewSetOptions,
         OpenViewSetRequest, OpenViewSetResponse, RequestEnvelope, ResponseOutcome, SessionStore,
-        UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy, ViewSetUpdate,
-        ViewSnapshot, ViewSpec,
+        UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy, ViewSetUpdate, ViewSnapshot,
+        ViewSpec,
     };
     use sha1::{Digest, Sha1};
     use tokio::sync::Mutex;

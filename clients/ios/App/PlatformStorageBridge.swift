@@ -5,6 +5,7 @@ import RSTorrentIOS
 final class PlatformStorageBridge: @unchecked Sendable {
     private let client: IosApplicationClient
     private let roots: [String: SelectedRootRecord]
+    private let appOwnedRoots: [String: URL]
     private let leases = CoordinatedLeaseLedger()
     private let workers = DispatchGroup()
     private let stateLock = NSLock()
@@ -12,9 +13,14 @@ final class PlatformStorageBridge: @unchecked Sendable {
     private var releaseTask: Task<Void, Never>?
     private var stopped = false
 
-    init(client: IosApplicationClient, roots: [SelectedRootRecord]) {
+    init(
+        client: IosApplicationClient,
+        roots: [SelectedRootRecord],
+        appOwnedRoots: [String: URL] = [:]
+    ) {
         self.client = client
         self.roots = Dictionary(uniqueKeysWithValues: roots.map { ($0.id, $0) })
+        self.appOwnedRoots = appOwnedRoots
     }
 
     func start() {
@@ -98,6 +104,14 @@ final class PlatformStorageBridge: @unchecked Sendable {
     }
 
     func openShareableFile(_ plan: IosFilePlan) throws -> ShareableFileLease {
+        if let root = appOwnedRoots[plan.storageRoot] {
+            return try Self.coordinatedShareableFile(
+                root: root,
+                components: plan.components,
+                length: plan.length,
+                scopedRoot: nil
+            )
+        }
         guard let record = roots[plan.storageRoot] else {
             throw StorageBridgeError.unregisteredRoot(plan.storageRoot)
         }
@@ -106,45 +120,53 @@ final class PlatformStorageBridge: @unchecked Sendable {
             throw RootAccessError.securityScopeDenied
         }
         do {
-            let target = try Self.storageTarget(root: root, components: plan.components)
-            var coordinationError: NSError?
-            var result: Result<URL, Error>?
-            NSFileCoordinator(filePresenter: nil).coordinate(
-                readingItemAt: target,
-                options: .withoutChanges,
-                error: &coordinationError
-            ) { coordinatedURL in
-                result = Result {
-                    try Self.validateCoordinatedTarget(
-                        coordinatedURL,
-                        requested: target
-                    )
-                    let observation = try Self.observe(
-                        root: root,
-                        components: plan.components
-                    )
-                    guard observation.exists, observation.kind == .file else {
-                        throw StorageBridgeError.shareTargetIsNotFile
-                    }
-                    guard observation.length == plan.length else {
-                        throw StorageBridgeError.shareTargetLengthChanged
-                    }
-                    return coordinatedURL
-                }
-            }
-            if let coordinationError {
-                throw RootAccessError.coordinationFailed(
-                    coordinationError.localizedDescription
-                )
-            }
-            guard let result else {
-                throw RootAccessError.coordinationAccessorDidNotRun
-            }
-            return ShareableFileLease(url: try result.get(), scopedRoot: root)
+            return try Self.coordinatedShareableFile(
+                root: root,
+                components: plan.components,
+                length: plan.length,
+                scopedRoot: root
+            )
         } catch {
             root.stopAccessingSecurityScopedResource()
             throw error
         }
+    }
+
+    static func coordinatedShareableFile(
+        root: URL,
+        components: [String],
+        length: UInt64,
+        scopedRoot: URL?
+    ) throws -> ShareableFileLease {
+        let target = try storageTarget(root: root, components: components)
+        var coordinationError: NSError?
+        var result: Result<URL, Error>?
+        NSFileCoordinator(filePresenter: nil).coordinate(
+            readingItemAt: target,
+            options: .withoutChanges,
+            error: &coordinationError
+        ) { coordinatedURL in
+            result = Result {
+                try validateCoordinatedTarget(coordinatedURL, requested: target)
+                let observation = try observe(root: root, components: components)
+                guard observation.exists, observation.kind == .file else {
+                    throw StorageBridgeError.shareTargetIsNotFile
+                }
+                guard observation.length == length else {
+                    throw StorageBridgeError.shareTargetLengthChanged
+                }
+                return coordinatedURL
+            }
+        }
+        if let coordinationError {
+            throw RootAccessError.coordinationFailed(
+                coordinationError.localizedDescription
+            )
+        }
+        guard let result else {
+            throw RootAccessError.coordinationAccessorDidNotRun
+        }
+        return ShareableFileLease(url: try result.get(), scopedRoot: scopedRoot)
     }
 
     private func removeExactFile(_ target: URL) throws {
@@ -700,7 +722,7 @@ final class ShareableFileLease: Identifiable {
     let url: URL
     private var scopedRoot: URL?
 
-    init(url: URL, scopedRoot: URL) {
+    init(url: URL, scopedRoot: URL?) {
         self.url = url
         self.scopedRoot = scopedRoot
     }

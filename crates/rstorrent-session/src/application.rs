@@ -2316,10 +2316,7 @@ impl ApplicationService {
                 resume.state,
                 TorrentState::Checking | TorrentState::NeedsRepair | TorrentState::Error
             )
-            || !matches!(
-                self.storage_roots.get(&resume.storage_root),
-                Some(StorageRootLocation::PlatformCapability)
-            )
+            || !self.storage_roots.contains_key(&resume.storage_root)
         {
             return Err(ApplicationError::Configuration(
                 "torrent has no shareable verified platform file".to_owned(),
@@ -14475,7 +14472,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn platform_file_handoff_requires_published_verified_content() {
+    async fn platform_file_handoff_requires_verified_direct_content() {
         let root = test_root("platform-file-handoff");
         let payload = b"abcdefg";
         let raw_info = single_file_info("seed.bin", payload, 4);
@@ -14530,12 +14527,66 @@ mod tests {
         let plan = service
             .platform_file_plan(&torrent_id, 0)
             .await
-            .expect("published file plan");
+            .expect("direct platform file plan");
         assert_eq!(plan.torrent_id, torrent_id);
         assert_eq!(plan.storage_root, "downloads");
         assert_eq!(plan.components, ["seed.bin"]);
         assert_eq!(plan.length, payload.len() as u64);
         assert!(service.platform_file_plan(&torrent_id, 1).await.is_err());
+
+        service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove root");
+    }
+
+    #[tokio::test]
+    async fn path_file_handoff_returns_the_direct_content_path() {
+        let root = test_root("path-file-handoff");
+        let payload = b"abcdefg";
+        let raw_info = single_file_info("seed.bin", payload, 4);
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        let info_hash_hex = crate::control::encode_info_hash(info_hash);
+        let configuration = config(&root);
+        fs::create_dir_all(root.join("payload")).expect("create payload root");
+        let torrent_id = {
+            let mut store = SessionStore::open(
+                configuration
+                    .durable_profile_root()
+                    .expect("durable profile"),
+                &configuration.profile_id,
+                &configuration.storage_roots,
+            )
+            .expect("open fixture store");
+            let torrent_id = add_store_torrent(&mut store, "add", &info_hash_hex);
+            store
+                .record_metadata(&torrent_id, &raw_info)
+                .expect("record metadata");
+            store
+                .record_pieces(&torrent_id, &[0, 1])
+                .expect("record verified pieces");
+            store.mark_complete(&torrent_id).expect("record completion");
+            torrent_id
+        };
+        fs::write(root.join("payload/seed.bin"), payload).expect("write direct payload");
+
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("open application");
+        wait_for_torrent_state(
+            &mut service,
+            &torrent_id,
+            TorrentState::Complete,
+            "path-file-handoff",
+        )
+        .await;
+        let plan = service
+            .platform_file_plan(&torrent_id, 0)
+            .await
+            .expect("direct path file plan");
+        assert_eq!(plan.torrent_id, torrent_id);
+        assert_eq!(plan.storage_root, "downloads");
+        assert_eq!(plan.components, ["seed.bin"]);
+        assert_eq!(plan.length, payload.len() as u64);
 
         service.shutdown().await.expect("shutdown");
         drop(service);

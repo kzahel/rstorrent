@@ -308,7 +308,11 @@ final class AppModel: ObservableObject {
                 peerIoTimeoutSeconds: 30
             )
         )
-        let bridge = PlatformStorageBridge(client: opened, roots: records)
+        let bridge = PlatformStorageBridge(
+            client: opened,
+            roots: records,
+            appOwnedRoots: ["ios-documents": documentsURL]
+        )
         bridge.start()
         client = opened
         storageBridge = bridge
