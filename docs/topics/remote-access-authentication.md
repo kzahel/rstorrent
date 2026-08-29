@@ -5,12 +5,12 @@ Topic: `remote-access-authentication`
 Status: Direction and investigation background accepted from maintainer
 discussion on 2026-08-04. Tactical
 [`190`](../tactical/190-opaque-wasm-relay-foundation.md) was accepted on
-2026-08-29 for later execution and selects an account-free OPAQUE login through
-one native/Wasm Rust core and a controlled dumb-relay proof. It is **Later**,
-has not started implementation, and does not authorize a
-production listener, public relay, durable owner authority or stable remote
-wire contract. Completed Tactical `174` separately permits one trusted
-Tailscale operator deployment; tailnet admission is not the owner
+2026-08-29 and is now **Active**. It selects an account-free OPAQUE login
+through one native/Wasm Rust core and a controlled dumb-relay proof. Its exact
+dependency/audit and encrypted-record pre-code gate is closed, but it does not
+authorize a production listener, public relay, durable owner authority or
+stable remote wire contract. Completed Tactical `174` separately permits one
+trusted Tailscale operator deployment; tailnet admission is not the owner
 authentication designed here.
 
 ## Purpose And Scope

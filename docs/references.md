@@ -381,10 +381,14 @@ tag `v4.0.1` commit `75fe4cdddb7946440054da0c8e7cdd73828af3f9`, licensed
 - `src/serialization/tests.rs` and `tests/remote_key.rs` for invalid encodings
   and the external-private-key seam.
 
-The project's cited NCC Group review covered a 2021 pre-final release, not
-`4.0.1` or RSTorrent's complete composition. Tactical `190` therefore requires
-a fresh audit/change/advisory, dependency-feature and license review before
-adding the crate.
+The project's
+[NCC Group review](https://www.nccgroup.com/research/public-report-whatsapp-opaque-ke-cryptographic-implementation-review/)
+covered `0.5.0` against draft 03 with a focused `1.2.0` fix retest, not `4.0.1`
+or RSTorrent's complete composition. The closed Tactical `190` pre-code review
+records the identity-element, reflection, I2OSP and constant-time MAC findings;
+the final-RFC change history; no published project or RustSec advisory; the
+exact selected feature/dependency/license graph; and passing upstream RFC and
+hostile-input tests. The repository lockfile remains the exact resolved graph.
 [`@serenity-kit/opaque` `1.1.0`](https://www.npmjs.com/package/@serenity-kit/opaque)
 is only a browser/Wasm feasibility and Argon2 performance reference, not an
 accepted dependency.

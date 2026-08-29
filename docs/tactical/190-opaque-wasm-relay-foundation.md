@@ -1,10 +1,10 @@
 # Tactical 190: OPAQUE WebAssembly Relay Foundation
 
-Status: **Accepted and decision-complete for later execution on 2026-08-29 by
-explicit user direction.** Implementation has not started. Desktop signed
-package and updater Tactical
+Status: **Active as of 2026-08-29 by explicit user direction.** The
+cryptographic pre-code gate below is closed and implementation may proceed.
+Desktop signed package and updater Tactical
 [`158`](158-desktop-signed-packaging-and-updater.md) remains independently
-active; creating this tactical does not itself start implementation.
+active under the concurrent-work policy.
 
 Topics:
 [`remote-access-authentication`](../topics/remote-access-authentication.md),
@@ -182,9 +182,9 @@ ready from executable evidence.
 ## Reference Dossier And Pre-Code Gate
 
 No external source, fixture or test vector is imported merely by this design.
-Before adding a dependency or production protocol code, execution must append
-the exact selected versions, checksums, feature graph, audit conclusions and
-license/notice result to this tactical.
+The exact selection, audit result and record construction below close the
+pre-code gate. Any change to those choices must be recorded before dependent
+protocol code changes.
 
 ### Normative specifications
 
@@ -257,6 +257,90 @@ justifies adopting a prerelease.
 - Tactical [`060`](060-multiplexed-application-websocket.md) remains the
   RSTorrent application-frame authority. The relay proof wraps those frames;
   it does not tunnel arbitrary HTTP paths or create another command API.
+
+### Closed selection and audit record (2026-08-29)
+
+The selected OPAQUE construction is RFC 9807 `OPAQUE-3DH` with the
+Ristretto255/SHA-512 VOPRF ciphersuite, `TripleDh<Ristretto255, Sha512>`, and a
+custom `Ksf` adapter using Argon2id version 1.3 with 64 MiB memory, three
+passes, parallelism one and a 64-byte output. The adapter uses the same fixed
+16-byte zero salt as `opaque-ke`'s Argon2 seam because the KSF input is already
+the OPRF-derived randomized password. The browser measurement matrix must
+confirm this selection remains within the tactical's five-second and 256-MiB
+bounds; exceeding either bound is a recorded result and requires revisiting
+the selection rather than falling back to the identity KSF.
+
+The dependency selection is:
+
+- exact `opaque-ke` `4.0.1` with `default-features = false` and only
+  `ristretto255`; its fixed serialization is used instead of Serde;
+- `argon2` `0.5.3` with allocation and zeroization support;
+- `hkdf` `0.12.4`, the workspace `sha2` `0.10.9`, and
+  `chacha20poly1305` `0.10.1` with only allocation support for records;
+- the `rand` 0.8 line and `rand_chacha` `0.3.1` for native OS randomness and
+  deterministic 32-byte browser-CSPRNG/test seeds; and
+- `zeroize` `1.9.0`, plus `wasm-bindgen` `0.2.127` only in the browser binding.
+
+The resolved OPAQUE normal graph inspected before adoption includes
+`curve25519-dalek` `4.1.3`, `voprf` `0.5.0`, `elliptic-curve` `0.13.8`,
+`hkdf` `0.12.4`, `hmac` `0.12.1`, `digest` `0.10.7`, `sha2` `0.10.9`,
+`subtle` `2.6.1`, `zeroize` `1.9.0`, `derive-where` `1.6.1`, `displaydoc`
+`0.2.7`, and pinned `generic-array` `0.14.7`. The final repository lockfile
+and `cargo tree` remain the exact build authority.
+
+All selected direct and normal-graph transitive licenses are permissive and
+compatible with the RSTorrent MIT project: MIT/Apache combinations,
+BSD-1-Clause, BSD-2-Clause, BSD-3-Clause, Unicode-3.0, and the optional
+LLVM-exception form on target support. No selected published package contains
+an upstream `NOTICE` file. Dependencies remain registry inputs with their own
+license metadata; no source, fixture, vector or asset is copied, so no new
+repository notice file is required.
+
+The 2021 NCC Group review covered `opaque-ke` `0.5.0` against OPAQUE draft 03,
+with a focused retest of fixes in `1.2.0`; it is not an audit of `4.0.1` or
+this composition. Its identity-element validation, reflected OPRF value,
+I2OSP length and constant-time transcript-MAC findings are represented by the
+current implementation checks and upstream tests. Version `4.0.0` synchronized
+to final RFC 9807, made dummy-record generation unconditional, and changed
+serialized setup/registration state; `4.0.1` only repaired documentation.
+There are no published GitHub advisories for the project and the 2026-08-29
+RustSec database contains no `opaque-ke` entry. `cargo audit` reports no known
+vulnerabilities in the current workspace lock. The `4.1.0-pre.2` prerelease is
+rejected because its KEM work is outside this proof.
+
+Exact tag `v4.0.1` at
+`75fe4cdddb7946440054da0c8e7cdd73828af3f9` was checked out in a temporary
+directory. Its source and tests named above were inspected, and its 83 library
+tests with `--no-default-features --features ristretto255` pass, including the
+RFC 9807 real/fake vectors, hostile deserialization properties and reflected
+value/identity-element cases. The checkout and build tree were removed after
+the run.
+
+OPAQUE inputs use one canonical length-prefixed binding containing the fixed
+protocol label, protocol version, 32-byte relay deployment ID, exact username
+and 32-byte random host ID. The credential identifier, client identifier,
+server identifier and OPAQUE context receive distinct fixed labels over that
+binding. OPAQUE already authenticates its server static public key; a client
+pins the resulting 32-byte server public key together with the host ID after a
+successful login.
+
+The encrypted record construction is fixed as follows:
+
+1. HKDF-SHA-512 extracts from the 64-byte OPAQUE session key with the SHA-512
+   digest of the canonical binding as salt.
+2. Four domain-separated labels derive client-to-host and host-to-client
+   32-byte ChaCha20-Poly1305 keys and four-byte nonce prefixes.
+3. Each record begins with a 16-byte authenticated header: ASCII `RSR1`, one
+   direction byte, one flags byte, two zero reserved bytes and a big-endian
+   64-bit sequence starting at zero. The WebSocket message boundary supplies
+   length; the header is AEAD associated data.
+4. The 96-bit nonce is the direction's four-byte prefix followed by the
+   sequence. Only flag bit zero is defined as authenticated close; a close has
+   empty plaintext. Unknown flags, nonzero reserved bytes, wrong direction,
+   duplicate/skipped sequence, malformed tag and post-close use fail closed.
+5. Each direction stops before sequence `2^32`; adapters additionally enforce
+   the 24-hour lifetime and their asymmetric plaintext bounds. Records are not
+   compressed, padded or resumed.
 
 ## Owner, Task, Cancellation, And Dependency Map
 

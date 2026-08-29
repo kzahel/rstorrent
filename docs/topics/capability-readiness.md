@@ -833,6 +833,10 @@ exactly.
 
 ### Active
 
+- Execute **Tactical `190`** through its controlled native-host/browser-Wasm
+  OPAQUE proof, bounded dumb relay, exact application trace and adversarial
+  resource evidence. It does not authorize public relay deployment or
+  production owner authority.
 - Resume **Tactical `158`** and close the clean Windows and Linux x86_64
   signed replacement/relaunch evidence plus Windows firewall-consent
   characterization. Prove clean launch or bounded reset and payload safety,
@@ -890,10 +894,10 @@ local service discovery,
 NAT traversal, dynamic VPN and metered-network controls, and production
 remote access remain
 important. Accepted Tactical
-[`190`](../tactical/190-opaque-wasm-relay-foundation.md) owns a later controlled
-OPAQUE native/Wasm dumb-relay proof without public exposure, durable authority,
-remembered devices or account delegation; it remains **Later** until explicitly
-selected and may become active without displacing Tactical `158`. Tactical
+[`190`](../tactical/190-opaque-wasm-relay-foundation.md) now actively owns a
+controlled OPAQUE native/Wasm dumb-relay proof without public exposure,
+durable authority, remembered devices or account delegation; it proceeds
+independently from Tactical `158`. Tactical
 `112` now owns IPv6 DHT operation and dual-stack
 listening. Closed Tactical `113` implements IPv6 firewall-pinhole control but
 records positive physical capability as unknown on the current hardware after
