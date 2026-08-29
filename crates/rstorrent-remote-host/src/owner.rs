@@ -2,9 +2,10 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::Engine as _;
+use futures_util::{SinkExt, StreamExt};
 use p256::ecdsa::SigningKey;
 use rand::rngs::OsRng;
 use rstorrent_remote_access::{
@@ -21,12 +22,17 @@ use tokio::task::JoinHandle;
 use tokio_rustls::rustls::pki_types::CertificateDer;
 use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use tokio_tungstenite::Connector;
+use tokio_tungstenite::connect_async_tls_with_config;
+use tokio_tungstenite::tungstenite::Message;
 use url::Url;
 use zeroize::Zeroizing;
 
 use crate::error::Result;
 use crate::runtime::run_host;
 use crate::{RemoteHostError, wire};
+use rstorrent_remote_relay::{
+    HOST_CHALLENGE_MAGIC, RELEASE_COMPLETE_MAGIC, encode_host_proof, host_claim_transcript,
+};
 
 const PROTOCOL_FLOOR: u16 = 1;
 const MAX_RELAY_CERTIFICATE_BYTES: usize = 64 * 1024;
@@ -233,7 +239,8 @@ pub struct RemoteSecurityView {
     pub live_circuits: Vec<LiveCircuitView>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DisableRemoteAccessOutcome {
     pub authority_file_removed: bool,
     pub route_released: bool,
@@ -318,13 +325,17 @@ impl RemoteAccessOwner {
                 random_operation_seed().map_err(|_| RemoteHostError::Protocol)?,
             ),
         )?;
-        self.shared.store.create(&authority)?;
+        if let Err(error) = self.shared.store.create(&authority) {
+            let _ = release_route(&self.shared.config, &authority).await;
+            return Err(error.into());
+        }
         self.shared.state.lock().await.authority = Some(authority);
         self.start_host().await;
         self.security_view().await
     }
 
     pub async fn security_view(&self) -> Result<RemoteSecurityView> {
+        self.expire_authorizations().await?;
         let state = self.shared.state.lock().await;
         let retained_history = self.shared.store.load_history()?;
         let (username, route, relay_id, host_pin, authority) = match &state.authority {
@@ -385,6 +396,161 @@ impl RemoteAccessOwner {
         Ok(())
     }
 
+    pub async fn revoke_all_other(&self, retained_client_id: &str) -> Result<usize> {
+        let retained_client_id = ClientId::new(wire::decode_id(retained_client_id)?);
+        let mut state = self.shared.state.lock().await;
+        let authority = state
+            .authority
+            .as_mut()
+            .ok_or(RemoteHostError::Configuration("remote access is disabled"))?;
+        let client_ids = authority
+            .security_snapshot()
+            .clients
+            .into_iter()
+            .map(|client| wire::decode_id(&client.client_id).map(ClientId::new))
+            .collect::<Result<Vec<_>>>()?;
+        let revoked_ids = client_ids
+            .iter()
+            .copied()
+            .filter(|client_id| *client_id != retained_client_id)
+            .collect::<Vec<_>>();
+        let event_ids = random_event_ids(revoked_ids.len())?;
+        let revoked = self.shared.store.update(authority, |candidate| {
+            candidate.revoke_all_except(retained_client_id, now(), event_ids)
+        })?;
+        for circuit in state.circuits.values().filter(|circuit| {
+            circuit
+                .client_id
+                .is_some_and(|client_id| revoked_ids.contains(&client_id))
+        }) {
+            circuit.cancellation.cancel();
+        }
+        Ok(revoked)
+    }
+
+    pub async fn close_circuit(&self, encoded_circuit_id: &str) -> Result<()> {
+        let circuit_id = wire::decode_id(encoded_circuit_id)?;
+        let state = self.shared.state.lock().await;
+        let circuit = state
+            .circuits
+            .get(&circuit_id)
+            .ok_or(RemoteHostError::Configuration("live circuit not found"))?;
+        circuit.cancellation.cancel();
+        Ok(())
+    }
+
+    pub async fn rename(&self, encoded_client_id: &str, label: &str) -> Result<()> {
+        let client_id = ClientId::new(wire::decode_id(encoded_client_id)?);
+        let event_id = random_event_id()?;
+        let mut state = self.shared.state.lock().await;
+        let authority = state
+            .authority
+            .as_mut()
+            .ok_or(RemoteHostError::Configuration("remote access is disabled"))?;
+        self.shared.store.update(authority, |candidate| {
+            candidate.rename_client(client_id, label, now(), event_id)
+        })?;
+        Ok(())
+    }
+
+    pub async fn require_password_everywhere(&self) -> Result<usize> {
+        let mut state = self.shared.state.lock().await;
+        let authority = state
+            .authority
+            .as_mut()
+            .ok_or(RemoteHostError::Configuration("remote access is disabled"))?;
+        let count = authority.security_snapshot().clients.len();
+        let event_id = random_event_id()?;
+        let tombstone_events = random_event_ids(count)?;
+        let revoked = self.shared.store.update(authority, |candidate| {
+            candidate.require_password_everywhere(now(), event_id, tombstone_events)
+        })?;
+        state
+            .circuits
+            .values()
+            .filter(|circuit| circuit.client_id.is_some())
+            .for_each(|circuit| circuit.cancellation.cancel());
+        Ok(revoked)
+    }
+
+    pub async fn change_passphrase(&self, passphrase: &[u8]) -> Result<usize> {
+        if !(MIN_PASSPHRASE_BYTES..=MAX_PASSPHRASE_BYTES).contains(&passphrase.len()) {
+            return Err(RemoteHostError::Configuration("passphrase length"));
+        }
+        let mut state = self.shared.state.lock().await;
+        let authority = state
+            .authority
+            .as_mut()
+            .ok_or(RemoteHostError::Configuration("remote access is disabled"))?;
+        let count = authority.security_snapshot().clients.len();
+        let event_id = random_event_id()?;
+        let tombstone_events = random_event_ids(count)?;
+        let start_seed = random_seed()?;
+        let finish_seed = random_seed()?;
+        let revoked = self.shared.store.update(authority, |candidate| {
+            candidate.change_passphrase(
+                passphrase,
+                start_seed,
+                finish_seed,
+                now(),
+                event_id,
+                tombstone_events,
+            )
+        })?;
+        state
+            .circuits
+            .values()
+            .for_each(|circuit| circuit.cancellation.cancel());
+        Ok(revoked)
+    }
+
+    pub async fn clear_history(&self) -> Result<bool> {
+        Ok(self.shared.store.clear_history()?)
+    }
+
+    pub async fn disable(&self) -> Result<DisableRemoteAccessOutcome> {
+        self.stop_host().await;
+        let authority = {
+            let mut state = self.shared.state.lock().await;
+            if !state.circuits.is_empty() {
+                return Err(RemoteHostError::Configuration(
+                    "remote circuits did not stop",
+                ));
+            }
+            state
+                .authority
+                .take()
+                .ok_or(RemoteHostError::Configuration("remote access is disabled"))?
+        };
+        let route_released = release_route(&self.shared.config, &authority).await.is_ok();
+        let disabled = self
+            .shared
+            .store
+            .disable(authority, now(), random_event_id()?);
+        match disabled {
+            Ok(outcome) => Ok(DisableRemoteAccessOutcome {
+                authority_file_removed: outcome.authority_file_removed,
+                route_released,
+            }),
+            Err(error) => {
+                let restored = self.shared.store.load()?;
+                let should_restart = restored.is_some();
+                self.shared.state.lock().await.authority = restored;
+                if should_restart {
+                    self.start_host().await;
+                }
+                Err(error.into())
+            }
+        }
+    }
+
+    pub async fn recover(&self, username: &str, passphrase: &[u8]) -> Result<RemoteSecurityView> {
+        if self.shared.state.lock().await.authority.is_some() {
+            self.disable().await?;
+        }
+        self.enable(username, passphrase).await
+    }
+
     pub async fn shutdown(&self) {
         self.shared.shutdown.cancel();
         self.stop_host().await;
@@ -409,6 +575,43 @@ impl RemoteAccessOwner {
             let _ = lifecycle.task.await;
         }
     }
+
+    async fn expire_authorizations(&self) -> Result<usize> {
+        let current = now();
+        let mut state = self.shared.state.lock().await;
+        let Some(authority) = state.authority.as_mut() else {
+            return Ok(0);
+        };
+        let count = authority
+            .security_snapshot()
+            .clients
+            .iter()
+            .filter(|client| current >= client.idle_expires || current >= client.absolute_expires)
+            .count();
+        if count == 0 {
+            return Ok(0);
+        }
+        let event_ids = random_event_ids(count)?;
+        let expired = self.shared.store.update(authority, |candidate| {
+            candidate.expire_clients(current, event_ids)
+        })?;
+        let current_ids = authority
+            .security_snapshot()
+            .clients
+            .into_iter()
+            .map(|client| client.client_id)
+            .collect::<std::collections::BTreeSet<_>>();
+        state
+            .circuits
+            .values()
+            .filter(|circuit| {
+                circuit
+                    .client_id
+                    .is_some_and(|id| !current_ids.contains(&wire::encode_id(id.as_bytes())))
+            })
+            .for_each(|circuit| circuit.cancellation.cancel());
+        Ok(expired)
+    }
 }
 
 pub(crate) fn now() -> Timestamp {
@@ -429,6 +632,10 @@ pub(crate) fn random_event_id() -> Result<EventId> {
     Ok(EventId::new(random_array()?))
 }
 
+fn random_event_ids(count: usize) -> Result<Vec<EventId>> {
+    (0..count).map(|_| random_event_id()).collect()
+}
+
 pub(crate) fn random_seed() -> Result<OperationSeed> {
     Ok(OperationSeed::new(random_array()?))
 }
@@ -438,4 +645,51 @@ impl SharedOwner {
         self.next_connection_generation
             .fetch_add(1, Ordering::Relaxed)
     }
+}
+
+async fn release_route(config: &RemoteHostConfig, authority: &RemoteAuthority) -> Result<()> {
+    let path = format!("/v1/release/{}", authority.route());
+    let url = config.relay_websocket_url(&path)?;
+    for _ in 0..10 {
+        let connected =
+            connect_async_tls_with_config(url.clone(), None, false, Some(config.relay_connector()))
+                .await;
+        let Ok((mut socket, _)) = connected else {
+            return Err(RemoteHostError::Relay);
+        };
+        let Some(Ok(Message::Binary(challenge))) = socket.next().await else {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            continue;
+        };
+        if challenge.len() != 68 || &challenge[..4] != HOST_CHALLENGE_MAGIC {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            continue;
+        }
+        let relay_id: [u8; 32] = challenge[4..36]
+            .try_into()
+            .map_err(|_| RemoteHostError::Relay)?;
+        if authority.binding().relay_id().as_bytes() != &relay_id {
+            return Err(RemoteHostError::Relay);
+        }
+        let nonce: [u8; 32] = challenge[36..]
+            .try_into()
+            .map_err(|_| RemoteHostError::Relay)?;
+        let transcript = host_claim_transcript(relay_id, authority.route(), nonce, true)
+            .map_err(|_| RemoteHostError::Relay)?;
+        let signature = authority.sign_relay_transcript(&transcript);
+        socket
+            .send(Message::Binary(
+                encode_host_proof(signature.as_bytes())
+                    .map_err(|_| RemoteHostError::Relay)?
+                    .into(),
+            ))
+            .await
+            .map_err(|_| RemoteHostError::Relay)?;
+        if matches!(socket.next().await, Some(Ok(Message::Binary(message))) if message.as_ref() == RELEASE_COMPLETE_MAGIC)
+        {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    Err(RemoteHostError::Relay)
 }

@@ -388,6 +388,35 @@ impl RemoteAuthority {
         })
     }
 
+    pub fn revoke_all_except<I>(
+        &mut self,
+        retained_client_id: ClientId,
+        now: Timestamp,
+        event_ids: I,
+    ) -> Result<usize>
+    where
+        I: IntoIterator<Item = EventId>,
+    {
+        if !self
+            .clients
+            .iter()
+            .any(|client| client.client_id == retained_client_id)
+        {
+            return Err(RemoteAccessError::NotFound);
+        }
+        let revoked = self
+            .clients
+            .iter()
+            .filter(|client| client.client_id != retained_client_id)
+            .map(|client| client.client_id)
+            .collect::<Vec<_>>();
+        let event_ids = self.validate_event_ids(event_ids, revoked.len(), &[])?;
+        for (client_id, event_id) in revoked.iter().copied().zip(event_ids) {
+            self.revoke_client(client_id, now, event_id)?;
+        }
+        Ok(revoked.len())
+    }
+
     pub fn expire_clients<I>(&mut self, now: Timestamp, event_ids: I) -> Result<usize>
     where
         I: IntoIterator<Item = EventId>,
@@ -1668,6 +1697,33 @@ mod tests {
             1
         );
         assert!(authority.security_snapshot().clients.is_empty());
+    }
+
+    #[test]
+    fn revoke_all_except_keeps_only_the_selected_current_browser() {
+        let now = Timestamp::from_millis(10_000);
+        let mut authority = provision(now);
+        let retained = authorize(&mut authority, &signing_key(43), 44, now, 45);
+        authorize(&mut authority, &signing_key(46), 47, now, 48);
+        authorize(&mut authority, &signing_key(49), 50, now, 51);
+
+        assert_eq!(
+            authority
+                .revoke_all_except(
+                    retained,
+                    now,
+                    [EventId::new([52; 16]), EventId::new([53; 16])],
+                )
+                .unwrap(),
+            2
+        );
+        let snapshot = authority.security_snapshot();
+        assert_eq!(snapshot.clients.len(), 1);
+        assert_eq!(
+            snapshot.clients[0].client_id,
+            encode_id(retained.as_bytes())
+        );
+        assert_eq!(snapshot.tombstones.len(), 2);
     }
 
     #[test]

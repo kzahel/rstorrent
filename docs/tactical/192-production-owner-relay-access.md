@@ -426,8 +426,18 @@ principal asserted inside a client frame.
   through password and resumed circuits, prove shared mode retains no
   authorization, prove revocation closes the resumed circuit and prove the
   serialized security view excludes passphrase, internal gateway token and raw
-  client public key. Desktop/headless lifecycle attachment and the remaining
-  local administration operations are still unfinished Steps 3 and 4.
+  client public key.
+- The product owner now implements the complete local administration core:
+  safe full-ledger/live-circuit inspection, rename, exact revocation, revoke
+  all except a selected current browser, explicit circuit closure, require-
+  password-everywhere, passphrase replacement, automatic expiry, disable with
+  signed route release and non-authorizing retained history, history clearing,
+  and local disable/reprovision recovery. Durable invalidation always precedes
+  circuit cancellation. End-to-end tests prove the actual route appears in
+  live-circuit inspection, explicit shared-circuit termination, protected
+  authority removal, relay reservation release, retained disable evidence and
+  successful reprovisioning. Desktop/headless command attachment and local
+  presentation remain unfinished Steps 3 and 4.
 
 No desktop/headless command, browser persistence or supported product surface
 is implied by these internal checkpoints. Steps 3 and 5, desktop/headless

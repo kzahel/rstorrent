@@ -127,6 +127,11 @@ async fn private_browser_resumes_and_revocation_closes_its_application_circuit()
     assert!(!safe_view.contains(std::str::from_utf8(PASSPHRASE).unwrap()));
     assert!(!safe_view.contains("internal-remote-gateway-token"));
     assert!(!safe_view.contains(&encode(client_public.as_bytes())));
+    harness
+        .owner
+        .rename(&encode(client_id.as_bytes()), "Renamed browser")
+        .await
+        .unwrap();
 
     let resume_context = ResumeContext::new(
         client.binding.clone(),
@@ -252,6 +257,77 @@ async fn shared_browser_gets_application_access_without_durable_authorization() 
     let view = harness.owner.security_view().await.unwrap();
     assert!(view.authority.as_ref().unwrap().clients.is_empty());
     assert_eq!(view.live_circuits.len(), 1);
+    assert_eq!(view.live_circuits[0].route, view.route.as_deref().unwrap());
+    let circuit_id = view.live_circuits[0].circuit_id.clone();
+    harness.owner.close_circuit(&circuit_id).await.unwrap();
+    let close_record = binary(&mut client.socket).await;
+    assert!(client.channel.open(&close_record).unwrap().is_close);
+    wait_for_async(|| async {
+        harness
+            .owner
+            .security_view()
+            .await
+            .unwrap()
+            .live_circuits
+            .is_empty()
+    })
+    .await;
+    stop_harness(harness).await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn operator_can_disable_clear_history_and_recover_the_local_route() {
+    let harness = start_harness().await;
+    wait_for(|| harness.relay.metrics().waiting_hosts == 1).await;
+
+    let outcome = harness.owner.disable().await.unwrap();
+    assert!(outcome.authority_file_removed);
+    assert!(outcome.route_released);
+    assert_eq!(harness.relay.metrics().registered_routes, 0);
+    let disabled = harness.owner.security_view().await.unwrap();
+    assert!(!disabled.enabled);
+    assert!(disabled.authority.is_none());
+    assert!(disabled.live_circuits.is_empty());
+    assert!(
+        disabled
+            .retained_history
+            .as_ref()
+            .unwrap()
+            .events
+            .iter()
+            .any(|event| event.kind == rstorrent_remote_access::EventKind::Disabled)
+    );
+    assert!(harness.owner.clear_history().await.unwrap());
+    assert!(
+        harness
+            .owner
+            .security_view()
+            .await
+            .unwrap()
+            .retained_history
+            .is_none()
+    );
+
+    let enabled = harness.owner.enable(USERNAME, PASSPHRASE).await.unwrap();
+    assert!(enabled.enabled);
+    wait_for(|| harness.relay.metrics().waiting_hosts == 1).await;
+    assert_eq!(
+        harness
+            .owner
+            .change_passphrase(b"replacement horse password")
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        harness.owner.require_password_everywhere().await.unwrap(),
+        0
+    );
+    let reset = harness.owner.recover(USERNAME, PASSPHRASE).await.unwrap();
+    assert!(reset.enabled);
+    wait_for(|| harness.relay.metrics().waiting_hosts == 1).await;
+
     stop_harness(harness).await;
 }
 

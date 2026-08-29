@@ -258,6 +258,7 @@ async fn authenticate_password(
             let open_event = random_event_id()?;
             let mut state = owner.state.lock().await;
             let authority = state.authority.as_mut().ok_or(RemoteHostError::Protocol)?;
+            let route = authority.route().to_owned();
             owner.store.update(authority, |candidate| {
                 candidate.record_full_login(None, started, login_event, client_build)?;
                 candidate.record_circuit_event(
@@ -278,7 +279,7 @@ async fn authenticate_password(
                     connection_generation: generation,
                     started,
                     last_activity: started,
-                    route: "relay".to_owned(),
+                    route,
                     cancellation: circuit_cancellation.clone(),
                 },
             );
@@ -309,6 +310,7 @@ async fn authenticate_password(
             let open_event = random_event_id()?;
             let mut state = owner.state.lock().await;
             let authority = state.authority.as_mut().ok_or(RemoteHostError::Protocol)?;
+            let route = authority.route().to_owned();
             let fingerprint = owner.store.update(authority, |candidate| {
                 candidate.authorize_client(AuthorizationRequest::new(
                     client_id,
@@ -345,7 +347,7 @@ async fn authenticate_password(
                     connection_generation: generation,
                     started,
                     last_activity: started,
-                    route: "relay".to_owned(),
+                    route,
                     cancellation: circuit_cancellation.clone(),
                 },
             );
@@ -401,6 +403,7 @@ async fn authenticate_resume(
     let generation = owner.connection_generation();
     let mut state = owner.state.lock().await;
     let authority = state.authority.as_mut().ok_or(RemoteHostError::Protocol)?;
+    let route = authority.route().to_owned();
     let channel = match owner.store.update(authority, |candidate| {
         let channel = candidate.finish_resume(pending, proof, started, resume_event)?;
         candidate.record_circuit_event(
@@ -436,7 +439,7 @@ async fn authenticate_resume(
             connection_generation: generation,
             started,
             last_activity: started,
-            route: "relay".to_owned(),
+            route,
             cancellation: circuit_cancellation.clone(),
         },
     );
