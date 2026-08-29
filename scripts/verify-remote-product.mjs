@@ -208,6 +208,21 @@ try {
     throw new Error("changed host did not require an explicit trust reset");
   }
 
+  const resourcesBeforeFlood = processResources(
+    relayProcess.child.pid,
+    headlessProcess.child.pid,
+  );
+  const floodAttempts = 256;
+  await floodInvalidRelayCircuits(restartedPage, relayUrl, floodAttempts);
+  await delay(250);
+  if (relayProcess.child.exitCode !== null || headlessProcess.child.exitCode !== null) {
+    throw new Error("connection churn terminated a product owner");
+  }
+  const resourcesAfterFlood = processResources(
+    relayProcess.child.pid,
+    headlessProcess.child.pid,
+  );
+
   const registrations = await restartedPage.evaluate(async () =>
     (await navigator.serviceWorker.getRegistrations()).length,
   );
@@ -244,6 +259,9 @@ try {
       exactRevocationRejectedResume: true,
       revocationTombstoneRetained: true,
       changedHostBlocked: true,
+      invalidCircuitFloodAttempts: floodAttempts,
+      resourcesBeforeFlood,
+      resourcesAfterFlood,
       serviceWorkers: registrations,
       currentOwnerEvents: finalAudit.authority.events.length,
       retainedPayloadsAtRelay: 0,
@@ -595,6 +613,52 @@ async function expectText(page, text) {
     state: "visible",
     timeout: 20_000,
   });
+}
+
+async function floodInvalidRelayCircuits(page, relayUrl, attempts) {
+  await page.evaluate(
+    async ({ attempts, relayUrl }) => {
+      const connect = () => new Promise((resolveAttempt) => {
+        const socket = new WebSocket(relayUrl);
+        const timer = window.setTimeout(() => {
+          socket.close();
+          resolveAttempt(undefined);
+        }, 2_000);
+        const complete = () => {
+          window.clearTimeout(timer);
+          resolveAttempt(undefined);
+        };
+        socket.binaryType = "arraybuffer";
+        socket.onopen = () => socket.send(Uint8Array.of(0xff));
+        socket.onerror = complete;
+        socket.onclose = complete;
+      });
+      for (let offset = 0; offset < attempts; offset += 32) {
+        await Promise.all(
+          Array.from({ length: Math.min(32, attempts - offset) }, connect),
+        );
+      }
+    },
+    { attempts, relayUrl },
+  );
+}
+
+function processResources(relayPid, headlessPid) {
+  return {
+    relay: processResource(relayPid),
+    headless: processResource(headlessPid),
+  };
+}
+
+function processResource(pid) {
+  if (!Number.isInteger(pid) || pid < 1) throw new Error("invalid process ID");
+  const output = run("ps", ["-o", "rss=,%cpu=", "-p", String(pid)]).stdout.trim();
+  const match = /^(\d+)\s+([0-9.]+)$/.exec(output);
+  if (match === null) throw new Error(`invalid process resource sample: ${output}`);
+  return {
+    residentBytes: Number(match[1]) * 1024,
+    cpuPercentSample: Number(match[2]),
+  };
 }
 
 function startManaged(command, arguments_) {
