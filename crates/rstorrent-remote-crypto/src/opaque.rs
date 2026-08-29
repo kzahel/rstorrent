@@ -42,21 +42,36 @@ impl Ksf for OpaqueKsf {
         &self,
         mut input: GenericArray<u8, L>,
     ) -> core::result::Result<GenericArray<u8, L>, opaque_ke::errors::InternalError> {
-        let params = Params::new(
-            ARGON2_MEMORY_KIB,
-            ARGON2_PASSES,
-            ARGON2_PARALLELISM,
-            Some(L::USIZE),
-        )
-        .map_err(|_| opaque_ke::errors::InternalError::KsfError)?;
-        let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
         let mut output = GenericArray::default();
-        let result = argon2
-            .hash_password_into(&input, &ARGON2_SALT, &mut output)
+        let result = argon2id(&input, &mut output, ARGON2_MEMORY_KIB, ARGON2_PASSES)
             .map_err(|_| opaque_ke::errors::InternalError::KsfError);
         input.zeroize();
         result.map(|()| output)
     }
+}
+
+fn argon2id(input: &[u8], output: &mut [u8], memory_kib: u32, passes: u32) -> Result<()> {
+    let params = Params::new(memory_kib, passes, ARGON2_PARALLELISM, Some(output.len()))
+        .map_err(|_| RemoteCryptoError::KeyDerivationFailed)?;
+    Argon2::new(Algorithm::Argon2id, Version::V0x13, params)
+        .hash_password_into(input, &ARGON2_SALT, output)
+        .map_err(|_| RemoteCryptoError::KeyDerivationFailed)
+}
+
+/// Execute one bounded Argon2id candidate for the controlled browser matrix.
+/// The feature is excluded from ordinary builds and the derived output is
+/// wiped without crossing the caller boundary.
+#[cfg(feature = "ksf-bench")]
+pub fn exercise_argon2id_candidate(input: &[u8], memory_kib: u32, passes: u32) -> Result<()> {
+    if input.len() != 64
+        || !(32 * 1024..=128 * 1024).contains(&memory_kib)
+        || !(1..=4).contains(&passes)
+        || !memory_kib.is_multiple_of(32 * 1024)
+    {
+        return Err(RemoteCryptoError::KeyDerivationFailed);
+    }
+    let mut output = Zeroizing::new([0_u8; 64]);
+    argon2id(input, &mut *output, memory_kib, passes)
 }
 
 /// Complete host OPAQUE authority. Its serialized secret bytes are wiped on

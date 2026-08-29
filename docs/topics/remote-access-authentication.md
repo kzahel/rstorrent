@@ -13,6 +13,14 @@ stable remote wire contract. Completed Tactical `174` separately permits one
 trusted Tailscale operator deployment; tailnet admission is not the owner
 authentication designed here.
 
+The pure OPAQUE/record core and separate Wasm client binding now pass their
+native tests and real-headless-Chrome equivalence gate. Browser Web Crypto
+entropy, consuming state handles, first/repeated host pinning, changed-pin
+blocking and bidirectional records have been exercised against a native Rust
+oracle. The complete Argon2id matrix and exact bundle/memory results live in
+Tactical `190`; relay routing and real application-frame composition remain
+in progress, so no supported remote-access capability exists yet.
+
 ## Purpose And Scope
 
 This topic owns the security background and decision boundary for authenticating
@@ -211,7 +219,9 @@ The accepted requirement is a password-authenticated E2E key exchange through
 an untrusted relay. SRP-6a remains useful product history because the
 maintainer has shipped and extended that model in YepAnywhere. Tactical `190`
 selects OPAQUE for the first controlled feasibility and application-composition
-proof; that selection is not yet a production dependency or support claim.
+proof. The selected libraries are now bounded workspace dependencies for that
+controlled proof only; they are not a production listener, durable wire
+contract or support claim.
 
 One runtime-independent Rust core will own OPAQUE, transcript binding and the
 encrypted record state natively on the host and through Wasm in the browser.
@@ -223,9 +233,12 @@ host ID, OPAQUE host setup and relay registration credential distinct.
 The proof uses a portable-profile host-key tier and requires a complete
 password login after every disconnect. Account delegation, Google/OIDC login,
 cloud sync, remembered devices, resumption and hardware-backed host keys remain
-separate later decisions. The exact dependency graph, Argon2id parameters and
-record cipher construction remain subject to Tactical `190`'s source-first
-pre-code gate rather than being inferred from the high-level selection.
+separate later decisions. Tactical `190` has closed the source-first dependency
+gate and fixed RFC 9807 Ristretto255/SHA-512/3DH, Argon2id 64 MiB/three
+passes/parallelism one, HKDF-SHA-512 and directional ChaCha20-Poly1305 records.
+Its real Chrome matrix keeps that KSF point within the controlled proof bounds.
+Public-relay, low-end-device and durable-authority decisions remain explicitly
+unmade.
 
 ## SRP And OPAQUE Background
 

@@ -9,6 +9,7 @@ publish = false
 [features]
 default = ["native"]
 native = ["rand/std", "rand/std_rng"]
+ksf-bench = []
 
 [dependencies]
 argon2.workspace = true

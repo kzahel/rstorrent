@@ -152,6 +152,26 @@ impl HostPin {
     pub const fn server_public_key(&self) -> &[u8; 32] {
         &self.server_public_key
     }
+
+    pub fn from_bytes(encoded: &[u8]) -> Result<Self> {
+        if encoded.len() != 64 {
+            return Err(RemoteCryptoError::InvalidIdentifier);
+        }
+        let host_id = encoded[..32]
+            .try_into()
+            .map_err(|_| RemoteCryptoError::InvalidIdentifier)?;
+        let server_public_key = encoded[32..]
+            .try_into()
+            .map_err(|_| RemoteCryptoError::InvalidIdentifier)?;
+        Ok(Self::new(HostId::new(host_id), server_public_key))
+    }
+
+    pub fn to_bytes(self) -> [u8; 64] {
+        let mut encoded = [0_u8; 64];
+        encoded[..32].copy_from_slice(self.host_id.as_bytes());
+        encoded[32..].copy_from_slice(&self.server_public_key);
+        encoded
+    }
 }
 
 fn append_field(output: &mut Vec<u8>, value: &[u8]) {
@@ -214,5 +234,15 @@ mod tests {
         assert_ne!(first.credential_identifier(), first.client_identifier());
         assert_ne!(first.client_identifier(), first.server_identifier());
         assert_ne!(first.server_identifier(), first.context());
+    }
+
+    #[test]
+    fn host_pin_has_one_exact_encoding() {
+        let pin = HostPin::new(HostId::new([3; 32]), [4; 32]);
+        assert_eq!(HostPin::from_bytes(&pin.to_bytes()), Ok(pin));
+        assert_eq!(
+            HostPin::from_bytes(&pin.to_bytes()[..63]),
+            Err(RemoteCryptoError::InvalidIdentifier)
+        );
     }
 }

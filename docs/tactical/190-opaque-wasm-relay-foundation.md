@@ -374,6 +374,57 @@ unrelated `chacha20` `0.10.1`, while this crate resolves `chacha20` `0.9.1`.
 Browser/Wasm, RFC-vector composition and relay evidence remain open in their
 declared later steps.
 
+### Wasm and controlled-browser evidence (2026-08-29)
+
+The second implementation slice adds `rstorrent-remote-wasm` as a separate
+`cdylib` depending only on the pure core and exact `wasm-bindgen` `0.2.127`.
+Its byte-oriented client registration/login handles are consumed by the first
+finish attempt, the finalization is take-once, and the session delegates
+pinning plus seal/open/close to the core without JavaScript cryptography. The
+React source tree adds only the 32-byte Web Crypto entropy adapter; it has no
+pseudorandom fallback and reports platform failure generically.
+
+`node scripts/verify-remote-wasm.mjs` builds both the ordinary release binding
+and a measurement-only KSF-matrix feature, runs exact `wasm-bindgen` CLI
+`0.2.127`, serves the result from a temporary loopback origin, launches real
+headless Chrome, and removes the exact temporary root. A native Rust oracle
+retains all secret state and exchanges only bounded protocol messages with the
+browser. The deterministic flow proves byte-equal native/Wasm registration,
+login and record outputs; a separate flow obtains every client operation seed
+from `crypto.getRandomValues`, repeats a pinned login, blocks a changed pin,
+and carries records in both directions. Short entropy, reused registration or
+login state, reused finalization and post-close sealing are rejected.
+
+The recorded controlled profile was headless Chrome `150.0.7871.114` on Linux
+`7.0.0-30-generic` x86-64, an AMD Ryzen AI 9 365 with 20 logical CPUs and
+24,251,789,312 bytes of system memory. This is a fast desktop development
+profile, not representative low-end-device evidence. Fresh pages measured
+each Argon2id candidate synchronously; durations are milliseconds and the last
+column is the exact post-evaluation Wasm linear-memory high water:
+
+| Memory | 1 pass | 2 passes | 3 passes | 4 passes | Wasm bytes |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 32 MiB | 22.3 | 42.0 | 59.6 | 76.4 | 34,799,616 |
+| 64 MiB | 47.7 | 85.0 | **123.6** | 164.7 | 68,354,048 |
+| 96 MiB | 94.2 | 133.4 | 192.0 | 253.1 | 101,908,480 |
+| 128 MiB | 96.2 | 182.5 | 263.7 | 343.6 | 135,462,912 |
+
+The selected 64-MiB/three-pass point therefore remains unchanged and is well
+inside the five-second/256-MiB proof bounds on this profile. The actual
+Web-Crypto registration and login finishes measured 127.5 ms and 109.9 ms;
+the deterministic equivalents measured 123.5 ms and 109.1 ms. The ordinary
+Rust-release plus `wasm-bindgen` artifact is 286,175 bytes of Wasm and 17,083
+bytes of JavaScript. The matrix-only artifact is 289,882 plus 17,502 bytes.
+No `wasm-opt` post-processing was installed or used.
+
+The passing commands were the reusable browser runner above,
+`cargo clippy -p rstorrent-remote-crypto -p rstorrent-remote-wasm
+--all-targets --features rstorrent-remote-wasm/ksf-bench -- -D warnings`,
+the two crate test suites, `npm run typecheck --prefix clients/web`, and the
+focused entropy-adapter Vitest. Relay and application-composition evidence
+remain open; this browser result does not make the proof a supported remote
+client.
+
 ## Owner, Task, Cancellation, And Dependency Map
 
 ```text

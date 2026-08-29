@@ -1,0 +1,17 @@
+[package]
+name = "rstorrent-remote-wasm"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+ksf-bench = ["rstorrent-remote-crypto/ksf-bench"]
+
+[dependencies]
+rstorrent-remote-crypto = { path = "../rstorrent-remote-crypto", default-features = false }
+wasm-bindgen.workspace = true

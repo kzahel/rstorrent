@@ -24,6 +24,9 @@ pub use record::{
     SecureChannel,
 };
 
+#[cfg(feature = "ksf-bench")]
+pub use opaque::exercise_argon2id_candidate;
+
 /// A deterministic entropy input for one protocol operation.
 ///
 /// The wrapper is intentionally neither printable nor clonable and wipes its
