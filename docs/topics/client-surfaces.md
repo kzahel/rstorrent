@@ -834,9 +834,11 @@ streaming demand, expiry, and revocation remain unchanged.
   product owner, resumable named-browser registry, exact revocation and full
   authorization/circuit audit. Desktop composition and explicit headless
   opt-in now select a fixed WebPKI product relay, and the website build owns an
-  atomic `/remote/` React/Wasm artifact. The relay/client origins have not been
-  activated and no external browser/ISP matrix, rollback soak, wake-up path or
-  public wire compatibility promise exists, so owner remote access remains an
+  atomic `/remote/` React/Wasm artifact. The relay/client origins are active as
+  an unadvertised canary, and source-built Chromium plus Playwright
+  Firefox/WebKit pass the production origins. The signed-package and external
+  browser/ISP matrix, rollback/renewal soak, wake-up path and public wire
+  compatibility promise remain absent, so owner remote access is still an
   implemented but unsupported capability.
 - The configured Linux headless surface now also supports exact RFC 1918
   `lan-none`, with a one-time per-origin notice that authentication is absent
@@ -963,9 +965,10 @@ demo surface, and first live peer projection plus recovery evidence.
 Completed Tactical `117` records the Android product-presentation closure.
 Production-shaped local remote authorization is implemented by Tactical
 `192`, including private-browser automatic resume plus the local/remote security
-surface for authorization inspection and revocation. Public client/relay
-deployment and support remain a later tactical; dynamic Android network
-controls and broader desktop lifecycle work remain later capability boundaries.
+surface for authorization inspection and revocation. The public client/relay
+are active as an unadvertised canary, while support remains with the active
+deployment tactical; dynamic Android network controls and broader desktop
+lifecycle work remain later capability boundaries.
 Signed
 distribution, updating, CI, product identity, and beta MVP triage are tracked
 in [`beta-release-readiness.md`](beta-release-readiness.md).

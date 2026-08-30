@@ -13,9 +13,11 @@ security audit, exact revocation, a separately supervised opaque TLS relay and
 a release-built remote React client. The production owner profile, platform
 WebPKI trust, Windows protected authority store, trusted-proxy relay boundary,
 operator admission/aggregate surface and atomic `/remote/` Pages artifact are
-also implemented as of 2026-08-29. Public activation, external-path evidence,
-rollback drills, soak and support remain gated in a separately retained
-deployment tactical. Completed Tactical `174` separately permits one
+also implemented as of 2026-08-29. The public website and relay were
+technically activated on 2026-08-30 as an unadvertised, unsupported canary.
+External signed-package/browser-path evidence, rollback and renewal drills,
+soak and support remain gated in a separately retained deployment tactical.
+Completed Tactical `174` separately permits one
 trusted Tailscale operator deployment; tailnet admission is not the owner
 authentication designed here.
 
@@ -39,11 +41,14 @@ browser restart, phone viewport, shared non-persistence, relay restart, local
 layout rollback, full audit, exact revocation and changed-host recovery, then
 removes every temporary process and authority root.
 
-This does not yet change the supported product claim. No public relay/client
-deployment, DNS/certificate mutation, Internet abuse evidence, external
-browser matrix, soak, stable wire promise or remote media/file path has landed.
-The production code and deployment-safe artifact are not authorization to
-activate or advertise the service.
+This does not yet change the supported product claim. The production website,
+WebPKI relay and source-built headless canaries pass private/shared login,
+rendered audit, reload/browser/phone resume and exact revocation through
+Chromium plus Playwright Firefox and WebKit. Signed product packages,
+independent ISP/cellular and physical mobile paths, Internet abuse ceilings,
+rollback and certificate-renewal drills, soak, stable wire promises and remote
+media/file paths remain absent. Technical activation is not authorization to
+advertise the service.
 
 ## Purpose And Scope
 
@@ -705,10 +710,11 @@ desktop and configured-headless lifecycle, independently built remote browser,
 separate loopback TLS relay and complete local package/browser evidence. The
 active deployment/finalization work now owns public relay/client activation,
 DNS/TLS, external paths, operations, rollback, soak and support claims. Its
-portable product and atomic Pages portions are committed; retained
-infrastructure has not been activated. Passkeys, account-wide identity,
-delegation and multi-user roles remain separate decisions and are not implied
-by this implementation.
+portable product and atomic Pages portions are committed, and its retained
+website/relay canary is active but unadvertised and unsupported. External
+signed-package and browser paths, rollback, certificate renewal and soak remain
+open. Passkeys, account-wide identity, delegation and multi-user roles remain
+separate decisions and are not implied by this implementation.
 
 Friend sharing, fragment-held capability links, offline encrypted snapshots,
 UPnP/NAT traversal, wake-up delivery, public accounts and multi-user

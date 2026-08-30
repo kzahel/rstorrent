@@ -259,7 +259,7 @@ combinations that look secure but are not.
 | Private reverse-proxy host | One explicit unicast backend address | Bounded Basic credential, with password from a secret file | Public HTTPS/WSS terminated by an operator-owned proxy | Implemented maintainer preview |
 | Trusted private LAN | One exact non-loopback RFC 1918 IPv4 authority | None; every reachable client has full owner control | Plain HTTP/WS with exact Host and Origin, no confidentiality | Implemented operator mode |
 | Trusted Tailscale overlay | Exact loopback backend plus one exact HTTPS `*.ts.net` authority | None; every identity admitted by tailnet policy has full owner control | Tailscale transport and Serve HTTPS/WSS | Implemented operator mode |
-| Owner remote access | Direct or relay-mediated host | Passphrase bootstrap plus bounded named-browser authorization, automatic resume and exact revocation | Authenticated end-to-end records; relay remains opaque | Product/Pages/relay deployment code implemented; public activation and external support evidence pending |
+| Owner remote access | Direct or relay-mediated host | Passphrase bootstrap plus bounded named-browser authorization, automatic resume and exact revocation | Authenticated end-to-end records; relay remains opaque | Public website/relay active as an unadvertised canary; source-built production-origin browser evidence passes, while signed-package/external-path, rollback, renewal, soak and support evidence remain pending |
 | Development-none | Ephemeral loopback only | None | Local test traffic only | Implemented development mode |
 
 The immediate operator deployment may place RSTorrent behind Caddy, nginx, or
