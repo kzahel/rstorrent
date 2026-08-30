@@ -110,6 +110,7 @@ class ProductEngineService : Service() {
     private var trackerEvidenceJob: Job? = null
     private var companionPairingJob: Job? = null
     private var companionRootJob: Job? = null
+    private var companionRootRemovalJob: Job? = null
     private val companionOwnerMutation = Mutex()
     @Volatile private var safStorageJobs: List<Job> = emptyList()
     @Volatile private var defaultSafRootId: String? = null
@@ -888,6 +889,16 @@ class ProductEngineService : Service() {
                         }
                     }
             }
+            if (companionRootRemovalJob?.isActive != true) {
+                companionRootRemovalJob =
+                    scope.launch {
+                        while (!stopped.get()) {
+                            val request =
+                                client.nextCompanionRootRemovalRequest() ?: return@launch
+                            executeCompanionRootRemoval(request)
+                        }
+                    }
+            }
             Log.i(TAG, "chromeos_companion_ready port=$port")
         }
     }
@@ -1038,6 +1049,63 @@ class ProductEngineService : Service() {
                 executeSafRootOperation(operation)
             }
             refreshSafRootState()
+        }
+    }
+
+    private suspend fun executeCompanionRootRemoval(
+        request: org.rstorrent.bootstrap.uniffi.AndroidCompanionRootRemovalRequest,
+    ) {
+        val command = request.applicationRequest.command as? Command.RemoveStorageRoot
+        if (command == null) {
+            client.failCompanionRootRemovalRequest(
+                request.requestId,
+                "Companion root-removal request has the wrong command",
+            )
+            return
+        }
+        var nativeMutationComplete = false
+        try {
+            safRootMutation.withLock {
+                val operation =
+                    ProductSafRootRegistry.beginRemoval(
+                        this@ProductEngineService,
+                        command.storageRoot,
+                    )
+                val response = client.dispatch(request.applicationRequest)
+                if (response.outcome is ResponseOutcome.Error) {
+                    ProductSafRootRegistry.abandonPendingRemoval(this@ProductEngineService)
+                } else {
+                    nativeMutationComplete = true
+                    ProductSafRootRegistry.completePending(this@ProductEngineService)
+                    operation.previous?.let { previous ->
+                        runCatching {
+                            ProductSafDocuments.releaseGrantIfUnregistered(
+                                this@ProductEngineService,
+                                Uri.parse(previous.treeUri),
+                            )
+                        }.onFailure { releaseError ->
+                            Log.w(TAG, "could not release removed SAF grant", releaseError)
+                        }
+                    }
+                    refreshSafRootState()
+                }
+                client.completeCompanionRootRemovalRequest(request.requestId, response)
+            }
+        } catch (error: Throwable) {
+            runCatching {
+                if (
+                    !nativeMutationComplete &&
+                    ProductSafRootRegistry.load(this@ProductEngineService)
+                        .pending?.kind == ProductSafRootOperationKind.REMOVE
+                ) {
+                    ProductSafRootRegistry.abandonPendingRemoval(this@ProductEngineService)
+                }
+            }.onFailure(error::addSuppressed)
+            client.failCompanionRootRemovalRequest(
+                request.requestId,
+                error.message ?: "Android root removal failed",
+            )
+            reportError(error)
         }
     }
 
@@ -2122,6 +2190,7 @@ class ProductEngineService : Service() {
         trackerEvidenceSubscription?.close()
         companionPairingJob?.cancel()
         companionRootJob?.cancel()
+        companionRootRemovalJob?.cancel()
         cancelCompanionRootNotification()
         if (::client.isInitialized) {
             try {

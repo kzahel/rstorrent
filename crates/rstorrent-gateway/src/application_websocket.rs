@@ -11,7 +11,7 @@ use futures_util::{SinkExt, StreamExt};
 use rstorrent_session::{
     API_VERSION, AcknowledgedViewStream, AcknowledgedViewStreamError, AddTorrentBytesRequest,
     ApiEncoding, ApiHello, ApplicationCall, ApplicationCallError, ApplicationCallResult,
-    ApplicationService, DeliveryMode, UpdateBatch, ViewSetError, ViewSetOwner,
+    ApplicationService, Command, DeliveryMode, UpdateBatch, ViewSetError, ViewSetOwner,
     application_error_response, validate_add_torrent_bytes_request,
 };
 use schemars::JsonSchema;
@@ -810,10 +810,19 @@ async fn serve_application_connection(
     state
         .connection_metrics
         .accepted(takeover, handshake_started.elapsed());
-    let hello = {
+    let mut hello = {
         let service = state.service.lock().await;
         application_hello(&service)
     };
+    hello.backend = state.hello_backend.clone();
+    if matches!(
+        state.authentication.as_ref(),
+        GatewayAuthentication::ChromeOsCompanion(_)
+    ) {
+        hello
+            .capabilities
+            .retain(|capability| capability != "torrent_media");
+    }
     if send_control(
         &control,
         ApplicationServerFrame::Connected {
@@ -1040,7 +1049,11 @@ async fn serve_application_connection(
                                         root.root_id == request.storage_root
                                             && root.availability
                                                 == rstorrent_session::StorageRootAvailability::Available
-                                    })
+                                    }) && (!matches!(
+                                        state.authentication.as_ref(),
+                                        GatewayAuthentication::ChromeOsCompanion(_)
+                                    ) || snapshot.default_root.as_deref()
+                                        == Some(request.storage_root.as_str()))
                                 });
                             if !root_available {
                                 send_call_error(
@@ -1260,6 +1273,46 @@ async fn handle_client_frame(
                 .await;
                 return;
             }
+            if matches!(
+                (&operation, state.authentication.as_ref()),
+                (
+                    ApplicationCall::CreateMediaUrl { .. },
+                    GatewayAuthentication::ChromeOsCompanion(_)
+                )
+            ) {
+                send_call_error(
+                    control,
+                    call_id,
+                    ApplicationConnectionErrorCode::InvalidCall,
+                    "media capabilities are unavailable on Android companion connections",
+                )
+                .await;
+                return;
+            }
+            if matches!(
+                state.authentication.as_ref(),
+                GatewayAuthentication::ChromeOsCompanion(_)
+            ) && let ApplicationCall::Dispatch { request } = &operation
+                && let Command::AddMagnet { storage_root, .. } = &request.command
+            {
+                let current = state
+                    .service
+                    .lock()
+                    .await
+                    .storage_snapshot()
+                    .ok()
+                    .and_then(|snapshot| snapshot.default_root);
+                if current.as_deref() != Some(storage_root) {
+                    send_call_error(
+                        control,
+                        call_id,
+                        ApplicationConnectionErrorCode::InvalidCall,
+                        "Android companion adds must use the current download root",
+                    )
+                    .await;
+                    return;
+                }
+            }
             if !insert_pending(pending_ids, &call_id) {
                 send_call_error(
                     control,
@@ -1280,15 +1333,42 @@ async fn handle_client_frame(
             let pending_ids = pending_ids.clone();
             let metrics = state.connection_metrics.clone();
             let media_origin = state.media_origin.clone();
+            let joined_removal =
+                state
+                    .companion_platform
+                    .clone()
+                    .and_then(|platform| match &operation {
+                        ApplicationCall::Dispatch { request }
+                            if matches!(&request.command, Command::RemoveStorageRoot { .. }) =>
+                        {
+                            Some((
+                                platform,
+                                request.as_ref().clone(),
+                                connection_cancel.clone(),
+                            ))
+                        }
+                        _ => None,
+                    });
             calls.spawn(async move {
                 let reservation_started = Instant::now();
                 let reservation = reservations.acquire_owned().await.ok();
                 metrics.reservation_wait(reservation_started.elapsed());
-                let result = service
-                    .lock()
-                    .await
-                    .application_call(&owner, operation)
-                    .await;
+                let result = if let Some((platform, request, cancellation)) = joined_removal {
+                    platform
+                        .request_removal(request, cancellation)
+                        .await
+                        .map(|response| ApplicationCallResult::CommandResponse {
+                            response: Box::new(response),
+                        })
+                        .map_err(companion_platform_call_error)
+                } else {
+                    service
+                        .lock()
+                        .await
+                        .application_call(&owner, operation)
+                        .await
+                        .map_err(application_call_error)
+                };
                 let frame = match result {
                     Ok(mut result) => {
                         let media_origin_result = match &mut result {
@@ -1322,7 +1402,7 @@ async fn handle_client_frame(
                     }
                     Err(error) => ApplicationServerFrame::CallError {
                         call_id: call_id.clone(),
-                        error: application_call_error(error),
+                        error,
                     },
                 };
                 let _ = send_control(&control, frame, reservation).await;
@@ -1868,6 +1948,22 @@ fn application_call_error(error: ApplicationCallError) -> ApplicationConnectionE
             "application call failed",
         ),
     }
+}
+
+fn companion_platform_call_error(
+    error: super::CompanionPlatformError,
+) -> ApplicationConnectionError {
+    let code = match error {
+        super::CompanionPlatformError::Busy => ApplicationConnectionErrorCode::ResourceLimit,
+        super::CompanionPlatformError::Revoked => {
+            ApplicationConnectionErrorCode::AuthenticationFailed
+        }
+        super::CompanionPlatformError::Expired => ApplicationConnectionErrorCode::InvalidCall,
+        super::CompanionPlatformError::Closed
+        | super::CompanionPlatformError::Failure(_)
+        | super::CompanionPlatformError::Random(_) => ApplicationConnectionErrorCode::Internal,
+    };
+    ApplicationConnectionError::new(code, "Android root removal did not complete")
 }
 
 fn view_set_connection_error(error: ViewSetError) -> ApplicationConnectionError {

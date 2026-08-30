@@ -24,7 +24,7 @@ use super::{
     GatewayAuthentication, GatewayError, GatewayState, MAX_INCOMING_MESSAGE_BYTES,
     constant_time_equal,
 };
-use rstorrent_session::StorageRootSnapshot;
+use rstorrent_session::{RequestEnvelope, ResponseEnvelope, StorageRootSnapshot};
 
 pub const ARC_COMPANION_HOST: &str = "100.115.92.2";
 pub const ANDROID_COMPANION_PORTS: [u16; 5] = [3030, 3031, 3032, 3033, 3034];
@@ -127,6 +127,13 @@ pub struct CompanionRootRequest {
     pub expires_in_seconds: u64,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompanionRootRemovalRequest {
+    pub request_id: String,
+    pub application_request: RequestEnvelope,
+    pub expires_in_seconds: u64,
+}
+
 #[derive(Debug)]
 pub enum CompanionPlatformError {
     Busy,
@@ -156,6 +163,8 @@ impl std::error::Error for CompanionPlatformError {}
 pub struct CompanionPlatformOwner {
     inner: Arc<Mutex<Option<PendingRootRequest>>>,
     available: Arc<tokio::sync::Notify>,
+    removal_inner: Arc<Mutex<Option<PendingRootRemoval>>>,
+    removal_available: Arc<tokio::sync::Notify>,
 }
 
 impl fmt::Debug for CompanionPlatformOwner {
@@ -180,6 +189,14 @@ struct PendingRootRequest {
     expires: Instant,
     delivered: bool,
     result: Option<oneshot::Sender<Result<Option<StorageRootSnapshot>, String>>>,
+}
+
+struct PendingRootRemoval {
+    request_id: String,
+    application_request: RequestEnvelope,
+    expires: Instant,
+    delivered: bool,
+    result: Option<oneshot::Sender<Result<ResponseEnvelope, String>>>,
 }
 
 impl CompanionPlatformOwner {
@@ -226,6 +243,51 @@ impl CompanionPlatformOwner {
         self.finish(request_id, Ok(root))
     }
 
+    pub async fn next_removal_request(&self) -> Option<CompanionRootRemovalRequest> {
+        loop {
+            let notified = self.removal_available.notified();
+            {
+                let now = Instant::now();
+                let mut pending = self
+                    .removal_inner
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                if pending
+                    .as_ref()
+                    .is_some_and(|request| request.expires <= now)
+                    && let Some(mut expired) = pending.take()
+                    && let Some(result) = expired.result.take()
+                {
+                    let _ = result.send(Err("root-removal request expired".to_owned()));
+                }
+                if let Some(request) = pending.as_mut()
+                    && !request.delivered
+                {
+                    request.delivered = true;
+                    return Some(CompanionRootRemovalRequest {
+                        request_id: request.request_id.clone(),
+                        application_request: request.application_request.clone(),
+                        expires_in_seconds: request
+                            .expires
+                            .saturating_duration_since(now)
+                            .as_secs(),
+                    });
+                }
+            }
+            notified.await;
+        }
+    }
+
+    pub fn complete_removal(&self, request_id: &str, response: ResponseEnvelope) -> bool {
+        self.finish_removal(request_id, Ok(response))
+    }
+
+    pub fn fail_removal(&self, request_id: &str, message: &str) -> bool {
+        let mut bounded = message.to_owned();
+        bounded.truncate(bounded.floor_char_boundary(1_024));
+        self.finish_removal(request_id, Err(bounded))
+    }
+
     pub fn fail(&self, request_id: &str, message: &str) -> bool {
         let mut bounded = message.to_owned();
         bounded.truncate(bounded.floor_char_boundary(1_024));
@@ -243,6 +305,16 @@ impl CompanionPlatformOwner {
             let _ = result.send(Err("download-root request owner closed".to_owned()));
         }
         self.available.notify_waiters();
+        let mut removal = self
+            .removal_inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(mut request) = removal.take()
+            && let Some(result) = request.result.take()
+        {
+            let _ = result.send(Err("root-removal request owner closed".to_owned()));
+        }
+        self.removal_available.notify_waiters();
     }
 
     async fn request(
@@ -306,6 +378,56 @@ impl CompanionPlatformOwner {
         outcome
     }
 
+    pub(crate) async fn request_removal(
+        &self,
+        application_request: RequestEnvelope,
+        revocation: CancellationToken,
+    ) -> Result<ResponseEnvelope, CompanionPlatformError> {
+        let request_id = random_token(18).map_err(|error| match error {
+            CompanionPairingError::Random(error) => CompanionPlatformError::Random(error),
+            _ => unreachable!("random_token only returns randomness errors"),
+        })?;
+        let (sender, receiver) = oneshot::channel();
+        {
+            let mut pending = self
+                .removal_inner
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if pending.is_some() {
+                return Err(CompanionPlatformError::Busy);
+            }
+            *pending = Some(PendingRootRemoval {
+                request_id: request_id.clone(),
+                application_request,
+                expires: Instant::now() + PLATFORM_REQUEST_LIFETIME,
+                delivered: false,
+                result: Some(sender),
+            });
+        }
+        self.removal_available.notify_one();
+        let outcome = tokio::select! {
+            biased;
+            () = revocation.cancelled() => Err(CompanionPlatformError::Revoked),
+            result = tokio::time::timeout(PLATFORM_REQUEST_LIFETIME, receiver) => match result {
+                Ok(Ok(Ok(response))) => Ok(response),
+                Ok(Ok(Err(message))) => Err(CompanionPlatformError::Failure(message)),
+                Ok(Err(_)) => Err(CompanionPlatformError::Closed),
+                Err(_) => Err(CompanionPlatformError::Expired),
+            },
+        };
+        let mut pending = self
+            .removal_inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if pending
+            .as_ref()
+            .is_some_and(|pending| pending.request_id == request_id)
+        {
+            *pending = None;
+        }
+        outcome
+    }
+
     fn finish(
         &self,
         request_id: &str,
@@ -313,6 +435,24 @@ impl CompanionPlatformOwner {
     ) -> bool {
         let mut pending = self
             .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(mut request) = pending.take() else {
+            return false;
+        };
+        if request.request_id != request_id {
+            *pending = Some(request);
+            return false;
+        }
+        request
+            .result
+            .take()
+            .is_some_and(|result| result.send(outcome).is_ok())
+    }
+
+    fn finish_removal(&self, request_id: &str, outcome: Result<ResponseEnvelope, String>) -> bool {
+        let mut pending = self
+            .removal_inner
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let Some(mut request) = pending.take() else {
@@ -351,6 +491,7 @@ impl fmt::Debug for CompanionPairingOwner {
 
 struct PairingInner {
     database: Mutex<Connection>,
+    instance_id: String,
     runtime: Mutex<PairingRuntime>,
     next_connection: AtomicU64,
 }
@@ -436,11 +577,36 @@ impl CompanionPairingOwner {
                  generation INTEGER NOT NULL,
                  created_unix_seconds INTEGER NOT NULL,
                  PRIMARY KEY(origin, installation_id)
+             );
+             CREATE TABLE IF NOT EXISTS companion_metadata(
+                 singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+                 instance_id TEXT NOT NULL
              );",
+        )?;
+        let instance_id = match connection
+            .query_row(
+                "SELECT instance_id FROM companion_metadata WHERE singleton = 1",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+        {
+            Some(instance_id) => instance_id,
+            None => random_token(18)?,
+        };
+        if !valid_identifier(&instance_id) {
+            return Err(CompanionPairingError::Configuration(
+                "persisted companion instance identity is invalid".to_owned(),
+            ));
+        }
+        connection.execute(
+            "INSERT OR IGNORE INTO companion_metadata(singleton, instance_id) VALUES (1, ?1)",
+            [&instance_id],
         )?;
         Ok(Arc::new(Self {
             inner: Arc::new(PairingInner {
                 database: Mutex::new(connection),
+                instance_id,
                 runtime: Mutex::new(PairingRuntime::default()),
                 next_connection: AtomicU64::new(1),
             }),
@@ -449,6 +615,10 @@ impl CompanionPairingOwner {
 
     pub fn origin_allowed(origin: &str) -> bool {
         matches!(origin, BETA_EXTENSION_ORIGIN | PRODUCTION_EXTENSION_ORIGIN)
+    }
+
+    pub fn instance_id(&self) -> &str {
+        &self.inner.instance_id
     }
 
     pub fn hello(&self, origin: &str, port: u16) -> Result<CompanionHello, CompanionPairingError> {
@@ -895,6 +1065,8 @@ pub async fn bind_companion(
     pairings: Arc<CompanionPairingOwner>,
     platform: Arc<CompanionPlatformOwner>,
     service: Arc<tokio::sync::Mutex<rstorrent_session::ApplicationService>>,
+    profile_id: &str,
+    product_version: &str,
 ) -> Result<CompanionServer, GatewayError> {
     let mut last_error = None;
     let mut bound = None;
@@ -927,6 +1099,19 @@ pub async fn bind_companion(
         connection_registry: super::application_websocket::ApplicationConnectionRegistry::new(),
         connection_metrics: ApplicationConnectionMetrics::default(),
         gateway_shutdown: CancellationToken::new(),
+        hello_backend: Some(rstorrent_session::ApiBackendIdentity {
+            kind: "android".to_owned(),
+            instance_id: pairings.instance_id().to_owned(),
+            profile_id: profile_id.to_owned(),
+            product_version: product_version.to_owned(),
+            capability_profile: vec![
+                "android_saf_acquisition".to_owned(),
+                "retained_storage_roots".to_owned(),
+                "one_current_root".to_owned(),
+                "joined_platform_root_removal".to_owned(),
+            ],
+        }),
+        companion_platform: Some(platform.clone()),
         download_directory_picker: Arc::new(super::UnavailableDownloadDirectoryPicker),
         hosted_assets: None,
         web_auth: None,
@@ -1290,6 +1475,19 @@ mod tests {
     }
 
     #[test]
+    fn backend_instance_identity_persists_with_the_pairing_store() {
+        let (owner, root) = owner("instance-identity");
+        let first = owner.instance_id().to_owned();
+        drop(owner);
+
+        let reopened = CompanionPairingOwner::open(&root.join("pairings.sqlite"))
+            .expect("reopen pairing owner");
+        assert_eq!(reopened.instance_id(), first);
+        drop(reopened);
+        fs::remove_dir_all(root).expect("remove pairing fixture");
+    }
+
+    #[test]
     fn pending_pairing_is_single_bounded_and_bound_to_all_nonces() {
         let (owner, root) = owner("pending");
         let pending = request(&owner, "installation_1234");
@@ -1378,5 +1576,40 @@ mod tests {
             cancelled.await.expect("join cancelled request"),
             Err(CompanionPlatformError::Revoked)
         ));
+
+        let removal_request = rstorrent_session::RequestEnvelope {
+            version: rstorrent_session::CONTROL_VERSION,
+            request_id: "extension-remove-root-a".to_owned(),
+            expected_revision: Some("7".to_owned()),
+            command: rstorrent_session::Command::RemoveStorageRoot {
+                storage_root: "root_a".to_owned(),
+            },
+        };
+        let removal_owner = platform.clone();
+        let expected_request = removal_request.clone();
+        let removal = tokio::spawn(async move {
+            removal_owner
+                .request_removal(removal_request, CancellationToken::new())
+                .await
+        });
+        let pending = platform
+            .next_removal_request()
+            .await
+            .expect("pending removal request");
+        assert_eq!(pending.application_request, expected_request);
+        let response = rstorrent_session::ResponseEnvelope::error(
+            "extension-remove-root-a".to_owned(),
+            7,
+            rstorrent_session::ErrorCode::StorageRootInUse,
+            "root is referenced",
+        );
+        assert!(platform.complete_removal(&pending.request_id, response.clone()));
+        assert_eq!(
+            removal
+                .await
+                .expect("join removal")
+                .expect("removal response"),
+            response
+        );
     }
 }

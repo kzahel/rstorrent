@@ -15,22 +15,22 @@ mod subscription;
 mod view_set;
 
 pub use contract::{
-    API_VERSION, ActivePiece, ActivePieceStageView, ApiEncoding, ApiHello, ApiLimits, ApiVersion,
-    CapabilityStatus, CatalogPageRequest, CatalogPageView, CheckingPhaseView, CheckingProgressView,
-    DeliveryMode, DeliveryPolicy, DhtAddressFamilyView, DhtBucketView, DhtFamilyInspectionView,
-    DhtInspectionView, DhtLifecycleView, DhtLookupView, DhtNetworkPolicyView,
-    DiskCheckpointStageView, DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView,
-    IndexRange, IntegrityPreparationPhaseView, IntegrityPreparationView,
-    MetadataAcquisitionPhaseView, MetadataAcquisitionView, OpenViewSetOptions, OpenViewSetRequest,
-    OpenViewSetResponse, PeerDirection, PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView,
-    PeerLifecycle, PeerMseMethodView, PeerRequestPhase, PeerRole, PeerSourceView,
-    PeerTransportKind, PeerView, ProgressAction, ProgressAssessment, ProgressDisposition,
-    ProgressInputs, ProgressPhase, ProgressReason, ResetReason, SubscriptionError,
-    SubscriptionSpec, SubscriptionStats, SwarmCatalogState, SwarmCountsView, SwarmPeerState,
-    SwarmPeerView, TorrentEtaView, TorrentOperationalState, TorrentPreparationView, TorrentView,
-    UpdateBatch, UpdateViewSetRequest, VIEW_CONTRACT_VERSION, ViewDeliveryPolicy, ViewPatch,
-    ViewProjection, ViewSelector, ViewSetError, ViewSetOwner, ViewSetStats, ViewSetUpdate,
-    ViewSnapshot, ViewSpec, ViewUpdate, ViewUpdatePayload,
+    API_VERSION, ActivePiece, ActivePieceStageView, ApiBackendIdentity, ApiEncoding, ApiHello,
+    ApiLimits, ApiVersion, CapabilityStatus, CatalogPageRequest, CatalogPageView,
+    CheckingPhaseView, CheckingProgressView, DeliveryMode, DeliveryPolicy, DhtAddressFamilyView,
+    DhtBucketView, DhtFamilyInspectionView, DhtInspectionView, DhtLifecycleView, DhtLookupView,
+    DhtNetworkPolicyView, DiskCheckpointStageView, DiskPieceStageView, DiskPieceView,
+    DiskPipelineView, DiskPressureView, IndexRange, IntegrityPreparationPhaseView,
+    IntegrityPreparationView, MetadataAcquisitionPhaseView, MetadataAcquisitionView,
+    OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse, PeerDirection,
+    PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView, PeerLifecycle, PeerMseMethodView,
+    PeerRequestPhase, PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction,
+    ProgressAssessment, ProgressDisposition, ProgressInputs, ProgressPhase, ProgressReason,
+    ResetReason, SubscriptionError, SubscriptionSpec, SubscriptionStats, SwarmCatalogState,
+    SwarmCountsView, SwarmPeerState, SwarmPeerView, TorrentEtaView, TorrentOperationalState,
+    TorrentPreparationView, TorrentView, UpdateBatch, UpdateViewSetRequest, VIEW_CONTRACT_VERSION,
+    ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector, ViewSetError, ViewSetOwner,
+    ViewSetStats, ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdate, ViewUpdatePayload,
 };
 pub(crate) use eta::TorrentEtaRuntime;
 pub(crate) use hub::ViewSetLeaseReaper;

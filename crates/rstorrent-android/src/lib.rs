@@ -128,6 +128,13 @@ pub struct AndroidCompanionRootRequest {
     pub expires_in_seconds: u64,
 }
 
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct AndroidCompanionRootRemovalRequest {
+    pub request_id: String,
+    pub application_request: RequestEnvelope,
+    pub expires_in_seconds: u64,
+}
+
 #[derive(Debug, uniffi::Error)]
 pub enum AndroidClientError {
     Failure { detail: String },
@@ -158,6 +165,7 @@ pub struct AndroidApplicationClient {
     platform_storage: Arc<PlatformStorageBroker>,
     companion_pairings: Arc<CompanionPairingOwner>,
     companion_platform: Arc<CompanionPlatformOwner>,
+    companion_profile_id: String,
     companion: AsyncMutex<Option<AndroidCompanionRuntime>>,
 }
 
@@ -179,6 +187,7 @@ impl AndroidApplicationClient {
     pub async fn open(config: AndroidApplicationConfig) -> Result<Arc<Self>, AndroidClientError> {
         let (platform_client, platform_storage) = platform_storage_channel();
         let platform_enabled = config.platform_storage;
+        let companion_profile_id = config.profile_id.clone();
         let companion_database = PathBuf::from(&config.profile_root)
             .join(&config.profile_id)
             .join("companion.sqlite");
@@ -199,6 +208,7 @@ impl AndroidApplicationClient {
             platform_storage,
             companion_pairings,
             companion_platform: CompanionPlatformOwner::new(),
+            companion_profile_id,
             companion: AsyncMutex::new(None),
         }))
     }
@@ -603,6 +613,8 @@ impl AndroidApplicationClient {
             self.companion_pairings.clone(),
             self.companion_platform.clone(),
             self.service.clone(),
+            &self.companion_profile_id,
+            env!("CARGO_PKG_VERSION"),
         )
         .await
         .map_err(|error| AndroidClientError::message(error.to_string()))?;
@@ -655,6 +667,32 @@ impl AndroidApplicationClient {
                 repair_root: request.repair_root,
                 expires_in_seconds: request.expires_in_seconds,
             })
+    }
+
+    pub async fn next_companion_root_removal_request(
+        &self,
+    ) -> Option<AndroidCompanionRootRemovalRequest> {
+        self.companion_platform
+            .next_removal_request()
+            .await
+            .map(|request| AndroidCompanionRootRemovalRequest {
+                request_id: request.request_id,
+                application_request: request.application_request,
+                expires_in_seconds: request.expires_in_seconds,
+            })
+    }
+
+    pub fn complete_companion_root_removal_request(
+        &self,
+        request_id: String,
+        response: ResponseEnvelope,
+    ) -> bool {
+        self.companion_platform
+            .complete_removal(&request_id, response)
+    }
+
+    pub fn fail_companion_root_removal_request(&self, request_id: String, message: String) -> bool {
+        self.companion_platform.fail_removal(&request_id, &message)
     }
 
     pub fn complete_companion_root_request(

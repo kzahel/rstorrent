@@ -339,7 +339,9 @@ export type ApiVersion = { current: number, minimum: number, };
 
 export type ApiLimits = { max_view_sets_per_owner: number, max_views_per_set: number, max_view_id_bytes: number, min_queue_bytes: number, default_queue_bytes: number, max_queue_bytes: number, max_snapshot_bytes: number, max_wait_millis: number, lease_millis: string, };
 
-export type ApiHello = { api: ApiVersion, encodings: Array<ApiEncoding>, deliveries: Array<DeliveryMode>, capabilities: Array<string>, limits: ApiLimits, };
+export type ApiBackendIdentity = { kind: string, instance_id: string, profile_id: string, product_version: string, capability_profile: Array<string>, };
+
+export type ApiHello = { api: ApiVersion, encodings: Array<ApiEncoding>, deliveries: Array<DeliveryMode>, capabilities: Array<string>, backend?: ApiBackendIdentity | null, limits: ApiLimits, };
 
 export type ViewDeliveryPolicy = { min_interval_millis: number, };
 

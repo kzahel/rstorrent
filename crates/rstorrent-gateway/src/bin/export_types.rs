@@ -11,16 +11,16 @@ use rstorrent_session::{
     ActiveDownloadsClampReason, ActivePiece, ActivePieceFieldUpdate, ActivePieceStageView,
     ActivePieceUpdate, AddTorrentBytesRequest, AddTorrentDisposition, AddTorrentResult,
     AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus,
-    AdvertisedPeerEndpointUnavailableReason, ApiEncoding, ApiHello, ApiLimits, ApiVersion,
-    ApplicationCall, ApplicationCallResult, BandwidthDirectionRuntimeView, BandwidthRuntimeView,
-    CapabilityStatus, CatalogPageRequest, CatalogPageView, CheckingPhaseView, CheckingProgressView,
-    ClientSettings, ClientSettingsApplicationState, ClientSettingsDegradedReason,
-    ClientSettingsPatch, ClientSettingsRuntimeView, Command, CommandResult, DeliveryMode,
-    DeliveryPolicy, DhtAddressFamilyView, DhtBucketView, DhtFamilyInspectionView,
-    DhtInspectionView, DhtLifecycleView, DhtLookupView, DhtNetworkPolicyView, DiagnosticCategory,
-    DiagnosticEvent, DiagnosticField, DiagnosticFilter, DiagnosticProfile, DiagnosticRetention,
-    DiagnosticSeverity, DiagnosticSubject, DiagnosticValue, DiskCheckpointStageView,
-    DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView,
+    AdvertisedPeerEndpointUnavailableReason, ApiBackendIdentity, ApiEncoding, ApiHello, ApiLimits,
+    ApiVersion, ApplicationCall, ApplicationCallResult, BandwidthDirectionRuntimeView,
+    BandwidthRuntimeView, CapabilityStatus, CatalogPageRequest, CatalogPageView, CheckingPhaseView,
+    CheckingProgressView, ClientSettings, ClientSettingsApplicationState,
+    ClientSettingsDegradedReason, ClientSettingsPatch, ClientSettingsRuntimeView, Command,
+    CommandResult, DeliveryMode, DeliveryPolicy, DhtAddressFamilyView, DhtBucketView,
+    DhtFamilyInspectionView, DhtInspectionView, DhtLifecycleView, DhtLookupView,
+    DhtNetworkPolicyView, DiagnosticCategory, DiagnosticEvent, DiagnosticField, DiagnosticFilter,
+    DiagnosticProfile, DiagnosticRetention, DiagnosticSeverity, DiagnosticSubject, DiagnosticValue,
+    DiskCheckpointStageView, DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView,
     EffectiveListenerSettings, EncryptionPolicy, ErrorCode, ErrorResponse, FileCatalogState,
     FileFieldUpdate, FileIndexRange, FilePriority, FileRowUpdate, FileSelectionIntent,
     FileSelectionView, FileView, HttpsServerAuthenticationPolicy, IndexRange,
@@ -264,6 +264,7 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<DeliveryMode>(&mut declarations)?;
     append::<ApiVersion>(&mut declarations)?;
     append::<ApiLimits>(&mut declarations)?;
+    append::<ApiBackendIdentity>(&mut declarations)?;
     append::<ApiHello>(&mut declarations)?;
     append::<ViewDeliveryPolicy>(&mut declarations)?;
     append::<ViewSpec>(&mut declarations)?;

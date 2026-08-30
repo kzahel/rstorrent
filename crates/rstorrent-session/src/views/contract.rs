@@ -134,7 +134,18 @@ pub struct ApiHello {
     pub encodings: Vec<ApiEncoding>,
     pub deliveries: Vec<DeliveryMode>,
     pub capabilities: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backend: Option<ApiBackendIdentity>,
     pub limits: ApiLimits,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+pub struct ApiBackendIdentity {
+    pub kind: String,
+    pub instance_id: String,
+    pub profile_id: String,
+    pub product_version: String,
+    pub capability_profile: Vec<String>,
 }
 
 impl Default for ApiHello {
@@ -162,6 +173,7 @@ impl Default for ApiHello {
                 "piece_activity".to_owned(),
                 "diagnostics".to_owned(),
             ],
+            backend: None,
             limits: ApiLimits {
                 max_view_sets_per_owner: MAX_VIEW_SETS_PER_OWNER as u16,
                 max_views_per_set: MAX_VIEWS_PER_SET as u16,

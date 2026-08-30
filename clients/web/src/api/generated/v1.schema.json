@@ -551,6 +551,36 @@
       ],
       "type": "string"
     },
+    "ApiBackendIdentity": {
+      "properties": {
+        "capability_profile": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "instance_id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "product_version": {
+          "type": "string"
+        },
+        "profile_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "instance_id",
+        "profile_id",
+        "product_version",
+        "capability_profile"
+      ],
+      "type": "object"
+    },
     "ApiEncoding": {
       "enum": [
         "json",
@@ -601,6 +631,16 @@
       "properties": {
         "api": {
           "$ref": "#/$defs/ApiVersion"
+        },
+        "backend": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiBackendIdentity"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "capabilities": {
           "items": {

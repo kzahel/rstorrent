@@ -16,7 +16,8 @@ pub use chromeos_companion::{
     ANDROID_COMPANION_PORTS, ARC_COMPANION_HOST, BETA_EXTENSION_ORIGIN, CompanionPairingError,
     CompanionPairingOwner, CompanionPairingPending, CompanionPairingPoll,
     CompanionPairingPollStatus, CompanionPlatformError, CompanionPlatformOwner,
-    CompanionRootRequest, CompanionServer, PRODUCTION_EXTENSION_ORIGIN, bind_companion,
+    CompanionRootRemovalRequest, CompanionRootRequest, CompanionServer,
+    PRODUCTION_EXTENSION_ORIGIN, bind_companion,
 };
 pub use web_auth::{
     AuthorizedWebSession, INITIAL_WINDOW_SECONDS, IssuedWebSession, PairingTicket, WebAccessPolicy,
@@ -542,6 +543,8 @@ struct GatewayState {
     connection_registry: application_websocket::ApplicationConnectionRegistry,
     connection_metrics: ApplicationConnectionMetrics,
     gateway_shutdown: CancellationToken,
+    hello_backend: Option<rstorrent_session::ApiBackendIdentity>,
+    companion_platform: Option<Arc<CompanionPlatformOwner>>,
     download_directory_picker: Arc<dyn DownloadDirectoryPicker>,
     hosted_assets: Option<Arc<HostedAssets>>,
     web_auth: Option<Arc<std::sync::Mutex<web_auth_http::WebAuthRuntime>>>,
@@ -891,6 +894,8 @@ impl PreparedGateway {
             connection_registry: application_websocket::ApplicationConnectionRegistry::new(),
             connection_metrics: ApplicationConnectionMetrics::default(),
             gateway_shutdown: CancellationToken::new(),
+            hello_backend: None,
+            companion_platform: None,
             download_directory_picker: self.download_directory_picker,
             hosted_assets: self.hosted_assets.map(Arc::new),
             web_auth: self.web_auth,
