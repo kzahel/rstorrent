@@ -977,15 +977,18 @@ streaming demand, expiry, and revocation remain unchanged.
   BitTorrent network convergence, intent-preserving automatic recovery, and
   truthful Compose/companion state. VPN-grade leak prevention still requires
   explicit Android network binding and race analysis; proxy remains separate.
-- Android's foreground notification reports service/activity state but does
-  not yet provide JSTorrent-shaped edge-triggered completion or actionable
-  fatal/storage-failure notifications when Compose is absent. This is a core
-  background-product parity gap. Active Tactical
+- Android's one service-native notification owner now reports generic
+  foreground state and derives bounded completion plus fatal/storage-repair
+  edges from the authoritative torrent-list stream. Default-on app preferences
+  remain independent from low/default/high system channels; exact taps route
+  to torrent detail or Storage, and initial/reset/restart/recheck state does not
+  replay. Denied or blocked notification visibility permits visible Compose
+  work but joins the service and companion after the last interaction lease;
+  target-35 `dataSync` timeout uses the same joined non-sticky stop. Tactical
   [`198`](../tactical/198-android-completion-and-attention-notifications.md)
-  owns one service-native edge reducer, bounded channels/settings, exact tap
-  routing, JSTorrent-like denied/blocked-notification transparency for
-  standalone and ChromeOS companion use, and prompt target-35 `dataSync`
-  timeout shutdown. Ready Tactical
+  has passing deterministic, dual-ABI, API 34/35 connected and genuine
+  transfer/repair evidence, but its physical Chromebook companion matrix is
+  still blocked by an unreachable, locked testbed. Ready Tactical
   [`200`](../tactical/200-android-product-background-lifecycle.md) owns the
   granted-background activity/active-work/completion/seeding/task-removal/
   reboot contract and accepts Android 15+ `dataSync` operation as finite;

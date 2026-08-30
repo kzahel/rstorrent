@@ -1,6 +1,7 @@
 # Tactical 198: Android Completion And Attention Notifications
 
-Status: **Active as of 2026-08-30.** User direction authorized end-to-end
+Status: **Active; implementation and AVD gates complete, physical ChromeOS
+gate blocked as of 2026-08-30.** User direction authorized end-to-end
 implementation. Maintainer direction selected
 JSTorrent-like notification transparency: Android notification permission is
 not a technical prerequisite for starting a foreground service, but RSTorrent
@@ -744,6 +745,149 @@ commands and cleanup. Web typecheck/test is required only if implementation
 changes shared React code; the accepted design keeps Android settings and
 notification delivery native. Regenerate no contract unless implementation
 finds a missing authoritative field and stops under the escalation contract.
+
+## Execution Record: Implementation And AVD Gates
+
+Implementation and every non-physical gate passed on 2026-08-30. The
+tactical remains active because the required physical Chromebook was
+unreachable at its authoritative doctor gate.
+
+### Landed commits
+
+- `635ec79` activated this tactical and reconciled the active-work indexes;
+- `7a14de3` added the bounded pure notification edge policy and hostile-state
+  matrix;
+- `d3cb7eb` added default-on, commit-before-live app preferences and explicit
+  platform eligibility state;
+- `b62265e` added the Android notification coordinator on the sole torrent-list
+  stream;
+- `4d0ed75` wired channels, block observations, visibility ownership, generic
+  foreground status, companion workflow delivery, and joined shutdown;
+- `6a411da` added native settings plus exact cold/warm torrent and storage tap
+  routing;
+- `0713bef` closed pending-bind, Activity-recreation, picker, permission, wake-
+  lock, and latest-start shutdown races;
+- `074cb5f` added installed channel/delivery/cap/timeout probes and debug-only
+  terminal resource observation;
+- `0aea480` added the failure-safe `product-notifications` controlled SAF
+  campaign;
+- `d6f874f` bounded coalesced Android submissions before the platform's active
+  list catches up and fixed the existing external-intake cancellation test
+  race;
+- `a4abe09` admitted an explicitly selected task-owned API 35 AVD while keeping
+  the established API 34 name pinned;
+- `47c0c74` proved durable preference suppression and enable-without-replay;
+  and
+- `56125be` made installed adapter setup and teardown wait for Android's
+  asynchronous notification activation/cancellation.
+
+No Rust application type, UniFFI definition, generated Kotlin contract,
+shared React source, production identifier, signing input, extension package,
+or release artifact changed.
+
+### Deterministic and installed evidence
+
+The Kotlin policy tests cover initial terminal snapshots, ordinary/coalesced
+progress, zero-byte/import/recheck suppression, completion, fatal and repair
+entry, raw-error churn, recovery/re-arm, removal/re-add, reset/resync,
+attention-over-completion, the 256-ID tombstone bound, and 120-scalar display
+names. Preference tests cover defaults, synchronous persistence failure, and
+enable-without-replay. Compose tests cover permission explanation, independent
+toggles, blocked-channel truth, exact detail/storage routes, and stale-target
+fallback.
+
+The final API 34 arm64 `jstorrent-tablet` connected run passed all 19 tests.
+The API 35 arm64 task AVD passed all 18 then-current connected tests, including
+`ProductServiceTimeoutTest`: direct `onTimeout(..., dataSync)` converged through
+the common non-sticky joined shutdown with zero interaction leases, registered
+block receivers, wake lock, and foreground notification. The subsequently
+added preference case compiled/linted and passed on API 34; it changes no
+API-specific behavior.
+
+Both API 34 and API 35 ran:
+
+```text
+python3 clients/android/run_bootstrap.py --target avd \
+  --avd <owned-avd> [--avd-api 35] --profile product-notifications \
+  --storage saf-internal --runs 1 --no-build
+```
+
+Each fresh installed run downloaded and verified the five-piece controlled
+fixture from incomplete state, posted exactly one `Download complete` event
+with an opaque tag and bounded body, and routed its shade tap to the exact
+torrent. Process restart and Force recheck posted zero replay. Replacing one
+verified final file with a directory drove the authoritative row to
+`TorrentState.NEEDS_REPAIR` and `StorageState.NEEDS_REPAIR`, posted exactly one
+`Download needs attention` event, and routed its shade tap to Storage. The
+fixture bytes were restored for safe exact removal, which left zero automatic
+events. Both runs reached 6/40 owned SAF handles and 3/16 pending platform
+requests. Process descriptor baseline/high/final was 124/144/139 on API 34 and
+142/160/155 on API 35.
+
+Grant loss was deliberately not reclassified as attention: the first campaign
+attempt correctly observed `AWAITING_STORAGE/UNAVAILABLE`, a recoverable state
+excluded by this contract. A wrong-kind verified path was then used to produce
+the genuine repair edge. API 35 also exposed per-package enqueue throttling;
+the adapter now retains the last 32 submitted category tags while still
+inspecting only this application's active tagged events, and the paced installed
+test proved oldest-same-category eviction at exactly 32.
+
+Manual package-manager/settings/dumpsys campaigns on both APIs observed the
+same lifecycle contract. With permission denied, the visible Activity retained
+the service; after Home, API 35 joined it in six 100-ms polls. With permission
+granted, Home retained the current provisional low-importance foreground
+owner. Blocking `rstorrent-product` changed its importance to zero and joined
+the API 35 owner within the first 100-ms poll; API 34 separately passed whole-
+app and channel blocking. Restoring permission or a system switch did not
+restart an owner or replay an event. All three channels retained their exact
+low/default/high importance; Background activity was silent and badge-free.
+
+### Build, repository, identity, and cleanup
+
+These gates passed after sourcing the configured profile:
+
+```text
+cargo fmt --all -- --check
+cargo clippy --workspace -- -D warnings
+cargo test --workspace
+cd clients/android && ./gradlew lintDebug testDebugUnitTest \
+  assembleDebug assembleDebugAndroidTest
+ANDROID_SERIAL=emulator-5554 ./gradlew connectedDebugAndroidTest
+./clients/android/build.sh
+```
+
+The first workspace test run hit the pre-existing ephemeral-port race in
+`application_coordinates_local_network_endpoints_when_available` (ports 63801
+and 63795). Its exact rerun passed, followed by a complete passing workspace
+rerun. The dual build packaged both `arm64-v8a` and `x86_64`. Merged-manifest
+inspection found application ID `org.rstorrent.bootstrap`, target SDK 35,
+`POST_NOTIFICATIONS`, and a non-exported `dataSync` product service. The final
+debug APK SHA-256 was
+`c37c0b002e5604a17236dff34745d71dbd011a55a53b4a52d0bddba8862fbfd2`.
+
+Every runner session removed its package, SAF child, payload, reverse
+transport, fixture peer, notification, and AVD process. Manual sessions cleared
+and uninstalled both app/test packages. The task-owned
+`rstorrent-t198-api35` AVD was deleted; no emulator remained. The reusable API
+35 system image is ordinary SDK tooling, not test state.
+
+### Remaining physical gate
+
+The required Machine Control ChromeOS guide was read before access. The common
+read-only command
+
+```text
+~/code/machine-control/bin/machine-control --target chromeos target doctor
+```
+
+returned `ready=false`: SSH administration was unreachable, automatic SSH
+startup evidence was unavailable, and the ChromeOS profile was locked, so the
+resident client, semantic extension surface, capture, input, and ARCVM ADB were
+all unavailable. The guide requires physical VT2/login recovery for this state;
+no reboot, rootfs change, SSH repair, ADB prompt, APK install, extension change,
+or device policy mutation was attempted. The physical companion permission,
+disconnect/reconnect, notification tap, and terminal cleanup matrix remains the
+sole stopping-condition gap. `JAR-007` and `AND-009` therefore remain open.
 
 ## Documentation And Completion Updates
 

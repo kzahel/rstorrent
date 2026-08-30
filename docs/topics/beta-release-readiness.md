@@ -621,18 +621,17 @@ disposition of current JSTorrent Android features.
   credential removal, uninstall, and post-cleanup refusal pass. Android-through-
   Compose remains a separate supported choice.
 - [ ] **AND-009 — Add background completion and actionable failure
-  notifications.** Current Android has the required foreground-service status
-  but not JSTorrent-shaped edge-triggered completion or fatal/storage-repair
-  attention while Compose is absent. A supported Android lane needs a bounded
-  native notification owner with permission denial, initial/reset suppression,
-  duplicate avoidance, tap/action routing, restart, and cleanup evidence.
-  Active Tactical
+  notifications.** Android now has the bounded service-native completion and
+  fatal/storage-repair owner, default-on preferences, three truthful channels,
+  initial/reset/recheck suppression, exact taps, denied/blocked visible-only
+  shutdown, and prompt target-35 timeout handling. Deterministic, dual-ABI,
+  API 34/35 connected, genuine controlled transfer/repair, resource, and
+  cleanup gates pass. Active Tactical
   [`198`](../tactical/198-android-completion-and-attention-notifications.md)
-  selects default-on completion/attention preferences and JSTorrent-like
-  transparency: blocked notification visibility permits interactive use but
-  stops the application and ChromeOS companion when visible interaction ends.
-  It also owns prompt target-35 `dataSync` timeout shutdown without claiming a
-  complete granted-background lifecycle. Ready Tactical
+  remains open only for the physical Chromebook companion permission,
+  disconnect/reconnect, notification-tap, and terminal cleanup matrix; its
+  authoritative doctor found SSH unreachable and the profile locked. This
+  slice does not claim a complete granted-background lifecycle. Ready Tactical
   [`200`](../tactical/200-android-product-background-lifecycle.md) owns that
   granted-background contract: explicit default-off continuation, qualifying
   active work, default stop on completion, optional continued seeding,

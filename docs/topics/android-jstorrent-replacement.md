@@ -171,7 +171,12 @@ daemon architecture.
   denied or blocked notification visibility permits interactive use but not
   an invisible long-running application or companion owner after the visible
   interaction ends. The existing foreground **Stop** action remains; Pause
-  All and Resume All are deferred.
+  All and Resume All are deferred. The implementation, deterministic suite,
+  dual-ABI build, API 34/35 connected tests, genuine completion/repair
+  campaigns, timeout shutdown, and cleanup pass. The gate remains open only
+  because the required physical Chromebook was unreachable and locked at the
+  authoritative doctor, leaving its companion permission/reconnect matrix
+  unexecuted.
 - [ ] **JAR-008 — Enforce unmetered-network policy live.** This is the required
   part of beta gate `AND-010`. Ready Tactical
   [`199`](../tactical/199-android-live-unmetered-network-enforcement.md) owns a
