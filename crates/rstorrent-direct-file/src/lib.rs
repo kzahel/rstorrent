@@ -1,0 +1,8 @@
+#![forbid(unsafe_code)]
+//! Experimental bounded direct-file transport components.
+//!
+//! The protocol codec is runtime independent. The optional WebRTC adapter is
+//! deliberately feature-gated so product builds that do not request it omit
+//! the ICE, DTLS, SCTP, and certificate dependency graph.
+
+pub mod codec;

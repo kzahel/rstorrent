@@ -4215,6 +4215,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "rstorrent-direct-file"
+version = "0.1.0"
+
+[[package]]
 name = "rstorrent-engine"
 version = "0.1.0"
 dependencies = [
