@@ -656,6 +656,16 @@ own correctness.
   preference and exactly one partial CPU wake lock for the same active state
   set while removing its Wi-Fi lock. iOS retains finite background work and
   exposes no misleading general keep-awake control.
+- Ready Tactical
+  [`200`](../tactical/200-android-product-background-lifecycle.md) replaces
+  Android's always-sticky lifetime with one activity-aware owner. Visible
+  Compose retains interactive use; background download continuation is
+  default-off and notification-gated; completion stops unattended work by
+  default; continued seeding is separately opt-in; and every policy stop joins
+  the generation without rewriting durable torrent intent. Authenticated
+  ChromeOS companion work receives a fixed reconnect grace. No reboot launch,
+  second daemon, indefinite Android-15 `dataSync` claim, or low-battery policy
+  is added.
 - The Linux headless process owns one application service, profile, one or
   more explicitly configured gateways, and engine independently from browser
   connections. Its systemd user unit forwards stop to the adapter, whose
@@ -975,16 +985,19 @@ streaming demand, expiry, and revocation remain unchanged.
   owns one service-native edge reducer, bounded channels/settings, exact tap
   routing, JSTorrent-like denied/blocked-notification transparency for
   standalone and ChromeOS companion use, and prompt target-35 `dataSync`
-  timeout shutdown. Granted-background active/idle/seeding/reboot policy and
-  Android 15+ long-duration design remain the separate `JAR-009` lifecycle
-  slice; dynamic metered/VPN policy also remains separate from Tactical
-  `194`'s connection transport.
+  timeout shutdown. Ready Tactical
+  [`200`](../tactical/200-android-product-background-lifecycle.md) owns the
+  granted-background activity/active-work/completion/seeding/task-removal/
+  reboot contract and accepts Android 15+ `dataSync` operation as finite;
+  dynamic metered/VPN policy remains separate from Tactical `194`'s connection
+  transport.
 - Android now has Compose connection/seeding settings for backed peer, upload-
   slot, active-download, listener, port-mapping, IPv6, and encryption values,
   including configured/effective/application truth, plus backed session and
   per-torrent upload/download limits. Metered-network enforcement remains
-  absent with ready Tactical `199`; VPN, proxy, and power policy remain
-  separate product/engine slices.
+  absent with ready Tactical `199`; background lifetime remains absent with
+  ready Tactical `200`; VPN, proxy, low-battery, and broader seeding policy
+  remain separate product/engine slices.
 - Tracker HTTPS authentication is intentionally absent from ordinary React
   and Compose settings. The advanced typed `disabled` override exists for
   compatibility/debug use and remains visibly unauthenticated in tracker

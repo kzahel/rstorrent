@@ -179,17 +179,20 @@ daemon architecture.
   observation, fail-closed initial/live application prerequisite, intent-
   preserving automatic recovery, and complete peer/tracker/DHT/listener/
   mapping closure evidence. It explicitly excludes VPN privacy and proxying.
-- [ ] **JAR-009 — Select and implement background lifecycle policy.** Current
-  JSTorrent defaults background downloads off, requires notification
-  permission to opt in, shuts the engine down when background work is not
-  allowed or idle, and separately chooses stop/close versus continued
-  seeding. RSTorrent currently starts one sticky foreground service until
-  explicit stop. Tactical `198` fixes denied/blocked notification behavior and
-  prompt Android 15 `dataSync` timeout shutdown but deliberately leaves the
-  granted-background contract here. Select truthful foreground/background/
-  idle/seeding behavior, task-removal and reboot policy, an Android 15+
-  mechanism or finite limitation, and cancellation/join ownership before
-  replacement.
+- [ ] **JAR-009 — Implement the selected background lifecycle policy.** Ready
+  Tactical
+  [`200`](../tactical/200-android-product-background-lifecycle.md) replaces the
+  always-sticky owner with JSTorrent-shaped standalone outcomes over
+  RSTorrent's one service/application owner. Background downloads remain an
+  explicit default-off opt-in gated by notification eligibility; active
+  download/metadata/checking and unmetered waiting qualify, completion closes
+  unattended work by default, and continued seeding is separately opt-in.
+  Visible Compose use remains unrestricted, shutdown preserves torrent
+  intent, task removal follows policy, reboot does not launch work, and the
+  target-35 `dataSync` duration is a disclosed finite limit. Authenticated
+  ChromeOS companion work receives one fixed reconnect grace rather than the
+  legacy daemon's configurable idle timer. Tactical `198` supplies the
+  notification/timeout owner and Tactical `199` the live network prerequisite.
 - [ ] **JAR-010 — Qualify the signed Play replacement.** Produce and inspect
   the protected-key release AAB, remove or deliberately retain diagnostic
   components, close current Android API deprecations, complete store/privacy/
@@ -209,9 +212,9 @@ blocker for an independent RSTorrent beta.
 | VPN-only mode | JSTorrent suspends when the active default network is not reported as VPN. RSTorrent has no control. The legacy check does not prove socket binding or leak prevention. | Implement only with Android `Network` binding, fail-closed startup/handover, closure or rebinding of existing TCP/UDP sockets, and peer/tracker/DHT/DNS leakage evidence; otherwise retire and disclose it. |
 | SOCKS5 proxy | JSTorrent exposes host, port, optional credentials, and peer/HTTP-tracker/UDP-tracker routing choices. RSTorrent shows a disabled placeholder and has no engine proxy owner. | Use a source-first engine tactical covering DNS, authentication-secret storage, UDP ASSOCIATE or a truthful unsupported state, reconnect, bypass prevention, resource limits, and interoperability. |
 | DHT and PEX controls | Both RSTorrent engine capabilities exist, but Compose has no enable/disable controls. | Add backed settings or explicitly retain always-on public-torrent policy. Preserve private-torrent gating regardless. |
-| Seeding and queue policy | JSTorrent has an active-seed limit and stop/close versus keep-seeding choice. RSTorrent exposes active-download admission but not equivalent seed goals/policy. | Resolve with `JAR-009` or a separate seeding-policy tactical; do not imply ratio/time goals that do not exist. |
+| Seeding and queue policy | JSTorrent has an active-seed limit and stop/close versus keep-seeding choice. RSTorrent exposes active-download admission but not equivalent seed goals/policy. | Tactical `200` selects default stop-on-completion and a separate keep-seeding-in-background opt-in without adding active-seed limits or ratio/time goals. Those broader seed policies remain separate. |
 | Low-battery shutdown | JSTorrent offers an opt-in 5–50% threshold. RSTorrent has only the active-work sleep setting and a disabled Battery policy row. | Decide whether Android replacement retains this safety valve. If implemented, define charging, threshold hysteresis, notification, intent preservation, and restart behavior. |
-| Companion idle/auto-close | JSTorrent can stop the companion after a configured disconnected interval. Tactical `194` owns a different one-service architecture without this user control. | Decide from the selected production extension and background lifecycle rather than porting the old daemon timer literally. |
+| Companion idle/auto-close | JSTorrent can stop its separate legacy daemon after a configured disconnected interval. Tactical `194` instead owns one semantic service/application owner. | Tactical `200` selects a fixed 60-second authenticated-disconnect grace and no user-facing timer. A configurable idle policy remains deferred unless product evidence justifies it. |
 | Search and plugins | JSTorrent has search UI plus installed/recommended URL-fetched JavaScript plugins in an Android WebView sandbox. RSTorrent has no search/plugin product capability. | Treat as a separate security and product campaign. Implement only with explicit network-code trust, sandbox, update, disclosure, and Play-review policy; otherwise retire/defer visibly. |
 | Native/progressive playback | JSTorrent has Media3 playback for local and incomplete content, subtitles, streaming-aware activity ownership, and picture-in-picture. RSTorrent has completed-file Android open and engine/shared-web streaming foundations, but no native Android playback presentation. | Separate native presentation/lifecycle tactical. Do not equate engine byte availability with qualified Android playback. |
 | Localization | JSTorrent currently ships system/app locale selection and numerous translated `values-*` resources. RSTorrent Compose strings are predominantly inline English. | Select the replacement locale set and translation/update workflow; record any reduced first-release set in the listing and release notes. |
@@ -254,14 +257,14 @@ pause/resume shortcut that overwrites torrent intent.
 
 Sleep inhibition and background continuation are independent. Tactical `165`
 answers whether active work may keep the CPU awake after the product has
-already decided it is allowed to run. `JAR-009` must still answer whether work
-is allowed to continue when Compose leaves the foreground, when an active
-download completes, while only seeding remains, after task removal, after
-process recovery, and after reboot. Tactical `198` separately fixes the
-notification-visibility prerequisite: denial or blocking permits interactive
-use but ends the owner when visible interaction ends, and target-35
-`dataSync` timeout enters prompt joined shutdown rather than an ANR or sticky
-restart.
+already decided it is allowed to run. Ready Tactical
+[`200`](../tactical/200-android-product-background-lifecycle.md) now selects
+the `JAR-009` outcome when Compose leaves, an active download completes, only
+seeding remains, the task is removed, the process restarts, or the device
+reboots. Tactical `198` separately supplies its notification-visibility
+prerequisite: denial or blocking permits interactive use but ends the owner
+when visible interaction ends, and target-35 `dataSync` timeout enters prompt
+joined shutdown rather than an ANR or sticky restart.
 
 The replacement policy must identify one owner for:
 
@@ -423,8 +426,11 @@ live run.
    [`199`](../tactical/199-android-live-unmetered-network-enforcement.md) for
    the unmetered portion of `JAR-008` without coupling it to a VPN privacy
    claim.
-5. Select `JAR-009` background/seeding/idle policy, then reconcile low-battery
-   and companion-idle controls against that owner.
+5. Execute ready Tactical
+   [`200`](../tactical/200-android-product-background-lifecycle.md) for
+   `JAR-009` background/seeding/idle ownership after Tactical `198` exposes
+   notification eligibility. Retain its fixed companion reconnect grace;
+   low-battery shutdown remains a separately bounded decision.
 6. Design `JAR-005` with the production extension before either store update
    is scheduled.
 7. Decide VPN, proxy, DHT/PEX controls, search/plugins, playback,

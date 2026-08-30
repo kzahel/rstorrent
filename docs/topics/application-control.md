@@ -238,6 +238,17 @@ closes every BitTorrent network generation while keeping the fixed address
 policy, durable torrent intent, local application work, and product control
 separate. VPN binding and proxy routing remain independent contracts.
 
+Android process lifetime is also not torrent lifecycle intent. Ready Tactical
+[`200`](../tactical/200-android-product-background-lifecycle.md) makes the one
+Android service/application owner decide whether visible interaction,
+explicitly allowed active background work, optional seeding, a bounded
+interaction, or an authenticated companion retains that generation. Idle,
+completion, timeout, notification ineligibility, task removal, and companion
+disconnect may join and close the generation, but never synthesize Pause,
+Pause All, Stop Torrent, or a queue mutation. A later visible launch opens the
+same profile and applies its durable desired-running and paused state through
+ordinary admission.
+
 Typed diagnostics use a separate bounded reactive projection. They may explain
 the facts behind a progress assessment, but clients do not parse diagnostic
 text to determine torrent state, available actions, or correctness. A view

@@ -93,6 +93,15 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`200-android-product-background-lifecycle.md`](200-android-product-background-lifecycle.md):
+  ready; replaces the always-sticky Android owner with one JSTorrent-shaped
+  activity/background lifetime policy. Background downloads remain explicit
+  default-off consent, completion closes unattended work by default, seeding
+  requires a separate opt-in, notification eligibility is mandatory, and
+  finite Android `dataSync` limits stop cleanly without rewriting torrent
+  intent. The selected semantic ChromeOS companion retains authenticated work
+  through one fixed reconnect grace; reboot startup, low-battery shutdown,
+  VPN, proxy, playback, and a second daemon remain separate.
 - [`199-android-live-unmetered-network-enforcement.md`](199-android-live-unmetered-network-enforcement.md):
   ready; adds one default-off **Unmetered networks only** preference, an
   ordered Android default-network observer, and a live application/engine

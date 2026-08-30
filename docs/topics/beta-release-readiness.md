@@ -632,7 +632,13 @@ disposition of current JSTorrent Android features.
   transparency: blocked notification visibility permits interactive use but
   stops the application and ChromeOS companion when visible interaction ends.
   It also owns prompt target-35 `dataSync` timeout shutdown without claiming a
-  complete granted-background lifecycle.
+  complete granted-background lifecycle. Ready Tactical
+  [`200`](../tactical/200-android-product-background-lifecycle.md) owns that
+  granted-background contract: explicit default-off continuation, qualifying
+  active work, default stop on completion, optional continued seeding,
+  activity handoff, intent-preserving joined shutdown, finite duration, and a
+  bounded authenticated-companion reconnect grace. Reboot autostart,
+  low-battery shutdown, VPN, and proxy remain outside both slices.
 - [ ] **AND-010 — Add metered-network safety and bound VPN policy.** JSTorrent
   Android enforces unmetered/Wi-Fi-only and VPN-only prerequisites; RSTorrent's
   service selects `Online` for its full lifetime. Before a supported phone
