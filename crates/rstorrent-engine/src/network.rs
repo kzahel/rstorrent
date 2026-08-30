@@ -1,10 +1,170 @@
 use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::time::Duration;
 
+use tokio::sync::watch;
+
 pub const DEFAULT_PEER_ID: [u8; 20] = *b"-RS0001-000000000000";
+
+const NETWORK_PREREQUISITE_ALLOWED: u64 = 1;
+const NETWORK_PREREQUISITE_MAX_GENERATION: u64 = u64::MAX >> 1;
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ApplicationNetworkPrerequisite {
+    #[default]
+    Allowed,
+    WaitingForUnmeteredNetwork,
+}
+
+impl ApplicationNetworkPrerequisite {
+    #[must_use]
+    pub const fn is_allowed(self) -> bool {
+        matches!(self, Self::Allowed)
+    }
+
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Allowed => "allowed",
+            Self::WaitingForUnmeteredNetwork => "waiting_for_unmetered_network",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NetworkPrerequisiteSnapshot {
+    pub generation: u64,
+    pub prerequisite: ApplicationNetworkPrerequisite,
+}
+
+impl NetworkPrerequisiteSnapshot {
+    #[must_use]
+    pub const fn is_allowed(self) -> bool {
+        self.prerequisite.is_allowed()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct NetworkPrerequisiteHandle {
+    state: Arc<AtomicU64>,
+    updates: watch::Sender<NetworkPrerequisiteSnapshot>,
+}
+
+impl NetworkPrerequisiteHandle {
+    #[must_use]
+    pub fn new(initial: ApplicationNetworkPrerequisite) -> Self {
+        let snapshot = NetworkPrerequisiteSnapshot {
+            generation: 1,
+            prerequisite: initial,
+        };
+        let (updates, _) = watch::channel(snapshot);
+        Self {
+            state: Arc::new(AtomicU64::new(encode_network_prerequisite(snapshot))),
+            updates,
+        }
+    }
+
+    #[must_use]
+    pub fn load(&self) -> NetworkPrerequisiteSnapshot {
+        decode_network_prerequisite(self.state.load(Ordering::Acquire))
+    }
+
+    pub fn replace(
+        &self,
+        prerequisite: ApplicationNetworkPrerequisite,
+    ) -> Result<NetworkPrerequisiteSnapshot, NetworkPrerequisiteError> {
+        let mut encoded = self.state.load(Ordering::Acquire);
+        loop {
+            let current = decode_network_prerequisite(encoded);
+            if current.prerequisite == prerequisite {
+                return Ok(current);
+            }
+            let generation = current
+                .generation
+                .checked_add(1)
+                .filter(|generation| *generation <= NETWORK_PREREQUISITE_MAX_GENERATION)
+                .ok_or(NetworkPrerequisiteError::GenerationExhausted)?;
+            let next = NetworkPrerequisiteSnapshot {
+                generation,
+                prerequisite,
+            };
+            match self.state.compare_exchange_weak(
+                encoded,
+                encode_network_prerequisite(next),
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => {
+                    self.updates.send_replace(next);
+                    return Ok(next);
+                }
+                Err(observed) => encoded = observed,
+            }
+        }
+    }
+
+    pub fn close(&self) -> Result<NetworkPrerequisiteSnapshot, NetworkPrerequisiteError> {
+        self.replace(ApplicationNetworkPrerequisite::WaitingForUnmeteredNetwork)
+    }
+
+    pub fn allow(&self) -> Result<NetworkPrerequisiteSnapshot, NetworkPrerequisiteError> {
+        self.replace(ApplicationNetworkPrerequisite::Allowed)
+    }
+
+    #[must_use]
+    pub fn subscribe(&self) -> watch::Receiver<NetworkPrerequisiteSnapshot> {
+        self.updates.subscribe()
+    }
+
+    #[cfg(test)]
+    fn with_snapshot_for_test(snapshot: NetworkPrerequisiteSnapshot) -> Self {
+        let (updates, _) = watch::channel(snapshot);
+        Self {
+            state: Arc::new(AtomicU64::new(encode_network_prerequisite(snapshot))),
+            updates,
+        }
+    }
+}
+
+impl Default for NetworkPrerequisiteHandle {
+    fn default() -> Self {
+        Self::new(ApplicationNetworkPrerequisite::Allowed)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NetworkPrerequisiteError {
+    GenerationExhausted,
+}
+
+impl fmt::Display for NetworkPrerequisiteError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::GenerationExhausted => {
+                formatter.write_str("network prerequisite generation exhausted")
+            }
+        }
+    }
+}
+
+impl std::error::Error for NetworkPrerequisiteError {}
+
+const fn encode_network_prerequisite(snapshot: NetworkPrerequisiteSnapshot) -> u64 {
+    (snapshot.generation << 1) | (snapshot.prerequisite.is_allowed() as u64)
+}
+
+const fn decode_network_prerequisite(encoded: u64) -> NetworkPrerequisiteSnapshot {
+    NetworkPrerequisiteSnapshot {
+        generation: encoded >> 1,
+        prerequisite: if encoded & NETWORK_PREREQUISITE_ALLOWED != 0 {
+            ApplicationNetworkPrerequisite::Allowed
+        } else {
+            ApplicationNetworkPrerequisite::WaitingForUnmeteredNetwork
+        },
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum AddressFamily {
@@ -311,9 +471,56 @@ mod tests {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6};
 
     use super::{
-        AddressFamily, AddressFamilyPolicy, NetworkConfig, NetworkPolicy, PeerEncryptionPolicy,
-        PeerEncryptionPolicyHandle, is_valid_outbound_address,
+        AddressFamily, AddressFamilyPolicy, ApplicationNetworkPrerequisite, NetworkConfig,
+        NetworkPolicy, NetworkPrerequisiteError, NetworkPrerequisiteHandle,
+        NetworkPrerequisiteSnapshot, PeerEncryptionPolicy, PeerEncryptionPolicyHandle,
+        is_valid_outbound_address,
     };
+
+    #[tokio::test]
+    async fn network_prerequisite_is_nonzero_ordered_and_latest_value() {
+        let handle = NetworkPrerequisiteHandle::default();
+        let mut updates = handle.subscribe();
+        assert_eq!(handle.load().generation, 1);
+        assert!(handle.load().is_allowed());
+
+        let closed = handle.close().expect("close available generation");
+        assert_eq!(closed.generation, 2);
+        assert!(!closed.is_allowed());
+        updates.changed().await.expect("close update");
+        assert_eq!(*updates.borrow_and_update(), closed);
+
+        assert_eq!(handle.close().expect("duplicate close"), closed);
+        assert!(!updates.has_changed().expect("sender remains available"));
+
+        let allowed = handle.allow().expect("allow newer generation");
+        assert_eq!(allowed.generation, 3);
+        assert!(allowed.is_allowed());
+        assert_eq!(handle.load(), allowed);
+    }
+
+    #[test]
+    fn prerequisite_values_are_closed_and_stable() {
+        assert_eq!(ApplicationNetworkPrerequisite::Allowed.as_str(), "allowed");
+        assert_eq!(
+            ApplicationNetworkPrerequisite::WaitingForUnmeteredNetwork.as_str(),
+            "waiting_for_unmetered_network"
+        );
+    }
+
+    #[test]
+    fn prerequisite_generation_refuses_overflow_without_changing_state() {
+        let maximum = NetworkPrerequisiteSnapshot {
+            generation: super::NETWORK_PREREQUISITE_MAX_GENERATION,
+            prerequisite: ApplicationNetworkPrerequisite::Allowed,
+        };
+        let handle = NetworkPrerequisiteHandle::with_snapshot_for_test(maximum);
+        assert_eq!(
+            handle.close(),
+            Err(NetworkPrerequisiteError::GenerationExhausted)
+        );
+        assert_eq!(handle.load(), maximum);
+    }
 
     #[test]
     fn comparison_toggles_are_explicit_and_default_on_product_behavior() {

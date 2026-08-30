@@ -66,8 +66,9 @@ pub use media_catalog_views::{MediaCatalogState, MediaItemView, MediaRoleView};
 pub use profile_reset::ProfileResetReport;
 pub use reachability::Ipv6PinholeDiagnosticResult;
 pub use rstorrent_engine::{
-    DownloadResourceLimits, IncomingPeerServiceSnapshot, IncomingTcpBootstrap, NetworkConfig,
-    NetworkPolicy, PeerTransportPolicy,
+    ApplicationNetworkPrerequisite, DownloadResourceLimits, IncomingPeerServiceSnapshot,
+    IncomingTcpBootstrap, NetworkConfig, NetworkPolicy, NetworkPrerequisiteError,
+    NetworkPrerequisiteHandle, NetworkPrerequisiteSnapshot, PeerTransportPolicy,
 };
 pub use settings::{
     ActiveDownloadsClampReason, AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus,

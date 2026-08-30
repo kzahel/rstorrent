@@ -121,8 +121,10 @@ pub use mse::{
     MseHandshakeObservation, MseHandshakeOutcome, MseHandshakeSink,
 };
 pub use network::{
-    AddressFamily, AddressFamilyPolicy, AddressFamilyPolicyHandle, DEFAULT_PEER_ID, NetworkConfig,
-    NetworkPolicy, PeerEncryptionPolicy, PeerEncryptionPolicyHandle, PeerTransportPolicy,
+    AddressFamily, AddressFamilyPolicy, AddressFamilyPolicyHandle, ApplicationNetworkPrerequisite,
+    DEFAULT_PEER_ID, NetworkConfig, NetworkPolicy, NetworkPrerequisiteError,
+    NetworkPrerequisiteHandle, NetworkPrerequisiteSnapshot, PeerEncryptionPolicy,
+    PeerEncryptionPolicyHandle, PeerTransportPolicy,
 };
 pub use part_file::{PartFile, PartFileError, PartFileIdentity};
 pub use peer_budget::{

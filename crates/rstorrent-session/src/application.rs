@@ -8,18 +8,19 @@ use std::time::{Duration, Instant};
 
 use rstorrent_engine::dht::{DhtConfig, DhtError};
 use rstorrent_engine::{
-    ActiveFileError, ContentShape, DEFAULT_INCOMING_HANDSHAKE_TIMEOUT,
-    DEFAULT_INCOMING_INACTIVITY_TIMEOUT, DEFAULT_INCOMING_KEEPALIVE_INTERVAL,
-    DEFAULT_INCOMING_NO_REQUEST_TIMEOUT, DEFAULT_INCOMING_PEER_ACTIVITY_TIMEOUT, DEFAULT_PEER_ID,
-    DEFAULT_STORAGE_FILE_LIMIT, DEFAULT_UPLOAD_READ_JOBS, DirectContentLayout,
-    DiscoveryAdvertisementError, DiscoveryAdvertisementHandle, DiscoveryAdvertisementRegistration,
-    DiskCheckpointStage, DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink,
-    DownloadControl, DownloadError, DownloadResourceLimits, ExternalMagnetMetadataDownloadConfig,
+    ActiveFileError, ApplicationNetworkPrerequisite, ContentShape,
+    DEFAULT_INCOMING_HANDSHAKE_TIMEOUT, DEFAULT_INCOMING_INACTIVITY_TIMEOUT,
+    DEFAULT_INCOMING_KEEPALIVE_INTERVAL, DEFAULT_INCOMING_NO_REQUEST_TIMEOUT,
+    DEFAULT_INCOMING_PEER_ACTIVITY_TIMEOUT, DEFAULT_PEER_ID, DEFAULT_STORAGE_FILE_LIMIT,
+    DEFAULT_UPLOAD_READ_JOBS, DirectContentLayout, DiscoveryAdvertisementError,
+    DiscoveryAdvertisementHandle, DiscoveryAdvertisementRegistration, DiskCheckpointStage,
+    DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink, DownloadControl,
+    DownloadError, DownloadResourceLimits, ExternalMagnetMetadataDownloadConfig,
     FileSelectionUpdate, IncomingPeerError, IncomingPeerServiceSnapshot, MseHandshakeObservation,
-    MseHandshakeOutcome, MseHandshakeSink, NetworkConfig, NetworkPolicy, PeerEncryptionPolicy,
-    PeerTransportPolicy, PlatformStorageClient, PlatformStorageFailureKind, PlatformStorageSpec,
-    ResumableMagnetDownloadConfig, ResumableMetainfoDownloadConfig, ResumeValidationIntent,
-    ResumedStorage, SelectiveStorageError, SessionDownloadResourceSnapshot,
+    MseHandshakeOutcome, MseHandshakeSink, NetworkConfig, NetworkPolicy, NetworkPrerequisiteHandle,
+    PeerEncryptionPolicy, PeerTransportPolicy, PlatformStorageClient, PlatformStorageFailureKind,
+    PlatformStorageSpec, ResumableMagnetDownloadConfig, ResumableMetainfoDownloadConfig,
+    ResumeValidationIntent, ResumedStorage, SelectiveStorageError, SessionDownloadResourceSnapshot,
     SessionDownloadResources, SessionSocketError, SessionUdpError, StorageFileKey,
     StorageFileLocator, StorageFilePool, StorageFilePoolSnapshot, StorageFileReference,
     StorageFileRole, StorageObjectKind, TorrentId, TorrentIdentityContext, TorrentPrivacy,
@@ -272,6 +273,7 @@ pub struct ApplicationConfig {
     /// Platform-capability roots retain their adapter-owned part placement.
     pub path_part_directory: Option<PathBuf>,
     pub network: NetworkConfig,
+    pub initial_network_prerequisite: ApplicationNetworkPrerequisite,
     pub initial_client_settings: crate::ClientSettings,
     pub peer_transport_policy: PeerTransportPolicy,
     pub download_resource_limits: DownloadResourceLimits,
@@ -378,6 +380,7 @@ impl ApplicationConfig {
             path_root_startup_policy: PathRootStartupPolicy::CreateMissing,
             path_part_directory: None,
             network,
+            initial_network_prerequisite: ApplicationNetworkPrerequisite::Allowed,
             initial_client_settings: crate::ClientSettings::default(),
             peer_transport_policy: PeerTransportPolicy::PreferUtp,
             download_resource_limits: DownloadResourceLimits::DESKTOP,
@@ -429,6 +432,14 @@ impl ApplicationConfig {
         self.path_part_directory = Some(directory);
         self
     }
+
+    pub const fn with_initial_network_prerequisite(
+        mut self,
+        prerequisite: ApplicationNetworkPrerequisite,
+    ) -> Self {
+        self.initial_network_prerequisite = prerequisite;
+        self
+    }
 }
 
 #[derive(Debug)]
@@ -477,6 +488,7 @@ pub struct ApplicationService {
     store: Arc<Mutex<SessionStore>>,
     storage_roots: Arc<BTreeMap<String, StorageRootLocation>>,
     network: NetworkConfig,
+    network_prerequisite: NetworkPrerequisiteHandle,
     download_resource_limits: DownloadResourceLimits,
     session_download_resources: SessionDownloadResources,
     active_download_cap: Option<u16>,
@@ -533,6 +545,8 @@ impl ApplicationService {
         } else {
             config.network
         };
+        let network_prerequisite =
+            NetworkPrerequisiteHandle::new(config.initial_network_prerequisite);
         if config.view_set_lease.is_zero()
             || config.view_set_reaper_interval.is_zero()
             || config.view_set_reaper_interval > config.view_set_lease
@@ -687,6 +701,7 @@ impl ApplicationService {
             store: Arc::new(Mutex::new(store)),
             storage_roots: Arc::new(storage_roots),
             network,
+            network_prerequisite,
             download_resource_limits: config.download_resource_limits,
             session_download_resources,
             active_download_cap: config.active_download_cap,
@@ -780,6 +795,11 @@ impl ApplicationService {
         self.session_network
             .as_ref()
             .expect("session network exists before application shutdown")
+    }
+
+    #[must_use]
+    pub fn network_prerequisite_handle(&self) -> NetworkPrerequisiteHandle {
+        self.network_prerequisite.clone()
     }
 
     pub fn configure_media_origin(&mut self, origin: &str) -> Result<(), MediaOriginError> {
@@ -6230,10 +6250,10 @@ mod tests {
     use rstorrent_engine::dht::BootstrapNode;
     use rstorrent_engine::peer::{PeerEndpoint, PeerObservation, PeerSource};
     use rstorrent_engine::{
-        ByteMetric, ByteMetricSink, CheckerPhase, DEFAULT_PEER_ID, DownloadError, NetworkConfig,
-        NetworkPolicy, PeerBudgetDirection, PlatformStorageFailure, PlatformStorageFailureKind,
-        PlatformStorageOperation, StorageFileKey, StorageFileLocator, StorageFileReference,
-        StorageFileRole, StorageObjectKind, StorageObservation, TorrentId,
+        ApplicationNetworkPrerequisite, ByteMetric, ByteMetricSink, CheckerPhase, DEFAULT_PEER_ID,
+        DownloadError, NetworkConfig, NetworkPolicy, PeerBudgetDirection, PlatformStorageFailure,
+        PlatformStorageFailureKind, PlatformStorageOperation, StorageFileKey, StorageFileLocator,
+        StorageFileReference, StorageFileRole, StorageObjectKind, StorageObservation, TorrentId,
         platform_storage_channel, torrent_storage_paths,
     };
     use rstorrent_protocol::content::TorrentContentProjection;
@@ -6376,6 +6396,24 @@ mod tests {
         assert_eq!(
             offline.initial_client_settings.port_mapping,
             crate::PortMappingPolicy::Disabled
+        );
+    }
+
+    #[test]
+    fn application_network_prerequisite_defaults_allowed_and_can_start_closed() {
+        let root = test_root("network-prerequisite-config");
+        let allowed = default_config(&root);
+        assert_eq!(
+            allowed.initial_network_prerequisite,
+            ApplicationNetworkPrerequisite::Allowed
+        );
+
+        let closed = allowed.with_initial_network_prerequisite(
+            ApplicationNetworkPrerequisite::WaitingForUnmeteredNetwork,
+        );
+        assert_eq!(
+            closed.initial_network_prerequisite,
+            ApplicationNetworkPrerequisite::WaitingForUnmeteredNetwork
         );
     }
 
