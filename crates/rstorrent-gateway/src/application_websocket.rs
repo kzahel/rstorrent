@@ -611,10 +611,18 @@ pub(crate) async fn upgrade_application_connection(
     headers: HeaderMap,
     websocket: WebSocketUpgrade,
 ) -> Response {
-    if headers
+    let origin = headers
         .get(header::ORIGIN)
         .and_then(|value| value.to_str().ok())
-        != Some(state.allowed_origin.as_ref())
+        .map(str::to_owned);
+    if !origin
+        .as_deref()
+        .is_some_and(|origin| match state.authentication.as_ref() {
+            GatewayAuthentication::ChromeOsCompanion(_) => {
+                super::CompanionPairingOwner::origin_allowed(origin)
+            }
+            _ => origin == state.allowed_origin.as_ref(),
+        })
     {
         state.connection_metrics.rejected_origin();
         return StatusCode::FORBIDDEN.into_response();
@@ -637,7 +645,13 @@ pub(crate) async fn upgrade_application_connection(
         .max_message_size(MAX_TORRENT_SOURCE_BYTES)
         .max_frame_size(MAX_TORRENT_SOURCE_BYTES)
         .on_upgrade(move |socket| {
-            serve_application_connection(socket, state, permit, web_session_id)
+            serve_application_connection(
+                socket,
+                state,
+                permit,
+                web_session_id,
+                origin.expect("validated origin"),
+            )
         })
         .into_response()
 }
@@ -677,6 +691,7 @@ async fn serve_application_connection(
     state: GatewayState,
     _permit: OwnedSemaphorePermit,
     web_session_id: Option<String>,
+    origin: String,
 ) {
     let handshake_started = Instant::now();
     let (websocket_writer, mut websocket_reader) = socket.split();
@@ -747,9 +762,24 @@ async fn serve_application_connection(
         finish_writer(control, data, writer).await;
         return;
     }
-    if !valid_client_instance_id(&client_instance_id)
-        || !connection_token_matches(&state.authentication, token.as_deref())
-    {
+    let companion_lease = match state.authentication.as_ref() {
+        GatewayAuthentication::ChromeOsCompanion(owner)
+            if valid_client_instance_id(&client_instance_id) =>
+        {
+            token
+                .as_deref()
+                .and_then(|credential| owner.authenticate(&origin, &client_instance_id, credential))
+        }
+        _ => None,
+    };
+    let authentication_valid = match state.authentication.as_ref() {
+        GatewayAuthentication::ChromeOsCompanion(_) => companion_lease.is_some(),
+        authentication => {
+            valid_client_instance_id(&client_instance_id)
+                && connection_token_matches(authentication, token.as_deref())
+        }
+    };
+    if !authentication_valid {
         state.connection_metrics.rejected_authentication();
         fatal_connection(
             &control,
@@ -814,6 +844,10 @@ async fn serve_application_connection(
     let mut outstanding_ping: Option<(Vec<u8>, Instant)> = None;
     let mut pending_upload: Option<PendingTorrentUpload> = None;
     let mut service_shutdown = false;
+    let companion_revoked = companion_lease
+        .as_ref()
+        .map(|lease| lease.cancellation().clone())
+        .unwrap_or_default();
 
     loop {
         tokio::select! {
@@ -822,6 +856,7 @@ async fn serve_application_connection(
                 service_shutdown = true;
                 break;
             }
+            () = companion_revoked.cancelled(), if companion_lease.is_some() => break,
             () = connection_cancel.cancelled() => break,
             _ = heartbeat.tick() => {
                 if web_session_id.as_deref().is_some_and(|session_id| {
@@ -1814,6 +1849,7 @@ fn connection_token_matches(
         | GatewayAuthentication::TailscaleServeNone
         | GatewayAuthentication::Web(_)
         | GatewayAuthentication::UnauthenticatedLoopbackDevelopment => candidate.is_none(),
+        GatewayAuthentication::ChromeOsCompanion(_) => false,
     }
 }
 

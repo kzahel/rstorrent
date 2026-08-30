@@ -22,10 +22,12 @@ libc = "=0.2.189"
 # The fixed descriptor surface is retained only for the separate EngineService
 # diagnostic harness. AndroidApplicationClient product storage is dynamic.
 rstorrent-engine = { path = "../rstorrent-engine", features = ["descriptor-storage-diagnostics"] }
+rstorrent-gateway = { path = "../rstorrent-gateway" }
 rstorrent-protocol = { path = "../rstorrent-protocol" }
 rstorrent-session = { path = "../rstorrent-session", features = ["uniffi"] }
 sha1.workspace = true
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "sync", "time"] }
+tokio-util.workspace = true
 uniffi = { version = "=0.31.0", default-features = false, features = ["tokio"] }
 
 [target.'cfg(target_os = "android")'.dependencies]

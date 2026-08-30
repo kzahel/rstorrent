@@ -4160,11 +4160,13 @@ dependencies = [
  "jni 0.22.4",
  "libc",
  "rstorrent-engine",
+ "rstorrent-gateway",
  "rstorrent-protocol",
  "rstorrent-session",
  "rustls-platform-verifier",
  "sha1",
  "tokio",
+ "tokio-util",
  "uniffi",
 ]
 

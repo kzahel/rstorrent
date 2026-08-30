@@ -3,6 +3,7 @@
 //! Bounded HTTP and WebSocket adapter for the application contract.
 
 mod application_websocket;
+mod chromeos_companion;
 mod web_auth;
 mod web_auth_http;
 
@@ -10,6 +11,12 @@ pub use application_websocket::{
     ApplicationClientFrame, ApplicationConnectionError, ApplicationConnectionErrorCode,
     ApplicationConnectionLimits, ApplicationConnectionMetrics,
     ApplicationConnectionMetricsSnapshot, ApplicationFrameMetrics, ApplicationServerFrame,
+};
+pub use chromeos_companion::{
+    ANDROID_COMPANION_PORTS, ARC_COMPANION_HOST, BETA_EXTENSION_ORIGIN, CompanionPairingError,
+    CompanionPairingOwner, CompanionPairingPending, CompanionPairingPoll,
+    CompanionPairingPollStatus, CompanionPlatformError, CompanionPlatformOwner,
+    CompanionRootRequest, CompanionServer, PRODUCTION_EXTENSION_ORIGIN, bind_companion,
 };
 pub use web_auth::{
     AuthorizedWebSession, INITIAL_WINDOW_SECONDS, IssuedWebSession, PairingTicket, WebAccessPolicy,
@@ -87,6 +94,7 @@ pub enum GatewayAuthentication {
     PrivateLanNone,
     TailscaleServeNone,
     Web(WebAuthenticationConfig),
+    ChromeOsCompanion(Arc<CompanionPairingOwner>),
     UnauthenticatedLoopbackDevelopment,
 }
 
@@ -136,6 +144,7 @@ impl fmt::Debug for GatewayAuthentication {
             Self::PrivateLanNone => formatter.write_str("PrivateLanNone"),
             Self::TailscaleServeNone => formatter.write_str("TailscaleServeNone"),
             Self::Web(config) => formatter.debug_tuple("Web").field(config).finish(),
+            Self::ChromeOsCompanion(_) => formatter.write_str("ChromeOsCompanion([redacted])"),
             Self::UnauthenticatedLoopbackDevelopment => {
                 formatter.write_str("UnauthenticatedLoopbackDevelopment")
             }
@@ -777,6 +786,7 @@ async fn prepare_with_picker_and_assets(
         | GatewayAuthentication::TailscaleServeNone
         | GatewayAuthentication::Web(_) => config.allowed_origin.trim_end_matches('/').to_owned(),
         GatewayAuthentication::Bearer { .. }
+        | GatewayAuthentication::ChromeOsCompanion(_)
         | GatewayAuthentication::UnauthenticatedLoopbackDevelopment => {
             format!("http://{local_addr}")
         }

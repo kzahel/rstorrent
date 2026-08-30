@@ -7,6 +7,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 #[cfg(unix)]
 use std::os::fd::FromRawFd;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -20,6 +21,7 @@ use rstorrent_engine::{
     download_verified_piece_to_descriptors_with_control, download_verified_piece_with_control,
     plan_descriptor_storage, platform_storage_channel,
 };
+use rstorrent_gateway::{CompanionPairingOwner, CompanionPlatformOwner};
 use rstorrent_protocol::identity::V1InfoHash;
 use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo};
 use rstorrent_session::{
@@ -29,6 +31,8 @@ use rstorrent_session::{
 };
 use sha1::{Digest, Sha1};
 use tokio::sync::Mutex as AsyncMutex;
+use tokio::task::JoinHandle as TaskJoinHandle;
+use tokio_util::sync::CancellationToken;
 
 const INTERFACE_VERSION: &str = "rstorrent-android/0.3.0;uniffi/0.31.0";
 const MIN_PAYLOAD_BYTES: u64 = 16 * 1024;
@@ -108,6 +112,22 @@ pub struct AndroidDownloadResourceSnapshot {
     pub active_storage_hashes_high_water: u64,
 }
 
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct AndroidCompanionPairingPending {
+    pub request_id: String,
+    pub extension_id: String,
+    pub extension_name: String,
+    pub installation_id: String,
+    pub expires_in_seconds: u64,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct AndroidCompanionRootRequest {
+    pub request_id: String,
+    pub repair_root: Option<String>,
+    pub expires_in_seconds: u64,
+}
+
 #[derive(Debug, uniffi::Error)]
 pub enum AndroidClientError {
     Failure { detail: String },
@@ -133,8 +153,19 @@ impl AndroidClientError {
 
 #[derive(Debug, uniffi::Object)]
 pub struct AndroidApplicationClient {
-    service: Arc<AsyncMutex<Option<ApplicationService>>>,
+    service: Arc<AsyncMutex<ApplicationService>>,
+    shutdown: AtomicBool,
     platform_storage: Arc<PlatformStorageBroker>,
+    companion_pairings: Arc<CompanionPairingOwner>,
+    companion_platform: Arc<CompanionPlatformOwner>,
+    companion: AsyncMutex<Option<AndroidCompanionRuntime>>,
+}
+
+#[derive(Debug)]
+struct AndroidCompanionRuntime {
+    port: u16,
+    shutdown: CancellationToken,
+    task: TaskJoinHandle<Result<(), rstorrent_gateway::GatewayError>>,
 }
 
 #[derive(Debug, uniffi::Object)]
@@ -148,6 +179,9 @@ impl AndroidApplicationClient {
     pub async fn open(config: AndroidApplicationConfig) -> Result<Arc<Self>, AndroidClientError> {
         let (platform_client, platform_storage) = platform_storage_channel();
         let platform_enabled = config.platform_storage;
+        let companion_database = PathBuf::from(&config.profile_root)
+            .join(&config.profile_id)
+            .join("companion.sqlite");
         let mut application_config = validate_application_config(config)?;
         if platform_enabled {
             application_config.platform_storage_client = Some(platform_client);
@@ -155,23 +189,38 @@ impl AndroidApplicationClient {
         let service = ApplicationService::open(application_config)
             .await
             .map_err(|error| AndroidClientError::message(error.to_string()))?;
-        let service = Arc::new(AsyncMutex::new(Some(service)));
-        ApplicationService::ensure_optional_maintenance_owner(&service).await;
+        let service = Arc::new(AsyncMutex::new(service));
+        ApplicationService::ensure_maintenance_owner(&service).await;
+        let companion_pairings = CompanionPairingOwner::open(&companion_database)
+            .map_err(|error| AndroidClientError::message(error.to_string()))?;
         Ok(Arc::new(Self {
             service,
+            shutdown: AtomicBool::new(false),
             platform_storage,
+            companion_pairings,
+            companion_platform: CompanionPlatformOwner::new(),
+            companion: AsyncMutex::new(None),
         }))
+    }
+
+    fn ensure_running(&self) -> Result<(), AndroidClientError> {
+        if self.shutdown.load(Ordering::Acquire) {
+            Err(AndroidClientError::message(
+                "application client is shut down",
+            ))
+        } else {
+            Ok(())
+        }
     }
 
     pub async fn dispatch(
         &self,
         request: RequestEnvelope,
     ) -> Result<ResponseEnvelope, AndroidClientError> {
+        self.ensure_running()?;
         self.service
             .lock()
             .await
-            .as_mut()
-            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
             .dispatch(request)
             .await
             .map_err(|error| AndroidClientError::message(error.to_string()))
@@ -182,11 +231,10 @@ impl AndroidApplicationClient {
         request: AddTorrentBytesRequest,
         source: Vec<u8>,
     ) -> Result<ResponseEnvelope, AndroidClientError> {
+        self.ensure_running()?;
         self.service
             .lock()
             .await
-            .as_mut()
-            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
             .add_torrent_bytes(request, source)
             .await
             .map_err(|error| AndroidClientError::message(error.to_string()))
@@ -196,12 +244,11 @@ impl AndroidApplicationClient {
         &self,
         spec: SubscriptionSpec,
     ) -> Result<Arc<AndroidViewSubscription>, AndroidClientError> {
+        self.ensure_running()?;
         let subscription = self
             .service
             .lock()
             .await
-            .as_ref()
-            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
             .subscribe(spec)
             .map_err(|error| AndroidClientError::message(error.to_string()))?;
         Ok(Arc::new(AndroidViewSubscription { subscription }))
@@ -210,13 +257,8 @@ impl AndroidApplicationClient {
     pub async fn mse_dh_work_snapshot(
         &self,
     ) -> Result<AndroidMseDhWorkSnapshot, AndroidClientError> {
-        let snapshot = self
-            .service
-            .lock()
-            .await
-            .as_ref()
-            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
-            .mse_dh_work_snapshot();
+        self.ensure_running()?;
+        let snapshot = self.service.lock().await.mse_dh_work_snapshot();
         Ok(AndroidMseDhWorkSnapshot {
             waiting: snapshot.waiting as u64,
             active: snapshot.active as u64,
@@ -229,12 +271,11 @@ impl AndroidApplicationClient {
     pub async fn download_resource_snapshot(
         &self,
     ) -> Result<AndroidDownloadResourceSnapshot, AndroidClientError> {
+        self.ensure_running()?;
         let snapshot = self
             .service
             .lock()
             .await
-            .as_ref()
-            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
             .session_download_resource_snapshot();
         Ok(AndroidDownloadResourceSnapshot {
             registered_generations: snapshot.registered_generations as u64,
@@ -255,11 +296,10 @@ impl AndroidApplicationClient {
     }
 
     pub async fn probe_saf_storage_roots(&self) -> Result<bool, AndroidClientError> {
+        self.ensure_running()?;
         self.service
             .lock()
             .await
-            .as_mut()
-            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
             .probe_platform_storage_roots()
             .await
             .map_err(|error| AndroidClientError::message(error.to_string()))
@@ -268,21 +308,19 @@ impl AndroidApplicationClient {
     pub async fn saf_storage_snapshot(
         &self,
     ) -> Result<StorageSettingsSnapshot, AndroidClientError> {
+        self.ensure_running()?;
         self.service
             .lock()
             .await
-            .as_ref()
-            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
             .storage_snapshot()
             .map_err(|error| AndroidClientError::message(error.to_string()))
     }
 
     pub async fn allocate_saf_storage_root_id(&self) -> Result<String, AndroidClientError> {
+        self.ensure_running()?;
         self.service
             .lock()
             .await
-            .as_ref()
-            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
             .allocate_storage_root_id()
             .map_err(|error| AndroidClientError::message(error.to_string()))
     }
@@ -293,11 +331,10 @@ impl AndroidApplicationClient {
         label: String,
         make_default: bool,
     ) -> Result<StorageRootSnapshot, AndroidClientError> {
+        self.ensure_running()?;
         self.service
             .lock()
             .await
-            .as_mut()
-            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
             .install_platform_storage_root(&root_id, &label, make_default)
             .await
             .map_err(|error| AndroidClientError::message(error.to_string()))
@@ -308,12 +345,11 @@ impl AndroidApplicationClient {
         root_id: String,
         label: String,
     ) -> Result<SafStorageRootMutation, AndroidClientError> {
+        self.ensure_running()?;
         let (root, restart_torrent_ids) = self
             .service
             .lock()
             .await
-            .as_mut()
-            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
             .repair_platform_storage_root(&root_id, &label)
             .await
             .map_err(|error| AndroidClientError::message(error.to_string()))?;
@@ -328,11 +364,10 @@ impl AndroidApplicationClient {
         torrent_id: String,
         message: String,
     ) -> Result<(), AndroidClientError> {
+        self.ensure_running()?;
         self.service
             .lock()
             .await
-            .as_mut()
-            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
             .mark_storage_unavailable(&torrent_id, &message)
             .await
             .map_err(|error| AndroidClientError::message(error.to_string()))
@@ -342,11 +377,10 @@ impl AndroidApplicationClient {
         &self,
         root_id: String,
     ) -> Result<Vec<String>, AndroidClientError> {
+        self.ensure_running()?;
         self.service
             .lock()
             .await
-            .as_mut()
-            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
             .prepare_platform_storage_replacement(&root_id)
             .await
             .map_err(|error| AndroidClientError::message(error.to_string()))
@@ -356,12 +390,11 @@ impl AndroidApplicationClient {
         &self,
         torrent_id: String,
     ) -> Result<SafRemovalPlan, AndroidClientError> {
+        self.ensure_running()?;
         let plan = self
             .service
             .lock()
             .await
-            .as_mut()
-            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
             .platform_removal_plan(&torrent_id)
             .await
             .map_err(|error| AndroidClientError::message(error.to_string()))?;
@@ -373,11 +406,10 @@ impl AndroidApplicationClient {
         torrent_id: String,
         operation_id: String,
     ) -> Result<(), AndroidClientError> {
+        self.ensure_running()?;
         self.service
             .lock()
             .await
-            .as_mut()
-            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
             .confirm_platform_removal(&torrent_id, &operation_id)
             .await
             .map_err(|error| AndroidClientError::message(error.to_string()))
@@ -389,11 +421,10 @@ impl AndroidApplicationClient {
         operation_id: String,
         message: String,
     ) -> Result<(), AndroidClientError> {
+        self.ensure_running()?;
         self.service
             .lock()
             .await
-            .as_mut()
-            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
             .fail_platform_removal(&torrent_id, &operation_id, &message)
             .await
             .map_err(|error| AndroidClientError::message(error.to_string()))
@@ -435,13 +466,8 @@ impl AndroidApplicationClient {
     pub async fn saf_storage_pool_snapshot(
         &self,
     ) -> Result<SafStoragePoolSnapshot, AndroidClientError> {
-        let snapshot = self
-            .service
-            .lock()
-            .await
-            .as_ref()
-            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
-            .storage_file_pool_snapshot();
+        self.ensure_running()?;
+        let snapshot = self.service.lock().await.storage_file_pool_snapshot();
         Ok(SafStoragePoolSnapshot {
             limit: snapshot.limit as u64,
             current_owned: snapshot.current_owned as u64,
@@ -560,16 +586,115 @@ impl AndroidApplicationClient {
             .complete_observation(request_id, observation))
     }
 
-    pub async fn shutdown(&self) -> Result<(), AndroidClientError> {
-        self.platform_storage.cancel_all();
-        let service = self.service.lock().await.take();
-        if let Some(mut service) = service {
-            service
-                .shutdown()
-                .await
-                .map_err(|error| AndroidClientError::message(error.to_string()))?;
+    pub async fn start_chromeos_companion(&self) -> Result<u16, AndroidClientError> {
+        self.ensure_running()?;
+        let mut active = self.companion.lock().await;
+        if active
+            .as_ref()
+            .is_some_and(|runtime| !runtime.task.is_finished())
+        {
+            return Ok(active.as_ref().expect("active companion").port);
         }
-        Ok(())
+        if let Some(previous) = active.take() {
+            previous.shutdown.cancel();
+            let _ = previous.task.await;
+        }
+        let server = rstorrent_gateway::bind_companion(
+            self.companion_pairings.clone(),
+            self.companion_platform.clone(),
+            self.service.clone(),
+        )
+        .await
+        .map_err(|error| AndroidClientError::message(error.to_string()))?;
+        let port = server.local_addr().port();
+        let shutdown = CancellationToken::new();
+        let task_shutdown = shutdown.clone();
+        let task = tokio::spawn(server.serve(task_shutdown));
+        *active = Some(AndroidCompanionRuntime {
+            port,
+            shutdown,
+            task,
+        });
+        Ok(port)
+    }
+
+    pub async fn stop_chromeos_companion(&self) -> Result<(), AndroidClientError> {
+        self.stop_companion_inner().await
+    }
+
+    pub fn pending_companion_pairing(&self) -> Option<AndroidCompanionPairingPending> {
+        self.companion_pairings
+            .pending()
+            .map(|pending| AndroidCompanionPairingPending {
+                request_id: pending.request_id,
+                extension_id: pending.extension_id,
+                extension_name: pending.extension_name,
+                installation_id: pending.installation_id,
+                expires_in_seconds: pending.expires_in_seconds,
+            })
+    }
+
+    pub fn approve_companion_pairing(&self, request_id: String) -> Result<(), AndroidClientError> {
+        self.companion_pairings
+            .approve(&request_id)
+            .map_err(|error| AndroidClientError::message(error.to_string()))
+    }
+
+    pub fn reject_companion_pairing(&self, request_id: String) -> Result<(), AndroidClientError> {
+        self.companion_pairings
+            .reject(&request_id)
+            .map_err(|error| AndroidClientError::message(error.to_string()))
+    }
+
+    pub async fn next_companion_root_request(&self) -> Option<AndroidCompanionRootRequest> {
+        self.companion_platform
+            .next_request()
+            .await
+            .map(|request| AndroidCompanionRootRequest {
+                request_id: request.request_id,
+                repair_root: request.repair_root,
+                expires_in_seconds: request.expires_in_seconds,
+            })
+    }
+
+    pub fn complete_companion_root_request(
+        &self,
+        request_id: String,
+        root: Option<StorageRootSnapshot>,
+    ) -> bool {
+        self.companion_platform.complete(&request_id, root)
+    }
+
+    pub fn fail_companion_root_request(&self, request_id: String, message: String) -> bool {
+        self.companion_platform.fail(&request_id, &message)
+    }
+
+    pub async fn shutdown(&self) -> Result<(), AndroidClientError> {
+        if self.shutdown.swap(true, Ordering::AcqRel) {
+            return Ok(());
+        }
+        self.stop_companion_inner().await?;
+        self.companion_platform.close();
+        self.platform_storage.cancel_all();
+        self.service
+            .lock()
+            .await
+            .shutdown()
+            .await
+            .map_err(|error| AndroidClientError::message(error.to_string()))
+    }
+
+    async fn stop_companion_inner(&self) -> Result<(), AndroidClientError> {
+        let active = self.companion.lock().await.take();
+        let Some(active) = active else {
+            return Ok(());
+        };
+        active.shutdown.cancel();
+        active
+            .task
+            .await
+            .map_err(|error| AndroidClientError::message(error.to_string()))?
+            .map_err(|error| AndroidClientError::message(error.to_string()))
     }
 }
 
@@ -1760,6 +1885,29 @@ mod tests {
         }
     }
 
+    async fn companion_http(port: u16, host: String, origin: String) -> String {
+        tokio::task::spawn_blocking(move || {
+            let mut stream = std::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+                .expect("connect companion listener");
+            stream
+                .write_all(
+                    format!(
+                        "GET /rstorrent/companion/v1/hello HTTP/1.1\r\n\
+                         Host: {host}\r\nOrigin: {origin}\r\nConnection: close\r\n\r\n"
+                    )
+                    .as_bytes(),
+                )
+                .expect("write companion request");
+            let mut response = String::new();
+            stream
+                .read_to_string(&mut response)
+                .expect("read companion response");
+            response
+        })
+        .await
+        .expect("join companion HTTP request")
+    }
+
     #[test]
     fn product_application_policy_maps_online_explicitly() {
         let root = test_path("application-network");
@@ -1879,6 +2027,124 @@ mod tests {
                 .expect("cancelled probe result")
         );
         fs::remove_dir_all(root).expect("remove platform product fixture");
+    }
+
+    #[tokio::test]
+    async fn product_companion_uses_the_shared_application_owner() {
+        let root = test_path("application-companion-owner");
+        let content = root.join("content");
+        fs::create_dir_all(&content).expect("create content root");
+        let client = AndroidApplicationClient::open(AndroidApplicationConfig {
+            profile_root: root.join("profile").display().to_string(),
+            profile_id: "test".to_owned(),
+            storage_root: content.display().to_string(),
+            platform_storage: false,
+            platform_storage_roots: Vec::new(),
+            network_policy: AndroidNetworkPolicy::Offline,
+            peer_connect_timeout_seconds: 15,
+            peer_io_timeout_seconds: 60,
+        })
+        .await
+        .expect("open product application");
+        let port = client
+            .start_chromeos_companion()
+            .await
+            .expect("start companion");
+        assert!(rstorrent_gateway::ANDROID_COMPANION_PORTS.contains(&port));
+        assert_eq!(
+            client
+                .start_chromeos_companion()
+                .await
+                .expect("reuse companion"),
+            port
+        );
+        let accepted = companion_http(
+            port,
+            format!("{}:{port}", rstorrent_gateway::ARC_COMPANION_HOST),
+            rstorrent_gateway::BETA_EXTENSION_ORIGIN.to_owned(),
+        )
+        .await;
+        assert!(accepted.starts_with("HTTP/1.1 200"), "{accepted}");
+        assert!(accepted.contains("\"backend\":\"android\""));
+        let wrong_host = companion_http(
+            port,
+            format!("127.0.0.1:{port}"),
+            rstorrent_gateway::BETA_EXTENSION_ORIGIN.to_owned(),
+        )
+        .await;
+        assert!(wrong_host.starts_with("HTTP/1.1 403"), "{wrong_host}");
+        let wrong_origin = companion_http(
+            port,
+            format!("{}:{port}", rstorrent_gateway::ARC_COMPANION_HOST),
+            "chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
+        )
+        .await;
+        assert!(wrong_origin.starts_with("HTTP/1.1 403"), "{wrong_origin}");
+        assert_eq!(
+            client
+                .saf_storage_snapshot()
+                .await
+                .expect("shared storage while listener is active")
+                .default_root
+                .as_deref(),
+            Some("downloads")
+        );
+
+        let hello = client
+            .companion_pairings
+            .hello(rstorrent_gateway::BETA_EXTENSION_ORIGIN, port)
+            .expect("companion hello");
+        let requested = client
+            .companion_pairings
+            .request_pairing(
+                rstorrent_gateway::BETA_EXTENSION_ORIGIN,
+                &hello.nonce,
+                "installation_1234",
+                "extension_nonce_1234",
+            )
+            .expect("pairing request");
+        assert_eq!(
+            client
+                .pending_companion_pairing()
+                .expect("Android pending pairing")
+                .request_id,
+            requested.request_id
+        );
+        client
+            .approve_companion_pairing(requested.request_id.clone())
+            .expect("approve from Android owner");
+        assert!(
+            client
+                .companion_pairings
+                .poll(
+                    rstorrent_gateway::BETA_EXTENSION_ORIGIN,
+                    &requested.request_id,
+                    "installation_1234",
+                    "extension_nonce_1234",
+                )
+                .expect("poll pairing")
+                .credential
+                .is_some()
+        );
+
+        client
+            .stop_chromeos_companion()
+            .await
+            .expect("stop companion before application");
+        assert_eq!(
+            client
+                .saf_storage_snapshot()
+                .await
+                .expect("application remains after listener stop")
+                .default_root
+                .as_deref(),
+            Some("downloads")
+        );
+        client
+            .shutdown()
+            .await
+            .expect("shutdown product application");
+        fs::remove_dir_all(root).expect("remove companion product fixture");
     }
 
     fn two_file_metainfo() -> Vec<u8> {
