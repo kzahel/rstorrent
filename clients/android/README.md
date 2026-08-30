@@ -80,6 +80,9 @@ python3 clients/android/run_bootstrap.py \
   --target avd --avd jstorrent-tablet --storage saf-internal --runs 1 \
   --profile product-hybrid-saf --no-build
 python3 clients/android/run_bootstrap.py \
+  --target avd --avd jstorrent-tablet --storage saf-internal --runs 1 \
+  --profile product-external-intake --no-build
+python3 clients/android/run_bootstrap.py \
   --target motox4 --storage saf-sdcard --runs 3 --profile success
 ```
 
@@ -128,6 +131,19 @@ force-stops and restores complete content without peer payload or hash
 requests, Force rechecks both integrity lanes, and removes the SAF namespace
 exactly. It records storage-handle, pending-operation, and process-descriptor
 high-water marks under the existing bounds.
+
+The `product-external-intake` profile installs the androidTest fixture package
+on a fresh API 34 AVD and exercises implicit cold/warm `magnet:` delivery plus
+warm cross-package `content://` delivery under temporary grants. It covers
+confirmation, start-disabled and start-enabled adds, exact duplicate
+coalescing, AlreadyPresent, empty/oversized/invalid input, provider denial and
+failure, explicit retry, cancellation, timeout, directory rejection, generic
+MIME fallback, and an exact controlled transfer. A throttled unknown-length
+64 MiB stream records source-buffer, Java/native/process RSS, descriptor, and
+SAF-handle high waters. The profile scans product diagnostics and app-private
+files for source leakage, proves settled descriptors and temporary-grant
+revocation, and removes every app, provider, transport, grant, and payload
+artifact.
 
 Every device command is addressed through the exact verified target
 controller. The runner owns and removes its reverse port, controlled seed,

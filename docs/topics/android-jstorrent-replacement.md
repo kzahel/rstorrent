@@ -102,6 +102,8 @@ The Rust Android product already provides the hard architectural foundation:
 - in-application magnet and local `.torrent` intake, queue and torrent
   actions, High/Normal/Skip file intent, completed-file open, and guarded
   keep/delete removal;
+- bounded external `magnet:` and cross-package `content://` `.torrent`
+  activation through the same activity, service, root, and application owner;
 - retained multi-root SAF selection, current/default future binding,
   grant-loss repair, direct storage, restart/recheck, upload, and exact
   cleanup;
@@ -150,13 +152,15 @@ daemon architecture.
   application owner. Choose and prove an extension-first, app-first-compatible,
   or coordinated rollout that leaves no installed cohort stranded. Do not add
   a permanent raw I/O compatibility daemon merely to avoid rollout planning.
-- [ ] **JAR-006 — Add external Android torrent intake.** Register and bound
+- [x] **JAR-006 — Add external Android torrent intake.** Completed Tactical
+  [`197`](../tactical/197-android-external-torrent-intake.md) registers and bounds
   `magnet:`, `application/x-bittorrent`, and supported `content://` `.torrent`
   delivery through one exported intake owner. Reuse the application add flow
   for cold, warm, duplicate, malformed, oversized, canceled, and storage-root
-  cases; do not create a second engine or profile owner. Active Tactical
-  [`197`](../tactical/197-android-external-torrent-intake.md) owns the exact
-  filters, ephemeral intake state, hostile-provider bounds, and AVD evidence.
+  cases without creating a second engine or profile owner. JVM, Compose,
+  manifest, connected API 34, hostile-provider, controlled-transfer, resource,
+  privacy, grant-revocation, and cleanup evidence pass under the exact filters
+  and ephemeral service-owned queue.
 - [ ] **JAR-007 — Add background completion and actionable failure
   notifications.** This is also beta gate `AND-009`. Ready Tactical
   [`198`](../tactical/198-android-completion-and-attention-notifications.md)
@@ -407,10 +411,10 @@ live run.
    It fixes the candidate identity, migration/reset boundary, payload safety,
    signing inputs, and exact old-version fixture before code changes make
    accidental compatibility promises.
-2. Execute active Tactical
-   [`197`](../tactical/197-android-external-torrent-intake.md) for `JAR-006`
-   external Android torrent intake. It is small, user-visible, and independent
-   of the larger policy work.
+2. Preserve completed Tactical
+   [`197`](../tactical/197-android-external-torrent-intake.md) as the `JAR-006`
+   external-intake regression gate while the provisional product identity is
+   replaced later under `JAR-004`.
 3. Execute ready Tactical
    [`198`](../tactical/198-android-completion-and-attention-notifications.md)
    for `JAR-007` completion/failure notifications, companion-aware permission

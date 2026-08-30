@@ -929,10 +929,13 @@ streaming demand, expiry, and revocation remain unchanged.
   and concurrent-admission state plus live Peers, Files, Trackers, Pieces,
   Disk, Swarm, Logs, Speed, and dual-family DHT projections. Search/plugins,
   playback, dynamic network policy, and tracker mutation remain explicitly
-  unavailable rather than discarded or simulated. External Android
-  `magnet:`/`.torrent` activation remains absent; active Tactical
-  [`197`](../tactical/197-android-external-torrent-intake.md) owns that bounded
-  platform intake without changing the in-application Add capability. Manual
+  unavailable rather than discarded or simulated. Completed Tactical
+  [`197`](../tactical/197-android-external-torrent-intake.md) adds bounded
+  external `magnet:` and cross-package `content://` `.torrent` activation to
+  the one `singleTop` activity and service-owned application flow. Generic
+  Compose confirmation retains root/start choice, while hostile providers,
+  temporary grants, cancellation, timeout, duplicates, resource bounds, and
+  exact cleanup pass on API 34 without changing the generated contract. Manual
   session and torrent peer-transfer limits are implemented. Completed
   Tactical `175` carries
   exact retained Swarm payload download/upload totals through the generated

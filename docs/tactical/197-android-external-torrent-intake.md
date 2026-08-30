@@ -1,9 +1,9 @@
 # Tactical 197: Android External Torrent Intake
 
-Status: **Active as of 2026-08-30.** Maintainer direction selected external
-Android `magnet:` and `.torrent` activation as the first bounded feature slice
-from the Android JSTorrent replacement-readiness campaign. Implementation is
-authorized; no release action has occurred.
+Status: **Complete as of 2026-08-30.** External Android `magnet:` and
+`.torrent` activation now passes deterministic, package, connected API 34,
+hostile-provider, controlled-transfer, resource, privacy, grant-revocation,
+and cleanup gates. No release action occurred.
 
 Topics: `android-jstorrent-replacement`, `client-surfaces`,
 `capability-readiness`
@@ -302,18 +302,18 @@ received
             -> submitting
                  -> succeeded
                  -> duplicate
-                 -> retryable_failure -> presented
+                 -> retryable_failure -> submitting
                  -> terminal_failure
 ```
 
-Only `queued`, `presented`, `awaiting_root`, `submitting`, and one retryable
-failure retain a descriptor. `rejected`, `cancelled`, both successful
-outcomes, and terminal failure retain no source. A root transition changes
-presentation eligibility, not source identity. Activity recreation attaches
-to the service-owned current state and cannot enqueue the same launch intent
-again. Process/service death drops unconfirmed ephemeral state; the system may
-redeliver the original launch intent, but RSTorrent does not persist a stale
-URI or silently auto-submit it.
+Only transient metadata `received`, `queued`, `presented`, `awaiting_root`,
+`submitting`, and one retryable failure retain a descriptor. `rejected`,
+`cancelled`, both successful outcomes, and terminal failure retain no source.
+A root transition changes presentation eligibility, not source identity.
+Activity recreation attaches to the service-owned current state and cannot
+enqueue the same launch intent again. Process/service death drops unconfirmed
+ephemeral state; the system may redeliver the original launch intent, but
+RSTorrent does not persist a stale URI or silently auto-submit it.
 
 ## Ownership, Tasks, Cancellation, And Dependency Direction
 
@@ -472,6 +472,109 @@ production extension, or external publication is required.
 No web/TypeScript generation or test is required unless implementation
 changes the generated application contract, which this tactical forbids
 without escalation.
+
+## Completion Evidence
+
+Implementation landed in these commits:
+
+- `f9852e9` — activate the bounded tactical;
+- `fc3763c` — add the classifier, pure intake controller, bounded reader, and
+  JVM tests;
+- `0a2f87b` — add exact manifest/activity/service/Compose integration;
+- `4c58c62` — add package-resolution, lifecycle, Compose, and hostile-provider
+  platform fixtures;
+- `baf00cd` — make retry exhaustion a distinct terminal controller result;
+- `54b012b` — add the controlled API 34 external-intake profile;
+- `89009b2` — add implicit cold/warm magnet and near-limit resource/privacy
+  evidence; and
+- `ab97f9f` — stabilize real activity-lifecycle and dialog-scoped connected
+  instrumentation.
+
+The implementation is Android-local. The principal production owners are
+`ExternalTorrentIntake.kt`, `BoundedTorrentSourceReader.kt`, `MainActivity.kt`,
+`ProductEngineService.kt`, `ProductState.kt`, `ProductApp.kt`, and the exact
+filters in `app/src/main/AndroidManifest.xml`. Unit tests cover classification,
+queue/state/retry/redaction, source limits, closure, cancellation, timeout, and
+buffer ownership. Instrumentation covers real package resolution, cold/warm
+activity delivery, recreation, generic Compose confirmation, root action,
+start choice, retry/cancel callbacks, and source redaction. The test APK owns
+an unexported temporary-grant provider for valid, empty, known/unknown
+oversized, near-limit, denied, delayed, failing, directory, and generic-MIME
+cases.
+
+The merged debug manifest was inspected with:
+
+```bash
+apkanalyzer manifest print \
+  clients/android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+It contains one exported `singleTop` `MainActivity`, separate
+`DEFAULT`/`BROWSABLE` filters for `magnet`, exact
+`application/x-bittorrent` plus `content`, and `content` paths ending in
+`.torrent`. Both engine services remain unexported. Instrumented
+`PackageManager` resolution accepts only those three declared shapes and
+rejects file, HTTP, HTTPS, octet-stream-only, and `ACTION_SEND` inputs.
+
+The proportional build and deterministic gates passed on 2026-08-30:
+
+```bash
+source ~/.profile
+cargo fmt --all -- --check
+cargo clippy --workspace -- -D warnings
+cargo test --workspace
+(
+  cd clients/android
+  ./gradlew lintDebug testDebugUnitTest assembleDebug assembleDebugAndroidTest
+)
+./clients/android/build.sh
+(
+  cd clients/android
+  ANDROID_SERIAL=emulator-5554 ./gradlew connectedDebugAndroidTest
+)
+```
+
+The full Rust formatting, warning-denied Clippy, workspace unit/integration,
+and doc-test baseline passed. The dual-ABI build packaged `x86_64` and
+`arm64-v8a`. The connected suite ran 10 tests on the explicitly selected
+`jstorrent-tablet` API 34 arm64 AVD and passed. The first connected run exposed
+an `ActivityScenario`
+pre-create tracking limitation after the real activity had displayed and an
+ambiguous duplicate **Select folder** test selector; framework lifecycle
+callbacks and dialog-scoped semantics retained the intended assertions, and
+the clean repeat passed all 10 tests. No Rust/UniFFI/generated application
+contract changed, so web generation and tests were inapplicable.
+
+The controlled installed-product command was:
+
+```bash
+python3 clients/android/run_bootstrap.py \
+  --target avd --avd jstorrent-tablet --storage saf-internal --runs 1 \
+  --profile product-external-intake --no-build
+```
+
+The fresh AVD identified itself as API 34, `arm64-v8a`, model
+`sdk_gphone64_arm64`, fingerprint
+`google/sdk_gphone64_arm64/emu64a:14/UE1A.230829.050/12077443:userdebug/dev-keys`.
+The profile passed implicit cold magnet presentation, warm exact coalescing,
+warm cross-package content, start-disabled `PAUSED`, typed AlreadyPresent,
+start-enabled exact transfer, empty/oversized/invalid terminal failures,
+permission/provider retry then terminal, delayed cancellation, timeout then
+explicit retry and exact transfer, directory/generic rejection, safe-name
+generic acceptance, and exact torrent/root cleanup. The controlled v1 payload
+completed all five pieces and every final non-padding file matched its expected
+SHA-1.
+
+The unknown-length 64 MiB provider read recorded 100,663,296 bytes peak
+source-buffer ownership, below the two-source-cap-plus-buffer bound. AVD
+baseline/high Java RSS was 35,108/100,840 KiB, native RSS was
+20,772/88,020 KiB, and process RSS was 204,564/348,376 KiB. Process descriptor
+baseline/high/settled was 142/168/142. Direct SAF owned/pending handle highs
+were 6/3 under the existing limit of 40. Product-log and app-private-file scans
+found none of the sentinel magnet, query token, or provider authority. The
+external grant was absent after force-stop; application/test-package uninstall,
+reverse transports, provider pipes, SAF child, staging/part/final paths, host
+fixture, and fresh AVD cleanup all passed.
 
 ## Documentation And Completion Updates
 

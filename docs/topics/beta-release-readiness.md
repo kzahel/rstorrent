@@ -144,6 +144,14 @@ extension-triggered SAF picker and retained-root semantics so changing the
 current root for new downloads does not discard grants used by older torrents.
 It does not authorize store publication or turn other missing Android features
 into implicit scope.
+Completed Tactical
+[`197`](../tactical/197-android-external-torrent-intake.md) now closes the
+independent Android beta usability gap for external `magnet:` and local
+`.torrent` activation. Exact manifest/runtime filters, generic confirmation,
+the shared root/start/add flow, hostile-provider bounds, connected API 34
+instrumentation, controlled transfer, privacy, temporary-grant revocation,
+and cleanup pass. This does not select the production JSTorrent identity,
+publish a store artifact, or close notification/network/lifecycle gates.
 
 ## Scope And Release Definition
 
@@ -637,6 +645,16 @@ disposition of current JSTorrent Android features.
   the required default-off unmetered cost policy, including fail-closed
   startup, complete live BitTorrent egress convergence, automatic intent-
   preserving recovery, AVD/physical evidence, and an explicit non-VPN claim.
+- [x] **AND-011 — Handle external magnets and torrent files.** Completed
+  Tactical `197` makes the installed provisional Android product a narrow
+  `ACTION_VIEW` handler for `magnet:`, exact BitTorrent-MIME `content://`, and
+  supported `.torrent` content paths. Cold/warm delivery converges through one
+  `singleTop` activity and service owner with generic root/start confirmation,
+  one bounded ephemeral queue/read job, duplicate and retry-once semantics,
+  temporary grants, privacy-preserving diagnostics, and no generated-contract
+  change. JVM, lint/package, connected API 34, hostile-provider, exact-transfer,
+  resource, revocation, and cleanup gates pass. Signed package/store handler
+  declarations remain owned by `AND-003` through `AND-005`.
 
 ## iOS/iPadOS Beta Checklist
 
