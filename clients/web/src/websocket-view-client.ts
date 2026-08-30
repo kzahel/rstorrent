@@ -51,6 +51,20 @@ export type ApplicationWebSocketFactory = (
   url: string,
 ) => ApplicationWebSocket;
 
+export interface ApplicationWebSocketPlatformClient {
+  chooseDownloadRoot(
+    request: ChooseDownloadRootRequest,
+    signal?: AbortSignal,
+  ): Promise<StorageRootSnapshot | null>;
+  prepareMediaOpen?(): MediaOpenTarget;
+  close(): Promise<void>;
+}
+
+export interface ApplicationWebSocketClientOptions {
+  readonly connectPath?: string;
+  readonly platformClient?: ApplicationWebSocketPlatformClient;
+}
+
 interface PendingCorrelation {
   readonly resolve: (frame: ApplicationServerFrame) => void;
   readonly reject: (error: Error) => void;
@@ -71,7 +85,7 @@ export class WebSocketApplicationViewClient
 {
   private readonly clientInstanceId: string;
   private readonly socketUrl: string;
-  private readonly platformClient: HttpApplicationClient;
+  private readonly platformClient: ApplicationWebSocketPlatformClient;
   private readonly pending = new Map<string, PendingCorrelation>();
   private readonly streams = new Map<string, WebSocketUpdateStream>();
   private socket: ApplicationWebSocket | undefined;
@@ -92,6 +106,7 @@ export class WebSocketApplicationViewClient
     private readonly socketFactory: ApplicationWebSocketFactory = (url) =>
       new WebSocket(url),
     clientInstanceId: string = generateClientInstanceId(),
+    options: ApplicationWebSocketClientOptions = {},
   ) {
     if (token !== null && (token.length === 0 || token.length > 128)) {
       throw new Error("gateway token must be 1..=128 characters");
@@ -102,21 +117,23 @@ export class WebSocketApplicationViewClient
       );
     }
     this.clientInstanceId = clientInstanceId;
-    const endpoint = new URL("/api/v1/connect", baseUrl);
+    const endpoint = new URL(options.connectPath ?? "/api/v1/connect", baseUrl);
     endpoint.protocol = endpoint.protocol === "https:" ? "wss:" : "ws:";
     endpoint.username = "";
     endpoint.password = "";
     endpoint.search = "";
     endpoint.hash = "";
     this.socketUrl = endpoint.href;
-    this.platformClient = new HttpApplicationClient(
-      baseUrl,
-      token,
-      globalThis.location?.origin ?? new URL(baseUrl).origin,
-      undefined,
-      undefined,
-      clientInstanceId,
-    );
+    this.platformClient =
+      options.platformClient ??
+      new HttpApplicationClient(
+        baseUrl,
+        token,
+        globalThis.location?.origin ?? new URL(baseUrl).origin,
+        undefined,
+        undefined,
+        clientInstanceId,
+      );
   }
 
   public async hello(signal?: AbortSignal): Promise<ApiHello> {
@@ -224,7 +241,14 @@ export class WebSocketApplicationViewClient
   }
 
   public prepareMediaOpen(): MediaOpenTarget {
-    return this.platformClient.prepareMediaOpen();
+    const prepare = this.platformClient.prepareMediaOpen;
+    if (prepare === undefined) {
+      throw new ApplicationViewError(
+        "unsupported_capability",
+        "opening files is unavailable on this connection",
+      );
+    }
+    return prepare.call(this.platformClient);
   }
 
   public async openViewSet(

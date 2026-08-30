@@ -18,6 +18,7 @@ import styles from "./AddTorrentDialog.module.css";
 export interface AddTorrentDialogProps {
   readonly roots: readonly DownloadRoot[];
   readonly defaultRoot: string | null;
+  readonly oneCurrentRoot?: boolean;
   readonly returnFocus: RefObject<HTMLInputElement | null>;
   readonly externalKind?: "magnet" | "torrent_file" | undefined;
   readonly showCrostiniStorageHelp: boolean;
@@ -33,6 +34,7 @@ export interface AddTorrentDialogProps {
 export function AddTorrentDialog({
   roots,
   defaultRoot,
+  oneCurrentRoot = false,
   returnFocus,
   externalKind,
   showCrostiniStorageHelp,
@@ -41,8 +43,13 @@ export function AddTorrentDialog({
   onConfirm,
 }: AddTorrentDialogProps) {
   const availableRoots = useMemo(
-    () => roots.filter((root) => root.availability === "available"),
-    [roots],
+    () =>
+      roots.filter(
+        (root) =>
+          root.availability === "available" &&
+          (!oneCurrentRoot || root.id === defaultRoot),
+      ),
+    [defaultRoot, oneCurrentRoot, roots],
   );
   const preferred = availableRoots.some((root) => root.id === defaultRoot)
     ? defaultRoot
@@ -142,8 +149,9 @@ export function AddTorrentDialog({
             : externalKind === "torrent_file"
               ? "An external .torrent file requested this add. "
               : null}
-          Choose where this torrent will download. This location applies only to
-          this torrent unless you change the default in Settings.
+          {oneCurrentRoot
+            ? "This torrent will use Android's current download folder."
+            : "Choose where this torrent will download. This location applies only to this torrent unless you change the default in Settings."}
         </p>
 
         {showCrostiniStorageHelp ? <CrostiniStorageHelp /> : null}
@@ -152,52 +160,57 @@ export function AddTorrentDialog({
           <legend>Download location</legend>
           {roots.length === 0 ? (
             <p className={styles.empty}>
-              A download folder is required before RSTorrent can add this torrent.
+              A download folder is required before RSTorrent can add this
+              torrent.
             </p>
           ) : (
-            roots.map((root) => {
-              const performance = showCrostiniStorageHelp
-                ? describeCrostiniStoragePath(root.path)
-                : null;
-              return (
-                <div
-                  key={root.id}
-                  className={styles.location}
-                  data-availability={root.availability}
-                >
-                  <label>
-                    <input
-                      type="radio"
-                      name="download-root"
-                      value={root.id}
-                      checked={selectedRoot === root.id}
-                      disabled={root.availability !== "available"}
-                      onChange={() => setSelectedRoot(root.id)}
-                    />
-                    <span>
-                      <strong>{root.label}</strong>
-                      <small>{root.path ?? "Location is not available"}</small>
-                      {performance === null ? null : (
-                        <small className={styles.performance}>
-                          {performance}
-                        </small>
-                      )}
-                    </span>
-                  </label>
-                  {root.availability === "unavailable" ? (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void chooseFolder(root.id)}
-                    >
-                      {choosingRoot === root.id ? "Repairing…" : "Repair…"}
-                    </button>
-                  ) : root.id === defaultRoot ? (
-                    <span className={styles.defaultBadge}>Default</span>
-                  ) : null}
-                </div>
-              );
-            })
+            roots
+              .filter((root) => !oneCurrentRoot || root.id === defaultRoot)
+              .map((root) => {
+                const performance = showCrostiniStorageHelp
+                  ? describeCrostiniStoragePath(root.path)
+                  : null;
+                return (
+                  <div
+                    key={root.id}
+                    className={styles.location}
+                    data-availability={root.availability}
+                  >
+                    <label>
+                      <input
+                        type="radio"
+                        name="download-root"
+                        value={root.id}
+                        checked={selectedRoot === root.id}
+                        disabled={root.availability !== "available"}
+                        onChange={() => setSelectedRoot(root.id)}
+                      />
+                      <span>
+                        <strong>{root.label}</strong>
+                        <small>{root.path ?? "Location is not available"}</small>
+                        {performance === null ? null : (
+                          <small className={styles.performance}>
+                            {performance}
+                          </small>
+                        )}
+                      </span>
+                    </label>
+                    {root.availability === "unavailable" ? (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void chooseFolder(root.id)}
+                      >
+                        {choosingRoot === root.id ? "Repairing…" : "Repair…"}
+                      </button>
+                    ) : root.id === defaultRoot ? (
+                      <span className={styles.defaultBadge}>
+                        {oneCurrentRoot ? "Current" : "Default"}
+                      </span>
+                    ) : null}
+                  </div>
+                );
+              })
           )}
           <button
             className={styles.choose}
@@ -226,18 +239,24 @@ export function AddTorrentDialog({
           </label>
         </section>
 
-        <label className={styles.preference}>
-          <input
-            type="checkbox"
-            checked={dontShowAgain}
-            disabled={busy}
-            onChange={(event) => setDontShowAgain(event.currentTarget.checked)}
-          />
-          Don’t show these options again when a usable default is available
-        </label>
+        {oneCurrentRoot ? null : (
+          <label className={styles.preference}>
+            <input
+              type="checkbox"
+              checked={dontShowAgain}
+              disabled={busy}
+              onChange={(event) =>
+                setDontShowAgain(event.currentTarget.checked)
+              }
+            />
+            Don’t show these options again when a usable default is available
+          </label>
+        )}
 
         {error === "" ? null : (
-          <p className={styles.error} role="alert">{error}</p>
+          <p className={styles.error} role="alert">
+            {error}
+          </p>
         )}
         <div className={styles.actions}>
           <button

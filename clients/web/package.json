@@ -7,6 +7,7 @@
   "scripts": {
     "prebuild": "npm run generate:validators",
     "build": "vite build && npm run check:csp",
+    "build:companion": "npm run generate:validators && vite build --mode companion && npm run check:csp",
     "build:remote": "npm run generate:validators && npm run build:remote-wasm && vite build --mode remote && node scripts/finalize-remote-dist.mjs && npm run check:csp",
     "build:remote-wasm": "node scripts/build-remote-wasm.mjs",
     "check:csp": "node scripts/check-csp-safe-dist.mjs",

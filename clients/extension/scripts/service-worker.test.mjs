@@ -28,6 +28,9 @@ globalThis.chrome = {
       nativeRequest = { host, request };
       callback(nativeResponse(request));
     },
+    getURL(path) {
+      return `chrome-extension://gcgoepclopkgijmclmlheafaglmbjlcc/${path}`;
+    },
   },
   storage: {
     session: {
@@ -184,6 +187,40 @@ test("warm popup action creates the fixed UI tab without probing the backend", a
   assert.equal(response.result.status, "opened");
   assert.equal(tabs.get(100).url, "http://penguin.linux.test:3030/");
   assert.equal(stored.crostiniUiTabId, 100);
+});
+
+test("Android action attempts the fixed launch and opens one packaged React tab", async () => {
+  const response = await sendInternal({ type: "androidBootstrap", op: "open" });
+
+  assert.deepEqual(response, {
+    ok: true,
+    result: {
+      kind: "android_ui",
+      status: "opened",
+      launchRequested: true,
+    },
+  });
+  assert.equal(tabs.get(100).url, "rstorrent://chromeos-companion");
+  assert.equal(
+    tabs.get(101).url,
+    "chrome-extension://gcgoepclopkgijmclmlheafaglmbjlcc/companion/companion.html",
+  );
+  assert.equal(stored.androidUiTabId, 101);
+});
+
+test("repeated Android action focuses the one visible application tab", async () => {
+  stored.androidUiTabId = 77;
+  tabs.set(77, {
+    id: 77,
+    windowId: 5,
+    url: "chrome-extension://gcgoepclopkgijmclmlheafaglmbjlcc/companion/companion.html",
+  });
+
+  const response = await sendInternal({ type: "androidBootstrap", op: "open" });
+
+  assert.equal(response.result.status, "focused");
+  assert.equal(tabs.get(77).active, true);
+  assert.equal(stored.androidUiTabId, 77);
 });
 
 test("external messages fail closed for URL and shape drift", () => {

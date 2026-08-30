@@ -9,6 +9,9 @@ const launchButton = document.querySelector("#launch");
 const linuxButton = document.querySelector("#launch-linux");
 const linuxHelpButton = document.querySelector("#linux-help");
 const linuxStatus = document.querySelector("#linux-status");
+const androidButton = document.querySelector("#connect-android");
+const androidStatus = document.querySelector("#android-status");
+const ANDROID_HOST_PERMISSION = "http://100.115.92.2/*";
 
 function setStatus(kind, title, detail) {
   statusDot.className = `status-dot ${kind}`;
@@ -90,6 +93,34 @@ linuxButton.addEventListener("click", async () => {
 
 linuxHelpButton.addEventListener("click", () => {
   chrome.tabs.create({ url: chrome.runtime.getURL("crostini/setup.html") });
+});
+
+androidButton.addEventListener("click", async () => {
+  androidButton.disabled = true;
+  androidStatus.textContent = "Requesting access to the Android service…";
+  try {
+    const granted = await chrome.permissions.request({
+      origins: [ANDROID_HOST_PERMISSION],
+    });
+    if (!granted) {
+      androidStatus.textContent =
+        "Android connection access was not granted. No local service was contacted.";
+      return;
+    }
+    const response = await chrome.runtime.sendMessage({
+      type: "androidBootstrap",
+      op: "open",
+    });
+    if (!response?.ok) {
+      throw new Error(response?.error?.message || "Chrome could not start the Android flow.");
+    }
+    androidStatus.textContent =
+      "Launch requested. ChromeOS may ask which Android app to open; continue in the RSTorrent tab.";
+  } catch (error) {
+    androidStatus.textContent = error instanceof Error ? error.message : String(error);
+  } finally {
+    androidButton.disabled = false;
+  }
 });
 
 function requestCrostini() {

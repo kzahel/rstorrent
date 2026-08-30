@@ -44,6 +44,7 @@ export interface SettingsDialogProps {
   readonly clientSettings: ClientSettingsRuntimeView;
   readonly downloadsManageable: boolean;
   readonly showCrostiniStorageHelp: boolean;
+  readonly oneCurrentRoot?: boolean;
   readonly clientSettingsManageable: boolean;
   readonly notifications?: DesktopNotifications | undefined;
   readonly power?: DesktopPower | undefined;
@@ -75,6 +76,7 @@ export function SettingsDialog({
   clientSettings,
   downloadsManageable,
   showCrostiniStorageHelp,
+  oneCurrentRoot = false,
   clientSettingsManageable,
   notifications,
   power,
@@ -253,6 +255,7 @@ export function SettingsDialog({
                 storage={storage}
                 manageable={downloadsManageable}
                 showCrostiniStorageHelp={showCrostiniStorageHelp}
+                oneCurrentRoot={oneCurrentRoot}
                 onChooseFolder={onChooseFolder}
                 onDefaultRootChange={onDefaultRootChange}
                 onShowAddOptionsChange={onShowAddOptionsChange}

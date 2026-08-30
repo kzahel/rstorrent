@@ -77,6 +77,7 @@ const LOGS_VIEW_ID = "logs";
 
 export interface LiveApplicationOptions extends ViewControllerOptions {
   readonly initialViews?: DesiredInspectionViews;
+  readonly storagePolicy?: "portable" | "one_current_root";
 }
 
 export class LiveApplication implements InspectionApplication {
@@ -106,6 +107,7 @@ export class LiveApplication implements InspectionApplication {
   private constructor(
     private readonly client: ApplicationViewClient,
     initialViews: DesiredInspectionViews,
+    private readonly storagePolicy: "portable" | "one_current_root",
   ) {
     this.desired = initialViews;
     this.snapshot = emptyLiveSnapshot(initialViews, "offline");
@@ -122,7 +124,11 @@ export class LiveApplication implements InspectionApplication {
       logCapture: null,
       speed: null,
     };
-    const application = new LiveApplication(client, desired);
+    const application = new LiveApplication(
+      client,
+      desired,
+      options.storagePolicy ?? "portable",
+    );
     application.hello = await client.hello();
     const specs = application.viewSpecs(desired);
     application.controller = await ViewController.open(
@@ -223,7 +229,10 @@ export class LiveApplication implements InspectionApplication {
           storage: {
             ...this.snapshot.storage,
             roots: [...roots, mapped],
-            defaultRoot: this.snapshot.storage.defaultRoot ?? mapped.id,
+            defaultRoot:
+              this.storagePolicy === "one_current_root"
+                ? mapped.id
+                : (this.snapshot.storage.defaultRoot ?? mapped.id),
           },
         };
         this.emit({ type: "snapshot", snapshot: this.snapshot });

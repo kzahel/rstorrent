@@ -11,6 +11,7 @@ interface DownloadSettingsSectionProps {
   readonly storage: DownloadStorageSettings;
   readonly manageable: boolean;
   readonly showCrostiniStorageHelp: boolean;
+  readonly oneCurrentRoot?: boolean;
   readonly onChooseFolder: (repairRoot?: string) => Promise<DownloadRoot | null>;
   readonly onDefaultRootChange: (rootId: string) => Promise<void>;
   readonly onShowAddOptionsChange: (show: boolean) => Promise<void>;
@@ -21,6 +22,7 @@ export function DownloadSettingsSection({
   storage,
   manageable,
   showCrostiniStorageHelp,
+  oneCurrentRoot = false,
   onChooseFolder,
   onDefaultRootChange,
   onShowAddOptionsChange,
@@ -56,8 +58,9 @@ export function DownloadSettingsSection({
           <div className={styles.settingHeading}>
             <strong>Download folders</strong>
             <span>
-              The default applies to future torrents only. Existing torrents
-              stay attached to their selected folder.
+              {oneCurrentRoot
+                ? "The current folder applies to future torrents only. Existing torrents stay attached to their earlier folder."
+                : "The default applies to future torrents only. Existing torrents stay attached to their selected folder."}
             </span>
           </div>
           {showCrostiniStorageHelp ? <CrostiniStorageHelp /> : null}
@@ -83,7 +86,9 @@ export function DownloadSettingsSection({
                       <small>
                         {root.availability === "available"
                           ? root.id === storage.defaultRoot
-                            ? "Default download folder"
+                            ? oneCurrentRoot
+                              ? "Current download folder"
+                              : "Default download folder"
                             : "Available"
                           : "Unavailable — repair required"}
                       </small>
@@ -128,26 +133,28 @@ export function DownloadSettingsSection({
                             )
                           }
                         >
-                          Make default
+                          {oneCurrentRoot ? "Make current" : "Make default"}
                         </button>
                       ) : null}
-                      <button
-                        type="button"
-                        disabled={pendingAction !== null}
-                        onClick={() =>
-                          void runStorageAction(
-                            `remove-${root.id}`,
-                            async () => {
-                              await onRemoveRoot(root.id);
-                              return `${root.label} removed`;
-                            },
-                          )
-                        }
-                      >
-                        {pendingAction === `remove-${root.id}`
-                          ? "Removing…"
-                          : "Remove"}
-                      </button>
+                      {root.id === storage.defaultRoot && oneCurrentRoot ? null : (
+                        <button
+                          type="button"
+                          disabled={pendingAction !== null}
+                          onClick={() =>
+                            void runStorageAction(
+                              `remove-${root.id}`,
+                              async () => {
+                                await onRemoveRoot(root.id);
+                                return `${root.label} removed`;
+                              },
+                            )
+                          }
+                        >
+                          {pendingAction === `remove-${root.id}`
+                            ? "Removing…"
+                            : "Remove"}
+                        </button>
+                      )}
                     </div>
                   </article>
                 );
@@ -169,26 +176,30 @@ export function DownloadSettingsSection({
           >
             {pendingAction === "add" ? "Choosing…" : "Add folder…"}
           </button>
-          <label className={styles.preference}>
-            <input
-              type="checkbox"
-              checked={storage.showAddOptions}
-              disabled={pendingAction !== null}
-              onChange={(event) => {
-                const show = event.currentTarget.checked;
-                void runStorageAction("preference", async () => {
-                  await onShowAddOptionsChange(show);
-                  return show
-                    ? "Add options will be shown"
-                    : "The usable default will be used automatically";
-                });
-              }}
-            />
-            <span>
-              <strong>Show options when adding torrents</strong>
-              <small>Options are always shown when no usable default exists.</small>
-            </span>
-          </label>
+          {oneCurrentRoot ? null : (
+            <label className={styles.preference}>
+              <input
+                type="checkbox"
+                checked={storage.showAddOptions}
+                disabled={pendingAction !== null}
+                onChange={(event) => {
+                  const show = event.currentTarget.checked;
+                  void runStorageAction("preference", async () => {
+                    await onShowAddOptionsChange(show);
+                    return show
+                      ? "Add options will be shown"
+                      : "The usable default will be used automatically";
+                  });
+                }}
+              />
+              <span>
+                <strong>Show options when adding torrents</strong>
+                <small>
+                  Options are always shown when no usable default exists.
+                </small>
+              </span>
+            </label>
+          )}
           {storageStatus === "" ? null : (
             <output className={styles.storageStatus} aria-live="polite">
               {storageStatus}

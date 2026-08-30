@@ -4,6 +4,9 @@ const CROSTINI_ORIGIN = "http://penguin.linux.test:3030";
 const CROSTINI_ROOT = `${CROSTINI_ORIGIN}/`;
 const CROSTINI_LAUNCH_URL = `${CROSTINI_ORIGIN}/launch-chromeos`;
 const CROSTINI_TAB_KEY = "crostiniUiTabId";
+const ANDROID_LAUNCH_URL = "rstorrent://chromeos-companion";
+const ANDROID_PAGE = "companion/companion.html";
+const ANDROID_TAB_KEY = "androidUiTabId";
 
 function sendNativeOperation(op) {
   const request = {
@@ -50,6 +53,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     focusOrOpenCrostiniTab().then(sendResponse);
     return true;
   }
+  if (message?.type === "androidBootstrap" && message.op === "open") {
+    launchAndOpenAndroid().then(sendResponse);
+    return true;
+  }
   return false;
 });
 
@@ -67,7 +74,58 @@ chrome.tabs.onRemoved.addListener((tabId) => {
       chrome.storage.session.remove(CROSTINI_TAB_KEY);
     }
   });
+  readRememberedTab(ANDROID_TAB_KEY).then((remembered) => {
+    if (remembered === tabId) {
+      chrome.storage.session.remove(ANDROID_TAB_KEY);
+    }
+  });
 });
+
+async function launchAndOpenAndroid() {
+  let launchRequested = false;
+  try {
+    await chrome.tabs.create({ url: ANDROID_LAUNCH_URL, active: true });
+    launchRequested = true;
+  } catch {
+    // ChromeOS may reject or defer the custom-scheme launch. The visible
+    // companion page keeps probing and explains how to retry.
+  }
+  const tab = await focusOrOpenExtensionTab(ANDROID_TAB_KEY, ANDROID_PAGE);
+  return {
+    ok: true,
+    result: {
+      kind: "android_ui",
+      status: tab,
+      launchRequested,
+    },
+  };
+}
+
+async function readRememberedTab(key) {
+  const stored = await chrome.storage.session.get(key);
+  return Number.isInteger(stored?.[key]) ? stored[key] : null;
+}
+
+async function focusOrOpenExtensionTab(key, relativeUrl) {
+  const remembered = await readRememberedTab(key);
+  if (remembered !== null) {
+    try {
+      await activateTab(remembered);
+      return "focused";
+    } catch {
+      await chrome.storage.session.remove(key);
+    }
+  }
+  const tab = await chrome.tabs.create({
+    url: chrome.runtime.getURL(relativeUrl),
+    active: true,
+  });
+  if (!Number.isInteger(tab.id)) {
+    throw new Error("Chrome could not open the RSTorrent Android page");
+  }
+  await chrome.storage.session.set({ [key]: tab.id });
+  return "opened";
+}
 
 function validCrostiniLaunchMessage(message, sender) {
   if (

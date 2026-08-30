@@ -57,6 +57,7 @@ const DESTINATIONS: readonly {
 ];
 
 export interface AppProps {
+  readonly oneCurrentRoot?: boolean | undefined;
   readonly webAuth?: WebAuthClient | undefined;
   readonly updater?: DesktopUpdater | undefined;
   readonly externalIntake?: DesktopExternalIntake | undefined;
@@ -68,6 +69,7 @@ export interface AppProps {
 }
 
 export function App({
+  oneCurrentRoot,
   webAuth,
   updater,
   externalIntake,
@@ -88,6 +90,7 @@ export function App({
           remoteAccess={remoteAccess}
           accessMode={accessMode}
           hostedProduct={hostedProduct}
+          oneCurrentRoot={oneCurrentRoot}
         />
       </TorrentActionProvider>
     </DesktopExternalIntakeProvider>
@@ -95,6 +98,7 @@ export function App({
 }
 
 function AppContent({
+  oneCurrentRoot,
   webAuth,
   updater,
   notifications,
@@ -399,6 +403,7 @@ function AppContent({
           ) : destination === "transfers" ? (
             <TransfersView
               showCrostiniStorageHelp={hostedProduct === "crostini"}
+              oneCurrentRoot={oneCurrentRoot === true}
             />
           ) : (
             <>
@@ -408,6 +413,7 @@ function AppContent({
               >
                 <TorrentActions
                   showCrostiniStorageHelp={hostedProduct === "crostini"}
+                  oneCurrentRoot={oneCurrentRoot === true}
                 />
                 <div className={styles.tableWrap}>
                   <TorrentTable />
@@ -480,6 +486,7 @@ function AppContent({
           clientSettings={clientSettings}
           downloadsManageable={demo === null}
           showCrostiniStorageHelp={hostedProduct === "crostini"}
+          oneCurrentRoot={oneCurrentRoot === true}
           clientSettingsManageable
           notifications={notifications}
           power={power}

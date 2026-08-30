@@ -2385,6 +2385,87 @@ describe("inspection application", () => {
     expect(within(dialog).getByText(/future torrents only/i)).toBeVisible();
   });
 
+  it("uses only the current Android root and retains older roots in Settings", async () => {
+    const user = userEvent.setup();
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot: liveSnapshot({
+        roots: [
+          downloadRoot("root_a", "Current Downloads"),
+          downloadRoot("root_b", "Earlier Downloads"),
+        ],
+        defaultRoot: "root_a",
+        showAddOptions: true,
+      }),
+    });
+    renderApplication(
+      application,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      true,
+    );
+    const magnet =
+      "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213";
+
+    await user.type(
+      screen.getByRole("textbox", { name: "Magnet link or torrent URL" }),
+      magnet,
+    );
+    await user.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() =>
+      expect(application.commands).toContainEqual({
+        type: "add_magnet",
+        magnet,
+        storageRoot: "root_a",
+        startContent: true,
+      }),
+    );
+    expect(
+      screen.queryByRole("dialog", { name: "Choose download options" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const dialog = screen.getByRole("dialog", { name: "Settings" });
+    await user.click(within(dialog).getByRole("tab", { name: "Downloads" }));
+    expect(within(dialog).getByText("Current download folder")).toBeVisible();
+    expect(
+      within(dialog).queryByRole("checkbox", {
+        name: /Show options when adding torrents/,
+      }),
+    ).not.toBeInTheDocument();
+    const current = within(dialog)
+      .getByText("Current Downloads")
+      .closest("article");
+    const earlier = within(dialog)
+      .getByText("Earlier Downloads")
+      .closest("article");
+    expect(current).not.toBeNull();
+    expect(earlier).not.toBeNull();
+    expect(within(current!).queryByRole("button", { name: "Remove" })).toBeNull();
+    expect(
+      within(earlier!).getByRole("button", { name: "Make current" }),
+    ).toBeEnabled();
+    expect(
+      within(earlier!).getByRole("button", { name: "Remove" }),
+    ).toBeEnabled();
+
+    await user.click(
+      within(earlier!).getByRole("button", { name: "Make current" }),
+    );
+    await waitFor(() =>
+      expect(application.commands).toContainEqual({
+        type: "set_default_download_root",
+        rootId: "root_b",
+      }),
+    );
+  });
+
   it("explains Crostini storage performance and ChromeOS sharing in Add and Settings", async () => {
     const user = userEvent.setup();
     const application = new RecordingLiveApplication({
@@ -3128,6 +3209,7 @@ function renderApplication(
   power?: DesktopPower,
   accessMode?: HostedAccessMode,
   hostedProduct?: HostedProduct,
+  oneCurrentRoot?: boolean,
 ) {
   const controller = new InspectionController(application, appearanceStorage);
   controllers.push(controller);
@@ -3141,6 +3223,7 @@ function renderApplication(
         power={power}
         accessMode={accessMode}
         hostedProduct={hostedProduct}
+        oneCurrentRoot={oneCurrentRoot}
       />
     </InspectionProvider>,
   );

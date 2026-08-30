@@ -15,6 +15,7 @@ const proxy: Record<string, string | ProxyOptions> | undefined =
 
 export default defineConfig(({ mode }) => {
   const remote = mode === "remote";
+  const companion = mode === "companion";
   if (remote) {
     const environment = loadEnv(mode, process.cwd(), "");
     const relay = environment.VITE_RSTORRENT_REMOTE_RELAY_URL;
@@ -31,6 +32,24 @@ export default defineConfig(({ mode }) => {
   return {
     server: { proxy },
     preview: { proxy },
+    ...(companion
+      ? {
+          base: "./",
+          publicDir: false,
+          build: {
+            outDir: "dist/companion",
+            emptyOutDir: true,
+            rollupOptions: {
+              input: resolve(process.cwd(), "companion.html"),
+              output: {
+                entryFileNames: "assets/companion.js",
+                chunkFileNames: "assets/[name].js",
+                assetFileNames: "assets/companion.[ext]",
+              },
+            },
+          },
+        }
+      : {}),
     ...(remote
       ? {
           base: "/remote/",

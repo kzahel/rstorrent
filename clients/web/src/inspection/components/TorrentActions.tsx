@@ -46,10 +46,12 @@ type PendingAdd = PendingMagnetAdd | PendingTorrentFileAdd | PendingExternalAdd;
 
 interface TorrentActionsProps {
   readonly showCrostiniStorageHelp: boolean;
+  readonly oneCurrentRoot?: boolean;
 }
 
 export function TorrentActions({
   showCrostiniStorageHelp,
+  oneCurrentRoot = false,
 }: TorrentActionsProps) {
   const demo = useInspectionStore((state) => state.demo);
   const storage = useInspectionStore((state) => state.storage);
@@ -96,7 +98,10 @@ export function TorrentActions({
       (root) =>
         root.id === storage.defaultRoot && root.availability === "available",
     );
-    if (storage.showAddOptions || defaultRoot === undefined) {
+    if (
+      (!oneCurrentRoot && storage.showAddOptions) ||
+      defaultRoot === undefined
+    ) {
       setPendingAdd({
         type: "magnet",
         magnet: validated.magnet,
@@ -196,7 +201,10 @@ export function TorrentActions({
       (root) =>
         root.id === storage.defaultRoot && root.availability === "available",
     );
-    if (storage.showAddOptions || defaultRoot === undefined) {
+    if (
+      (!oneCurrentRoot && storage.showAddOptions) ||
+      defaultRoot === undefined
+    ) {
       setPendingAdd(source);
       return;
     }
@@ -317,7 +325,10 @@ export function TorrentActions({
       (root) =>
         root.id === storage.defaultRoot && root.availability === "available",
     );
-    if (storage.showAddOptions || defaultRoot === undefined) {
+    if (
+      (!oneCurrentRoot && storage.showAddOptions) ||
+      defaultRoot === undefined
+    ) {
       setPendingAdd(source);
       return;
     }
@@ -454,6 +465,7 @@ export function TorrentActions({
         <AddTorrentDialog
           roots={storage.roots}
           defaultRoot={storage.defaultRoot}
+          oneCurrentRoot={oneCurrentRoot}
           returnFocus={addInputRef}
           externalKind={
             pendingAdd.type === "external"
