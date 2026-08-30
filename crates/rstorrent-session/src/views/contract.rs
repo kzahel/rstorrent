@@ -649,6 +649,7 @@ pub enum DhtLifecycleView {
     BootstrapEmpty,
     Participating,
     Inactive,
+    Suspended,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -778,6 +779,7 @@ pub enum ProgressPhase {
 #[serde(rename_all = "snake_case")]
 pub enum ProgressReason {
     NetworkDisabled,
+    WaitingForUnmeteredNetwork,
     DiscoveringPeers,
     WaitingForDiscovery,
     NoEnabledDiscoverySource,
@@ -897,6 +899,7 @@ pub struct ProgressInputs {
     pub task_active: bool,
     pub stopping: bool,
     pub network_disabled: bool,
+    pub waiting_for_unmetered_network: bool,
     pub discovery_exhausted: bool,
     pub discovery_active: bool,
     pub discovery_retry_scheduled: bool,

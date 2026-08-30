@@ -25,9 +25,10 @@ use rstorrent_gateway::{CompanionPairingOwner, CompanionPlatformOwner};
 use rstorrent_protocol::identity::V1InfoHash;
 use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo};
 use rstorrent_session::{
-    AddTorrentBytesRequest, ApplicationConfig, ApplicationService, ConfiguredStorageRoot,
-    MAX_STORAGE_ROOTS, PlatformRemovalPlan, RequestEnvelope, ResponseEnvelope, StorageRootSnapshot,
-    StorageSettingsSnapshot, SubscriptionSpec, ViewSubscription, ViewUpdate,
+    AddTorrentBytesRequest, ApplicationConfig, ApplicationNetworkPrerequisite, ApplicationService,
+    ConfiguredStorageRoot, MAX_STORAGE_ROOTS, NetworkPrerequisiteHandle, PlatformRemovalPlan,
+    RequestEnvelope, ResponseEnvelope, StorageRootSnapshot, StorageSettingsSnapshot,
+    SubscriptionSpec, ViewSubscription, ViewUpdate,
 };
 use sha1::{Digest, Sha1};
 use tokio::sync::Mutex as AsyncMutex;
@@ -68,6 +69,7 @@ pub struct AndroidApplicationConfig {
     pub platform_storage: bool,
     pub platform_storage_roots: Vec<AndroidPlatformStorageRoot>,
     pub network_policy: AndroidNetworkPolicy,
+    pub initial_network_prerequisite: AndroidApplicationNetworkPrerequisite,
     pub peer_connect_timeout_seconds: u64,
     pub peer_io_timeout_seconds: u64,
 }
@@ -83,6 +85,19 @@ pub enum AndroidNetworkPolicy {
     Offline,
     LoopbackOnly,
     Online,
+}
+
+#[derive(Clone, Copy, Debug, uniffi::Enum)]
+pub enum AndroidApplicationNetworkPrerequisite {
+    Allowed,
+    WaitingForUnmeteredNetwork,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct AndroidNetworkPrerequisiteResult {
+    pub requested_generation: String,
+    pub effective_generation: String,
+    pub allowed: bool,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -161,6 +176,7 @@ impl AndroidClientError {
 #[derive(Debug, uniffi::Object)]
 pub struct AndroidApplicationClient {
     service: Arc<AsyncMutex<ApplicationService>>,
+    network_prerequisite: NetworkPrerequisiteHandle,
     shutdown: AtomicBool,
     platform_storage: Arc<PlatformStorageBroker>,
     companion_pairings: Arc<CompanionPairingOwner>,
@@ -198,12 +214,14 @@ impl AndroidApplicationClient {
         let service = ApplicationService::open(application_config)
             .await
             .map_err(|error| AndroidClientError::message(error.to_string()))?;
+        let network_prerequisite = service.network_prerequisite_handle();
         let service = Arc::new(AsyncMutex::new(service));
         ApplicationService::ensure_maintenance_owner(&service).await;
         let companion_pairings = CompanionPairingOwner::open(&companion_database)
             .map_err(|error| AndroidClientError::message(error.to_string()))?;
         Ok(Arc::new(Self {
             service,
+            network_prerequisite,
             shutdown: AtomicBool::new(false),
             platform_storage,
             companion_pairings,
@@ -234,6 +252,36 @@ impl AndroidApplicationClient {
             .dispatch(request)
             .await
             .map_err(|error| AndroidClientError::message(error.to_string()))
+    }
+
+    pub async fn set_network_prerequisite(
+        &self,
+        prerequisite: AndroidApplicationNetworkPrerequisite,
+    ) -> Result<AndroidNetworkPrerequisiteResult, AndroidClientError> {
+        self.ensure_running()?;
+        let prerequisite = match prerequisite {
+            AndroidApplicationNetworkPrerequisite::Allowed => {
+                ApplicationNetworkPrerequisite::Allowed
+            }
+            AndroidApplicationNetworkPrerequisite::WaitingForUnmeteredNetwork => {
+                ApplicationNetworkPrerequisite::WaitingForUnmeteredNetwork
+            }
+        };
+        let requested = self
+            .network_prerequisite
+            .replace(prerequisite)
+            .map_err(|error| AndroidClientError::message(error.to_string()))?;
+        let mut service = self.service.lock().await;
+        service
+            .reconcile_network_prerequisite()
+            .await
+            .map_err(|error| AndroidClientError::message(error.to_string()))?;
+        let effective = service.effective_network_prerequisite();
+        Ok(AndroidNetworkPrerequisiteResult {
+            requested_generation: requested.generation.to_string(),
+            effective_generation: effective.generation.to_string(),
+            allowed: effective.is_allowed(),
+        })
     }
 
     pub async fn add_torrent_bytes(
@@ -859,6 +907,15 @@ fn validate_application_config(
             Duration::from_secs(config.peer_io_timeout_seconds),
         ),
     );
+    application =
+        application.with_initial_network_prerequisite(match config.initial_network_prerequisite {
+            AndroidApplicationNetworkPrerequisite::Allowed => {
+                ApplicationNetworkPrerequisite::Allowed
+            }
+            AndroidApplicationNetworkPrerequisite::WaitingForUnmeteredNetwork => {
+                ApplicationNetworkPrerequisite::WaitingForUnmeteredNetwork
+            }
+        });
     if network_policy == NetworkPolicy::Online {
         application = application.with_fresh_profile_defaults();
     }
@@ -1983,6 +2040,7 @@ mod tests {
                 label: "Downloads".to_owned(),
             }],
             network_policy: AndroidNetworkPolicy::Online,
+            initial_network_prerequisite: AndroidApplicationNetworkPrerequisite::Allowed,
             peer_connect_timeout_seconds: 15,
             peer_io_timeout_seconds: 60,
         })
@@ -2004,6 +2062,53 @@ mod tests {
             DownloadResourceLimits::ANDROID
         );
         assert_eq!(config.active_download_cap, Some(2));
+        assert_eq!(
+            config.initial_network_prerequisite,
+            ApplicationNetworkPrerequisite::Allowed
+        );
+    }
+
+    #[tokio::test]
+    async fn product_application_converges_live_network_prerequisites() {
+        let root = test_path("application-live-network-prerequisite");
+        let content = root.join("content");
+        fs::create_dir_all(&content).expect("create content root");
+        let client = AndroidApplicationClient::open(AndroidApplicationConfig {
+            profile_root: root.join("profile").display().to_string(),
+            profile_id: "test".to_owned(),
+            storage_root: content.display().to_string(),
+            platform_storage: false,
+            platform_storage_roots: Vec::new(),
+            network_policy: AndroidNetworkPolicy::Offline,
+            initial_network_prerequisite:
+                AndroidApplicationNetworkPrerequisite::WaitingForUnmeteredNetwork,
+            peer_connect_timeout_seconds: 15,
+            peer_io_timeout_seconds: 60,
+        })
+        .await
+        .expect("open initially blocked product application");
+
+        let allowed = client
+            .set_network_prerequisite(AndroidApplicationNetworkPrerequisite::Allowed)
+            .await
+            .expect("allow product network owners");
+        assert!(allowed.allowed);
+        assert_eq!(allowed.requested_generation, allowed.effective_generation);
+        let blocked = client
+            .set_network_prerequisite(
+                AndroidApplicationNetworkPrerequisite::WaitingForUnmeteredNetwork,
+            )
+            .await
+            .expect("block product network owners");
+        assert!(!blocked.allowed);
+        assert_eq!(blocked.requested_generation, blocked.effective_generation);
+
+        client
+            .shutdown()
+            .await
+            .expect("shutdown product application");
+        drop(client);
+        fs::remove_dir_all(root).expect("remove product fixture");
     }
 
     #[tokio::test]
@@ -2019,6 +2124,7 @@ mod tests {
             platform_storage: false,
             platform_storage_roots: Vec::new(),
             network_policy: AndroidNetworkPolicy::Offline,
+            initial_network_prerequisite: AndroidApplicationNetworkPrerequisite::Allowed,
             peer_connect_timeout_seconds: 15,
             peer_io_timeout_seconds: 60,
         })
@@ -2069,6 +2175,7 @@ mod tests {
                 label: "Downloads".to_owned(),
             }],
             network_policy: AndroidNetworkPolicy::Offline,
+            initial_network_prerequisite: AndroidApplicationNetworkPrerequisite::Allowed,
             peer_connect_timeout_seconds: 15,
             peer_io_timeout_seconds: 60,
         })
@@ -2103,6 +2210,7 @@ mod tests {
             platform_storage: false,
             platform_storage_roots: Vec::new(),
             network_policy: AndroidNetworkPolicy::Offline,
+            initial_network_prerequisite: AndroidApplicationNetworkPrerequisite::Allowed,
             peer_connect_timeout_seconds: 15,
             peer_io_timeout_seconds: 60,
         })

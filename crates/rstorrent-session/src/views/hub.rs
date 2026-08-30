@@ -510,7 +510,7 @@ impl ViewHub {
     pub(crate) fn replace_network_runtime_views(
         &self,
         dht: DhtInspectionView,
-        client_settings: ClientSettingsRuntimeView,
+        mut client_settings: ClientSettingsRuntimeView,
     ) -> Result<(), SubscriptionError> {
         {
             let mut hub = self
@@ -519,12 +519,46 @@ impl ViewHub {
                 .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
             let previous_torrents = hub.torrents.clone();
             let previous_client_settings = hub.client_settings.clone();
+            client_settings.application_network =
+                previous_client_settings.application_network.clone();
             hub.client_settings = client_settings;
             hub.client_settings_attempt_generation = None;
             hub.client_settings_mapping_generation = None;
             hub.publish_changes(&previous_torrents, None, Some(&previous_client_settings))?;
         }
         self.publish_dht(dht)
+    }
+
+    pub(crate) fn set_application_network_runtime(
+        &self,
+        runtime: crate::ApplicationNetworkRuntimeView,
+    ) -> Result<(), SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        let previous_torrents = hub.torrents.clone();
+        let previous_client_settings = hub.client_settings.clone();
+        hub.client_settings.application_network = runtime;
+        hub.publish_changes(&previous_torrents, None, Some(&previous_client_settings))
+    }
+
+    pub(crate) fn set_waiting_for_unmetered_network(
+        &self,
+        waiting: bool,
+    ) -> Result<(), SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        let previous = hub.torrents.clone();
+        for model in hub.torrents.values_mut() {
+            model.progress_inputs.waiting_for_unmetered_network = waiting;
+            model.view.progress = assess_progress(&model.snapshot, model.progress_inputs);
+            model.view.operational_state =
+                operational_state(&model.snapshot, model.progress_inputs);
+        }
+        hub.publish_changes(&previous, None, None)
     }
 
     pub(crate) fn begin_client_settings_attempt(

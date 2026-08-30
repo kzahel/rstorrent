@@ -7,6 +7,9 @@ import org.rstorrent.bootstrap.uniffi.SafStorageObjectKind
 import org.rstorrent.session.uniffi.ActivePiece
 import org.rstorrent.session.uniffi.ActivePieceStageView
 import org.rstorrent.session.uniffi.AdvertisedPeerEndpointStatus
+import org.rstorrent.session.uniffi.ApplicationNetworkPrerequisiteView
+import org.rstorrent.session.uniffi.ApplicationNetworkRuntimeState
+import org.rstorrent.session.uniffi.ApplicationNetworkRuntimeView
 import org.rstorrent.session.uniffi.CatalogPageRequest
 import org.rstorrent.session.uniffi.CatalogPageView
 import org.rstorrent.session.uniffi.BandwidthDirectionRuntimeView
@@ -1024,6 +1027,15 @@ class ProductStateReducerTest {
     ): ClientSettingsRuntimeView =
         ClientSettingsRuntimeView(
             configured = configured,
+            applicationNetwork =
+                ApplicationNetworkRuntimeView(
+                    requestedGeneration = "1",
+                    requestedPrerequisite = ApplicationNetworkPrerequisiteView.ALLOWED,
+                    effectiveGeneration = "1",
+                    effectivePrerequisite = ApplicationNetworkPrerequisiteView.ALLOWED,
+                    state = ApplicationNetworkRuntimeState.ALLOWED,
+                    degradedDetail = null,
+                ),
             effectiveListener =
                 EffectiveListenerSettings(
                     listener = ListenerPolicy.Disabled,

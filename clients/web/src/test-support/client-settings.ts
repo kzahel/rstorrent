@@ -19,6 +19,14 @@ export function clientSettingsFixture(): ClientSettings {
 export function clientSettingsRuntimeFixture(): ClientSettingsRuntimeView {
   return {
     configured: clientSettingsFixture(),
+    application_network: {
+      requested_generation: "1",
+      requested_prerequisite: "allowed",
+      effective_generation: "1",
+      effective_prerequisite: "allowed",
+      state: "allowed",
+      degraded_detail: null,
+    },
     effective_listener: {
       listener: { type: "disabled" },
       preferred_listen_port: 6_881,

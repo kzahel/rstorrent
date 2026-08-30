@@ -43,6 +43,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.supervisorScope
@@ -52,6 +53,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import org.rstorrent.bootstrap.uniffi.AndroidApplicationClient
 import org.rstorrent.bootstrap.uniffi.AndroidApplicationConfig
+import org.rstorrent.bootstrap.uniffi.AndroidApplicationNetworkPrerequisite
 import org.rstorrent.bootstrap.uniffi.AndroidCompanionRootRequest
 import org.rstorrent.bootstrap.uniffi.AndroidNetworkPolicy
 import org.rstorrent.bootstrap.uniffi.AndroidPlatformStorageRoot
@@ -153,6 +155,9 @@ class ProductEngineService : Service() {
     private var powerLock: PowerManager.WakeLock? = null
     private lateinit var defaultNetworkObserver: AndroidDefaultNetworkObserver
     private val networkPreferenceMutation = Mutex()
+    private val networkNativeMutation = Mutex()
+    private val networkConvergenceWake = Channel<Unit>(Channel.CONFLATED)
+    private var networkConvergenceJob: Job? = null
     private val externalIntakeController = ExternalIntakeController()
     private val externalIntakeMutation = Mutex()
     private val externalContentMutation = Mutex()
@@ -216,6 +221,7 @@ class ProductEngineService : Service() {
                             ),
                     )
                 }
+                networkConvergenceWake.trySend(Unit)
             }
         val callbackRegistered = defaultNetworkObserver.start()
         val initialNetworkState = defaultNetworkObserver.snapshot()
@@ -249,10 +255,35 @@ class ProductEngineService : Service() {
                                 AndroidPlatformStorageRoot(it.rootId, it.label)
                             },
                             AndroidNetworkPolicy.ONLINE,
+                            desiredNetworkPrerequisite(initialNetworkState),
                             15UL,
                             60UL,
                         ),
                     )
+                networkConvergenceJob =
+                    scope.launch {
+                        for (ignored in networkConvergenceWake) {
+                            val observed = defaultNetworkObserver.snapshot()
+                            runCatching {
+                                applyNativeNetworkPrerequisite(
+                                    desiredNetworkPrerequisite(observed),
+                                )
+                            }.onFailure { error ->
+                                if (error is CancellationException && stopped.get()) return@onFailure
+                                Log.e(TAG, "network prerequisite convergence failed", error)
+                                mutableState.update {
+                                    it.copy(
+                                        network =
+                                            it.network.copy(
+                                                runtimeError =
+                                                    error.message ?: error.toString(),
+                                            ),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                networkConvergenceWake.trySend(Unit)
                 presentationRepository =
                     AndroidPresentationRepository(
                         scope,
@@ -2348,7 +2379,18 @@ class ProductEngineService : Service() {
                 if (stopped.get()) return@withLock
                 val current = mutableState.value.network
                 if (enabled == current.unmeteredNetworksOnly) return@withLock
+                clientReady.await()
+                if (enabled) {
+                    applyNativeNetworkPrerequisite(
+                        AndroidApplicationNetworkPrerequisite.WAITING_FOR_UNMETERED_NETWORK,
+                    )
+                }
                 if (!ProductNetworkPreference.persist(this@ProductEngineService, enabled)) {
+                    if (enabled) {
+                        applyNativeNetworkPrerequisite(
+                            AndroidApplicationNetworkPrerequisite.ALLOWED,
+                        )
+                    }
                     mutableState.update {
                         it.copy(
                             network =
@@ -2360,6 +2402,7 @@ class ProductEngineService : Service() {
                     return@withLock
                 }
                 val updated = defaultNetworkObserver.setUnmeteredNetworksOnly(enabled)
+                applyNativeNetworkPrerequisite(desiredNetworkPrerequisite(updated))
                 mutableState.update {
                     it.copy(
                         network =
@@ -2368,9 +2411,40 @@ class ProductEngineService : Service() {
                                 eligibility = updated.eligibility,
                                 observationRevision = updated.revision,
                                 preferenceError = null,
+                                runtimeError = null,
                             ),
                     )
                 }
+            }
+        }
+    }
+
+    private fun desiredNetworkPrerequisite(
+        state: AndroidDefaultNetworkState,
+    ): AndroidApplicationNetworkPrerequisite =
+        if (
+            state.unmeteredNetworksOnly &&
+                state.eligibility != AndroidNetworkEligibility.UNRESTRICTED
+        ) {
+            AndroidApplicationNetworkPrerequisite.WAITING_FOR_UNMETERED_NETWORK
+        } else {
+            AndroidApplicationNetworkPrerequisite.ALLOWED
+        }
+
+    private suspend fun applyNativeNetworkPrerequisite(
+        prerequisite: AndroidApplicationNetworkPrerequisite,
+    ) {
+        networkNativeMutation.withLock {
+            val result = client.setNetworkPrerequisite(prerequisite)
+            mutableState.update {
+                it.copy(
+                    network =
+                        it.network.copy(
+                            effectiveNetworkAllowed = result.allowed,
+                            effectiveGeneration = result.effectiveGeneration,
+                            runtimeError = null,
+                        ),
+                )
             }
         }
     }
@@ -2928,6 +3002,7 @@ class ProductEngineService : Service() {
             ProductInteractionRegistry.detach()
             interactionLeases.clear()
             initializationJob?.cancelAndJoin()
+            networkConvergenceJob?.cancelAndJoin()
             powerNotificationJob?.cancelAndJoin()
             externalAdmissionCancellationSignal?.cancel()
             externalCancellationSignal?.cancel()

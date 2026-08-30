@@ -1159,6 +1159,56 @@
       ],
       "type": "object"
     },
+    "ApplicationNetworkPrerequisiteView": {
+      "enum": [
+        "allowed",
+        "waiting_for_unmetered_network"
+      ],
+      "type": "string"
+    },
+    "ApplicationNetworkRuntimeState": {
+      "enum": [
+        "allowed",
+        "blocking",
+        "blocked",
+        "starting",
+        "degraded"
+      ],
+      "type": "string"
+    },
+    "ApplicationNetworkRuntimeView": {
+      "properties": {
+        "degraded_detail": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "effective_generation": {
+          "type": "string"
+        },
+        "effective_prerequisite": {
+          "$ref": "#/$defs/ApplicationNetworkPrerequisiteView"
+        },
+        "requested_generation": {
+          "type": "string"
+        },
+        "requested_prerequisite": {
+          "$ref": "#/$defs/ApplicationNetworkPrerequisiteView"
+        },
+        "state": {
+          "$ref": "#/$defs/ApplicationNetworkRuntimeState"
+        }
+      },
+      "required": [
+        "requested_generation",
+        "requested_prerequisite",
+        "effective_generation",
+        "effective_prerequisite",
+        "state"
+      ],
+      "type": "object"
+    },
     "ApplicationServerFrame": {
       "oneOf": [
         {
@@ -1797,6 +1847,9 @@
         "advertised_peer_endpoint": {
           "$ref": "#/$defs/AdvertisedPeerEndpointStatus"
         },
+        "application_network": {
+          "$ref": "#/$defs/ApplicationNetworkRuntimeView"
+        },
         "bandwidth": {
           "$ref": "#/$defs/BandwidthRuntimeView"
         },
@@ -1912,6 +1965,7 @@
       },
       "required": [
         "configured",
+        "application_network",
         "effective_port_mapping",
         "effective_peer_connection_limit",
         "effective_upload_slots",
@@ -2670,7 +2724,8 @@
         "offline",
         "bootstrap_empty",
         "participating",
-        "inactive"
+        "inactive",
+        "suspended"
       ],
       "type": "string"
     },
@@ -5942,6 +5997,7 @@
     "ProgressReason": {
       "enum": [
         "network_disabled",
+        "waiting_for_unmetered_network",
         "discovering_peers",
         "waiting_for_discovery",
         "no_enabled_discovery_source",
@@ -8586,6 +8642,13 @@
                 "active_download_count": 0,
                 "advertised_peer_endpoint": {
                   "type": "unavailable"
+                },
+                "application_network": {
+                  "effective_generation": "1",
+                  "effective_prerequisite": "allowed",
+                  "requested_generation": "1",
+                  "requested_prerequisite": "allowed",
+                  "state": "allowed"
                 },
                 "bandwidth": {
                   "download": {

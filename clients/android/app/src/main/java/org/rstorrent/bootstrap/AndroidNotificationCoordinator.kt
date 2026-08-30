@@ -453,6 +453,16 @@ internal class AndroidNotificationCoordinator(
 internal fun productOngoingNotificationText(product: ProductState): String {
     if (!product.ready && product.error == null) return "Opening profile"
     if (product.error != null) return "RSTorrent needs attention"
+    val networkRuntime = product.clientSettings?.applicationNetwork
+    if (
+        networkRuntime?.requestedPrerequisite ==
+            org.rstorrent.session.uniffi.ApplicationNetworkPrerequisiteView
+                .WAITING_FOR_UNMETERED_NETWORK &&
+        networkRuntime.state !=
+            org.rstorrent.session.uniffi.ApplicationNetworkRuntimeState.ALLOWED
+    ) {
+        return "Waiting for an unmetered network"
+    }
     val downloading = product.torrents.values.count { it.state == TorrentState.DOWNLOADING }
     if (downloading == 1) return "Downloading 1 torrent"
     if (downloading > 1) return "Downloading $downloading torrents"

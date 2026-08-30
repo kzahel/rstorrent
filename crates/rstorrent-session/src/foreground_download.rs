@@ -1211,6 +1211,7 @@ fn checking_phase(phase: crate::CheckingPhaseView) -> &'static str {
 fn progress_reason(reason: ProgressReason) -> &'static str {
     match reason {
         ProgressReason::NetworkDisabled => "network disabled",
+        ProgressReason::WaitingForUnmeteredNetwork => "waiting for unmetered network",
         ProgressReason::DiscoveringPeers => "discovering peers",
         ProgressReason::WaitingForDiscovery => "waiting for peers",
         ProgressReason::NoEnabledDiscoverySource => "no enabled discovery source",

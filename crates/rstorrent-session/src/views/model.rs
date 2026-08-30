@@ -73,11 +73,15 @@ impl DhtInspectionView {
 
     pub(crate) fn suspended(network_policy: rstorrent_engine::NetworkPolicy) -> Self {
         let mut view = Self::inactive();
+        view.lifecycle = DhtLifecycleView::Suspended;
         view.network_policy = match network_policy {
             rstorrent_engine::NetworkPolicy::Offline => DhtNetworkPolicyView::Offline,
             rstorrent_engine::NetworkPolicy::LoopbackOnly => DhtNetworkPolicyView::LoopbackOnly,
             rstorrent_engine::NetworkPolicy::Online => DhtNetworkPolicyView::Online,
         };
+        for family in &mut view.families {
+            family.lifecycle = DhtLifecycleView::Suspended;
+        }
         view
     }
 }
@@ -131,8 +135,35 @@ pub fn assess_progress(snapshot: &TorrentSnapshot, inputs: ProgressInputs) -> Pr
     use ProgressReason::{
         AcquiringMetadata, Complete, DiscoveringPeers, Failed, NeedsRepair, NetworkDisabled,
         NoEnabledDiscoverySource, Paused, PreparingIntegrity, PreparingStorage, TransferringPieces,
-        VerifyingPieces, WaitingForDiscovery, WaitingForStorage,
+        VerifyingPieces, WaitingForDiscovery, WaitingForStorage, WaitingForUnmeteredNetwork,
     };
+
+    if snapshot.state == TorrentState::AwaitingMetadata && inputs.network_disabled {
+        return ProgressAssessment {
+            disposition: Blocked,
+            phase: Discovery,
+            reason: NetworkDisabled,
+            actions: vec![EnableNetwork],
+        };
+    }
+    if inputs.waiting_for_unmetered_network
+        && snapshot.desired_running
+        && !matches!(
+            snapshot.state,
+            TorrentState::Paused
+                | TorrentState::Complete
+                | TorrentState::AwaitingStorage
+                | TorrentState::NeedsRepair
+                | TorrentState::Error
+        )
+    {
+        return ProgressAssessment {
+            disposition: Waiting,
+            phase: phase_for(snapshot),
+            reason: WaitingForUnmeteredNetwork,
+            actions: Vec::new(),
+        };
+    }
 
     match snapshot.state {
         TorrentState::Paused => ProgressAssessment {
@@ -190,12 +221,6 @@ pub fn assess_progress(snapshot: &TorrentSnapshot, inputs: ProgressInputs) -> Pr
                 reason: TransferringPieces,
                 actions: Vec::new(),
             },
-        },
-        TorrentState::AwaitingMetadata if inputs.network_disabled => ProgressAssessment {
-            disposition: Blocked,
-            phase: Discovery,
-            reason: NetworkDisabled,
-            actions: vec![EnableNetwork],
         },
         TorrentState::AwaitingMetadata if inputs.task_active || inputs.discovery_active => {
             ProgressAssessment {

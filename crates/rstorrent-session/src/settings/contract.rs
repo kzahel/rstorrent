@@ -874,6 +874,7 @@ pub struct BandwidthRuntimeView {
 #[serde(deny_unknown_fields)]
 pub struct ClientSettingsRuntimeView {
     pub configured: ClientSettings,
+    pub application_network: ApplicationNetworkRuntimeView,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effective_listener: Option<EffectiveListenerSettings>,
     pub effective_port_mapping: PortMappingPolicy,
@@ -913,6 +914,7 @@ impl Default for ClientSettingsRuntimeView {
     fn default() -> Self {
         let settings = ClientSettings::default();
         Self {
+            application_network: ApplicationNetworkRuntimeView::default(),
             effective_listener: Some(EffectiveListenerSettings::from_settings(&settings)),
             effective_port_mapping: settings.port_mapping,
             effective_peer_connection_limit: settings.peer_connection_limit,
@@ -953,6 +955,7 @@ impl ClientSettingsRuntimeView {
     pub fn fresh_profile_default() -> Self {
         let settings = ClientSettings::fresh_profile_default();
         Self {
+            application_network: ApplicationNetworkRuntimeView::default(),
             effective_listener: Some(EffectiveListenerSettings {
                 listener: ListenerPolicy::Disabled,
                 preferred_listen_port: settings.preferred_listen_port,
@@ -988,6 +991,52 @@ impl ClientSettingsRuntimeView {
             ipv6_pinhole_status: Ipv6PinholeStatus::Disabled,
             advertised_peer_endpoint: AdvertisedPeerEndpointStatus::Unavailable,
             transport_families: Vec::new(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum ApplicationNetworkPrerequisiteView {
+    #[default]
+    Allowed,
+    WaitingForUnmeteredNetwork,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum ApplicationNetworkRuntimeState {
+    #[default]
+    Allowed,
+    Blocking,
+    Blocked,
+    Starting,
+    Degraded,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ApplicationNetworkRuntimeView {
+    pub requested_generation: String,
+    pub requested_prerequisite: ApplicationNetworkPrerequisiteView,
+    pub effective_generation: String,
+    pub effective_prerequisite: ApplicationNetworkPrerequisiteView,
+    pub state: ApplicationNetworkRuntimeState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub degraded_detail: Option<String>,
+}
+
+impl Default for ApplicationNetworkRuntimeView {
+    fn default() -> Self {
+        Self {
+            requested_generation: "1".to_owned(),
+            requested_prerequisite: ApplicationNetworkPrerequisiteView::Allowed,
+            effective_generation: "1".to_owned(),
+            effective_prerequisite: ApplicationNetworkPrerequisiteView::Allowed,
+            state: ApplicationNetworkRuntimeState::Allowed,
+            degraded_detail: None,
         }
     }
 }

@@ -750,6 +750,8 @@ function lifecycleLabel(lifecycle: DhtInspectionView["lifecycle"]): string {
       return "Participating";
     case "inactive":
       return "Inactive";
+    case "suspended":
+      return "Suspended";
   }
 }
 

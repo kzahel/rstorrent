@@ -253,6 +253,7 @@ fn runtime_view_distinguishes_configured_effective_domains_and_observed_facts() 
     };
     let view = ClientSettingsRuntimeView {
         configured: configured.clone(),
+        application_network: Default::default(),
         effective_listener: Some(EffectiveListenerSettings {
             listener: ListenerPolicy::AutomaticLoopback,
             preferred_listen_port: 41_000,

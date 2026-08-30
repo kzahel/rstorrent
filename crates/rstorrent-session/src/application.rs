@@ -253,6 +253,35 @@ fn allocate_application_peer_id() -> Result<[u8; 20], ApplicationError> {
         .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
     Ok(peer_id)
 }
+
+fn prerequisite_view(
+    prerequisite: ApplicationNetworkPrerequisite,
+) -> crate::ApplicationNetworkPrerequisiteView {
+    match prerequisite {
+        ApplicationNetworkPrerequisite::Allowed => {
+            crate::ApplicationNetworkPrerequisiteView::Allowed
+        }
+        ApplicationNetworkPrerequisite::WaitingForUnmeteredNetwork => {
+            crate::ApplicationNetworkPrerequisiteView::WaitingForUnmeteredNetwork
+        }
+    }
+}
+
+fn application_network_runtime_view(
+    requested: NetworkPrerequisiteSnapshot,
+    effective: NetworkPrerequisiteSnapshot,
+    state: crate::ApplicationNetworkRuntimeState,
+    degraded_detail: Option<String>,
+) -> crate::ApplicationNetworkRuntimeView {
+    crate::ApplicationNetworkRuntimeView {
+        requested_generation: requested.generation.to_string(),
+        requested_prerequisite: prerequisite_view(requested.prerequisite),
+        effective_generation: effective.generation.to_string(),
+        effective_prerequisite: prerequisite_view(effective.prerequisite),
+        state,
+        degraded_detail,
+    }
+}
 use crate::views::{
     DhtInspectionView, DurableTorrentViewState, ProgressInputs, SubscriptionError,
     SubscriptionSpec, TorrentActivity, TorrentEtaRuntime, VIEW_SET_REAPER_INTERVAL_MILLIS, ViewHub,
@@ -681,6 +710,18 @@ impl ApplicationService {
             initial_dht_view,
             initial_settings_view,
         )?;
+        let initial_network_state = if initial_network_prerequisite.is_allowed() {
+            crate::ApplicationNetworkRuntimeState::Allowed
+        } else {
+            crate::ApplicationNetworkRuntimeState::Blocked
+        };
+        views.set_application_network_runtime(application_network_runtime_view(
+            initial_network_prerequisite,
+            initial_network_prerequisite,
+            initial_network_state,
+            None,
+        ))?;
+        views.set_waiting_for_unmetered_network(!initial_network_prerequisite.is_allowed())?;
         if let Some(session_network) = session_network.as_mut() {
             session_network.attach_views(views.clone());
         }
@@ -844,10 +885,35 @@ impl ApplicationService {
             let converged = requested == self.effective_network_prerequisite
                 && requested.is_allowed() == self.session_network.is_some();
             if !converged {
-                if requested.is_allowed() {
-                    self.start_network_generation(requested).await?;
+                let transition_state = if requested.is_allowed() {
+                    crate::ApplicationNetworkRuntimeState::Starting
                 } else {
-                    self.stop_network_generation(requested).await?;
+                    crate::ApplicationNetworkRuntimeState::Blocking
+                };
+                self.views
+                    .set_application_network_runtime(application_network_runtime_view(
+                        requested,
+                        self.effective_network_prerequisite,
+                        transition_state,
+                        None,
+                    ))?;
+                self.views
+                    .set_waiting_for_unmetered_network(!requested.is_allowed())?;
+                let result = if requested.is_allowed() {
+                    self.start_network_generation(requested).await
+                } else {
+                    self.stop_network_generation(requested).await
+                };
+                if let Err(error) = result {
+                    self.views.set_application_network_runtime(
+                        application_network_runtime_view(
+                            requested,
+                            self.effective_network_prerequisite,
+                            crate::ApplicationNetworkRuntimeState::Degraded,
+                            Some(error.to_string()),
+                        ),
+                    )?;
+                    return Err(error);
                 }
             }
             if self.network_prerequisite.load() == requested {
@@ -936,6 +1002,13 @@ impl ApplicationService {
             crate::ClientSettingsRuntimeView::from_configured(settings),
         )?;
         self.effective_network_prerequisite = requested;
+        self.views
+            .set_application_network_runtime(application_network_runtime_view(
+                requested,
+                requested,
+                crate::ApplicationNetworkRuntimeState::Blocked,
+                None,
+            ))?;
         self.refresh_views()?;
         self.views.record_diagnostic(
             DiagnosticSeverity::Info,
@@ -987,6 +1060,13 @@ impl ApplicationService {
         candidate.start_reachability(self.views.clone());
         self.session_network = Some(candidate);
         self.effective_network_prerequisite = requested;
+        self.views
+            .set_application_network_runtime(application_network_runtime_view(
+                requested,
+                requested,
+                crate::ApplicationNetworkRuntimeState::Allowed,
+                None,
+            ))?;
 
         for torrent in snapshot.torrents {
             self.ensure_torrent_runtime(&torrent.torrent_id)?
@@ -4193,6 +4273,8 @@ impl ApplicationService {
             u16::try_from(active_download_count).unwrap_or(u16::MAX),
             u16::try_from(checking_count).unwrap_or(u16::MAX),
         )?;
+        self.views
+            .set_waiting_for_unmetered_network(!self.network_prerequisite.load().is_allowed())?;
         Ok(())
     }
 
@@ -6692,6 +6774,17 @@ mod tests {
         let initial = application.network_prerequisite_snapshot();
         assert!(!initial.is_allowed());
         assert_eq!(application.effective_network_prerequisite(), initial);
+        let initially_blocked_view = client_settings_runtime(&application).await;
+        assert_eq!(
+            initially_blocked_view.application_network.state,
+            crate::ApplicationNetworkRuntimeState::Blocked
+        );
+        assert_eq!(
+            initially_blocked_view
+                .application_network
+                .requested_prerequisite,
+            crate::ApplicationNetworkPrerequisiteView::WaitingForUnmeteredNetwork
+        );
 
         let allowed = application
             .network_prerequisite_handle()
@@ -6716,6 +6809,11 @@ mod tests {
         assert!(application.session_network.is_none());
         assert_eq!(application.effective_network_prerequisite(), blocked);
         assert!(application.session_udp_snapshot().is_none());
+        let blocked_view = client_settings_runtime(&application).await;
+        assert_eq!(
+            blocked_view.application_network.state,
+            crate::ApplicationNetworkRuntimeState::Blocked
+        );
         assert_eq!(
             application
                 .session_download_resource_snapshot()

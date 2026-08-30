@@ -1464,6 +1464,39 @@ fn disabled_network_is_blocked_without_changing_torrent_intent() {
 }
 
 #[test]
+fn live_network_prerequisite_waits_without_offering_a_policy_action() {
+    let mut torrent = snapshot(0, 0).torrents.remove(0);
+    torrent.state = TorrentState::AwaitingMetadata;
+    torrent.metadata_available = false;
+    let assessment = assess_progress(
+        &torrent,
+        ProgressInputs {
+            waiting_for_unmetered_network: true,
+            discovery_exhausted: true,
+            ..ProgressInputs::default()
+        },
+    );
+
+    assert_eq!(assessment.disposition, ProgressDisposition::Waiting);
+    assert_eq!(
+        assessment.reason,
+        ProgressReason::WaitingForUnmeteredNetwork
+    );
+    assert!(assessment.actions.is_empty());
+
+    let fixed_policy = assess_progress(
+        &torrent,
+        ProgressInputs {
+            network_disabled: true,
+            waiting_for_unmetered_network: true,
+            ..ProgressInputs::default()
+        },
+    );
+    assert_eq!(fixed_policy.reason, ProgressReason::NetworkDisabled);
+    assert_eq!(fixed_policy.actions, vec![ProgressAction::EnableNetwork]);
+}
+
+#[test]
 fn stale_settings_attempts_cannot_publish_runtime_or_mapping_facts() {
     let hub = ViewHub::new(&snapshot(0, 4)).expect("hub");
     let mut convergence = SettingsConvergenceModel::default();

@@ -178,13 +178,22 @@ internal fun NetworkSettings(
 ) {
     ToggleSetting(
         title = "Unmetered networks only",
-        detail = "Pause network transfers on metered connections · ${network.currentTruth}",
+        detail =
+            "Pause network transfers on metered connections · ${network.currentTruth} · " +
+                settings.applicationNetwork.state.name.lowercase(),
         checked = network.unmeteredNetworksOnly,
         onChecked = onUnmeteredNetworksOnly,
     )
     network.preferenceError?.let {
         ListItem(
             headlineContent = { Text("Setting not saved") },
+            supportingContent = { Text(it) },
+        )
+        HorizontalDivider()
+    }
+    network.runtimeError?.let {
+        ListItem(
+            headlineContent = { Text("Network policy needs attention") },
             supportingContent = { Text(it) },
         )
         HorizontalDivider()

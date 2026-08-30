@@ -205,6 +205,19 @@
   min-width: 0;
 }
 
+.networkWaiting {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--ui-space-xs);
+  border-bottom: 1px solid #5b8fc0;
+  padding: 0.34rem var(--ui-space-md);
+  color: #102d49;
+  background: #cce8ff;
+  font-size: var(--ui-font-small);
+  line-height: 1.35;
+}
+
 .lanWarning {
   display: flex;
   min-width: 0;

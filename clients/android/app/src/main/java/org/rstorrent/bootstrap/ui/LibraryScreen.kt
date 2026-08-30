@@ -65,6 +65,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.rstorrent.bootstrap.ProductState
+import org.rstorrent.session.uniffi.ApplicationNetworkPrerequisiteView
+import org.rstorrent.session.uniffi.ApplicationNetworkRuntimeState
 import org.rstorrent.session.uniffi.TorrentOperationalState
 import org.rstorrent.session.uniffi.TorrentView
 
@@ -100,6 +102,11 @@ internal fun LibraryScreen(
     val filter = LibraryFilter.valueOf(filterName)
     val sort = LibrarySort.valueOf(sortName)
     val torrents = filteredAndSortedTorrents(state.torrents.values, filter, sort)
+    val networkRuntime = state.clientSettings?.applicationNetwork
+    val waitingForUnmeteredNetwork =
+        networkRuntime?.requestedPrerequisite ==
+            ApplicationNetworkPrerequisiteView.WAITING_FOR_UNMETERED_NETWORK &&
+            networkRuntime.state != ApplicationNetworkRuntimeState.ALLOWED
 
     Scaffold(
         topBar = {
@@ -221,6 +228,35 @@ internal fun LibraryScreen(
                 contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                if (waitingForUnmeteredNetwork) {
+                    item("network-prerequisite") {
+                        Card(
+                            modifier = Modifier.fillMaxWidth().widthIn(max = 720.dp),
+                            colors =
+                                CardDefaults.cardColors(
+                                    MaterialTheme.colorScheme.secondaryContainer,
+                                ),
+                        ) {
+                            Column(Modifier.padding(16.dp)) {
+                                Text(
+                                    "Waiting for an unmetered network",
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Text(
+                                    if (networkRuntime?.state ==
+                                        ApplicationNetworkRuntimeState.DEGRADED
+                                    ) {
+                                        "Network owners could not stop cleanly. " +
+                                            "RSTorrent will retry when connectivity changes."
+                                    } else {
+                                        "Transfers will resume automatically when an " +
+                                            "unmetered network is usable."
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
                 if (!notificationsGranted) {
                     item("notifications") {
                         SetupCard(

@@ -12,7 +12,8 @@ use rstorrent_session::{
     ActivePieceUpdate, AddTorrentBytesRequest, AddTorrentDisposition, AddTorrentResult,
     AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus,
     AdvertisedPeerEndpointUnavailableReason, ApiBackendIdentity, ApiEncoding, ApiHello, ApiLimits,
-    ApiVersion, ApplicationCall, ApplicationCallResult, BandwidthDirectionRuntimeView,
+    ApiVersion, ApplicationCall, ApplicationCallResult, ApplicationNetworkPrerequisiteView,
+    ApplicationNetworkRuntimeState, ApplicationNetworkRuntimeView, BandwidthDirectionRuntimeView,
     BandwidthRuntimeView, CapabilityStatus, CatalogPageRequest, CatalogPageView, CheckingPhaseView,
     CheckingProgressView, ClientSettings, ClientSettingsApplicationState,
     ClientSettingsDegradedReason, ClientSettingsPatch, ClientSettingsRuntimeView, Command,
@@ -114,6 +115,9 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<ActiveDownloadsClampReason>(&mut declarations)?;
     append::<BandwidthDirectionRuntimeView>(&mut declarations)?;
     append::<BandwidthRuntimeView>(&mut declarations)?;
+    append::<ApplicationNetworkPrerequisiteView>(&mut declarations)?;
+    append::<ApplicationNetworkRuntimeState>(&mut declarations)?;
+    append::<ApplicationNetworkRuntimeView>(&mut declarations)?;
     append::<ClientSettingsRuntimeView>(&mut declarations)?;
     append_value(
         &mut declarations,

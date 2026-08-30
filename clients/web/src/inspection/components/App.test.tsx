@@ -732,6 +732,33 @@ describe("inspection application", () => {
     ).toBeVisible();
   });
 
+  it("shows generated waiting truth without offering a manual resume action", () => {
+    const clientSettings = clientSettingsRuntimeFixture();
+    clientSettings.application_network = {
+      requested_generation: "2",
+      requested_prerequisite: "waiting_for_unmetered_network",
+      effective_generation: "2",
+      effective_prerequisite: "waiting_for_unmetered_network",
+      state: "blocked",
+      degraded_detail: null,
+    };
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot: {
+        ...liveSnapshot({ roots: [], defaultRoot: null, showAddOptions: true }),
+        clientSettings,
+      },
+    });
+    renderApplication(application);
+
+    const status = screen.getByRole("status", {
+      name: "Network prerequisite status",
+    });
+    expect(status).toHaveTextContent("Waiting for an unmetered network.");
+    expect(status).toHaveTextContent("resume automatically");
+    expect(within(status).queryByRole("button")).not.toBeInTheDocument();
+  });
+
   it("describes trusted-network owner exposure once per browser", async () => {
     const user = userEvent.setup();
     renderApplication(
@@ -2869,6 +2896,14 @@ describe("inspection application", () => {
           configured: {
             ...active,
             listener: { type: "automatic_local_network" },
+          },
+          application_network: {
+            requested_generation: "1",
+            requested_prerequisite: "allowed",
+            effective_generation: "1",
+            effective_prerequisite: "allowed",
+            state: "allowed",
+            degraded_detail: null,
           },
           effective_listener: null,
           effective_port_mapping: "disabled",

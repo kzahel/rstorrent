@@ -97,6 +97,13 @@
                 "ipv6_enabled": true,
                 "tracker_https_server_authentication": "system_trust"
               },
+              "application_network": {
+                "requested_generation": "1",
+                "requested_prerequisite": "allowed",
+                "effective_generation": "1",
+                "effective_prerequisite": "allowed",
+                "state": "allowed"
+              },
               "effective_listener": {
                 "listener": {
                   "type": "disabled"
@@ -345,6 +352,13 @@
                 "encryption": "allow",
                 "ipv6_enabled": true,
                 "tracker_https_server_authentication": "system_trust"
+              },
+              "application_network": {
+                "requested_generation": "1",
+                "requested_prerequisite": "allowed",
+                "effective_generation": "1",
+                "effective_prerequisite": "allowed",
+                "state": "allowed"
               },
               "effective_listener": {
                 "listener": {

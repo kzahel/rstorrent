@@ -28,6 +28,9 @@ data class ProductNetworkState(
     val observationRevision: Long = 0,
     val callbackRegistered: Boolean = false,
     val preferenceError: String? = null,
+    val effectiveNetworkAllowed: Boolean? = null,
+    val effectiveGeneration: String? = null,
+    val runtimeError: String? = null,
 ) {
     val currentTruth: String
         get() =

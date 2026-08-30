@@ -72,15 +72,17 @@ pub use rstorrent_engine::{
 };
 pub use settings::{
     ActiveDownloadsClampReason, AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus,
-    AdvertisedPeerEndpointUnavailableReason, BandwidthDirectionRuntimeView, BandwidthRuntimeView,
-    ClientSettings, ClientSettingsApplicationState, ClientSettingsDegradedReason,
-    ClientSettingsError, ClientSettingsPatch, ClientSettingsRuntimeView, DEFAULT_ACTIVE_DOWNLOADS,
-    EffectiveListenerSettings, EncryptionPolicy, HttpsServerAuthenticationPolicy,
-    Ipv6PinholeFailureStage, Ipv6PinholeStatus, ListenerBindFailureReason, ListenerPolicy,
-    ListenerStatus, MAX_ACTIVE_DOWNLOADS, MIN_ACTIVE_DOWNLOADS, PortMappingFailureStage,
-    PortMappingMechanism, PortMappingPolicy, PortMappingStatus, SessionUdpStatus,
-    StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot, TorrentSettingsPatch,
-    TorrentTransferLimits, TransferRateLimit, TransportAddressFamily, TransportFamilyRuntimeView,
+    AdvertisedPeerEndpointUnavailableReason, ApplicationNetworkPrerequisiteView,
+    ApplicationNetworkRuntimeState, ApplicationNetworkRuntimeView, BandwidthDirectionRuntimeView,
+    BandwidthRuntimeView, ClientSettings, ClientSettingsApplicationState,
+    ClientSettingsDegradedReason, ClientSettingsError, ClientSettingsPatch,
+    ClientSettingsRuntimeView, DEFAULT_ACTIVE_DOWNLOADS, EffectiveListenerSettings,
+    EncryptionPolicy, HttpsServerAuthenticationPolicy, Ipv6PinholeFailureStage, Ipv6PinholeStatus,
+    ListenerBindFailureReason, ListenerPolicy, ListenerStatus, MAX_ACTIVE_DOWNLOADS,
+    MIN_ACTIVE_DOWNLOADS, PortMappingFailureStage, PortMappingMechanism, PortMappingPolicy,
+    PortMappingStatus, SessionUdpStatus, StorageRootAvailability, StorageRootSnapshot,
+    StorageSettingsSnapshot, TorrentSettingsPatch, TorrentTransferLimits, TransferRateLimit,
+    TransportAddressFamily, TransportFamilyRuntimeView,
 };
 pub use speed::{
     SessionCurrentRatesView, SpeedCurrentRate, SpeedHistoryAppend, SpeedHistoryAppendError,

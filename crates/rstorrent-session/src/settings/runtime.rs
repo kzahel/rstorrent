@@ -5,10 +5,11 @@ use rstorrent_engine::{
 };
 
 use super::contract::{
-    AdvertisedPeerEndpointStatus, BandwidthRuntimeView, ClientSettings,
-    ClientSettingsApplicationState, ClientSettingsRuntimeView, EffectiveListenerSettings,
-    HttpsServerAuthenticationPolicy, Ipv6PinholeStatus, ListenerBindFailureReason, ListenerPolicy,
-    ListenerStatus, MAX_RUNTIME_DETAIL_BYTES, PortMappingStatus, SessionUdpStatus,
+    AdvertisedPeerEndpointStatus, ApplicationNetworkRuntimeView, BandwidthRuntimeView,
+    ClientSettings, ClientSettingsApplicationState, ClientSettingsRuntimeView,
+    EffectiveListenerSettings, HttpsServerAuthenticationPolicy, Ipv6PinholeStatus,
+    ListenerBindFailureReason, ListenerPolicy, ListenerStatus, MAX_RUNTIME_DETAIL_BYTES,
+    PortMappingStatus, SessionUdpStatus,
 };
 use crate::reachability::ReachabilityState;
 
@@ -64,6 +65,7 @@ impl HttpsServerAuthenticationPolicy {
 impl ClientSettingsRuntimeView {
     pub(crate) fn from_configured(settings: ClientSettings) -> Self {
         Self {
+            application_network: ApplicationNetworkRuntimeView::default(),
             effective_listener: Some(EffectiveListenerSettings::from_settings(&settings)),
             effective_port_mapping: settings.port_mapping,
             effective_peer_connection_limit: settings.peer_connection_limit,
@@ -131,6 +133,7 @@ impl ClientSettingsRuntimeView {
         };
         Self {
             configured,
+            application_network: ApplicationNetworkRuntimeView::default(),
             effective_listener: if listener_status == ListenerStatus::Disabled
                 || matches!(listener_status, ListenerStatus::Listening { .. })
             {

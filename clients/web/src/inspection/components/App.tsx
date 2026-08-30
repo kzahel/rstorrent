@@ -146,6 +146,10 @@ function AppContent({
   const setColorTheme = useInspectionStore((state) => state.setColorTheme);
   const setDataUnits = useInspectionStore((state) => state.setDataUnits);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const waitingForUnmeteredNetwork =
+    clientSettings.application_network.requested_prerequisite ===
+      "waiting_for_unmetered_network" &&
+    clientSettings.application_network.state !== "allowed";
   const credentialFreeAccessMode =
     accessMode === "lan_none" || accessMode === "network_none"
       ? accessMode
@@ -351,31 +355,45 @@ function AppContent({
           <Icon name="settings" />
         </button>
       </header>
-      {credentialFreeAccessMode !== null &&
-      !credentialFreeNoticeDismissed ? (
+      {waitingForUnmeteredNetwork ||
+      (credentialFreeAccessMode !== null &&
+        !credentialFreeNoticeDismissed) ? (
         <div className={styles.topNotices}>
-          <aside
-            className={styles.lanWarning}
-            aria-label="Network security notice"
-          >
-            <span className={styles.lanWarningMessage}>
-              <strong>Authentication is off.</strong>
-              <span>
-                {credentialFreeAccessMode === "network_none"
-                  ? "Every device that can reach this service has full owner control."
-                  : "Every device on this LAN has full owner control."}
-              </span>
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                setCredentialFreeNoticeDismissed(true);
-                saveCredentialFreeNoticeDismissed(credentialFreeAccessMode);
-              }}
+          {waitingForUnmeteredNetwork ? (
+            <aside
+              className={styles.networkWaiting}
+              role="status"
+              aria-label="Network prerequisite status"
             >
-              Got it
-            </button>
-          </aside>
+              <strong>Waiting for an unmetered network.</strong>
+              <span>Transfers will resume automatically when one is usable.</span>
+            </aside>
+          ) : null}
+          {credentialFreeAccessMode !== null &&
+          !credentialFreeNoticeDismissed ? (
+            <aside
+              className={styles.lanWarning}
+              aria-label="Network security notice"
+            >
+              <span className={styles.lanWarningMessage}>
+                <strong>Authentication is off.</strong>
+                <span>
+                  {credentialFreeAccessMode === "network_none"
+                    ? "Every device that can reach this service has full owner control."
+                    : "Every device on this LAN has full owner control."}
+                </span>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setCredentialFreeNoticeDismissed(true);
+                  saveCredentialFreeNoticeDismissed(credentialFreeAccessMode);
+                }}
+              >
+                Got it
+              </button>
+            </aside>
+          ) : null}
           <ScenarioBar />
         </div>
       ) : (
