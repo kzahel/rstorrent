@@ -282,12 +282,19 @@ def start_avd(avd_name: str) -> AvdSession:
     raise ProbeFailure(f"AVD did not boot before timeout\n{detail}")
 
 
+def chromeos_controller() -> list[str]:
+    controller = (
+        Path.home() / "code" / "machine-control" / "bin" / "machine-control"
+    )
+    if not controller.is_file():
+        raise ProbeFailure(f"Machine Control is unavailable at {controller}")
+    return [str(controller), "--target", "chromeos"]
+
+
 def prepare_chromeos() -> AdbTarget:
-    testbed = Path.home() / "code" / "chromeos-testbed" / "bin" / "chromeos"
-    if not testbed.is_file():
-        raise ProbeFailure(f"ChromeOS testbed is unavailable at {testbed}")
-    run_host([str(testbed), "doctor"], timeout=60)
-    run_host([str(testbed), "adb-connect"], timeout=30)
+    chromeos = chromeos_controller()
+    run_host([*chromeos, "target", "doctor"], timeout=60)
+    run_host([*chromeos, "testbed", "--", "adb-connect"], timeout=30)
     target = AdbTarget(
         ["ssh", "chromeroot", "adb", "-s", CHROMEOS_SERIAL],
         "Chromebook ARCVM",
@@ -447,8 +454,16 @@ def verify_storage(
 
 def install_apk(target: AdbTarget, kind: str, apk: Path) -> None:
     if kind == "chromeos":
-        testbed = Path.home() / "code" / "chromeos-testbed" / "bin" / "chromeos"
-        run_host([str(testbed), "install-apk", str(apk)], timeout=120)
+        run_host(
+            [
+                *chromeos_controller(),
+                "testbed",
+                "--",
+                "install-apk",
+                str(apk),
+            ],
+            timeout=120,
+        )
     else:
         target.run(["install", "-r", str(apk)], timeout=120)
 

@@ -271,17 +271,18 @@ do not launch visible product clients merely to exercise engine behavior.
 
 ## ChromeOS Hardware Testing
 
-The authoritative physical-device controller is the separate checkout at
-`~/code/chromeos-testbed`. Before ChromeOS hardware work, read
-`~/code/chromeos-testbed/skills/SKILL.md`. Start a hardware session with:
+Use the sibling Machine Control checkout for physical ChromeOS work. Before a
+hardware session, read
+`~/code/machine-control/platforms/chromeos/skills/SKILL.md` and start with the
+common read-only doctor:
 
 ```bash
-~/code/chromeos-testbed/bin/chromeos doctor
+~/code/machine-control/bin/machine-control --target chromeos target doctor
 ```
 
 Keep RSTorrent-specific build, deployment, and assertions in this repository.
 Keep generic device transport, screenshots, UI automation, DevTools, ARCVM
-ADB, Crostini, and recovery in the testbed repository.
+ADB, Crostini, and recovery in Machine Control's ChromeOS platform controller.
 
 ## Commit Messages
 

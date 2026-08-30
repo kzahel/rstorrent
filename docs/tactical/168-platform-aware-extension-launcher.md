@@ -102,8 +102,8 @@ exact Play destination, hidden irrelevant controls, retained desktop messages,
 and retained Crostini messages. The package validator must keep the reviewed
 allowlist, exact store identity, and permission boundary.
 
-The physical Chromebook check uses the authoritative `chromeos-testbed` and
-`machine-control` path. It records semantic popup state, exact Play tab URL,
+The physical Chromebook check uses Machine Control's ChromeOS platform path.
+It records semantic popup state, exact Play tab URL,
 and successful warm Crostini UI focus/open without modifying or installing the
 published Android application.
 

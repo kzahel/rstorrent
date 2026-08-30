@@ -41,8 +41,8 @@ that seam to the real engine.
 - [Product and engine direction](../topics/product-direction.md)
 - [Engineering principles](../engineering-principles.md)
 - The repository ChromeOS instructions in [`../../AGENTS.md`](../../AGENTS.md)
-- The authoritative testbed skill at
-  `~/code/chromeos-testbed/skills/SKILL.md`
+- The Machine Control ChromeOS skill at
+  `~/code/machine-control/platforms/chromeos/skills/SKILL.md`
 - The pinned libtorrent reference and the existing controlled interoperability
   harness under `tests/interop/`
 - The official [UniFFI guide](https://mozilla.github.io/uniffi-rs/latest/) and
@@ -266,7 +266,7 @@ failure there is not required unless its behavior diverges.
 
 The host runner verifies exact model, device, API, ABI, serial, and transport
 before installation. ChromeOS health, ARCVM authorization, APK transport, UI
-automation, screenshots, and recovery use `~/code/chromeos-testbed`.
+automation, screenshots, and recovery use `~/code/machine-control`.
 
 An attached Pixel may provide additional evidence but is not required by the
 stopping condition unless the tactical is amended before those runs.
@@ -544,7 +544,7 @@ cargo tree --workspace --locked
 git diff --check
 ```
 
-The ChromeOS testbed's `chromeos doctor` check passed all ten required checks;
+The Machine Control ChromeOS doctor passed all ten required checks;
 its only warning was the optional DevTools tunnel. An initial direct Gradle
 validation without `ANDROID_HOME` failed before task execution because no
 local `sdk.dir` is committed. The explicit environment shown above passed.

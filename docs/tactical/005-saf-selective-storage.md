@@ -34,8 +34,8 @@ renames and a durable reopen verification.
 - [Product and engine direction](../topics/product-direction.md)
 - [Engineering principles](../engineering-principles.md)
 - The repository ChromeOS instructions in [`../../AGENTS.md`](../../AGENTS.md)
-- The authoritative testbed skill at
-  `~/code/chromeos-testbed/skills/SKILL.md`
+- The Machine Control ChromeOS skill at
+  `~/code/machine-control/platforms/chromeos/skills/SKILL.md`
 - The pinned libtorrent part-file and disk-storage implementations
 - The controlled libtorrent `2.0.13` peer and Tactical `002` fixture under
   `tests/interop/`

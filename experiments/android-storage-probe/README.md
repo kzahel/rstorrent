@@ -57,7 +57,7 @@ releases the grant, removes the empty grant directory, and clears application
 data again. Pre-creation avoids host keyboard-layout translation during UI
 automation. Android prevents granting the Downloads root itself. The AVD
 process is started and stopped by the runner. ChromeOS health, ARCVM
-authorization, and APK transport use `~/code/chromeos-testbed`.
+authorization, and APK transport use `~/code/machine-control`.
 
 The Moto X4 removable profile selects the exact mounted `F69D-D340` volume
 and verifies the returned document ID before writing. It creates its dedicated

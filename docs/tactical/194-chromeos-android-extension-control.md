@@ -542,8 +542,9 @@ being mistaken for full Android feature readiness.
    one remains bound to root A while root B becomes current for the second.
    Revoke and repair A without interrupting B.
 7. **Physical ChromeOS gate:** before device work, read
-   `~/code/chromeos-testbed/skills/SKILL.md`, run its doctor, then execute the
-   exact stopping-condition matrix on the named x86_64 Chromebook. Capture
+   `~/code/machine-control/platforms/chromeos/skills/SKILL.md`, run the common
+   Machine Control doctor, then execute the exact stopping-condition matrix on
+   the named x86_64 Chromebook. Capture
    Chrome version, ARC topology, Local Network Access behavior, endpoint
    reachability from the Chromebook and another LAN device, process IDs,
    service notification/lifecycle, transfer result, resource high waters,

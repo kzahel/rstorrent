@@ -16,7 +16,7 @@ same-origin gateway from Tacticals `101` and `109`, the beta extension identity
 and package scaffold from Tactical
 [`166`](166-desktop-native-bootstrap-and-extension-scaffold.md), ChromeOS Linux
 application registration, systemd user services, and physical Chromebook
-control through the authoritative ChromeOS testbed.
+control through Machine Control's ChromeOS platform controller.
 
 ## Decision And Desired Outcome
 
@@ -211,8 +211,8 @@ inapplicable.
    deterministic ZIP.
 5. **Local build gate:** run focused Rust/web/extension tests and construct the
    matching Linux package without substituting a desktop Tauri backend.
-6. **Physical gate:** use `machine-control` and the authoritative
-   `chromeos-testbed` controller to install in the real `penguin` container,
+6. **Physical gate:** use Machine Control's ChromeOS platform controller to
+   install in the real `penguin` container,
    deploy the matching unpacked extension, and exercise warm, stopped-VM,
    repeated, and reboot launch paths with process/port/browser assertions.
 7. **Closeout gate:** record exact commits, artifact hashes, ChromeOS and

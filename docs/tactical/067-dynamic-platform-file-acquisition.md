@@ -607,7 +607,7 @@ carry `Topic: android-saf-storage`.
 | Controlled path | A deterministic multi-file transfer and restart through the shared pool, plus the retained engine performance smoke. Exact payload hashes, publication, cleanup, pool counters, FD high water, and no material regression against the declared Tactical `057` floors. |
 | Controlled AVD | Metadata-only no-artifact proof; at least three simultaneous logical storage identities with at least 100 files each and a working set exceeding 40; live Skip/Normal and boundary materialization; interruption/restart; publication; grant-loss/repair; managed removal; exact hashes; descriptor and pending-request high waters. Network execution may remain serialized if the current application scheduler is single-active, but the storage-pool harness must interleave all identities. |
 | Repository | `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, Android Rust target checks, Gradle unit/instrumented tests, generated-binding checks, and documentation link/diff checks. |
-| Physical hardware | Authorized but not required for completion. The ChromeOS testbed doctor passed 9/9 checks; ARCVM ADB connection was refused, so no APK cycle ran. |
+| Physical hardware | Authorized but not required for completion. The Machine Control ChromeOS doctor passed 9/9 checks; ARCVM ADB connection was refused, so no APK cycle ran. |
 
 The AVD resource report must show that increasing torrent file count does not
 increase startup descriptor count, owned storage descriptors never exceed 40,
@@ -720,8 +720,8 @@ the observed high water and final count were `137` in each run. The largest
 observed delta was `31`, within the 40 Rust-owned plus four temporary-provider
 envelope.
 
-Physical validation followed the required ChromeOS testbed workflow. The
-testbed doctor reported nine passed checks and no failures, including SSH,
+Physical validation followed the required Machine Control ChromeOS workflow.
+The device doctor reported nine passed checks and no failures, including SSH,
 active user session, and writable rootfs. `chromeos adb-connect` then failed
 with connection refused at `127.0.0.1:5555`; ARCVM ADB was unavailable, so the
 physical APK cycle remains unclaimed.

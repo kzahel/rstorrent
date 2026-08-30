@@ -38,8 +38,8 @@ extended to both its internal shared storage and exact removable volume.
 - [Product and engine direction](../topics/product-direction.md)
 - [Engineering principles](../engineering-principles.md)
 - The repository ChromeOS instructions in [`../../AGENTS.md`](../../AGENTS.md)
-- The authoritative testbed skill at
-  `~/code/chromeos-testbed/skills/SKILL.md`
+- The Machine Control ChromeOS skill at
+  `~/code/machine-control/platforms/chromeos/skills/SKILL.md`
 
 Observed starting environment on 2026-07-29:
 
@@ -53,7 +53,7 @@ Observed starting environment on 2026-07-29:
 - Pixel 7a: API 37 and arm64-v8a;
 - Moto X4: API 28, arm64-v8a, with mounted removable volume `F69D-D340`
   backed by exFAT with a 128 KiB block size; and
-- ChromeOS testbed doctor: nine checks passed, no failures.
+- Machine Control ChromeOS doctor: nine checks passed, no failures.
 
 The local USB-connected Quest device is not part of this tactical. Do not
 install or run the probe on an unlisted target.
@@ -317,7 +317,7 @@ Completed on 2026-07-29.
   remain distinct from integrity failures.
 - The host runner accepts only the exact `jstorrent-tablet` AVD, Chromebook
   ARCVM identity, Pixel 7a, or Moto X4 serial and identity. It starts a wiped
-  headless AVD itself, uses the ChromeOS testbed for hardware health and APK
+  headless AVD itself, uses Machine Control for ChromeOS health and APK
   transport, never selects the first attached device, and rejects unexpected
   API, model, device, ABI, removable-volume, or mount values.
 - Every cycle uses fresh application data, an exact empty grant directory,
