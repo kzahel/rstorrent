@@ -166,6 +166,17 @@ class ExternalTorrentIntakeTest {
     }
 
     @Test
+    fun rootLossDuringSubmissionReturnsToRootWait() {
+        val controller = ExternalIntakeController()
+        val intakeId = requireNotNull(controller.receive(source(5), false, true).intakeId)
+        assertEquals(intakeId, controller.confirm(intakeId, true)?.intakeId)
+        assertTrue(controller.submissionRootUnavailable(intakeId))
+        assertEquals(ExternalIntakePhase.AWAITING_ROOT, controller.snapshot().presentation?.phase)
+        controller.rootAvailabilityChanged(true)
+        assertEquals(ExternalIntakePhase.PRESENTED, controller.snapshot().presentation?.phase)
+    }
+
+    @Test
     fun sourceAndControllerStringFormsAreRedacted() {
         val sentinel = "magnet:?xt=urn:btih:${"c".repeat(40)}&tr=https://secret.invalid/token"
         val source = ExternalIntakeSource.create(ExternalIntakeKind.MAGNET, sentinel)

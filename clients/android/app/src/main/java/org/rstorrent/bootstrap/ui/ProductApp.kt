@@ -37,6 +37,7 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -46,6 +47,8 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -80,6 +83,10 @@ import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.launch
 import org.rstorrent.bootstrap.ProductEngineService
 import org.rstorrent.bootstrap.ProductState
+import org.rstorrent.bootstrap.ExternalIntakeKind
+import org.rstorrent.bootstrap.ExternalIntakeNoticeKind
+import org.rstorrent.bootstrap.ExternalIntakePhase
+import org.rstorrent.bootstrap.ExternalIntakePresentation
 import org.rstorrent.bootstrap.GlobalPresentation
 import org.rstorrent.bootstrap.TorrentPresentation
 import org.rstorrent.bootstrap.clientSettingsPatch
@@ -114,6 +121,10 @@ fun ProductApp(
     onUpdateClientSettings: ((ClientSettingsPatch) -> Unit)? = null,
     onUpdateTorrentSettings: ((String, TorrentSettingsPatch) -> Unit)? = null,
     onRepairStorage: (String) -> Unit = {},
+    onExternalStartContent: ((Long, Boolean) -> Unit)? = null,
+    onConfirmExternalIntake: ((Long) -> Unit)? = null,
+    onRetryExternalIntake: ((Long) -> Unit)? = null,
+    onCancelExternalIntake: ((Long) -> Unit)? = null,
 ) {
     RstorrentTheme(mode = themeMode, dynamicColor = dynamicColor) {
         val state =
@@ -125,28 +136,69 @@ fun ProductApp(
                 val collected by service.state.collectAsStateWithLifecycle()
                 collected
             }
-        Surface(modifier = Modifier.fillMaxSize()) {
-            ProductNavHost(
-                state = state,
-                service = service,
+        val snackbar = remember { SnackbarHostState() }
+        LaunchedEffect(state.externalIntakeNotice?.sequence) {
+            state.externalIntakeNotice?.let { notice ->
+                snackbar.showSnackbar(externalIntakeNoticeText(notice.kind))
+            }
+        }
+        Box(modifier = Modifier.fillMaxSize()) {
+            Surface(modifier = Modifier.fillMaxSize()) {
+                ProductNavHost(
+                    state = state,
+                    service = service,
+                    onSelectStorage = onSelectStorage,
+                    onRepairStorage = onRepairStorage,
+                    onBrowseTorrent = onBrowseTorrent,
+                    notificationsGranted = notificationsGranted,
+                    onRequestNotifications = onRequestNotifications,
+                    onOpenNotificationSettings = onOpenNotificationSettings,
+                    themeMode = themeMode,
+                    dynamicColor = dynamicColor,
+                    onThemeMode = onThemeMode,
+                    onDynamicColor = onDynamicColor,
+                    onUpdateClientSettings =
+                        onUpdateClientSettings ?: {
+                            service?.updateClientSettings(it)
+                            Unit
+                        },
+                    onUpdateTorrentSettings =
+                        onUpdateTorrentSettings ?: { torrentId, patch ->
+                            service?.updateTorrentSettings(torrentId, patch)
+                            Unit
+                        },
+                )
+            }
+            SnackbarHost(
+                hostState = snackbar,
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
+        state.externalIntake?.let { intake ->
+            ExternalTorrentIntakeDialog(
+                intake = intake,
+                storageRootReady = state.storageRootReady,
+                repairRootId = state.storage?.defaultRoot,
                 onSelectStorage = onSelectStorage,
                 onRepairStorage = onRepairStorage,
-                onBrowseTorrent = onBrowseTorrent,
-                notificationsGranted = notificationsGranted,
-                onRequestNotifications = onRequestNotifications,
-                onOpenNotificationSettings = onOpenNotificationSettings,
-                themeMode = themeMode,
-                dynamicColor = dynamicColor,
-                onThemeMode = onThemeMode,
-                onDynamicColor = onDynamicColor,
-                onUpdateClientSettings =
-                    onUpdateClientSettings ?: {
-                        service?.updateClientSettings(it)
+                onStartContent =
+                    onExternalStartContent ?: { id, start ->
+                        service?.setExternalIntakeStartContent(id, start)
                         Unit
                     },
-                onUpdateTorrentSettings =
-                    onUpdateTorrentSettings ?: { torrentId, patch ->
-                        service?.updateTorrentSettings(torrentId, patch)
+                onConfirm =
+                    onConfirmExternalIntake ?: {
+                        service?.confirmExternalIntake(it)
+                        Unit
+                    },
+                onRetry =
+                    onRetryExternalIntake ?: {
+                        service?.retryExternalIntake(it)
+                        Unit
+                    },
+                onCancel =
+                    onCancelExternalIntake ?: {
+                        service?.cancelExternalIntake(it)
                         Unit
                     },
             )
@@ -186,6 +238,111 @@ fun ProductApp(
 }
 
 @Composable
+private fun ExternalTorrentIntakeDialog(
+    intake: ExternalIntakePresentation,
+    storageRootReady: Boolean,
+    repairRootId: String?,
+    onSelectStorage: () -> Unit,
+    onRepairStorage: (String) -> Unit,
+    onStartContent: (Long, Boolean) -> Unit,
+    onConfirm: (Long) -> Unit,
+    onRetry: (Long) -> Unit,
+    onCancel: (Long) -> Unit,
+) {
+    val title =
+        when (intake.kind) {
+            ExternalIntakeKind.MAGNET -> "Magnet link from another app"
+            ExternalIntakeKind.TORRENT_FILE -> "Torrent file from another app"
+        }
+    AlertDialog(
+        onDismissRequest = { onCancel(intake.intakeId) },
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                intake.displayLabel?.let { Text(it) }
+                Row(
+                    modifier =
+                        Modifier.fillMaxWidth().clickable(
+                            enabled = intake.phase != ExternalIntakePhase.SUBMITTING,
+                        ) {
+                            onStartContent(intake.intakeId, !intake.startContent)
+                        },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(
+                        checked = intake.startContent,
+                        onCheckedChange = {
+                            onStartContent(intake.intakeId, it)
+                        },
+                        enabled = intake.phase != ExternalIntakePhase.SUBMITTING,
+                    )
+                    Text("Start downloading immediately")
+                }
+                if (!storageRootReady) {
+                    Text("Choose or repair a download folder before adding this item.")
+                    TextButton(
+                        onClick = {
+                            if (repairRootId == null) onSelectStorage()
+                            else onRepairStorage(repairRootId)
+                        },
+                    ) {
+                        Text(if (repairRootId == null) "Select folder" else "Repair folder")
+                    }
+                }
+                when (intake.phase) {
+                    ExternalIntakePhase.AWAITING_ROOT -> Unit
+                    ExternalIntakePhase.SUBMITTING -> Text("Adding…")
+                    ExternalIntakePhase.RETRYABLE_FAILURE ->
+                        Text("The source could not be read. You can retry once.")
+                    else -> Unit
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (intake.phase == ExternalIntakePhase.RETRYABLE_FAILURE) {
+                        onRetry(intake.intakeId)
+                    } else {
+                        onConfirm(intake.intakeId)
+                    }
+                },
+                enabled =
+                    storageRootReady &&
+                        intake.phase in
+                        setOf(
+                            ExternalIntakePhase.PRESENTED,
+                            ExternalIntakePhase.RETRYABLE_FAILURE,
+                        ),
+            ) {
+                Text(
+                    if (intake.phase == ExternalIntakePhase.RETRYABLE_FAILURE) {
+                        "Retry"
+                    } else {
+                        "Add"
+                    },
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = { onCancel(intake.intakeId) }) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+private fun externalIntakeNoticeText(kind: ExternalIntakeNoticeKind): String =
+    when (kind) {
+        ExternalIntakeNoticeKind.REJECTED -> "That item can’t be added."
+        ExternalIntakeNoticeKind.QUEUE_FULL -> "Too many items are waiting to be added."
+        ExternalIntakeNoticeKind.ADDED -> "Torrent added."
+        ExternalIntakeNoticeKind.ALREADY_PRESENT -> "Torrent already present."
+        ExternalIntakeNoticeKind.SELECTION_EXPANDED -> "Torrent selection updated."
+        ExternalIntakeNoticeKind.TERMINAL_FAILURE -> "The torrent could not be added."
+    }
+
+@Composable
 private fun ProductNavHost(
     state: ProductState,
     service: ProductEngineService?,
@@ -205,6 +362,13 @@ private fun ProductNavHost(
     val navController = rememberNavController()
     var removeTargets by remember { mutableStateOf(emptySet<String>()) }
     var removeStorageRoot by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(state.externalIntake?.intakeId) {
+        if (state.externalIntake != null) {
+            if (!navController.popBackStack(ProductRoutes.LIBRARY, inclusive = false)) {
+                navController.navigate(ProductRoutes.LIBRARY) { launchSingleTop = true }
+            }
+        }
+    }
     NavHost(navController = navController, startDestination = ProductRoutes.LIBRARY) {
         composable(ProductRoutes.LIBRARY) {
             LibraryScreen(

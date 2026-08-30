@@ -9,15 +9,20 @@ import android.content.Context
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
+import android.database.Cursor
 import android.net.Uri
 import android.os.Binder
 import android.os.Build
 import android.os.CancellationSignal
 import android.os.IBinder
+import android.os.ParcelFileDescriptor
 import android.os.PowerManager
+import android.os.SystemClock
+import android.provider.DocumentsContract
+import android.provider.OpenableColumns
 import android.util.Log
-import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileNotFoundException
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -28,7 +33,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,9 +43,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.rstorrent.bootstrap.uniffi.AndroidApplicationClient
 import org.rstorrent.bootstrap.uniffi.AndroidApplicationConfig
 import org.rstorrent.bootstrap.uniffi.AndroidCompanionRootRequest
@@ -49,6 +59,8 @@ import org.rstorrent.bootstrap.uniffi.SafStorageFailureKind
 import org.rstorrent.bootstrap.uniffi.SafStorageOperation
 import org.rstorrent.session.uniffi.Command
 import org.rstorrent.session.uniffi.CommandResult
+import org.rstorrent.session.uniffi.AddTorrentDisposition
+import org.rstorrent.session.uniffi.AddTorrentResult
 import org.rstorrent.session.uniffi.AddTorrentBytesRequest
 import org.rstorrent.session.uniffi.CatalogPageRequest
 import org.rstorrent.session.uniffi.ClientSettings
@@ -120,6 +132,40 @@ class ProductEngineService : Service() {
     private val clientSettingsRequestActive = AtomicBoolean(false)
     private val torrentSettingsRequestActive = AtomicBoolean(false)
     private var powerLock: PowerManager.WakeLock? = null
+    private val externalIntakeController = ExternalIntakeController()
+    private val externalIntakeMutation = Mutex()
+    private val externalContentMutation = Mutex()
+    private val externalAdmissionHints = mutableMapOf<Long, ExternalContentHint>()
+    private var externalAdmissionJob: Job? = null
+    private var externalSubmissionJob: Job? = null
+    @Volatile private var externalCancellationSignal: CancellationSignal? = null
+    @Volatile private var externalAdmissionCancellationSignal: CancellationSignal? = null
+    private var externalNoticeSequence = 0L
+
+    private data class ExternalContentHint(
+        val announcedMimeType: String?,
+        val pathHasTorrentSuffix: Boolean,
+    ) {
+        val independentlyEligible: Boolean
+            get() =
+                announcedMimeType.equals(BITTORRENT_MIME_TYPE, ignoreCase = true) ||
+                    pathHasTorrentSuffix
+    }
+
+    private data class ExternalContentMetadata(
+        val displayLabel: String?,
+        val knownLength: Long?,
+        val providerMimeType: String?,
+    )
+
+    private sealed interface ExternalMetadataDisposition {
+        data class Accepted(
+            val displayLabel: String?,
+            val knownLength: Long?,
+        ) : ExternalMetadataDisposition
+
+        data class Rejected(val reason: String) : ExternalMetadataDisposition
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -214,6 +260,8 @@ class ProductEngineService : Service() {
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
+        } else if (intent?.action == externalIntakeAction(packageName)) {
+            admitExternalIntent(intent)
         } else if (intent?.action == ACTION_ENABLE_CHROMEOS_COMPANION) {
             enableChromeOsCompanion()
         }
@@ -228,6 +276,546 @@ class ProductEngineService : Service() {
         }
         scope.cancel()
         super.onDestroy()
+    }
+
+    private fun admitExternalIntent(command: Intent) {
+        scope.launch {
+            val started = SystemClock.elapsedRealtime()
+            externalIntakeMutation.withLock {
+                val forwardedRejection =
+                    command.getStringExtra(MainActivity.EXTRA_EXTERNAL_REJECTION)
+                if (forwardedRejection != null) {
+                    val reason =
+                        runCatching { ExternalIntentRejection.valueOf(forwardedRejection) }
+                            .getOrNull()
+                            ?.name
+                            ?.lowercase()
+                            ?: "invalid_forward"
+                    rejectExternalIntent(reason, started)
+                    return@withLock
+                }
+                val sourceValue = command.getStringExtra(MainActivity.EXTRA_EXTERNAL_SOURCE)
+                val sourceUri = sourceValue?.let(Uri::parse)
+                val classification =
+                    ExternalIntentClassifier.classify(
+                        ExternalIntentInput(
+                            action = EXTERNAL_VIEW_ACTION,
+                            data = sourceValue,
+                            scheme = sourceUri?.scheme,
+                            mimeType =
+                                command.getStringExtra(MainActivity.EXTRA_EXTERNAL_MIME_TYPE),
+                            path = sourceUri?.path,
+                            hasSelector = false,
+                            hasClipData = false,
+                            packageOverride = null,
+                            hasReadGrant =
+                                command.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0,
+                        ),
+                    )
+                when (classification) {
+                    ExternalIntentClassification.NotExternalView ->
+                        rejectExternalIntent("invalid_forward", started)
+                    is ExternalIntentClassification.Rejected ->
+                        rejectExternalIntent(classification.reason.name.lowercase(), started)
+                    is ExternalIntentClassification.Magnet ->
+                        admitExternalSource(
+                            classification.source,
+                            hint = null,
+                            started = started,
+                        )
+                    is ExternalIntentClassification.Content ->
+                        admitExternalSource(
+                            classification.source,
+                            ExternalContentHint(
+                                classification.announcedMimeType,
+                                classification.pathHasTorrentSuffix,
+                            ),
+                            started,
+                        )
+                }
+            }
+        }
+    }
+
+    private fun admitExternalSource(
+        source: ExternalIntakeSource,
+        hint: ExternalContentHint?,
+        started: Long,
+    ) {
+        val result =
+            externalIntakeController.receive(
+                source,
+                needsMetadataValidation = hint != null,
+                rootReady = currentSafRootForAdd() != null,
+            )
+        val intakeId = result.intakeId
+        when (result.disposition) {
+            ExternalAdmissionDisposition.ADMITTED -> {
+                if (hint != null && intakeId != null) externalAdmissionHints[intakeId] = hint
+                logExternalIntake(
+                    intakeId,
+                    source.kind,
+                    "received",
+                    "accepted",
+                    durationMillis = SystemClock.elapsedRealtime() - started,
+                    disposition = "admitted",
+                )
+                publishExternalSnapshot()
+                if (hint == null) {
+                    logExternalIntake(intakeId, source.kind, "presented", "ready")
+                } else {
+                    scheduleExternalAdmissionLocked()
+                }
+            }
+            ExternalAdmissionDisposition.COALESCED ->
+                logExternalIntake(
+                    intakeId,
+                    source.kind,
+                    "duplicate",
+                    "exact_source",
+                    durationMillis = SystemClock.elapsedRealtime() - started,
+                    disposition = "coalesced",
+                )
+            ExternalAdmissionDisposition.QUEUE_FULL -> {
+                publishExternalNotice(ExternalIntakeNoticeKind.QUEUE_FULL)
+                logExternalIntake(
+                    null,
+                    source.kind,
+                    "rejected",
+                    "queue_full",
+                    durationMillis = SystemClock.elapsedRealtime() - started,
+                    disposition = "queue_full",
+                )
+            }
+        }
+    }
+
+    private fun rejectExternalIntent(
+        reason: String,
+        started: Long,
+    ) {
+        publishExternalNotice(ExternalIntakeNoticeKind.REJECTED)
+        logExternalIntake(
+            null,
+            null,
+            "rejected",
+            reason,
+            durationMillis = SystemClock.elapsedRealtime() - started,
+            disposition = "rejected",
+        )
+    }
+
+    private fun scheduleExternalAdmissionLocked() {
+        if (externalAdmissionJob?.isActive == true) return
+        externalAdmissionJob =
+            scope.launch {
+                while (true) {
+                    val pending =
+                        externalIntakeMutation.withLock {
+                            val work = externalIntakeController.nextReceived()
+                            if (work == null) {
+                                externalAdmissionJob = null
+                                null
+                            } else {
+                                work to externalAdmissionHints.getValue(work.intakeId)
+                            }
+                        } ?: return@launch
+                    val started = SystemClock.elapsedRealtime()
+                    val disposition = inspectExternalContent(pending.first, pending.second)
+                    externalIntakeMutation.withLock {
+                        externalAdmissionHints.remove(pending.first.intakeId)
+                        when (disposition) {
+                            is ExternalMetadataDisposition.Accepted -> {
+                                externalIntakeController.completeContentAdmission(
+                                    pending.first.intakeId,
+                                    accepted = true,
+                                    displayLabel = disposition.displayLabel,
+                                    knownLength = disposition.knownLength,
+                                    rootReady = currentSafRootForAdd() != null,
+                                )
+                                logExternalIntake(
+                                    pending.first.intakeId,
+                                    ExternalIntakeKind.TORRENT_FILE,
+                                    "presented",
+                                    "metadata_accepted",
+                                    durationMillis =
+                                        SystemClock.elapsedRealtime() - started,
+                                    disposition = "admitted",
+                                )
+                            }
+                            is ExternalMetadataDisposition.Rejected -> {
+                                externalIntakeController.completeContentAdmission(
+                                    pending.first.intakeId,
+                                    accepted = false,
+                                    displayLabel = null,
+                                    knownLength = null,
+                                    rootReady = currentSafRootForAdd() != null,
+                                )
+                                publishExternalNotice(ExternalIntakeNoticeKind.REJECTED)
+                                logExternalIntake(
+                                    pending.first.intakeId,
+                                    ExternalIntakeKind.TORRENT_FILE,
+                                    "rejected",
+                                    disposition.reason,
+                                    durationMillis =
+                                        SystemClock.elapsedRealtime() - started,
+                                    disposition = "rejected",
+                                )
+                            }
+                        }
+                        publishExternalSnapshot()
+                    }
+                }
+            }
+    }
+
+    private suspend fun inspectExternalContent(
+        work: ExternalIntakeWork,
+        hint: ExternalContentHint,
+    ): ExternalMetadataDisposition =
+        externalContentMutation.withLock {
+            val metadata =
+                try {
+                    queryExternalContentMetadata(Uri.parse(work.source.reveal()))
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    return@withLock if (hint.independentlyEligible) {
+                        ExternalMetadataDisposition.Accepted(null, null)
+                    } else {
+                        ExternalMetadataDisposition.Rejected("metadata_unavailable")
+                    }
+                }
+            if (metadata.providerMimeType == DocumentsContract.Document.MIME_TYPE_DIR) {
+                return@withLock ExternalMetadataDisposition.Rejected("directory")
+            }
+            val accepted =
+                hint.independentlyEligible ||
+                    metadata.providerMimeType.equals(
+                        BITTORRENT_MIME_TYPE,
+                        ignoreCase = true,
+                    ) ||
+                    hasTorrentSuffix(metadata.displayLabel)
+            if (accepted) {
+                ExternalMetadataDisposition.Accepted(
+                    boundedExternalDisplayLabel(metadata.displayLabel),
+                    metadata.knownLength,
+                )
+            } else {
+                ExternalMetadataDisposition.Rejected("unsupported_content")
+            }
+        }
+
+    private suspend fun queryExternalContentMetadata(uri: Uri): ExternalContentMetadata =
+        supervisorScope {
+            val cancellation = CancellationSignal()
+            externalAdmissionCancellationSignal = cancellation
+            val query =
+                async(Dispatchers.IO) {
+                    runInterruptible {
+                        contentResolver
+                            .query(
+                                uri,
+                                arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
+                                null,
+                                null,
+                                null,
+                                cancellation,
+                            ).use(::externalContentMetadataFromCursor)
+                    }
+                }
+            try {
+                val result =
+                    withTimeoutOrNull(EXTERNAL_PROVIDER_TIMEOUT_MILLIS) {
+                        query.await()
+                    }
+                if (result == null) {
+                    cancellation.cancel()
+                    query.cancelAndJoin()
+                    throw TorrentSourceReadTimeoutException()
+                }
+                result.copy(
+                    providerMimeType = runInterruptible(Dispatchers.IO) {
+                        contentResolver.getType(uri)
+                    },
+                )
+            } finally {
+                externalAdmissionCancellationSignal = null
+                cancellation.cancel()
+            }
+        }
+
+    private fun externalContentMetadataFromCursor(cursor: Cursor?): ExternalContentMetadata {
+        if (cursor == null || !cursor.moveToFirst()) {
+            return ExternalContentMetadata(null, null, null)
+        }
+        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+        val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+        return ExternalContentMetadata(
+            displayLabel =
+                nameIndex.takeIf { it >= 0 && !cursor.isNull(it) }?.let(cursor::getString),
+            knownLength =
+                sizeIndex.takeIf { it >= 0 && !cursor.isNull(it) }
+                    ?.let(cursor::getLong)
+                    ?.takeIf { it >= 0L },
+            providerMimeType = null,
+        )
+    }
+
+    fun setExternalIntakeStartContent(
+        intakeId: Long,
+        startContent: Boolean,
+    ) {
+        scope.launch {
+            externalIntakeMutation.withLock {
+                if (externalIntakeController.setStartContent(intakeId, startContent)) {
+                    publishExternalSnapshot()
+                }
+            }
+        }
+    }
+
+    fun confirmExternalIntake(intakeId: Long) {
+        scope.launch {
+            externalIntakeMutation.withLock {
+                val work =
+                    externalIntakeController.confirm(
+                        intakeId,
+                        rootReady = currentSafRootForAdd() != null,
+                    )
+                publishExternalSnapshot()
+                if (work != null) scheduleExternalSubmissionLocked(work)
+            }
+        }
+    }
+
+    fun retryExternalIntake(intakeId: Long) {
+        scope.launch {
+            externalIntakeMutation.withLock {
+                val work =
+                    externalIntakeController.retry(
+                        intakeId,
+                        rootReady = currentSafRootForAdd() != null,
+                    )
+                publishExternalSnapshot()
+                if (work != null) scheduleExternalSubmissionLocked(work)
+            }
+        }
+    }
+
+    fun cancelExternalIntake(intakeId: Long) {
+        scope.launch {
+            val submission =
+                externalIntakeMutation.withLock {
+                    if (!externalIntakeController.cancel(intakeId, currentSafRootForAdd() != null)) {
+                        return@withLock null
+                    }
+                    externalAdmissionHints.remove(intakeId)
+                    externalCancellationSignal?.cancel()
+                    publishExternalSnapshot()
+                    externalSubmissionJob
+                }
+            submission?.cancelAndJoin()
+            logExternalIntake(intakeId, null, "cancelled", "user")
+        }
+    }
+
+    private fun scheduleExternalSubmissionLocked(work: ExternalIntakeWork) {
+        check(externalSubmissionJob?.isActive != true) {
+            "external intake already has a submission job"
+        }
+        externalSubmissionJob =
+            scope.launch {
+                val started = SystemClock.elapsedRealtime()
+                try {
+                    clientReady.await()
+                    val storageRoot = currentSafRootForAdd()
+                    if (storageRoot == null) {
+                        externalIntakeMutation.withLock {
+                            externalIntakeController.submissionRootUnavailable(work.intakeId)
+                            publishExternalSnapshot()
+                        }
+                        logExternalIntake(
+                            work.intakeId,
+                            work.source.kind,
+                            "awaiting_root",
+                            "root_unavailable",
+                        )
+                        return@launch
+                    }
+                    val result =
+                        when (work.source.kind) {
+                            ExternalIntakeKind.MAGNET ->
+                                dispatchAddResult(
+                                    Command.AddMagnet(
+                                        work.source.reveal().trim(),
+                                        storageRoot,
+                                        work.startContent,
+                                        emptyList(),
+                                    ),
+                                )
+                            ExternalIntakeKind.TORRENT_FILE -> {
+                                externalContentMutation.withLock {
+                                    val source = readExternalTorrentSource(work)
+                                    dispatchTorrentSourceResult(
+                                        source.bytes,
+                                        work.startContent,
+                                        FileSelectionIntent.All,
+                                        storageRoot,
+                                    )
+                                }
+                            }
+                        }
+                    val notice =
+                        when (result.disposition) {
+                            AddTorrentDisposition.Added -> ExternalIntakeNoticeKind.ADDED
+                            AddTorrentDisposition.AlreadyPresent ->
+                                ExternalIntakeNoticeKind.ALREADY_PRESENT
+                            is AddTorrentDisposition.SelectionExpanded ->
+                                ExternalIntakeNoticeKind.SELECTION_EXPANDED
+                        }
+                    externalIntakeMutation.withLock {
+                        if (currentSafRootForAdd() == null) {
+                            if (
+                                externalIntakeController.submissionRootUnavailable(
+                                    work.intakeId,
+                                )
+                            ) {
+                                publishExternalSnapshot()
+                                logExternalIntake(
+                                    work.intakeId,
+                                    work.source.kind,
+                                    "awaiting_root",
+                                    "root_unavailable",
+                                    durationMillis =
+                                        SystemClock.elapsedRealtime() - started,
+                                )
+                            }
+                            return@withLock
+                        }
+                        if (
+                            externalIntakeController.completeSubmission(
+                                work.intakeId,
+                                currentSafRootForAdd() != null,
+                            )
+                        ) {
+                            publishExternalNotice(notice)
+                            publishExternalSnapshot()
+                            logExternalIntake(
+                                work.intakeId,
+                                work.source.kind,
+                                when (notice) {
+                                    ExternalIntakeNoticeKind.ALREADY_PRESENT -> "duplicate"
+                                    else -> "success"
+                                },
+                                "complete",
+                                durationMillis = SystemClock.elapsedRealtime() - started,
+                                disposition = notice.name.lowercase(),
+                            )
+                        }
+                    }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    val retryable =
+                        error is SecurityException ||
+                            error is FileNotFoundException ||
+                            error is TorrentSourceReadTimeoutException ||
+                            error is TorrentSourceProviderException
+                    val reason =
+                        when (error) {
+                            is SecurityException -> "permission"
+                            is FileNotFoundException -> "provider_missing"
+                            is TorrentSourceReadTimeoutException -> "timeout"
+                            is TorrentSourceProviderException -> "provider_failure"
+                            is EmptyTorrentSourceException -> "empty"
+                            is OversizedTorrentSourceException -> "oversized"
+                            else -> "invalid_or_engine_failure"
+                        }
+                    externalIntakeMutation.withLock {
+                        if (
+                            externalIntakeController.failSubmission(
+                                work.intakeId,
+                                retryable,
+                                currentSafRootForAdd() != null,
+                            )
+                        ) {
+                            if (!retryable) {
+                                publishExternalNotice(
+                                    ExternalIntakeNoticeKind.TERMINAL_FAILURE,
+                                )
+                            }
+                            publishExternalSnapshot()
+                            logExternalIntake(
+                                work.intakeId,
+                                work.source.kind,
+                                if (retryable) "retry" else "terminal",
+                                reason,
+                                durationMillis = SystemClock.elapsedRealtime() - started,
+                                disposition = if (retryable) "retryable" else "failed",
+                            )
+                        }
+                    }
+                } finally {
+                    externalCancellationSignal = null
+                    externalIntakeMutation.withLock {
+                        externalSubmissionJob = null
+                    }
+                }
+            }
+    }
+
+    private suspend fun readExternalTorrentSource(work: ExternalIntakeWork): BoundedTorrentSource {
+        val cancellation = CancellationSignal()
+        externalCancellationSignal = cancellation
+        val uri = Uri.parse(work.source.reveal())
+        return BoundedTorrentSourceReader.read(
+            openInput = {
+                val descriptor =
+                    contentResolver.openFileDescriptor(uri, "r", cancellation)
+                        ?: throw FileNotFoundException()
+                ParcelFileDescriptor.AutoCloseInputStream(descriptor)
+            },
+            knownLength = work.knownLength,
+            cancelled = { cancellation.isCanceled },
+            onCancel = cancellation::cancel,
+        )
+    }
+
+    private fun publishExternalSnapshot() {
+        val snapshot = externalIntakeController.snapshot()
+        mutableState.update {
+            it.copy(
+                externalIntake = snapshot.presentation,
+                externalIntakeDepth = snapshot.descriptorCount,
+            )
+        }
+    }
+
+    private fun publishExternalNotice(kind: ExternalIntakeNoticeKind) {
+        externalNoticeSequence += 1
+        mutableState.update {
+            it.copy(
+                externalIntakeNotice = ExternalIntakeNotice(externalNoticeSequence, kind),
+            )
+        }
+    }
+
+    private fun logExternalIntake(
+        intakeId: Long?,
+        kind: ExternalIntakeKind?,
+        phase: String,
+        reason: String,
+        durationMillis: Long = 0L,
+        disposition: String = "none",
+    ) {
+        Log.i(
+            TAG,
+            "external_intake id=${intakeId ?: 0L} " +
+                "kind=${kind?.name?.lowercase() ?: "unknown"} phase=$phase " +
+                "reason=$reason count=1 depth=${externalIntakeController.descriptorCount()} " +
+                "duration_ms=$durationMillis disposition=$disposition",
+        )
     }
 
     fun addMagnet(
@@ -306,6 +894,16 @@ class ProductEngineService : Service() {
             "Select a download folder first"
         },
     ) {
+        val add = dispatchTorrentSourceResult(source, startContent, selection, storageRoot)
+        logAddResult(add, null)
+    }
+
+    private suspend fun dispatchTorrentSourceResult(
+        source: ByteArray,
+        startContent: Boolean,
+        selection: FileSelectionIntent,
+        storageRoot: String,
+    ): AddTorrentResult {
         val request =
             AddTorrentBytesRequest(
                 version = 1U.toUShort(),
@@ -319,28 +917,15 @@ class ProductEngineService : Service() {
         val response = client.addTorrentBytes(request, source)
         val outcome = response.outcome
         if (outcome is ResponseOutcome.Error) error(outcome.error.message)
-        logAddResult(response, null)
+        return addResult(response)
     }
 
-    private fun readTorrentSource(uri: Uri): ByteArray {
-        val input = contentResolver.openInputStream(uri) ?: error("Unable to open torrent file")
-        return input.use { stream ->
-            val output = ByteArrayOutputStream()
-            val buffer = ByteArray(16 * 1024)
-            var total = 0
-            while (true) {
-                val count = stream.read(buffer)
-                if (count < 0) break
-                total += count
-                require(total <= MAX_TORRENT_SOURCE_BYTES) {
-                    "Torrent file exceeds the ${MAX_TORRENT_SOURCE_BYTES / (1024 * 1024)} MiB limit"
-                }
-                output.write(buffer, 0, count)
-            }
-            require(total > 0) { "Torrent file is empty" }
-            output.toByteArray()
-        }
-    }
+    private suspend fun readTorrentSource(uri: Uri): ByteArray =
+        BoundedTorrentSourceReader.read(
+            openInput = {
+                contentResolver.openInputStream(uri) ?: throw FileNotFoundException()
+            },
+        ).bytes
 
     fun addMagnetWithTrackerPolicyForTest(
         magnet: String,
@@ -1207,6 +1792,7 @@ class ProductEngineService : Service() {
                     },
             )
         }
+        notifyExternalRootAvailability(ready)
     }
 
     private fun updateSafRootState(product: ProductState) {
@@ -1221,6 +1807,16 @@ class ProductEngineService : Service() {
                 storageRootReady = ready,
                 storageRootLabel = current?.label,
             )
+        }
+        notifyExternalRootAvailability(ready)
+    }
+
+    private fun notifyExternalRootAvailability(ready: Boolean) {
+        scope.launch {
+            externalIntakeMutation.withLock {
+                externalIntakeController.rootAvailabilityChanged(ready)
+                publishExternalSnapshot()
+            }
         }
     }
 
@@ -1749,15 +2345,22 @@ class ProductEngineService : Service() {
         command: Command,
         v1InfoHash: String?,
         v2InfoHash: String? = null,
-    ): String = logAddResult(dispatchForResponse(command), v1InfoHash, v2InfoHash)
+    ): String = logAddResult(dispatchAddResult(command), v1InfoHash, v2InfoHash)
+
+    private suspend fun dispatchAddResult(command: Command): AddTorrentResult =
+        addResult(dispatchForResponse(command))
+
+    private fun addResult(
+        response: org.rstorrent.session.uniffi.ResponseEnvelope,
+    ): AddTorrentResult =
+        (response.result as? CommandResult.AddTorrent)?.result
+            ?: error("add response omitted its result")
 
     private fun logAddResult(
-        response: org.rstorrent.session.uniffi.ResponseEnvelope,
+        add: AddTorrentResult,
         v1InfoHash: String?,
         v2InfoHash: String? = null,
     ): String {
-        val add = (response.result as? CommandResult.AddTorrent)?.result
-            ?: error("add response omitted its result")
         Log.i(
             TAG,
             "torrent_added torrent=${add.torrentId} " +
@@ -2185,6 +2788,10 @@ class ProductEngineService : Service() {
     private suspend fun shutdown() {
         if (!stopped.compareAndSet(false, true)) return
         Log.i(TAG, "product_shutdown_begin")
+        externalAdmissionCancellationSignal?.cancel()
+        externalCancellationSignal?.cancel()
+        externalAdmissionJob?.cancelAndJoin()
+        externalSubmissionJob?.cancelAndJoin()
         if (::presentationRepository.isInitialized) presentationRepository.close()
         trackerEvidenceJob?.cancel()
         trackerEvidenceSubscription?.close()
@@ -2271,12 +2878,14 @@ class ProductEngineService : Service() {
         const val ACTION_STOP = "org.rstorrent.bootstrap.PRODUCT_STOP"
         const val ACTION_ENABLE_CHROMEOS_COMPANION =
             "org.rstorrent.bootstrap.ENABLE_CHROMEOS_COMPANION"
+        fun externalIntakeAction(packageName: String): String =
+            "$packageName.action.EXTERNAL_TORRENT_INTAKE"
         private const val CHANNEL_ID = "rstorrent-product"
         private const val NOTIFICATION_ID = 42
         private const val COMPANION_ROOT_NOTIFICATION_ID = 43
         private const val COMPANION_ROOT_PENDING_INTENT_ID = 43
         private const val COMPANION_PAIRING_POLL_MILLIS = 250L
-        private const val MAX_TORRENT_SOURCE_BYTES = 64 * 1024 * 1024
+        private const val EXTERNAL_PROVIDER_TIMEOUT_MILLIS = 30_000L
         private const val SAF_PROVIDER_CONCURRENCY = 4
         private const val ANDROID_RATE_BYTES_PER_SECOND = 24 * 1024
         private const val TAG = "RSTorrentProduct"

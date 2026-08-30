@@ -8,12 +8,12 @@ internal const val MAX_EXTERNAL_DISPLAY_LABEL_BYTES = 256
 internal const val BITTORRENT_MIME_TYPE = "application/x-bittorrent"
 internal const val EXTERNAL_VIEW_ACTION = "android.intent.action.VIEW"
 
-internal enum class ExternalIntakeKind {
+enum class ExternalIntakeKind {
     MAGNET,
     TORRENT_FILE,
 }
 
-internal enum class ExternalIntakePhase {
+enum class ExternalIntakePhase {
     RECEIVED,
     QUEUED,
     PRESENTED,
@@ -129,7 +129,7 @@ internal class ExternalIntakeSource private constructor(
     }
 }
 
-internal data class ExternalIntakePresentation(
+data class ExternalIntakePresentation(
     val intakeId: Long,
     val kind: ExternalIntakeKind,
     val phase: ExternalIntakePhase,
@@ -295,6 +295,13 @@ internal class ExternalIntakeController(
         record.retryUsed = true
         record.phase = ExternalIntakePhase.SUBMITTING
         return record.toWork()
+    }
+
+    fun submissionRootUnavailable(intakeId: Long): Boolean {
+        val record = records.firstOrNull { it.intakeId == intakeId } ?: return false
+        if (record.phase != ExternalIntakePhase.SUBMITTING) return false
+        record.phase = ExternalIntakePhase.AWAITING_ROOT
+        return true
     }
 
     fun failSubmission(

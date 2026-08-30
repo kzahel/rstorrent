@@ -85,11 +85,28 @@ data class CompanionPairingState(
     val expiresInSeconds: ULong,
 )
 
+enum class ExternalIntakeNoticeKind {
+    REJECTED,
+    QUEUE_FULL,
+    ADDED,
+    ALREADY_PRESENT,
+    SELECTION_EXPANDED,
+    TERMINAL_FAILURE,
+}
+
+data class ExternalIntakeNotice(
+    val sequence: Long,
+    val kind: ExternalIntakeNoticeKind,
+)
+
 data class ProductState(
     val ready: Boolean = false,
     val error: String? = null,
     val storageRootReady: Boolean = false,
     val storageRootLabel: String? = null,
+    val externalIntake: ExternalIntakePresentation? = null,
+    val externalIntakeDepth: Int = 0,
+    val externalIntakeNotice: ExternalIntakeNotice? = null,
     val companionPort: UShort? = null,
     val companionPairing: CompanionPairingState? = null,
     val preventSleepDuringActiveDownloads: Boolean = true,

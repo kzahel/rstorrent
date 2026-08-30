@@ -281,8 +281,60 @@ class MainActivity : ComponentActivity() {
             showDiagnosticSurface()
             handleDiagnostic(command)
         } else {
-            showProductSurface(command)
+            val productCommand = consumeExternalView(command) ?: command
+            showProductSurface(productCommand)
         }
+    }
+
+    private fun consumeExternalView(command: Intent): Intent? {
+        if (command.action != Intent.ACTION_VIEW || isChromeOsCompanionLaunch(command)) {
+            return null
+        }
+        val input =
+            ExternalIntentInput(
+                action = command.action,
+                data = command.dataString,
+                scheme = command.scheme,
+                mimeType = command.type,
+                path = command.data?.path,
+                hasSelector = command.selector != null,
+                hasClipData = command.clipData != null,
+                packageOverride = command.`package`,
+                hasReadGrant =
+                    command.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0,
+            )
+        val classification = ExternalIntentClassifier.classify(input)
+        if (classification == ExternalIntentClassification.NotExternalView) return null
+
+        val serviceIntent =
+            Intent(this, ProductEngineService::class.java).apply {
+                action = ProductEngineService.externalIntakeAction(packageName)
+                addFlags(command.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                when (classification) {
+                    ExternalIntentClassification.NotExternalView -> Unit
+                    is ExternalIntentClassification.Rejected ->
+                        putExtra(EXTRA_EXTERNAL_REJECTION, classification.reason.name)
+                    is ExternalIntentClassification.Magnet ->
+                        putExtra(EXTRA_EXTERNAL_SOURCE, classification.source.reveal())
+                    is ExternalIntentClassification.Content -> {
+                        putExtra(EXTRA_EXTERNAL_SOURCE, classification.source.reveal())
+                        putExtra(EXTRA_EXTERNAL_MIME_TYPE, classification.announcedMimeType)
+                    }
+                }
+            }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent)
+        } else {
+            startService(serviceIntent)
+        }
+
+        val sanitized =
+            Intent(this, MainActivity::class.java).apply {
+                action = Intent.ACTION_MAIN
+                addCategory(Intent.CATEGORY_LAUNCHER)
+            }
+        setIntent(sanitized)
+        return sanitized
     }
 
     private fun showProductSurface(command: Intent) {
@@ -711,5 +763,8 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_PRODUCT_RELEASE_SAF_ROOT = "product_release_saf_root"
         const val EXTRA_COMPANION_ROOT_REQUEST = "companion_root_request"
         const val EXTRA_COMPANION_REPAIR_ROOT = "companion_repair_root"
+        const val EXTRA_EXTERNAL_SOURCE = "external_intake_source"
+        const val EXTRA_EXTERNAL_MIME_TYPE = "external_intake_mime_type"
+        const val EXTRA_EXTERNAL_REJECTION = "external_intake_rejection"
     }
 }

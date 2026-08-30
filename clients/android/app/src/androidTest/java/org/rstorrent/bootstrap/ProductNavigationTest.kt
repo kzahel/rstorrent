@@ -1,10 +1,13 @@
 package org.rstorrent.bootstrap
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -214,6 +217,127 @@ class ProductNavigationTest {
         assertEquals(TransferRateLimit.Unlimited, patches.single().downloadRateLimit)
         assertNull(patches.single().uploadRateLimit)
         assertNull(patches.single().peerConnectionLimit)
+    }
+
+    @Test
+    fun externalMagnetUsesGenericConfirmationAndTypedCallbacks() {
+        val startChoices = mutableListOf<Pair<Long, Boolean>>()
+        val confirmations = mutableListOf<Long>()
+        compose.setContent {
+            ProductApp(
+                service = null,
+                onSelectStorage = {},
+                onBrowseTorrent = {},
+                notificationsGranted = true,
+                onRequestNotifications = {},
+                onOpenNotificationSettings = {},
+                themeMode = ProductThemeMode.LIGHT,
+                dynamicColor = false,
+                onThemeMode = {},
+                onDynamicColor = {},
+                stateOverride =
+                    ProductState(
+                        ready = true,
+                        storageRootReady = true,
+                        externalIntake =
+                            ExternalIntakePresentation(
+                                41,
+                                ExternalIntakeKind.MAGNET,
+                                ExternalIntakePhase.PRESENTED,
+                                null,
+                                true,
+                            ),
+                    ),
+                onExternalStartContent = { id, start -> startChoices += id to start },
+                onConfirmExternalIntake = { confirmations += it },
+            )
+        }
+
+        compose.onNodeWithText("Magnet link from another app").assertIsDisplayed()
+        compose.onNodeWithText("Start downloading immediately").performClick()
+        compose.onNodeWithText("Add").performClick()
+        compose.onAllNodesWithText("secret.invalid", substring = true).assertCountEquals(0)
+        assertEquals(listOf(41L to false), startChoices)
+        assertEquals(listOf(41L), confirmations)
+    }
+
+    @Test
+    fun externalTorrentWaitsForRootAndOffersCancel() {
+        val selections = mutableListOf<Unit>()
+        val cancellations = mutableListOf<Long>()
+        compose.setContent {
+            ProductApp(
+                service = null,
+                onSelectStorage = { selections += Unit },
+                onBrowseTorrent = {},
+                notificationsGranted = true,
+                onRequestNotifications = {},
+                onOpenNotificationSettings = {},
+                themeMode = ProductThemeMode.LIGHT,
+                dynamicColor = false,
+                onThemeMode = {},
+                onDynamicColor = {},
+                stateOverride =
+                    ProductState(
+                        ready = true,
+                        externalIntake =
+                            ExternalIntakePresentation(
+                                42,
+                                ExternalIntakeKind.TORRENT_FILE,
+                                ExternalIntakePhase.AWAITING_ROOT,
+                                "safe.torrent",
+                                true,
+                            ),
+                    ),
+                onCancelExternalIntake = { cancellations += it },
+            )
+        }
+
+        compose.onNodeWithText("Torrent file from another app").assertIsDisplayed()
+        compose.onNodeWithText("safe.torrent").assertIsDisplayed()
+        compose.onNodeWithText("Add").assertIsNotEnabled()
+        compose.onNodeWithText("Select folder").performClick()
+        compose.onNodeWithText("Cancel").performClick()
+        assertEquals(1, selections.size)
+        assertEquals(listOf(42L), cancellations)
+    }
+
+    @Test
+    fun externalRetryIsExplicitAndBoundedByServiceState() {
+        val retries = mutableListOf<Long>()
+        compose.setContent {
+            ProductApp(
+                service = null,
+                onSelectStorage = {},
+                onBrowseTorrent = {},
+                notificationsGranted = true,
+                onRequestNotifications = {},
+                onOpenNotificationSettings = {},
+                themeMode = ProductThemeMode.LIGHT,
+                dynamicColor = false,
+                onThemeMode = {},
+                onDynamicColor = {},
+                stateOverride =
+                    ProductState(
+                        ready = true,
+                        storageRootReady = true,
+                        externalIntake =
+                            ExternalIntakePresentation(
+                                43,
+                                ExternalIntakeKind.TORRENT_FILE,
+                                ExternalIntakePhase.RETRYABLE_FAILURE,
+                                null,
+                                true,
+                            ),
+                    ),
+                onRetryExternalIntake = { retries += it },
+            )
+        }
+
+        compose.onNodeWithText("The source could not be read. You can retry once.")
+            .assertIsDisplayed()
+        compose.onNodeWithText("Retry").performClick()
+        assertEquals(listOf(43L), retries)
     }
 
     private fun torrent(): TorrentView =
