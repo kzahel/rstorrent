@@ -3,28 +3,36 @@
 Topic: `direct-remote-file-streaming`
 
 Status: Active Tactical
-[`196`](../tactical/196-remote-direct-file-product-integration.md) owns the
-first product slice. Its initial landing enables the measured WebRTC graph by
-default in desktop and headless leaf products, preserves explicit feature-off
-graphs, and tightens DataChannel file messages to 16 KiB because the retained
-SCTP implementation does not expose RFC 8260 message interleaving. Completed Tactical
+[`196`](../tactical/196-remote-direct-file-product-integration.md) has landed
+the first product slice and remains active for qualification. Desktop and
+headless leaf products compile the measured WebRTC graph by default while
+preserving explicit feature-off graphs. The remote Files surface saves one
+completed verified file over authenticated RDF signaling, direct-only ICE,
+and 16-KiB DataChannel messages; Remote Access settings own the kill switch,
+live resources, stop action, and redacted audit. Public Cloudflare STUN and
+strict UUIDv4 `.local` mDNS candidates are implemented lazily. The complete
+current-host product verifier and native Linux ARM64 build pass. Native
+Windows compilation with a complete C toolchain, an independent-network
+selected pair, and a real streaming save picker remain bounded evidence gaps,
+so the capability stays unadvertised. TURN remains explicitly unplanned.
+
+Completed Tactical
 [`195`](../tactical/195-webrtc-direct-file-feasibility-spike.md) retains lower
 `webrtc-rs/rtc` 0.20.4 behind the library-optional `direct-file-webrtc`
 feature, a lazy supervised endpoint, bounded verified-range codec, and local
 real-browser harness. Chromium and Firefox pass. Post-completion Playwright
 WebKit reruns also complete ICE, DTLS, DataChannel, and exact range traffic;
 their repeatable OPFS failure belongs to Playwright's non-persistent test
-context rather than the transport. Product signaling, visible UI, runtime
-setting, public STUN, and support claims remain incomplete until Tactical
-`196`; TURN is explicitly not planned for that slice.
+context rather than the transport. OPFS is not used by the product.
 
 ## Purpose And Ownership
 
 The remote React UI can control and inspect the real RSTorrent application,
-but its authenticated relay circuit intentionally carries no torrent payload
-or file content. The local media service already supplies bounded complete and
-incomplete-file range reads. This topic owns the missing transport and browser
-presentation seam between those two implemented capabilities.
+and its authenticated relay circuit intentionally carries no torrent payload
+or file content. The first direct completed-file Save seam now connects that
+control surface to the local media service's bounded verified reads. This
+topic owns that transport, its browser presentation, continuing qualification,
+and later file-consumption breadth.
 
 Specifically, it owns:
 
@@ -55,8 +63,10 @@ remote-file authority merely because some discovery mechanisms overlap.
 
 ## Desired Product Outcome
 
-From the remote UI, an authorized owner should be able to select an eligible
-torrent file and choose **Open**, **Play**, or **Download**. RSTorrent then:
+The landed first slice lets an authorized remote owner select one completed
+verified torrent file and choose **Save file...**. The broader desired outcome
+is to add eligible **Open** and **Play** consumers without weakening the same
+authority and direct-only invariants. For each supported action RSTorrent:
 
 1. creates a short-lived file-scoped capability inside the authenticated
    application circuit;
@@ -88,19 +98,19 @@ not silently send file bytes through the control relay as a fallback.
   DTLS fingerprints, protocol negotiation, and transfer grants are typed and
   bounded messages protected by the existing owner-authenticated channel. No
   new unauthenticated signaling endpoint is introduced.
-- **The native host embeds the other peer.** Desktop and headless builds would
+- **The native host embeds the other peer.** Desktop and headless builds
   contain a Rust WebRTC endpoint when compiled with the feature. A hidden
   desktop WebView, browser extension, companion daemon, and Google libwebrtc
   process are not the selected architecture.
-- **Compilation and activation are separate.** Ready Tactical `196` accepts the
-  measured package cost and will compile the endpoint by default in desktop and
-  configured-headless leaf products. Compilation must not bind UDP, enumerate
+- **Compilation and activation are separate.** Tactical `196` accepts the
+  measured package cost and compiles the endpoint by default in desktop and
+  configured-headless leaf products. Compilation does not bind UDP, enumerate
   interfaces, contact STUN, create a mapping, generate continuing traffic, or
   retain a background task. Runtime work begins only for an authorized file
   request and ends observably.
-- **Runtime direct transfer defaults on with a kill switch.** Once Tactical
-  `196` lands, enabling remote access also permits an explicit remote Save
-  action to attempt a direct path. The operator can disable direct file
+- **Runtime direct transfer defaults on with a kill switch.** Enabling remote
+  access permits an explicit remote Save action to attempt a direct path. The
+  operator can disable direct file
   transfers independently; disable cancels and joins active peers without
   disabling ordinary remote control.
 - **No unencrypted hole.** UPnP or an IPv6 firewall pinhole may make a UDP
@@ -263,11 +273,11 @@ called `direct-file-webrtc`; the implementing tactical may refine the name.
 - CI must build and test both feature-off and feature-on graphs. The off build
   must prove that WebRTC and its unique crypto/SCTP dependencies are absent.
 
-The feasibility artifact remains opt-in until Tactical `196` lands. That
-tactical accepts the measured installed/compressed cost for default desktop and
-configured-headless compilation while preserving explicit feature-off CI and
-dependency-tree proof for every excluded target. Runtime activation remains
-separate and lazy.
+Tactical `196` promotes the endpoint into default desktop and
+configured-headless compilation while preserving the library-optional feature,
+explicit feature-off CI, and dependency-tree proof for excluded targets.
+Runtime activation remains separate and lazy: compilation alone creates no
+certificate, socket, candidate, task, DNS request, or STUN traffic.
 
 ### Tactical 195 measured result
 
@@ -305,7 +315,7 @@ waiting and revocation are separately proved.
 
 ## Runtime Ownership And Cancellation
 
-The expected ownership shape is:
+The landed ownership shape is:
 
 ```text
 application/profile owner
@@ -313,31 +323,24 @@ application/profile owner
        -> optional direct-file supervisor (created on first request)
             -> bounded browser-peer generations
                  -> UDP socket + ICE/DTLS/SCTP driver
-                 -> optional mapping/pinhole lease
+                 -> bounded mDNS socket/driver
                  -> bounded file-request owners
                       -> media capability lease
-                      -> verified-range wait/read
+                      -> verified completed-file range read
                       -> DataChannel backpressure
 ```
 
-One browser peer should be able to multiplex a bounded number of range
-requests. Whether to use one reliable ordered channel, several SCTP streams,
-or a small control channel plus data channels is a measurement question;
-large ordered messages must not create head-of-line stalls for seek or cancel.
-Messages remain far below negotiated browser maxima, and sender
-`bufferedAmount`/library backpressure must bound queued data.
+The first slice uses one reliable ordered channel, one sequential request, and
+16-KiB maximum chunks because the retained SCTP stack does not expose RFC 8260
+message interleaving. Browser writes complete before acknowledgements advance
+the host, and both sides bound messages and queued bytes.
 
-Cancellation must flow from file-request cancel, seek replacement, capability
-revocation, authorization revocation, direct-peer replacement, timeout,
-profile replacement, remote-access disable, and application shutdown. Every
-task, read, range wait, transient streaming-demand lease, UDP socket, mapping,
-and pinhole must terminate and join. Uncertain gateway cleanup is an operator-
-visible bounded state, never silently reported as removed.
-
-Whether an established direct transfer may briefly survive loss of the relay
-control circuit remains open. The conservative first behavior is to stop
-admitting new ranges and close after a short bounded reconnection grace, while
-local revocation and shutdown always take effect immediately.
+Cancellation flows from file-request cancel, capability or authorization
+revocation, direct-peer replacement, timeout, profile replacement,
+remote-access disable, direct-transfer disable, circuit loss, and application
+shutdown. The first product does not let a transfer outlive its authenticated
+control circuit. Every task, read, capability lease, UDP or mDNS socket, and
+queued byte terminates and joins before terminal cleanup is reported.
 
 ## File-Range Protocol
 
@@ -393,11 +396,13 @@ Candidate adapters are:
    or future DNS/TLS route is reachable, retain the existing media URL and let
    the browser perform native ranges, download, PDF, audio, and video handling.
 
-The first browser investigation should prove bounded download and one seeking
-media-element path without buffering the whole file. It must run in real
-Chromium, Firefox, and WebKit/Safari-shaped environments before general support
-is claimed. Small-file success in one browser is not sufficient evidence for
-remote streaming.
+The landed Save adapter chooses the stream-to-file API synchronously from the
+user gesture when available and otherwise permits only the 32-MiB Blob path.
+It never uses OPFS. Browser-independent sink tests prove incremental
+write-before-ack and cancellation; real streaming-picker evidence remains a
+qualification gate. A later Open/Play tactical must separately prove a
+seeking media path in real Chromium, Firefox, and WebKit/Safari-shaped
+environments before general viewing or playback support is claimed.
 
 ## Security, Privacy, And Audit
 

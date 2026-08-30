@@ -1,6 +1,12 @@
 # Tactical 196: Remote Direct-File Product Integration
 
-Status: **Active.** This tactical turns completed Tactical
+Status: **Implementation complete; qualification remains active.** The product
+path, operator controls, audit, default build graph, direct-only signaling,
+and completed-file Save are implemented and pass the current-host product
+matrix. Native Linux ARM64 compilation also passes. Native Windows
+compilation, an independent-network direct path, and a real browser streaming
+save picker remain bounded evidence gaps, so this tactical does not yet claim
+completion or supported availability. This tactical turns completed Tactical
 [`195`](195-webrtc-direct-file-feasibility-spike.md)'s retained lower-`rtc`
 endpoint into one default-compiled, lazy, authenticated remote-file product
 slice. It adds completed-file **Save file...** from the remote React UI,
@@ -568,6 +574,88 @@ deployment, DNS changes, external messages, release publication, or edits to
 private deployment repositories. Browser profiles, selected test downloads,
 temporary payloads, logs, captures, and build probes stay isolated and are
 removed after summarized non-sensitive evidence is recorded.
+
+## Execution Record: 2026-08-30
+
+The end-to-end product implementation landed in these commits:
+
+- `1b5fcc2` defines capability-negotiated, circuit-bound direct-file
+  signaling while retaining exact protocol-1 compatibility;
+- `fe05d74` adds internal completed-file capability issuance;
+- `33046f1` makes remote circuits own and cancel direct peer generations;
+- `477b831` streams completed verified ranges over the retained WebRTC
+  endpoint;
+- `7c865f8` exposes direct saves, operator controls, live resources, and
+  bounded security audit events;
+- `d520c6c` retains usable host candidates when public STUN is unavailable;
+- `3b4b472` completes the Files/Settings product path, browser sink,
+  production-shaped verifier, mDNS routing, and cleanup fixes; and
+- `6cae2e2` selects the incumbent Rustls provider explicitly in the unified
+  product graph without changing RTC's Ring-owned DTLS path.
+
+The implemented browser action is **Save file...** for one selected verified
+completed file. The destination picker is requested synchronously from the
+user gesture when available. The browser then negotiates one direct-only
+DataChannel through authenticated encrypted sideband records and writes
+sequential 16-KiB chunks with write-before-ack backpressure. Browsers without
+the picker use the exact Blob fallback only up to 32 MiB. The product does not
+use OPFS, does not expose file paths or bearer URLs, and does not send file
+payload through the relay.
+
+The host gathers bounded UDP host, strict UUIDv4 `.local` mDNS, and
+Cloudflare server-reflexive candidates. STUN failure retains usable host
+candidates. TCP, relay, multicast, unspecified, and arbitrary DNS candidates
+fail closed. Remote disable, the direct-transfer kill switch, circuit loss,
+revocation, cancellation, and shutdown close and join the peer, request,
+capability, sockets, and mDNS driver. The Remote Access settings surface shows
+the setting, stop action, bounded live resources, and redacted per-transfer
+audit outcome.
+
+Passing evidence:
+
+- `cargo fmt --all -- --check`, `cargo clippy --workspace -- -D warnings`,
+  and `cargo test --workspace --quiet`; the workspace includes 592 engine,
+  41 desktop, 45 remote-host, 290 session, and 9 direct-file passing tests,
+  with only their recorded ignored cases;
+- `cargo test -p rstorrent-direct-file --features experiment`, the exact
+  tracker runtime rerun, and direct-file feature clippy;
+- `npm run typecheck --prefix clients/web` and
+  `npm run test --prefix clients/web` with 364 passing and 2 skipped tests;
+- the production-shaped remote verifier through real TLS and the opaque
+  relay: password login, reload/browser/phone resume, relay restart, package
+  rollback, revocation, tombstone, changed-host refusal, 256 invalid-circuit
+  attempts, rendered audit, and an exact 1,048,576-byte direct save with
+  SHA-256
+  `52157c7a6432d236380ce45de056573cf27dd0e1dfcca37aac92d09530ea67a9`;
+- zero relay payload retention and terminal zero direct peers, tasks, sockets,
+  requests, and queued bytes in that product verifier;
+- public Cloudflare STUN gathering from Chromium, Firefox, Playwright WebKit,
+  and the native endpoint in isolated probes;
+- earlier retained endpoint traces for exact 8-MiB Chromium and Firefox
+  saves, cancellation, bounded 16-KiB messages, and zero-owner cleanup, plus
+  WebKit DTLS/DataChannel/range success independent of OPFS; and
+- a native Ubuntu 24.04 ARM64 `cargo check -p rstorrent-headless` of the
+  default RTC graph in an isolated VM.
+
+Qualification remains open for three bounded reasons:
+
+1. The available Windows VM has Rust but no LLVM/MSVC C compiler or CMake, so
+   Ring stops in its build script. A macOS cross-check reaches the same Ring C
+   build but lacks the Windows SDK headers. A native Windows test image with
+   LLVM or MSVC, CMake, and the Windows SDK must compile the default graph.
+2. Browser and native public-STUN gathering pass separately and the complete
+   product payload path passes on the current host, but no available
+   independent-network topology selected a server-reflexive pair.
+3. The product verifier deliberately exercises the bounded Blob fallback.
+   Unit sink seams prove incremental write-before-ack behavior, but a real
+   browser exposing `showSaveFilePicker` has not yet supplied the large-file
+   streaming-save evidence. Actual Safari and physical mobile remain
+   evidence, not inferred support.
+
+These gaps do not reopen the implementation architecture. They keep Tactical
+`196` active and the capability unadvertised until the exact stopping
+condition is met. All temporary browser profiles, fixtures, downloads, VM
+sources, toolchains, archives, and testbed claims were removed or released.
 
 ## Escalation Contract
 
