@@ -126,6 +126,7 @@ class ProductEngineService : Service() {
         val interactionLeases: Int,
         val notificationReceiverRegistered: Boolean,
         val wakeLockHeld: Boolean,
+        val networkCallbackRegistered: Boolean,
     )
 
     private lateinit var client: AndroidApplicationClient
@@ -150,6 +151,8 @@ class ProductEngineService : Service() {
     private val clientSettingsRequestActive = AtomicBoolean(false)
     private val torrentSettingsRequestActive = AtomicBoolean(false)
     private var powerLock: PowerManager.WakeLock? = null
+    private lateinit var defaultNetworkObserver: AndroidDefaultNetworkObserver
+    private val networkPreferenceMutation = Mutex()
     private val externalIntakeController = ExternalIntakeController()
     private val externalIntakeMutation = Mutex()
     private val externalContentMutation = Mutex()
@@ -200,11 +203,34 @@ class ProductEngineService : Service() {
             notificationCoordinator.ongoingNotification("Opening profile"),
         )
         val safRegistry = ProductSafRootRegistry.load(this)
+        val unmeteredNetworksOnly = ProductNetworkPreference.read(this)
+        defaultNetworkObserver =
+            AndroidDefaultNetworkObserver(this, unmeteredNetworksOnly) { networkState ->
+                mutableState.update {
+                    it.copy(
+                        network =
+                            it.network.copy(
+                                unmeteredNetworksOnly = networkState.unmeteredNetworksOnly,
+                                eligibility = networkState.eligibility,
+                                observationRevision = networkState.revision,
+                            ),
+                    )
+                }
+            }
+        val callbackRegistered = defaultNetworkObserver.start()
+        val initialNetworkState = defaultNetworkObserver.snapshot()
         mutableState.update {
             it.copy(
                 storageRootReady = false,
                 storageRootLabel = safRegistry.roots.singleOrNull()?.label,
                 preventSleepDuringActiveDownloads = ProductPowerPreference.read(this),
+                network =
+                    ProductNetworkState(
+                        unmeteredNetworksOnly = unmeteredNetworksOnly,
+                        eligibility = initialNetworkState.eligibility,
+                        observationRevision = initialNetworkState.revision,
+                        callbackRegistered = callbackRegistered,
+                    ),
             )
         }
         initializationJob = scope.launch {
@@ -2316,6 +2342,39 @@ class ProductEngineService : Service() {
         notificationCoordinator.setPreference(preference, enabled, interactionLeases.size)
     }
 
+    internal fun setUnmeteredNetworksOnly(enabled: Boolean) {
+        scope.launch {
+            networkPreferenceMutation.withLock {
+                if (stopped.get()) return@withLock
+                val current = mutableState.value.network
+                if (enabled == current.unmeteredNetworksOnly) return@withLock
+                if (!ProductNetworkPreference.persist(this@ProductEngineService, enabled)) {
+                    mutableState.update {
+                        it.copy(
+                            network =
+                                it.network.copy(
+                                    preferenceError = "The network preference could not be saved.",
+                                ),
+                        )
+                    }
+                    return@withLock
+                }
+                val updated = defaultNetworkObserver.setUnmeteredNetworksOnly(enabled)
+                mutableState.update {
+                    it.copy(
+                        network =
+                            it.network.copy(
+                                unmeteredNetworksOnly = enabled,
+                                eligibility = updated.eligibility,
+                                observationRevision = updated.revision,
+                                preferenceError = null,
+                            ),
+                    )
+                }
+            }
+        }
+    }
+
     internal fun resourceSnapshotForTest(): ResourceSnapshot {
         check(ProductSafDocuments.isDebuggable(this)) { "resource snapshot is debug-only" }
         return ResourceSnapshot(
@@ -2323,6 +2382,8 @@ class ProductEngineService : Service() {
             interactionLeases = interactionLeases.size,
             notificationReceiverRegistered = notificationBlockReceiver != null,
             wakeLockHeld = powerLock?.isHeld == true,
+            networkCallbackRegistered =
+                ::defaultNetworkObserver.isInitialized && defaultNetworkObserver.isRegistered(),
         )
     }
 
@@ -2862,6 +2923,7 @@ class ProductEngineService : Service() {
         }
         Log.i(TAG, "product_shutdown_begin reason=$reason")
         try {
+            if (::defaultNetworkObserver.isInitialized) defaultNetworkObserver.close()
             unregisterNotificationBlockReceiver()
             ProductInteractionRegistry.detach()
             interactionLeases.clear()

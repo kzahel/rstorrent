@@ -21,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import org.rstorrent.bootstrap.ProductNetworkState
 import org.rstorrent.session.uniffi.ClientSettingsRuntimeView
 import org.rstorrent.session.uniffi.EncryptionPolicy
 import org.rstorrent.session.uniffi.ListenerPolicy
@@ -168,11 +169,26 @@ private fun rateLimitKiBValue(bytesPerSecond: UInt): String {
 @Composable
 internal fun NetworkSettings(
     settings: ClientSettingsRuntimeView,
+    network: ProductNetworkState,
+    onUnmeteredNetworksOnly: (Boolean) -> Unit,
     onListener: (Boolean) -> Unit,
     onPortMapping: (Boolean) -> Unit,
     onIpv6: (Boolean) -> Unit,
     onEncryption: (EncryptionPolicy) -> Unit,
 ) {
+    ToggleSetting(
+        title = "Unmetered networks only",
+        detail = "Pause network transfers on metered connections · ${network.currentTruth}",
+        checked = network.unmeteredNetworksOnly,
+        onChecked = onUnmeteredNetworksOnly,
+    )
+    network.preferenceError?.let {
+        ListItem(
+            headlineContent = { Text("Setting not saved") },
+            supportingContent = { Text(it) },
+        )
+        HorizontalDivider()
+    }
     ToggleSetting(
         title = "Incoming connections",
         detail = settings.listenerStatus.toString(),
@@ -202,7 +218,6 @@ internal fun NetworkSettings(
         onSelected = onEncryption,
     )
     DisabledSetting("VPN-only mode")
-    DisabledSetting("Metered network policy")
     DisabledSetting("Proxy")
 }
 

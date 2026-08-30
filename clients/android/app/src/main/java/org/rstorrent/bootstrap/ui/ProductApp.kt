@@ -123,6 +123,7 @@ fun ProductApp(
     notificationNavigation: ProductNotificationNavigation? = null,
     onNotificationNavigationConsumed: (Long) -> Unit = {},
     onUpdateNotificationPreference: ((ProductNotificationPreference, Boolean) -> Unit)? = null,
+    onUnmeteredNetworksOnly: ((Boolean) -> Unit)? = null,
     onUpdateClientSettings: ((ClientSettingsPatch) -> Unit)? = null,
     onUpdateTorrentSettings: ((String, TorrentSettingsPatch) -> Unit)? = null,
     onRepairStorage: (String) -> Unit = {},
@@ -167,6 +168,11 @@ fun ProductApp(
                     onUpdateNotificationPreference =
                         onUpdateNotificationPreference ?: { preference, enabled ->
                             service?.setNotificationPreference(preference, enabled)
+                            Unit
+                        },
+                    onUnmeteredNetworksOnly =
+                        onUnmeteredNetworksOnly ?: {
+                            service?.setUnmeteredNetworksOnly(it)
                             Unit
                         },
                     themeMode = themeMode,
@@ -372,6 +378,7 @@ private fun ProductNavHost(
     onNotificationNavigationConsumed: (Long) -> Unit,
     onNotificationNavigationFallback: (String) -> Unit,
     onUpdateNotificationPreference: (ProductNotificationPreference, Boolean) -> Unit,
+    onUnmeteredNetworksOnly: (Boolean) -> Unit,
     themeMode: ProductThemeMode,
     dynamicColor: Boolean,
     onThemeMode: (ProductThemeMode) -> Unit,
@@ -680,6 +687,8 @@ private fun ProductNavHost(
                 state.presentedClientSettings()?.let { settings ->
                     NetworkSettings(
                         settings,
+                        network = state.network,
+                        onUnmeteredNetworksOnly = onUnmeteredNetworksOnly,
                         onListener = { enabled ->
                             onUpdateClientSettings(
                                 clientSettingsPatch(
