@@ -89,6 +89,7 @@ def run(arguments: argparse.Namespace) -> None:
             "connections_limit": 1,
             "alert_queue_size": 512,
             "upload_rate_limit": arguments.upload_rate_limit,
+            "ignore_limits_on_local_network": False,
         }
     )
     parameters = lt.add_torrent_params()
