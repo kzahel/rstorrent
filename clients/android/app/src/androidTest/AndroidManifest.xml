@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <provider
+            android:name="org.rstorrent.bootstrap.ExternalIntakeFixtureProvider"
+            android:authorities="${applicationId}.external-intake-fixture"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+        <activity
+            android:name="org.rstorrent.bootstrap.ExternalIntakeFixtureActivity"
+            android:exported="true" />
+    </application>
+</manifest>
