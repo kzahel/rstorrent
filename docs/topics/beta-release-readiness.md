@@ -593,16 +593,20 @@ is still pending and is not the compatibility oracle.
   device proves persistence, acquisition through screen-off Dozing, absence of
   a Wi-Fi lock, service-stop release, and exact data/root cleanup.
 - [ ] **AND-008 — Qualify ChromeOS Android extension control.** Tactical `194`
-  must carry the release-built shared React presentation through explicit
+  carries the release-built shared React presentation through explicit
   Android-approved pairing to the one foreground-service application/engine/
-  profile owner, then prove cold launch, Local Network Access, exact Host/
-  Origin/auth rejection, same-device-only reachability, Compose coexistence,
-  extension-triggered SAF select/cancel/repair, two retained roots with one
-  current/default for new downloads, old-torrent root binding, independent
-  grant loss, bounded removal/release, restart/crash recovery, detached
-  transfer, reconnect, revoke, joined stop, and cleanup on a physical
-  Chromebook. No URI or descriptor may cross the application connection.
-  This blocks only the advertised extension-controlled Android ChromeOS lane;
+  profile owner. Physical ChromeOS 150 now passes pairing, identity, packaged
+  React control, Compose convergence, extension-triggered retained SAF roots,
+  current/default future binding, referenced-root rejection, independent grant
+  loss/repair, restart persistence, local `.torrent` intake, two controlled
+  root-bound transfers, a detached 4 MiB transfer, reconnect, and exact
+  cleanup without exposing a URI or descriptor. It remains blocked because
+  ChromeOS forwards the Android wildcard listener through the Chromebook's
+  Wi-Fi address: another LAN device reached the real hello route by supplying
+  the expected Host and extension Origin. Header admission cannot make a
+  cleartext bearer same-device-only. A non-LAN-reachable OS transport decision
+  and a repeat of the physical rejection/shutdown matrix are required. This
+  blocks only the advertised extension-controlled Android ChromeOS lane;
   Android-through-Compose remains a separate supported choice.
 - [ ] **AND-009 — Add background completion and actionable failure
   notifications.** Current Android has the required foreground-service status
@@ -802,18 +806,19 @@ concurrently when directed, without demoting other active work.
     enabled healthy current-host x86_64 service campaign pass. No public
     publication, unattended update, system-wide service, firewall change, or
     Raspberry Pi mutation occurred. Tactical `158` remains active.
-20. **Active — Tactical `194`: ChromeOS Android extension control.** Preserve
+20. **Blocked — Tactical `194`: ChromeOS Android extension control.** Preserve
     the JSTorrent companion user journey without its extension-owned engine or
     raw IO daemon: package the shared React UI in the beta extension, pair it
     explicitly over the same-device ARC boundary, and attach it to the one
     Android foreground application/profile owner. Provide the shared root UI
     through Android's SAF picker and retain older grants for their bound
-    torrents when a new root becomes current. Physical cold-launch, Local
-    Network Access, routing isolation, coexistence, two-root lifecycle,
-    detached-transfer, reconnect, revoke, shutdown, and cleanup evidence are
-    required. Store publication, production JSTorrent extension changes,
-    state import, media, notifications, and dynamic network policy remain
-    outside the slice.
+    torrents when a new root becomes current. Physical cold launch, pairing,
+    coexistence, two-root lifecycle, repair, detached transfer, reconnect, and
+    cleanup pass. ChromeOS 150 exposes the wildcard Android listener through
+    Wi-Fi, so same-device routing isolation fails and a different OS transport
+    decision is required. Store publication, production JSTorrent extension
+    changes, state import, media, notifications, and dynamic network policy
+    remain outside the slice.
 
 Each implementation item requires its own bounded tactical. These status
 classifications are not authorization to tag, publish, alter production

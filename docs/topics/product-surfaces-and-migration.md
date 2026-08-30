@@ -587,12 +587,14 @@ Linux headless backend, signed source update lane, exact trusted-LAN mode, and
 installed x86_64 evidence. Treat public candidate/channel promotion,
 system-wide ownership, native ARM64 service/update evidence, and owner remote
 authentication as separate future operations or slices.
-Execute active Tactical `194` as the first migration-critical Android
-JSTorrent-parity slice. It must prove the extension-controlled ChromeOS user
-journey, retained SAF-root selection, and extension-triggered picker while
-retaining one Android engine/profile owner; completion/error notifications and
-metered/VPN enforcement remain the next core Android release slices rather
-than additions to its transport boundary.
+Tactical `194` implements the first migration-critical Android
+JSTorrent-parity slice and physically proves the extension-controlled ChromeOS
+journey, retained SAF-root selection/repair, and one Android engine/profile
+owner. It is blocked from release because ChromeOS forwards the Android
+wildcard listener through the Chromebook's Wi-Fi address. Select and prove a
+non-LAN-reachable ChromeOS/ARC transport before resuming that tactical;
+completion/error notifications and metered/VPN enforcement remain the next
+core Android release slices rather than additions to its transport boundary.
 When JSTorrent graduation is separately authorized, create one bounded
 tactical that fixes the production handoff and the intentionally best-effort
 legacy-state scope from then-current evidence.

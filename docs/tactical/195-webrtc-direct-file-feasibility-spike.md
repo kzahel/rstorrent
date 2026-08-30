@@ -1,12 +1,12 @@
 # Tactical 195: WebRTC Direct-File Feasibility Spike
 
-Status: **Active as of 2026-08-30.** The maintainer authorized a real WebRTC
-experiment to determine its binary/package cost and whether a browser-to-Rust
-DataChannel can become a good direct-file solution. This tactical authorizes a
-local-only, feature-off-by-default prototype, dependency bake-off, real-browser
-evidence, file-range integration, and release-link size measurement. It does
-not authorize product UI integration, default enablement, public deployment,
-TURN, UPnP, or a supported remote-file claim.
+Status: **Complete as of 2026-08-30; Continue narrowly.** The local experiment
+proves that lower `webrtc-rs/rtc` can provide a bounded, lazy, real-file
+DataChannel path in Chromium and Firefox at a measured optional package cost.
+Playwright WebKit did not complete ICE/DTLS, so product integration waits on
+one focused Safari/WebKit interoperability investigation. The retained Cargo
+feature remains off by default and has no production signaling, UI,
+deployment, TURN, UPnP, or supported remote-file claim.
 
 Topics:
 [`direct-remote-file-streaming`](../topics/direct-remote-file-streaming.md),
@@ -646,3 +646,179 @@ alternative if browser interoperability exposes an `rtc` defect; high-level
 `webrtc` remains the fallback if writing a correct driver proves materially
 riskier than its 1.72 MB probe delta. No rejected candidate dependency will be
 added to the repository.
+
+### 2026-08-30: bounded endpoint and verified-file integration
+
+The retained `rstorrent-direct-file` crate has two layers:
+
+- a runtime-independent version-1 binary codec with exact request IDs,
+  offsets, lengths, acknowledgement offsets, completion and typed errors; and
+- a feature-gated lower-`rtc` adapter driven by one RSTorrent-owned Tokio task
+  and one explicitly bound UDP socket.
+
+The adapter admits one peer and DataChannel, at most four range requests, a
+4-KiB control ceiling, 60-KiB payload chunks, a 512-KiB application queue and
+512-KiB SCTP queue, 32 remote candidates, 64 KiB of accepted signaling, a
+20-second negotiation deadline, 60-second request-inactivity deadline, and a
+ten-minute experiment lifetime. Each chunk requires an exact next-offset ACK,
+so a slow browser cannot cause unbounded application reads or sends. The
+endpoint parses one consistent SHA-256 fingerprint from the bounded offer and
+reports it verified only after lower `rtc` authenticates the DTLS peer and the
+connection reaches connected state.
+
+The local harness creates a deterministic torrent through the ordinary
+`ApplicationService`, records its pieces verified, obtains a normal
+`MediaCapabilityLease`, and reads through that lease for every request. It
+never accepts a path, storage root, HTTP method/header, or application command.
+The browser independently verifies concurrent head, tail, seek-shaped, and
+overlapping ranges, an out-of-range rejection, cancellation after the first
+chunk, and the complete-file digest. An oversized hostile control frame and a
+stale acknowledgement leave the session usable.
+
+The practical browser adapter streams directly into Origin Private File
+System through incremental writes and an incremental browser SHA-256. It does
+not construct a whole-file Blob. This is sufficient to prove bounded browser
+consumption, but it is not yet the product's native Download/Open/Play route.
+No active incomplete-file fixture was run, so the first product proposal must
+remain completed-file-only until a separate slice proves active verified
+waiting, publication handoff, revocation, and removal over this transport.
+
+The lazy product seam is propagated as `direct-file-webrtc` through
+`rstorrent-remote-host`, `rstorrent-headless`, and `rstorrent-desktop`. A
+feature-on application owns only a dynamic lazy starter until signaling calls
+it; startup creates no certificate, candidate, task, or socket. The dynamic
+boundary also keeps the real endpoint start path link-reachable, avoiding the
+initial measurement error where the linker discarded the unused RTC stack.
+The ordinary feature-off graph contains neither `rstorrent-direct-file` nor an
+`rtc` package.
+
+Feature unification exposed one real integration defect: RTC selects Ring
+while the existing remote host selects AWS-LC, leaving rustls unable to infer
+one process default. Existing relay TLS client/server builders now select
+AWS-LC explicitly; RTC selects its provider explicitly. The combined remote
+host end-to-end matrix passes. Feature-on therefore contains both AWS-LC and
+Ring, but no OpenSSL dynamic library or additional non-system dylib.
+
+The selected `rtc` family is dual MIT/Apache-2.0, `ring` is Apache-2.0 AND ISC,
+and the newly resolved supporting crates are permissively licensed. No
+upstream source, fixture, or test asset was copied. The direct RTC family does
+contain audited upstream unsafe surfaces in DTLS padding, the otherwise unused
+media buffer package, and Windows interface enumeration; Ring and the existing
+AWS-LC also retain their native/unsafe crypto surfaces. This is a maintenance
+and security-update cost even for a data-only consumer. Upstream was actively
+shipping the 0.20 Sans-I/O line during July/August 2026 and still records
+pre-1.0 deterministic-time work, so the exact pin and focused upstream tests
+remain part of future update review.
+
+### 2026-08-30: representative release-link cost
+
+The product measurements used Rust/Cargo 1.97.0 on macOS 26.6.1,
+`aarch64-apple-darwin`, Apple clang 21.0.0 and Apple `ld` 1267. The repository
+release profile is Cargo's ordinary optimized profile without LTO or Cargo
+stripping. Executable stripping used `strip -S -x`; executable compression
+used `gzip -9`. The unsigned Tauri app used the documented package overlay,
+`--bundles app --no-sign --ci`, and the complete app contents were archived
+under the same relative root with `COPYFILE_DISABLE=1 tar -czf`.
+
+The paired source was the `fa80328` endpoint-link state. The only difference
+within each pair was the additive `direct-file-webrtc` feature. The feature-on
+executables contain RTC/ICE/DTLS/SCTP error strings and the reachable endpoint
+driver; feature-off trees and executables do not contain the direct-file
+crate/path. Product normal/build package count rises from 233 to 315, adding
+82 packages. Ring is new to the normal feature-on graph alongside the existing
+AWS-LC stack. `cargo bloat` was unavailable; Mach-O section attribution shows
+the headless stripped delta is principally `__TEXT` (+3,211,264 bytes), then
+`__LINKEDIT` (+294,912) and `__DATA_CONST` (+114,688).
+
+| Artifact | Feature off | Feature on | Delta | Percent | Compressed/package delta |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Headless executable, unstripped | 36,398,864 B | 40,684,912 B | +4,286,048 B | +11.78% | - |
+| Headless executable, stripped | 29,121,000 B | 32,744,504 B | +3,623,504 B | +12.44% | - |
+| Headless stripped gzip | 12,098,383 B | 13,702,231 B | +1,603,848 B | +13.26% | +1,603,848 B |
+| Desktop executable, unstripped | 48,427,328 B | 52,669,312 B | +4,241,984 B | +8.76% | - |
+| Desktop executable, stripped | 37,087,640 B | 40,645,312 B | +3,557,672 B | +9.59% | - |
+| Desktop stripped gzip | 15,048,218 B | 16,638,956 B | +1,590,738 B | +10.57% | +1,590,738 B |
+| Unsigned app executable | 47,932,400 B | 52,281,008 B | +4,348,608 B | +9.07% | - |
+| Complete unsigned app archive | 16,577,462 B | 18,351,083 B | +1,773,621 B | +10.70% | +1,773,621 B |
+
+Observed release build wall times were 64--72 seconds for the first matched
+headless/desktop and package switches; subsequent feature-on relinks were
+cache-dependent and are not treated as comparative performance evidence.
+Only the current macOS ARM64 link/package pair was available and required by
+the stopping condition. Linux/Windows sizes, signed installers, notarization,
+and update artifacts were not run. Default-off Android, iOS, remote-relay,
+remote-Wasm, and engine trees contain no direct-file or RTC dependency. CI now
+keeps the ordinary workspace feature-off gate and adds feature-on product
+Clippy plus focused direct-file and remote-host tests on Ubuntu.
+
+### 2026-08-30: real-browser and runtime evidence
+
+The test page is served from loopback HTTP, which browsers treat as a secure
+context, while the endpoint binds the explicitly discovered private-LAN IPv4
+address. No STUN, TURN, mapping, public listener, DNS, relay payload, or
+external service was contacted. Both successful browsers selected a host
+candidate and transferred bidirectionally over the one UDP socket.
+
+| Scenario/browser | Direct result | Exact content | Timing | RSS and queue high water | Cleanup | Result |
+| --- | --- | --- | --- | --- | --- | --- |
+| Chromium 151, 8 MiB | host candidate, DTLS fingerprint verified | 4 concurrent ranges, cancel, hostile controls, full SHA-256 | connect 229 ms; OPFS 25.1 MiB/s; close 30 ms | 29,184 -> 34,336 KiB RSS; 245,946 B combined queues | 0 tasks, sockets, requests and queued bytes | Pass |
+| Firefox 153, 8 MiB | host candidate, DTLS fingerprint verified | same trace and SHA-256 | connect 224 ms; OPFS 23.5 MiB/s; close 39 ms | 29,200 -> 34,464 KiB RSS; 368,724 B combined queues | 0 tasks, sockets, requests and queued bytes | Pass |
+| Chromium 151, 64 MiB | host candidate, DTLS fingerprint verified | exact `8d5c7f5d...7614dc`; no Blob | OPFS 25.8 MiB/s over 2.483 s | 86,768 -> 91,952 KiB RSS; 307,374 B combined queues | 0 tasks, sockets, requests and queued bytes | Pass |
+| Playwright WebKit, 8 MiB | one candidate received; no selected pair or DTLS verification | 0 file bytes | 20-second negotiation timeout | 0 request/queue high water | driver joined; 0 tasks/sockets | Fail |
+
+The 64-MiB harness baseline is higher because deterministic fixture creation
+precedes the idle sample and the process allocator retains that memory. Across
+both 8-MiB browsers the active Rust process RSS increment was about 5.2 MiB.
+Sampled `ps` lifetime-average CPU reached 16.4%--17.5% for the 8-MiB runs and
+25.2% for the 64-MiB run; this is useful host evidence but not a cross-platform
+CPU benchmark. Immediate post-close RSS retained the allocator high water, but
+endpoint counters prove no continuing RTC owner, task, socket, request, queued
+byte, candidate work, STUN traffic, or mapping. Browser hashes, not the server,
+are the content oracle.
+
+### Validation and deliberate gaps
+
+Passed locally:
+
+- `cargo fmt --all -- --check`;
+- direct-file codec/fingerprint/queue tests with `webrtc` enabled;
+- feature-on remote-host end-to-end tests and remote-relay TLS tests;
+- feature-on checks for remote host, headless, and desktop;
+- feature-on Clippy for direct-file, remote host, relay, headless, and desktop
+  with warnings denied;
+- Node syntax checks and real Chromium/Firefox browser runs;
+- both feature-off and feature-on current-host release links plus unsigned app
+  packages; and
+- `actionlint` for the added CI feature gate and `git diff --check`.
+
+The retained evidence does not claim active incomplete-file behavior, service
+worker/native media seeking, capability revocation during an active range,
+loss/reordering, fairness beside torrent traffic, interface/sleep changes,
+public IPv6, STUN, NAT traversal, firewall/mapping behavior, TURN, Safari,
+Linux/Windows link size, or production signaling. These are explicit future
+gates, not inferred from LAN success.
+
+### Final recommendation: Continue narrowly
+
+| Candidate | Version/revision | Runtime/crypto | Browser evidence | Stripped probe delta | Ownership | Disposition |
+| --- | --- | --- | --- | ---: | --- | --- |
+| lower `rtc` | 0.20.4 / `bbc1866` | caller-owned Sans-I/O + Ring | Chromium and Firefox pass; WebKit times out | +926,528 B | one joinable task/socket | Retain, optional |
+| `str0m` | 0.23.1 / `120401c` | caller-owned Sans-I/O + RustCrypto/AWS-LC | upstream focused tests only | +2,499,864 B | explicit caller ownership | Remove/not added |
+| high-level `webrtc` | 0.20.4 / `843d52e` | async driver + Tokio + Ring | upstream focused tests only | +2,651,208 B | library driver plus caller callbacks | Remove/not added |
+
+The transport is technically sound in Chromium and Firefox, the lower-`rtc`
+ownership model fits RSTorrent, and OPFS proves bounded file consumption. The
+measured current-host cost is material but credible for an optional feature:
+about 3.6 MiB stripped or 1.6--1.8 MiB compressed/package. It is not yet a
+case for default enablement.
+
+The one feasibility question that prevents **Proceed** is: **can this retained
+lower-`rtc` endpoint reliably complete candidate selection and DTLS with real
+Safari/WebKit, or is a bounded adapter/fix unavailable?** Retain the codec,
+lazy endpoint, optional manifests, browser harness, and CI gate while answering
+that question in a focused follow-up. Do not add production signaling or UI
+until it passes or the maintainer explicitly accepts a Chromium/Firefox-only
+first product boundary. If it passes, the next product tactical should begin
+completed-file-only, keep the feature default-off, authenticate signaling
+inside the existing remote circuit, and separately select a native
+Download/Open/Play browser adapter.

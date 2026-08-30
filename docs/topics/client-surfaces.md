@@ -15,17 +15,18 @@ bounded human progress, and terminal summary form a finite command surface,
 not a generated application API, daemon, TUI, or alternate product UI. It
 causes no React, Tauri, Compose, SwiftUI, Android CLI, or iOS CLI change.
 
-Active Tactical
-[`194`](../tactical/194-chromeos-android-extension-control.md) selects the
+Tactical [`194`](../tactical/194-chromeos-android-extension-control.md)
+implements the
 first migration-critical JSTorrent Android parity slice. On ChromeOS, the
 existing Android foreground service remains the sole Rust application,
 engine, profile, and SAF owner while the beta extension packages the shared
 React UI as a detachable authenticated presentation. The same React folder
 action used by Crostini delegates to Android's SAF picker; a new current root
 does not discard grants required by older torrents. It does not recreate
-JSTorrent's extension-owned engine/raw IO daemon, and no implementation or
-release claim exists until the tactical's deterministic, Android, and physical
-ChromeOS gates pass.
+JSTorrent's extension-owned engine/raw IO daemon. Deterministic, Android, and
+the retained-root/coexistence/detached-transfer physical gates pass, but the
+presentation is release-blocked because ChromeOS exposes the wildcard Android
+listener through Wi-Fi. A non-LAN-reachable OS transport remains required.
 
 Completed Tactical
 [`190`](../tactical/190-opaque-wasm-relay-foundation.md) adds no selectable
@@ -910,19 +911,17 @@ streaming demand, expiry, and revocation remain unchanged.
   unreleased `org.rstorrent.bootstrap` identity and retained diagnostic service
   remain explicit release-cleanup decisions rather than evidence that the
   Compose client is still an experiment.
-- Android currently has no extension presentation. `ProductEngineService`
-  owns one `AndroidApplicationClient` and Compose repository, while
-  `clients/extension` remains a launcher with no Android host permission,
-  pairing, packaged React application, or torrent-control transport. Tactical
-  `194` owns the bounded replacement of that gap through the same application
-  service, not a second engine or raw platform daemon. It also owns the
-  extension-triggered SAF picker and the retained multi-root registry needed
-  to change the current root without stranding older torrents.
-- Android durable SAF session storage and provider publication are currently
-  proven for one persisted root. The Compose product presents root setup,
-  health, repair, bounded High/Normal/Skip file priority, `Download now`, and
-  completed-file open. Tactical `194` must preserve each root through all of
-  those root-specific paths before claiming retained multi-root parity.
+- Android now has a packaged extension presentation over the one
+  `ProductEngineService` application owner, with exact ARC host permission,
+  explicit pairing, extension-triggered SAF picker, and retained multi-root
+  registry. Physical Compose/React convergence and detached transfer pass.
+  The transport is not releaseable because ChromeOS exposes its wildcard
+  cleartext listener through Wi-Fi; this is not a supported LAN surface.
+- Android durable SAF session storage is physically proven across two retained
+  roots. The Compose product presents root setup, current/default selection,
+  health, repair, bounded removal, High/Normal/Skip file priority, `Download
+  now`, and completed-file open. Physical evidence preserves old-torrent root
+  binding through current-root change, grant loss/repair, update, and restart.
   Relocation and cloud/removable-media policy remain product gaps.
 - The Android Compose product now presents authoritative multi-torrent queue
   and concurrent-admission state plus live Peers, Files, Trackers, Pieces,
@@ -996,9 +995,10 @@ surface for authorization inspection and revocation. The public client/relay
 are active as an unadvertised canary, while support remains with the active
 deployment tactical; dynamic Android network controls and broader desktop
 lifecycle work remain later capability boundaries.
-Active Tactical `194` now owns only the same-device ChromeOS Android extension
-presentation and its retained-root SAF workflow; its completion must not be
-described as full JSTorrent Android feature parity.
+Blocked Tactical `194` now owns only the non-LAN-reachable ChromeOS Android
+extension transport; the retained-root SAF workflow is implemented and
+physically proven. Its eventual completion must not be described as full
+JSTorrent Android feature parity.
 Signed
 distribution, updating, CI, product identity, and beta MVP triage are tracked
 in [`beta-release-readiness.md`](beta-release-readiness.md).

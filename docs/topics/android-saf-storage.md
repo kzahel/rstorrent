@@ -9,16 +9,21 @@ authority, lazy acquisition, exact path safety, provider repair, and the shared
 completion rename, and publication-specific generated facts are removed.
 Earlier tactical descriptions below remain historical evidence.
 
-Active Tactical
-[`194`](../tactical/194-chromeos-android-extension-control.md) owns the first
-multi-root Android product extension of this boundary. It replaces the
+Tactical [`194`](../tactical/194-chromeos-android-extension-control.md)
+implements the first multi-root Android product extension of this boundary. It
+replaces the
 singleton tree URI with a bounded root-ID-to-grant registry, routes the
 existing root-tagged broker requests through the exact retained grant, and
 lets the shared React presentation invoke Android's SAF picker. One root is
 current for new downloads; earlier roots remain for torrents already bound to
 them and may be made current explicitly. The existing `tree-uri`/`downloads`
 pair migrates in place for RSTorrent users. No locator, descriptor, or payload
-path moves into the extension.
+path moves into the extension. Physical ChromeOS proves two independent roots,
+future-add current/default selection, durable old-torrent binding, referenced
+removal rejection, independent grant loss/repair, restart, Compose/React
+convergence, and exact cleanup. The companion presentation remains blocked by
+its LAN-reachable ChromeOS transport; that does not roll back the in-process
+Compose retained-root capability.
 
 Completed Tactical
 [`188`](../tactical/188-existing-payload-adoption-and-recheck.md) applies the
@@ -502,10 +507,11 @@ bridge; after acquisition, payload I/O remains in Rust.
 ## Recommended Next Work
 
 Do not restore or extend the diagnostic-only fixed-manifest or publication
-APIs. Execute Tactical `194` for the bounded retained-root registry and
-extension-triggered picker. Desktop-shaped per-add choice among old roots,
-cloud/removable provider support, relocation, and an exposed advanced
-file-pool setting still require their own product decisions.
+APIs. Preserve Tactical `194`'s bounded retained-root registry and
+extension-triggered picker while its independent ChromeOS transport blocker is
+resolved. Desktop-shaped per-add choice among old roots, cloud/removable
+provider support, relocation, and an exposed advanced file-pool setting still
+require their own product decisions.
 Completed Tactical `120` consumes exact existence, kind, and length as
 per-torrent fast-resume admission evidence for the supported local provider.
 It adds no persisted provider-token snapshot; absence of the optional opaque

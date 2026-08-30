@@ -51,6 +51,10 @@ Notable distribution considerations in the current dependency graph include:
 - `keepawake` 0.6.1 is used only on macOS and Windows under its MIT license to
   hold and release the native user-idle/system execution assertion while
   download or verification work is active.
+- The optional default-off `direct-file-webrtc` build uses the `rtc` 0.20.4
+  crate family under its MIT OR Apache-2.0 terms and Ring 0.17.14 under Apache
+  2.0 AND ISC. It is not present in ordinary release graphs unless the feature
+  is selected.
 - `net.java.dev.jna:jna:5.17.0` is used under its Apache-2.0 option.
 - Some Rust and npm packages are MPL-2.0 licensed.
 - Linux desktop packages may use WebKitGTK and GTK system libraries under

@@ -118,7 +118,13 @@ try {
     outcome,
     terminal,
     teardownElapsedMillis,
-    process: { pid: rustPid, idleEndpoint, idle: idleProcess, highWater: processHighWater },
+    process: {
+      pid: rustPid,
+      idleEndpoint,
+      idle: idleProcess,
+      highWater: processHighWater,
+      terminal: finalSample,
+    },
   }, null, 2)}\n`);
 } finally {
   if (sampleTimer) clearInterval(sampleTimer);

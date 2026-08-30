@@ -98,14 +98,17 @@ uses the following primary protocol and browser sources:
   defines intercepted fetch and synthetic response behavior relevant to a
   possible browser range adapter.
 
-The 2026-08-30 dependency survey also identified the official pure-Rust
+The 2026-08-30 dependency survey compared the official pure-Rust
 [`webrtc-rs/webrtc`](https://github.com/webrtc-rs/webrtc),
 [`webrtc-rs/rtc`](https://github.com/webrtc-rs/rtc), and
-[`str0m`](https://github.com/algesten/str0m) projects for a future measured
-bake-off. None is selected, pinned, linked, vendored, or copied. A later
-implementation tactical must record the exact reviewed revision, tests,
-transitive dependency and license graph, browser evidence, and package cost
-before accepting one.
+[`str0m`](https://github.com/algesten/str0m) projects in a measured bake-off.
+Completed Tactical
+[`195`](tactical/195-webrtc-direct-file-feasibility-spike.md) retains crates.io
+`rtc` 0.20.4, corresponding to reviewed package revision
+`bbc18664cf2dcb690e023c6a1a436eb15253ca7f`, behind a default-off feature. Its
+execution record owns the exact source/test, transitive license/unsafe,
+Chromium/Firefox/WebKit, lifecycle, binary and package evidence. No upstream
+source, fixture, test vector, or asset was copied.
 
 Tactical
 [`113`](tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md) uses

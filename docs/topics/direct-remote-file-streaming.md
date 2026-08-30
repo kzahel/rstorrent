@@ -2,20 +2,15 @@
 
 Topic: `direct-remote-file-streaming`
 
-Status: Direction accepted from maintainer discussion on 2026-08-30. No
-implementation, dependency, Cargo feature, network service, or product support
-claim is authorized by this topic. The leading investigation is an optional
-native Rust WebRTC DataChannel endpoint that uses the existing end-to-end
-encrypted remote application circuit only for signaling, attempts a direct
-browser-to-host path, and starts no socket or task until an authorized remote
-browser requests file bytes. The first experimental build should keep the
-feature off by default. Its eventual release default remains deliberately
-undecided until package, binary, idle, active, and interoperability costs are
-measured. Ready Tactical
-[`195`](../tactical/195-webrtc-direct-file-feasibility-spike.md) separately
-authorizes the local-only endpoint bake-off, real-browser/file-range prototype,
-and exact feature-off/on cost measurement; it does not authorize product
-integration or deployment.
+Status: Direction accepted and Tactical
+[`195`](../tactical/195-webrtc-direct-file-feasibility-spike.md) completed on
+2026-08-30 with a **Continue narrowly** recommendation. The repository retains
+lower `webrtc-rs/rtc` 0.20.4 behind the default-off `direct-file-webrtc`
+feature, a lazy supervised endpoint, bounded verified-range codec, and local
+real-browser harness. Chromium and Firefox pass; Playwright WebKit reaches
+signaling but times out before ICE/DTLS completion. There is still no product
+signaling, visible UI, runtime setting, STUN/TURN service, public reachability,
+deployment, default enablement, or support claim.
 
 ## Purpose And Ownership
 
@@ -201,7 +196,7 @@ SCTP/DataChannel, retransmission, timers, flow control, and shutdown. This is
 substantial protocol code even when no audio/video feature is used; RSTorrent
 must not implement that stack ad hoc.
 
-The first bake-off should compare at least:
+The completed bake-off compared:
 
 - **`webrtc-rs/webrtc`.** The current `0.20.x` line offers an async
   `PeerConnection` API over a Sans-I/O core, includes a Tokio runtime backend,
@@ -224,11 +219,10 @@ binary, platform, unsafe-boundary, update, and codec/media surface are
 disproportionate for a data-only first slice. Reconsider it only if pure-Rust
 options fail recorded browser interoperability or correctness gates.
 
-Before choosing any crate, record its exact version/revision, transitive graph,
+Tactical `195` records each crate's exact version/revision, transitive graph,
 platform crypto providers, unsafe code and native-build requirements, license
 and notice obligations, maintenance activity, published security posture, and
-known browser interop issues. No source or test fixture should be imported
-during a dependency spike.
+known browser interop issues. It imported no source or test fixture.
 
 ## Optional Compilation And Packaging
 
@@ -257,6 +251,36 @@ desktop or headless releases enable it later depends on measured installed and
 compressed package deltas, platform reliability, security maintenance burden,
 and the percentage of real connections that become direct. No arbitrary size
 budget is accepted yet.
+
+### Tactical 195 measured result
+
+Lower `rtc` 0.20.4 with Ring is the retained endpoint dependency. Its isolated
+stripped probe added 926,528 bytes, versus 2,499,864 for `str0m` and 2,651,208
+for high-level `webrtc`. In the representative macOS ARM64 product link it
+adds 3,623,504 stripped bytes to headless and 3,557,672 stripped bytes to
+desktop; gzip deltas are 1,603,848 and 1,590,738 bytes. The complete unsigned
+desktop app archive grows 1,773,621 bytes (10.70%). The normal/build headless
+graph grows from 233 to 315 packages and contains both existing AWS-LC and new
+Ring crypto; builders select their provider explicitly.
+
+Compiled-but-unused startup has zero endpoint tasks, UDP sockets, candidates,
+STUN traffic, mappings, or queued bytes. The actual start path remains linked
+through a dynamic lazy starter. Chromium 151 and Firefox 153 establish a
+fingerprint-verified host-candidate path in about 224--229 ms, independently
+verify four concurrent ranges and a complete 8-MiB OPFS stream at roughly
+23.5--25.1 MiB/s, cancel promptly, and return to zero endpoint owners in
+30--39 ms. Chromium also verifies a 64-MiB OPFS stream at 25.8 MiB/s with a
+307,374-byte combined queue high water. Active Rust-process RSS rose about
+5.2 MiB above each harness idle sample.
+
+Playwright WebKit supplied one remote candidate but selected no pair, verified
+no fingerprint, transferred no bytes, and reached the 20-second negotiation
+timeout with clean task/socket teardown. That specific Safari/WebKit question
+is the next feasibility gate. The current retained OPFS adapter proves bounded
+consumption but is not a native Download/Open/Play or seekable-media product
+route. Only completed verified files were exercised; a first product slice
+must stay completed-file-only until active verified waiting and revocation are
+separately proved.
 
 ## Runtime Ownership And Cancellation
 
@@ -459,9 +483,11 @@ cost and success-rate evidence.
 
 ## Open Decisions
 
-- Which pure-Rust endpoint provides the best correctness/size/ownership tradeoff?
-- What binary and package deltas are acceptable for default desktop and
-  headless builds?
+- Can the retained lower-`rtc` endpoint complete real Safari/WebKit
+  negotiation through a bounded fix or adapter?
+- Is the measured 3.6-MiB stripped and 1.6--1.8-MiB compressed/package cost
+  acceptable for a future default, after platform breadth and direct-path
+  success rates exist? It remains acceptable only as a default-off experiment.
 - Should runtime direct streaming default on when compiled, or require a host
   setting before any interface/STUN/UPnP work?
 - Which STUN service, privacy statement, abuse policy, and availability model

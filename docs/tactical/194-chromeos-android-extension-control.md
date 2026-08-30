@@ -1,11 +1,16 @@
 # Tactical 194: ChromeOS Android Extension Control And Retained SAF Roots
 
-Status: **Active as of 2026-08-30.** Explicit maintainer direction selects a
-focused Android release-parity campaign against current JSTorrent Android and
-makes ChromeOS companion presentation the first migration-critical slice.
-This tactical authorizes design and implementation in the repository, but it
-does not authorize Chrome Web Store or Google Play publication, production
-JSTorrent extension mutation, release signing, or legacy-profile import.
+Status: **Blocked on physical same-LAN isolation as of 2026-08-30.** Explicit
+maintainer direction selects a focused Android release-parity campaign against
+current JSTorrent Android and makes ChromeOS companion presentation the first
+migration-critical slice. Implementation, packaging, retained-root, pairing,
+coexistence, and detached-transfer evidence have landed, but ChromeOS forwards
+the Android wildcard listener through the Chromebook's Wi-Fi address. The
+cleartext route is therefore not releaseable under this tactical's accepted
+same-device boundary. This tactical authorizes design and implementation in
+the repository, but it does not authorize Chrome Web Store or Google Play
+publication, production JSTorrent extension mutation, release signing,
+legacy-profile import, or silently widening the companion into a LAN API.
 
 Topics:
 [`product-surfaces-and-migration`](../topics/product-surfaces-and-migration.md),
@@ -599,7 +604,12 @@ commits:
 - `b9b63cd` packages the companion React application and exact-permission beta
   extension; and
 - `be6d67e` keeps the shared WebSocket writer command allocation bounded under
-  the current Rust lint baseline.
+  the current Rust lint baseline;
+- `ea71b35` supplies the exact extension Origin header Chrome omits from
+  extension-page `fetch()` calls;
+- `fc074f1` labels healthy Android-owned roots without inventing a path; and
+- `06d7f4f` permits a debug build to release one named retained SAF grant for
+  deterministic multi-root repair evidence.
 
 The implementation checkpoint passed the following automated evidence on
 2026-08-30:
@@ -616,30 +626,86 @@ The implementation checkpoint passed the following automated evidence on
 - 4 connected Compose instrumentation tests on an explicitly owned, headless
   API 34 `jstorrent-tablet` AVD, followed by exact emulator shutdown.
 
-The physical x86_64 Chromebook checkpoint is intentionally incomplete.
-`chromeos doctor` reported 10 passing checks with no failures; its non-blocking
-warnings were a pending ChromeOS reboot, an initially absent local DevTools
-tunnel, and disconnected ARC ADB. The device runs ChromeOS milestone 150,
-build `16700.60.0`, Chrome `150.0.7871.213`, with the expected
-`100.115.92.0/30` ARC bridge. The exact beta extension ID
-`gcgoepclopkgijmclmlheafaglmbjlcc` was updated in place from `0.3.0` to
-`0.4.0`. Its explicit action requested only **Read and change your data on
-100.115.92.2**, opened one packaged companion page, and attempted the fixed
-`rstorrent://chromeos-companion` launch without claiming success. The packaged
-page remained in its bounded probe state because the new Android package was
-not yet running. Chrome reports the page's Local Network Access permission as
-`prompt`; the actual prompt, grant, denial, and revocation remain part of the
-live-listener matrix rather than a completed claim.
+Physical work resumed after repairing post-update rootfs/DevTools state and
+authorizing ARC ADB through the testbed's raw touchscreen device. Final
+`chromeos doctor` reported 11 passing checks with no failures; only the
+non-blocking absence of SSH autostart remained. The device runs ChromeOS
+milestone 150, build `16700.60.0`, Chrome `150.0.7871.213`, with
+`arcbr0` at `100.115.92.1/30` and the established ARC endpoint
+`100.115.92.2`. The exact beta extension ID
+`gcgoepclopkgijmclmlheafaglmbjlcc` ran version `0.4.0`. Chrome continued to
+report Local Network Access as `prompt`, but no prompt appeared and the exact
+host-permitted extension request succeeded. This is observed Chrome 150
+extension behavior, not a claim that ordinary web pages bypass LNA.
 
-The debug APK is built at
-`clients/android/app/build/outputs/apk/debug/app-debug.apk` and copied to the
-Chromebook, but ARC installation is paused at ChromeOS's secure **Allow USB
-debugging?** confirmation. The testbed cannot actuate that protected system
-dialog. No APK-install, pairing, retained-root, two-transfer, reconnect,
-coexistence, same-LAN isolation, listener high-water, or final-cleanup claim is
-therefore recorded yet. After one physical approval, resume with exact ADB
-target verification, install this artifact, and run stopping conditions 1--11
-before marking the tactical complete.
+The unpublished debug APK installed as `org.rstorrent.bootstrap` version
+`0.1`. The fixed deep link cold-started one foreground
+`ProductEngineService`, exact Android approval paired the beta extension, and
+the packaged page identified backend `Android`, profile `default`, protocol
+`1-1`, product `0.1.0`, and one stable backend instance. The first live request
+exposed two integration defects: Chrome omitted `Origin`, producing the
+intended 403 until `ea71b35`, and healthy platform roots rendered as an
+unavailable path until `fc074f1`. Rebuilt extension assets passed after each
+fix and the physical page then connected normally.
+
+The physical retained-root and transfer trace passed these checks:
+
+- Android's picker created `RSTorrent Root A`, then `RSTorrent Root B`; B
+  became current while A remained retained. Both appeared as **Managed by
+  Android**, with no SAF URI or document identity in the browser.
+- A pinned libtorrent `2.0.13.0` peer uploaded a 262,144-byte v1 fixture with
+  info hash `b920f3f88e458b321b35c1238a1066a604ea347c` to A. After B became current,
+  a second one-peer fixture with info hash
+  `c1b4114f4080995064a950c30ad91141497b9aed` uploaded another 262,144 bytes to
+  B. Both reached 100%, and each seed recorded peer high-water `1`.
+- An app-private SQLite inspection after an update-install proved the A hash
+  remained bound to A's opaque root ID, the B hash remained bound to B's root
+  ID, and B was the durable default. A v1-only local `.torrent` selected
+  through ChromeOS Files was accepted as `metainfo` and bound to B.
+- Removing referenced non-current A failed with the exact retained-torrent
+  rejection. Releasing only A's grant and restarting made A unavailable and
+  failed its torrent closed while B stayed current and healthy. Selecting the
+  same A tree through extension-triggered repair restored the same root and
+  torrent without changing the default.
+- Compose and the extension showed the same library concurrently. Pausing B
+  from the extension appeared in Compose; resuming it in Compose converged in
+  the extension. An update-install and cold restart retained the same backend
+  instance, pairing, roots, bindings, and torrents.
+- A separate 4,194,304-byte v1 fixture was limited to 65,536 bytes/second.
+  At 1%, the extension page was closed and the Compose task was no longer
+  visible. PID `5927` and its foreground service remained; the one bounded peer
+  uploaded all bytes while no RSTorrent presentation was visible. A newly
+  opened extension page reconnected without approval and showed that torrent
+  seeding at 100% under the same backend identity.
+
+After the first two transfers, Android `dumpsys meminfo` recorded 119,612 KiB
+total PSS and 224,680 KiB total RSS. Android procfs denied the external FD
+count, so no physical FD high-water claim is made. SAF diagnostics observed a
+pending-request high-water of `2` within the existing bound. Wrong Host
+returned 403; the automated suite continues to own wrong Origin, bearer,
+pairing replay/expiry, frame, protocol, and revocation bounds.
+
+The release-blocking result is same-LAN routing. From another device at
+`192.168.1.x`, TCP to the Chromebook Wi-Fi address `192.168.1.106:3030`
+succeeded. More importantly, an HTTP request to that Wi-Fi address with the
+expected `Host: 100.115.92.2:3030` and beta extension Origin reached the real
+`/rstorrent/companion/v1/hello` route and returned 200 plus an Android hello
+nonce. The real ARC address returned the same 200; the Wi-Fi request with its
+natural Host returned 403. Host/Origin admission is therefore working but does
+not supply the selected same-device transport boundary: those headers are
+caller-controlled, and a paired bearer would cross a LAN-reachable cleartext
+listener.
+
+Testing stopped at the tactical's escalation boundary. The app was
+force-stopped immediately and Wi-Fi port 3030 then refused connections. The
+Android companion credential key was removed from exact extension storage,
+the test APK was uninstalled, all ADB reverses and SSH fixture forwards were
+closed, controlled payloads/root folders/staged APKs/torrents were removed,
+power policy was restored, and the Wi-Fi port remained refused. The generated
+local fixture directory and screenshots were also deleted. These artifacts
+are not recoverable, but every removed item was created by this controlled
+run. A maintainer decision on a non-LAN-reachable ChromeOS/ARC transport is now
+required before this tactical can resume or `AND-008` can pass.
 
 ## Non-Goals
 

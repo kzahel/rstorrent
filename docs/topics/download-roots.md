@@ -365,7 +365,7 @@ picker. SAF URI and grant state stay in the platform adapter; SQLite and
 portable application values retain the stable root ID. A revoked grant leaves
 the torrent waiting for repair rather than selecting app-private storage.
 
-Tactical `194` replaces the existing singleton URI with a bounded retained-root
+Tactical `194` replaces the former singleton URI with a bounded retained-root
 registry shared by Compose and the extension presentation. At most one root is
 current/default for future Android downloads; if it is unavailable, new work
 waits for repair or an explicit current-root change. Selecting a new tree
@@ -505,11 +505,13 @@ source, fixture, or asset is imported by this topic.
 
 ## Recommended Next Work
 
-Execute active Tactical `194` to replace Android's singleton grant with the
-bounded retained-root/current-default model and expose the same React folder
-action through the Android-owned SAF picker. Preserve completed Tactical
-`191`'s direct layout, stable per-torrent root binding, root-specific broker
-routing, and exact cleanup across every retained grant.
+Preserve Tactical `194`'s implemented Android retained-root/current-default
+model and React folder action through the Android-owned SAF picker. Its
+physical two-root binding, independent grant loss/repair, restart, and cleanup
+evidence passes; the separate extension transport remains blocked by
+same-LAN reachability. Preserve completed Tactical `191`'s direct layout,
+stable per-torrent root binding, root-specific broker routing, and exact
+cleanup across every retained grant.
 
 Tactical `161` provides one native Tauri dialog implementation for Windows,
 packaged Linux, and macOS while leaving the local WebUI helper implementation
