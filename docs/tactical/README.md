@@ -93,16 +93,24 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`196-remote-direct-file-product-integration.md`](196-remote-direct-file-product-integration.md):
+  ready; promotes the retained lower-`rtc` endpoint into one default-compiled
+  but lazy desktop/headless product path. It authenticates bounded signaling
+  inside the existing remote circuit, adds completed-file **Save file...**,
+  default-on operator control and audit, and direct-only ICE through one
+  documented free public Cloudflare STUN endpoint. OPFS, TURN, relay payload,
+  incomplete files, general Open/Play, UPnP, deployment, and release remain
+  excluded.
 - [`195-webrtc-direct-file-feasibility-spike.md`](195-webrtc-direct-file-feasibility-spike.md):
-  complete with a Continue narrowly recommendation; retains lower `rtc` behind
-  a default-off feature after Chromium/Firefox verified-range and OPFS success,
-  exact current-host link/package measurements, and zero-owner cleanup.
-  Playwright WebKit negotiation remains the one focused feasibility blocker;
+  complete with a corrected Proceed recommendation; retains lower `rtc` behind
+  a default-off feature after Chromium/Firefox and current Playwright WebKit
+  verified-range success, exact current-host link/package measurements, and
+  zero-owner cleanup. The apparent WebKit transport failure was an intermittent
+  ICE run followed by a reproducible non-persistent OPFS test-sink failure;
   product UI, default enablement, TURN, public reachability, and deployment
-  remain excluded.
+  remained excluded from the spike.
 - [`194-chromeos-android-extension-control.md`](194-chromeos-android-extension-control.md):
-  blocked on physical same-LAN isolation; preserves the JSTorrent ChromeOS
-  companion user journey while
+  complete; preserves the JSTorrent ChromeOS companion user journey while
   reversing its ownership. One Android foreground Rust application/engine/
   profile/SAF owner remains authoritative and the beta extension packages the
   shared React UI as an explicitly paired, detachable same-device
@@ -110,9 +118,8 @@ that scope and its cleanup or compatibility rules explicitly.
   picker and retains earlier grants for torrents bound before a new root
   becomes current. Exact ARC permission/LNA, Host/Origin/auth, root-registry
   crash recovery, two-root lifecycle, Compose coexistence, detached transfer,
-  and reconnect pass. ChromeOS forwards the cleartext wildcard Android
-  listener through the Chromebook's Wi-Fi address, so a non-LAN-reachable OS
-  transport decision is required before release or completion. Raw IO, legacy
+  reconnect, and same-LAN rejection pass. The listener binds only to ARC's
+  fixed guest address and is refused through Chromebook Wi-Fi. Raw IO, legacy
   import, media, store publication, notifications, and network policy are
   excluded.
 - [`193-stateless-foreground-downloader.md`](193-stateless-foreground-downloader.md):
