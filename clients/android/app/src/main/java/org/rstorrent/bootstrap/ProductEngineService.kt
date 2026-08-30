@@ -1,14 +1,14 @@
 package org.rstorrent.bootstrap
 
-import android.app.Notification
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
+import android.content.IntentFilter
 import android.database.Cursor
 import android.net.Uri
 import android.os.Binder
@@ -111,6 +111,8 @@ class ProductEngineService : Service() {
     private val requestPrefix = UUID.randomUUID().toString()
     private val requestIds = AtomicLong(1)
     private val stopped = AtomicBoolean(false)
+    private val stopRequested = AtomicBoolean(false)
+    private val shutdownComplete = CompletableDeferred<Unit>()
     private val clientReady = CompletableDeferred<Unit>()
     private val presentationReady = CompletableDeferred<Unit>()
     private val mutableState = MutableStateFlow(ProductState())
@@ -118,6 +120,10 @@ class ProductEngineService : Service() {
 
     private lateinit var client: AndroidApplicationClient
     private lateinit var presentationRepository: AndroidPresentationRepository
+    private lateinit var notificationCoordinator: AndroidNotificationCoordinator
+    private var notificationBlockReceiver: BroadcastReceiver? = null
+    private val notificationEligibilityMutation = Mutex()
+    private val interactionLeases = ConcurrentHashMap.newKeySet<String>()
     private var trackerEvidenceSubscription: AndroidViewSubscription? = null
     private var trackerEvidenceJob: Job? = null
     private var companionPairingJob: Job? = null
@@ -169,8 +175,16 @@ class ProductEngineService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        createNotificationChannel()
-        startForeground(NOTIFICATION_ID, notification("Opening profile"))
+        notificationCoordinator = AndroidNotificationCoordinator(this, mutableState)
+        notificationCoordinator.initialize(interactionLeases.size)
+        ProductActivityVisibility.attach { visible ->
+            setInteractionLease(INTERACTION_ACTIVITY, visible)
+        }
+        registerNotificationBlockReceiver()
+        startForeground(
+            AndroidNotificationContract.ONGOING_NOTIFICATION_ID,
+            notificationCoordinator.ongoingNotification("Opening profile"),
+        )
         val safRegistry = ProductSafRootRegistry.load(this)
         mutableState.update {
             it.copy(
@@ -210,6 +224,8 @@ class ProductEngineService : Service() {
                             if (driveSaf) advanceSaf(product)
                             driveSettingsMutations()
                         },
+                        onTorrentListUpdate = notificationCoordinator::onTorrentListUpdate,
+                        onTorrentListReset = notificationCoordinator::onTorrentListReset,
                         onError = ::reportError,
                     )
                 presentationRepository.start(client)
@@ -244,7 +260,7 @@ class ProductEngineService : Service() {
                 mutableState.update {
                     it.copy(ready = false, error = error.message ?: error.toString())
                 }
-                updateNotification("Engine unavailable")
+                notificationCoordinator.updateOngoingNotification("RSTorrent needs attention")
             }
         }
     }
@@ -255,27 +271,32 @@ class ProductEngineService : Service() {
         startId: Int,
     ): Int {
         if (intent?.action == ACTION_STOP) {
-            scope.launch {
-                shutdown()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-            }
+            requestStop("notification_stop", startId)
         } else if (intent?.action == externalIntakeAction(packageName)) {
             admitExternalIntent(intent)
         } else if (intent?.action == ACTION_ENABLE_CHROMEOS_COMPANION) {
             enableChromeOsCompanion()
         }
-        return START_STICKY
+        refreshNotificationEligibility("start")
+        return if (stopRequested.get()) START_NOT_STICKY else START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
 
     override fun onDestroy() {
         runBlocking(Dispatchers.IO) {
-            shutdown()
+            shutdown("destroy")
         }
         scope.cancel()
         super.onDestroy()
+    }
+
+    override fun onTimeout(
+        startId: Int,
+        fgsType: Int,
+    ) {
+        Log.w(TAG, "product_service_timeout type=data_sync")
+        requestStop("data_sync_timeout", startId)
     }
 
     private fun admitExternalIntent(command: Intent) {
@@ -1543,30 +1564,19 @@ class ProductEngineService : Service() {
                 open,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
-        val builder =
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                Notification.Builder(this, CHANNEL_ID)
-            } else {
-                @Suppress("DEPRECATION")
-                Notification.Builder(this)
-            }
-        val notification =
-            builder
-                .setSmallIcon(R.drawable.ic_rstorrent_notification)
-                .setContentTitle("Choose an RSTorrent download folder")
-                .setContentText("Chrome needs Android folder access to continue")
-                .setContentIntent(pending)
-                .setAutoCancel(true)
-                .build()
-        getSystemService(NotificationManager::class.java)
-            .notify(COMPANION_ROOT_NOTIFICATION_ID, notification)
+        val posted = notificationCoordinator.showCompanionRootNotification(pending)
         runCatching { startActivity(open) }
-            .onFailure { Log.i(TAG, "companion root picker waits for notification action") }
+            .onFailure {
+                if (posted) {
+                    Log.i(TAG, "companion root picker waits for notification action")
+                } else {
+                    Log.i(TAG, "companion root picker requires visible Android interaction")
+                }
+            }
     }
 
     private fun cancelCompanionRootNotification() {
-        getSystemService(NotificationManager::class.java)
-            .cancel(COMPANION_ROOT_NOTIFICATION_ID)
+        notificationCoordinator.cancelCompanionRootNotification()
     }
 
     private fun isChromeOs(): Boolean =
@@ -2275,15 +2285,26 @@ class ProductEngineService : Service() {
     }
 
     fun shutdownFromUi() {
-        scope.launch {
-            try {
-                clientReady.await()
-                shutdown()
-            } finally {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-            }
-        }
+        requestStop("ui_stop")
+    }
+
+    fun setInteractionLease(
+        token: String,
+        held: Boolean,
+    ) {
+        if (held) interactionLeases.add(token) else interactionLeases.remove(token)
+        refreshNotificationEligibility("interaction")
+    }
+
+    fun refreshNotificationEligibility() {
+        refreshNotificationEligibility("activity_result")
+    }
+
+    internal fun setNotificationPreference(
+        preference: ProductNotificationPreference,
+        enabled: Boolean,
+    ) {
+        notificationCoordinator.setPreference(preference, enabled, interactionLeases.size)
     }
 
     fun selectTorrent(torrentId: String) {
@@ -2764,16 +2785,9 @@ class ProductEngineService : Service() {
                     product.preventSleepDuringActiveDownloads &&
                         requiresSleepInhibition(product.torrents.values)
                 updatePowerLock(active)
-                val downloading =
-                    product.torrents.values.count { it.state == TorrentState.DOWNLOADING }
-                val detail =
-                    when {
-                        product.error != null -> "Error: ${product.error}"
-                        downloading > 0 -> "Downloading $downloading torrent"
-                        product.torrents.isEmpty() -> "Ready"
-                        else -> "Transfers paused or complete"
-                    }
-                updateNotification(detail)
+                notificationCoordinator.updateOngoingNotification(
+                    productOngoingNotificationText(product),
+                )
             }
         }
     }
@@ -2806,32 +2820,61 @@ class ProductEngineService : Service() {
         powerLock = null
     }
 
-    private suspend fun shutdown() {
-        if (!stopped.compareAndSet(false, true)) return
-        Log.i(TAG, "product_shutdown_begin")
-        externalAdmissionCancellationSignal?.cancel()
-        externalCancellationSignal?.cancel()
-        externalAdmissionJob?.cancelAndJoin()
-        externalSubmissionJob?.cancelAndJoin()
-        if (::presentationRepository.isInitialized) presentationRepository.close()
-        trackerEvidenceJob?.cancel()
-        trackerEvidenceSubscription?.close()
-        companionPairingJob?.cancel()
-        companionRootJob?.cancel()
-        companionRootRemovalJob?.cancel()
-        cancelCompanionRootNotification()
-        if (::client.isInitialized) {
+    private fun requestStop(
+        reason: String,
+        startId: Int? = null,
+    ) {
+        if (!stopRequested.compareAndSet(false, true)) return
+        scope.launch {
             try {
-                Log.i(TAG, "product_shutdown_client_begin")
-                client.shutdown()
-                Log.i(TAG, "product_shutdown_client_complete")
+                shutdown(reason)
             } finally {
-                safStorageJobs.forEach { it.join() }
-                client.close()
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                if (startId == null) stopSelf() else stopSelfResult(startId)
             }
         }
-        releasePowerLock()
-        Log.i(TAG, "product_shutdown_complete")
+    }
+
+    private suspend fun shutdown(reason: String) {
+        if (!stopped.compareAndSet(false, true)) {
+            shutdownComplete.await()
+            return
+        }
+        Log.i(TAG, "product_shutdown_begin reason=$reason")
+        try {
+            unregisterNotificationBlockReceiver()
+            ProductActivityVisibility.detach()
+            interactionLeases.clear()
+            externalAdmissionCancellationSignal?.cancel()
+            externalCancellationSignal?.cancel()
+            externalAdmissionJob?.cancelAndJoin()
+            externalSubmissionJob?.cancelAndJoin()
+            if (::presentationRepository.isInitialized) presentationRepository.close()
+            trackerEvidenceJob?.cancel()
+            trackerEvidenceSubscription?.close()
+            trackerEvidenceJob?.join()
+            companionPairingJob?.cancel()
+            companionRootJob?.cancel()
+            companionRootRemovalJob?.cancel()
+            notificationCoordinator.close()
+            if (::client.isInitialized) {
+                try {
+                    Log.i(TAG, "product_shutdown_client_begin")
+                    client.shutdown()
+                    Log.i(TAG, "product_shutdown_client_complete")
+                } finally {
+                    companionPairingJob?.join()
+                    companionRootJob?.join()
+                    companionRootRemovalJob?.join()
+                    safStorageJobs.forEach { it.join() }
+                    client.close()
+                }
+            }
+            releasePowerLock()
+            Log.i(TAG, "product_shutdown_complete reason=$reason")
+        } finally {
+            shutdownComplete.complete(Unit)
+        }
     }
 
     private fun reportError(error: Throwable) {
@@ -2839,60 +2882,55 @@ class ProductEngineService : Service() {
         mutableState.update { it.copy(error = error.message ?: error.toString()) }
     }
 
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(
-                NotificationChannel(
-                    CHANNEL_ID,
-                    "RSTorrent downloads",
-                    NotificationManager.IMPORTANCE_LOW,
-                ),
-            )
+    private fun refreshNotificationEligibility(reason: String) {
+        if (stopped.get()) return
+        scope.launch {
+            notificationEligibilityMutation.withLock {
+                if (stopped.get()) return@withLock
+                val eligibility =
+                    notificationCoordinator.refreshPlatformState(interactionLeases.size)
+                Log.i(
+                    TAG,
+                    "notification_eligibility reason=$reason visible=" +
+                        "${eligibility.backgroundNotificationVisible} " +
+                        "interaction=${eligibility.interactionLeaseCount > 0}",
+                )
+                if (eligibility.shouldStopOwner) {
+                    requestStop("notification_visibility")
+                }
+            }
         }
     }
 
-    private fun notification(detail: String): Notification {
-        val open =
-            PendingIntent.getActivity(
-                this,
-                0,
-                Intent(this, MainActivity::class.java),
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            )
-        val stop =
-            PendingIntent.getService(
-                this,
-                1,
-                Intent(this, ProductEngineService::class.java).setAction(ACTION_STOP),
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            )
-        val builder =
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                Notification.Builder(this, CHANNEL_ID)
-            } else {
-                @Suppress("DEPRECATION")
-                Notification.Builder(this)
+    private fun registerNotificationBlockReceiver() {
+        val receiver =
+            object : BroadcastReceiver() {
+                override fun onReceive(
+                    context: Context?,
+                    intent: Intent?,
+                ) {
+                    refreshNotificationEligibility("block_state")
+                }
             }
-        return builder
-            .setSmallIcon(R.drawable.ic_rstorrent_notification)
-            .setContentTitle("RSTorrent")
-            .setContentText(detail)
-            .setContentIntent(open)
-            .setOngoing(true)
-            .addAction(
-                Notification.Action.Builder(
-                    android.R.drawable.ic_menu_close_clear_cancel,
-                    "Stop",
-                    stop,
-                ).build(),
-            )
-            .build()
+        val filter =
+            IntentFilter().apply {
+                addAction(NotificationManager.ACTION_APP_BLOCK_STATE_CHANGED)
+                addAction(NotificationManager.ACTION_NOTIFICATION_CHANNEL_BLOCK_STATE_CHANGED)
+            }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION")
+            registerReceiver(receiver, filter)
+        }
+        notificationBlockReceiver = receiver
     }
 
-    private fun updateNotification(detail: String) {
-        getSystemService(NotificationManager::class.java)
-            .notify(NOTIFICATION_ID, notification(detail))
+    private fun unregisterNotificationBlockReceiver() {
+        notificationBlockReceiver?.let { receiver ->
+            runCatching { unregisterReceiver(receiver) }
+        }
+        notificationBlockReceiver = null
     }
 
     companion object {
@@ -2901,10 +2939,12 @@ class ProductEngineService : Service() {
             "org.rstorrent.bootstrap.ENABLE_CHROMEOS_COMPANION"
         fun externalIntakeAction(packageName: String): String =
             "$packageName.action.EXTERNAL_TORRENT_INTAKE"
-        private const val CHANNEL_ID = "rstorrent-product"
-        private const val NOTIFICATION_ID = 42
-        private const val COMPANION_ROOT_NOTIFICATION_ID = 43
         private const val COMPANION_ROOT_PENDING_INTENT_ID = 43
+        const val INTERACTION_ACTIVITY = "activity"
+        const val INTERACTION_NOTIFICATION_PERMISSION = "notification_permission"
+        const val INTERACTION_NOTIFICATION_SETTINGS = "notification_settings"
+        const val INTERACTION_SAF_PICKER = "saf_picker"
+        const val INTERACTION_TORRENT_PICKER = "torrent_picker"
         private const val COMPANION_PAIRING_POLL_MILLIS = 250L
         private const val EXTERNAL_PROVIDER_TIMEOUT_MILLIS = 30_000L
         private const val SAF_PROVIDER_CONCURRENCY = 4

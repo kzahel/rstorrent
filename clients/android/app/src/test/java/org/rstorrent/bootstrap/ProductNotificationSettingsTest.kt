@@ -102,4 +102,19 @@ class ProductNotificationSettingsTest {
             interactionLeaseCount = -1,
         )
     }
+
+    @Test
+    fun activityVisibilityConvergesBeforeAndAfterServiceAttachment() {
+        ProductActivityVisibility.resetForTest()
+        val observed = mutableListOf<Boolean>()
+
+        ProductActivityVisibility.setVisible(true)
+        ProductActivityVisibility.attach(observed::add)
+        ProductActivityVisibility.setVisible(false)
+        ProductActivityVisibility.detach()
+        ProductActivityVisibility.setVisible(true)
+
+        assertEquals(listOf(true, false), observed)
+        ProductActivityVisibility.resetForTest()
+    }
 }

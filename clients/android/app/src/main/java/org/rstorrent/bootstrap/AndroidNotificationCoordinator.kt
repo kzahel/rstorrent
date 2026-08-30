@@ -204,6 +204,36 @@ internal class AndroidNotificationCoordinator(
         manager.cancel(AndroidNotificationContract.COMPANION_ROOT_NOTIFICATION_ID)
     }
 
+    fun showCompanionRootNotification(pendingIntent: PendingIntent): Boolean {
+        val platform = platformState(state.value.notifications.interactionLeaseCount)
+        state.update { it.copy(notifications = platform) }
+        if (
+            !platform.permissionGranted ||
+            !platform.appNotificationsEnabled ||
+            !platform.attentionChannelEnabled
+        ) {
+            return false
+        }
+        val notification =
+            NotificationCompat
+                .Builder(context, AndroidNotificationContract.ATTENTION_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_rstorrent_notification)
+                .setContentTitle("Choose an RSTorrent download folder")
+                .setContentText("Chrome needs Android folder access to continue")
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+                .setCategory(NotificationCompat.CATEGORY_ERROR)
+                .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+                .build()
+        return runCatching {
+            manager.notify(AndroidNotificationContract.COMPANION_ROOT_NOTIFICATION_ID, notification)
+            true
+        }.getOrElse { error ->
+            Log.w(TAG, "notification_delivery category=workflow result=rejected", error)
+            false
+        }
+    }
+
     fun close() {
         policy.reset()
         cancelCompanionRootNotification()
@@ -377,7 +407,9 @@ internal class AndroidNotificationCoordinator(
 
     private fun channelEnabled(channelId: String): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
-            manager.getNotificationChannel(channelId)?.importance != NotificationManager.IMPORTANCE_NONE
+            manager.getNotificationChannel(channelId)?.importance?.let {
+                it != NotificationManager.IMPORTANCE_NONE
+            } == true
 
     private fun eventNotificationId(category: ProductNotificationCategory): Int =
         when (category) {

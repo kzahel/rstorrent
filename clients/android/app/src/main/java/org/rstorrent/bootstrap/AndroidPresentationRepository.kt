@@ -255,8 +255,8 @@ internal class AndroidPresentationRepository(
         return OwnedSubscription(subscription, job)
     }
 
-    private fun closeAll(subscriptions: MutableList<OwnedSubscription>) {
-        subscriptions.forEach(OwnedSubscription::close)
+    private suspend fun closeAll(subscriptions: MutableList<OwnedSubscription>) {
+        subscriptions.forEach { it.close() }
         subscriptions.clear()
     }
 
@@ -353,9 +353,10 @@ internal class AndroidPresentationRepository(
         val subscription: AndroidViewSubscription,
         val job: Job,
     ) {
-        fun close() {
+        suspend fun close() {
             job.cancel()
             subscription.close()
+            job.join()
         }
     }
 }

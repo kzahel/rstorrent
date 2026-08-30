@@ -1,5 +1,7 @@
 package org.rstorrent.bootstrap
 
+import java.util.concurrent.atomic.AtomicBoolean
+
 internal enum class ProductNotificationPreference {
     DOWNLOAD_COMPLETE,
     NEEDS_ATTENTION,
@@ -63,6 +65,35 @@ internal data class NotificationEligibility(
 
     val shouldStopOwner: Boolean
         get() = visibleOnly && interactionLeaseCount == 0
+}
+
+/** Process-local activity visibility; process death deliberately resets it to absent. */
+internal object ProductActivityVisibility {
+    private val visible = AtomicBoolean(false)
+    private val ownership = Any()
+    private var listener: ((Boolean) -> Unit)? = null
+
+    fun setVisible(value: Boolean) {
+        visible.set(value)
+        synchronized(ownership) { listener }?.invoke(value)
+    }
+
+    fun attach(listener: (Boolean) -> Unit) {
+        synchronized(ownership) {
+            check(this.listener == null) { "activity visibility already has a service owner" }
+            this.listener = listener
+        }
+        listener(visible.get())
+    }
+
+    fun detach() {
+        synchronized(ownership) { listener = null }
+    }
+
+    internal fun resetForTest() {
+        synchronized(ownership) { listener = null }
+        visible.set(false)
+    }
 }
 
 data class ProductNotificationState(

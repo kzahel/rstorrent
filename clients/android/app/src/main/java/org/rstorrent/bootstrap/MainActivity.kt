@@ -47,8 +47,13 @@ class MainActivity : ComponentActivity() {
     private var pendingProductBandwidthPolicy: String? = null
     private var pendingProductIpv6Policy: String? = null
     private var pendingProductTorrentAction: Pair<String, String>? = null
+    private var pendingNotificationSettingsReturn = false
     private val productTreePicker =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            productService.value?.setInteractionLease(
+                ProductEngineService.INTERACTION_SAF_PICKER,
+                false,
+            )
             val data = result.data
             val treeUri = data?.data
             val companionRequestId = pendingProductCompanionRootRequestId
@@ -77,6 +82,10 @@ class MainActivity : ComponentActivity() {
         }
     private val productTorrentPicker =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            productService.value?.setInteractionLease(
+                ProductEngineService.INTERACTION_TORRENT_PICKER,
+                false,
+            )
             val data = result.data
             val torrentUri = data?.data
             if (result.resultCode != RESULT_OK || torrentUri == null) {
@@ -95,6 +104,11 @@ class MainActivity : ComponentActivity() {
     private val notificationPermissionRequest =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {
             notificationsGranted.value = notificationPermissionGranted()
+            productService.value?.setInteractionLease(
+                ProductEngineService.INTERACTION_NOTIFICATION_PERMISSION,
+                false,
+            )
+            productService.value?.refreshNotificationEligibility()
         }
     private val productConnection =
         object : ServiceConnection {
@@ -118,6 +132,10 @@ class MainActivity : ComponentActivity() {
                     service.cancelCompanionRootRequest(it)
                 }
                 productService.value = service
+                service.setInteractionLease(
+                    ProductEngineService.INTERACTION_ACTIVITY,
+                    lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED),
+                )
                 pendingProductMagnet?.let {
                     pendingProductMagnet = null
                     val policy = pendingProductTrackerPolicy
@@ -238,11 +256,30 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        ProductActivityVisibility.setVisible(true)
         if (productMode) bindProductService()
     }
 
+    override fun onResume() {
+        super.onResume()
+        notificationsGranted.value = notificationPermissionGranted()
+        if (pendingNotificationSettingsReturn) {
+            pendingNotificationSettingsReturn = false
+            productService.value?.setInteractionLease(
+                ProductEngineService.INTERACTION_NOTIFICATION_SETTINGS,
+                false,
+            )
+        }
+        productService.value?.refreshNotificationEligibility()
+    }
+
     override fun onStop() {
+        ProductActivityVisibility.setVisible(false)
         if (productBound) {
+            productService.value?.setInteractionLease(
+                ProductEngineService.INTERACTION_ACTIVITY,
+                false,
+            )
             unbindService(productConnection)
             productBound = false
             productService.value = null
@@ -602,7 +639,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startProductService(action: String? = null) {
-        val serviceIntent = Intent(this, ProductEngineService::class.java).setAction(action)
+        val serviceIntent =
+            Intent(this, ProductEngineService::class.java)
+                .setAction(action)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(serviceIntent)
         } else {
@@ -612,6 +651,10 @@ class MainActivity : ComponentActivity() {
 
     private fun launchProductTreePicker(repairRootId: String? = null) {
         pendingProductRepairRootId = repairRootId
+        productService.value?.setInteractionLease(
+            ProductEngineService.INTERACTION_SAF_PICKER,
+            true,
+        )
         productTreePicker.launch(
             Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -631,6 +674,10 @@ class MainActivity : ComponentActivity() {
 
     private fun launchProductTorrentPicker(startContent: Boolean) {
         pendingProductTorrentStartContent = startContent
+        productService.value?.setInteractionLease(
+            ProductEngineService.INTERACTION_TORRENT_PICKER,
+            true,
+        )
         productTorrentPicker.launch(
             Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
@@ -661,9 +708,14 @@ class MainActivity : ComponentActivity() {
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
         ) {
+            productService.value?.setInteractionLease(
+                ProductEngineService.INTERACTION_NOTIFICATION_PERMISSION,
+                true,
+            )
             notificationPermissionRequest.launch(Manifest.permission.POST_NOTIFICATIONS)
         } else {
             notificationsGranted.value = true
+            productService.value?.refreshNotificationEligibility()
         }
     }
 
@@ -673,11 +725,24 @@ class MainActivity : ComponentActivity() {
             PackageManager.PERMISSION_GRANTED
 
     private fun openNotificationSettings() {
-        startActivity(
-            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-                putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
-            },
+        productService.value?.setInteractionLease(
+            ProductEngineService.INTERACTION_NOTIFICATION_SETTINGS,
+            true,
         )
+        pendingNotificationSettingsReturn = true
+        runCatching {
+            startActivity(
+                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                    putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                },
+            )
+        }.onFailure {
+            pendingNotificationSettingsReturn = false
+            productService.value?.setInteractionLease(
+                ProductEngineService.INTERACTION_NOTIFICATION_SETTINGS,
+                false,
+            )
+        }
     }
 
     private fun setThemeMode(mode: ProductThemeMode) {
