@@ -639,17 +639,17 @@ disposition of current JSTorrent Android features.
   bounded authenticated-companion reconnect grace. Reboot autostart,
   low-battery shutdown, VPN, and proxy remain outside both slices.
 - [ ] **AND-010 — Add metered-network safety and bound VPN policy.** JSTorrent
-  Android enforces unmetered/Wi-Fi-only and VPN-only prerequisites; RSTorrent's
-  service selects `Online` for its full lifetime. Before a supported phone
-  beta, add truthful live unmetered/metered enforcement that preserves torrent
-  intent across network change. VPN-only may remain a disclosed later feature
-  unless a dedicated tactical proves Android network binding, handover races,
-  socket leakage, tracker/DHT/peer coverage, and fail-closed recovery.
-  Ready Tactical
-  [`199`](../tactical/199-android-live-unmetered-network-enforcement.md) owns
-  the required default-off unmetered cost policy, including fail-closed
-  startup, complete live BitTorrent egress convergence, automatic intent-
-  preserving recovery, AVD/physical evidence, and an explicit non-VPN claim.
+  Android enforces unmetered/Wi-Fi-only and VPN-only prerequisites. Tactical
+  [`199`](../tactical/199-android-live-unmetered-network-enforcement.md) now
+  implements RSTorrent's required default-off unmetered cost policy with
+  fail-closed startup, joined live BitTorrent egress convergence, automatic
+  intent-preserving recovery, truthful generated/Compose state, and exact
+  cleanup. Deterministic, dual-ABI, and installed API 28/35 AVD evidence
+  passes. The unmetered gate remains open only for an explicitly authorized
+  physical current-API phone handoff campaign; no physical device was used.
+  VPN-only may remain a disclosed later feature unless a dedicated tactical
+  proves Android network binding, handover races, socket leakage, tracker/DHT/
+  peer coverage, and fail-closed recovery.
 - [x] **AND-011 — Handle external magnets and torrent files.** Completed
   Tactical `197` makes the installed provisional Android product a narrow
   `ACTION_VIEW` handler for `magnet:`, exact BitTorrent-MIME `content://`, and

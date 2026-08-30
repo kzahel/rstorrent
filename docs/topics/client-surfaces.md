@@ -938,7 +938,7 @@ streaming demand, expiry, and revocation remain unchanged.
 - The Android Compose product now presents authoritative multi-torrent queue
   and concurrent-admission state plus live Peers, Files, Trackers, Pieces,
   Disk, Swarm, Logs, Speed, and dual-family DHT projections. Search/plugins,
-  playback, dynamic network policy, and tracker mutation remain explicitly
+  playback, VPN/proxy policy, and tracker mutation remain explicitly
   unavailable rather than discarded or simulated. Completed Tactical
   [`197`](../tactical/197-android-external-torrent-intake.md) adds bounded
   external `magnet:` and cross-package `content://` `.torrent` activation to
@@ -969,14 +969,16 @@ streaming demand, expiry, and revocation remain unchanged.
   exact negotiated method or typed failure, fallback use, byte accounting, and
   exponentiation count. Deeper tracker-attempt, scheduler, and performance
   instrumentation remains to be added as those runtime owners grow.
-- Android has no connectivity, metered-network, or VPN-only settings yet.
-  Ready Tactical
-  [`199`](../tactical/199-android-live-unmetered-network-enforcement.md) owns
-  the default-off **Unmetered networks only** cost policy: ordered default-
-  network observation, fail-closed startup/live engine permission, complete
-  BitTorrent network convergence, intent-preserving automatic recovery, and
-  truthful Compose/companion state. VPN-grade leak prevention still requires
-  explicit Android network binding and race analysis; proxy remains separate.
+- Android now exposes the default-off **Unmetered networks only** cost policy.
+  Tactical
+  [`199`](../tactical/199-android-live-unmetered-network-enforcement.md) adds
+  ordered default-network observation, fail-closed startup and live engine
+  permission, joined BitTorrent network convergence, intent-preserving
+  automatic recovery, and truthful React, Compose, companion, DHT, and
+  foreground-notification state. Deterministic and installed API 28/35 AVD
+  evidence passes; the supported-phone gate still awaits explicit physical-
+  handoff authorization. VPN-grade leak prevention still requires Android
+  network binding and race analysis; proxy remains separate.
 - Android's one service-native notification owner now reports generic
   foreground state and derives bounded completion plus fatal/storage-repair
   edges from the authoritative torrent-list stream. Default-on app preferences
@@ -992,15 +994,15 @@ streaming demand, expiry, and revocation remain unchanged.
   [`200`](../tactical/200-android-product-background-lifecycle.md) owns the
   granted-background activity/active-work/completion/seeding/task-removal/
   reboot contract and accepts Android 15+ `dataSync` operation as finite;
-  dynamic metered/VPN policy remains separate from Tactical `194`'s connection
-  transport.
+  VPN policy remains separate from Tactical `194`'s connection transport.
 - Android now has Compose connection/seeding settings for backed peer, upload-
   slot, active-download, listener, port-mapping, IPv6, and encryption values,
   including configured/effective/application truth, plus backed session and
-  per-torrent upload/download limits. Metered-network enforcement remains
-  absent with ready Tactical `199`; background lifetime remains absent with
-  ready Tactical `200`; VPN, proxy, low-battery, and broader seeding policy
-  remain separate product/engine slices.
+  per-torrent upload/download limits. The default-off metered-network cost
+  policy is implemented by Tactical `199` and AVD-qualified, with only its
+  authorized physical-phone gate open. Background lifetime remains absent
+  with ready Tactical `200`; VPN, proxy, low-battery, and broader seeding
+  policy remain separate product/engine slices.
 - Tracker HTTPS authentication is intentionally absent from ordinary React
   and Compose settings. The advanced typed `disabled` override exists for
   compatibility/debug use and remains visibly unauthenticated in tracker

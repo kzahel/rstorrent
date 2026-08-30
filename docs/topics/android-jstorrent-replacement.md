@@ -178,12 +178,17 @@ daemon architecture.
   authoritative doctor, leaving its companion permission/reconnect matrix
   unexecuted.
 - [ ] **JAR-008 — Enforce unmetered-network policy live.** This is the required
-  part of beta gate `AND-010`. Ready Tactical
-  [`199`](../tactical/199-android-live-unmetered-network-enforcement.md) owns a
-  default-off **Unmetered networks only** preference, ordered default-network
-  observation, fail-closed initial/live application prerequisite, intent-
-  preserving automatic recovery, and complete peer/tracker/DHT/listener/
-  mapping closure evidence. It explicitly excludes VPN privacy and proxying.
+  part of beta gate `AND-010`. Tactical
+  [`199`](../tactical/199-android-live-unmetered-network-enforcement.md) now
+  implements the default-off **Unmetered networks only** preference, ordered
+  default-network observation, fail-closed initial/live application
+  prerequisite, intent-preserving automatic recovery, and complete owned-
+  generation closure. Deterministic Rust, generated clients, dual-ABI builds,
+  and installed API 28/35 AVD campaigns pass, including block/restart/resume,
+  exact hashes, paused intent, terminal-zero peers, and resource cleanup. The
+  gate remains open only for the explicitly authorized physical-phone handoff
+  campaign; no physical device was used. VPN privacy and proxying remain
+  excluded.
 - [ ] **JAR-009 — Implement the selected background lifecycle policy.** Ready
   Tactical
   [`200`](../tactical/200-android-product-background-lifecycle.md) replaces the
@@ -242,9 +247,12 @@ Unmetered policy, VPN-only policy, and proxying are three different contracts:
 
 - **Unmetered-only** is a cost policy over Android network capabilities. It is
   required before supported phone replacement and should count any eligible
-  unmetered transport, not merely Wi-Fi. Ready Tactical
-  [`199`](../tactical/199-android-live-unmetered-network-enforcement.md) owns
-  its exact callback, application-gate, presentation, and evidence contract.
+  unmetered transport, not merely Wi-Fi. Tactical
+  [`199`](../tactical/199-android-live-unmetered-network-enforcement.md)
+  implements its exact callback, application gate, generated and Compose
+  presentation, and AVD-qualified fail-closed recovery contract. Physical
+  current-API phone handoff evidence remains required before this replacement
+  gate closes.
 - **VPN-only** is a privacy boundary. Observing that Android's active default
   network has `TRANSPORT_VPN` and suspending the engine is not sufficient.
   Every newly created and already-open TCP/UDP socket, resolver route, tracker,
@@ -427,10 +435,11 @@ live run.
    [`198`](../tactical/198-android-completion-and-attention-notifications.md)
    for `JAR-007` completion/failure notifications, companion-aware permission
    transparency, and fail-safe target-35 timeout shutdown.
-4. Execute ready Tactical
-   [`199`](../tactical/199-android-live-unmetered-network-enforcement.md) for
+4. After explicit authorization, finish Tactical
+   [`199`](../tactical/199-android-live-unmetered-network-enforcement.md)'s
+   bounded physical-phone Wi-Fi/metered handoff and cleanup gate, then close
    the unmetered portion of `JAR-008` without coupling it to a VPN privacy
-   claim.
+   claim. The implementation and owned-AVD evidence are already complete.
 5. Execute ready Tactical
    [`200`](../tactical/200-android-product-background-lifecycle.md) for
    `JAR-009` background/seeding/idle ownership after Tactical `198` exposes

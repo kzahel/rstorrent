@@ -228,15 +228,16 @@ automatic mechanism can still act.
 Application network permission remains separate from each torrent's desired
 running or paused state. An offline policy prevents DNS and socket work and
 reports `network_disabled` with an `enable_network` action; it does not turn
-the torrent into an error or durable pause. Future Android connectivity,
-metered-network, and VPN settings should combine platform facts and user
-preferences in an application-level owner, then change the engine permission
-without rewriting torrent intent. Ready Tactical
-[`199`](../tactical/199-android-live-unmetered-network-enforcement.md) defines
-the first live prerequisite: Android's default-off unmetered cost policy
-closes every BitTorrent network generation while keeping the fixed address
+the torrent into an error or durable pause. Tactical
+[`199`](../tactical/199-android-live-unmetered-network-enforcement.md) adds the
+first live application prerequisite: Android's default-off unmetered cost
+policy combines transient platform facts with one durable user preference,
+atomically closes and joins every BitTorrent network generation, and starts
+only the latest eligible generation through ordinary admission. Fixed address
 policy, durable torrent intent, local application work, and product control
-separate. VPN binding and proxy routing remain independent contracts.
+remain separate. Deterministic and API 28/35 installed-product evidence passes;
+the supported-phone gate still awaits explicitly authorized physical handoff
+evidence. VPN binding and proxy routing remain independent contracts.
 
 Android process lifetime is also not torrent lifecycle intent. Ready Tactical
 [`200`](../tactical/200-android-product-background-lifecycle.md) makes the one

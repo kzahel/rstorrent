@@ -1,8 +1,9 @@
 # Tactical 199: Android Live Unmetered-Network Enforcement
 
-Status: **Ready as of 2026-08-30.** Maintainer direction selected this as the
-next Android replacement plan. No implementation, emulator/device mutation,
-or release action has occurred yet.
+Status: **Implementation and owned-AVD evidence complete as of 2026-08-30.**
+The bounded physical-phone handoff campaign remains authorization-gated, so
+this tactical and replacement gates `JAR-008`/`AND-010` remain open only for
+that final device evidence. The attached physical phone was not used.
 
 Topics: `android-jstorrent-replacement`, `beta-release-readiness`,
 `application-control`, `application-view-api`, `client-surfaces`,
@@ -517,9 +518,9 @@ unobserved handoff.
   and unmetered blocking share idempotent cancellation but distinct outcomes:
   the first three stop the application; this tactical normally retains it.
 
-## Current RSTorrent Findings
+## Pre-Implementation RSTorrent Findings
 
-The implementation starts from a useful but lifetime-fixed policy:
+The implementation started from a useful but lifetime-fixed policy:
 
 - `crates/rstorrent-engine/src/network.rs` defines task-free
   `NetworkPolicy::{Offline,LoopbackOnly,Online}` and `NetworkConfig`. Policy is
@@ -814,6 +815,119 @@ Run connected instrumentation only on explicitly owned AVDs. Run physical
 work only after the required authorization and record exact commands,
 captures, byte limits, policy mutations, and cleanup.
 
+## Implementation And Evidence
+
+The implementation landed in seven bounded commits:
+
+- `02e8e33` adds the manifest permission, task-free Android reducer, exact
+  default-network callback owner, default-off durable preference, and Compose
+  setting;
+- `91b0f02` adds the atomic, monotonically generated application network
+  prerequisite and permits the application to open fail-closed;
+- `c86d257` makes the application owner close and join the active session
+  network, reachability, discovery-advertisement, DHT, tracker, peer, listener,
+  and mapping generations without changing torrent intent;
+- `5b1e54f` crosses the Android/generated boundary and presents typed
+  `WaitingForUnmeteredNetwork` application, torrent, DHT, React, Compose, and
+  foreground-notification truth;
+- `7a2143b` adds installed Android policy instrumentation on owned AVDs;
+- `5539b96` moves the live generation fence into every socket-owning path so
+  a close returns only after new TCP, UDP/uTP, DHT, listener, mapping, tracker,
+  and advertisement work is ineligible; and
+- `fc3fb1e` adds the genuine installed-product unmetered-network campaign and
+  task-owned API 28/35 AVD support.
+
+The application service owns one requested prerequisite and one convergence
+task. A close atomically publishes the new closed generation, cancels and
+joins the prior network generation, and publishes effective-closed truth.
+An allow transition starts only the latest requested generation through the
+existing admission path. Android owns one callback registration for the
+service lifetime and unregisters it during joined shutdown. No torrent pause,
+queue, priority, verified-piece, or storage mutation is part of this path.
+
+Deterministic and controlled Rust evidence includes:
+
+- nonzero monotonic generation, latest-value, overflow, start-closed, rapid
+  allow/block/allow, and stale-generation fencing cases;
+- explicit cancellation coverage for session UDP/uTP, DHT, incoming
+  listeners, reachability/mapping, discovery advertisement, tracker work, and
+  suppression of stopped-generation cleanup traffic;
+- preservation of add and user-pause intent while blocked; and
+- a genuine two-piece TCP transfer that verifies one piece, blocks in under
+  50 ms, stays flat while blocked, retains the verified piece, reconnects in a
+  fresh generation, and completes to exact bytes without a Resume command.
+
+The installed-product campaign ran the final dual-ABI debug APK through a
+controlled libtorrent seed over one owned ADB reverse and SAF-internal root.
+Both runs proved the preference defaulted off, enabled while unmetered,
+verified exactly one piece, converged to native `tcp=0`, `udp=0`, and
+`connected_peers=0` after emulator Wi-Fi became metered, and transferred zero
+additional controlled bytes throughout the blocked interval. Force-stop and
+restart while still metered also produced zero controlled bytes and no peer.
+Returning Wi-Fi to unmetered resumed automatically and completed five exact
+pieces and file hashes. A separately user-paused torrent stayed paused with
+zero peer connections. Compose displayed **Waiting for an unmetered network**
+while product control remained available.
+
+| Evidence | API 28 AVD | API 35 AVD |
+| --- | ---: | ---: |
+| Close convergence | 277 ms | 563 ms |
+| Allow convergence | 297 ms | 326 ms |
+| Controlled bytes after block convergence | 0 | 0 |
+| Controlled bytes after blocked restart | 0 | 0 |
+| Peer connections, high / terminal | 1 / 0 | 1 / 0 |
+| Process FDs, baseline / high / final | 76 / 81 / 75 | 158 / 164 / 157 |
+| SAF handles, limit / owned high / pending high | 40 / 6 / 1 | 40 / 6 / 1 |
+
+The API 28 run used `generic_arm64`, Android 9, `arm64-v8a`, fingerprint
+`Android/sdk_gphone_arm64/generic_arm64:9/PSR1.210301.009.B6/9767327:userdebug/dev-keys`.
+The API 35 run used `emu64a`, Android 15, `arm64-v8a`, fingerprint
+`google/sdk_gphone64_arm64/emu64a:15/AE3A.240806.043/12960925:userdebug/dev-keys`.
+The final connected suites passed 18/18 tests on API 28 and 20/20 on API 35.
+One first API 35 suite attempt observed Android's notification manager still
+holding the foreground notification after the service had already logged and
+reported joined shutdown complete; the isolated timeout case and the complete
+suite then passed unchanged.
+
+The final APK is package `org.rstorrent.bootstrap`, min SDK 28, target SDK 35,
+and SHA-256
+`936b75e0b0cce7f01dc816db798cafe78bbf5848bae0b93725577889c5380ec6`.
+It contains `librstorrent_android.so` for `arm64-v8a` (23,718,680 bytes) and
+`x86_64` (26,689,336 bytes).
+
+Repository validation passed:
+
+```text
+cargo fmt --all -- --check
+cargo clippy --workspace -- -D warnings
+cargo test --workspace
+npm run generate --prefix clients/web
+npm run typecheck --prefix clients/web
+npm run test --prefix clients/web
+cd clients/android && ./gradlew lintDebug testDebugUnitTest assembleDebug assembleDebugAndroidTest
+./clients/android/build.sh
+```
+
+The web suite passed 365 tests with 2 skipped. The Android JVM/lint/package
+baseline completed 77 tasks, and the final connected suites passed as stated
+above. The Android build emitted only the already recorded cross-target Rust
+`dead_code` and Android API-deprecation warnings. One earlier full Rust
+baseline attempt hit a timing-sensitive metadata-cleanup timeout; five focused
+reruns and two later complete workspace runs passed unchanged.
+
+Each product campaign restored the emulator metered override and preference,
+removed the package, reverse, controlled payloads, SAF tree, and temporary
+host endpoints, and reported `cleanup=ok`. The task-owned AVD definitions were
+deleted after the final connected pass. No public swarm, uncontrolled endpoint,
+VPN/proxy path, physical radio, or physical device was used. Deterministic
+owner tests establish the non-TCP network-surface closure contract; the AVD
+campaign does not claim a separate real HTTP/UDP tracker, DHT, or uTP transfer
+on each emulator.
+
+The only unmet stopping-condition item is the explicitly authorized current-
+API physical-phone handoff campaign above. Until that runs, this evidence is
+AVD-qualified implementation rather than a supported-phone cost-policy claim.
+
 ## Documentation And Completion Updates
 
 Before marking this tactical complete:
@@ -868,29 +982,21 @@ within the declared owner and bounds.
 
 ## Oracle Restart Checkpoint And Next Action
 
-The exact pre-implementation checkpoint is:
+The implementation checkpoint is commits `02e8e33` through `fc3fb1e` and the
+deterministic, generated-client, dual-ABI, API 28, and API 35 evidence recorded
+above. Fixed `NetworkPolicy` remains the application-lifetime address/DNS
+boundary; the atomic application prerequisite is the independent live
+generation boundary. All current peer, tracker, DNS, DHT, incoming, UDP/uTP,
+advertisement, listener, reachability, and mapping owners consume it without
+rewriting torrent intent or emitting close cleanup traffic.
 
-- fixed `NetworkPolicy` already blocks addresses and DNS but is copied at
-  application open;
-- `ApplicationService` already separates desired torrent intent from runtime
-  activity and projects fixed Offline as non-error blockage;
-- Tactical `097` already centralizes stable/replaceable session networking,
-  and session UDP already removes/replaces socket families behind stable
-  handles;
-- Android always opens `Online`, lacks `ACCESS_NETWORK_STATE`, and has no
-  callback, preference, or live native boundary;
-- maintained JSTorrent proves the desired default/intent behavior but does not
-  prove complete DHT/listener/mapping quiescence; and
-- pinned libtorrent supplies the independent session-pause and network-
-  generation edge checklist, not the architecture.
+The next executable action for this tactical is the bounded current-API
+physical-phone campaign after explicit maintainer authorization. Record the
+cellular byte cap before starting, cross Wi-Fi/metered or cellular/Wi-Fi as
+specified above, restore radio and package state exactly, then close
+`JAR-008`, the unmetered portion of `AND-010`, and this tactical if it passes.
+No further implementation change is implied by the present evidence.
 
-The next executable action is Stage 1: add the task-free Android eligibility
-reducer and default-off preference with exhaustive ordered-callback tests,
-then land the initial/live platform-neutral prerequisite contract before any
-runtime socket behavior changes. Do not begin with Compose wiring alone or a
-Pause All shortcut.
-
-After this tactical closes, plan `JAR-009` background lifecycle or make an
-explicit retain/defer decision for VPN-only mode. SOCKS proxy remains a
-separate source-first engine campaign rather than the presumed continuation
-of Android connectivity work.
+Ready Tactical `200` may execute independently; it does not need to wait for
+physical authorization here. VPN-only and SOCKS proxy remain separate
+source-first campaigns rather than continuations of this cost-policy owner.
