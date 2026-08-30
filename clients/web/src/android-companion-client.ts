@@ -31,6 +31,10 @@ const ENDPOINTS = [
 ] as const;
 const API_ROOT = "/rstorrent/companion/v1";
 const STORAGE_KEY = "rstorrentAndroidCompanionV1";
+const EXTENSION_ORIGINS = [
+  "chrome-extension://gcgoepclopkgijmclmlheafaglmbjlcc",
+  "chrome-extension://dbokmlpefliilbjldladbimlcfgbolhk",
+] as const;
 const PROBE_TIMEOUT_MILLIS = 2_000;
 const PROBE_INTERVAL_MILLIS = 2_000;
 const MAX_BOOTSTRAP_RESPONSE_BYTES = 64 * 1024;
@@ -393,7 +397,10 @@ async function companionJson(
 }
 
 async function companionText(url: URL, init: RequestInit): Promise<string> {
-  const response = await fetch(url, init);
+  const response = await fetch(
+    url,
+    withCompanionOrigin(init, globalThis.location.origin),
+  );
   const source = await response.text();
   if (new TextEncoder().encode(source).byteLength > MAX_BOOTSTRAP_RESPONSE_BYTES) {
     throw new Error("Android companion response exceeds its bound");
@@ -402,6 +409,18 @@ async function companionText(url: URL, init: RequestInit): Promise<string> {
     throw new Error(`Android companion request failed (${response.status})`);
   }
   return source;
+}
+
+export function withCompanionOrigin(
+  init: RequestInit,
+  pageOrigin: string,
+): RequestInit {
+  if (!EXTENSION_ORIGINS.includes(pageOrigin as (typeof EXTENSION_ORIGINS)[number])) {
+    throw new Error("Android companion requests require a recognized extension origin");
+  }
+  const headers = new Headers(init.headers);
+  headers.set("Origin", pageOrigin);
+  return { ...init, headers };
 }
 
 async function readStoredCompanion(): Promise<StoredCompanion | undefined> {

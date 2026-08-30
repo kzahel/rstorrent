@@ -4,6 +4,7 @@ import type { ApiBackendIdentity, ApiHello } from "./api/generated/v1";
 import {
   sameBackendIdentity,
   validateAndroidBackend,
+  withCompanionOrigin,
 } from "./android-companion-client";
 
 const backend: ApiBackendIdentity = {
@@ -42,6 +43,21 @@ function hello(overrides: Partial<ApiHello> = {}): ApiHello {
 }
 
 describe("Android companion identity", () => {
+  it("pins every HTTP request to the packaged extension origin", () => {
+    const request = withCompanionOrigin(
+      { headers: { Accept: "application/json", Origin: "https://wrong.example" } },
+      "chrome-extension://gcgoepclopkgijmclmlheafaglmbjlcc",
+    );
+    const headers = new Headers(request.headers);
+    expect(headers.get("Accept")).toBe("application/json");
+    expect(headers.get("Origin")).toBe(
+      "chrome-extension://gcgoepclopkgijmclmlheafaglmbjlcc",
+    );
+    expect(() =>
+      withCompanionOrigin({}, "chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+    ).toThrow(/recognized extension origin/u);
+  });
+
   it("requires the exact Android root profile without media delivery", () => {
     expect(validateAndroidBackend(hello())).toEqual(backend);
     expect(() =>
