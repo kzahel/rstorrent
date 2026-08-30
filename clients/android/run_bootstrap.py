@@ -5445,6 +5445,7 @@ def parse_arguments() -> argparse.Namespace:
         required=True,
     )
     parser.add_argument("--avd", default="jstorrent-tablet")
+    parser.add_argument("--avd-api", choices=["34", "35"], default="34")
     parser.add_argument("--runs", type=int, choices=range(1, 6), default=1)
     parser.add_argument(
         "--storage",
@@ -5510,7 +5511,7 @@ def main() -> int:
     failure: BaseException | None = None
     try:
         if arguments.target == "avd":
-            avd_session = probe.start_avd(arguments.avd)
+            avd_session = probe.start_avd(arguments.avd, arguments.avd_api)
             target = avd_session.target
         elif arguments.target == "chromeos":
             target = probe.prepare_chromeos()
@@ -5518,7 +5519,11 @@ def main() -> int:
             target = probe.prepare_pixel()
         else:
             target = probe.prepare_moto()
-        identity = probe.verify_target(target, arguments.target)
+        identity = probe.verify_target(
+            target,
+            arguments.target,
+            arguments.avd_api,
+        )
         if arguments.storage != "private":
             identity.update(
                 probe.verify_storage(

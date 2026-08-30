@@ -215,10 +215,14 @@ class AvdSession:
             pass
 
 
-def start_avd(avd_name: str) -> AvdSession:
-    if avd_name != EXPECTED_AVD:
+def start_avd(avd_name: str, expected_api: str = EXPECTED_AVD_API) -> AvdSession:
+    allowed = avd_name == EXPECTED_AVD and expected_api == EXPECTED_AVD_API
+    task_owned_api35 = avd_name.startswith("rstorrent-") and expected_api == "35"
+    if not allowed and not task_owned_api35:
         raise ProbeFailure(
-            f"refusing unlisted AVD {avd_name!r}; expected {EXPECTED_AVD!r}"
+            f"refusing unlisted AVD {avd_name!r} for API {expected_api}; "
+            f"expected {EXPECTED_AVD!r} at API {EXPECTED_AVD_API} or a "
+            "task-owned 'rstorrent-' AVD at API 35"
         )
     adb = local_adb_path()
     emulator = emulator_path()
@@ -334,7 +338,11 @@ def prepare_moto() -> AdbTarget:
     return target
 
 
-def verify_target(target: AdbTarget, kind: str) -> dict[str, str]:
+def verify_target(
+    target: AdbTarget,
+    kind: str,
+    expected_avd_api: str = EXPECTED_AVD_API,
+) -> dict[str, str]:
     api = target.property("ro.build.version.sdk")
     model = target.property("ro.product.model")
     device = target.property("ro.product.device")
@@ -342,8 +350,8 @@ def verify_target(target: AdbTarget, kind: str) -> dict[str, str]:
     fingerprint = target.property("ro.build.fingerprint")
     if kind == "avd":
         variants = (
-            (EXPECTED_AVD_API, "sdk_gphone64_x86_64", "emu64xa", "x86_64"),
-            (EXPECTED_AVD_API, "sdk_gphone64_arm64", "emu64a", "arm64-v8a"),
+            (expected_avd_api, "sdk_gphone64_x86_64", "emu64xa", "x86_64"),
+            (expected_avd_api, "sdk_gphone64_arm64", "emu64a", "arm64-v8a"),
         )
         matched = next(
             (

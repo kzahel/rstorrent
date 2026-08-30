@@ -83,6 +83,9 @@ python3 clients/android/run_bootstrap.py \
   --target avd --avd jstorrent-tablet --storage saf-internal --runs 1 \
   --profile product-notifications --no-build
 python3 clients/android/run_bootstrap.py \
+  --target avd --avd rstorrent-task-api35 --avd-api 35 \
+  --storage saf-internal --runs 1 --profile product-notifications --no-build
+python3 clients/android/run_bootstrap.py \
   --target avd --avd jstorrent-tablet --storage saf-internal --runs 1 \
   --profile product-external-intake --no-build
 python3 clients/android/run_bootstrap.py \
@@ -126,6 +129,9 @@ attention notification, restores the fixture bytes for safe removal, and
 verifies zero retained automatic notifications. Notification tags are checked
 as opaque and the profile owns its package, grant, peer, transport, payload,
 and AVD cleanup.
+API 35 evidence uses an explicitly created task-owned AVD whose name starts
+with `rstorrent-`, selects `--avd-api 35`, and removes that AVD after the run.
+The established API 34 path remains restricted to `jstorrent-tablet`.
 
 The `product-incomplete-duplex` profile stores exactly two verified pieces
 through a capped seed, revokes the SAF grant, force-stops and restarts the
