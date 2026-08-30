@@ -4,9 +4,13 @@ import { ActionMenuItem, ActionMenuSection } from "./overlays/AnchoredOverlay";
 export function FileActionMenuItems({
   actions,
   onAction,
+  directSave,
+  onDirectSave,
 }: {
   readonly actions: readonly ResolvedFileAction[];
   readonly onAction: (actionId: FileActionId) => void;
+  readonly directSave?: DirectSaveMenuAction | undefined;
+  readonly onDirectSave?: (() => void) | undefined;
 }) {
   const open = actions.filter((action) => action.group === "open");
   const download = actions.filter((action) => action.group === "download");
@@ -25,6 +29,15 @@ export function FileActionMenuItems({
               {action.label}
             </ActionMenuItem>
           ))}
+          {directSave === undefined || onDirectSave === undefined ? null : (
+            <ActionMenuItem
+              isDisabled={directSave.disabled}
+              aria-description={directSave.disabledReason}
+              onAction={onDirectSave}
+            >
+              Save from remote device…
+            </ActionMenuItem>
+          )}
         </ActionMenuSection>
       ) : null}
       {download.length > 0 ? (
@@ -55,4 +68,9 @@ export function FileActionMenuItems({
       </ActionMenuSection>
     </>
   );
+}
+
+export interface DirectSaveMenuAction {
+  readonly disabled: boolean;
+  readonly disabledReason?: string | undefined;
 }

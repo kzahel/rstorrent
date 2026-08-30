@@ -188,6 +188,39 @@ describe("product remote application WebSocket", () => {
     expect(authorization?.authorizationGeneration).toBe(7n);
   });
 
+  it("accepts protocol-2 capability context and exchanges bounded direct signaling", async () => {
+    const { socket, relay } = passwordSocket("shared");
+    await passwordHandshake(relay, false, 2);
+    expect(socket.directFileSupported()).toBe(true);
+    expect(socket.directFileConnectionGeneration()).toBe(9);
+
+    const response = socket.directFile({
+      type: "open",
+      request_id: 11,
+      circuit_generation: 9,
+      browser_peer_generation: 4,
+      torrent_id: "torrent",
+      file_index: 2,
+      offer: { type: "offer", sdp: "v=0\r\n" },
+    });
+    expect(asText(relay.sent.at(-1)?.slice(1, 5))).toBe("RDF1");
+    relay.server(encryptedJson("RDF2", {
+      type: "opened",
+      request_id: 11,
+      circuit_generation: 9,
+      browser_peer_generation: 4,
+      host_peer_generation: 5,
+      file_length: "6",
+      max_chunk_bytes: 16_384,
+      answer: { type: "answer", sdp: "v=0\r\n" },
+      candidates: [],
+    }));
+    await expect(response).resolves.toMatchObject({
+      type: "opened",
+      file_length: "6",
+    });
+  });
+
   it("does not open before browser persistence completes", async () => {
     let releasePersistence: (() => void) | undefined;
     const persisted = new Promise<void>((resolve) => {
@@ -368,21 +401,25 @@ function passwordSocket(
   return { socket, relay };
 }
 
-async function passwordHandshake(relay: FakeSocket, privateChoice: boolean): Promise<void> {
+async function passwordHandshake(
+  relay: FakeSocket,
+  privateChoice: boolean,
+  protocolVersion = 1,
+): Promise<void> {
   relay.open();
   relay.server(text.encode("RSP1"));
-  relay.server(greeting());
+  relay.server(greeting(protocolVersion));
   await tick();
   expect(asText(relay.sent[1]?.slice(0, 4))).toBe("RSL1");
   relay.server(framed("RSL2", Uint8Array.of(0x12)));
   await tick();
   expect(asText(relay.sent[2]?.slice(0, 4))).toBe("RSL3");
-  relay.server(encryptedJson("RSA2", ready()));
+  relay.server(encryptedJson("RSA2", ready(protocolVersion)));
   await tick();
   expect(relay.sent[3]?.[0]).toBe(0xa0);
   const choice = JSON.parse(asText(relay.sent[3]?.slice(5))) as { choice: string };
   expect(choice.choice).toBe(privateChoice ? "private" : "shared");
-  relay.server(encryptedJson("RSA4", outcome(privateChoice)));
+  relay.server(encryptedJson("RSA4", outcome(privateChoice, protocolVersion)));
   await tick();
 }
 
@@ -402,13 +439,18 @@ function authorization(): RemoteAuthorization {
   };
 }
 
-function greeting(): Uint8Array {
-  return concatenate(text.encode("RHG1"), relayId, hostId, Uint8Array.of(0, 1));
+function greeting(protocolVersion = 1): Uint8Array {
+  return concatenate(
+    text.encode("RHG1"),
+    relayId,
+    hostId,
+    Uint8Array.of(protocolVersion >> 8, protocolVersion & 0xff),
+  );
 }
 
-function ready(): object {
+function ready(protocolVersion = 1): object {
   return {
-    protocol_version: 1,
+    protocol_version: protocolVersion,
     host_build: "test-host",
     host_pin: encodeId(hostPin),
     host_resume_public_key: encodeId(hostResumePublicKey),
@@ -418,12 +460,19 @@ function ready(): object {
   };
 }
 
-function outcome(privateChoice: boolean): object {
+function outcome(privateChoice: boolean, protocolVersion = 1): object {
   return {
-    protocol_version: 1,
+    protocol_version: protocolVersion,
     authorization: privateChoice
       ? { client_id: encodeId(clientId), fingerprint: "SHA256:test" }
       : null,
+    ...(protocolVersion === 2
+      ? {
+          capabilities: ["direct_file_v1"],
+          circuit_id: encodeId(new Uint8Array(16).fill(7)),
+          connection_generation: 9,
+        }
+      : {}),
   };
 }
 

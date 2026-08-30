@@ -1,6 +1,9 @@
 import { Icon } from "./Icon";
 import type { FileActionId, ResolvedFileAction } from "../file-actions";
-import { FileActionMenuItems } from "./FileActionMenuItems";
+import {
+  FileActionMenuItems,
+  type DirectSaveMenuAction,
+} from "./FileActionMenuItems";
 import {
   ActionMenuPopover,
   ActionMenuTrigger,
@@ -12,12 +15,18 @@ export function FileActionsMenu({
   pending,
   actions,
   onAction,
+  directSave,
+  onDirectSave,
 }: {
   readonly pending: boolean;
   readonly actions: readonly ResolvedFileAction[];
   readonly onAction: (actionId: FileActionId) => void;
+  readonly directSave?: DirectSaveMenuAction | undefined;
+  readonly onDirectSave?: (() => void) | undefined;
 }) {
-  const description = actions.find((action) => action.disabledReason)?.disabledReason;
+  const description =
+    directSave?.disabledReason ??
+    actions.find((action) => action.disabledReason)?.disabledReason;
 
   return (
     <ActionMenuTrigger isDisabled={pending}>
@@ -29,7 +38,12 @@ export function FileActionsMenu({
         More <Icon name="chevronDown" />
       </OverlayButton>
       <ActionMenuPopover description={description}>
-        <FileActionMenuItems actions={actions} onAction={onAction} />
+        <FileActionMenuItems
+          actions={actions}
+          onAction={onAction}
+          directSave={directSave}
+          onDirectSave={onDirectSave}
+        />
       </ActionMenuPopover>
     </ActionMenuTrigger>
   );

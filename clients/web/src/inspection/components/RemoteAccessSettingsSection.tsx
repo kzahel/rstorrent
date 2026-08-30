@@ -181,6 +181,56 @@ export function RemoteAccessSettingsSection({
           </section>
 
           <section className={styles.section}>
+            <div className={styles.sectionHeading}>
+              <div>
+                <h3>Direct file transfers</h3>
+                <p>
+                  {security.direct_file.compiled
+                    ? security.direct_file.enabled
+                      ? "Enabled · file bytes use a direct encrypted WebRTC connection"
+                      : "Disabled by the operator"
+                    : "Not included in this host build"}
+                </p>
+              </div>
+              <span className={styles.badge}>{humanize(security.direct_file.state)}</span>
+            </div>
+            <p className={styles.note}>
+              The relay carries encrypted connection setup only. File contents
+              never pass through the relay, and completed verified files are the
+              only eligible source.
+            </p>
+            <dl className={styles.identity}>
+              <div><dt>Active circuit</dt><dd><code>{security.direct_file.active_circuit_id ?? "none"}</code></dd></div>
+              <div><dt>Payload sent</dt><dd>{security.direct_file.bytes_sent.toLocaleString()} bytes</dd></div>
+              <div><dt>Candidate class</dt><dd>{security.direct_file.candidate_class === null ? "none" : humanize(security.direct_file.candidate_class)}</dd></div>
+              <div><dt>Resources</dt><dd>{security.direct_file.active_tasks} tasks · {security.direct_file.open_sockets} sockets · {security.direct_file.active_requests} range requests · {security.direct_file.queued_bytes.toLocaleString()} queued bytes</dd></div>
+            </dl>
+            <div className={styles.actions}>
+              <button
+                type="button"
+                disabled={busy || !security.direct_file.compiled}
+                onClick={() => void perform(async () => {
+                  const enabled = !security.direct_file.enabled;
+                  await remoteAccess.setDirectFileTransfersEnabled(enabled);
+                  return `Direct file transfers ${enabled ? "enabled" : "disabled"}.`;
+                })}
+              >
+                {security.direct_file.enabled ? "Disable direct file transfers" : "Enable direct file transfers"}
+              </button>
+              <button
+                type="button"
+                disabled={busy || security.direct_file.active_circuit_id === null}
+                onClick={() => void perform(async () => {
+                  await remoteAccess.stopDirectFileTransfers();
+                  return "Active direct file transfers stopped.";
+                })}
+              >
+                Stop active transfers
+              </button>
+            </div>
+          </section>
+
+          <section className={styles.section}>
             <h3>Authentication and recovery</h3>
             <div className={styles.actions}>
               <button type="button" disabled={busy || (security.authority?.clients.length ?? 0) === 0} onClick={() => {
@@ -321,6 +371,11 @@ function AuditHistory({ title, snapshot, busy, clear }: { readonly title: string
             <strong>{humanize(event.kind)}</strong>
             <small>{formatDate(event.timestamp)} · {event.result} · {event.authentication_method ?? "owner action"} · route {event.route ?? "none"}</small>
             <small>client {event.client_id ?? "none"} · circuit {event.circuit_id ?? "none"} · build {event.client_build ?? "none"} · reason {event.reason_class ?? "none"}</small>
+            {event.direct_file === null ? null : (
+              <small>
+                torrent {event.direct_file.torrent_id} · file index {event.direct_file.file_index} · {event.direct_file.byte_count.toLocaleString()} bytes · candidate {event.direct_file.candidate_class === null ? "none" : humanize(event.direct_file.candidate_class)}
+              </small>
+            )}
           </li>
         ))}
       </ol>

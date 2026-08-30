@@ -65,6 +65,7 @@ import type {
   DesktopPower,
   DesktopPowerSettings,
 } from "../desktop-power/types";
+import type { DesktopRemoteAccess } from "../remote-access/types";
 import { App } from "./App";
 import { RemoveTorrentDialog } from "./RemoveTorrentDialog";
 
@@ -1028,6 +1029,65 @@ describe("inspection application", () => {
         torrentId: DEMO_PRIMARY_TORRENT_ID,
         fileIndex: file.index,
       }),
+    );
+  });
+
+  it("offers a direct save for one verified file on a capable remote host", async () => {
+    const user = userEvent.setup();
+    const base = buildScenarioSnapshot("file-progress", 24_000, false, 1);
+    const fileSet = base.filesByTorrent[DEMO_PRIMARY_TORRENT_ID]!;
+    const file = fileSet.order
+      .map((id) => fileSet.rows[id])
+      .find((candidate) => candidate?.padding === false)!;
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot: {
+        ...base,
+        demo: null,
+        filesByTorrent: {
+          ...base.filesByTorrent,
+          [DEMO_PRIMARY_TORRENT_ID]: {
+            ...fileSet,
+            rows: {
+              ...fileSet.rows,
+              [file.id]: { ...file, mediaAvailability: "available" as const },
+            },
+          },
+        },
+      },
+    });
+    const saveCompletedFile = vi.fn(async () => undefined);
+    const remoteAccess = directFileRemoteAccess(saveCompletedFile);
+    renderApplication(
+      application,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      remoteAccess,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(screen.getByRole("tab", { name: "Files" }));
+    await user.click(within(screen.getByRole("grid", { name: "Torrent files" })).getByText(file.name));
+    await user.click(screen.getByRole("button", { name: "More file actions" }));
+    const save = await screen.findByRole("menuitem", { name: "Save from remote device…" });
+    await waitFor(() => expect(save).not.toHaveAttribute("aria-disabled"));
+    await user.click(save);
+
+    await waitFor(() =>
+      expect(saveCompletedFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          torrentId: DEMO_PRIMARY_TORRENT_ID,
+          fileIndex: file.index,
+          fileName: file.name,
+          lengthBytes: file.lengthBytes,
+        }),
+      ),
     );
   });
 
@@ -3214,6 +3274,7 @@ function renderApplication(
   accessMode?: HostedAccessMode,
   hostedProduct?: HostedProduct,
   oneCurrentRoot?: boolean,
+  remoteAccess?: DesktopRemoteAccess,
 ) {
   const controller = new InspectionController(application, appearanceStorage);
   controllers.push(controller);
@@ -3228,9 +3289,55 @@ function renderApplication(
         accessMode={accessMode}
         hostedProduct={hostedProduct}
         oneCurrentRoot={oneCurrentRoot}
+        remoteAccess={remoteAccess}
       />
     </InspectionProvider>,
   );
+}
+
+function directFileRemoteAccess(
+  saveCompletedFile: DesktopRemoteAccess["saveCompletedFile"],
+): DesktopRemoteAccess {
+  const security = {
+    enabled: true,
+    username: "alice",
+    route: "alice",
+    relay_id: "relay",
+    host_pin: "pin",
+    authority: null,
+    retained_history: null,
+    live_circuits: [],
+    direct_file: {
+      compiled: true,
+      enabled: true,
+      state: "idle",
+      active_circuit_id: null,
+      bytes_sent: 0,
+      candidate_class: null,
+      active_tasks: 0,
+      open_sockets: 0,
+      active_requests: 0,
+      queued_bytes: 0,
+    },
+  } as const;
+  return {
+    scope: "remote",
+    state: async () => ({ configured: true, security }),
+    enable: async () => security,
+    rename: async () => undefined,
+    revoke: async () => undefined,
+    revokeAllOther: async () => 0,
+    closeCircuit: async () => undefined,
+    requirePasswordEverywhere: async () => 0,
+    changePassphrase: async () => 0,
+    disable: async () => ({ authority_file_removed: false, route_released: false }),
+    recover: async () => security,
+    clearHistory: async () => false,
+    setDirectFileTransfersEnabled: async () => security,
+    stopDirectFileTransfers: async () => security,
+    directFileSupported: () => true,
+    ...(saveCompletedFile === undefined ? {} : { saveCompletedFile }),
+  };
 }
 
 function notificationSettingsController(): DesktopNotifications {

@@ -5,6 +5,7 @@ import type { DataUnits } from "../appearance";
 import { resolveFileActions, type FileActionId } from "../file-actions";
 import { formatExactBytes, formatDecimalProgress } from "../format";
 import type { FileRow, ViewMaterialization } from "../model";
+import type { DesktopRemoteAccess } from "../remote-access/types";
 import { FileActionsMenu } from "./FileActionsMenu";
 import { FileActionMenuItems } from "./FileActionMenuItems";
 import { VirtualTable, type VirtualColumn } from "./VirtualTable";
@@ -155,7 +156,13 @@ const columns = (dataUnits: DataUnits): readonly VirtualColumn<FileRow>[] => [
   },
 ];
 
-export function FileTable({ torrentId }: { readonly torrentId: string }) {
+export function FileTable({
+  torrentId,
+  remoteAccess,
+}: {
+  readonly torrentId: string;
+  readonly remoteAccess?: DesktopRemoteAccess | undefined;
+}) {
   const dataUnits = useInspectionStore((state) => state.presentation.dataUnits);
   const displayColumns = useMemo(() => columns(dataUnits), [dataUnits]);
   const [currentFileId, setCurrentFileId] = useState<string | null>(null);
@@ -164,6 +171,8 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
   );
   const [fileActionPending, setFileActionPending] = useState(false);
   const [fileActionStatus, setFileActionStatus] = useState("");
+  const [directFileEnabled, setDirectFileEnabled] = useState<boolean | null>(null);
+  const [directSaveAbort, setDirectSaveAbort] = useState<AbortController | null>(null);
   const execute = useInspectionCommand();
   const demo = useInspectionStore((state) => state.demo);
   const fileSet = useInspectionStore(
@@ -196,7 +205,36 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
     setSelectedFileIds(new Set());
     setFileActionPending(false);
     setFileActionStatus("");
+    setDirectSaveAbort((current) => {
+      current?.abort();
+      return null;
+    });
   }, [torrentId]);
+
+  useEffect(() => {
+    let active = true;
+    if (
+      remoteAccess?.scope !== "remote" ||
+      remoteAccess.directFileSupported?.() !== true
+    ) {
+      setDirectFileEnabled(false);
+      return () => {
+        active = false;
+      };
+    }
+    setDirectFileEnabled(null);
+    void remoteAccess
+      .state()
+      .then((state) => {
+        if (active) setDirectFileEnabled(state.security?.direct_file.enabled === true);
+      })
+      .catch(() => {
+        if (active) setDirectFileEnabled(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [remoteAccess, torrentId]);
 
   useEffect(() => {
     setSelectedFileIds((current) => {
@@ -243,6 +281,14 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
     fileActionPending,
     unavailableReason,
     selectedOpenAvailability,
+  );
+  const selectedRows = rows.filter((row) => selectedFileIds.has(row.id));
+  const toolbarDirectSave = resolveDirectSave(
+    remoteAccess,
+    selectedRows,
+    fileActionPending,
+    directFileEnabled,
+    unavailableReason,
   );
 
   const runFileAction = async (
@@ -304,6 +350,62 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
     }
   };
 
+  const runDirectSave = async (
+    requestedIds: readonly string[] = [...selectedFileIds],
+  ) => {
+    const requested = new Set(requestedIds);
+    const targetRows = rows.filter((row) => requested.has(row.id));
+    const action = resolveDirectSave(
+      remoteAccess,
+      targetRows,
+      fileActionPending,
+      directFileEnabled,
+      unavailableReason,
+    );
+    if (action === undefined || action.disabled || targetRows.length !== 1) {
+      if (action?.disabledReason !== undefined) setFileActionStatus(action.disabledReason);
+      return;
+    }
+    const save = remoteAccess?.saveCompletedFile;
+    if (save === undefined) return;
+    const row = targetRows[0]!;
+    const cancellation = new AbortController();
+    setDirectSaveAbort(cancellation);
+    setFileActionPending(true);
+    setFileActionStatus("Choose where to save this remote file.");
+    try {
+      await save({
+        torrentId,
+        fileIndex: row.index,
+        fileName: row.name,
+        lengthBytes: row.lengthBytes,
+        signal: cancellation.signal,
+        onProgress: (progress) => {
+          if (progress.state === "connecting") {
+            setFileActionStatus("Connecting directly to the remote device…");
+          } else if (progress.state === "transferring") {
+            setFileActionStatus(
+              `Saving directly… ${directProgress(progress.bytesWritten, progress.fileLength)}`,
+            );
+          } else if (progress.state === "complete") {
+            setFileActionStatus("Remote file saved.");
+          }
+        },
+      });
+    } catch (error) {
+      setFileActionStatus(
+        error instanceof DOMException && error.name === "AbortError"
+          ? "Remote file save cancelled."
+          : error instanceof Error
+            ? error.message
+            : String(error),
+      );
+    } finally {
+      setDirectSaveAbort(null);
+      setFileActionPending(false);
+    }
+  };
+
   return (
     <div className={styles.filePanel}>
       <div className={styles.summary}>
@@ -320,10 +422,21 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
         <output className={styles.commandStatus} aria-live="polite">
           {fileActionStatus}
         </output>
+        {directSaveAbort === null ? null : (
+          <button
+            type="button"
+            className={styles.cancelSave}
+            onClick={() => directSaveAbort.abort()}
+          >
+            Cancel save
+          </button>
+        )}
         <FileActionsMenu
           pending={fileActionPending}
           actions={toolbarActions}
           onAction={(actionId) => void runFileAction(actionId)}
+          directSave={toolbarDirectSave}
+          onDirectSave={() => void runDirectSave()}
         />
       </div>
       <VirtualTable
@@ -355,6 +468,13 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
                 ? rows.find((row) => row.id === targetIds[0])?.mediaAvailability
                 : undefined,
             );
+            const directSave = resolveDirectSave(
+              remoteAccess,
+              rows.filter((row) => targetIdSet.has(row.id)),
+              fileActionPending,
+              directFileEnabled,
+              unavailableReason,
+            );
             return (
               <ActionMenuPopover label="File actions">
                 <FileActionMenuItems
@@ -362,6 +482,8 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
                   onAction={(actionId) =>
                     void runFileAction(actionId, targetIds)
                   }
+                  directSave={directSave}
+                  onDirectSave={() => void runDirectSave(targetIds)}
                 />
               </ActionMenuPopover>
             );
@@ -372,6 +494,40 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
       />
     </div>
   );
+}
+
+function resolveDirectSave(
+  remoteAccess: DesktopRemoteAccess | undefined,
+  rows: readonly FileRow[],
+  pending: boolean,
+  enabled: boolean | null,
+  unavailableReason: string | undefined,
+) {
+  if (remoteAccess?.scope !== "remote") return undefined;
+  if (unavailableReason !== undefined) return { disabled: true, disabledReason: unavailableReason };
+  if (rows.length !== 1) {
+    return { disabled: true, disabledReason: "Select one completed file to save." };
+  }
+  if (rows[0]?.mediaAvailability !== "available") {
+    return { disabled: true, disabledReason: "Only completed, verified files can be saved remotely." };
+  }
+  if (remoteAccess.directFileSupported?.() !== true || remoteAccess.saveCompletedFile === undefined) {
+    return { disabled: true, disabledReason: "This remote host does not support direct file saves." };
+  }
+  if (enabled === null) {
+    return { disabled: true, disabledReason: "Checking direct file transfer settings…" };
+  }
+  if (!enabled) {
+    return { disabled: true, disabledReason: "Direct file transfers are disabled on the host." };
+  }
+  if (pending) return { disabled: true, disabledReason: "Another file action is in progress." };
+  return { disabled: false };
+}
+
+function directProgress(written: bigint, length: bigint): string {
+  if (length === 0n) return "100%";
+  const basisPoints = (written * 10_000n) / length;
+  return `${Number(basisPoints) / 100}%`;
 }
 
 function setsEqual(left: ReadonlySet<string>, right: ReadonlySet<string>) {

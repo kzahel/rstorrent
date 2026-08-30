@@ -996,7 +996,11 @@ function validateOutcome(value: AuthenticationSucceeded): void {
 function hasExactKeys(value: unknown, expected: readonly string[]): value is object {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const keys = Object.keys(value).sort();
-  return keys.length === expected.length && keys.every((key, index) => key === expected[index]);
+  const sortedExpected = [...expected].sort();
+  return (
+    keys.length === sortedExpected.length &&
+    keys.every((key, index) => key === sortedExpected[index])
+  );
 }
 
 function encodeJsonRecord(magic: Uint8Array, value: unknown): Uint8Array {

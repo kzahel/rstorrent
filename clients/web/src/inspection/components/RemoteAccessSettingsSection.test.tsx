@@ -17,6 +17,8 @@ afterEach(() => cleanup());
 describe("desktop remote security settings", () => {
   it("renders every authorization, circuit, and audit category without a filter", async () => {
     const revoke = vi.fn(async () => undefined);
+    const setDirectFileTransfersEnabled = vi.fn(async () => enabledState().security!);
+    const stopDirectFileTransfers = vi.fn(async () => enabledState().security!);
     vi.spyOn(window, "confirm").mockReturnValue(true);
     render(
       <RemoteAccessSettingsSection
@@ -24,6 +26,8 @@ describe("desktop remote security settings", () => {
           scope: "remote",
           currentClientId: "client-one",
           revoke,
+          setDirectFileTransfersEnabled,
+          stopDirectFileTransfers,
         })}
       />,
     );
@@ -32,6 +36,9 @@ describe("desktop remote security settings", () => {
     expect(screen.getByText("Phone browser")).toBeVisible();
     expect(screen.getByText("Live circuits")).toBeVisible();
     expect(screen.getByText("Current security ledger")).toBeVisible();
+    expect(screen.getByText("Direct file transfers")).toBeVisible();
+    expect(screen.getByText("direct file completed")).toBeVisible();
+    expect(screen.getByText(/torrent torrent-one · file index 2 · 5 bytes/)).toBeVisible();
     expect(screen.getByText("full login succeeded")).toBeVisible();
     expect(screen.getByText("This browser")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Disable remote access" })).not.toBeInTheDocument();
@@ -45,6 +52,10 @@ describe("desktop remote security settings", () => {
     }
     await userEvent.click(within(laptop).getByRole("button", { name: "Revoke" }));
     expect(revoke).toHaveBeenCalledWith("client-one");
+    await userEvent.click(screen.getByRole("button", { name: "Disable direct file transfers" }));
+    expect(setDirectFileTransfersEnabled).toHaveBeenCalledWith(false);
+    await userEvent.click(screen.getByRole("button", { name: "Stop active transfers" }));
+    expect(stopDirectFileTransfers).toHaveBeenCalledOnce();
   });
 
   it("truthfully reports when the remote owner is unavailable", async () => {
@@ -120,7 +131,7 @@ function enabledState(): DesktopRemoteAccessState {
         compiled: true,
         enabled: true,
         state: "idle",
-        active_circuit_id: null,
+        active_circuit_id: "circuit-one",
         bytes_sent: 0,
         candidate_class: null,
         active_tasks: 0,
@@ -164,6 +175,24 @@ function securitySnapshot(): RemoteSecuritySnapshot {
         client_build: "test-build",
         reason_class: null,
         direct_file: null,
+      },
+      {
+        event_id: "event-two",
+        timestamp: 1_780_000_002_000,
+        kind: "direct_file_completed",
+        result: "succeeded",
+        client_id: "client-one",
+        circuit_id: "circuit-one",
+        authentication_method: "resume",
+        route: "alice",
+        client_build: null,
+        reason_class: "complete",
+        direct_file: {
+          torrent_id: "torrent-one",
+          file_index: 2,
+          byte_count: 5,
+          candidate_class: "host",
+        },
       },
     ],
     failed_attempts: [

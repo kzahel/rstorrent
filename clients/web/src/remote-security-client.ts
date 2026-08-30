@@ -9,6 +9,7 @@ import type {
   RemoteControlOutcome,
 } from "./remote-application-websocket";
 import type { RemoteClientStore } from "./remote-client-store";
+import { prepareDirectFileSink, saveDirectFile } from "./direct-file-save";
 
 export interface RemoteSecurityClientOptions {
   readonly username: string;
@@ -74,6 +75,32 @@ export function createRemoteSecurityClient(
     stopDirectFileTransfers: async () => {
       expectComplete(await control({ type: "stop_direct_file_transfers" }));
       return securityView(await control({ type: "inspect" }));
+    },
+    directFileSupported: () => options.transport()?.directFileSupported() ?? false,
+    saveCompletedFile: (request) => {
+      const transport = options.transport();
+      if (transport === undefined) {
+        return Promise.reject(new Error("remote file connection is unavailable"));
+      }
+      let expectedLength: bigint;
+      try {
+        expectedLength = BigInt(request.lengthBytes);
+      } catch {
+        return Promise.reject(new Error("remote file length is invalid"));
+      }
+      const sink = prepareDirectFileSink(request.fileName, expectedLength);
+      return saveDirectFile(
+        transport,
+        {
+          torrentId: request.torrentId,
+          fileIndex: request.fileIndex,
+          fileName: request.fileName,
+          expectedLength,
+          ...(request.signal === undefined ? {} : { signal: request.signal }),
+          ...(request.onProgress === undefined ? {} : { onProgress: request.onProgress }),
+        },
+        sink,
+      );
     },
     clearHistory: async () => {
       expectComplete(await control({ type: "clear_history" }));

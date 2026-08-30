@@ -11,6 +11,7 @@ import {
   torrentVisibleProgress,
 } from "../format";
 import type { DetailTab } from "../model";
+import type { DesktopRemoteAccess } from "../remote-access/types";
 import {
   settingsDraftFields,
   settingsDraftPhase,
@@ -38,7 +39,11 @@ import { SpeedPanel } from "./SpeedPanel";
 import { DhtPanel } from "./DhtPanel";
 import styles from "./DetailPane.module.css";
 
-export function DetailPane() {
+export function DetailPane({
+  remoteAccess,
+}: {
+  readonly remoteAccess?: DesktopRemoteAccess | undefined;
+}) {
   const currentTorrentId = useInspectionStore(
     (state) => state.presentation.currentTorrentId,
   );
@@ -154,7 +159,7 @@ export function DetailPane() {
         ) : activeTab === "trackers" && currentTorrentId !== null ? (
           <TrackerTable torrentId={currentTorrentId} />
         ) : activeTab === "files" && currentTorrentId !== null ? (
-          <FileTable torrentId={currentTorrentId} />
+          <FileTable torrentId={currentTorrentId} remoteAccess={remoteAccess} />
         ) : activeTab === "pieces" && currentTorrentId !== null ? (
           <PieceMapPanel torrentId={currentTorrentId} />
         ) : activeTab === "disk" ? (

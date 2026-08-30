@@ -446,7 +446,7 @@ function AppContent({
               >
                 <span aria-hidden="true" />
               </div>
-              <DetailPane />
+              <DetailPane remoteAccess={remoteAccess} />
             </>
           )}
         </main>

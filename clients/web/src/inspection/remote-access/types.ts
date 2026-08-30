@@ -125,5 +125,22 @@ export interface DesktopRemoteAccess {
   clearHistory(): Promise<boolean>;
   setDirectFileTransfersEnabled(enabled: boolean): Promise<RemoteSecurityView>;
   stopDirectFileTransfers(): Promise<RemoteSecurityView>;
+  directFileSupported?(): boolean;
+  saveCompletedFile?(request: RemoteCompletedFileSaveRequest): Promise<void>;
   signOutThisBrowser?(): Promise<void>;
+}
+
+export interface RemoteCompletedFileSaveRequest {
+  readonly torrentId: string;
+  readonly fileIndex: number;
+  readonly fileName: string;
+  readonly lengthBytes: string;
+  readonly signal?: AbortSignal;
+  readonly onProgress?: (progress: RemoteCompletedFileSaveProgress) => void;
+}
+
+export interface RemoteCompletedFileSaveProgress {
+  readonly state: "choosing_destination" | "connecting" | "transferring" | "complete";
+  readonly bytesWritten: bigint;
+  readonly fileLength: bigint;
 }
