@@ -963,9 +963,15 @@ streaming demand, expiry, and revocation remain unchanged.
 - Android's foreground notification reports service/activity state but does
   not yet provide JSTorrent-shaped edge-triggered completion or actionable
   fatal/storage-failure notifications when Compose is absent. This is a core
-  background-product parity gap and the next bounded Android release slice
-  alongside dynamic metered/VPN policy, not part of Tactical `194`'s
-  connection transport.
+  background-product parity gap. Ready Tactical
+  [`198`](../tactical/198-android-completion-and-attention-notifications.md)
+  owns one service-native edge reducer, bounded channels/settings, exact tap
+  routing, JSTorrent-like denied/blocked-notification transparency for
+  standalone and ChromeOS companion use, and prompt target-35 `dataSync`
+  timeout shutdown. Granted-background active/idle/seeding/reboot policy and
+  Android 15+ long-duration design remain the separate `JAR-009` lifecycle
+  slice; dynamic metered/VPN policy also remains separate from Tactical
+  `194`'s connection transport.
 - Android now has Compose connection/seeding settings for backed peer, upload-
   slot, active-download, listener, port-mapping, IPv6, and encryption values,
   including configured/effective/application truth, plus backed session and

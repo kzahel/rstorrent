@@ -158,11 +158,16 @@ daemon architecture.
   [`197`](../tactical/197-android-external-torrent-intake.md) owns the exact
   filters, ephemeral intake state, hostile-provider bounds, and AVD evidence.
 - [ ] **JAR-007 — Add background completion and actionable failure
-  notifications.** This is also beta gate `AND-009`. Implement one native
-  edge owner for completion plus fatal/storage-repair attention with
-  permission denial, initial/reset suppression, duplicate avoidance,
-  tap/action routing, restart, and cleanup. Decide whether the current
-  JSTorrent Pause All/Resume All/Quit foreground actions are retained.
+  notifications.** This is also beta gate `AND-009`. Ready Tactical
+  [`198`](../tactical/198-android-completion-and-attention-notifications.md)
+  owns one native edge owner for completion plus fatal/storage-repair
+  attention, default-on app preferences, low/default/high system channels,
+  permission denial, initial/reset suppression, duplicate avoidance, exact
+  tap routing, restart, and cleanup. It selects JSTorrent-like transparency:
+  denied or blocked notification visibility permits interactive use but not
+  an invisible long-running application or companion owner after the visible
+  interaction ends. The existing foreground **Stop** action remains; Pause
+  All and Resume All are deferred.
 - [ ] **JAR-008 — Enforce unmetered-network policy live.** This is the required
   part of beta gate `AND-010`. Present it as **Unmetered networks only**, not
   literal Wi-Fi-only behavior. Preserve each torrent's user intent while
@@ -174,9 +179,12 @@ daemon architecture.
   permission to opt in, shuts the engine down when background work is not
   allowed or idle, and separately chooses stop/close versus continued
   seeding. RSTorrent currently starts one sticky foreground service until
-  explicit stop. Select truthful foreground/background/idle/seeding behavior,
-  task-removal and reboot policy, notification-permission failure, and
-  cancellation/join ownership before replacement.
+  explicit stop. Tactical `198` fixes denied/blocked notification behavior and
+  prompt Android 15 `dataSync` timeout shutdown but deliberately leaves the
+  granted-background contract here. Select truthful foreground/background/
+  idle/seeding behavior, task-removal and reboot policy, an Android 15+
+  mechanism or finite limitation, and cancellation/join ownership before
+  replacement.
 - [ ] **JAR-010 — Qualify the signed Play replacement.** Produce and inspect
   the protected-key release AAB, remove or deliberately retain diagnostic
   components, close current Android API deprecations, complete store/privacy/
@@ -242,12 +250,17 @@ answers whether active work may keep the CPU awake after the product has
 already decided it is allowed to run. `JAR-009` must still answer whether work
 is allowed to continue when Compose leaves the foreground, when an active
 download completes, while only seeding remains, after task removal, after
-process recovery, and after reboot.
+process recovery, and after reboot. Tactical `198` separately fixes the
+notification-visibility prerequisite: denial or blocking permits interactive
+use but ends the owner when visible interaction ends, and target-35
+`dataSync` timeout enters prompt joined shutdown rather than an ANR or sticky
+restart.
 
 The replacement policy must identify one owner for:
 
-- activity visibility and user-requested background permission;
-- foreground-service start/stop and notification-permission failure;
+- activity visibility and user-requested background continuation;
+- foreground-service start/stop, using Tactical `198`'s already-selected
+  notification-permission and channel-block behavior;
 - active-download, checking, playback, and seeding reasons to remain alive;
 - idle shutdown and any low-battery stop;
 - wake-lock acquisition/release; and
@@ -395,8 +408,10 @@ live run.
    [`197`](../tactical/197-android-external-torrent-intake.md) for `JAR-006`
    external Android torrent intake. It is small, user-visible, and independent
    of the larger policy work.
-3. Implement `JAR-007` completion/failure notifications by adapting the
-   already-proven desktop edge semantics to one Android-native owner.
+3. Execute ready Tactical
+   [`198`](../tactical/198-android-completion-and-attention-notifications.md)
+   for `JAR-007` completion/failure notifications, companion-aware permission
+   transparency, and fail-safe target-35 timeout shutdown.
 4. Implement the unmetered portion of `JAR-008` without coupling it to a VPN
    privacy claim.
 5. Select `JAR-009` background/seeding/idle policy, then reconcile low-battery

@@ -93,6 +93,14 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`198-android-completion-and-attention-notifications.md`](198-android-completion-and-attention-notifications.md):
+  ready; adds one Android-native edge owner for completion and fatal/storage-
+  repair attention, default-on app preferences, bounded low/default/high
+  channels, exact tap routing, and JSTorrent-like permission transparency.
+  Denied or blocked notification visibility permits interactive use but stops
+  the application and ChromeOS companion after visible interaction ends. It
+  also fails safely on the target-35 `dataSync` timeout without claiming an
+  indefinite background lifecycle.
 - [`197-android-external-torrent-intake.md`](197-android-external-torrent-intake.md):
   ready; makes the one Compose/product-service owner a bounded Android handler
   for cold and warm `magnet:` plus temporary-grant `content://` `.torrent`

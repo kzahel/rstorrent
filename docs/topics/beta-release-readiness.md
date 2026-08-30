@@ -618,6 +618,13 @@ disposition of current JSTorrent Android features.
   attention while Compose is absent. A supported Android lane needs a bounded
   native notification owner with permission denial, initial/reset suppression,
   duplicate avoidance, tap/action routing, restart, and cleanup evidence.
+  Ready Tactical
+  [`198`](../tactical/198-android-completion-and-attention-notifications.md)
+  selects default-on completion/attention preferences and JSTorrent-like
+  transparency: blocked notification visibility permits interactive use but
+  stops the application and ChromeOS companion when visible interaction ends.
+  It also owns prompt target-35 `dataSync` timeout shutdown without claiming a
+  complete granted-background lifecycle.
 - [ ] **AND-010 — Add metered-network safety and bound VPN policy.** JSTorrent
   Android enforces unmetered/Wi-Fi-only and VPN-only prerequisites; RSTorrent's
   service selects `Online` for its full lifetime. Before a supported phone
