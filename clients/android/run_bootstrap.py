@@ -37,6 +37,9 @@ ACTION_OBSERVE = "org.rstorrent.bootstrap.OBSERVE"
 ACTION_VERIFY = "org.rstorrent.bootstrap.VERIFY"
 EXPECTED_INTERFACE = "rstorrent-android/0.3.0;uniffi/0.31.0"
 PAYLOAD_LIMIT = 32 * 1024
+MAX_TORRENT_SOURCE_BYTES = 64 * 1024 * 1024
+MAX_EXTERNAL_INTAKE_FD_DELTA = 32
+MAX_EXTERNAL_INTAKE_SETTLED_FD_DELTA = 4
 CANCELLATION_STORAGE_DELAY_MILLIS = 5_000
 RESULT_TIMEOUT_SECONDS = 45
 PROFILE_CHOICES = (
@@ -1547,6 +1550,42 @@ def product_fd_count(target: Any) -> int:
     if listing.returncode != 0:
         return 0
     return len(listing.stdout.split())
+
+
+def product_memory_kib(target: Any) -> dict[str, int]:
+    pid_text = target.shell(["pidof", PACKAGE], check=False).stdout.strip()
+    if not pid_text:
+        return {"java_rss": 0, "native_rss": 0, "process_rss": 0}
+    pid = pid_text.split()[0]
+    status = target.shell(
+        ["run-as", PACKAGE, "cat", f"/proc/{pid}/status"],
+        check=False,
+    ).stdout
+    process_match = re.search(r"^VmRSS:\s+(\d+)\s+kB$", status, re.MULTILINE)
+    meminfo = target.shell(["dumpsys", "meminfo", pid], check=False).stdout
+
+    def summary_rss(label: str) -> int:
+        match = re.search(rf"^\s*{re.escape(label)}:\s+\d+\s+(\d+)\s*$", meminfo, re.MULTILINE)
+        return int(match.group(1)) if match is not None else 0
+
+    return {
+        "java_rss": summary_rss("Java Heap"),
+        "native_rss": summary_rss("Native Heap"),
+        "process_rss": int(process_match.group(1)) if process_match is not None else 0,
+    }
+
+
+def private_app_source_leaks(target: Any, needles: Sequence[bytes]) -> list[str]:
+    listing = target.shell(
+        ["run-as", PACKAGE, "find", "files", "shared_prefs", "databases", "-type", "f"],
+        check=False,
+    )
+    leaks: list[str] = []
+    for relative_path in listing.stdout.splitlines():
+        content = app_bytes(target, relative_path.strip())
+        if content is not None and any(needle in content for needle in needles):
+            leaks.append(relative_path.strip())
+    return leaks
 
 
 def product_logs(target: Any) -> str:
@@ -4446,11 +4485,45 @@ def run_product_external_intake_profile(
     baseline_fds = 0
     fd_high_water = 0
     metrics: dict[str, int] = {}
+    memory_baseline: dict[str, int] = {}
+    memory_high_water = {"java_rss": 0, "native_rss": 0, "process_rss": 0}
+    privacy_token = "external-intake-private-197"
+    privacy_magnet = (
+        f"magnet:?xt=urn:btih:{'e' * 40}&dn={privacy_token}"
+        f"&tr=https%3A%2F%2Fsecret.invalid%2F{privacy_token}"
+    )
     try:
         clear_application(target)
         prepare_product_saf(target, probe, grant_storage)
+
+        presented_count = external_log_count(target, "phase=presented", "kind=magnet")
+        launch_external_magnet(target, privacy_magnet, cold=True)
+        wait_external_log(
+            target,
+            presented_count,
+            "phase=presented",
+            "kind=magnet",
+        )
+        duplicate_count = external_log_count(
+            target,
+            "phase=duplicate",
+            "disposition=coalesced",
+        )
+        launch_external_magnet(target, privacy_magnet, cold=False)
+        wait_external_log(
+            target,
+            duplicate_count,
+            "phase=duplicate",
+            "disposition=coalesced",
+        )
+        cancelled_count = external_log_count(target, "phase=cancelled")
+        wait_and_click_product_text(target, probe, "Cancel")
+        wait_external_log(target, cancelled_count, "phase=cancelled")
+
         baseline_fds = product_fd_count(target)
         fd_high_water = baseline_fds
+        memory_baseline = product_memory_kib(target)
+        memory_high_water = dict(memory_baseline)
         peer_transport = ReverseTransport.create(
             target,
             target_kind,
@@ -4579,6 +4652,45 @@ def run_product_external_intake_profile(
                 terminal_reason,
             )
 
+        def sample_external_resources() -> None:
+            nonlocal fd_high_water
+            fd_high_water = max(fd_high_water, product_fd_count(target))
+            current = product_memory_kib(target)
+            for key, value in current.items():
+                memory_high_water[key] = max(memory_high_water[key], value)
+
+        source_read_count = external_log_count(
+            target,
+            "phase=source_read",
+            "bytes=67108864",
+        )
+        terminal_count = external_log_count(
+            target,
+            "phase=terminal",
+            "reason=invalid_or_engine_failure",
+        )
+        launch_external_fixture(target, test_package, "near-limit")
+        wait_and_click_product_text(target, probe, "Add")
+        wait_external_log(
+            target,
+            terminal_count,
+            "phase=terminal",
+            "reason=invalid_or_engine_failure",
+            sample=sample_external_resources,
+        )
+        source_read = wait_external_log(
+            target,
+            source_read_count,
+            "phase=source_read",
+            "bytes=67108864",
+        )
+        peak_match = re.search(r"\bpeak_source_bytes=(\d+)\b", source_read)
+        if peak_match is None:
+            raise BootstrapFailure("near-limit source read omitted its buffer high water")
+        source_peak_bytes = int(peak_match.group(1))
+        if source_peak_bytes > MAX_TORRENT_SOURCE_BYTES * 2 + 16 * 1024:
+            raise BootstrapFailure("near-limit source buffer exceeded its ownership bound")
+
         for fixture_case in ("denied", "failing"):
             retry_count = external_log_count(target, "phase=retry")
             launch_external_fixture(target, test_package, fixture_case)
@@ -4680,18 +4792,55 @@ def run_product_external_intake_profile(
             mime_type="application/octet-stream",
         )
         wait_external_log(target, presented_count, "phase=presented")
+        cancelled_count = external_log_count(target, "phase=cancelled")
         wait_and_click_product_text(target, probe, "Cancel")
+        wait_external_log(target, cancelled_count, "phase=cancelled")
 
         fd_high_water = max(fd_high_water, product_fd_count(target))
-        if baseline_fds and fd_high_water - baseline_fds > 20:
+        if (
+            baseline_fds
+            and fd_high_water - baseline_fds > MAX_EXTERNAL_INTAKE_FD_DELTA
+        ):
             raise BootstrapFailure(
                 "external intake descriptor delta exceeded its bounds: "
                 f"baseline={baseline_fds} high_water={fd_high_water}"
+            )
+        settled_fds = product_fd_count(target)
+        settle_deadline = time.monotonic() + 10
+        while (
+            baseline_fds
+            and settled_fds - baseline_fds > MAX_EXTERNAL_INTAKE_SETTLED_FD_DELTA
+            and time.monotonic() < settle_deadline
+        ):
+            time.sleep(0.2)
+            settled_fds = product_fd_count(target)
+        if (
+            baseline_fds
+            and settled_fds - baseline_fds > MAX_EXTERNAL_INTAKE_SETTLED_FD_DELTA
+        ):
+            raise BootstrapFailure(
+                "external intake descriptors did not settle after terminal work: "
+                f"baseline={baseline_fds} settled={settled_fds}"
             )
         if fixture.handle.status().total_upload <= 0:
             raise BootstrapFailure("external intake oracle uploaded no payload")
         if metrics["owned_high_water"] > metrics["limit"]:
             raise BootstrapFailure("external intake exceeded the SAF handle bound")
+        if not all(memory_high_water.values()):
+            raise BootstrapFailure(
+                f"external intake memory evidence was incomplete: {memory_high_water}"
+            )
+        product_log = product_logs(target)
+        if privacy_magnet in product_log or privacy_token in product_log or authority in product_log:
+            raise BootstrapFailure("external intake source leaked into product diagnostics")
+        private_leaks = private_app_source_leaks(
+            target,
+            [privacy_magnet.encode("utf-8"), authority.encode("utf-8")],
+        )
+        if private_leaks:
+            raise BootstrapFailure(
+                f"external intake source leaked into app-private files: {private_leaks}"
+            )
 
         target.shell(["am", "force-stop", PACKAGE], check=False)
         grants = target.shell(["dumpsys", "package", PACKAGE], check=False).stdout
@@ -4718,11 +4867,23 @@ def run_product_external_intake_profile(
                 "directory": "rejected",
                 "generic_name": "accepted_then_cancelled",
                 "generic_other": "rejected",
+                "near_limit_unknown_length": "bounded_terminal",
+                "cold_magnet": "presented",
+                "warm_magnet": "coalesced",
+            },
+            "source_buffer": {
+                "bytes": MAX_TORRENT_SOURCE_BYTES,
+                "peak_owned_bytes": source_peak_bytes,
+            },
+            "memory_kib": {
+                "baseline": memory_baseline,
+                "high_water": memory_high_water,
             },
             "storage_metrics": metrics,
             "process_fds": {
                 "baseline": baseline_fds,
                 "high_water": fd_high_water,
+                "settled": settled_fds,
                 "final": product_fd_count(target),
             },
             "temporary_grant": "revoked_on_force_stop",
@@ -4762,6 +4923,32 @@ def external_fixture_package(target: Any) -> str:
         if target_package == PACKAGE:
             return test_package
     raise BootstrapFailure("could not resolve the installed external-intake fixture package")
+
+
+def launch_external_magnet(target: Any, magnet: str, *, cold: bool) -> None:
+    if cold:
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+    started = target.shell(
+        [
+            "am",
+            "start",
+            "-W",
+            "-a",
+            "android.intent.action.VIEW",
+            "-c",
+            "android.intent.category.BROWSABLE",
+            "-d",
+            shlex.quote(magnet),
+        ],
+        timeout=30,
+        check=False,
+    )
+    if (
+        "Error:" in started.stdout
+        or "Error:" in started.stderr
+        or PACKAGE not in started.stdout
+    ):
+        raise BootstrapFailure("implicit external magnet did not resolve to RSTorrent")
 
 
 def launch_external_fixture(
@@ -4847,10 +5034,13 @@ def wait_external_log(
     previous_count: int,
     *markers: str,
     timeout: float = 45,
+    sample: Any | None = None,
 ) -> str:
     deadline = time.monotonic() + timeout
     logs = ""
     while time.monotonic() < deadline:
+        if sample is not None:
+            sample()
         logs = product_logs(target)
         matches = [
             line

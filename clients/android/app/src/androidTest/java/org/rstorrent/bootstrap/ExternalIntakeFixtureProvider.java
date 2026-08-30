@@ -22,6 +22,7 @@ public final class ExternalIntakeFixtureProvider extends ContentProvider {
     public static final String EMPTY = "empty";
     public static final String OVERSIZED = "oversized";
     public static final String OVERSIZED_STREAM = "oversized-stream";
+    public static final String NEAR_LIMIT = "near-limit";
     public static final String DENIED = "denied";
     public static final String DELAYED_ONCE = "delayed-once";
     public static final String FAILING = "failing";
@@ -146,7 +147,7 @@ public final class ExternalIntakeFixtureProvider extends ContentProvider {
                     row.add(0L);
                 } else if (OVERSIZED.equals(fixture)) {
                     row.add((long) MAX_TORRENT_SOURCE_BYTES + 1L);
-                } else if (OVERSIZED_STREAM.equals(fixture)) {
+                } else if (OVERSIZED_STREAM.equals(fixture) || NEAR_LIMIT.equals(fixture)) {
                     row.add(null);
                 } else {
                     row.add((long) configuredPayload.length);
@@ -191,6 +192,17 @@ public final class ExternalIntakeFixtureProvider extends ContentProvider {
                                         int count = (int) Math.min(buffer.length, remaining);
                                         output.write(buffer, 0, count);
                                         remaining -= count;
+                                    }
+                                    return;
+                                }
+                                if (NEAR_LIMIT.equals(fixture)) {
+                                    byte[] buffer = new byte[16 * 1024];
+                                    long remaining = MAX_TORRENT_SOURCE_BYTES;
+                                    while (remaining > 0L) {
+                                        int count = (int) Math.min(buffer.length, remaining);
+                                        output.write(buffer, 0, count);
+                                        remaining -= count;
+                                        Thread.sleep(1L);
                                     }
                                     return;
                                 }

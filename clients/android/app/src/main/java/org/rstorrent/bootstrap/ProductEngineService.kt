@@ -657,6 +657,14 @@ class ProductEngineService : Service() {
                             ExternalIntakeKind.TORRENT_FILE -> {
                                 externalContentMutation.withLock {
                                     val source = readExternalTorrentSource(work)
+                                    logExternalIntake(
+                                        work.intakeId,
+                                        work.source.kind,
+                                        "source_read",
+                                        "complete",
+                                        byteCount = source.sourceBytes,
+                                        peakSourceBytes = source.peakOwnedBytes,
+                                    )
                                     dispatchTorrentSourceResult(
                                         source.bytes,
                                         work.startContent,
@@ -818,13 +826,16 @@ class ProductEngineService : Service() {
         reason: String,
         durationMillis: Long = 0L,
         disposition: String = "none",
+        byteCount: Int = 0,
+        peakSourceBytes: Int = 0,
     ) {
         Log.i(
             TAG,
             "external_intake id=${intakeId ?: 0L} " +
                 "kind=${kind?.name?.lowercase() ?: "unknown"} phase=$phase " +
                 "reason=$reason count=1 depth=${externalIntakeController.descriptorCount()} " +
-                "duration_ms=$durationMillis disposition=$disposition",
+                "duration_ms=$durationMillis disposition=$disposition " +
+                "bytes=$byteCount peak_source_bytes=$peakSourceBytes",
         )
     }
 
