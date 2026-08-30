@@ -11,7 +11,11 @@ browser-to-host path, and starts no socket or task until an authorized remote
 browser requests file bytes. The first experimental build should keep the
 feature off by default. Its eventual release default remains deliberately
 undecided until package, binary, idle, active, and interoperability costs are
-measured.
+measured. Ready Tactical
+[`195`](../tactical/195-webrtc-direct-file-feasibility-spike.md) separately
+authorizes the local-only endpoint bake-off, real-browser/file-range prototype,
+and exact feature-off/on cost measurement; it does not authorize product
+integration or deployment.
 
 ## Purpose And Ownership
 

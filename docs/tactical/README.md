@@ -93,6 +93,13 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`195-webrtc-direct-file-feasibility-spike.md`](195-webrtc-direct-file-feasibility-spike.md):
+  ready; compares high-level and Sans-I/O pure-Rust WebRTC endpoints, proves a
+  lazy browser-to-Rust DataChannel and real verified file ranges, investigates
+  one bounded browser consumption path, and records exact feature-off/on
+  binary, package, dependency, idle, active, and cleanup costs before a
+  Proceed, Continue narrowly, or Reject recommendation. Product UI, default
+  enablement, TURN, public reachability, and deployment are excluded.
 - [`194-chromeos-android-extension-control.md`](194-chromeos-android-extension-control.md):
   active; preserves the JSTorrent ChromeOS companion user journey while
   reversing its ownership. One Android foreground Rust application/engine/
