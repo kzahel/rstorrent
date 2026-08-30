@@ -18,11 +18,17 @@ pub const AUTHENTICATION_SUCCEEDED_MAGIC: &[u8; 4] = b"RSA4";
 pub const HOST_GREETING_MAGIC: &[u8; 4] = b"RHG1";
 pub const REMOTE_CONTROL_REQUEST_MAGIC: &[u8; 4] = b"RSC2";
 pub const REMOTE_CONTROL_RESPONSE_MAGIC: &[u8; 4] = b"RSC3";
+#[cfg(feature = "direct-file-webrtc")]
+pub const DIRECT_FILE_REQUEST_MAGIC: &[u8; 4] = b"RDF1";
+#[cfg(feature = "direct-file-webrtc")]
+pub const DIRECT_FILE_RESPONSE_MAGIC: &[u8; 4] = b"RDF2";
 
 const MAX_HANDSHAKE_MESSAGE_BYTES: usize = 4 * 1024;
 const MAX_JSON_BYTES: usize = 2 * 1024;
 const MAX_CONTROL_REQUEST_BYTES: usize = 16 * 1024;
 const MAX_CONTROL_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+#[cfg(feature = "direct-file-webrtc")]
+pub const MAX_DIRECT_FILE_SIGNALING_BYTES: usize = 64 * 1024;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -102,6 +108,149 @@ pub struct AuthorizationSucceeded {
 pub struct AuthenticationSucceeded {
     pub protocol_version: u16,
     pub authorization: Option<AuthorizationSucceeded>,
+}
+
+#[cfg(feature = "direct-file-webrtc")]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DirectSessionDescription {
+    #[serde(rename = "type")]
+    pub kind: DirectSdpType,
+    pub sdp: String,
+}
+
+#[cfg(feature = "direct-file-webrtc")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DirectSdpType {
+    Offer,
+    Answer,
+}
+
+#[cfg(feature = "direct-file-webrtc")]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DirectIceCandidate {
+    pub candidate: String,
+    pub sdp_mid: Option<String>,
+    pub sdp_m_line_index: Option<u16>,
+    pub username_fragment: Option<String>,
+}
+
+#[cfg(feature = "direct-file-webrtc")]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum DirectFileRequest {
+    Open {
+        request_id: u32,
+        circuit_generation: u64,
+        browser_peer_generation: u64,
+        torrent_id: String,
+        file_index: u32,
+        offer: DirectSessionDescription,
+    },
+    Candidate {
+        request_id: u32,
+        circuit_generation: u64,
+        browser_peer_generation: u64,
+        candidate: DirectIceCandidate,
+    },
+    EndOfCandidates {
+        request_id: u32,
+        circuit_generation: u64,
+        browser_peer_generation: u64,
+    },
+    Close {
+        request_id: u32,
+        circuit_generation: u64,
+        browser_peer_generation: u64,
+    },
+}
+
+#[cfg(feature = "direct-file-webrtc")]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum DirectFileResponse {
+    Opened {
+        request_id: u32,
+        circuit_generation: u64,
+        browser_peer_generation: u64,
+        host_peer_generation: u64,
+        file_length: String,
+        max_chunk_bytes: u32,
+        answer: DirectSessionDescription,
+        candidates: Vec<DirectIceCandidate>,
+    },
+    Candidate {
+        request_id: u32,
+        circuit_generation: u64,
+        browser_peer_generation: u64,
+        host_peer_generation: u64,
+        candidate: DirectIceCandidate,
+    },
+    EndOfCandidates {
+        request_id: u32,
+        circuit_generation: u64,
+        browser_peer_generation: u64,
+        host_peer_generation: u64,
+    },
+    Status {
+        request_id: u32,
+        circuit_generation: u64,
+        browser_peer_generation: u64,
+        host_peer_generation: u64,
+        state: DirectFileStatus,
+        bytes_sent: String,
+        candidate_class: Option<DirectCandidateClass>,
+    },
+    Rejected {
+        request_id: u32,
+        circuit_generation: u64,
+        browser_peer_generation: u64,
+        reason: DirectFileFailure,
+    },
+    Closed {
+        request_id: u32,
+        circuit_generation: u64,
+        browser_peer_generation: u64,
+        host_peer_generation: Option<u64>,
+        reason: DirectFileFailure,
+    },
+}
+
+#[cfg(feature = "direct-file-webrtc")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DirectFileStatus {
+    Negotiating,
+    Connected,
+    Transferring,
+    Complete,
+}
+
+#[cfg(feature = "direct-file-webrtc")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DirectCandidateClass {
+    Host,
+    ServerReflexive,
+    PeerReflexive,
+}
+
+#[cfg(feature = "direct-file-webrtc")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DirectFileFailure {
+    Disabled,
+    Busy,
+    Unsupported,
+    InvalidRequest,
+    FileUnavailable,
+    SignalingLimit,
+    DirectUnavailable,
+    Cancelled,
+    CircuitClosed,
+    Internal,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -202,6 +351,73 @@ pub fn decode_control_response(message: &[u8]) -> Result<RemoteControlResponse, 
     let payload = message
         .strip_prefix(REMOTE_CONTROL_RESPONSE_MAGIC)
         .filter(|payload| !payload.is_empty() && payload.len() <= MAX_CONTROL_RESPONSE_BYTES)
+        .ok_or(RemoteHostError::Protocol)?;
+    serde_json::from_slice(payload).map_err(|_| RemoteHostError::Protocol)
+}
+
+#[cfg(feature = "direct-file-webrtc")]
+pub fn encode_direct_file_response(
+    response: &DirectFileResponse,
+) -> Result<Vec<u8>, RemoteHostError> {
+    encode_bounded_record(
+        DIRECT_FILE_RESPONSE_MAGIC,
+        response,
+        MAX_DIRECT_FILE_SIGNALING_BYTES,
+    )
+}
+
+#[cfg(feature = "direct-file-webrtc")]
+pub fn encode_direct_file_request(request: &DirectFileRequest) -> Result<Vec<u8>, RemoteHostError> {
+    encode_bounded_record(
+        DIRECT_FILE_REQUEST_MAGIC,
+        request,
+        MAX_DIRECT_FILE_SIGNALING_BYTES,
+    )
+}
+
+#[cfg(feature = "direct-file-webrtc")]
+pub fn decode_direct_file_request(message: &[u8]) -> Result<DirectFileRequest, RemoteHostError> {
+    decode_bounded_record(
+        DIRECT_FILE_REQUEST_MAGIC,
+        message,
+        MAX_DIRECT_FILE_SIGNALING_BYTES,
+    )
+}
+
+#[cfg(feature = "direct-file-webrtc")]
+pub fn decode_direct_file_response(message: &[u8]) -> Result<DirectFileResponse, RemoteHostError> {
+    decode_bounded_record(
+        DIRECT_FILE_RESPONSE_MAGIC,
+        message,
+        MAX_DIRECT_FILE_SIGNALING_BYTES,
+    )
+}
+
+#[cfg(feature = "direct-file-webrtc")]
+fn encode_bounded_record<T: Serialize>(
+    magic: &[u8; 4],
+    value: &T,
+    maximum: usize,
+) -> Result<Vec<u8>, RemoteHostError> {
+    let encoded = serde_json::to_vec(value).map_err(|_| RemoteHostError::Protocol)?;
+    if encoded.is_empty() || encoded.len() > maximum {
+        return Err(RemoteHostError::Protocol);
+    }
+    let mut message = Vec::with_capacity(4 + encoded.len());
+    message.extend_from_slice(magic);
+    message.extend_from_slice(&encoded);
+    Ok(message)
+}
+
+#[cfg(feature = "direct-file-webrtc")]
+fn decode_bounded_record<T: DeserializeOwned>(
+    magic: &[u8; 4],
+    message: &[u8],
+    maximum: usize,
+) -> Result<T, RemoteHostError> {
+    let payload = message
+        .strip_prefix(magic)
+        .filter(|payload| !payload.is_empty() && payload.len() <= maximum)
         .ok_or(RemoteHostError::Protocol)?;
     serde_json::from_slice(payload).map_err(|_| RemoteHostError::Protocol)
 }
@@ -325,5 +541,55 @@ mod tests {
         assert_eq!(client_id, ClientId::new([5; 16]));
         assert_eq!(hello, *start.hello());
         assert!(decode_resume_request(&encoded[..encoded.len() - 1]).is_err());
+    }
+
+    #[cfg(feature = "direct-file-webrtc")]
+    #[test]
+    fn direct_file_signaling_is_closed_versioned_and_bounded() {
+        let request = DirectFileRequest::Open {
+            request_id: 7,
+            circuit_generation: 11,
+            browser_peer_generation: 13,
+            torrent_id: "t1-0123456789abcdef0123456789abcdef".to_owned(),
+            file_index: 3,
+            offer: DirectSessionDescription {
+                kind: DirectSdpType::Offer,
+                sdp: "v=0\r\n".to_owned(),
+            },
+        };
+        let encoded = encode_direct_file_request(&request).unwrap();
+        assert_eq!(decode_direct_file_request(&encoded).unwrap(), request);
+        assert!(decode_direct_file_response(&encoded).is_err());
+
+        let mut unknown = serde_json::to_value(&request).unwrap();
+        unknown
+            .as_object_mut()
+            .unwrap()
+            .insert("unknown".to_owned(), serde_json::Value::Bool(true));
+        let mut unknown_record = DIRECT_FILE_REQUEST_MAGIC.to_vec();
+        unknown_record.extend_from_slice(&serde_json::to_vec(&unknown).unwrap());
+        assert!(decode_direct_file_request(&unknown_record).is_err());
+
+        let oversized = DirectFileRequest::Open {
+            request_id: 1,
+            circuit_generation: 1,
+            browser_peer_generation: 1,
+            torrent_id: "t1-0123456789abcdef0123456789abcdef".to_owned(),
+            file_index: 0,
+            offer: DirectSessionDescription {
+                kind: DirectSdpType::Offer,
+                sdp: "x".repeat(MAX_DIRECT_FILE_SIGNALING_BYTES),
+            },
+        };
+        assert!(encode_direct_file_request(&oversized).is_err());
+
+        let response = DirectFileResponse::Rejected {
+            request_id: 7,
+            circuit_generation: 11,
+            browser_peer_generation: 13,
+            reason: DirectFileFailure::FileUnavailable,
+        };
+        let encoded = encode_direct_file_response(&response).unwrap();
+        assert_eq!(decode_direct_file_response(&encoded).unwrap(), response);
     }
 }

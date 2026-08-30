@@ -7,7 +7,7 @@ license.workspace = true
 publish = false
 
 [features]
-default = []
+default = ["direct-file-webrtc"]
 direct-file-webrtc = ["rstorrent-remote-host/direct-file-webrtc"]
 
 [lib]

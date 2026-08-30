@@ -66,7 +66,7 @@ jobs:
       - name: Lint the Rust workspace
         run: cargo clippy --workspace -- -D warnings
 
-      - name: Lint and test the optional direct-file WebRTC graph
+      - name: Lint and test the default direct-file WebRTC graph
         run: |
           cargo clippy \
             -p rstorrent-direct-file \
@@ -77,6 +77,13 @@ jobs:
             -- -D warnings
           cargo test -p rstorrent-direct-file --features webrtc
           cargo test -p rstorrent-remote-host --features direct-file-webrtc
+
+      - name: Keep the direct-file graph out of explicit feature-off products
+        run: |
+          cargo clippy -p rstorrent-headless --no-default-features -- -D warnings
+          cargo clippy -p rstorrent-desktop --no-default-features -- -D warnings
+          test -z "$(cargo tree -p rstorrent-headless --no-default-features | grep 'rtc v' || true)"
+          test -z "$(cargo tree -p rstorrent-desktop --no-default-features | grep 'rtc v' || true)"
 
       - name: Test the Rust workspace
         run: cargo test --workspace

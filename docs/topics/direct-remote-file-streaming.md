@@ -2,18 +2,21 @@
 
 Topic: `direct-remote-file-streaming`
 
-Status: Direction accepted and ready Tactical
+Status: Active Tactical
 [`196`](../tactical/196-remote-direct-file-product-integration.md) owns the
-first product slice. Completed Tactical
+first product slice. Its initial landing enables the measured WebRTC graph by
+default in desktop and headless leaf products, preserves explicit feature-off
+graphs, and tightens DataChannel file messages to 16 KiB because the retained
+SCTP implementation does not expose RFC 8260 message interleaving. Completed Tactical
 [`195`](../tactical/195-webrtc-direct-file-feasibility-spike.md) retains lower
-`webrtc-rs/rtc` 0.20.4 behind the current default-off `direct-file-webrtc`
+`webrtc-rs/rtc` 0.20.4 behind the library-optional `direct-file-webrtc`
 feature, a lazy supervised endpoint, bounded verified-range codec, and local
 real-browser harness. Chromium and Firefox pass. Post-completion Playwright
 WebKit reruns also complete ICE, DTLS, DataChannel, and exact range traffic;
 their repeatable OPFS failure belongs to Playwright's non-persistent test
 context rather than the transport. Product signaling, visible UI, runtime
-setting, public STUN, default compilation, and support claims remain absent
-until Tactical `196`; TURN is explicitly not planned for that slice.
+setting, public STUN, and support claims remain incomplete until Tactical
+`196`; TURN is explicitly not planned for that slice.
 
 ## Purpose And Ownership
 

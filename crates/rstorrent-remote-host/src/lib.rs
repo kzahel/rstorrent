@@ -29,3 +29,11 @@ pub use wire::{
     decode_json_record, decode_resume_request, encode_control_request, encode_control_response,
     encode_json_record, encode_resume_request, protocol_payload,
 };
+
+#[cfg(feature = "direct-file-webrtc")]
+pub use wire::{
+    DIRECT_FILE_REQUEST_MAGIC, DIRECT_FILE_RESPONSE_MAGIC, DirectCandidateClass, DirectFileFailure,
+    DirectFileRequest, DirectFileResponse, DirectFileStatus, DirectIceCandidate, DirectSdpType,
+    DirectSessionDescription, MAX_DIRECT_FILE_SIGNALING_BYTES, decode_direct_file_request,
+    decode_direct_file_response, encode_direct_file_request, encode_direct_file_response,
+};

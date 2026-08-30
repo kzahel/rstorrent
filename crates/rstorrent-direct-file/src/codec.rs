@@ -5,7 +5,11 @@ use std::fmt;
 
 pub const PROTOCOL_VERSION: u8 = 1;
 pub const MAX_CONTROL_FRAME_BYTES: usize = 4 * 1024;
-pub const MAX_CHUNK_BYTES: usize = 60 * 1024;
+/// RFC 8831 section 6.6 recommends at most 16 KiB messages when the SCTP
+/// implementation does not expose message interleaving. `rtc` 0.20.4 does
+/// not currently expose RFC 8260 I-DATA, so keep each product payload within
+/// that conservative interoperability ceiling.
+pub const MAX_CHUNK_BYTES: usize = 16 * 1024;
 pub const MAX_DATA_FRAME_BYTES: usize = 64 * 1024;
 pub const MAX_RANGE_REQUESTS: usize = 4;
 

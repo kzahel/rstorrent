@@ -1,6 +1,6 @@
 # Tactical 196: Remote Direct-File Product Integration
 
-Status: **Ready.** This tactical turns completed Tactical
+Status: **Active.** This tactical turns completed Tactical
 [`195`](195-webrtc-direct-file-feasibility-spike.md)'s retained lower-`rtc`
 endpoint into one default-compiled, lazy, authenticated remote-file product
 slice. It adds completed-file **Save file...** from the remote React UI,
@@ -282,6 +282,13 @@ first with explicit protocol-1 fallback and never sends new fields to a host
 that did not advertise them. There is no stable public wire promise beyond
 this bounded rollout contract.
 
+The Stage 0 survey retains protocol 1 unchanged while introducing closed
+`RDF1` browser-to-host and `RDF2` host-to-browser records for the negotiated
+capability. Each record carries request, circuit and peer generations; the
+64-KiB encoded ceiling is independent from file frames. The browser will be
+made protocol-2-aware before the host advertises `direct_file_v1`, so current
+protocol-1 hosts remain controllable during rollout.
+
 ## Authority And Security Invariants
 
 - The authenticated circuit, not STUN reachability or a DataChannel message,
@@ -351,7 +358,7 @@ Retain or tighten the proven Tactical 195 limits:
 | Simultaneous Save operations in first browser UI | 1 |
 | Control frame | 4 KiB |
 | Data frame | 64 KiB |
-| File payload per chunk | 60 KiB |
+| File payload per chunk | 16 KiB |
 | Application outbound queue per peer | 512 KiB |
 | SCTP buffered data per peer | 512 KiB |
 | Candidates per direction and peer generation | 32 |
@@ -363,6 +370,12 @@ Retain or tighten the proven Tactical 195 limits:
 | Hard peer lifetime | circuit lifetime, at most 24 hours |
 | Blob fallback file size | 32 MiB |
 | Persistent audit additions per transfer | start plus one terminal event |
+
+The payload row is intentionally tighter than Tactical 195's experiment.
+RFC 8831 section 6.6 recommends messages no larger than 16 KiB when SCTP
+message interleaving is unavailable, and the reviewed `rtc`/`rtc-sctp` 0.20.4
+surface does not expose RFC 8260 I-DATA interleaving. The retained 64-KiB data
+frame decoder ceiling remains a hostile-input bound, not a sender target.
 
 Candidate gathering resolves at most eight STUN addresses per peer generation,
 retains no more than two usable addresses per IP family, applies bounded DNS
