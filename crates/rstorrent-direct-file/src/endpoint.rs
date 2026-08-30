@@ -258,7 +258,14 @@ impl LazyEndpointStarter for RtcEndpointStarter {
     ) -> ProductEndpointStartFuture {
         let application = self.application.clone();
         Box::pin(async move {
-            let (bind_ip, stun_addresses) = resolve_stun_route().await?;
+            validate_offer(&offer)?;
+            let (bind_ip, stun_addresses) = match resolve_stun_route().await {
+                Ok(route) => route,
+                Err(stun_error) => match bind_ip_from_offer(&offer.sdp).await {
+                    Some(bind_ip) => (bind_ip, Vec::new()),
+                    None => return Err(stun_error),
+                },
+            };
             answer_offer(application, capability, bind_ip, stun_addresses, offer).await
         })
     }
@@ -1041,6 +1048,47 @@ fn direct_udp_candidate(candidate: &str) -> bool {
         })
 }
 
+async fn bind_ip_from_offer(sdp: &str) -> Option<IpAddr> {
+    for candidate in direct_candidate_addresses(sdp) {
+        if candidate.ip().is_unspecified() || candidate.ip().is_multicast() {
+            continue;
+        }
+        let wildcard = if candidate.is_ipv4() {
+            SocketAddr::from(([0, 0, 0, 0], 0))
+        } else {
+            SocketAddr::from(([0_u16; 8], 0))
+        };
+        let Ok(socket) = UdpSocket::bind(wildcard).await else {
+            continue;
+        };
+        if socket.connect(candidate).await.is_ok() {
+            let Ok(local_addr) = socket.local_addr() else {
+                continue;
+            };
+            let local_ip = local_addr.ip();
+            if !local_ip.is_unspecified() {
+                return Some(local_ip);
+            }
+        }
+    }
+    None
+}
+
+fn direct_candidate_addresses(sdp: &str) -> Vec<SocketAddr> {
+    sdp.lines()
+        .filter_map(|line| line.trim_end().strip_prefix("a=candidate:"))
+        .filter(|candidate| direct_udp_candidate(candidate))
+        .filter_map(|candidate| {
+            let fields = candidate.split_ascii_whitespace().collect::<Vec<_>>();
+            Some(SocketAddr::new(
+                fields.get(4)?.parse().ok()?,
+                fields.get(5)?.parse().ok()?,
+            ))
+        })
+        .take(MAX_REMOTE_CANDIDATES)
+        .collect()
+}
+
 async fn resolve_stun_route() -> Result<(IpAddr, Vec<SocketAddr>), DirectFileEndpointError> {
     let addresses = tokio::time::timeout(
         STUN_RESOLUTION_TIMEOUT,
@@ -1164,10 +1212,18 @@ fn validate_offer(offer: &RTCSessionDescription) -> Result<String, DirectFileEnd
     let candidates = offer
         .sdp
         .lines()
-        .filter(|line| line.trim_end().starts_with("a=candidate:"))
-        .count();
-    if candidates > MAX_REMOTE_CANDIDATES {
+        .filter_map(|line| line.trim_end().strip_prefix("a=candidate:"))
+        .collect::<Vec<_>>();
+    if candidates.len() > MAX_REMOTE_CANDIDATES {
         return Err(DirectFileEndpointError::SignalingLimit);
+    }
+    if candidates
+        .iter()
+        .any(|candidate| !direct_udp_candidate(candidate))
+    {
+        return Err(DirectFileEndpointError::InvalidOffer(
+            "non-direct ICE candidate",
+        ));
     }
     fingerprint_from_sdp(&offer.sdp)
 }
@@ -1259,6 +1315,50 @@ mod tests {
             "candidate:5 1 tcp 1518280447 192.0.2.5 9 typ host tcptype active"
         ));
         assert!(!direct_udp_candidate("candidate:short"));
+    }
+
+    #[test]
+    fn offer_rejects_relay_and_tcp_candidates_before_peer_creation() {
+        for candidate in [
+            "candidate:4 1 udp 1677729535 203.0.113.4 5003 typ relay",
+            "candidate:5 1 tcp 1518280447 192.0.2.5 9 typ host tcptype active",
+        ] {
+            let offer = RTCSessionDescription::offer(format!(
+                concat!(
+                    "v=0\r\n",
+                    "o=- 0 0 IN IP4 127.0.0.1\r\n",
+                    "s=-\r\n",
+                    "t=0 0\r\n",
+                    "a=fingerprint:sha-256 {}\r\n",
+                    "m=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n",
+                    "c=IN IP4 0.0.0.0\r\n",
+                    "a=mid:0\r\n",
+                    "a=sctp-port:5000\r\n",
+                    "a={}\r\n"
+                ),
+                FINGERPRINT, candidate
+            ))
+            .expect("offer");
+            assert!(matches!(
+                validate_offer(&offer),
+                Err(DirectFileEndpointError::InvalidOffer(
+                    "non-direct ICE candidate"
+                ))
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn offer_candidate_supplies_a_host_route_when_stun_is_unavailable() {
+        let sdp = "v=0\r\na=candidate:1 1 UDP 2130706431 127.0.0.1 5000 typ host\r\n";
+        assert_eq!(
+            direct_candidate_addresses(sdp),
+            vec![SocketAddr::from(([127, 0, 0, 1], 5000))]
+        );
+        assert_eq!(
+            bind_ip_from_offer(sdp).await,
+            Some(IpAddr::from([127, 0, 0, 1]))
+        );
     }
 
     #[tokio::test]
