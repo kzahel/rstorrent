@@ -11,7 +11,11 @@ Linux headless deliberately injects no native picker and currently exposes a
 nonfunctional **Add folder...** action that returns HTTP `501`. Maintainer direction on
 2026-08-29 accepts typed absolute server paths for the exact Linux headless
 product, with server-side validation and durable root identity. That direction
-is not implemented and has no tactical yet.
+is not implemented and has no tactical yet. Active Tactical
+[`194`](../tactical/194-chromeos-android-extension-control.md) separately owns
+Android's extension-triggered SAF picker and retained-root registry. It keeps
+the same React acquisition action as Crostini while leaving the resulting URI
+and grant entirely in Android.
 
 ## Conclusion
 
@@ -24,9 +28,12 @@ runtime and its session:
 - a local browser gateway asks its same-machine backend to launch a native
   helper, not the browser;
 - a browser controlling a remote Linux headless service cannot select a
-  client-machine folder and must not cause the server to launch a dialog; and
+  client-machine folder and must not cause the server to launch a dialog;
 - the exact Linux headless product should instead accept and validate an
-  absolute path in the server's namespace, such as `/srv/media/torrents`.
+  absolute path in the server's namespace, such as `/srv/media/torrents`; and
+- the exact ChromeOS Android companion presentation should ask its authenticated
+  Android backend to launch the system SAF picker and receive only the
+  resulting opaque root snapshot.
 
 An opaque root ID remains the portable application value after acquisition.
 Neither a picker result nor a typed path belongs in `add_magnet`, torrent
@@ -64,7 +71,7 @@ filesystem API, or authorize a presentation to enumerate the backend machine.
 | Local gateway/browser | Windows | The native adapter is compiled as unsupported for every operating system except macOS and Linux | Clicking **Add folder...** reaches the HTTP platform route and returns `501` with “download folder picker is not implemented on this platform” |
 | ChromeOS Linux/Crostini | Linux user service, ChromeOS browser presentation | Crostini injects the same Linux native helper adapter as local WebUI | `~/Downloads` is preconfigured, so first use does not require a picker. Additional selection is conditional on a usable Linux graphical session and Zenity or KDialog; exact installed interaction is unproved |
 | Hosted Linux headless | Linux service with or without a display | `rstorrent-headless` uses the hosted gateway preparation that injects `UnavailableDownloadDirectoryPicker` | TOML supplies at least one root. The shared UI still renders native-picker add/repair controls, but those calls return `501` |
-| Android/ChromeOS Android | Android activity | Android Storage Access Framework tree selection and a persisted URI grant | System tree picker; the platform adapter retains the capability and Rust uses an opaque root ID |
+| Android/ChromeOS Android | Android activity/foreground service | Currently Compose launches Android Storage Access Framework tree selection and retains one URI grant; Tactical `194` adds the same shared React operation over its authenticated companion platform endpoint | The current system picker retains one grant. Tactical `194` must prove multiple bounded grants, one current root for new downloads, and opaque-root-only Rust/React values before that result is claimed |
 | iOS/iPadOS | First-party iOS application | System directory picker followed by a qualified security-scoped bookmark | System picker; accepted local roots retain opaque identity and platform-owned reopening state |
 
 “Web UI on Windows” is ambiguous and must be qualified:
@@ -77,7 +84,10 @@ filesystem API, or authorize a presentation to enumerate the backend machine.
   maintained native Windows product launcher.
 
 The WebSocket client does not change this split. Its platform operations
-delegate to the same HTTP `/api/v1/platform/download-root` endpoint.
+delegate to a runtime-specific platform client: hosted products use HTTP
+`/api/v1/platform/download-root`; Tactical `194`'s Android companion uses its
+exact authenticated `/rstorrent/companion/v1/platform/download-root` endpoint.
+Neither operation is an application command or accepts a locator from React.
 
 ## How The Two Desktop Implementations Differ
 
@@ -127,6 +137,23 @@ filesystem after a user gesture. It cannot give a remote Rust backend a native
 server path or move torrent payload I/O out of the engine:
 
 - [File System Access specification](https://wicg.github.io/file-system-access/)
+
+### ChromeOS Android companion
+
+Tactical `194` preserves the same `chooseDownloadRoot` React interaction but
+changes the trusted owner. The authenticated extension request contains only
+an optional opaque root ID for repair. `ProductEngineService` owns one pending
+request, starts a lifecycle-safe SAF picker activity or posts an actionable
+notification fallback, and returns only the installed root snapshot. The
+extension never supplies, receives, logs, or persists the tree URI.
+
+The selected Android tree is not a replacement for every prior grant. A new
+tree becomes the current/default root for future downloads after provider
+qualification, while prior root IDs and grants remain available to their
+already-bound torrents. A healthy retained root may later be made current
+explicitly. Repair preserves one root ID; removal releases a grant only after
+the root is neither current nor referenced. At most 32 roots share the
+existing session-wide SAF handle/request bounds.
 
 ## Current Validation And Failure Semantics
 
@@ -297,6 +324,13 @@ Current code and dependency evidence:
 - `clients/web/src/inspection/components/DownloadSettingsSection.tsx` currently
   renders one picker-shaped add/repair interface without acquisition-mode
   awareness.
+- `clients/web/src/websocket-view-client.ts` already separates application
+  WebSocket delivery from its `chooseDownloadRoot` platform client, which is
+  the seam Tactical `194` reuses for Android.
+- `clients/android/app/src/main/java/org/rstorrent/bootstrap/`
+  `ProductSafDocuments.kt` and `ProductEngineService.kt` currently persist and
+  resolve one `tree-uri`, even though each generated `SafStorageRequest`
+  already carries `root_id`.
 - Tactical [`061`](../tactical/061-user-selected-download-roots.md) records
   real Ubuntu GNOME/Zenity local-WebUI choose, cancel, restart, repair, and
   missing-helper evidence.
@@ -328,8 +362,9 @@ gateway.
 
 ## Next Bounded Work
 
-The recommended next tactical is one headless path-acquisition slice with this
-stopping condition:
+The recommended next unowned tactical is one headless path-acquisition slice
+with this stopping condition; active Android acquisition work remains in
+Tactical `194`:
 
 - a typed and runtime-gated server-path operation exists for Linux headless;
 - capability/provenance facts drive the React controls;

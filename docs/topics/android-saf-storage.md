@@ -9,6 +9,17 @@ authority, lazy acquisition, exact path safety, provider repair, and the shared
 completion rename, and publication-specific generated facts are removed.
 Earlier tactical descriptions below remain historical evidence.
 
+Active Tactical
+[`194`](../tactical/194-chromeos-android-extension-control.md) owns the first
+multi-root Android product extension of this boundary. It replaces the
+singleton tree URI with a bounded root-ID-to-grant registry, routes the
+existing root-tagged broker requests through the exact retained grant, and
+lets the shared React presentation invoke Android's SAF picker. One root is
+current for new downloads; earlier roots remain for torrents already bound to
+them and may be made current explicitly. The existing `tree-uri`/`downloads`
+pair migrates in place for RSTorrent users. No locator, descriptor, or payload
+path moves into the extension.
+
 Completed Tactical
 [`188`](../tactical/188-existing-payload-adoption-and-recheck.md) applies the
 shared no-resume discovery/full-check decision to local platform-capability
@@ -106,9 +117,11 @@ It complements:
 - [`application-control.md`](application-control.md), which keeps platform
   capabilities and descriptor values out of portable presentation commands.
 
-This topic does not implement general Android multi-root UI, cloud document
-providers, torrent relocation, a general virtual filesystem, or a second
-Android storage engine. SAF-backed seeding and bounded file observations are
+This topic does not implement desktop-shaped per-add selection among retained
+Android roots, cloud document providers, torrent relocation, a general virtual
+filesystem, or a second Android storage engine. Tactical `194` adds only the
+retained-root policy needed to preserve existing torrent authority when a new
+SAF tree becomes current. SAF-backed seeding and bounded file observations are
 implemented specifically by Tactical `116`; that evidence does not broaden
 the provider claim beyond the tested local SAF path.
 
@@ -175,9 +188,14 @@ filesystem trait with operations not required by the proven storage lifecycle.
 
 ### Android owns namespace capability; Rust owns open handles
 
-`ProductEngineService` is the current same-process lifecycle owner for the
-persisted grant and SAF work. Dynamic acquisition extends that owner; it does
-not require another Android service, process, or I/O daemon.
+`ProductEngineService` is the current same-process lifecycle owner for
+persisted grants and SAF work. Dynamic acquisition extends that owner; it does
+not require another Android service, process, or I/O daemon. Tactical `194`
+changes its singleton locator lookup to a bounded app-private registry keyed
+by the root ID already present on each platform request. The application
+database remains authoritative for the current/default root and each
+torrent's binding; Android remains authoritative for the corresponding URI
+and grant.
 
 The Android adapter must provide a small concrete broker with these semantic
 operations:
@@ -484,9 +502,10 @@ bridge; after acquisition, payload I/O remains in Rust.
 ## Recommended Next Work
 
 Do not restore or extend the diagnostic-only fixed-manifest or publication
-APIs. General root
-management, cloud/removable provider support, relocation, and an exposed
-advanced file-pool setting still require their own product decisions.
+APIs. Execute Tactical `194` for the bounded retained-root registry and
+extension-triggered picker. Desktop-shaped per-add choice among old roots,
+cloud/removable provider support, relocation, and an exposed advanced
+file-pool setting still require their own product decisions.
 Completed Tactical `120` consumes exact existence, kind, and length as
 per-torrent fast-resume admission evidence for the supported local provider.
 It adds no persisted provider-token snapshot; absence of the optional opaque

@@ -134,6 +134,16 @@ state readers while retaining bounded reset and external-payload safety.
 Tactical `176` is also complete after its Xcode 26.6 simulator and unsigned
 device-archive gates passed on 2026-08-29. Signed release Tactical `158`
 remains active.
+Explicit maintainer direction on 2026-08-30 activates focused ChromeOS Android
+extension-control Tactical
+[`194`](../tactical/194-chromeos-android-extension-control.md) alongside
+Tactical `158`. It is the first migration-critical JSTorrent Android parity
+slice: Android retains the only Rust engine/profile owner and the extension is
+a detachable shared React presentation. It includes Android's
+extension-triggered SAF picker and retained-root semantics so changing the
+current root for new downloads does not discard grants used by older torrents.
+It does not authorize store publication or turn other missing Android features
+into implicit scope.
 
 ## Scope And Release Definition
 
@@ -582,6 +592,31 @@ is still pending and is not the compatibility oracle.
   and retains only one service-owned partial CPU wake lock. A physical API 37
   device proves persistence, acquisition through screen-off Dozing, absence of
   a Wi-Fi lock, service-stop release, and exact data/root cleanup.
+- [ ] **AND-008 — Qualify ChromeOS Android extension control.** Tactical `194`
+  must carry the release-built shared React presentation through explicit
+  Android-approved pairing to the one foreground-service application/engine/
+  profile owner, then prove cold launch, Local Network Access, exact Host/
+  Origin/auth rejection, same-device-only reachability, Compose coexistence,
+  extension-triggered SAF select/cancel/repair, two retained roots with one
+  current/default for new downloads, old-torrent root binding, independent
+  grant loss, bounded removal/release, restart/crash recovery, detached
+  transfer, reconnect, revoke, joined stop, and cleanup on a physical
+  Chromebook. No URI or descriptor may cross the application connection.
+  This blocks only the advertised extension-controlled Android ChromeOS lane;
+  Android-through-Compose remains a separate supported choice.
+- [ ] **AND-009 — Add background completion and actionable failure
+  notifications.** Current Android has the required foreground-service status
+  but not JSTorrent-shaped edge-triggered completion or fatal/storage-repair
+  attention while Compose is absent. A supported Android lane needs a bounded
+  native notification owner with permission denial, initial/reset suppression,
+  duplicate avoidance, tap/action routing, restart, and cleanup evidence.
+- [ ] **AND-010 — Add metered-network safety and bound VPN policy.** JSTorrent
+  Android enforces unmetered/Wi-Fi-only and VPN-only prerequisites; RSTorrent's
+  service selects `Online` for its full lifetime. Before a supported phone
+  beta, add truthful live unmetered/metered enforcement that preserves torrent
+  intent across network change. VPN-only may remain a disclosed later feature
+  unless a dedicated tactical proves Android network binding, handover races,
+  socket leakage, tracker/DHT/peer coverage, and fail-closed recovery.
 
 ## iOS/iPadOS Beta Checklist
 
@@ -634,9 +669,11 @@ These useful gaps are **not automatic beta blockers** when disclosed:
 - embedded/progressive media playback and a media catalog;
 - search, plugins, torrent creation, tracker mutation, rich numeric file
   priorities, ratio/time seed goals, and durable transfer totals;
-- production remote access, extension control, relay, pairing, and migration
-  from legacy JSTorrent;
-- VPN-only, metered-network, proxy, interface-specific, and power policy;
+- production remote access, relay, third-party pairing, and migration from
+  legacy JSTorrent. Extension control remains required only for the explicitly
+  advertised ChromeOS Android companion-presentation lane under `AND-008`;
+- VPN-only, proxy, interface-specific, and broader power policy. Android
+  metered-network safety is separately promoted to `AND-010`;
 - local service discovery (BEP 14), HTTP web seeds (BEP 17/19), tracker scrape
   (BEP 48), hole punching (BEP 55), PCP/NAT-PMP, and full IPv6/uTP breadth; and
 - complete BEP 52 coverage. Pure-v2 and hybrid behavior may be labelled beta
@@ -765,6 +802,18 @@ concurrently when directed, without demoting other active work.
     enabled healthy current-host x86_64 service campaign pass. No public
     publication, unattended update, system-wide service, firewall change, or
     Raspberry Pi mutation occurred. Tactical `158` remains active.
+20. **Active — Tactical `194`: ChromeOS Android extension control.** Preserve
+    the JSTorrent companion user journey without its extension-owned engine or
+    raw IO daemon: package the shared React UI in the beta extension, pair it
+    explicitly over the same-device ARC boundary, and attach it to the one
+    Android foreground application/profile owner. Provide the shared root UI
+    through Android's SAF picker and retain older grants for their bound
+    torrents when a new root becomes current. Physical cold-launch, Local
+    Network Access, routing isolation, coexistence, two-root lifecycle,
+    detached-transfer, reconnect, revoke, shutdown, and cleanup evidence are
+    required. Store publication, production JSTorrent extension changes,
+    state import, media, notifications, and dynamic network policy remain
+    outside the slice.
 
 Each implementation item requires its own bounded tactical. These status
 classifications are not authorization to tag, publish, alter production

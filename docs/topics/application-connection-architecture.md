@@ -79,6 +79,22 @@ credential is issued or accepted. The installed current-host service proves
 exact HTTP/WebSocket success and wrong-Host/Origin `403` behavior. This is a
 truthfully warned trusted-LAN operator mode, not authenticated application
 authority or a stable remote protocol.
+Active Tactical
+[`194`](../tactical/194-chromeos-android-extension-control.md) selects a
+separate first-party same-device adapter: the packaged extension React page
+attaches to the one Android-owned application service across ChromeOS's fixed
+ARC host. Exact extension Origin, Host, explicit Android-approved bearer
+pairing, backend/profile identity, optional host permission, current Local
+Network Access behavior, revocation, and physical non-LAN reachability are
+required around the unchanged typed application WebSocket. Android serves no
+application assets, raw IO, filesystem, piece, or media endpoint in that
+slice, and no general LAN/remote compatibility claim follows from it. The
+existing `chooseDownloadRoot` platform seam is deliberately adjacent to the
+semantic connection: an authenticated extension request may cause the Android
+owner to launch its SAF picker and return a root snapshot, but the URI and
+grant remain outside application frames. Retained root IDs let one Android
+current/default root govern new adds while older torrents continue through
+their original grants.
 
 ## Purpose And Scope
 

@@ -88,7 +88,15 @@ Current active release work includes
 [`158-desktop-signed-packaging-and-updater.md`](docs/tactical/158-desktop-signed-packaging-and-updater.md),
 whose remaining gates are clean signed Windows replacement/relaunch,
 Windows firewall-consent characterization, and installed Linux x86_64
-evidence. Completed Tactical `193` supplies the source-built finite
+evidence, plus
+[`194-chromeos-android-extension-control.md`](docs/tactical/194-chromeos-android-extension-control.md),
+the first migration-critical JSTorrent Android parity slice. Tactical `194`
+keeps the sole Rust application/engine/profile/SAF owner in the Android
+foreground service and packages the shared React UI in the extension as an
+explicitly paired same-device ChromeOS presentation. Its shared root action
+opens Android's SAF picker, and retained grants keep prior torrents on their
+original roots after a new root becomes current; implementation and physical
+gates remain open. Completed Tactical `193` supplies the source-built finite
 `rstorrent-download` command documented above, with controlled lifecycle and
 native macOS/Linux/Windows gates. Completed Tactical `176` carries durable
 High/Normal/Skip file priority through persistence, scheduling, and every
@@ -135,8 +143,9 @@ Completed Tactical `166` supplies the typed desktop compatibility/launch host,
 per-user registration and sidecar packaging, and the self-contained Manifest
 V3 JSTorrent Beta seed. Chrome 151 on an installed unsigned macOS arm64 app
 proves its exact provisional store ID, native `hello` from a stopped state,
-and cold desktop launch. Full extension control and Crostini topology remain
-undecided.
+and cold desktop launch. Completed Tacticals `167`--`169` own the selected
+Crostini topology; active Tactical `194` owns only the distinct Android
+extension-control path.
 Completed Tactical `162` supplies one packaged desktop instance,
 close-to-tray policy, persisted background intent, joined Quit, release-only
 Windows GUI subsystem validation, a native Linux arm64 package gate, and

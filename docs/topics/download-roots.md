@@ -62,8 +62,12 @@ entry for the exact Linux headless product. That unimplemented platform
 operation and the current cross-runtime picker matrix are owned by
 [`download-root-acquisition.md`](download-root-acquisition.md); portable add
 commands continue to carry only opaque root IDs.
-Android already proves one user-selected persisted SAF root but not general
-multi-root management. The maintained iOS
+Android already proves one user-selected persisted SAF root. Active Tactical
+[`194`](../tactical/194-chromeos-android-extension-control.md) now owns its
+replacement with a retained multi-root grant registry plus extension-triggered
+SAF acquisition: one root is current for future downloads while previous
+roots remain authoritative for torrents already bound to them. The maintained
+iOS
 product now supports app Documents plus distinct qualified selected roots.
 Tactical
 [`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md)
@@ -279,6 +283,11 @@ application command, or browser-local persistence.
   validated server-path operation; the backend installs the locator and
   returns an opaque root ID. Other transports without a safe acquisition
   operation direct the user to the owning product to add or repair a root.
+- Tactical `194`'s authenticated same-device ChromeOS Android presentation is
+  such a safe acquisition operation. It invokes the Android-owned SAF picker
+  through the existing `chooseDownloadRoot` platform seam and receives only
+  the installed root snapshot; URI, document, descriptor, and intent values
+  never cross into React or the application connection.
 
 Do not use the browser File System Access API as an engine storage backend and
 do not move piece payload through the web presentation. Browser directory
@@ -356,9 +365,28 @@ picker. SAF URI and grant state stay in the platform adapter; SQLite and
 portable application values retain the stable root ID. A revoked grant leaves
 the torrent waiting for repair rather than selecting app-private storage.
 
-The existing one-root Android product is a valid initial presentation limit.
-General multi-root Settings parity with desktop may land later, but it must not
-change the shared root identity and per-torrent binding semantics.
+Tactical `194` replaces the existing singleton URI with a bounded retained-root
+registry shared by Compose and the extension presentation. At most one root is
+current/default for future Android downloads; if it is unavailable, new work
+waits for repair or an explicit current-root change. Selecting a new tree
+adds or deduplicates a stable root and makes it current only after its grant and
+probe succeed; it never redirects an existing torrent. Previous roots and
+their grants remain available to torrents already bound to them, and a healthy
+one may be made current explicitly. Repair replaces the locator behind the
+same root ID, while removal releases a grant only after the root is neither
+current nor referenced.
+
+Android **current root** is presentation wording for the ordinary durable
+default root, not a second platform-owned setting. Compose and React therefore
+cannot disagree about which root receives future downloads.
+
+The React interaction remains aligned with Crostini: **Choose folder...** and
+**Repair...** call the same platform capability. Crostini's adapter opens a
+Linux picker and installs a path root; Android's adapter opens the SAF picker
+and installs a platform root. Android does not offer previous retained roots
+as new per-torrent overrides in this slice. Multi-root support exists to
+preserve earlier torrent authority across a current-root change, not to imply
+relocation or arbitrary provider support.
 
 ### iOS and iPadOS
 
@@ -477,9 +505,11 @@ source, fixture, or asset is imported by this topic.
 
 ## Recommended Next Work
 
-Execute Tactical `191` to make the accepted direct layout real across path,
-SAF, iOS, persistence, and presentation while preserving this topic's root
-identity, selection, validation, and repair authority.
+Execute active Tactical `194` to replace Android's singleton grant with the
+bounded retained-root/current-default model and expose the same React folder
+action through the Android-owned SAF picker. Preserve completed Tactical
+`191`'s direct layout, stable per-torrent root binding, root-specific broker
+routing, and exact cleanup across every retained grant.
 
 Tactical `161` provides one native Tauri dialog implementation for Windows,
 packaged Linux, and macOS while leaving the local WebUI helper implementation

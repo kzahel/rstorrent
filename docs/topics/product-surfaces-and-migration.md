@@ -80,6 +80,18 @@ signed source update machinery, one exact no-credential private-LAN mode, and
 an enabled healthy current-host x86_64 deployment. No public headless channel,
 physical ARM64 service, owner remote cryptography, or relay is claimed.
 
+Explicit maintainer direction on 2026-08-30 selects ChromeOS Android
+extension control as migration-critical release-parity work in active Tactical
+[`194`](../tactical/194-chromeos-android-extension-control.md). It preserves
+the familiar JSTorrent launch, pairing, dense browser presentation, and
+background-service journey while reversing the old ownership: Android retains
+the only Rust application service, engine, profile, networking, hashing, and
+SAF authority; the extension is a detachable typed presentation. The same
+React root action used with Crostini invokes Android's SAF picker, and retained
+grants keep earlier torrents on their original roots when a new root becomes
+current. This is workflow continuity, not legacy-state import, a raw IO
+daemon, a public remote API, or production-extension publication.
+
 ## Scope
 
 This topic owns the product shape that separates a native engine host from the
@@ -305,11 +317,15 @@ and desktop products.
 
 ### Android plus extension
 
-The Android application may operate normally on ChromeOS while exposing a
-narrow authenticated remote-control surface to the extension. This is not the
-current raw IO-companion architecture: the Android foreground service owns the
-complete Rust application service and engine in-process, while the extension
-is another presentation of its commands and views.
+Active Tactical
+[`194`](../tactical/194-chromeos-android-extension-control.md) selects the
+Android-plus-extension configuration for implementation. The Android
+application operates normally on ChromeOS while exposing a narrow,
+ChromeOS-only authenticated application-control surface to the extension.
+This is not the current raw IO-companion architecture: the Android foreground
+service owns the complete Rust application service and engine in-process,
+while the extension packages the shared React application as another
+presentation of its commands and views.
 
 The extension and Compose UI therefore see the same Android profile. Either
 surface may be attached without copying torrents or starting a second engine,
@@ -329,10 +345,34 @@ opens the extension. Once the Android foreground service is already running,
 the extension can reconnect directly. Product copy must describe this rather
 than promise seamless launch.
 
+Root acquisition is also presentation-neutral. The shared
+`chooseDownloadRoot` interaction uses a Linux path picker for Crostini and an
+Android-owned SAF picker for the Android backend. Android keeps the URI and
+grant private and returns only the resulting root snapshot. A new selected
+tree becomes the one current/default root for future downloads; prior roots
+and grants remain registered for the torrents already bound to them, and a
+healthy retained root may be made current explicitly. Repair preserves the
+root ID, and removal is allowed only when a root is neither current nor
+referenced. The extension cannot submit a URI or silently redirect an existing
+torrent.
+
 Android plus extension remains a useful option for people who prefer the
 extension's dense UI or want the same Android profile in both presentations.
-It should not dictate the primary ChromeOS flow while the two-action cold
-start remains.
+It is now a required migration-continuity lane for current JSTorrent companion
+users, but it should not dictate the primary ChromeOS flow while the two-action
+cold start remains. The promise is a familiar operating model after a fresh
+RSTorrent install, root grant, and pairing; it does not import JSTorrent
+torrents, settings, tokens, or verified state.
+
+The selected security and topology boundary is deliberately local and narrow:
+the extension uses the fixed ChromeOS ARC host and a bounded RSTorrent-only
+port list, requests its exact host permission at the user's connect action,
+and authenticates through explicit Android approval. Exact Host, extension
+Origin, bearer credential, backend/profile identity, resource bounds,
+revocation, same-device routing evidence, and current Chrome Local Network
+Access behavior are release gates. There is no network discovery, arbitrary
+host input, LAN/tailnet/Internet claim, Android-served application shell, raw
+file/socket/hash path, or media path in the first slice.
 
 ### Android alone
 
@@ -508,9 +548,12 @@ fixture, or wire contract from either sibling project.
 - Whether Tauri and extension views may remain attached simultaneously on
   desktop, and how command conflicts are presented.
 - Production pairing, authentication, origin, rate, replay, token rotation,
-  and protocol-compatibility policy for every extension transport.
-- The exact Android remote-control endpoint and its foreground-service,
-  permission, ChromeOS networking, and cold-start recovery behavior.
+  and protocol-compatibility policy for extension transports beyond Tactical
+  `194`'s exact same-device ChromeOS Android boundary.
+- Physical completion of Tactical `194`'s Android foreground-service,
+  fixed-ARC endpoint, optional host permission, Local Network Access,
+  pairing/revocation, same-device reachability, and cold-start recovery
+  contract.
 - Crostini update/rollback, suspend/reboot, shared-storage, physical native
   ARM64 runtime, and broader network contracts beyond the accepted public
   `crostini-v0.1.0` x86_64 installation and hosted two-architecture packages.
@@ -544,6 +587,12 @@ Linux headless backend, signed source update lane, exact trusted-LAN mode, and
 installed x86_64 evidence. Treat public candidate/channel promotion,
 system-wide ownership, native ARM64 service/update evidence, and owner remote
 authentication as separate future operations or slices.
+Execute active Tactical `194` as the first migration-critical Android
+JSTorrent-parity slice. It must prove the extension-controlled ChromeOS user
+journey, retained SAF-root selection, and extension-triggered picker while
+retaining one Android engine/profile owner; completion/error notifications and
+metered/VPN enforcement remain the next core Android release slices rather
+than additions to its transport boundary.
 When JSTorrent graduation is separately authorized, create one bounded
 tactical that fixes the production handoff and the intentionally best-effort
 legacy-state scope from then-current evidence.

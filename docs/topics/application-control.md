@@ -256,6 +256,17 @@ root identity; it never supplies an ambient local path or open descriptor. The
 accepted first-add, default-root, local picker, and remote-presentation behavior
 is recorded in [`download-roots.md`](download-roots.md).
 
+Active Tactical
+[`194`](../tactical/194-chromeos-android-extension-control.md) applies that
+split to the same-device ChromeOS Android presentation. The authenticated
+platform client may request Android's SAF picker with only an optional opaque
+repair-root ID and receives only the resulting root snapshot. The application
+service remains authoritative for the single current/default root, retained
+root inventory, per-torrent bindings, reference checks, and durable mutation;
+Android remains authoritative for URI/grant acquisition, repair, and release.
+Root lifecycle therefore needs a joined platform handshake and crash-recovery
+journal, but no SAF locator becomes a command or application frame.
+
 Tactical `062` keeps publication naming behind this boundary. Verified
 metainfo and the selected root resolve a durable relative publication
 component inside the application/engine layers; no presentation command gains
