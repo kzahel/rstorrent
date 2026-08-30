@@ -6,6 +6,26 @@ three-component versions, and desktop release tags use
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-08-30
+
+- Add the owner-only remote-access preview for desktop, including Settings
+  enrollment, durable browser resume, authorized-session administration, and
+  a security audit log. The hosted controller and opaque relay cannot read
+  authenticated application traffic.
+- Keep remote access an unsupported, unadvertised incubation capability for
+  manual owner testing. It controls a running desktop product host and does
+  not provide Android remote control.
+- Write torrent content directly to final paths, adopt existing payload
+  through a bounded full recheck, and preserve unrelated files during
+  recovery.
+- Add responsive Library media details and playback, restore torrent sizes,
+  and make High file priority durable.
+- Improve metadata startup and dry-swarm recovery while bounding peer
+  attempts, probe pacing, and retained transfer accounting.
+- Reduce browser connection bandwidth with view-aware coalescing, sparse row
+  patches, compact preparation progress, and incremental speed history.
+- Replace settings mutation with revisioned typed patches so desktop, web,
+  and Android drafts converge on authoritative state.
 - Clarify that every `0.1.x` package is an unsupported incubation build. Its
   application-owned state and application contracts may be reset or replaced;
   no compatibility baseline begins until a future version is explicitly

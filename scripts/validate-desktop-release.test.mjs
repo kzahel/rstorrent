@@ -11,10 +11,10 @@ import {
 const root = path.resolve(import.meta.dirname, "..");
 
 test("accepts the checked-in desktop release configuration", () => {
-  assert.equal(validateDesktopReleaseRepository(root).version, "0.1.2");
+  assert.equal(validateDesktopReleaseRepository(root).version, "0.1.3");
   assert.equal(
-    validateDesktopReleaseRepository(root, "desktop-v0.1.2").version,
-    "0.1.2",
+    validateDesktopReleaseRepository(root, "desktop-v0.1.3").version,
+    "0.1.3",
   );
 });
 
