@@ -49,6 +49,7 @@ PROFILE_CHOICES = (
     "product-pure-v2-saf",
     "product-identity-reset",
     "product-incomplete-duplex",
+    "product-notifications",
     "product-saf-grant-repair",
     "product-https-tracker",
     "product-https-platform-trust",
@@ -1872,6 +1873,122 @@ def wait_product_completion(
     )
 
 
+def automatic_notification_records(target: Any, tag_prefix: str) -> list[str]:
+    dump = target.shell(
+        ["dumpsys", "notification", "--noredact"], timeout=20, check=False
+    ).stdout
+    pattern = re.compile(
+        rf"NotificationRecord\([^\n]* tag=({re.escape(tag_prefix)}[^ ]+) "
+    )
+    return pattern.findall(dump)
+
+
+def wait_product_notification(
+    target: Any,
+    *,
+    tag_prefix: str,
+    title: str,
+    body: str,
+    timeout: float = 15,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout
+    dump = ""
+    records: list[str] = []
+    while time.monotonic() < deadline:
+        dump = target.shell(
+            ["dumpsys", "notification", "--noredact"],
+            timeout=20,
+            check=False,
+        ).stdout
+        records = automatic_notification_records(target, tag_prefix)
+        if (
+            len(records) == 1
+            and f"android.title=String ({title})" in dump
+            and f"android.text=String ({body})" in dump
+        ):
+            return {
+                "count": 1,
+                "tag": "opaque" if records[0].startswith(tag_prefix) else "invalid",
+                "title": title,
+                "body": body,
+            }
+        time.sleep(0.2)
+    raise BootstrapFailure(
+        "timed out waiting for exact Android notification "
+        f"prefix={tag_prefix!r} title={title!r} body={body!r} "
+        f"records={records!r}\n{dump}"
+    )
+
+
+def assert_no_product_notification(
+    target: Any,
+    tag_prefix: str,
+    description: str,
+    timeout: float = 5,
+) -> None:
+    deadline = time.monotonic() + timeout
+    records: list[str] = []
+    while time.monotonic() < deadline:
+        records = automatic_notification_records(target, tag_prefix)
+        if not records:
+            return
+        time.sleep(0.2)
+    raise BootstrapFailure(f"{description} replayed notifications: {records!r}")
+
+
+def tap_product_notification(
+    target: Any,
+    probe: ModuleType,
+    *,
+    body: str,
+    expected_text: str,
+    timeout: float = 15,
+) -> None:
+    target.shell(["cmd", "statusbar", "expand-notifications"], check=False)
+    deadline = time.monotonic() + timeout
+    visible: list[str] = []
+    while time.monotonic() < deadline:
+        nodes = probe.ui_nodes(target)
+        visible = [
+            value
+            for node in nodes
+            for value in (
+                node.attrib.get("text", "").strip(),
+                node.attrib.get("content-desc", "").strip(),
+            )
+            if value
+        ]
+        if probe.click_from_nodes(target, nodes, [body]):
+            break
+        time.sleep(0.2)
+    else:
+        raise BootstrapFailure(
+            f"could not tap notification body {body!r}; visible={visible!r}"
+        )
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        activity = target.shell(
+            ["dumpsys", "activity", "activities"], timeout=20, check=False
+        ).stdout
+        nodes = probe.ui_nodes(target)
+        text = {
+            value
+            for node in nodes
+            for value in (
+                node.attrib.get("text", "").strip(),
+                node.attrib.get("content-desc", "").strip(),
+            )
+            if value
+        }
+        if PACKAGE in activity and expected_text in text:
+            return
+        time.sleep(0.2)
+    raise BootstrapFailure(
+        f"notification tap did not reach {expected_text!r}; visible={sorted(text)!r}"
+    )
+
+
 def wait_product_log(target: Any, marker: str, description: str, timeout: float = 20) -> str:
     deadline = time.monotonic() + timeout
     logs = ""
@@ -2732,6 +2849,216 @@ def run_product_dynamic_saf_profile(
             tracker_transport.close()
         if controlled_tracker is not None:
             controlled_tracker.close()
+        if peer_transport is not None:
+            peer_transport.close()
+        fixture.close()
+
+
+def run_product_notifications_profile(
+    target: Any,
+    target_kind: str,
+    identity: dict[str, str],
+    probe: ModuleType,
+    interop: ModuleType,
+    ordinal: int,
+    storage: str,
+) -> dict[str, Any]:
+    if not storage.startswith("saf-"):
+        raise BootstrapFailure("product-notifications requires a SAF storage mode")
+    grant_storage = "sdcard" if storage == "saf-sdcard" else "internal"
+    fixture = SeedFixture.create(interop, f"{target_kind}-product-notifications-{ordinal}")
+    peer_transport: ReverseTransport | None = None
+    output_root = f"{probe.grant_path(grant_storage)}/{fixture.name}"
+    staging_root = f"{probe.grant_path(grant_storage)}/.{fixture.name}.rstorrent-staging"
+    part_path = f"{probe.grant_path(grant_storage)}/.{fixture.name}.rstorrent-parts"
+    torrent_id = "unallocated"
+    completion_body = f"{fixture.name} finished downloading"
+    attention_body = f"{fixture.name} · Open RSTorrent for details"
+    completion_prefix = "rstorrent-download_complete-"
+    attention_prefix = "rstorrent-needs_attention-"
+
+    try:
+        clear_application(target)
+        prepare_product_saf(target, probe, grant_storage)
+        peer_transport = ReverseTransport.create(
+            target,
+            target_kind,
+            fixture.host_port,
+            ordinal,
+        )
+        magnet = (
+            f"magnet:?xt=urn:btih:{fixture.info_hash}"
+            f"&dn={fixture.name}&x.pe=127.0.0.1:{peer_transport.device_port}"
+        )
+        baseline_fds = product_fd_count(target)
+        add_count = product_add_count(target, fixture.info_hash)
+        started = target.shell(
+            [
+                "am",
+                "start",
+                "-n",
+                ACTIVITY,
+                "--es",
+                "product_magnet",
+                shlex.quote(magnet),
+            ],
+            timeout=30,
+            check=False,
+        )
+        if "Error:" in started.stdout:
+            raise BootstrapFailure("could not add notification-profile magnet")
+        torrent_id = wait_product_torrent_id(target, fixture.info_hash, add_count)
+        staging_root = f"{probe.grant_path(grant_storage)}/.{torrent_id}.rstorrent-staging"
+        part_path = f"{probe.grant_path(grant_storage)}/.{torrent_id}.rstorrent-parts"
+        metrics, fd_high_water = wait_product_completion(
+            target,
+            torrent_id,
+            baseline_fds,
+        )
+        completion = wait_product_notification(
+            target,
+            tag_prefix=completion_prefix,
+            title="Download complete",
+            body=completion_body,
+        )
+        tap_product_notification(
+            target,
+            probe,
+            body=completion_body,
+            expected_text=fixture.name,
+        )
+        assert_no_product_notification(
+            target,
+            completion_prefix,
+            "completion tap",
+        )
+
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+        target.run(["logcat", "-c"], check=False)
+        restarted = target.shell(
+            ["am", "start", "-W", "-n", ACTIVITY], timeout=30, check=False
+        )
+        if "Error:" in restarted.stdout:
+            raise BootstrapFailure("could not restart notification profile")
+        wait_product_torrent_state(
+            target,
+            torrent_id,
+            state="COMPLETE",
+            description="complete torrent after notification-profile restart",
+            timeout=45,
+        )
+        assert_no_product_notification(
+            target,
+            completion_prefix,
+            "restart baseline",
+        )
+
+        target.run(["logcat", "-c"], check=False)
+        request_product_torrent_action(target, torrent_id, "force_recheck")
+        wait_product_torrent_state(
+            target,
+            torrent_id,
+            state="COMPLETE",
+            description="complete torrent after notification-profile recheck",
+            timeout=45,
+        )
+        assert_no_product_notification(
+            target,
+            completion_prefix,
+            "force recheck",
+        )
+
+        corrupt_relative = next(
+            relative_path
+            for relative_path, length, padding in fixture_files()
+            if length > 0 and not padding
+        )
+        corrupt_path = f"{output_root}/{corrupt_relative}"
+        target.shell(["rm", "-f", corrupt_path])
+        target.shell(["mkdir", "-p", corrupt_path])
+        target.run(["logcat", "-c"], check=False)
+        recheck = target.shell(
+            [
+                "am",
+                "start",
+                "-n",
+                ACTIVITY,
+                "--es",
+                "product_torrent_id",
+                torrent_id,
+                "--es",
+                "product_torrent_action",
+                "force_recheck",
+            ],
+            timeout=30,
+            check=False,
+        )
+        if "Error:" in recheck.stdout:
+            raise BootstrapFailure("could not request malformed-storage recheck")
+        repair_logs = wait_product_log(
+            target,
+            "storage=NEEDS_REPAIR",
+            "live storage-repair transition",
+            timeout=45,
+        )
+        if f"torrent={torrent_id}" not in repair_logs:
+            raise BootstrapFailure("storage-repair transition selected the wrong torrent")
+        attention = wait_product_notification(
+            target,
+            tag_prefix=attention_prefix,
+            title="Download needs attention",
+            body=attention_body,
+        )
+        tap_product_notification(
+            target,
+            probe,
+            body=attention_body,
+            expected_text="Storage",
+        )
+        assert_no_product_notification(target, attention_prefix, "attention tap")
+
+        target.shell(["rm", "-rf", corrupt_path])
+        source_path = fixture.run_path / "seed" / fixture.name / corrupt_relative
+        target.run(["push", str(source_path), corrupt_path], timeout=30)
+
+        request_product_torrent_action(target, torrent_id, "remove")
+        wait_product_log(
+            target,
+            f"saf_removal_confirmed torrent={torrent_id}",
+            "notification-profile removal",
+        )
+        if automatic_notification_records(target, completion_prefix):
+            raise BootstrapFailure("torrent removal retained completion notification")
+        if automatic_notification_records(target, attention_prefix):
+            raise BootstrapFailure("torrent removal retained attention notification")
+
+        return {
+            "target": target_kind,
+            "profile": "product-notifications",
+            "run": ordinal,
+            "identity": identity,
+            "torrent_id": torrent_id,
+            "content_name": fixture.name,
+            "completion": completion,
+            "attention": attention,
+            "completion_tap": "exact_torrent",
+            "attention_tap": "exact_storage",
+            "restart_replay": 0,
+            "recheck_replay": 0,
+            "malformed_path_restored": True,
+            "active_after_removal": 0,
+            "storage_metrics": metrics,
+            "process_fds": {
+                "baseline": baseline_fds,
+                "high_water": fd_high_water,
+                "final": product_fd_count(target),
+            },
+        }
+    finally:
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+        for exact_path in (output_root, staging_root, part_path):
+            target.shell(["rm", "-rf", exact_path], check=False)
+        probe.remove_grant_folder(target, grant_storage)
         if peer_transport is not None:
             peer_transport.close()
         fixture.close()
@@ -5218,6 +5545,7 @@ def main() -> int:
                     "product-pure-v2-saf",
                     "product-identity-reset",
                     "product-incomplete-duplex",
+                    "product-notifications",
                     "product-https-tracker",
                     "product-mse",
                     "product-concurrent-downloads",
@@ -5295,6 +5623,16 @@ def main() -> int:
                         arguments.target,
                         identity,
                         probe,
+                        arguments.storage,
+                    )
+                elif profile == "product-notifications":
+                    result = run_product_notifications_profile(
+                        target,
+                        arguments.target,
+                        identity,
+                        probe,
+                        interop,
+                        ordinal,
                         arguments.storage,
                     )
                 elif profile == "product-incomplete-duplex":

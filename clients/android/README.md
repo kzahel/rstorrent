@@ -81,6 +81,9 @@ python3 clients/android/run_bootstrap.py \
   --profile product-hybrid-saf --no-build
 python3 clients/android/run_bootstrap.py \
   --target avd --avd jstorrent-tablet --storage saf-internal --runs 1 \
+  --profile product-notifications --no-build
+python3 clients/android/run_bootstrap.py \
+  --target avd --avd jstorrent-tablet --storage saf-internal --runs 1 \
   --profile product-external-intake --no-build
 python3 clients/android/run_bootstrap.py \
   --target motox4 --storage saf-sdcard --runs 3 --profile success
@@ -113,6 +116,16 @@ than payload transfer. It proves an initially healthy persisted grant, retains
 the stable root identity after debug-only grant revocation, observes the root
 as unavailable after process restart, repairs it through the system picker,
 and observes it as healthy across another restart.
+
+The `product-notifications` profile performs a genuine controlled SAF
+download, inspects and taps its completion notification, and proves that
+restart and Force recheck do not replay it. It then replaces one verified
+payload file with the wrong object kind to drive the authoritative torrent
+and storage states to `NEEDS_REPAIR`, inspects and taps the exact Storage-route
+attention notification, restores the fixture bytes for safe removal, and
+verifies zero retained automatic notifications. Notification tags are checked
+as opaque and the profile owns its package, grant, peer, transport, payload,
+and AVD cleanup.
 
 The `product-incomplete-duplex` profile stores exactly two verified pieces
 through a capped seed, revokes the SAF grant, force-stops and restarts the
