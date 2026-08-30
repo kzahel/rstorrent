@@ -1,9 +1,9 @@
 # Tactical 197: Android External Torrent Intake
 
-Status: **Ready as of 2026-08-30.** Maintainer direction selected external
+Status: **Active as of 2026-08-30.** Maintainer direction selected external
 Android `magnet:` and `.torrent` activation as the first bounded feature slice
-from the Android JSTorrent replacement-readiness campaign. No implementation
-or release action has occurred yet.
+from the Android JSTorrent replacement-readiness campaign. Implementation is
+authorized; no release action has occurred.
 
 Topics: `android-jstorrent-replacement`, `client-surfaces`,
 `capability-readiness`

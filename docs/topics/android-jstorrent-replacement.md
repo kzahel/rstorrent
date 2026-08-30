@@ -154,7 +154,7 @@ daemon architecture.
   `magnet:`, `application/x-bittorrent`, and supported `content://` `.torrent`
   delivery through one exported intake owner. Reuse the application add flow
   for cold, warm, duplicate, malformed, oversized, canceled, and storage-root
-  cases; do not create a second engine or profile owner. Ready Tactical
+  cases; do not create a second engine or profile owner. Active Tactical
   [`197`](../tactical/197-android-external-torrent-intake.md) owns the exact
   filters, ephemeral intake state, hostile-provider bounds, and AVD evidence.
 - [ ] **JAR-007 — Add background completion and actionable failure
@@ -407,7 +407,7 @@ live run.
    It fixes the candidate identity, migration/reset boundary, payload safety,
    signing inputs, and exact old-version fixture before code changes make
    accidental compatibility promises.
-2. Execute ready Tactical
+2. Execute active Tactical
    [`197`](../tactical/197-android-external-torrent-intake.md) for `JAR-006`
    external Android torrent intake. It is small, user-visible, and independent
    of the larger policy work.
