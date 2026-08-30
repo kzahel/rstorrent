@@ -848,6 +848,14 @@ exactly.
 
 ### Active
 
+- Implement **Tactical `200`** for Android product background lifecycle. The
+  landed Tactical `198` notification eligibility/timeout owner and Tactical
+  `199` live network prerequisite now provide its required seams. Replace the
+  always-sticky owner with default-off notification-gated continuation,
+  qualifying active work, default completion shutdown, optional background
+  seeding, activity handoff, joined intent-preserving shutdown, and the fixed
+  authenticated-companion reconnect grace. Physical phone and ChromeOS closure
+  remain separately authorization-gated.
 - Finish qualification evidence for **Tactical `196`**. The implementation
   now supplies the default-compiled lazy desktop/headless endpoint,
   authenticated direct-only signaling, completed-file **Save file...**,
@@ -879,13 +887,6 @@ exactly.
 
 ### Ready
 
-- Execute **Tactical `200`** for Android product background lifecycle. Replace
-  the always-sticky owner with JSTorrent-shaped default-off background
-  continuation, notification eligibility, qualifying active work, default
-  stop on completion, optional continued seeding, activity handoff, joined
-  intent-preserving shutdown, and a fixed authenticated-companion reconnect
-  grace. Accept finite Android `dataSync` duration; do not add reboot startup,
-  Pause All, a second daemon, low-battery shutdown, VPN, or proxy.
 - Declare the future first supported version and freeze its fresh application
   identities and persistence/API baseline only from that version forward.
   Complete changelog, privacy/support presentation, and the repeatable beta

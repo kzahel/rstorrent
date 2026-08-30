@@ -1,10 +1,11 @@
 # Tactical 200: Android Product Background Lifecycle
 
-Status: **Ready as of 2026-08-30.** Maintainer direction selected
-JSTorrent-like standalone lifetime semantics for the Android replacement while
-deferring VPN, proxy, low-battery thresholds, and configurable companion-idle
-policy. No implementation, emulator/device mutation, or release action has
-occurred yet.
+Status: **Active as of 2026-08-30.** Maintainer direction selected
+JSTorrent-like standalone lifetime semantics for the Android replacement and
+then explicitly authorized end-to-end implementation. VPN, proxy, low-battery
+thresholds, and configurable companion-idle policy remain deferred. Physical
+phone and ChromeOS campaigns still require their separately stated exact
+target authorization.
 
 Topics: `android-jstorrent-replacement`, `beta-release-readiness`,
 `application-control`, `client-surfaces`, `capability-readiness`
@@ -16,13 +17,15 @@ sleep Tactical
 ChromeOS companion Tactical
 [`194`](194-chromeos-android-extension-control.md), and completed external-
 intake Tactical [`197`](197-android-external-torrent-intake.md). Runtime
-completion also depends on notification-transparency Tactical
+integration also consumes notification-transparency Tactical
 [`198`](198-android-completion-and-attention-notifications.md) and live
 unmetered-network Tactical
-[`199`](199-android-live-unmetered-network-enforcement.md). Their pure policy
-and preference work may proceed independently, but this tactical cannot close
-until it consumes Tactical `198`'s notification eligibility and timeout owner
-plus Tactical `199`'s fail-closed startup/live network prerequisite.
+[`199`](199-android-live-unmetered-network-enforcement.md). Their native
+notification eligibility/timeout and fail-closed initial/live network seams
+are implemented with deterministic, generated-boundary, dual-ABI, and owned-
+AVD evidence. Their remaining physical qualification gates do not block this
+tactical's repository or owned-AVD implementation, but keep integrated
+physical closure authorization-gated.
 
 ## Decision And Desired Outcome
 
@@ -575,11 +578,12 @@ policy:
   registry, work classifier, lifecycle timer, foreground demotion, task-
   removal policy, or process-recovery qualification.
 
-Tactical `198` is planned to add notification eligibility, visible-interaction
+Tactical `198` now supplies notification eligibility, visible-interaction
 transparency, generic ongoing status, and prompt API-35 timeout shutdown.
-Tactical `199` is planned to add an initial/live network prerequisite. This
-tactical consumes and completes those seams; it does not create competing
-permission, notification, connectivity, or shutdown owners.
+Tactical `199` now supplies the atomic initial/live network prerequisite and
+joined generation convergence. This tactical consumes and completes those
+seams; it does not create competing permission, notification, connectivity,
+or shutdown owners.
 
 The concrete boundary improvement is one explicit Android product-lifetime
 reducer and coordinator around the incumbent service. Engine/application
@@ -916,7 +920,7 @@ an escalation. Diagnose it within the declared owner and bounds.
 
 ## Restart Checkpoint And Next Action
 
-The exact pre-implementation checkpoint is:
+The exact implementation checkpoint is:
 
 - one `ProductEngineService` always enters foreground, opens one application
   profile, optionally starts the companion, returns sticky, and runs until
@@ -925,20 +929,21 @@ The exact pre-implementation checkpoint is:
 - joined shutdown, authoritative torrent projections, partial wake-lock
   policy, durable torrent intent, external intake, and physical same-device
   companion behavior already exist;
-- notification eligibility/timeout and live network prerequisite are designed
-  by ready Tacticals `198` and `199` but not yet implemented;
+- notification eligibility/timeout and the live network prerequisite are
+  implemented by Tacticals `198` and `199`, including their service-facing
+  Kotlin state and joined native owners;
 - the companion gateway counts active authenticated connections internally but
   does not expose a count-only Android lifecycle observation; and
 - maintained JSTorrent supplies the selected standalone defaults and lifetime
   outcomes, while its split owners, low-battery Pause All, Wi-Fi lock, legacy
   daemon, weaker tests, and Android-15 timeout gap are not adopted.
 
-The next executable action after Tactical `198`'s notification eligibility is
-available is Stage 1: implement the task-free lifecycle reducer, closed work
-classifier, preference codec, monotonic deadline replacement, and exhaustive
-JVM matrix. Then install the one service coordinator and visible-interaction
-handoff before changing sticky recovery or companion behavior. Do not begin
-with Compose toggles, Pause All, an idle polling loop, or a second service.
+The next executable action is Stage 1: implement the task-free lifecycle
+reducer, closed work classifier, preference codec, monotonic deadline
+replacement, and exhaustive JVM matrix. Then install the one service
+coordinator and visible-interaction handoff before changing sticky recovery or
+companion behavior. Do not begin with Compose toggles, Pause All, an idle
+polling loop, or a second service.
 
 After this tactical closes, prioritize production handoff/reset-support work
 or the separately bounded Android playback presentation. VPN and proxy remain
