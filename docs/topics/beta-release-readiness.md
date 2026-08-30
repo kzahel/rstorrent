@@ -561,6 +561,12 @@ is still pending and is not the compatibility oracle.
 
 ## Android/ChromeOS Beta Checklist
 
+This checklist owns the independent RSTorrent Android beta lane. Updating the
+installed `com.jstorrent.app` product is a stronger and separately authorized
+operation; [`android-jstorrent-replacement.md`](android-jstorrent-replacement.md)
+owns its package/state handoff, production-extension rollout, and explicit
+disposition of current JSTorrent Android features.
+
 - [x] **AND-001 — Maintain a real first-party product client.** Compose,
   in-process Rust, foreground-service lifecycle, SAF storage, generated UniFFI
   contract, dual ABI packaging, AVD, ChromeOS, and physical Android evidence

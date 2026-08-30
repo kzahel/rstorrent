@@ -914,8 +914,11 @@ streaming demand, expiry, and revocation remain unchanged.
   `ProductEngineService` application owner, with exact ARC host permission,
   explicit pairing, extension-triggered SAF picker, and retained multi-root
   registry. Physical Compose/React convergence and detached transfer pass.
-  The transport is not releaseable because ChromeOS exposes its wildcard
-  cleartext listener through Wi-Fi; this is not a supported LAN surface.
+  Completed Tactical `194` replaces the former wildcard listener with ARC's
+  fixed guest address: the exact ChromeOS extension connects while the
+  Chromebook Wi-Fi address and spoofed same-LAN requests refuse. Production
+  extension rollout and Android replacement readiness remain separate in
+  [`android-jstorrent-replacement.md`](android-jstorrent-replacement.md).
 - Android durable SAF session storage is physically proven across two retained
   roots. The Compose product presents root setup, current/default selection,
   health, repair, bounded removal, High/Normal/Skip file priority, `Download

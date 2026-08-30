@@ -595,6 +595,9 @@ extension connects from ChromeOS while the Chromebook Wi-Fi address refuses
 raw TCP and the formerly successful spoofed-Host/Origin request. Completion/
 error notifications and metered/VPN enforcement remain the next core Android
 release slices rather than additions to its completed transport boundary.
-When JSTorrent graduation is separately authorized, create one bounded
-tactical that fixes the production handoff and the intentionally best-effort
-legacy-state scope from then-current evidence.
+[`android-jstorrent-replacement.md`](android-jstorrent-replacement.md) now owns
+the stricter Android production-replacement ledger, feature dispositions, and
+coordinated extension rollout. When implementation is authorized, create its
+bounded production-handoff tactical to fix the intentionally best-effort
+legacy-state scope from then-current evidence before scheduling a store
+replacement.

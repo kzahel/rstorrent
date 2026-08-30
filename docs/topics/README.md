@@ -43,6 +43,10 @@ Topics own the current truth for a continuing concern. Tactical docs under
   backend/presentation separation, desktop extension use, ChromeOS Android and
   Crostini choices, launch handoff, backend isolation, and later best-effort
   JSTorrent graduation.
+- [`android-jstorrent-replacement.md`](android-jstorrent-replacement.md):
+  authoritative Android production-replacement gates, current JSTorrent
+  feature dispositions, Play/state/SAF handoff, and coordinated ChromeOS
+  extension rollout.
 - [`runtime-configurations-and-headless-deployment.md`](runtime-configurations-and-headless-deployment.md):
   visible, background, windowless, and headless runtime compositions; explicit
   Linux service, listener, origin, authentication, and reverse-proxy policy;
