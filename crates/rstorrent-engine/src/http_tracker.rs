@@ -362,6 +362,7 @@ fn configured_client_builder(
     family: AddressFamily,
     https_authentication: TrackerHttpsAuthentication,
 ) -> reqwest::ClientBuilder {
+    select_rustls_provider_if_unset();
     // The desktop updater deliberately uses reqwest's native-TLS backend so it
     // does not enable a second rustls crypto provider in this process. Cargo
     // features are workspace-unified, so keep tracker authentication pinned
@@ -388,6 +389,14 @@ fn configured_client_builder(
         return builder.tls_certs_merge([root.clone()]);
     }
     builder
+}
+
+fn select_rustls_provider_if_unset() {
+    // Default desktop/headless builds also link RTC's Ring graph. Rustls
+    // deliberately refuses to guess when both Ring and AWS-LC are compiled,
+    // so the tracker boundary retains the product's existing AWS-LC choice.
+    // A process owner that already selected a provider remains authoritative.
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 }
 
 #[cfg(feature = "test-platform-root")]
@@ -1420,6 +1429,7 @@ mod tests {
         let key = base64::engine::general_purpose::STANDARD
             .decode(key)
             .expect("key DER");
+        select_rustls_provider_if_unset();
         ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(
@@ -1493,6 +1503,7 @@ mod tests {
             params
         }
 
+        select_rustls_provider_if_unset();
         let trusted_root = CertifiedIssuer::self_signed(
             ca_params("RSTorrent test trusted root"),
             KeyPair::generate().expect("trusted root key"),
