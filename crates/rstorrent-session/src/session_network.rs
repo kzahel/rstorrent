@@ -1010,10 +1010,25 @@ impl SessionNetworkRuntime {
     }
 
     pub(crate) async fn shutdown(mut self, views: &ViewHub) -> SessionNetworkShutdown {
+        self.shutdown_inner(views, true).await
+    }
+
+    pub(crate) async fn shutdown_for_network_prerequisite(
+        mut self,
+        views: &ViewHub,
+    ) -> SessionNetworkShutdown {
+        self.shutdown_inner(views, false).await
+    }
+
+    async fn shutdown_inner(
+        &mut self,
+        views: &ViewHub,
+        network_cleanup_permitted: bool,
+    ) -> SessionNetworkShutdown {
         self.begin_shutdown();
         let terminal = if let Some(task) = self.reconciliation_task.take() {
             match task.await {
-                Ok(owner) => owner.shutdown(views).await,
+                Ok(owner) => owner.shutdown(views, network_cleanup_permitted).await,
                 Err(error) => SessionNetworkShutdown {
                     dht_snapshot: None,
                     dht_error: None,
@@ -1024,7 +1039,7 @@ impl SessionNetworkRuntime {
             self.pending_owner
                 .take()
                 .expect("pending owner exists before reconciliation starts")
-                .shutdown(views)
+                .shutdown(views, network_cleanup_permitted)
                 .await
         };
         if let Some(bandwidth) = self.bandwidth.take() {
@@ -2203,10 +2218,19 @@ impl SessionNetworkOwner {
         expiry
     }
 
-    async fn shutdown(mut self, views: &ViewHub) -> SessionNetworkShutdown {
+    async fn shutdown(
+        mut self,
+        views: &ViewHub,
+        network_cleanup_permitted: bool,
+    ) -> SessionNetworkShutdown {
         let mut join_error = None;
         if let Some(discovery) = self.discovery_advertisement.take() {
-            match discovery.shutdown().await {
+            let shutdown = if network_cleanup_permitted {
+                discovery.shutdown().await
+            } else {
+                discovery.shutdown_without_stopped_announces().await
+            };
+            match shutdown {
                 Ok(terminal) => {
                     let terminal_counts = format!(
                         "tasks={},registrations={},tracker_operations={},tracker_high_water={},dht_operations={},dht_high_water={},queue_high_water={}",
@@ -2233,28 +2257,49 @@ impl SessionNetworkOwner {
             }
         }
         if let Some(reachability) = self.reachability.take() {
-            match reachability.shutdown().await {
-                Ok(terminal) => {
-                    let terminal_counts = format!(
-                        "tasks={},mappings={},pinholes={}",
-                        terminal.tasks, terminal.mappings, terminal.pinholes
-                    );
-                    let _ = views.record_diagnostic(
-                        DiagnosticSeverity::Info,
-                        category::DISCOVERY_REACHABILITY,
-                        "reachability_coordinator_stopped",
-                        None,
-                        "Incoming reachability coordinator stopped with joined owners",
-                        &[("terminal_counts", &terminal_counts)],
-                    );
+            if network_cleanup_permitted {
+                match reachability.shutdown().await {
+                    Ok(terminal) => {
+                        let terminal_counts = format!(
+                            "tasks={},mappings={},pinholes={}",
+                            terminal.tasks, terminal.mappings, terminal.pinholes
+                        );
+                        let _ = views.record_diagnostic(
+                            DiagnosticSeverity::Info,
+                            category::DISCOVERY_REACHABILITY,
+                            "reachability_coordinator_stopped",
+                            None,
+                            "Incoming reachability coordinator stopped with joined owners",
+                            &[("terminal_counts", &terminal_counts)],
+                        );
+                    }
+                    Err(error) => remember_error(
+                        &mut join_error,
+                        format!("reachability coordinator: {error}"),
+                    ),
                 }
-                Err(error) => remember_error(
-                    &mut join_error,
-                    format!("reachability coordinator: {error}"),
-                ),
+            } else {
+                match reachability.shutdown_without_network_cleanup().await {
+                    Ok(shutdown) => {
+                        debug_assert_eq!(shutdown.terminal, Default::default());
+                        self.uncertain_mapping = shutdown.uncertain_tcp_mapping;
+                        self.uncertain_udp_mapping = shutdown.uncertain_udp_mapping;
+                        self.uncertain_pinhole = shutdown.uncertain_pinhole;
+                        if let Some(error) = shutdown.error {
+                            remember_error(
+                                &mut join_error,
+                                format!("reachability coordinator: {error}"),
+                            );
+                        }
+                    }
+                    Err(error) => remember_error(
+                        &mut join_error,
+                        format!("reachability coordinator: {error}"),
+                    ),
+                }
             }
         }
-        if let Some(mapping) = self.uncertain_mapping.take() {
+        if network_cleanup_permitted && let Some(mapping) = self.uncertain_mapping.take() {
             remember_error(
                 &mut join_error,
                 format!(
@@ -2266,7 +2311,7 @@ impl SessionNetworkOwner {
                 ),
             );
         }
-        if let Some(mapping) = self.uncertain_udp_mapping.take() {
+        if network_cleanup_permitted && let Some(mapping) = self.uncertain_udp_mapping.take() {
             remember_error(
                 &mut join_error,
                 format!(
@@ -2278,7 +2323,7 @@ impl SessionNetworkOwner {
                 ),
             );
         }
-        if let Some(pinhole) = self.uncertain_pinhole.take() {
+        if network_cleanup_permitted && let Some(pinhole) = self.uncertain_pinhole.take() {
             remember_error(
                 &mut join_error,
                 format!(

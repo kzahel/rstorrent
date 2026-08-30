@@ -507,6 +507,26 @@ impl ViewHub {
         Ok(())
     }
 
+    pub(crate) fn replace_network_runtime_views(
+        &self,
+        dht: DhtInspectionView,
+        client_settings: ClientSettingsRuntimeView,
+    ) -> Result<(), SubscriptionError> {
+        {
+            let mut hub = self
+                .inner
+                .lock()
+                .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+            let previous_torrents = hub.torrents.clone();
+            let previous_client_settings = hub.client_settings.clone();
+            hub.client_settings = client_settings;
+            hub.client_settings_attempt_generation = None;
+            hub.client_settings_mapping_generation = None;
+            hub.publish_changes(&previous_torrents, None, Some(&previous_client_settings))?;
+        }
+        self.publish_dht(dht)
+    }
+
     pub(crate) fn begin_client_settings_attempt(
         &self,
         generation: SettingsDomainGeneration,

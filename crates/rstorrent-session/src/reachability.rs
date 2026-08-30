@@ -6,7 +6,7 @@
 use std::net::{Ipv4Addr, SocketAddrV4, SocketAddrV6};
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use rstorrent_engine::eligible_global_ipv6;
@@ -234,6 +234,7 @@ struct ReachabilityTaskContext {
     settings_generation: SettingsDomainGeneration,
     discovery_config: Option<UpnpDiscoveryConfig>,
     evidence: ReachabilityEvidenceProbe,
+    cleanup_permitted: Arc<AtomicBool>,
 }
 
 #[derive(Debug)]
@@ -242,6 +243,7 @@ pub(crate) struct ReachabilityCoordinator {
     task: Option<JoinHandle<ReachabilityRunOutcome>>,
     counters: Arc<ReachabilityCounters>,
     endpoint_selector: AdvertisedPeerEndpointSelector,
+    cleanup_permitted: Arc<AtomicBool>,
 }
 
 impl ReachabilityCoordinator {
@@ -286,9 +288,11 @@ impl ReachabilityCoordinator {
             views.set_ipv6_pinhole_status_for(settings_generation, pinhole_state.status().clone());
         let cancellation = CancellationToken::new();
         let counters = Arc::new(ReachabilityCounters::default());
+        let cleanup_permitted = Arc::new(AtomicBool::new(true));
         let has_work = tcp_mapping_state.local_endpoint().is_some()
             || udp_mapping_state.local_endpoint().is_some()
             || pinhole_state.internal_endpoint().is_some();
+        let task_cleanup_permitted = cleanup_permitted.clone();
         let task = has_work.then(|| {
             counters.tasks.store(1, Ordering::Release);
             let task_cancellation = cancellation.clone();
@@ -309,6 +313,7 @@ impl ReachabilityCoordinator {
                         settings_generation,
                         discovery_config: None,
                         evidence,
+                        cleanup_permitted: task_cleanup_permitted,
                     },
                 )
                 .await;
@@ -321,6 +326,7 @@ impl ReachabilityCoordinator {
             task,
             counters,
             endpoint_selector,
+            cleanup_permitted,
         }
     }
 
@@ -374,6 +380,13 @@ impl ReachabilityCoordinator {
         mut self,
     ) -> Result<ReachabilityGenerationShutdown, String> {
         self.shutdown_inner(false).await
+    }
+
+    pub(crate) async fn shutdown_without_network_cleanup(
+        mut self,
+    ) -> Result<ReachabilityGenerationShutdown, String> {
+        self.cleanup_permitted.store(false, Ordering::Release);
+        self.shutdown_inner(true).await
     }
 
     async fn shutdown_inner(
@@ -509,6 +522,7 @@ fn context_without_discovery(
         settings_generation,
         discovery_config: None,
         evidence: ReachabilityEvidenceProbe::default(),
+        cleanup_permitted: Arc::new(AtomicBool::new(true)),
     }
 }
 
@@ -869,6 +883,7 @@ async fn run_ipv4_mapping(
         settings_generation,
         discovery_config: _,
         evidence: _,
+        cleanup_permitted,
     } = context;
     if let Err(error) = publish_mapping_status(
         kind,
@@ -993,6 +1008,29 @@ async fn run_ipv4_mapping(
             }
         }
     }
+    if !cleanup_permitted.load(Ordering::Acquire) {
+        counters.mappings.fetch_sub(1, Ordering::AcqRel);
+        let uncertain_mapping = Some(UncertainMappingLease {
+            transport: kind.transport(),
+            external_address: mapping.external_address,
+            external_port: mapping.external_port,
+            expires_at: lease_deadline,
+            detail: "UPnP mapping cleanup suppressed by application network prerequisite"
+                .to_owned(),
+        });
+        return match kind {
+            Ipv4MappingKind::Tcp => ReachabilityRunOutcome {
+                uncertain_tcp_mapping: uncertain_mapping,
+                error: run_error,
+                ..ReachabilityRunOutcome::default()
+            },
+            Ipv4MappingKind::Udp => ReachabilityRunOutcome {
+                uncertain_udp_mapping: uncertain_mapping,
+                error: run_error,
+                ..ReachabilityRunOutcome::default()
+            },
+        };
+    }
     if let Err(error) = publish_mapping_status(
         kind,
         &mut state,
@@ -1058,6 +1096,7 @@ async fn run_ipv6_pinhole(
         settings_generation,
         discovery_config: _,
         evidence,
+        cleanup_permitted,
     } = context;
     let status = match firewall.firewall_status(&cancellation).await {
         Ok(status) => status,
@@ -1276,6 +1315,22 @@ async fn run_ipv6_pinhole(
                 _ = cancellation.cancelled() => return ReachabilityRunOutcome::default(),
                 _ = tokio::time::sleep(RENEWAL_RETRY_DELAY) => continue 'create,
             }
+        }
+
+        if !cleanup_permitted.load(Ordering::Acquire) {
+            counters.pinholes.store(0, Ordering::Release);
+            return ReachabilityRunOutcome {
+                uncertain_pinhole: (latest_possible_deadline > Instant::now()).then(|| {
+                    UncertainPinholeLease {
+                        internal_endpoint,
+                        expires_at: latest_possible_deadline,
+                        detail: "IPv6 UPnP pinhole cleanup suppressed by application network prerequisite"
+                            .to_owned(),
+                    }
+                }),
+                error: run_error,
+                ..ReachabilityRunOutcome::default()
+            };
         }
 
         let _ = publish_pinhole(
@@ -2245,6 +2300,7 @@ mod tests {
                 settings_generation,
                 discovery_config: Some(config),
                 evidence: evidence.clone(),
+                cleanup_permitted: Arc::new(AtomicBool::new(true)),
             },
         ));
         tokio::time::timeout(Duration::from_secs(3), async {

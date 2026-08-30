@@ -476,6 +476,36 @@ impl DiscoveryAdvertisementService {
             Ok(Err(error)) => Err(error),
         }
     }
+
+    pub async fn shutdown_without_stopped_announces(
+        mut self,
+    ) -> Result<DiscoveryAdvertisementOwnerCounts, DiscoveryAdvertisementError> {
+        let (sender, receiver) = oneshot::channel();
+        if self
+            .handle
+            .send(Command::ShutdownImmediately(sender))
+            .await
+            .is_err()
+        {
+            return self
+                .task
+                .take()
+                .expect("advertisement owner exists until shutdown")
+                .await
+                .map_err(|error| DiscoveryAdvertisementError::Join(error.to_string()))?;
+        }
+        let response = receiver.await;
+        let joined = self
+            .task
+            .take()
+            .expect("advertisement owner exists until shutdown")
+            .await
+            .map_err(|error| DiscoveryAdvertisementError::Join(error.to_string()))?;
+        match response {
+            Ok(Ok(())) | Err(_) => joined,
+            Ok(Err(error)) => Err(error),
+        }
+    }
 }
 
 impl Drop for DiscoveryAdvertisementService {
@@ -535,6 +565,7 @@ enum Command {
     },
     Snapshot(oneshot::Sender<DiscoveryAdvertisementRuntimeSnapshot>),
     Shutdown(oneshot::Sender<Result<(), DiscoveryAdvertisementError>>),
+    ShutdownImmediately(oneshot::Sender<Result<(), DiscoveryAdvertisementError>>),
 }
 
 #[derive(Debug)]
@@ -741,6 +772,7 @@ async fn run_service(
     let mut operation_high_water = 0_usize;
     let mut dht_operation_high_water = 0_usize;
     let mut shutting_down = false;
+    let mut immediate_shutdown = false;
     let mut shutdown_response = None;
     let mut shutdown_deadline = None;
 
@@ -967,6 +999,12 @@ async fn run_service(
                             let _ = dht.cancel_lookup(swarm_key.into_bytes()).await;
                         }
                     }
+                    Command::ShutdownImmediately(response) => {
+                        shutting_down = true;
+                        immediate_shutdown = true;
+                        shutdown_response = Some(response);
+                        entries.clear();
+                    }
                 }
             }
             changed = endpoint_receiver.changed() => {
@@ -1026,6 +1064,9 @@ async fn run_service(
                 }
             }
             _ = &mut sleep => {}
+        }
+        if immediate_shutdown {
+            break;
         }
     }
 
@@ -2336,6 +2377,62 @@ mod tests {
 
     fn empty_http_tracker_response() -> &'static [u8] {
         b"HTTP/1.1 200 OK\r\nContent-Length: 26\r\nConnection: close\r\n\r\nd8:intervali900e5:peers0:e"
+    }
+
+    #[tokio::test]
+    async fn immediate_shutdown_suppresses_stopped_tracker_traffic() {
+        let tracker = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind HTTP tracker");
+        let tracker_address = tracker.local_addr().expect("HTTP tracker address");
+        let tracker_task = tokio::spawn(async move {
+            let (mut started_stream, _) = tracker.accept().await.expect("accept started announce");
+            let started = read_http_tracker_request(&mut started_stream).await;
+            started_stream
+                .write_all(empty_http_tracker_response())
+                .await
+                .expect("write started response");
+            let stopped = tokio::time::timeout(Duration::from_millis(250), tracker.accept()).await;
+            (started, stopped.is_ok())
+        });
+        let endpoint = PeerAdvertisementEndpoint::outbound_only(1);
+        let (_endpoint_sender, endpoint_receiver) = watch::channel(endpoint);
+        let network = NetworkConfig::new(
+            NetworkPolicy::LoopbackOnly,
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+        );
+        let mut dht_config = crate::dht::DhtConfig::for_network(NetworkPolicy::Offline);
+        dht_config.bootstrap_nodes.clear();
+        let dht = crate::dht::DhtService::start(dht_config)
+            .await
+            .expect("start offline DHT");
+        let service =
+            DiscoveryAdvertisementService::start(network, endpoint_receiver, dht.handle());
+        let activity = Arc::new(RecordingActivity::default());
+        service
+            .handle()
+            .upsert(http_registration(
+                [31; 20],
+                format!("http://{tracker_address}/announce"),
+                activity.clone(),
+            ))
+            .await
+            .expect("register tracker");
+        activity.wait_for_successes(1).await;
+
+        let terminal = service
+            .shutdown_without_stopped_announces()
+            .await
+            .expect("immediate shutdown");
+        dht.shutdown().await.expect("shutdown DHT");
+        let (started, observed_second_connection) = tracker_task.await.expect("tracker task");
+
+        assert!(started.contains("event=started"));
+        assert!(!observed_second_connection);
+        assert_eq!(terminal.registrations, 0);
+        assert_eq!(terminal.tracker_operations, 0);
+        assert_eq!(terminal.dht_operations, 0);
     }
 
     #[tokio::test]

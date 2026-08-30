@@ -42,7 +42,7 @@ use super::{
 };
 
 impl DhtInspectionView {
-    pub(super) fn inactive() -> Self {
+    pub(crate) fn inactive() -> Self {
         Self {
             lifecycle: DhtLifecycleView::Inactive,
             network_policy: DhtNetworkPolicyView::Offline,
@@ -69,6 +69,16 @@ impl DhtInspectionView {
                 .collect(),
             lookups: Vec::new(),
         }
+    }
+
+    pub(crate) fn suspended(network_policy: rstorrent_engine::NetworkPolicy) -> Self {
+        let mut view = Self::inactive();
+        view.network_policy = match network_policy {
+            rstorrent_engine::NetworkPolicy::Offline => DhtNetworkPolicyView::Offline,
+            rstorrent_engine::NetworkPolicy::LoopbackOnly => DhtNetworkPolicyView::LoopbackOnly,
+            rstorrent_engine::NetworkPolicy::Online => DhtNetworkPolicyView::Online,
+        };
+        view
     }
 }
 

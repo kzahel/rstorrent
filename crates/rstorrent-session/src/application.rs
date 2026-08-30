@@ -18,14 +18,14 @@ use rstorrent_engine::{
     DownloadError, DownloadResourceLimits, ExternalMagnetMetadataDownloadConfig,
     FileSelectionUpdate, IncomingPeerError, IncomingPeerServiceSnapshot, MseHandshakeObservation,
     MseHandshakeOutcome, MseHandshakeSink, NetworkConfig, NetworkPolicy, NetworkPrerequisiteHandle,
-    PeerEncryptionPolicy, PeerTransportPolicy, PlatformStorageClient, PlatformStorageFailureKind,
-    PlatformStorageSpec, ResumableMagnetDownloadConfig, ResumableMetainfoDownloadConfig,
-    ResumeValidationIntent, ResumedStorage, SelectiveStorageError, SessionDownloadResourceSnapshot,
-    SessionDownloadResources, SessionSocketError, SessionUdpError, StorageFileKey,
-    StorageFileLocator, StorageFilePool, StorageFilePoolSnapshot, StorageFileReference,
-    StorageFileRole, StorageObjectKind, TorrentId, TorrentIdentityContext, TorrentPrivacy,
-    TrackerConfig, TrackerEndpoint, TrackerSource, TrackerTransport, VerifiedFileError,
-    VerifiedFileReader, download_magnet_metadata_with_external_discovery,
+    NetworkPrerequisiteSnapshot, PeerEncryptionPolicy, PeerTransportPolicy, PlatformStorageClient,
+    PlatformStorageFailureKind, PlatformStorageSpec, ResumableMagnetDownloadConfig,
+    ResumableMetainfoDownloadConfig, ResumeValidationIntent, ResumedStorage, SelectiveStorageError,
+    SessionDownloadResourceSnapshot, SessionDownloadResources, SessionSocketError, SessionUdpError,
+    StorageFileKey, StorageFileLocator, StorageFilePool, StorageFilePoolSnapshot,
+    StorageFileReference, StorageFileRole, StorageObjectKind, TorrentId, TorrentIdentityContext,
+    TorrentPrivacy, TrackerConfig, TrackerEndpoint, TrackerSource, TrackerTransport,
+    VerifiedFileError, VerifiedFileReader, download_magnet_metadata_with_external_discovery,
     resume_magnet_with_control, resume_metainfo_with_control, torrent_storage_paths,
 };
 use rstorrent_protocol::content::{TorrentContent, TorrentContentProjection};
@@ -254,9 +254,9 @@ fn allocate_application_peer_id() -> Result<[u8; 20], ApplicationError> {
     Ok(peer_id)
 }
 use crate::views::{
-    DurableTorrentViewState, ProgressInputs, SubscriptionError, SubscriptionSpec, TorrentActivity,
-    TorrentEtaRuntime, VIEW_SET_REAPER_INTERVAL_MILLIS, ViewHub, ViewSetLeaseReaper,
-    ViewSubscription, ranges_from_pieces,
+    DhtInspectionView, DurableTorrentViewState, ProgressInputs, SubscriptionError,
+    SubscriptionSpec, TorrentActivity, TorrentEtaRuntime, VIEW_SET_REAPER_INTERVAL_MILLIS, ViewHub,
+    ViewSetLeaseReaper, ViewSubscription, ranges_from_pieces,
 };
 use crate::{
     OpenViewSetRequest, OpenViewSetResponse, UpdateViewSetRequest, ViewSet, ViewSetError,
@@ -489,6 +489,8 @@ pub struct ApplicationService {
     storage_roots: Arc<BTreeMap<String, StorageRootLocation>>,
     network: NetworkConfig,
     network_prerequisite: NetworkPrerequisiteHandle,
+    effective_network_prerequisite: NetworkPrerequisiteSnapshot,
+    session_network_config: SessionNetworkConfig,
     download_resource_limits: DownloadResourceLimits,
     session_download_resources: SessionDownloadResources,
     active_download_cap: Option<u16>,
@@ -643,8 +645,9 @@ impl ApplicationService {
             StorageFilePool::new(config.storage_file_limit, config.platform_storage_client)
                 .map_err(|error| ApplicationError::Configuration(error.to_owned()))?;
         storage_file_pool.set_platform_health_wake(admission_wake.clone());
-        let mut session_network = SessionNetworkRuntime::start(SessionNetworkConfig {
-            settings: active_client_settings,
+        let initial_network_prerequisite = network_prerequisite.load();
+        let session_network_config = SessionNetworkConfig {
+            settings: active_client_settings.clone(),
             network,
             dht: config.dht,
             initial_dht_snapshot,
@@ -657,16 +660,30 @@ impl ApplicationService {
             incoming_inactivity_timeout: config.incoming_inactivity_timeout,
             peer_budget_max_open_files_for_testing: config.peer_budget_max_open_files_for_testing,
             peer_transport_policy: config.peer_transport_policy,
-        })
-        .await?;
+        };
+        let mut session_network = if initial_network_prerequisite.is_allowed() {
+            Some(SessionNetworkRuntime::start(session_network_config.clone()).await?)
+        } else {
+            None
+        };
+        let initial_dht_view = session_network.as_ref().map_or_else(
+            || DhtInspectionView::suspended(network.policy),
+            SessionNetworkRuntime::initial_dht_view,
+        );
+        let initial_settings_view = session_network.as_ref().map_or_else(
+            || crate::ClientSettingsRuntimeView::from_configured(active_client_settings.clone()),
+            SessionNetworkRuntime::initial_settings_view,
+        );
         let views = ViewHub::new_with_runtime_views(
             &snapshot,
             config.view_set_lease,
             speed.history.clone(),
-            session_network.initial_dht_view(),
-            session_network.initial_settings_view(),
+            initial_dht_view,
+            initial_settings_view,
         )?;
-        session_network.attach_views(views.clone());
+        if let Some(session_network) = session_network.as_mut() {
+            session_network.attach_views(views.clone());
+        }
         let eta_runtime = TorrentEtaRuntime::start(views.clone());
         let speed_history = speed.start(views.clone());
         let view_set_reaper =
@@ -676,32 +693,39 @@ impl ApplicationService {
             config.storage_write_concurrency_for_testing,
             config.storage_hash_concurrency_for_testing,
         );
-        let advertised_endpoint = session_network.advertised_endpoint();
         let mut torrent_runtimes = BTreeMap::new();
         let mut next_torrent_generation = 1_u64;
-        for torrent in &snapshot.torrents {
-            let generation = next_torrent_generation;
-            next_torrent_generation = next_torrent_generation.checked_add(1).ok_or_else(|| {
-                ApplicationError::Configuration("torrent runtime generation overflow".to_owned())
-            })?;
-            let (torrent_id, info_hashes) = store.load_identities(&torrent.torrent_id)?;
-            let runtime = TorrentRuntime::new(
-                runtime_identity(torrent_id, info_hashes)?,
-                generation,
-                views.clone(),
-                advertised_endpoint.clone(),
-                session_network
-                    .register_torrent_bandwidth(torrent.transfer_limits.into_engine())
-                    .map_err(|error| ApplicationError::Configuration(error.to_string()))?,
-            )
-            .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
-            torrent_runtimes.insert(torrent.torrent_id.clone(), runtime);
+        if let Some(session_network) = session_network.as_ref() {
+            let advertised_endpoint = session_network.advertised_endpoint();
+            for torrent in &snapshot.torrents {
+                let generation = next_torrent_generation;
+                next_torrent_generation =
+                    next_torrent_generation.checked_add(1).ok_or_else(|| {
+                        ApplicationError::Configuration(
+                            "torrent runtime generation overflow".to_owned(),
+                        )
+                    })?;
+                let (torrent_id, info_hashes) = store.load_identities(&torrent.torrent_id)?;
+                let runtime = TorrentRuntime::new(
+                    runtime_identity(torrent_id, info_hashes)?,
+                    generation,
+                    views.clone(),
+                    advertised_endpoint.clone(),
+                    session_network
+                        .register_torrent_bandwidth(torrent.transfer_limits.into_engine())
+                        .map_err(|error| ApplicationError::Configuration(error.to_string()))?,
+                )
+                .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+                torrent_runtimes.insert(torrent.torrent_id.clone(), runtime);
+            }
         }
         let mut service = Self {
             store: Arc::new(Mutex::new(store)),
             storage_roots: Arc::new(storage_roots),
             network,
             network_prerequisite,
+            effective_network_prerequisite: initial_network_prerequisite,
+            session_network_config,
             download_resource_limits: config.download_resource_limits,
             session_download_resources,
             active_download_cap: config.active_download_cap,
@@ -716,7 +740,7 @@ impl ApplicationService {
             path_part_directory: config.path_part_directory,
             media: MediaCapabilities::new(),
             healthy_platform_roots,
-            session_network: Some(session_network),
+            session_network,
             torrent_runtimes,
             next_torrent_generation,
             speed_recorder,
@@ -774,20 +798,19 @@ impl ApplicationService {
         }
         service.refresh_views()?;
         service.restore_removals().await?;
-        service.restore_running().await?;
-        service.reconcile_incoming_catalog().await?;
-        // Completed-seed structural validation may discover one torrent that
-        // needs the existing checker. Admit that durable generation before
-        // returning the restored session.
-        service.reconcile_admission().await?;
-        service.reconcile_discovery_catalog().await?;
+        if initial_network_prerequisite.is_allowed() {
+            service.restore_running().await?;
+            service.reconcile_incoming_catalog().await?;
+            // Completed-seed structural validation may discover one torrent that
+            // needs the existing checker. Admit that durable generation before
+            // returning the restored session.
+            service.reconcile_admission().await?;
+            service.reconcile_discovery_catalog().await?;
+        }
         service.refresh_views()?;
-        let views = service.views.clone();
-        service
-            .session_network
-            .as_mut()
-            .expect("session network exists after startup")
-            .start_reachability(views);
+        if let Some(session_network) = service.session_network.as_mut() {
+            session_network.start_reachability(service.views.clone());
+        }
         Ok(service)
     }
 
@@ -800,6 +823,191 @@ impl ApplicationService {
     #[must_use]
     pub fn network_prerequisite_handle(&self) -> NetworkPrerequisiteHandle {
         self.network_prerequisite.clone()
+    }
+
+    #[must_use]
+    pub fn network_prerequisite_snapshot(&self) -> NetworkPrerequisiteSnapshot {
+        self.network_prerequisite.load()
+    }
+
+    #[must_use]
+    pub const fn effective_network_prerequisite(&self) -> NetworkPrerequisiteSnapshot {
+        self.effective_network_prerequisite
+    }
+
+    /// Converges the long-lived network owners to the newest atomic
+    /// application prerequisite generation. Durable torrent intent is not
+    /// changed while network ownership is suspended.
+    pub async fn reconcile_network_prerequisite(&mut self) -> Result<(), ApplicationError> {
+        loop {
+            let requested = self.network_prerequisite.load();
+            let converged = requested == self.effective_network_prerequisite
+                && requested.is_allowed() == self.session_network.is_some();
+            if !converged {
+                if requested.is_allowed() {
+                    self.start_network_generation(requested).await?;
+                } else {
+                    self.stop_network_generation(requested).await?;
+                }
+            }
+            if self.network_prerequisite.load() == requested {
+                return Ok(());
+            }
+        }
+    }
+
+    async fn stop_network_generation(
+        &mut self,
+        requested: NetworkPrerequisiteSnapshot,
+    ) -> Result<(), ApplicationError> {
+        if let Some(session_network) = self.session_network.as_mut() {
+            session_network.begin_shutdown();
+        }
+        let active_ids = self.active_download_ids();
+        for torrent_id in &active_ids {
+            if let Some(active) = self.active_download_for(torrent_id) {
+                active.control.cancel();
+            }
+        }
+
+        let terminal = match self.session_network.take() {
+            Some(session_network) => Some(
+                session_network
+                    .shutdown_for_network_prerequisite(&self.views)
+                    .await,
+            ),
+            None => None,
+        };
+        let mut convergence_error = None;
+        for torrent_id in active_ids {
+            let Some(active) = self.take_active_download(&torrent_id) else {
+                continue;
+            };
+            let eta_generation = active.eta_generation;
+            match active.task.await {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) if convergence_error.is_none() => convergence_error = Some(error),
+                Err(error) if error.is_cancelled() => {}
+                Err(error) if convergence_error.is_none() => {
+                    convergence_error = Some(error.to_string());
+                }
+                Ok(Err(_)) | Err(_) => {}
+            }
+            active.control.release_session_resources();
+            if let Err(error) = self
+                .views
+                .deactivate_eta_generation(&torrent_id, eta_generation)
+                && convergence_error.is_none()
+            {
+                convergence_error = Some(format!("torrent ETA deactivation: {error}"));
+            }
+        }
+        for runtime in self.torrent_runtimes.values_mut() {
+            if let Err(error) = runtime.handle().forget_seed_registration()
+                && convergence_error.is_none()
+            {
+                convergence_error = Some(format!("torrent seed registration: {error}"));
+            }
+            if let Err(error) = runtime.publish_inactive()
+                && convergence_error.is_none()
+            {
+                convergence_error = Some(format!("torrent peer state: {error}"));
+            }
+            runtime.deactivate_peer_events();
+        }
+        self.torrent_runtimes.clear();
+
+        if let Some(terminal) = terminal {
+            if let Some(snapshot) = terminal.dht_snapshot {
+                self.session_network_config.initial_dht_snapshot = Some(snapshot.clone());
+                self.store_mut()?.save_dht_snapshot(snapshot)?;
+            }
+            if let Some(error) = terminal.dht_error {
+                convergence_error.get_or_insert_with(|| error.to_string());
+            }
+            if let Some(error) = terminal.join_error {
+                convergence_error.get_or_insert(error);
+            }
+        }
+        let settings = self.store_mut()?.snapshot()?.client_settings;
+        self.session_network_config.settings = settings.clone();
+        self.views.replace_network_runtime_views(
+            DhtInspectionView::suspended(self.network.policy),
+            crate::ClientSettingsRuntimeView::from_configured(settings),
+        )?;
+        self.effective_network_prerequisite = requested;
+        self.refresh_views()?;
+        self.views.record_diagnostic(
+            DiagnosticSeverity::Info,
+            category::LIFECYCLE_SESSION,
+            "application_network_prerequisite_blocked",
+            None,
+            "Application network owners stopped for the live prerequisite",
+            &[("generation", &requested.generation.to_string())],
+        )?;
+        if let Some(error) = convergence_error {
+            return Err(ApplicationError::Join(error));
+        }
+        Ok(())
+    }
+
+    async fn start_network_generation(
+        &mut self,
+        requested: NetworkPrerequisiteSnapshot,
+    ) -> Result<(), ApplicationError> {
+        if self.session_network.is_some() {
+            self.effective_network_prerequisite = requested;
+            return Ok(());
+        }
+        let snapshot = self.store_mut()?.snapshot()?;
+        self.session_network_config.settings = snapshot.client_settings.clone();
+        let mut candidate =
+            SessionNetworkRuntime::start(self.session_network_config.clone()).await?;
+        if self.network_prerequisite.load() != requested {
+            let terminal = candidate
+                .shutdown_for_network_prerequisite(&self.views)
+                .await;
+            if let Some(snapshot) = terminal.dht_snapshot {
+                self.session_network_config.initial_dht_snapshot = Some(snapshot);
+            }
+            if let Some(error) = terminal.dht_error {
+                return Err(error.into());
+            }
+            if let Some(error) = terminal.join_error {
+                return Err(ApplicationError::Join(error));
+            }
+            return Ok(());
+        }
+
+        self.views.replace_network_runtime_views(
+            candidate.initial_dht_view(),
+            candidate.initial_settings_view(),
+        )?;
+        candidate.attach_views(self.views.clone());
+        candidate.start_reachability(self.views.clone());
+        self.session_network = Some(candidate);
+        self.effective_network_prerequisite = requested;
+
+        for torrent in snapshot.torrents {
+            self.ensure_torrent_runtime(&torrent.torrent_id)?
+                .peers()
+                .set_transfer_rate_limits(torrent.transfer_limits.into_engine());
+        }
+        self.restore_running().await?;
+        self.reconcile_incoming_catalog().await?;
+        self.reconcile_discovery_catalog().await?;
+        self.refresh_views()?;
+        self.admission_wake.notify_waiters();
+        self.discovery_wake.notify_waiters();
+        self.views.record_diagnostic(
+            DiagnosticSeverity::Info,
+            category::LIFECYCLE_SESSION,
+            "application_network_prerequisite_allowed",
+            None,
+            "Application network owners restarted for the live prerequisite",
+            &[("generation", &requested.generation.to_string())],
+        )?;
+        Ok(())
     }
 
     pub fn configure_media_origin(&mut self, origin: &str) -> Result<(), MediaOriginError> {
@@ -1628,10 +1836,15 @@ impl ApplicationService {
             Command::MoveDownloadToTop { .. } | Command::MoveDownloadToBottom { .. } => {}
             Command::UpdateClientSettings { .. } => {
                 let settings = self.store_mut()?.snapshot()?.client_settings;
-                self.session_network
-                    .as_mut()
-                    .expect("session network exists while settings are accepted")
-                    .submit_settings(settings)?;
+                self.session_network_config.settings = settings.clone();
+                if let Some(session_network) = self.session_network.as_mut() {
+                    session_network.submit_settings(settings)?;
+                } else {
+                    self.views.replace_network_runtime_views(
+                        DhtInspectionView::suspended(self.network.policy),
+                        crate::ClientSettingsRuntimeView::from_configured(settings),
+                    )?;
+                }
             }
             Command::UpdateTorrentSettings { torrent_id, .. } => {
                 let torrent_id = torrent_id.to_ascii_lowercase();
@@ -1642,7 +1855,9 @@ impl ApplicationService {
                     .into_iter()
                     .find(|torrent| torrent.torrent_id == torrent_id)
                     .map(|torrent| torrent.transfer_limits);
-                if let Some(limits) = limits {
+                if self.session_network.is_some()
+                    && let Some(limits) = limits
+                {
                     self.ensure_torrent_runtime(&torrent_id)?
                         .peers()
                         .set_transfer_rate_limits(limits.into_engine());
@@ -1980,7 +2195,20 @@ impl ApplicationService {
     }
 
     pub fn peer_budget_snapshot(&self) -> rstorrent_engine::PeerBudgetSnapshot {
-        self.session_network().peer_budget().snapshot()
+        self.session_network
+            .as_ref()
+            .map(|network| network.peer_budget().snapshot())
+            .unwrap_or(rstorrent_engine::PeerBudgetSnapshot {
+                configured_limit: 0,
+                effective_limit: 0,
+                incoming_slack: 0,
+                outgoing_connecting: 0,
+                outgoing_established: 0,
+                incoming_connecting: 0,
+                incoming_established: 0,
+                total: 0,
+                total_high_water: 0,
+            })
     }
 
     pub fn bandwidth_snapshot(&self) -> rstorrent_engine::SessionBandwidthSnapshot {
@@ -2022,7 +2250,7 @@ impl ApplicationService {
                     service = service.lock() => service,
                 };
                 if service.session_network.is_none() {
-                    break;
+                    continue;
                 }
                 let result = if admission {
                     service.reconcile_admission().await
@@ -2097,7 +2325,7 @@ impl ApplicationService {
                     break;
                 };
                 if service.session_network.is_none() {
-                    break;
+                    continue;
                 }
                 let result = if admission {
                     service.reconcile_admission().await
@@ -2150,7 +2378,16 @@ impl ApplicationService {
     }
 
     pub fn mse_dh_work_snapshot(&self) -> rstorrent_engine::MseDhWorkSnapshot {
-        self.session_network().mse_dh().snapshot()
+        self.session_network
+            .as_ref()
+            .map(|network| network.mse_dh().snapshot())
+            .unwrap_or(rstorrent_engine::MseDhWorkSnapshot {
+                waiting: 0,
+                active: 0,
+                high_water: 0,
+                tracked: 0,
+                closed: true,
+            })
     }
 
     pub fn suggested_storage_root_path(
@@ -3037,6 +3274,10 @@ impl ApplicationService {
 
     async fn reconcile_admission(&mut self) -> Result<(), ApplicationError> {
         self.reap_finished().await?;
+        if self.session_network.is_none() {
+            self.refresh_views()?;
+            return Ok(());
+        }
         let snapshot = self.store_mut()?.snapshot()?;
         let effective_limit = snapshot
             .client_settings
@@ -3731,6 +3972,9 @@ impl ApplicationService {
     }
 
     async fn unregister_incoming(&mut self, torrent_id: &str) -> Result<(), ApplicationError> {
+        if self.session_network.is_none() {
+            return Ok(());
+        }
         let runtime = self
             .torrent_runtimes
             .get(torrent_id)
@@ -3749,6 +3993,9 @@ impl ApplicationService {
         &mut self,
         torrent_id: &str,
     ) -> Result<(), ApplicationError> {
+        if self.session_network.is_none() {
+            return Ok(());
+        }
         self.ensure_torrent_runtime(torrent_id)?;
         let runtime = self
             .torrent_runtimes
@@ -3800,6 +4047,9 @@ impl ApplicationService {
     }
 
     async fn reconcile_incoming_catalog(&mut self) -> Result<(), ApplicationError> {
+        if self.session_network.is_none() {
+            return Ok(());
+        }
         let torrent_ids = self
             .store_mut()?
             .snapshot()?
@@ -3817,6 +4067,9 @@ impl ApplicationService {
         &mut self,
         torrent_id: &str,
     ) -> Result<(), ApplicationError> {
+        if self.session_network.is_none() {
+            return Ok(());
+        }
         self.ensure_torrent_runtime(torrent_id)?;
         let (resume, catalog_eligible) = {
             let store = self.store_mut()?;
@@ -3879,6 +4132,9 @@ impl ApplicationService {
     }
 
     async fn reconcile_discovery_catalog(&mut self) -> Result<(), ApplicationError> {
+        if self.session_network.is_none() {
+            return Ok(());
+        }
         let torrent_ids = self
             .store_mut()?
             .snapshot()?
@@ -3893,6 +4149,9 @@ impl ApplicationService {
     }
 
     async fn stop_discovery_torrent(&self, torrent_id: &str) -> Result<(), ApplicationError> {
+        if self.session_network.is_none() {
+            return Ok(());
+        }
         let Some(runtime) = self.torrent_runtimes.get(torrent_id) else {
             return Ok(());
         };
@@ -6415,6 +6674,56 @@ mod tests {
             closed.initial_network_prerequisite,
             ApplicationNetworkPrerequisite::WaitingForUnmeteredNetwork
         );
+    }
+
+    #[tokio::test]
+    async fn application_network_prerequisite_starts_closed_and_restarts_owners() {
+        let root = test_root("network-prerequisite-runtime");
+        let mut application =
+            ApplicationService::open(default_config(&root).with_initial_network_prerequisite(
+                ApplicationNetworkPrerequisite::WaitingForUnmeteredNetwork,
+            ))
+            .await
+            .expect("open initially blocked application");
+
+        assert!(application.session_network.is_none());
+        assert_eq!(application.peer_budget_snapshot().total, 0);
+        assert_eq!(application.mse_dh_work_snapshot().tracked, 0);
+        let initial = application.network_prerequisite_snapshot();
+        assert!(!initial.is_allowed());
+        assert_eq!(application.effective_network_prerequisite(), initial);
+
+        let allowed = application
+            .network_prerequisite_handle()
+            .allow()
+            .expect("allow application networking");
+        application
+            .reconcile_network_prerequisite()
+            .await
+            .expect("start network owners");
+        assert!(application.session_network.is_some());
+        assert_eq!(application.effective_network_prerequisite(), allowed);
+        assert!(application.session_udp_snapshot().is_some());
+
+        let blocked = application
+            .network_prerequisite_handle()
+            .close()
+            .expect("close application networking");
+        application
+            .reconcile_network_prerequisite()
+            .await
+            .expect("stop network owners");
+        assert!(application.session_network.is_none());
+        assert_eq!(application.effective_network_prerequisite(), blocked);
+        assert!(application.session_udp_snapshot().is_none());
+        assert_eq!(
+            application
+                .session_download_resource_snapshot()
+                .registered_generations,
+            0
+        );
+
+        application.shutdown().await.expect("shutdown application");
     }
 
     #[tokio::test]
