@@ -151,6 +151,37 @@ fun ProductApp(
                     },
             )
         }
+        state.companionPairing?.let { pairing ->
+            AlertDialog(
+                onDismissRequest = {},
+                title = { Text("Connect Chrome extension?") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(pairing.extensionName)
+                        Text(
+                            "Extension ${pairing.extensionId}\n" +
+                                "Installation ${pairing.installationId}",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = { service?.approveCompanionPairing(pairing.requestId) },
+                    ) {
+                        Text("Approve")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { service?.rejectCompanionPairing(pairing.requestId) },
+                    ) {
+                        Text("Reject")
+                    }
+                },
+            )
+        }
     }
 }
 

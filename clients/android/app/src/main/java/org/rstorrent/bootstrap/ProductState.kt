@@ -77,11 +77,21 @@ data class DiskViewState(
     val pieces: Map<String, DiskPieceView>,
 )
 
+data class CompanionPairingState(
+    val requestId: String,
+    val extensionId: String,
+    val extensionName: String,
+    val installationId: String,
+    val expiresInSeconds: ULong,
+)
+
 data class ProductState(
     val ready: Boolean = false,
     val error: String? = null,
     val storageRootReady: Boolean = false,
     val storageRootLabel: String? = null,
+    val companionPort: UShort? = null,
+    val companionPairing: CompanionPairingState? = null,
     val preventSleepDuringActiveDownloads: Boolean = true,
     val selectedTorrent: String? = null,
     val torrents: Map<String, TorrentView> = emptyMap(),

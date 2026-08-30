@@ -41,6 +41,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import org.rstorrent.bootstrap.uniffi.AndroidApplicationClient
 import org.rstorrent.bootstrap.uniffi.AndroidApplicationConfig
+import org.rstorrent.bootstrap.uniffi.AndroidCompanionRootRequest
 import org.rstorrent.bootstrap.uniffi.AndroidNetworkPolicy
 import org.rstorrent.bootstrap.uniffi.AndroidPlatformStorageRoot
 import org.rstorrent.bootstrap.uniffi.AndroidViewSubscription
@@ -107,6 +108,9 @@ class ProductEngineService : Service() {
     private lateinit var presentationRepository: AndroidPresentationRepository
     private var trackerEvidenceSubscription: AndroidViewSubscription? = null
     private var trackerEvidenceJob: Job? = null
+    private var companionPairingJob: Job? = null
+    private var companionRootJob: Job? = null
+    private val companionOwnerMutation = Mutex()
     @Volatile private var safStorageJobs: List<Job> = emptyList()
     @Volatile private var defaultSafRootId: String? = null
     private val safRootMutation = Mutex()
@@ -173,6 +177,14 @@ class ProductEngineService : Service() {
                 refreshSafRootState()
                 mutableState.update { it.copy(ready = true) }
                 clientReady.complete(Unit)
+                if (
+                    ProductCompanionPreference.shouldStart(
+                        isChromeOs(),
+                        ProductCompanionPreference.read(this@ProductEngineService),
+                    )
+                ) {
+                    startChromeOsCompanionOwners()
+                }
                 observePowerAndNotification()
             } catch (error: Throwable) {
                 if (!clientReady.isCompleted) {
@@ -201,6 +213,8 @@ class ProductEngineService : Service() {
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
+        } else if (intent?.action == ACTION_ENABLE_CHROMEOS_COMPANION) {
+            enableChromeOsCompanion()
         }
         return START_STICKY
     }
@@ -750,6 +764,7 @@ class ProductEngineService : Service() {
     fun setSafTree(
         treeUri: Uri,
         repairRootId: String? = null,
+        companionRequestId: String? = null,
     ) {
         ProductSafRootRegistry.recordSelectionCandidate(this, treeUri, repairRootId)
         scope.launch {
@@ -760,16 +775,186 @@ class ProductEngineService : Service() {
                 refreshSafRootState()
                 Log.i(TAG, "saf_root_health source=selection available=$storageRootHealthy")
                 Log.i(TAG, "saf_tree_ready root=${defaultSafRootId ?: "none"}")
+                if (companionRequestId != null) {
+                    completeCompanionRootSelection(companionRequestId, repairRootId)
+                }
                 if (!storageRootHealthy) return@launch
                 advanceSaf(mutableState.value)
                 mutableState.value.torrents.values
                     .filter { it.state == TorrentState.AWAITING_STORAGE }
                     .forEach { resume(it.torrentId) }
             } catch (error: Throwable) {
+                if (companionRequestId != null && ::client.isInitialized) {
+                    client.failCompanionRootRequest(
+                        companionRequestId,
+                        error.message ?: "Unable to use the selected download folder",
+                    )
+                    cancelCompanionRootNotification()
+                }
                 reportError(error)
             }
         }
     }
+
+    fun cancelCompanionRootRequest(requestId: String) {
+        scope.launch {
+            try {
+                clientReady.await()
+                client.completeCompanionRootRequest(requestId, null)
+                cancelCompanionRootNotification()
+            } catch (error: Throwable) {
+                if (!stopped.get()) reportError(error)
+            }
+        }
+    }
+
+    fun approveCompanionPairing(requestId: String) {
+        resolveCompanionPairing(requestId, approve = true)
+    }
+
+    fun rejectCompanionPairing(requestId: String) {
+        resolveCompanionPairing(requestId, approve = false)
+    }
+
+    private fun resolveCompanionPairing(requestId: String, approve: Boolean) {
+        scope.launch {
+            try {
+                clientReady.await()
+                if (approve) client.approveCompanionPairing(requestId)
+                else client.rejectCompanionPairing(requestId)
+                mutableState.update {
+                    if (it.companionPairing?.requestId == requestId) {
+                        it.copy(companionPairing = null)
+                    } else {
+                        it
+                    }
+                }
+            } catch (error: Throwable) {
+                reportError(error)
+            }
+        }
+    }
+
+    private fun enableChromeOsCompanion() {
+        if (!isChromeOs()) {
+            Log.w(TAG, "ignored ChromeOS companion enable request on a non-ChromeOS device")
+            return
+        }
+        ProductCompanionPreference.enable(this)
+        scope.launch {
+            try {
+                clientReady.await()
+                startChromeOsCompanionOwners()
+            } catch (error: Throwable) {
+                reportError(error)
+            }
+        }
+    }
+
+    private suspend fun startChromeOsCompanionOwners() {
+        companionOwnerMutation.withLock {
+            check(isChromeOs()) { "ChromeOS companion listener is unavailable on this device" }
+            val port = client.startChromeosCompanion()
+            mutableState.update { it.copy(companionPort = port) }
+            if (companionPairingJob?.isActive != true) {
+                companionPairingJob =
+                    scope.launch {
+                        while (!stopped.get()) {
+                            val pending = client.pendingCompanionPairing()
+                            mutableState.update {
+                                it.copy(
+                                    companionPairing =
+                                        pending?.let { request ->
+                                            CompanionPairingState(
+                                                request.requestId,
+                                                request.extensionId,
+                                                request.extensionName,
+                                                request.installationId,
+                                                request.expiresInSeconds,
+                                            )
+                                        },
+                                )
+                            }
+                            delay(COMPANION_PAIRING_POLL_MILLIS)
+                        }
+                    }
+            }
+            if (companionRootJob?.isActive != true) {
+                companionRootJob =
+                    scope.launch {
+                        while (!stopped.get()) {
+                            val request = client.nextCompanionRootRequest() ?: return@launch
+                            presentCompanionRootRequest(request)
+                        }
+                    }
+            }
+            Log.i(TAG, "chromeos_companion_ready port=$port")
+        }
+    }
+
+    private suspend fun completeCompanionRootSelection(
+        requestId: String,
+        repairRootId: String?,
+    ) {
+        val storage = client.safStorageSnapshot()
+        val selectedRootId = repairRootId ?: storage.defaultRoot
+        val root = storage.roots.singleOrNull { it.rootId == selectedRootId }
+        if (root?.availability != StorageRootAvailability.AVAILABLE) {
+            client.failCompanionRootRequest(
+                requestId,
+                "The selected download folder is unavailable",
+            )
+        } else {
+            client.completeCompanionRootRequest(requestId, root)
+        }
+        cancelCompanionRootNotification()
+    }
+
+    private fun presentCompanionRootRequest(request: AndroidCompanionRootRequest) {
+        val open =
+            Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                putExtra(MainActivity.EXTRA_COMPANION_ROOT_REQUEST, request.requestId)
+                request.repairRoot?.let {
+                    putExtra(MainActivity.EXTRA_COMPANION_REPAIR_ROOT, it)
+                }
+            }
+        val pending =
+            PendingIntent.getActivity(
+                this,
+                COMPANION_ROOT_PENDING_INTENT_ID,
+                open,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        val builder =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Notification.Builder(this, CHANNEL_ID)
+            } else {
+                @Suppress("DEPRECATION")
+                Notification.Builder(this)
+            }
+        val notification =
+            builder
+                .setSmallIcon(R.drawable.ic_rstorrent_notification)
+                .setContentTitle("Choose an RSTorrent download folder")
+                .setContentText("Chrome needs Android folder access to continue")
+                .setContentIntent(pending)
+                .setAutoCancel(true)
+                .build()
+        getSystemService(NotificationManager::class.java)
+            .notify(COMPANION_ROOT_NOTIFICATION_ID, notification)
+        runCatching { startActivity(open) }
+            .onFailure { Log.i(TAG, "companion root picker waits for notification action") }
+    }
+
+    private fun cancelCompanionRootNotification() {
+        getSystemService(NotificationManager::class.java)
+            .cancel(COMPANION_ROOT_NOTIFICATION_ID)
+    }
+
+    private fun isChromeOs(): Boolean =
+        packageManager.hasSystemFeature("org.chromium.arc") ||
+            packageManager.hasSystemFeature("org.chromium.arc.device_management")
 
     private suspend fun reconcileSafRootRegistry() {
         safRootMutation.withLock {
@@ -1866,6 +2051,9 @@ class ProductEngineService : Service() {
         if (::presentationRepository.isInitialized) presentationRepository.close()
         trackerEvidenceJob?.cancel()
         trackerEvidenceSubscription?.close()
+        companionPairingJob?.cancel()
+        companionRootJob?.cancel()
+        cancelCompanionRootNotification()
         if (::client.isInitialized) {
             try {
                 Log.i(TAG, "product_shutdown_client_begin")
@@ -1943,8 +2131,13 @@ class ProductEngineService : Service() {
 
     companion object {
         const val ACTION_STOP = "org.rstorrent.bootstrap.PRODUCT_STOP"
+        const val ACTION_ENABLE_CHROMEOS_COMPANION =
+            "org.rstorrent.bootstrap.ENABLE_CHROMEOS_COMPANION"
         private const val CHANNEL_ID = "rstorrent-product"
         private const val NOTIFICATION_ID = 42
+        private const val COMPANION_ROOT_NOTIFICATION_ID = 43
+        private const val COMPANION_ROOT_PENDING_INTENT_ID = 43
+        private const val COMPANION_PAIRING_POLL_MILLIS = 250L
         private const val MAX_TORRENT_SOURCE_BYTES = 64 * 1024 * 1024
         private const val SAF_PROVIDER_CONCURRENCY = 4
         private const val ANDROID_RATE_BYTES_PER_SECOND = 24 * 1024

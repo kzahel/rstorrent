@@ -35,6 +35,8 @@ class MainActivity : ComponentActivity() {
     private var pendingProductTorrentSelection: FileSelectionIntent = FileSelectionIntent.All
     private var pendingProductTorrentStartContent = true
     private var pendingProductRepairRootId: String? = null
+    private var pendingProductCompanionRootRequestId: String? = null
+    private var pendingProductCompanionCancelledRequestId: String? = null
     private var pendingProductTrackerPolicy: String? = null
     private var pendingProductEncryptionPolicy: String? = null
     private var pendingProductStartContent = true
@@ -49,13 +51,29 @@ class MainActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             val data = result.data
             val treeUri = data?.data
-            if (result.resultCode != RESULT_OK || treeUri == null) return@registerForActivityResult
-            val flags = data.flags and ProductSafDocuments.GRANT_FLAGS
-            contentResolver.takePersistableUriPermission(treeUri, flags)
+            val companionRequestId = pendingProductCompanionRootRequestId
             val repairRootId = pendingProductRepairRootId
             pendingProductRepairRootId = null
+            if (result.resultCode != RESULT_OK || treeUri == null) {
+                pendingProductCompanionRootRequestId = null
+                if (companionRequestId != null) {
+                    val service = productService.value
+                    if (service == null) {
+                        pendingProductCompanionCancelledRequestId = companionRequestId
+                    } else {
+                        service.cancelCompanionRootRequest(companionRequestId)
+                    }
+                }
+                return@registerForActivityResult
+            }
+            val flags = data.flags and ProductSafDocuments.GRANT_FLAGS
+            contentResolver.takePersistableUriPermission(treeUri, flags)
             ProductSafDocuments.persistTree(this, treeUri, repairRootId)
-            productService.value?.setSafTree(treeUri, repairRootId)
+            val service = productService.value
+            if (service != null) {
+                pendingProductCompanionRootRequestId = null
+                service.setSafTree(treeUri, repairRootId, companionRequestId)
+            }
         }
     private val productTorrentPicker =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -90,8 +108,14 @@ class MainActivity : ComponentActivity() {
                         service.setSafTree(
                             android.net.Uri.parse(encoded),
                             registry.selectionRepairRootId,
+                            pendingProductCompanionRootRequestId,
                         )
+                        pendingProductCompanionRootRequestId = null
                     }
+                }
+                pendingProductCompanionCancelledRequestId?.let {
+                    pendingProductCompanionCancelledRequestId = null
+                    service.cancelCompanionRootRequest(it)
                 }
                 productService.value = service
                 pendingProductMagnet?.let {
@@ -180,6 +204,12 @@ class MainActivity : ComponentActivity() {
             }.getOrDefault(ProductThemeMode.SYSTEM)
         dynamicColor.value = preferences.getBoolean(PREFERENCE_DYNAMIC_COLOR, true)
         pendingProductTorrentUri = savedInstanceState?.getString(STATE_PENDING_TORRENT_URI)
+        pendingProductCompanionRootRequestId =
+            savedInstanceState?.getString(STATE_PENDING_COMPANION_ROOT_REQUEST)
+        pendingProductRepairRootId =
+            savedInstanceState?.getString(STATE_PENDING_COMPANION_REPAIR_ROOT)
+        pendingProductCompanionCancelledRequestId =
+            savedInstanceState?.getString(STATE_PENDING_COMPANION_ROOT_CANCELLED)
         pendingProductTorrentStartContent =
             savedInstanceState?.getBoolean(STATE_PENDING_TORRENT_START, true) ?: true
         route(intent)
@@ -188,6 +218,15 @@ class MainActivity : ComponentActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         pendingProductTorrentUri?.let { outState.putString(STATE_PENDING_TORRENT_URI, it) }
+        pendingProductCompanionRootRequestId?.let {
+            outState.putString(STATE_PENDING_COMPANION_ROOT_REQUEST, it)
+        }
+        pendingProductRepairRootId?.let {
+            outState.putString(STATE_PENDING_COMPANION_REPAIR_ROOT, it)
+        }
+        pendingProductCompanionCancelledRequestId?.let {
+            outState.putString(STATE_PENDING_COMPANION_ROOT_CANCELLED, it)
+        }
         outState.putBoolean(STATE_PENDING_TORRENT_START, pendingProductTorrentStartContent)
     }
 
@@ -430,7 +469,20 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        startProductService()
+        startProductService(
+            if (isChromeOsCompanionLaunch(command)) {
+                ProductEngineService.ACTION_ENABLE_CHROMEOS_COMPANION
+            } else {
+                null
+            },
+        )
+        command.getStringExtra(EXTRA_COMPANION_ROOT_REQUEST)?.let { requestId ->
+            command.removeExtra(EXTRA_COMPANION_ROOT_REQUEST)
+            pendingProductCompanionRootRequestId = requestId
+            val repairRootId = command.getStringExtra(EXTRA_COMPANION_REPAIR_ROOT)
+            command.removeExtra(EXTRA_COMPANION_REPAIR_ROOT)
+            launchProductTreePicker(repairRootId)
+        }
         if (
             ProductSafDocuments.isDebuggable(this) &&
             command.getBooleanExtra(EXTRA_PRODUCT_SELECT_SAF, false)
@@ -491,8 +543,8 @@ class MainActivity : ComponentActivity() {
         finishIfRequested(command)
     }
 
-    private fun startProductService() {
-        val serviceIntent = Intent(this, ProductEngineService::class.java)
+    private fun startProductService(action: String? = null) {
+        val serviceIntent = Intent(this, ProductEngineService::class.java).setAction(action)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(serviceIntent)
         } else {
@@ -595,6 +647,10 @@ class MainActivity : ComponentActivity() {
                 BootstrapContract.ACTION_VERIFY,
             )
 
+    private fun isChromeOsCompanionLaunch(command: Intent): Boolean =
+        command.data?.scheme == CHROMEOS_COMPANION_SCHEME &&
+            command.data?.host == CHROMEOS_COMPANION_HOST
+
     private fun finishIfRequested(command: Intent) {
         if (command.getBooleanExtra("finish_activity", false)) {
             finish()
@@ -621,6 +677,14 @@ class MainActivity : ComponentActivity() {
         private const val PREFERENCE_DYNAMIC_COLOR = "dynamic_color"
         private const val STATE_PENDING_TORRENT_URI = "pending_torrent_uri"
         private const val STATE_PENDING_TORRENT_START = "pending_torrent_start"
+        private const val STATE_PENDING_COMPANION_ROOT_REQUEST =
+            "pending_companion_root_request"
+        private const val STATE_PENDING_COMPANION_REPAIR_ROOT =
+            "pending_companion_repair_root"
+        private const val STATE_PENDING_COMPANION_ROOT_CANCELLED =
+            "pending_companion_root_cancelled"
+        private const val CHROMEOS_COMPANION_SCHEME = "rstorrent"
+        private const val CHROMEOS_COMPANION_HOST = "chromeos-companion"
         const val EXTRA_PRODUCT_MAGNET = "product_magnet"
         const val EXTRA_PRODUCT_TRACKER_HTTPS_POLICY = "product_tracker_https_policy"
         const val EXTRA_PRODUCT_ENCRYPTION_POLICY = "product_encryption_policy"
@@ -638,5 +702,7 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_PRODUCT_TRACKER_EVIDENCE_TORRENT = "product_tracker_evidence_torrent"
         const val EXTRA_PRODUCT_SELECT_SAF = "product_select_saf"
         const val EXTRA_PRODUCT_RELEASE_SAF_GRANT = "product_release_saf_grant"
+        const val EXTRA_COMPANION_ROOT_REQUEST = "companion_root_request"
+        const val EXTRA_COMPANION_REPAIR_ROOT = "companion_repair_root"
     }
 }
