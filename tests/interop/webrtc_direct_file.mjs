@@ -4,18 +4,15 @@ import process from "node:process";
 import readline from "node:readline";
 
 const require = createRequire(new URL("../../clients/web/package.json", import.meta.url));
-const { chromium, firefox } = require("playwright");
+const { chromium, firefox, webkit } = require("playwright");
 const browserName = process.argv[2] || "chromium";
-const browserType = { chromium, firefox }[browserName];
+const browserType = { chromium, firefox, webkit }[browserName];
 if (!browserType) throw new Error(`unsupported browser: ${browserName}`);
 const fixtureMib = process.env.RSTORRENT_WEBRTC_FIXTURE_MIB || "8";
 if (!/^[1-9][0-9]{0,2}$/.test(fixtureMib) || Number(fixtureMib) > 256) {
   throw new Error(`invalid RSTORRENT_WEBRTC_FIXTURE_MIB: ${fixtureMib}`);
 }
-
-const cargo = spawn(
-  "cargo",
-  [
+const cargoArguments = [
     "run",
     "--quiet",
     "-p",
@@ -27,7 +24,11 @@ const cargo = spawn(
     "--",
     "--fixture-mib",
     fixtureMib,
-  ],
+];
+
+const cargo = spawn(
+  "cargo",
+  cargoArguments,
   { cwd: new URL("../..", import.meta.url), env: { ...process.env, RUST_BACKTRACE: "1" } },
 );
 cargo.stderr.pipe(process.stderr);
@@ -93,7 +94,10 @@ try {
   await page.click("#start");
   await page.waitForFunction(() => window.__result !== undefined, null, { timeout: 120_000 });
   const outcome = await page.evaluate(() => window.__result);
-  if (!outcome.ok) throw new Error(outcome.error);
+  if (!outcome.ok) {
+    const server = await fetch(new URL("status", details.url)).then((response) => response.json());
+    throw new Error(`${outcome.error}; server=${JSON.stringify(server)}`);
+  }
   await page.click("#close");
   await page.waitForFunction(() => window.__terminal !== undefined, null, { timeout: 20_000 });
   const terminal = await page.evaluate(() => window.__terminal);
