@@ -94,12 +94,12 @@ that scope and its cleanup or compatibility rules explicitly.
 ## Current Tacticals
 
 - [`195-webrtc-direct-file-feasibility-spike.md`](195-webrtc-direct-file-feasibility-spike.md):
-  ready; compares high-level and Sans-I/O pure-Rust WebRTC endpoints, proves a
-  lazy browser-to-Rust DataChannel and real verified file ranges, investigates
-  one bounded browser consumption path, and records exact feature-off/on
-  binary, package, dependency, idle, active, and cleanup costs before a
-  Proceed, Continue narrowly, or Reject recommendation. Product UI, default
-  enablement, TURN, public reachability, and deployment are excluded.
+  complete with a Continue narrowly recommendation; retains lower `rtc` behind
+  a default-off feature after Chromium/Firefox verified-range and OPFS success,
+  exact current-host link/package measurements, and zero-owner cleanup.
+  Playwright WebKit negotiation remains the one focused feasibility blocker;
+  product UI, default enablement, TURN, public reachability, and deployment
+  remain excluded.
 - [`194-chromeos-android-extension-control.md`](194-chromeos-android-extension-control.md):
   blocked on physical same-LAN isolation; preserves the JSTorrent ChromeOS
   companion user journey while
