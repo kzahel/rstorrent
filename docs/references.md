@@ -77,6 +77,36 @@ document metadata, history, and each BEP's copyright section.
 Where deployed clients disagree with a specification, record the observed
 compatibility behavior rather than silently replacing the documented contract.
 
+## Direct Remote Transport References
+
+The design-only
+[`direct remote file streaming topic`](topics/direct-remote-file-streaming.md)
+uses the following primary protocol and browser sources:
+
+- [RFC 8831](https://www.rfc-editor.org/rfc/rfc8831.html) defines WebRTC
+  DataChannels as SCTP over DTLS over ICE/UDP, including reliable and partially
+  reliable delivery, congestion control, multiplexing, and file transfer;
+- [RFC 8445](https://www.rfc-editor.org/rfc/rfc8445.html) defines ICE host,
+  server-reflexive, peer-reflexive, and relayed candidates plus connectivity
+  checks and candidate lifecycle;
+- the [W3C WebRTC Recommendation](https://www.w3.org/TR/webrtc/) defines the
+  browser `RTCPeerConnection` and `RTCDataChannel` APIs;
+- the [W3C WebTransport specification](https://www.w3.org/TR/webtransport/)
+  defines the alternative browser stream/datagram and certificate-hash API;
+  and
+- the [W3C Service Workers specification](https://www.w3.org/TR/service-workers/)
+  defines intercepted fetch and synthetic response behavior relevant to a
+  possible browser range adapter.
+
+The 2026-08-30 dependency survey also identified the official pure-Rust
+[`webrtc-rs/webrtc`](https://github.com/webrtc-rs/webrtc),
+[`webrtc-rs/rtc`](https://github.com/webrtc-rs/rtc), and
+[`str0m`](https://github.com/algesten/str0m) projects for a future measured
+bake-off. None is selected, pinned, linked, vendored, or copied. A later
+implementation tactical must record the exact reviewed revision, tests,
+transitive dependency and license graph, browser evidence, and package cost
+before accepting one.
+
 Tactical
 [`113`](tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md) uses
 the UPnP Forum's

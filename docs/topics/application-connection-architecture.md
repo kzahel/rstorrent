@@ -127,6 +127,9 @@ hardware-key threat model around a relay circuit.
 [`http-file-serving-and-streaming.md`](http-file-serving-and-streaming.md)
 owns the separate capability-authorized media-byte listener and its rule that
 HTTP file reads never become another application-control API.
+[`direct-remote-file-streaming.md`](direct-remote-file-streaming.md) owns the
+proposed optional direct remote byte transport and preserves this topic's rule
+that bulk content stays outside the application control connection.
 
 This topic records a future remote-compatibility requirement. It does not by
 itself authorize a production listener, relay service, pairing flow, account

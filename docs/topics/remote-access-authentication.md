@@ -142,6 +142,10 @@ allows the exact capability route through its accepted Tailscale HTTPS
 authority under the same all-admitted-callers-are-owners operator posture.
 Any general product remote-media route still requires the principal,
 authenticated encryption, host identity, and authorization selected here.
+[`direct-remote-file-streaming.md`](direct-remote-file-streaming.md) owns the
+separate proposal for optional lazy direct browser-to-host file bytes, WebRTC
+signaling over this encrypted circuit, browser consumption, path privacy, and
+direct-transfer audit. It does not change the authority model defined here.
 
 ## Product Outcome
 

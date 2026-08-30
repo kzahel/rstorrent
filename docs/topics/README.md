@@ -114,8 +114,13 @@ Topics own the current truth for a continuing concern. Tactical docs under
   layering beneath the unchanged frame contract.
 - [`http-file-serving-and-streaming.md`](http-file-serving-and-streaming.md):
   capability-authorized HTTP reads of verified torrent files, ephemeral
-  loopback and existing-gateway port policy, and the separate future
-  incomplete-file streaming scheduler boundary.
+  loopback and existing-gateway port policy, and verified-only incomplete-file
+  streaming demand.
+- [`direct-remote-file-streaming.md`](direct-remote-file-streaming.md): optional
+  lazily started direct browser-to-host file transport, WebRTC/DataChannel and
+  alternative-path evaluation, browser range/viewing adapters, security,
+  audit, package-cost measurement, and the evidence required before choosing
+  a dependency or release default.
 - [`remote-access-authentication.md`](remote-access-authentication.md):
   owner username/passphrase E2E access, SRP and OPAQUE background, host and
   device identity, hardware-backed degradation, clone and active-proxy threat

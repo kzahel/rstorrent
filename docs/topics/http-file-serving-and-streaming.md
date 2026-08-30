@@ -39,6 +39,10 @@ owns the semantic operation that may create or revoke a file URL.
 bounded file-acquisition mechanisms beneath logical reads.
 [`remote-access-authentication.md`](remote-access-authentication.md) owns any
 future nonlocal principal, encryption, relay, or device-authentication design.
+[`direct-remote-file-streaming.md`](direct-remote-file-streaming.md) owns the
+proposed optional browser-to-host byte transport, direct-path discovery,
+browser range adapter, packaging cost, and audit above this unchanged file
+authority.
 
 HTTP file serving is not an application-control side channel. The listener
 does not accept torrent commands, expose views, browse storage roots, or make
@@ -400,6 +404,8 @@ and deliberate deferrals.
 ## Recommended Next Work
 
 Stable sharing, remote exposure, playback UI, Android streaming presentation,
-and transcoding remain independent product decisions. A future embedded
-player may provide real presentation deadlines through the existing bounded
-demand seam; byte offsets alone remain insufficient to invent them.
+and transcoding remain independent product decisions. The direct remote path
+and its browser presentation investigation now live in
+[`direct-remote-file-streaming.md`](direct-remote-file-streaming.md). A future
+embedded player may provide real presentation deadlines through the existing
+bounded demand seam; byte offsets alone remain insufficient to invent them.
