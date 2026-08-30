@@ -101,17 +101,20 @@ that scope and its cleanup or compatibility rules explicitly.
   Proceed, Continue narrowly, or Reject recommendation. Product UI, default
   enablement, TURN, public reachability, and deployment are excluded.
 - [`194-chromeos-android-extension-control.md`](194-chromeos-android-extension-control.md):
-  active; preserves the JSTorrent ChromeOS companion user journey while
+  blocked on physical same-LAN isolation; preserves the JSTorrent ChromeOS
+  companion user journey while
   reversing its ownership. One Android foreground Rust application/engine/
   profile/SAF owner remains authoritative and the beta extension packages the
   shared React UI as an explicitly paired, detachable same-device
   presentation. It also makes the shared root action launch Android's SAF
   picker and retains earlier grants for torrents bound before a new root
   becomes current. Exact ARC permission/LNA, Host/Origin/auth, root-registry
-  crash recovery, two-root lifecycle, routing isolation, Compose coexistence,
-  detached-transfer, reconnect, revoke, joined shutdown, and physical
-  Chromebook evidence remain open; raw IO, legacy import, media, store
-  publication, notifications, and network policy are excluded.
+  crash recovery, two-root lifecycle, Compose coexistence, detached transfer,
+  and reconnect pass. ChromeOS forwards the cleartext wildcard Android
+  listener through the Chromebook's Wi-Fi address, so a non-LAN-reachable OS
+  transport decision is required before release or completion. Raw IO, legacy
+  import, media, store publication, notifications, and network policy are
+  excluded.
 - [`193-stateless-foreground-downloader.md`](193-stateless-foreground-downloader.md):
   complete; adds one finite native downloader that composes the existing
   ephemeral in-memory-SQLite application service, writes directly to final
