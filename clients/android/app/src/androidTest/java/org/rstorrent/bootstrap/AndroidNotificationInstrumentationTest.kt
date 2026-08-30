@@ -160,6 +160,59 @@ class AndroidNotificationInstrumentationTest {
     }
 
     @Test
+    fun cPersistsPreferenceBeforeSuppressingWithoutEnableReplay() {
+        val state = MutableStateFlow(ProductState())
+        val coordinator = coordinator(state)
+        val store = ProductNotificationPreferenceStore(context)
+        try {
+            coordinator.setPreference(
+                ProductNotificationPreference.DOWNLOAD_COMPLETE,
+                false,
+                1,
+            )
+            assertFalse(state.value.notifications.preferences.downloadComplete)
+            assertFalse(store.read().downloadComplete)
+
+            val initial = torrent(ID, TorrentState.DOWNLOADING, received = 0UL)
+            val baseline = ProductState(ready = true, torrents = mapOf(ID to initial))
+            state.value = baseline
+            coordinator.onTorrentListUpdate(snapshot(listOf(initial)), baseline)
+            val progress = initial.copy(receivedBytes = "1")
+            val progressState = baseline.copy(torrents = mapOf(ID to progress))
+            state.value = progressState
+            coordinator.onTorrentListUpdate(patch(listOf(progress)), progressState)
+            val complete = progress.copy(state = TorrentState.COMPLETE)
+            val completeState = baseline.copy(torrents = mapOf(ID to complete))
+            state.value = completeState
+            coordinator.onTorrentListUpdate(patch(listOf(complete)), completeState)
+            SystemClock.sleep(300L)
+            assertEquals(
+                0,
+                manager.activeNotifications.count {
+                    it.tag?.startsWith("rstorrent-download_complete-") == true
+                },
+            )
+
+            coordinator.setPreference(
+                ProductNotificationPreference.DOWNLOAD_COMPLETE,
+                true,
+                1,
+            )
+            SystemClock.sleep(300L)
+            assertTrue(store.read().downloadComplete)
+            assertEquals(
+                0,
+                manager.activeNotifications.count {
+                    it.tag?.startsWith("rstorrent-download_complete-") == true
+                },
+            )
+        } finally {
+            store.write(ProductNotificationPreference.DOWNLOAD_COMPLETE, true)
+            coordinator.close()
+        }
+    }
+
+    @Test
     fun zEvictsOnlyTheOldestAutomaticNotificationInItsCategory() {
         val state = MutableStateFlow(ProductState())
         val coordinator = coordinator(state)
