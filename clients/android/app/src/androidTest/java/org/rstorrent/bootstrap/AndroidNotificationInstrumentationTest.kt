@@ -68,11 +68,19 @@ class AndroidNotificationInstrumentationTest {
         context = ApplicationProvider.getApplicationContext()
         manager = context.getSystemService(NotificationManager::class.java)
         clearAutomaticNotifications()
+        ProductNotificationPreferenceStore(context).apply {
+            write(ProductNotificationPreference.DOWNLOAD_COMPLETE, true)
+            write(ProductNotificationPreference.NEEDS_ATTENTION, true)
+        }
     }
 
     @After
     fun tearDown() {
         clearAutomaticNotifications()
+        ProductNotificationPreferenceStore(context).apply {
+            write(ProductNotificationPreference.DOWNLOAD_COMPLETE, true)
+            write(ProductNotificationPreference.NEEDS_ATTENTION, true)
+        }
     }
 
     @Test
@@ -114,10 +122,7 @@ class AndroidNotificationInstrumentationTest {
         state.value = completeState
         coordinator.onTorrentListUpdate(patch(listOf(complete)), completeState)
 
-        val completion =
-            manager.activeNotifications.single {
-                it.tag?.startsWith("rstorrent-download_complete-") == true
-            }
+        val completion = waitForAutomaticNotification("rstorrent-download_complete-")
         assertFalse(requireNotNull(completion.tag).contains(ID))
         assertEquals(
             "Download complete",
@@ -140,10 +145,7 @@ class AndroidNotificationInstrumentationTest {
         state.value = attentionState
         coordinator.onTorrentListUpdate(patch(listOf(attentionRow)), attentionState)
 
-        val attention =
-            manager.activeNotifications.single {
-                it.tag?.startsWith("rstorrent-needs_attention-") == true
-            }
+        val attention = waitForAutomaticNotification("rstorrent-needs_attention-")
         assertFalse(requireNotNull(attention.tag).contains(ID))
         assertEquals(
             "Download needs attention",
@@ -283,6 +285,26 @@ class AndroidNotificationInstrumentationTest {
         manager.activeNotifications
             .filter { it.tag?.startsWith("rstorrent-") == true }
             .forEach { manager.cancel(it.tag, it.id) }
+        val deadline = SystemClock.elapsedRealtime() + 5_000L
+        while (
+            manager.activeNotifications.any { it.tag?.startsWith("rstorrent-") == true } &&
+            SystemClock.elapsedRealtime() < deadline
+        ) {
+            SystemClock.sleep(25L)
+        }
+    }
+
+    private fun waitForAutomaticNotification(
+        prefix: String,
+    ): android.service.notification.StatusBarNotification {
+        val deadline = SystemClock.elapsedRealtime() + 5_000L
+        while (SystemClock.elapsedRealtime() < deadline) {
+            manager.activeNotifications.singleOrNull {
+                it.tag?.startsWith(prefix) == true
+            }?.let { return it }
+            SystemClock.sleep(25L)
+        }
+        throw AssertionError("notification with prefix $prefix was not active")
     }
 
     private fun snapshot(torrents: List<TorrentView>) =
