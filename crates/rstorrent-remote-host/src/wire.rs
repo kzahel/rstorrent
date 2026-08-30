@@ -108,6 +108,8 @@ pub struct AuthorizationSucceeded {
 pub struct AuthenticationSucceeded {
     pub protocol_version: u16,
     pub authorization: Option<AuthorizationSucceeded>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub capabilities: Vec<String>,
 }
 
 #[cfg(feature = "direct-file-webrtc")]
@@ -164,7 +166,17 @@ pub enum DirectFileRequest {
         request_id: u32,
         circuit_generation: u64,
         browser_peer_generation: u64,
+        outcome: DirectFileCloseOutcome,
     },
+}
+
+#[cfg(feature = "direct-file-webrtc")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DirectFileCloseOutcome {
+    Complete,
+    Cancelled,
+    SinkFailed,
 }
 
 #[cfg(feature = "direct-file-webrtc")]
@@ -214,7 +226,7 @@ pub enum DirectFileResponse {
         circuit_generation: u64,
         browser_peer_generation: u64,
         host_peer_generation: Option<u64>,
-        reason: DirectFileFailure,
+        outcome: DirectFileCloseOutcome,
     },
 }
 

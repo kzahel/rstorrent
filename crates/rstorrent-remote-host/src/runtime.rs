@@ -35,6 +35,12 @@ use crate::wire::{
 };
 use crate::{RESUME_REQUEST, RemoteHostError};
 
+#[cfg(feature = "direct-file-webrtc")]
+use crate::wire::{
+    DIRECT_FILE_REQUEST_MAGIC, DirectFileCloseOutcome, DirectFileFailure, DirectFileRequest,
+    DirectFileResponse, DirectSdpType, decode_direct_file_request, encode_direct_file_response,
+};
+
 const HANDSHAKE_DEADLINE: Duration = Duration::from_secs(20);
 const CIRCUIT_LIFETIME: Duration = Duration::from_secs(24 * 60 * 60);
 const RECONNECT_DELAY: Duration = Duration::from_millis(250);
@@ -49,6 +55,7 @@ struct AuthenticatedCircuit {
     circuit_id: [u8; 16],
     cancellation: CancellationToken,
     success: AuthenticationSucceeded,
+    connection_generation: u64,
 }
 
 pub(crate) async fn run_host(owner: Arc<SharedOwner>, cancellation: CancellationToken) {
@@ -105,7 +112,7 @@ pub(crate) async fn run_host(owner: Arc<SharedOwner>, cancellation: Cancellation
             HostGreeting {
                 relay_id: *authority.binding().relay_id().as_bytes(),
                 host_id: *authority.binding().host_id().as_bytes(),
-                protocol_version: 1,
+                protocol_version: advertised_protocol(&owner),
             }
             .to_bytes()
         };
@@ -142,6 +149,7 @@ pub(crate) async fn run_host(owner: Arc<SharedOwner>, cancellation: Cancellation
                 &mut circuit.channel,
                 circuit.circuit_id,
                 circuit.client_id,
+                circuit.connection_generation,
                 &circuit.cancellation,
                 &cancellation,
             )
@@ -237,7 +245,7 @@ async fn authenticate_password(
         let state = owner.state.lock().await;
         let authority = state.authority.as_ref().ok_or(RemoteHostError::Protocol)?;
         AuthenticationReady {
-            protocol_version: 1,
+            protocol_version: advertised_protocol(owner),
             host_build: owner.config.host_build().to_owned(),
             host_pin: encode_id(&authority.host_pin().to_bytes()),
             host_resume_public_key: encode_id(authority.host_resume_key().public_key().as_bytes()),
@@ -370,9 +378,11 @@ async fn authenticate_password(
         circuit_id,
         cancellation: circuit_cancellation,
         success: AuthenticationSucceeded {
-            protocol_version: 1,
+            protocol_version: advertised_protocol(owner),
             authorization,
+            capabilities: advertised_capabilities(owner),
         },
+        connection_generation: generation,
     })
 }
 
@@ -453,24 +463,30 @@ async fn authenticate_resume(
         circuit_id,
         cancellation: circuit_cancellation,
         success: AuthenticationSucceeded {
-            protocol_version: 1,
+            protocol_version: advertised_protocol(owner),
             authorization: Some(AuthorizationSucceeded {
                 client_id: encode_id(client_id.as_bytes()),
                 fingerprint,
             }),
+            capabilities: advertised_capabilities(owner),
         },
+        connection_generation: generation,
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn bridge_application(
     owner: &Arc<SharedOwner>,
     relay: &mut RelaySocket,
     channel: &mut SecureChannel,
     circuit_id: [u8; 16],
     authenticated_client_id: Option<ClientId>,
+    connection_generation: u64,
     circuit_cancellation: &CancellationToken,
     host_cancellation: &CancellationToken,
 ) -> Result<()> {
+    #[cfg(not(feature = "direct-file-webrtc"))]
+    let _ = connection_generation;
     let mut request = owner
         .config
         .gateway_websocket_url()
@@ -503,6 +519,24 @@ async fn bridge_application(
                     Message::Binary(record) => {
                         let opened = channel.open(&record).map_err(|_| RemoteHostError::Protocol)?;
                         if opened.is_close { break; }
+                        #[cfg(feature = "direct-file-webrtc")]
+                        if opened.plaintext.starts_with(DIRECT_FILE_REQUEST_MAGIC) {
+                            let request = decode_direct_file_request(&opened.plaintext)?;
+                            let response = execute_direct_file_request(
+                                owner,
+                                circuit_id,
+                                authenticated_client_id,
+                                connection_generation,
+                                request,
+                            ).await;
+                            let response = encode_direct_file_response(&response)?;
+                            let record = channel.seal(&response)
+                                .map_err(|_| RemoteHostError::Protocol)?;
+                            relay.send(Message::Binary(record.into())).await
+                                .map_err(|_| RemoteHostError::Protocol)?;
+                            touch(owner, circuit_id).await;
+                            continue;
+                        }
                         if opened.plaintext.starts_with(REMOTE_CONTROL_REQUEST_MAGIC) {
                             let request = decode_control_request(&opened.plaintext)?;
                             let (outcome, close_after) = execute_remote_control(
@@ -577,6 +611,14 @@ async fn bridge_application(
         let _ = relay.send(Message::Binary(record.into())).await;
     }
     let _ = gateway.close(None).await;
+    #[cfg(feature = "direct-file-webrtc")]
+    if let Some(supervisor) = &owner.direct_file
+        && let Some(closed) = supervisor.close(circuit_id).await
+    {
+        owner
+            .record_closed_direct_file(closed, "circuit_closed")
+            .await;
+    }
     Ok(())
 }
 
@@ -638,6 +680,260 @@ async fn execute_remote_control(
             },
             false,
         ),
+    }
+}
+
+#[cfg(feature = "direct-file-webrtc")]
+async fn execute_direct_file_request(
+    owner: &Arc<SharedOwner>,
+    circuit_id: [u8; 16],
+    client_id: Option<ClientId>,
+    connection_generation: u64,
+    request: DirectFileRequest,
+) -> DirectFileResponse {
+    let (request_id, request_generation, browser_peer_generation) = match &request {
+        DirectFileRequest::Open {
+            request_id,
+            circuit_generation,
+            browser_peer_generation,
+            ..
+        }
+        | DirectFileRequest::Candidate {
+            request_id,
+            circuit_generation,
+            browser_peer_generation,
+            ..
+        }
+        | DirectFileRequest::EndOfCandidates {
+            request_id,
+            circuit_generation,
+            browser_peer_generation,
+        }
+        | DirectFileRequest::Close {
+            request_id,
+            circuit_generation,
+            browser_peer_generation,
+            ..
+        } => (*request_id, *circuit_generation, *browser_peer_generation),
+    };
+    if request_id == 0
+        || browser_peer_generation == 0
+        || request_generation != connection_generation
+    {
+        return direct_rejected(
+            request_id,
+            request_generation,
+            browser_peer_generation,
+            DirectFileFailure::InvalidRequest,
+        );
+    }
+    let allowed = {
+        let state = owner.state.lock().await;
+        state
+            .authority
+            .as_ref()
+            .is_some_and(|authority| authority.direct_file_transfers_enabled())
+            && state
+                .circuits
+                .get(&circuit_id)
+                .is_some_and(|circuit| circuit.connection_generation == connection_generation)
+    };
+    if !allowed {
+        return direct_rejected(
+            request_id,
+            request_generation,
+            browser_peer_generation,
+            DirectFileFailure::Disabled,
+        );
+    }
+    let Some(supervisor) = &owner.direct_file else {
+        return direct_rejected(
+            request_id,
+            request_generation,
+            browser_peer_generation,
+            DirectFileFailure::Unsupported,
+        );
+    };
+    match request {
+        DirectFileRequest::Open {
+            torrent_id,
+            file_index,
+            offer,
+            ..
+        } => {
+            if offer.kind != DirectSdpType::Offer {
+                return direct_rejected(
+                    request_id,
+                    request_generation,
+                    browser_peer_generation,
+                    DirectFileFailure::InvalidRequest,
+                );
+            }
+            let opened = supervisor
+                .open(
+                    circuit_id,
+                    request_id,
+                    request_generation,
+                    browser_peer_generation,
+                    torrent_id.clone(),
+                    file_index,
+                    offer,
+                )
+                .await;
+            let opened = match opened {
+                Ok(opened) => opened,
+                Err(reason) => {
+                    return direct_rejected(
+                        request_id,
+                        request_generation,
+                        browser_peer_generation,
+                        direct_failure(reason),
+                    );
+                }
+            };
+            if owner
+                .record_direct_file_started(client_id, circuit_id, torrent_id, file_index)
+                .await
+                .is_err()
+            {
+                if let Some(closed) = supervisor.close(circuit_id).await {
+                    owner
+                        .record_closed_direct_file(closed, "audit_failure")
+                        .await;
+                }
+                return direct_rejected(
+                    request_id,
+                    request_generation,
+                    browser_peer_generation,
+                    DirectFileFailure::Internal,
+                );
+            }
+            DirectFileResponse::Opened {
+                request_id,
+                circuit_generation: request_generation,
+                browser_peer_generation,
+                host_peer_generation: opened.host_peer_generation,
+                file_length: opened.file_length.to_string(),
+                max_chunk_bytes: u32::try_from(rstorrent_direct_file::codec::MAX_CHUNK_BYTES)
+                    .expect("direct-file chunk bound fits u32"),
+                answer: opened.answer,
+                candidates: opened.candidates,
+            }
+        }
+        DirectFileRequest::Candidate { candidate, .. } => {
+            match supervisor
+                .add_candidate(
+                    circuit_id,
+                    request_generation,
+                    browser_peer_generation,
+                    request_id,
+                    candidate,
+                )
+                .await
+            {
+                Ok(host_peer_generation) => DirectFileResponse::Status {
+                    request_id,
+                    circuit_generation: request_generation,
+                    browser_peer_generation,
+                    host_peer_generation,
+                    state: crate::wire::DirectFileStatus::Negotiating,
+                    bytes_sent: "0".to_owned(),
+                    candidate_class: None,
+                },
+                Err(reason) => direct_rejected(
+                    request_id,
+                    request_generation,
+                    browser_peer_generation,
+                    direct_failure(reason),
+                ),
+            }
+        }
+        DirectFileRequest::EndOfCandidates { .. } => {
+            match supervisor
+                .validate_peer(
+                    circuit_id,
+                    request_generation,
+                    browser_peer_generation,
+                    request_id,
+                )
+                .await
+            {
+                Ok(host_peer_generation) => DirectFileResponse::EndOfCandidates {
+                    request_id,
+                    circuit_generation: request_generation,
+                    browser_peer_generation,
+                    host_peer_generation,
+                },
+                Err(reason) => direct_rejected(
+                    request_id,
+                    request_generation,
+                    browser_peer_generation,
+                    direct_failure(reason),
+                ),
+            }
+        }
+        DirectFileRequest::Close { outcome, .. } => {
+            match supervisor
+                .close_matching(
+                    circuit_id,
+                    request_generation,
+                    browser_peer_generation,
+                    request_id,
+                )
+                .await
+            {
+                Ok(closed) => {
+                    let host_peer_generation = closed.host_peer_generation;
+                    let reason = match outcome {
+                        DirectFileCloseOutcome::Complete => "complete",
+                        DirectFileCloseOutcome::Cancelled => "cancelled",
+                        DirectFileCloseOutcome::SinkFailed => "sink_failed",
+                    };
+                    owner.record_closed_direct_file(closed, reason).await;
+                    DirectFileResponse::Closed {
+                        request_id,
+                        circuit_generation: request_generation,
+                        browser_peer_generation,
+                        host_peer_generation: Some(host_peer_generation),
+                        outcome,
+                    }
+                }
+                Err(reason) => direct_rejected(
+                    request_id,
+                    request_generation,
+                    browser_peer_generation,
+                    direct_failure(reason),
+                ),
+            }
+        }
+    }
+}
+
+#[cfg(feature = "direct-file-webrtc")]
+fn direct_rejected(
+    request_id: u32,
+    circuit_generation: u64,
+    browser_peer_generation: u64,
+    reason: DirectFileFailure,
+) -> DirectFileResponse {
+    DirectFileResponse::Rejected {
+        request_id,
+        circuit_generation,
+        browser_peer_generation,
+        reason,
+    }
+}
+
+#[cfg(feature = "direct-file-webrtc")]
+fn direct_failure(reason: &str) -> DirectFileFailure {
+    match reason {
+        "disabled" => DirectFileFailure::Disabled,
+        "busy" => DirectFileFailure::Busy,
+        "file_unavailable" => DirectFileFailure::FileUnavailable,
+        "invalid_request" => DirectFileFailure::InvalidRequest,
+        "signaling_limit" => DirectFileFailure::SignalingLimit,
+        "direct_unavailable" => DirectFileFailure::DirectUnavailable,
+        _ => DirectFileFailure::Internal,
     }
 }
 
@@ -781,6 +1077,22 @@ async fn reconnect_delay(owner: &SharedOwner, cancellation: &CancellationToken) 
         () = cancellation.cancelled() => {}
         () = tokio::time::sleep(RECONNECT_DELAY) => {}
     }
+}
+
+fn advertised_protocol(_owner: &SharedOwner) -> u16 {
+    #[cfg(feature = "direct-file-webrtc")]
+    if _owner.direct_file.is_some() {
+        return 2;
+    }
+    1
+}
+
+fn advertised_capabilities(_owner: &SharedOwner) -> Vec<String> {
+    #[cfg(feature = "direct-file-webrtc")]
+    if _owner.direct_file.is_some() {
+        return vec!["direct_file_v1".to_owned()];
+    }
+    Vec::new()
 }
 
 impl From<tungstenite::Error> for RemoteHostError {

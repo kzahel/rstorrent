@@ -17,12 +17,18 @@ use rtc::peer_connection::message::RTCMessage;
 use rtc::peer_connection::sdp::{RTCSdpType, RTCSessionDescription};
 use rtc::peer_connection::state::RTCPeerConnectionState;
 use rtc::peer_connection::transport::{
-    CandidateConfig, CandidateHostConfig, RTCIceCandidate, RTCIceCandidateInit,
+    CandidateConfig, CandidateHostConfig, CandidateServerReflexiveConfig, RTCIceCandidate,
+    RTCIceCandidateInit, RTCIceCandidateType,
 };
 use rtc::sansio::Protocol;
 use rtc::shared::{TaggedBytesMut, TransportContext, TransportProtocol};
 use rtc::statistics::StatsSelector;
+use rtc::statistics::report::RTCStatsReportEntry;
 use rtc::statistics::stats::ice_candidate_pair::RTCStatsIceCandidatePairState;
+use rtc::stun::agent::StunEvent;
+use rtc::stun::client::ClientBuilder as StunClientBuilder;
+use rtc::stun::message::{BINDING_REQUEST, Getter, Message as StunMessage, TransactionId};
+use rtc::stun::xoraddr::XorMappedAddress;
 use serde::{Deserialize, Serialize};
 use tokio::net::UdpSocket;
 use tokio::sync::{Mutex, mpsc, oneshot};
@@ -32,10 +38,16 @@ use tokio_util::sync::CancellationToken;
 use crate::codec::{
     ControlFrame, MAX_CHUNK_BYTES, MAX_RANGE_REQUESTS, RangeErrorCode, decode_control,
     encode_range_accepted, encode_range_chunk, encode_range_complete, encode_range_error,
+    encoded_chunk_payload_bytes,
 };
 
 pub const MAX_REMOTE_CANDIDATES: usize = 32;
 pub const MAX_SIGNALING_BYTES: usize = 64 * 1024;
+pub const STUN_SERVER: &str = "stun.cloudflare.com";
+pub const STUN_PORT: u16 = 3478;
+pub const MAX_STUN_ADDRESSES: usize = 8;
+pub const STUN_RESOLUTION_TIMEOUT: Duration = Duration::from_secs(3);
+pub const STUN_BINDING_TIMEOUT: Duration = Duration::from_secs(4);
 pub const NEGOTIATION_TIMEOUT: Duration = Duration::from_secs(20);
 pub const REQUEST_INACTIVE_TIMEOUT: Duration = Duration::from_secs(60);
 pub const EXPERIMENT_LIFETIME: Duration = Duration::from_secs(10 * 60);
@@ -95,6 +107,8 @@ impl Error for DirectFileEndpointError {
 pub struct OfferAnswer {
     pub answer: RTCSessionDescription,
     pub udp_address: SocketAddr,
+    pub local_candidates: Vec<RTCIceCandidateInit>,
+    pub server_reflexive_candidate: bool,
     pub local_fingerprint: String,
     pub remote_fingerprint: String,
 }
@@ -195,6 +209,13 @@ type EndpointStartFuture = Pin<
     >,
 >;
 
+type ProductEndpointStartFuture = Pin<
+    Box<
+        dyn Future<Output = Result<(OfferAnswer, DirectFileEndpoint), DirectFileEndpointError>>
+            + Send,
+    >,
+>;
+
 trait LazyEndpointStarter: Send + Sync {
     fn answer_offer(
         &self,
@@ -202,6 +223,12 @@ trait LazyEndpointStarter: Send + Sync {
         bind_ip: IpAddr,
         offer: RTCSessionDescription,
     ) -> EndpointStartFuture;
+
+    fn answer_product_offer(
+        &self,
+        capability: String,
+        offer: RTCSessionDescription,
+    ) -> ProductEndpointStartFuture;
 }
 
 struct RtcEndpointStarter {
@@ -219,8 +246,21 @@ impl LazyEndpointStarter for RtcEndpointStarter {
             self.application.clone(),
             capability,
             bind_ip,
+            Vec::new(),
             offer,
         ))
+    }
+
+    fn answer_product_offer(
+        &self,
+        capability: String,
+        offer: RTCSessionDescription,
+    ) -> ProductEndpointStartFuture {
+        let application = self.application.clone();
+        Box::pin(async move {
+            let (bind_ip, stun_addresses) = resolve_stun_route().await?;
+            answer_offer(application, capability, bind_ip, stun_addresses, offer).await
+        })
     }
 }
 
@@ -249,12 +289,21 @@ impl DirectFileEndpointFactory {
     ) -> Result<(OfferAnswer, DirectFileEndpoint), DirectFileEndpointError> {
         self.starter.answer_offer(capability, bind_ip, offer).await
     }
+
+    pub async fn answer_product_offer(
+        &self,
+        capability: String,
+        offer: RTCSessionDescription,
+    ) -> Result<(OfferAnswer, DirectFileEndpoint), DirectFileEndpointError> {
+        self.starter.answer_product_offer(capability, offer).await
+    }
 }
 
 async fn answer_offer(
     application: SharedApplication,
     capability: String,
     bind_ip: IpAddr,
+    stun_addresses: Vec<SocketAddr>,
     offer: RTCSessionDescription,
 ) -> Result<(OfferAnswer, DirectFileEndpoint), DirectFileEndpointError> {
     let remote_fingerprint = validate_offer(&offer)?;
@@ -270,6 +319,7 @@ async fn answer_offer(
         .await
         .map_err(DirectFileEndpointError::Bind)?;
     let local_addr = socket.local_addr().map_err(DirectFileEndpointError::Bind)?;
+    let server_reflexive = gather_server_reflexive(&socket, local_addr, &stun_addresses).await;
     let host_candidate = CandidateHostConfig {
         base_config: CandidateConfig {
             network: "udp".to_owned(),
@@ -287,12 +337,34 @@ async fn answer_offer(
         .with_sctp_receive_buffer_size(MAX_TRANSPORT_QUEUE_BYTES as u32)
         .build()
         .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?;
-    peer.add_local_candidate(
-        RTCIceCandidate::from(&host_candidate)
+    let host_candidate = RTCIceCandidate::from(&host_candidate)
+        .to_json()
+        .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?;
+    peer.add_local_candidate(host_candidate.clone())
+        .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?;
+    let mut local_candidates = vec![host_candidate];
+    if let Some(mapped) = server_reflexive {
+        let candidate = CandidateServerReflexiveConfig {
+            base_config: CandidateConfig {
+                network: "udp".to_owned(),
+                address: mapped.ip.to_string(),
+                port: mapped.port,
+                component: 1,
+                ..CandidateConfig::default()
+            },
+            rel_addr: local_addr.ip().to_string(),
+            rel_port: local_addr.port(),
+            url: Some(format!("stun:{STUN_SERVER}:{STUN_PORT}")),
+        }
+        .new_candidate_server_reflexive()
+        .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?;
+        let candidate = RTCIceCandidate::from(&candidate)
             .to_json()
-            .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?,
-    )
-    .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?;
+            .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?;
+        peer.add_local_candidate(candidate.clone())
+            .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?;
+        local_candidates.push(candidate);
+    }
     peer.set_remote_description(offer.clone())
         .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?;
     let answer = peer
@@ -338,6 +410,8 @@ async fn answer_offer(
         OfferAnswer {
             answer,
             udp_address: local_addr,
+            server_reflexive_candidate: local_candidates.len() > 1,
+            local_candidates,
             local_fingerprint,
             remote_fingerprint,
         },
@@ -369,7 +443,7 @@ impl DirectFileEndpoint {
         let candidate_bytes = candidate.candidate.len()
             + candidate.sdp_mid.as_ref().map_or(0, String::len)
             + candidate.username_fragment.as_ref().map_or(0, String::len);
-        if candidate.candidate.is_empty() || candidate_bytes > MAX_SIGNALING_BYTES {
+        if !direct_udp_candidate(&candidate.candidate) || candidate_bytes > MAX_SIGNALING_BYTES {
             return Err(DirectFileEndpointError::SignalingLimit);
         }
         let count = self
@@ -483,8 +557,6 @@ async fn run_driver(
                     RTCPeerConnectionState::Connected => {
                         metrics.set_state("connected");
                         metrics.fingerprint_verified.store(true, Ordering::Release);
-                        *lock_unpoisoned(&metrics.selected_candidate_class) =
-                            Some("host".to_owned());
                     }
                     RTCPeerConnectionState::Failed => {
                         break 'driver "connection_failed";
@@ -639,7 +711,7 @@ async fn run_driver(
                     .queued_bytes
                     .fetch_sub(frame.bytes.len(), Ordering::AcqRel);
                 metrics.bytes_sent.fetch_add(
-                    u64::try_from(frame.bytes.len()).unwrap_or(u64::MAX),
+                    u64::try_from(encoded_chunk_payload_bytes(&frame.bytes)).unwrap_or(u64::MAX),
                     Ordering::AcqRel,
                 );
                 continue;
@@ -927,6 +999,20 @@ fn update_transport_metrics(
         .candidate_pairs()
         .find(|pair| pair.nominated && pair.state == RTCStatsIceCandidatePairState::Succeeded)
     {
+        let candidate_class = match report.get(&pair.local_candidate_id) {
+            Some(RTCStatsReportEntry::LocalCandidate(candidate)) => {
+                match candidate.candidate_type {
+                    RTCIceCandidateType::Host => Some("host"),
+                    RTCIceCandidateType::Srflx => Some("server_reflexive"),
+                    RTCIceCandidateType::Prflx => Some("peer_reflexive"),
+                    RTCIceCandidateType::Relay | RTCIceCandidateType::Unspecified => None,
+                }
+            }
+            _ => None,
+        };
+        if let Some(candidate_class) = candidate_class {
+            *lock_unpoisoned(&metrics.selected_candidate_class) = Some(candidate_class.to_owned());
+        }
         let micros = if pair.current_round_trip_time.is_sign_negative()
             || !pair.current_round_trip_time.is_finite()
         {
@@ -936,6 +1022,135 @@ fn update_transport_metrics(
         };
         metrics.rtt_micros.store(micros, Ordering::Release);
         metrics.has_rtt.store(true, Ordering::Release);
+    }
+}
+
+fn direct_udp_candidate(candidate: &str) -> bool {
+    let fields = candidate.split_ascii_whitespace().collect::<Vec<_>>();
+    if fields.len() < 8 || !fields[2].eq_ignore_ascii_case("udp") {
+        return false;
+    }
+    fields
+        .windows(2)
+        .find(|fields| fields[0].eq_ignore_ascii_case("typ"))
+        .is_some_and(|fields| {
+            matches!(
+                fields[1].to_ascii_lowercase().as_str(),
+                "host" | "srflx" | "prflx"
+            )
+        })
+}
+
+async fn resolve_stun_route() -> Result<(IpAddr, Vec<SocketAddr>), DirectFileEndpointError> {
+    let addresses = tokio::time::timeout(
+        STUN_RESOLUTION_TIMEOUT,
+        tokio::net::lookup_host((STUN_SERVER, STUN_PORT)),
+    )
+    .await
+    .map_err(|_| DirectFileEndpointError::WebRtc("STUN DNS timed out".to_owned()))?
+    .map_err(|error| DirectFileEndpointError::WebRtc(format!("STUN DNS failed: {error}")))?
+    .take(MAX_STUN_ADDRESSES)
+    .collect::<Vec<_>>();
+    for address in &addresses {
+        let wildcard = if address.is_ipv4() {
+            SocketAddr::from(([0, 0, 0, 0], 0))
+        } else {
+            SocketAddr::from(([0_u16; 8], 0))
+        };
+        let socket = UdpSocket::bind(wildcard)
+            .await
+            .map_err(DirectFileEndpointError::Bind)?;
+        if socket.connect(address).await.is_ok() {
+            let bind_ip = socket
+                .local_addr()
+                .map_err(DirectFileEndpointError::Bind)?
+                .ip();
+            let compatible = addresses
+                .iter()
+                .copied()
+                .filter(|candidate| candidate.is_ipv4() == bind_ip.is_ipv4())
+                .collect();
+            return Ok((bind_ip, compatible));
+        }
+    }
+    Err(DirectFileEndpointError::WebRtc(
+        "no routable STUN address".to_owned(),
+    ))
+}
+
+async fn gather_server_reflexive(
+    socket: &UdpSocket,
+    local_addr: SocketAddr,
+    servers: &[SocketAddr],
+) -> Option<XorMappedAddress> {
+    tokio::time::timeout(STUN_BINDING_TIMEOUT, async {
+        for server in servers.iter().copied().take(MAX_STUN_ADDRESSES) {
+            if let Some(mapped) = gather_one_server_reflexive(socket, local_addr, server).await {
+                return Some(mapped);
+            }
+        }
+        None
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+async fn gather_one_server_reflexive(
+    socket: &UdpSocket,
+    local_addr: SocketAddr,
+    server: SocketAddr,
+) -> Option<XorMappedAddress> {
+    let mut client = StunClientBuilder::new()
+        .with_rto(Duration::from_millis(500))
+        .build(local_addr, server, TransportProtocol::UDP)
+        .ok()?;
+    let mut request = StunMessage::new();
+    request
+        .build(&[Box::<TransactionId>::default(), Box::new(BINDING_REQUEST)])
+        .ok()?;
+    client.handle_write(request).ok()?;
+    let mut buffer = [0_u8; MAX_DATAGRAM_BYTES];
+    loop {
+        while let Some(transmit) = client.poll_write() {
+            socket
+                .send_to(&transmit.message, transmit.transport.peer_addr)
+                .await
+                .ok()?;
+        }
+        if let Some(event) = client.poll_event() {
+            match event {
+                StunEvent::Message(message) => {
+                    let mut mapped = XorMappedAddress::default();
+                    mapped.get_from(&message).ok()?;
+                    return Some(mapped);
+                }
+                _ => return None,
+            }
+        }
+        let timeout = client.poll_timeout()?;
+        let delay = timeout.saturating_duration_since(Instant::now());
+        tokio::select! {
+            () = tokio::time::sleep(delay) => {
+                client.handle_timeout(Instant::now()).ok()?;
+            }
+            received = socket.recv_from(&mut buffer) => {
+                let (length, peer_addr) = received.ok()?;
+                if peer_addr != server {
+                    continue;
+                }
+                client.handle_read(TaggedBytesMut {
+                    now: Instant::now(),
+                    transport: TransportContext {
+                        local_addr,
+                        peer_addr,
+                        ecn: None,
+                        transport_protocol: TransportProtocol::UDP,
+                    },
+                    message: BytesMut::from(&buffer[..length]),
+                }).ok()?;
+            }
+        }
     }
 }
 
@@ -1024,5 +1239,42 @@ mod tests {
             metrics.queue_high_water.load(Ordering::Acquire),
             MAX_APPLICATION_QUEUE_BYTES
         );
+    }
+
+    #[test]
+    fn accepts_only_direct_udp_candidate_classes() {
+        assert!(direct_udp_candidate(
+            "candidate:1 1 UDP 2130706431 192.0.2.1 5000 typ host"
+        ));
+        assert!(direct_udp_candidate(
+            "candidate:2 1 udp 1694498815 198.51.100.2 5001 typ srflx raddr 10.0.0.2 rport 4000"
+        ));
+        assert!(direct_udp_candidate(
+            "candidate:3 1 udp 1677734911 198.51.100.3 5002 typ prflx"
+        ));
+        assert!(!direct_udp_candidate(
+            "candidate:4 1 udp 1677729535 203.0.113.4 5003 typ relay"
+        ));
+        assert!(!direct_udp_candidate(
+            "candidate:5 1 tcp 1518280447 192.0.2.5 9 typ host tcptype active"
+        ));
+        assert!(!direct_udp_candidate("candidate:short"));
+    }
+
+    #[tokio::test]
+    #[ignore = "contacts the selected public STUN service"]
+    async fn cloudflare_stun_returns_one_bounded_server_reflexive_address() {
+        let (bind_ip, addresses) = resolve_stun_route().await.expect("resolve STUN route");
+        assert!(!addresses.is_empty());
+        assert!(addresses.len() <= MAX_STUN_ADDRESSES);
+        let socket = UdpSocket::bind(SocketAddr::new(bind_ip, 0))
+            .await
+            .expect("bind exact route address");
+        let local_addr = socket.local_addr().expect("local address");
+        let mapped = gather_server_reflexive(&socket, local_addr, &addresses)
+            .await
+            .expect("server-reflexive address");
+        assert!(!mapped.ip.is_unspecified());
+        assert_ne!(mapped.port, 0);
     }
 }

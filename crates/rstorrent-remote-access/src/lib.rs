@@ -14,8 +14,8 @@ pub use authority::{AuthorizationRequest, PendingResume, ProvisioningMaterial, R
 pub use error::{RemoteAccessError, Result};
 pub use model::{
     ABSOLUTE_LIFETIME_MILLIS, AuthenticationMethod, AuthorizationMetadata, AuthorizedClientView,
-    ClientState, EventId, EventKind, EventResult, FailedAttemptKind, IDLE_LIFETIME_MILLIS,
-    MAX_AUTHORIZED_CLIENTS, MAX_FAILED_BUCKETS, MAX_SECURITY_EVENTS, MAX_TOMBSTONES,
-    SecurityEventView, SecuritySnapshot, Timestamp, TombstoneView,
+    ClientState, DirectFileAuditView, EventId, EventKind, EventResult, FailedAttemptKind,
+    IDLE_LIFETIME_MILLIS, MAX_AUTHORIZED_CLIENTS, MAX_FAILED_BUCKETS, MAX_SECURITY_EVENTS,
+    MAX_TOMBSTONES, SecurityEventView, SecuritySnapshot, Timestamp, TombstoneView,
 };
 pub use store::{AuthorityStore, CommitCrashPoint, DisableOutcome};

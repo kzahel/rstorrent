@@ -18,17 +18,22 @@ use zeroize::{Zeroize, Zeroizing};
 
 use crate::model::{
     ABSOLUTE_LIFETIME_MILLIS, AuthenticationMethod, AuthorizationMetadata, AuthorizedClientView,
-    ClientState, EventId, EventKind, EventResult, FAILED_BUCKET_MILLIS, FAILED_RETENTION_MILLIS,
-    FailedAttemptBucketView, FailedAttemptKind, IDLE_LIFETIME_MILLIS, MAX_AUTHORIZED_CLIENTS,
-    MAX_FAILED_BUCKETS, MAX_OBSERVATION_BYTES, MAX_SECURITY_EVENTS, MAX_TOMBSTONES,
-    SECURITY_RETENTION_MILLIS, SecurityEventView, SecuritySnapshot, TOUCH_INTERVAL_MILLIS,
-    Timestamp, TombstoneView, decode_fixed, encode_id, validate_bounded_text,
+    ClientState, DirectFileAuditView, EventId, EventKind, EventResult, FAILED_BUCKET_MILLIS,
+    FAILED_RETENTION_MILLIS, FailedAttemptBucketView, FailedAttemptKind, IDLE_LIFETIME_MILLIS,
+    MAX_AUTHORIZED_CLIENTS, MAX_FAILED_BUCKETS, MAX_OBSERVATION_BYTES, MAX_SECURITY_EVENTS,
+    MAX_TOMBSTONES, SECURITY_RETENTION_MILLIS, SecurityEventView, SecuritySnapshot,
+    TOUCH_INTERVAL_MILLIS, Timestamp, TombstoneView, decode_fixed, encode_id,
+    validate_bounded_text,
 };
 use crate::{RemoteAccessError, Result};
 
 const AUTHORITY_VERSION: u16 = 1;
 const MAX_ROUTE_BYTES: usize = 64;
 const MAX_REASON_BYTES: usize = 64;
+
+const fn default_true() -> bool {
+    true
+}
 
 pub struct ProvisioningMaterial {
     host_id: HostId,
@@ -143,6 +148,7 @@ struct SecurityEvent {
     route: Option<String>,
     client_build: Option<String>,
     reason_class: Option<String>,
+    direct_file: Option<DirectFileAuditView>,
 }
 
 struct FailedAttemptBucket {
@@ -163,6 +169,7 @@ pub struct RemoteAuthority {
     route: String,
     relay_credential: Zeroizing<[u8; 32]>,
     protocol_floor: u16,
+    direct_file_transfers_enabled: bool,
     opaque_authority: ServerAuthority,
     password_file: PasswordFile,
     host_resume_key: HostResumeKey,
@@ -206,6 +213,7 @@ impl RemoteAuthority {
             route,
             relay_credential: material.relay_credential,
             protocol_floor,
+            direct_file_transfers_enabled: true,
             opaque_authority,
             password_file,
             host_resume_key,
@@ -226,6 +234,7 @@ impl RemoteAuthority {
             route: Some(authority.route.clone()),
             client_build: None,
             reason_class: None,
+            direct_file: None,
         })?;
         Ok(authority)
     }
@@ -260,6 +269,10 @@ impl RemoteAuthority {
 
     pub fn protocol_floor(&self) -> u16 {
         self.protocol_floor
+    }
+
+    pub fn direct_file_transfers_enabled(&self) -> bool {
+        self.direct_file_transfers_enabled
     }
 
     pub fn opaque_authority(&self) -> &ServerAuthority {
@@ -324,6 +337,7 @@ impl RemoteAuthority {
             route: Some(self.route.clone()),
             client_build: client.metadata.client_build().map(ToOwned::to_owned),
             reason_class: None,
+            direct_file: None,
         };
         self.push_event(event)?;
         self.clients.push(client);
@@ -357,6 +371,7 @@ impl RemoteAuthority {
             route: Some(self.route.clone()),
             client_build: None,
             reason_class: None,
+            direct_file: None,
         })
     }
 
@@ -385,6 +400,7 @@ impl RemoteAuthority {
             route: Some(self.route.clone()),
             client_build: None,
             reason_class: Some("owner_revoked".to_owned()),
+            direct_file: None,
         })
     }
 
@@ -447,6 +463,7 @@ impl RemoteAuthority {
                 route: Some(self.route.clone()),
                 client_build: None,
                 reason_class: Some("deadline".to_owned()),
+                direct_file: None,
             })?;
         }
         Ok(expired.len())
@@ -480,6 +497,7 @@ impl RemoteAuthority {
             route: Some(self.route.clone()),
             client_build: None,
             reason_class: None,
+            direct_file: None,
         })?;
         self.revoke_all(now, tombstone_event_ids, "global_generation")
     }
@@ -523,6 +541,7 @@ impl RemoteAuthority {
             route: Some(self.route.clone()),
             client_build: None,
             reason_class: None,
+            direct_file: None,
         })?;
         self.revoke_all(now, tombstone_event_ids, "password_changed")
     }
@@ -547,6 +566,7 @@ impl RemoteAuthority {
             route: Some(self.route.clone()),
             client_build: None,
             reason_class: None,
+            direct_file: None,
         })
     }
 
@@ -618,6 +638,7 @@ impl RemoteAuthority {
             route: Some(self.route.clone()),
             client_build,
             reason_class: None,
+            direct_file: None,
         })?;
         Ok(channel)
     }
@@ -651,6 +672,7 @@ impl RemoteAuthority {
             route: Some(self.route.clone()),
             client_build,
             reason_class: None,
+            direct_file: None,
         })
     }
 
@@ -697,6 +719,90 @@ impl RemoteAuthority {
             route: Some(self.route.clone()),
             client_build: None,
             reason_class,
+            direct_file: None,
+        })
+    }
+
+    pub fn set_direct_file_transfers_enabled(
+        &mut self,
+        enabled: bool,
+        now: Timestamp,
+        event_id: EventId,
+    ) -> Result<bool> {
+        if self.direct_file_transfers_enabled == enabled {
+            return Ok(false);
+        }
+        self.push_event(SecurityEvent {
+            event_id,
+            timestamp: now,
+            kind: EventKind::DirectFileSettingChanged,
+            result: EventResult::Succeeded,
+            client_id: None,
+            circuit_id: None,
+            authentication_method: None,
+            route: Some(self.route.clone()),
+            client_build: None,
+            reason_class: Some(if enabled { "enabled" } else { "disabled" }.to_owned()),
+            direct_file: None,
+        })?;
+        self.direct_file_transfers_enabled = enabled;
+        Ok(true)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn record_direct_file_event(
+        &mut self,
+        kind: EventKind,
+        result: EventResult,
+        client_id: Option<ClientId>,
+        circuit_id: [u8; 16],
+        now: Timestamp,
+        event_id: EventId,
+        details: DirectFileAuditView,
+        reason_class: Option<String>,
+    ) -> Result<()> {
+        if !matches!(
+            kind,
+            EventKind::DirectFileStarted
+                | EventKind::DirectFileCompleted
+                | EventKind::DirectFileFailed
+                | EventKind::DirectFileCancelled
+        ) {
+            return Err(RemoteAccessError::InvalidInput(
+                "direct-file audit event kind",
+            ));
+        }
+        let terminal = kind != EventKind::DirectFileStarted;
+        if let Some(client_id) = client_id {
+            let current = self
+                .clients
+                .iter()
+                .any(|client| client.client_id == client_id);
+            let historical = terminal
+                && self
+                    .tombstones
+                    .iter()
+                    .any(|client| client.client_id == client_id);
+            if !current && !historical {
+                return Err(RemoteAccessError::NotFound);
+            }
+        }
+        validate_direct_file_audit(&details)?;
+        if let Some(reason) = &reason_class {
+            validate_bounded_text(reason, 1, MAX_REASON_BYTES, "direct-file reason class")?;
+        }
+        self.push_event(SecurityEvent {
+            event_id,
+            timestamp: now,
+            kind,
+            result,
+            client_id,
+            circuit_id: Some(circuit_id),
+            authentication_method: None,
+            route: Some(self.route.clone()),
+            client_build: None,
+            reason_class,
+            direct_file: Some(details),
         })
     }
 
@@ -814,6 +920,7 @@ impl RemoteAuthority {
             route: Some(self.route.clone()),
             client_build: None,
             reason_class: None,
+            direct_file: None,
         });
         let cutoff = now.saturating_sub(SECURITY_RETENTION_MILLIS);
         snapshot.tombstones.retain(|item| item.ended >= cutoff);
@@ -906,6 +1013,7 @@ impl RemoteAuthority {
                 route: Some(self.route.clone()),
                 client_build: None,
                 reason_class: Some(reason.to_owned()),
+                direct_file: None,
             })?;
         }
         Ok(count)
@@ -1061,6 +1169,7 @@ fn event_view(event: &SecurityEvent) -> SecurityEventView {
         route: event.route.clone(),
         client_build: event.client_build.clone(),
         reason_class: event.reason_class.clone(),
+        direct_file: event.direct_file.clone(),
     }
 }
 
@@ -1085,6 +1194,8 @@ struct PersistedAuthority {
     route: String,
     relay_credential: SecretString,
     protocol_floor: u16,
+    #[serde(default = "default_true")]
+    direct_file_transfers_enabled: bool,
     opaque_authority: SecretString,
     password_file: SecretString,
     host_resume_key: SecretString,
@@ -1138,6 +1249,8 @@ struct PersistedEvent {
     route: Option<String>,
     client_build: Option<String>,
     reason_class: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    direct_file: Option<DirectFileAuditView>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1174,6 +1287,7 @@ impl PersistedAuthority {
             route: authority.route.clone(),
             relay_credential: SecretString(encode_id(&*authority.relay_credential)),
             protocol_floor: authority.protocol_floor,
+            direct_file_transfers_enabled: authority.direct_file_transfers_enabled,
             opaque_authority: SecretString(encode_id(opaque.as_bytes())),
             password_file: SecretString(encode_id(password.as_bytes())),
             host_resume_key: SecretString(encode_id(&*host_resume)),
@@ -1226,6 +1340,7 @@ impl PersistedAuthority {
                     route: event.route.clone(),
                     client_build: event.client_build.clone(),
                     reason_class: event.reason_class.clone(),
+                    direct_file: event.direct_file.clone(),
                 })
                 .collect(),
             failed_attempts: authority
@@ -1355,6 +1470,10 @@ impl PersistedAuthority {
                 "event client build",
             )?;
             validate_optional(&event.reason_class, MAX_REASON_BYTES, "event reason")?;
+            if let Some(details) = &event.direct_file {
+                validate_direct_file_audit(details)
+                    .map_err(|_| RemoteAccessError::Corrupt("direct-file audit"))?;
+            }
             events.push(SecurityEvent {
                 event_id,
                 timestamp: event.timestamp,
@@ -1371,6 +1490,7 @@ impl PersistedAuthority {
                 route: event.route,
                 client_build: event.client_build,
                 reason_class: event.reason_class,
+                direct_file: event.direct_file,
             });
         }
         let mut failed_attempts = Vec::with_capacity(self.failed_attempts.len());
@@ -1399,6 +1519,7 @@ impl PersistedAuthority {
             route: self.route,
             relay_credential,
             protocol_floor: self.protocol_floor,
+            direct_file_transfers_enabled: self.direct_file_transfers_enabled,
             opaque_authority,
             password_file,
             host_resume_key,
@@ -1437,6 +1558,29 @@ fn validate_optional(value: &Option<String>, maximum: usize, name: &'static str)
     if let Some(value) = value {
         validate_bounded_text(value, 1, maximum, name)
             .map_err(|_| RemoteAccessError::Corrupt(name))?;
+    }
+    Ok(())
+}
+
+fn validate_direct_file_audit(details: &DirectFileAuditView) -> Result<()> {
+    let torrent = details.torrent_id.as_bytes();
+    if torrent.len() != 35
+        || !details.torrent_id.starts_with("t1-")
+        || !torrent[3..].iter().all(u8::is_ascii_hexdigit)
+    {
+        return Err(RemoteAccessError::InvalidInput(
+            "direct-file torrent identifier",
+        ));
+    }
+    if let Some(candidate_class) = &details.candidate_class
+        && !matches!(
+            candidate_class.as_str(),
+            "host" | "server_reflexive" | "peer_reflexive"
+        )
+    {
+        return Err(RemoteAccessError::InvalidInput(
+            "direct-file candidate class",
+        ));
     }
     Ok(())
 }
@@ -1779,6 +1923,72 @@ mod tests {
     }
 
     #[test]
+    fn direct_file_setting_and_redacted_audit_survive_round_trip() {
+        let now = Timestamp::from_millis(10_000);
+        let mut authority = provision(now);
+        assert!(authority.direct_file_transfers_enabled());
+        assert!(
+            authority
+                .set_direct_file_transfers_enabled(false, now, EventId::new([20; 16]))
+                .unwrap()
+        );
+        let details = DirectFileAuditView {
+            torrent_id: "t1-0123456789abcdef0123456789abcdef".to_owned(),
+            file_index: 3,
+            byte_count: 0,
+            candidate_class: None,
+        };
+        authority
+            .record_direct_file_event(
+                EventKind::DirectFileStarted,
+                EventResult::Succeeded,
+                None,
+                [21; 16],
+                now,
+                EventId::new([22; 16]),
+                details,
+                None,
+            )
+            .unwrap();
+        authority
+            .record_direct_file_event(
+                EventKind::DirectFileCompleted,
+                EventResult::Succeeded,
+                None,
+                [21; 16],
+                now,
+                EventId::new([23; 16]),
+                DirectFileAuditView {
+                    torrent_id: "t1-0123456789abcdef0123456789abcdef".to_owned(),
+                    file_index: 3,
+                    byte_count: 65_536,
+                    candidate_class: Some("server_reflexive".to_owned()),
+                },
+                Some("complete".to_owned()),
+            )
+            .unwrap();
+
+        let decoded = RemoteAuthority::decode(&authority.encode().unwrap()).unwrap();
+        assert!(!decoded.direct_file_transfers_enabled());
+        let snapshot = decoded.security_snapshot();
+        let completed = snapshot
+            .events
+            .iter()
+            .find(|event| event.kind == EventKind::DirectFileCompleted)
+            .unwrap();
+        assert_eq!(completed.reason_class.as_deref(), Some("complete"));
+        assert_eq!(
+            completed.direct_file.as_ref().unwrap(),
+            &DirectFileAuditView {
+                torrent_id: "t1-0123456789abcdef0123456789abcdef".to_owned(),
+                file_index: 3,
+                byte_count: 65_536,
+                candidate_class: Some("server_reflexive".to_owned()),
+            }
+        );
+    }
+
+    #[test]
     fn every_registry_enforces_its_high_water_and_retention() {
         let now = Timestamp::from_millis(FAILED_BUCKET_MILLIS);
         let mut authority = provision(now);
@@ -1797,6 +2007,7 @@ mod tests {
                     route: Some("alice-local".to_owned()),
                     client_build: None,
                     reason_class: None,
+                    direct_file: None,
                 })
                 .unwrap();
         }
@@ -1860,6 +2071,7 @@ mod tests {
                 route: None,
                 client_build: None,
                 reason_class: None,
+                direct_file: None,
             })
             .unwrap();
         assert!(authority.tombstones.is_empty());

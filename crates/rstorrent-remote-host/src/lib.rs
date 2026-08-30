@@ -7,6 +7,8 @@
 //! application adapter beneath desktop/headless lifecycles.
 
 mod application;
+#[cfg(feature = "direct-file-webrtc")]
+mod direct_file;
 mod error;
 mod owner;
 mod runtime;
@@ -15,8 +17,8 @@ mod wire;
 pub use application::RemoteApplicationRuntime;
 pub use error::RemoteHostError;
 pub use owner::{
-    DisableRemoteAccessOutcome, LiveCircuitView, RemoteAccessOwner, RemoteHostConfig,
-    RemoteSecurityView,
+    DirectFileSecurityView, DisableRemoteAccessOutcome, LiveCircuitView, RemoteAccessOwner,
+    RemoteHostConfig, RemoteSecurityView,
 };
 
 pub use wire::{
@@ -32,8 +34,9 @@ pub use wire::{
 
 #[cfg(feature = "direct-file-webrtc")]
 pub use wire::{
-    DIRECT_FILE_REQUEST_MAGIC, DIRECT_FILE_RESPONSE_MAGIC, DirectCandidateClass, DirectFileFailure,
-    DirectFileRequest, DirectFileResponse, DirectFileStatus, DirectIceCandidate, DirectSdpType,
-    DirectSessionDescription, MAX_DIRECT_FILE_SIGNALING_BYTES, decode_direct_file_request,
-    decode_direct_file_response, encode_direct_file_request, encode_direct_file_response,
+    DIRECT_FILE_REQUEST_MAGIC, DIRECT_FILE_RESPONSE_MAGIC, DirectCandidateClass,
+    DirectFileCloseOutcome, DirectFileFailure, DirectFileRequest, DirectFileResponse,
+    DirectFileStatus, DirectIceCandidate, DirectSdpType, DirectSessionDescription,
+    MAX_DIRECT_FILE_SIGNALING_BYTES, decode_direct_file_request, decode_direct_file_response,
+    encode_direct_file_request, encode_direct_file_response,
 };

@@ -29,6 +29,17 @@ const CHUNK_ACK_BYTES: usize = PREFIX_BYTES + REQUEST_ID_BYTES + 8;
 const RANGE_ACCEPTED_BYTES: usize = PREFIX_BYTES + REQUEST_ID_BYTES + 8 + 8 + 4;
 const RANGE_CHUNK_HEADER_BYTES: usize = PREFIX_BYTES + REQUEST_ID_BYTES + 8;
 
+pub(crate) fn encoded_chunk_payload_bytes(frame: &[u8]) -> usize {
+    if frame.len() > RANGE_CHUNK_HEADER_BYTES
+        && frame.first() == Some(&PROTOCOL_VERSION)
+        && frame.get(1) == Some(&RANGE_CHUNK)
+    {
+        frame.len() - RANGE_CHUNK_HEADER_BYTES
+    } else {
+        0
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ControlFrame {
     RangeRequest {

@@ -12,6 +12,8 @@ use rstorrent_remote_access::{
     AuthenticationMethod, AuthorityStore, EventId, ProvisioningMaterial, RemoteAuthority,
     SecuritySnapshot, Timestamp,
 };
+#[cfg(feature = "direct-file-webrtc")]
+use rstorrent_remote_access::{DirectFileAuditView, EventKind, EventResult};
 use rstorrent_remote_crypto::{
     ClientId, HostId, OperationSeed, RelayId, Username, random_operation_seed,
 };
@@ -251,6 +253,8 @@ pub(crate) struct SharedOwner {
     pub(crate) config: RemoteHostConfig,
     pub(crate) shutdown: tokio_util::sync::CancellationToken,
     pub(crate) next_connection_generation: AtomicU64,
+    #[cfg(feature = "direct-file-webrtc")]
+    pub(crate) direct_file: Option<Arc<crate::direct_file::DirectFileSupervisor>>,
 }
 
 pub(crate) struct OwnerState {
@@ -301,6 +305,22 @@ pub struct RemoteSecurityView {
     pub authority: Option<SecuritySnapshot>,
     pub retained_history: Option<SecuritySnapshot>,
     pub live_circuits: Vec<LiveCircuitView>,
+    pub direct_file: DirectFileSecurityView,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DirectFileSecurityView {
+    pub compiled: bool,
+    pub enabled: bool,
+    pub state: String,
+    pub active_circuit_id: Option<String>,
+    pub bytes_sent: u64,
+    pub candidate_class: Option<String>,
+    pub active_tasks: usize,
+    pub open_sockets: usize,
+    pub active_requests: usize,
+    pub queued_bytes: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -310,8 +330,55 @@ pub struct DisableRemoteAccessOutcome {
     pub route_released: bool,
 }
 
+fn unavailable_direct_file_view() -> DirectFileSecurityView {
+    DirectFileSecurityView {
+        compiled: false,
+        enabled: false,
+        state: "unavailable".to_owned(),
+        active_circuit_id: None,
+        bytes_sent: 0,
+        candidate_class: None,
+        active_tasks: 0,
+        open_sockets: 0,
+        active_requests: 0,
+        queued_bytes: 0,
+    }
+}
+
 impl RemoteAccessOwner {
     pub async fn open(root: impl Into<PathBuf>, config: RemoteHostConfig) -> Result<Self> {
+        Self::open_inner(
+            root.into(),
+            config,
+            #[cfg(feature = "direct-file-webrtc")]
+            None,
+        )
+        .await
+    }
+
+    #[cfg(feature = "direct-file-webrtc")]
+    pub async fn open_with_direct_file(
+        root: impl Into<PathBuf>,
+        config: RemoteHostConfig,
+        application: Arc<Mutex<rstorrent_session::ApplicationService>>,
+    ) -> Result<Self> {
+        Self::open_inner(
+            root.into(),
+            config,
+            Some(Arc::new(crate::direct_file::DirectFileSupervisor::new(
+                application,
+            ))),
+        )
+        .await
+    }
+
+    async fn open_inner(
+        root: PathBuf,
+        config: RemoteHostConfig,
+        #[cfg(feature = "direct-file-webrtc")] direct_file: Option<
+            Arc<crate::direct_file::DirectFileSupervisor>,
+        >,
+    ) -> Result<Self> {
         let store = AuthorityStore::new(root);
         let authority = store.load()?;
         let owner = Self {
@@ -324,9 +391,23 @@ impl RemoteAccessOwner {
                 config,
                 shutdown: tokio_util::sync::CancellationToken::new(),
                 next_connection_generation: AtomicU64::new(1),
+                #[cfg(feature = "direct-file-webrtc")]
+                direct_file,
             }),
             lifecycle: Mutex::new(None),
         };
+        #[cfg(feature = "direct-file-webrtc")]
+        if let Some(supervisor) = &owner.shared.direct_file {
+            let enabled = owner
+                .shared
+                .state
+                .lock()
+                .await
+                .authority
+                .as_ref()
+                .is_some_and(RemoteAuthority::direct_file_transfers_enabled);
+            supervisor.set_enabled(enabled).await;
+        }
         if owner.shared.state.lock().await.authority.is_some() {
             owner.start_host().await;
         }
@@ -472,8 +553,28 @@ impl RemoteAccessOwner {
         self.shared.clear_history()
     }
 
+    pub async fn set_direct_file_transfers_enabled(
+        &self,
+        enabled: bool,
+    ) -> Result<RemoteSecurityView> {
+        self.shared
+            .set_direct_file_transfers_enabled(enabled)
+            .await?;
+        self.security_view().await
+    }
+
+    pub async fn stop_direct_file_transfers(&self) -> Result<RemoteSecurityView> {
+        self.shared
+            .stop_direct_file_transfers("operator_stop")
+            .await?;
+        self.security_view().await
+    }
+
     pub async fn disable(&self) -> Result<DisableRemoteAccessOutcome> {
         self.stop_host().await;
+        self.shared
+            .stop_direct_file_transfers("remote_access_disabled")
+            .await?;
         let authority = {
             let mut state = self.shared.state.lock().await;
             if !state.circuits.is_empty() {
@@ -518,6 +619,10 @@ impl RemoteAccessOwner {
     pub async fn shutdown(&self) {
         self.shared.shutdown.cancel();
         self.stop_host().await;
+        let _ = self
+            .shared
+            .stop_direct_file_transfers("application_shutdown")
+            .await;
     }
 
     async fn start_host(&self) {
@@ -573,37 +678,223 @@ impl SharedOwner {
             .fetch_add(1, Ordering::Relaxed)
     }
 
+    pub(crate) async fn set_direct_file_transfers_enabled(&self, enabled: bool) -> Result<()> {
+        #[cfg(not(feature = "direct-file-webrtc"))]
+        {
+            let _ = enabled;
+            Err(RemoteHostError::Configuration(
+                "direct-file transport is not compiled",
+            ))
+        }
+        #[cfg(feature = "direct-file-webrtc")]
+        {
+            let supervisor = self
+                .direct_file
+                .as_ref()
+                .ok_or(RemoteHostError::Configuration(
+                    "direct-file transport is unavailable",
+                ))?;
+            if !enabled {
+                let closed = supervisor.set_enabled(false).await;
+                self.record_closed_direct_files(closed, "direct_transfer_disabled")
+                    .await;
+            }
+            let event_id = random_event_id()?;
+            let mut state = self.state.lock().await;
+            let authority = state
+                .authority
+                .as_mut()
+                .ok_or(RemoteHostError::Configuration("remote access is disabled"))?;
+            self.store.update(authority, |candidate| {
+                candidate.set_direct_file_transfers_enabled(enabled, now(), event_id)
+            })?;
+            drop(state);
+            if enabled {
+                supervisor.set_enabled(true).await;
+            }
+            Ok(())
+        }
+    }
+
+    pub(crate) async fn stop_direct_file_transfers(&self, reason: &str) -> Result<()> {
+        #[cfg(feature = "direct-file-webrtc")]
+        if let Some(supervisor) = &self.direct_file {
+            let closed = supervisor.close_all().await;
+            self.record_closed_direct_files(closed, reason).await;
+        }
+        #[cfg(not(feature = "direct-file-webrtc"))]
+        let _ = reason;
+        Ok(())
+    }
+
+    #[cfg(feature = "direct-file-webrtc")]
+    pub(crate) async fn record_direct_file_started(
+        &self,
+        client_id: Option<ClientId>,
+        circuit_id: [u8; 16],
+        torrent_id: String,
+        file_index: u32,
+    ) -> Result<()> {
+        let event_id = random_event_id()?;
+        let mut state = self.state.lock().await;
+        let authority = state
+            .authority
+            .as_mut()
+            .ok_or(RemoteHostError::Configuration("remote access is disabled"))?;
+        self.store.update(authority, |candidate| {
+            candidate.record_direct_file_event(
+                EventKind::DirectFileStarted,
+                EventResult::Succeeded,
+                client_id,
+                circuit_id,
+                now(),
+                event_id,
+                DirectFileAuditView {
+                    torrent_id,
+                    file_index,
+                    byte_count: 0,
+                    candidate_class: None,
+                },
+                None,
+            )
+        })?;
+        Ok(())
+    }
+
+    #[cfg(feature = "direct-file-webrtc")]
+    pub(crate) async fn record_closed_direct_file(
+        &self,
+        closed: crate::direct_file::ClosedDirectFile,
+        reason: &str,
+    ) {
+        let Ok(event_id) = random_event_id() else {
+            return;
+        };
+        let (kind, result) = if reason == "complete" {
+            (EventKind::DirectFileCompleted, EventResult::Succeeded)
+        } else if matches!(
+            reason,
+            "cancelled" | "operator_stop" | "direct_transfer_disabled"
+        ) {
+            (EventKind::DirectFileCancelled, EventResult::Succeeded)
+        } else {
+            (EventKind::DirectFileFailed, EventResult::Rejected)
+        };
+        let mut state = self.state.lock().await;
+        let client_id = state
+            .circuits
+            .get(&closed.circuit_id)
+            .and_then(|circuit| circuit.client_id);
+        let Some(authority) = state.authority.as_mut() else {
+            return;
+        };
+        let _ = self.store.update(authority, |candidate| {
+            candidate.record_direct_file_event(
+                kind,
+                result,
+                client_id,
+                closed.circuit_id,
+                now(),
+                event_id,
+                DirectFileAuditView {
+                    torrent_id: closed.torrent_id,
+                    file_index: closed.file_index,
+                    byte_count: closed.snapshot.bytes_sent.min(closed.file_length),
+                    candidate_class: closed.snapshot.selected_candidate_class,
+                },
+                Some(reason.to_owned()),
+            )
+        });
+    }
+
+    #[cfg(feature = "direct-file-webrtc")]
+    async fn record_closed_direct_files(
+        &self,
+        closed: Vec<crate::direct_file::ClosedDirectFile>,
+        reason: &str,
+    ) {
+        for closed in closed {
+            self.record_closed_direct_file(closed, reason).await;
+        }
+    }
+
     pub(crate) async fn security_view(&self) -> Result<RemoteSecurityView> {
         self.expire_authorizations().await?;
-        let state = self.state.lock().await;
         let retained_history = self.store.load_history()?;
-        let (username, route, relay_id, host_pin, authority) = match &state.authority {
-            Some(authority) => (
-                Some(authority.binding().username().as_str().to_owned()),
-                Some(authority.route().to_owned()),
-                Some(wire::encode_id(authority.binding().relay_id().as_bytes())),
-                Some(wire::encode_id(&authority.host_pin().to_bytes())),
-                Some(authority.security_snapshot()),
-            ),
-            None => (None, None, None, None, None),
+        let (
+            enabled,
+            direct_enabled,
+            username,
+            route,
+            relay_id,
+            host_pin,
+            authority,
+            live_circuits,
+        ) = {
+            let state = self.state.lock().await;
+            let (direct_enabled, username, route, relay_id, host_pin, authority) =
+                match &state.authority {
+                    Some(authority) => (
+                        authority.direct_file_transfers_enabled(),
+                        Some(authority.binding().username().as_str().to_owned()),
+                        Some(authority.route().to_owned()),
+                        Some(wire::encode_id(authority.binding().relay_id().as_bytes())),
+                        Some(wire::encode_id(&authority.host_pin().to_bytes())),
+                        Some(authority.security_snapshot()),
+                    ),
+                    None => (false, None, None, None, None, None),
+                };
+            let live_circuits = state
+                .circuits
+                .iter()
+                .map(|(circuit_id, circuit)| LiveCircuitView {
+                    circuit_id: wire::encode_id(circuit_id),
+                    client_id: circuit
+                        .client_id
+                        .map(|client_id| wire::encode_id(client_id.as_bytes())),
+                    authentication_method: circuit.authentication_method,
+                    connection_generation: circuit.connection_generation,
+                    started: circuit.started,
+                    last_activity: circuit.last_activity,
+                    route: circuit.route.clone(),
+                })
+                .collect();
+            (
+                state.authority.is_some(),
+                direct_enabled,
+                username,
+                route,
+                relay_id,
+                host_pin,
+                authority,
+                live_circuits,
+            )
         };
-        let live_circuits = state
-            .circuits
-            .iter()
-            .map(|(circuit_id, circuit)| LiveCircuitView {
-                circuit_id: wire::encode_id(circuit_id),
-                client_id: circuit
-                    .client_id
-                    .map(|client_id| wire::encode_id(client_id.as_bytes())),
-                authentication_method: circuit.authentication_method,
-                connection_generation: circuit.connection_generation,
-                started: circuit.started,
-                last_activity: circuit.last_activity,
-                route: circuit.route.clone(),
-            })
-            .collect();
+        #[cfg(feature = "direct-file-webrtc")]
+        let direct_file = match &self.direct_file {
+            Some(supervisor) => {
+                let snapshot = supervisor.snapshot().await;
+                DirectFileSecurityView {
+                    compiled: true,
+                    enabled: direct_enabled,
+                    state: snapshot.state,
+                    active_circuit_id: snapshot.active_circuit.map(|id| wire::encode_id(&id)),
+                    bytes_sent: snapshot.bytes_sent,
+                    candidate_class: snapshot.candidate_class,
+                    active_tasks: snapshot.active_tasks,
+                    open_sockets: snapshot.open_sockets,
+                    active_requests: snapshot.active_requests,
+                    queued_bytes: snapshot.queued_bytes,
+                }
+            }
+            None => unavailable_direct_file_view(),
+        };
+        #[cfg(not(feature = "direct-file-webrtc"))]
+        let _ = direct_enabled;
+        #[cfg(not(feature = "direct-file-webrtc"))]
+        let direct_file = unavailable_direct_file_view();
         Ok(RemoteSecurityView {
-            enabled: state.authority.is_some(),
+            enabled,
             username,
             route,
             relay_id,
@@ -611,6 +902,7 @@ impl SharedOwner {
             authority,
             retained_history,
             live_circuits,
+            direct_file,
         })
     }
 

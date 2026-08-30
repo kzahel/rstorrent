@@ -15,3 +15,8 @@ pub use endpoint::{
     DirectFileEndpoint, DirectFileEndpointError, DirectFileEndpointFactory,
     DirectFileEndpointSnapshot, OfferAnswer,
 };
+
+#[cfg(feature = "webrtc")]
+pub use rtc::peer_connection::sdp::RTCSessionDescription;
+#[cfg(feature = "webrtc")]
+pub use rtc::peer_connection::transport::RTCIceCandidateInit;

@@ -164,6 +164,11 @@ pub enum EventKind {
     RequirePasswordEverywhere,
     RelayCredentialRotated,
     RecoveryReset,
+    DirectFileSettingChanged,
+    DirectFileStarted,
+    DirectFileCompleted,
+    DirectFileFailed,
+    DirectFileCancelled,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -224,6 +229,16 @@ pub struct SecurityEventView {
     pub route: Option<String>,
     pub client_build: Option<String>,
     pub reason_class: Option<String>,
+    pub direct_file: Option<DirectFileAuditView>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DirectFileAuditView {
+    pub torrent_id: String,
+    pub file_index: u32,
+    pub byte_count: u64,
+    pub candidate_class: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
