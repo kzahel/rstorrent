@@ -83,6 +83,12 @@ function remoteAccess(
       throw new Error("not expected");
     },
     clearHistory: async () => false,
+    setDirectFileTransfersEnabled: async () => {
+      throw new Error("not expected");
+    },
+    stopDirectFileTransfers: async () => {
+      throw new Error("not expected");
+    },
     ...overrides,
   };
 }
@@ -110,6 +116,18 @@ function enabledState(): DesktopRemoteAccessState {
           route: "alice",
         },
       ],
+      direct_file: {
+        compiled: true,
+        enabled: true,
+        state: "idle",
+        active_circuit_id: null,
+        bytes_sent: 0,
+        candidate_class: null,
+        active_tasks: 0,
+        open_sockets: 0,
+        active_requests: 0,
+        queued_bytes: 0,
+      },
     },
   };
 }
@@ -145,6 +163,7 @@ function securitySnapshot(): RemoteSecuritySnapshot {
         route: "alice",
         client_build: "test-build",
         reason_class: null,
+        direct_file: null,
       },
     ],
     failed_attempts: [

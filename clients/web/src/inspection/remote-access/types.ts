@@ -38,6 +38,14 @@ export interface RemoteSecurityEvent {
   readonly route: string | null;
   readonly client_build: string | null;
   readonly reason_class: string | null;
+  readonly direct_file: RemoteDirectFileAudit | null;
+}
+
+export interface RemoteDirectFileAudit {
+  readonly torrent_id: string;
+  readonly file_index: number;
+  readonly byte_count: number;
+  readonly candidate_class: string | null;
 }
 
 export interface RemoteFailedAttemptBucket {
@@ -75,6 +83,20 @@ export interface RemoteSecurityView {
   readonly authority: RemoteSecuritySnapshot | null;
   readonly retained_history: RemoteSecuritySnapshot | null;
   readonly live_circuits: readonly RemoteLiveCircuit[];
+  readonly direct_file: RemoteDirectFileSecurity;
+}
+
+export interface RemoteDirectFileSecurity {
+  readonly compiled: boolean;
+  readonly enabled: boolean;
+  readonly state: string;
+  readonly active_circuit_id: string | null;
+  readonly bytes_sent: number;
+  readonly candidate_class: string | null;
+  readonly active_tasks: number;
+  readonly open_sockets: number;
+  readonly active_requests: number;
+  readonly queued_bytes: number;
 }
 
 export interface DesktopRemoteAccessState {
@@ -101,5 +123,7 @@ export interface DesktopRemoteAccess {
   disable(): Promise<DisableRemoteAccessOutcome>;
   recover(username: string, passphrase: string): Promise<RemoteSecurityView>;
   clearHistory(): Promise<boolean>;
+  setDirectFileTransfersEnabled(enabled: boolean): Promise<RemoteSecurityView>;
+  stopDirectFileTransfers(): Promise<RemoteSecurityView>;
   signOutThisBrowser?(): Promise<void>;
 }

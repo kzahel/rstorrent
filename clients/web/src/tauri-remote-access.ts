@@ -42,5 +42,11 @@ export function createTauriDesktopRemoteAccess(): DesktopRemoteAccess {
       }),
     clearHistory: () =>
       invoke<boolean>("desktop_remote_access_clear_history"),
+    setDirectFileTransfersEnabled: (enabled) =>
+      invoke<RemoteSecurityView>("desktop_remote_access_set_direct_file_transfers", {
+        enabled,
+      }),
+    stopDirectFileTransfers: () =>
+      invoke<RemoteSecurityView>("desktop_remote_access_stop_direct_file_transfers"),
   };
 }

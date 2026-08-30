@@ -24,9 +24,13 @@ const AUTHORIZATION_CHOICE = bytes("RSA3");
 const AUTHENTICATION_SUCCEEDED = bytes("RSA4");
 const REMOTE_CONTROL_REQUEST = bytes("RSC2");
 const REMOTE_CONTROL_RESPONSE = bytes("RSC3");
+const DIRECT_FILE_REQUEST = bytes("RDF1");
+const DIRECT_FILE_RESPONSE = bytes("RDF2");
 const MAX_REMOTE_CONTROL_RESPONSE_BYTES = 4 * 1024 * 1024;
+const MAX_DIRECT_FILE_SIGNALING_BYTES = 64 * 1024;
 const MAX_PENDING_REMOTE_CONTROLS = 4;
 const REMOTE_CONTROL_TIMEOUT_MILLIS = 10_000;
+const DIRECT_FILE_SIGNALING_TIMEOUT_MILLIS = 15_000;
 
 export type RemoteConnectionFailure =
   | "connection_failed"
@@ -40,6 +44,8 @@ export type RemoteControlOperation =
   | { readonly type: "revoke_all_other"; readonly retained_client_id: string }
   | { readonly type: "close_circuit"; readonly circuit_id: string }
   | { readonly type: "require_password_everywhere" }
+  | { readonly type: "set_direct_file_transfers"; readonly enabled: boolean }
+  | { readonly type: "stop_direct_file_transfers" }
   | { readonly type: "sign_out_this_browser" }
   | { readonly type: "clear_history" };
 
@@ -48,6 +54,81 @@ export type RemoteControlOutcome =
   | { readonly type: "count"; readonly count: number }
   | { readonly type: "complete" }
   | { readonly type: "signed_out"; readonly authorization_revoked: boolean };
+
+export interface DirectIceCandidate {
+  readonly candidate: string;
+  readonly sdp_mid: string | null;
+  readonly sdp_m_line_index: number | null;
+  readonly username_fragment: string | null;
+}
+
+interface DirectFileIdentity {
+  readonly request_id: number;
+  readonly circuit_generation: number;
+  readonly browser_peer_generation: number;
+}
+
+export type DirectFileRequest =
+  | (DirectFileIdentity & {
+      readonly type: "open";
+      readonly torrent_id: string;
+      readonly file_index: number;
+      readonly offer: { readonly type: "offer"; readonly sdp: string };
+    })
+  | (DirectFileIdentity & {
+      readonly type: "candidate";
+      readonly candidate: DirectIceCandidate;
+    })
+  | (DirectFileIdentity & { readonly type: "end_of_candidates" })
+  | (DirectFileIdentity & {
+      readonly type: "close";
+      readonly outcome: "complete" | "cancelled" | "sink_failed";
+    });
+
+export type DirectFileResponse =
+  | (DirectFileIdentity & {
+      readonly type: "opened";
+      readonly host_peer_generation: number;
+      readonly file_length: string;
+      readonly max_chunk_bytes: number;
+      readonly answer: { readonly type: "answer"; readonly sdp: string };
+      readonly candidates: readonly DirectIceCandidate[];
+    })
+  | (DirectFileIdentity & {
+      readonly type: "candidate";
+      readonly host_peer_generation: number;
+      readonly candidate: DirectIceCandidate;
+    })
+  | (DirectFileIdentity & {
+      readonly type: "end_of_candidates";
+      readonly host_peer_generation: number;
+    })
+  | (DirectFileIdentity & {
+      readonly type: "status";
+      readonly host_peer_generation: number;
+      readonly state: "negotiating" | "connected" | "transferring" | "complete";
+      readonly bytes_sent: string;
+      readonly candidate_class: "host" | "server_reflexive" | "peer_reflexive" | null;
+    })
+  | (DirectFileIdentity & {
+      readonly type: "rejected";
+      readonly reason:
+        | "disabled"
+        | "busy"
+        | "unsupported"
+        | "invalid_request"
+        | "file_unavailable"
+        | "signaling_limit"
+        | "direct_unavailable"
+        | "cancelled"
+        | "circuit_closed"
+        | "internal";
+    })
+  | (DirectFileIdentity & {
+      readonly type: "closed";
+      readonly host_peer_generation: number | null;
+      readonly outcome: "complete" | "cancelled" | "sink_failed";
+    });
 
 export interface RemoteHostIdentity {
   readonly relayId: Uint8Array;
@@ -211,10 +292,20 @@ interface AuthenticationSucceeded {
     readonly client_id: string;
     readonly fingerprint: string;
   };
+  readonly capabilities?: readonly string[];
+  readonly circuit_id?: string;
+  readonly connection_generation?: number;
 }
 
 interface PendingRemoteControl {
   readonly resolve: (outcome: RemoteControlOutcome) => void;
+  readonly reject: (error: Error) => void;
+  readonly timer: ReturnType<typeof setTimeout>;
+}
+
+interface PendingDirectFile {
+  readonly requestId: number;
+  readonly resolve: (response: DirectFileResponse) => void;
   readonly reject: (error: Error) => void;
   readonly timer: ReturnType<typeof setTimeout>;
 }
@@ -243,6 +334,9 @@ export class RemoteApplicationWebSocket implements ApplicationWebSocket {
   private failed = false;
   private nextControlId = 1;
   private readonly pendingControls = new Map<number, PendingRemoteControl>();
+  private pendingDirectFile: PendingDirectFile | undefined;
+  private directFileCircuitGeneration: number | undefined;
+  private directFileCapability = false;
 
   public constructor(private readonly options: RemoteConnectionOptions) {
     validateOptions(options);
@@ -310,6 +404,7 @@ export class RemoteApplicationWebSocket implements ApplicationWebSocket {
     clearTimeout(this.timer);
     this.eraseHandshakeSecrets();
     this.rejectPendingControls(new Error("remote application connection closed"));
+    this.rejectPendingDirectFile(new Error("remote application connection closed"));
     if (this.session !== undefined) {
       try {
         this.socket.send(exactBuffer(this.session.seal_close()));
@@ -350,6 +445,55 @@ export class RemoteApplicationWebSocket implements ApplicationWebSocket {
     });
   }
 
+  public directFileSupported(): boolean {
+    return this.state === SOCKET_OPEN && this.directFileCapability;
+  }
+
+  public directFileConnectionGeneration(): number {
+    if (!this.directFileSupported() || this.directFileCircuitGeneration === undefined) {
+      throw new Error("direct file transfer is unavailable on this connection");
+    }
+    return this.directFileCircuitGeneration;
+  }
+
+  public directFile(request: DirectFileRequest): Promise<DirectFileResponse> {
+    if (this.state !== SOCKET_OPEN || this.session === undefined) {
+      return Promise.reject(new Error("remote application connection is not open"));
+    }
+    if (!this.directFileCapability || this.directFileCircuitGeneration === undefined) {
+      return Promise.reject(new Error("direct file transfer is unsupported by this host"));
+    }
+    if (request.circuit_generation !== this.directFileCircuitGeneration) {
+      return Promise.reject(new Error("direct file transfer uses a stale connection"));
+    }
+    if (this.pendingDirectFile !== undefined) {
+      return Promise.reject(new Error("a direct file signaling operation is already pending"));
+    }
+    let plaintext: Uint8Array;
+    try {
+      plaintext = encodeJsonRecord(DIRECT_FILE_REQUEST, request);
+      if (plaintext.byteLength - DIRECT_FILE_REQUEST.byteLength > MAX_DIRECT_FILE_SIGNALING_BYTES) {
+        throw new Error("direct file signaling exceeds the size limit");
+      }
+    } catch (error) {
+      return Promise.reject(asError(error));
+    }
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingDirectFile = undefined;
+        reject(new Error("direct file signaling timed out"));
+      }, DIRECT_FILE_SIGNALING_TIMEOUT_MILLIS);
+      this.pendingDirectFile = { requestId: request.request_id, resolve, reject, timer };
+      try {
+        this.socket.send(exactBuffer(this.session!.seal(plaintext)));
+      } catch (error) {
+        clearTimeout(timer);
+        this.pendingDirectFile = undefined;
+        reject(asError(error));
+      }
+    });
+  }
+
   private async receive(data: unknown): Promise<void> {
     const message = binaryMessage(data);
     switch (this.phase) {
@@ -380,7 +524,9 @@ export class RemoteApplicationWebSocket implements ApplicationWebSocket {
   }
 
   private beginAuthentication(greeting: HostGreetingValue): void {
-    if (greeting.protocolVersion !== 1) throw new Error("unsupported host protocol");
+    if (greeting.protocolVersion !== 1 && greeting.protocolVersion !== 2) {
+      throw new Error("unsupported host protocol");
+    }
     const expected = expectedIdentity(this.options);
     if (
       expected !== undefined &&
@@ -549,6 +695,8 @@ export class RemoteApplicationWebSocket implements ApplicationWebSocket {
       AUTHENTICATION_SUCCEEDED,
     );
     validateOutcome(outcome);
+    this.directFileCapability = outcome.capabilities?.includes("direct_file_v1") ?? false;
+    this.directFileCircuitGeneration = outcome.connection_generation;
     const authentication = this.options.authentication;
     if (authentication.type === "resume") {
       if (
@@ -618,6 +766,13 @@ export class RemoteApplicationWebSocket implements ApplicationWebSocket {
       equalBytes(opened.plaintext.subarray(0, 4), REMOTE_CONTROL_RESPONSE)
     ) {
       this.acceptRemoteControl(opened.plaintext);
+      return;
+    }
+    if (
+      opened.plaintext.byteLength > 4 &&
+      equalBytes(opened.plaintext.subarray(0, 4), DIRECT_FILE_RESPONSE)
+    ) {
+      this.acceptDirectFile(opened.plaintext);
       return;
     }
     const text = new TextDecoder("utf-8", { fatal: true }).decode(opened.plaintext);
@@ -704,6 +859,35 @@ export class RemoteApplicationWebSocket implements ApplicationWebSocket {
     }
     this.pendingControls.clear();
   }
+
+  private acceptDirectFile(plaintext: Uint8Array): void {
+    const response = validateDirectFileResponse(
+      decodeJsonRecord<unknown>(
+        plaintext,
+        DIRECT_FILE_RESPONSE,
+        MAX_DIRECT_FILE_SIGNALING_BYTES,
+      ),
+    );
+    const pending = this.pendingDirectFile;
+    if (pending === undefined || pending.requestId !== response.request_id) {
+      throw new Error("unexpected direct file signaling response");
+    }
+    clearTimeout(pending.timer);
+    this.pendingDirectFile = undefined;
+    if (response.type === "rejected") {
+      pending.reject(new Error(directFileFailureMessage(response.reason)));
+    } else {
+      pending.resolve(response);
+    }
+  }
+
+  private rejectPendingDirectFile(error: Error): void {
+    const pending = this.pendingDirectFile;
+    if (pending === undefined) return;
+    clearTimeout(pending.timer);
+    this.pendingDirectFile = undefined;
+    pending.reject(error);
+  }
 }
 
 async function signP256(
@@ -749,7 +933,7 @@ function validateReady(value: AuthenticationReady): void {
       "protocol_floor",
       "protocol_version",
     ]) ||
-    value.protocol_version !== 1 ||
+    (value.protocol_version !== 1 && value.protocol_version !== 2) ||
     !Number.isSafeInteger(value.authorization_generation) ||
     value.authorization_generation < 1 ||
     !Number.isSafeInteger(value.protocol_floor) ||
@@ -766,11 +950,33 @@ function validateReady(value: AuthenticationReady): void {
 }
 
 function validateOutcome(value: AuthenticationSucceeded): void {
-  if (
-    !hasExactKeys(value, ["authorization", "protocol_version"]) ||
-    value.protocol_version !== 1
-  ) {
+  if (value.protocol_version !== 1 && value.protocol_version !== 2) {
     throw new Error("invalid authentication result");
+  }
+  const expectedKeys =
+    value.protocol_version === 1
+      ? ["authorization", "protocol_version"]
+      : [
+          "authorization",
+          "capabilities",
+          "circuit_id",
+          "connection_generation",
+          "protocol_version",
+        ];
+  if (!hasExactKeys(value, expectedKeys)) throw new Error("invalid authentication result");
+  if (value.protocol_version === 2) {
+    if (
+      !Array.isArray(value.capabilities) ||
+      value.capabilities.some(
+        (capability) => typeof capability !== "string" || capability.length > 64,
+      ) ||
+      typeof value.circuit_id !== "string" ||
+      !Number.isSafeInteger(value.connection_generation) ||
+      (value.connection_generation ?? 0) < 1
+    ) {
+      throw new Error("invalid authentication result");
+    }
+    decodeId(value.circuit_id, 16, "circuit ID");
   }
   if (value.authorization !== null) {
     if (!hasExactKeys(value.authorization, ["client_id", "fingerprint"])) {
@@ -852,6 +1058,180 @@ function validateControlOutcome(
       break;
   }
   throw new Error("invalid remote security response");
+}
+
+function validateDirectFileResponse(value: unknown): DirectFileResponse {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("invalid direct file signaling response");
+  }
+  const candidate = value as Record<string, unknown>;
+  if (!directFileIdentity(candidate)) throw new Error("invalid direct file signaling response");
+  const common = [
+    "browser_peer_generation",
+    "circuit_generation",
+    "request_id",
+    "type",
+  ];
+  switch (candidate.type) {
+    case "opened":
+      if (
+        hasExactKeys(value, [
+          ...common,
+          "answer",
+          "candidates",
+          "file_length",
+          "host_peer_generation",
+          "max_chunk_bytes",
+        ]) &&
+        positiveSafeInteger(candidate.host_peer_generation) &&
+        decimalU64(candidate.file_length) &&
+        positiveSafeInteger(candidate.max_chunk_bytes) &&
+        (candidate.max_chunk_bytes as number) <= 64 * 1024 &&
+        directSessionDescription(candidate.answer, "answer") &&
+        Array.isArray(candidate.candidates) &&
+        candidate.candidates.length <= 32 &&
+        candidate.candidates.every(directIceCandidate)
+      ) {
+        return value as DirectFileResponse;
+      }
+      break;
+    case "candidate":
+      if (
+        hasExactKeys(value, [...common, "candidate", "host_peer_generation"]) &&
+        positiveSafeInteger(candidate.host_peer_generation) &&
+        directIceCandidate(candidate.candidate)
+      ) {
+        return value as DirectFileResponse;
+      }
+      break;
+    case "end_of_candidates":
+      if (
+        hasExactKeys(value, [...common, "host_peer_generation"]) &&
+        positiveSafeInteger(candidate.host_peer_generation)
+      ) {
+        return value as DirectFileResponse;
+      }
+      break;
+    case "status":
+      if (
+        hasExactKeys(value, [
+          ...common,
+          "bytes_sent",
+          "candidate_class",
+          "host_peer_generation",
+          "state",
+        ]) &&
+        positiveSafeInteger(candidate.host_peer_generation) &&
+        decimalU64(candidate.bytes_sent) &&
+        oneOf(candidate.state, ["negotiating", "connected", "transferring", "complete"]) &&
+        (candidate.candidate_class === null ||
+          oneOf(candidate.candidate_class, ["host", "server_reflexive", "peer_reflexive"]))
+      ) {
+        return value as DirectFileResponse;
+      }
+      break;
+    case "rejected":
+      if (
+        hasExactKeys(value, [...common, "reason"]) &&
+        oneOf(candidate.reason, [
+          "disabled",
+          "busy",
+          "unsupported",
+          "invalid_request",
+          "file_unavailable",
+          "signaling_limit",
+          "direct_unavailable",
+          "cancelled",
+          "circuit_closed",
+          "internal",
+        ])
+      ) {
+        return value as DirectFileResponse;
+      }
+      break;
+    case "closed":
+      if (
+        hasExactKeys(value, [...common, "host_peer_generation", "outcome"]) &&
+        (candidate.host_peer_generation === null ||
+          positiveSafeInteger(candidate.host_peer_generation)) &&
+        oneOf(candidate.outcome, ["complete", "cancelled", "sink_failed"])
+      ) {
+        return value as DirectFileResponse;
+      }
+      break;
+  }
+  throw new Error("invalid direct file signaling response");
+}
+
+function directFileIdentity(candidate: Record<string, unknown>): boolean {
+  return (
+    positiveSafeInteger(candidate.request_id) &&
+    positiveSafeInteger(candidate.circuit_generation) &&
+    positiveSafeInteger(candidate.browser_peer_generation)
+  );
+}
+
+function directSessionDescription(value: unknown, kind: "offer" | "answer"): boolean {
+  return (
+    hasExactKeys(value, ["sdp", "type"]) &&
+    (value as Record<string, unknown>).type === kind &&
+    typeof (value as Record<string, unknown>).sdp === "string" &&
+    ((value as Record<string, unknown>).sdp as string).length > 0
+  );
+}
+
+function directIceCandidate(value: unknown): boolean {
+  if (!hasExactKeys(value, [
+    "candidate",
+    "sdp_m_line_index",
+    "sdp_mid",
+    "username_fragment",
+  ])) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.candidate === "string" &&
+    candidate.candidate.length > 0 &&
+    candidate.candidate.length <= 4_096 &&
+    nullableSignalingString(candidate.sdp_mid) &&
+    (candidate.sdp_m_line_index === null ||
+      (nonnegativeSafeInteger(candidate.sdp_m_line_index) &&
+        (candidate.sdp_m_line_index as number) <= 0xffff)) &&
+    nullableSignalingString(candidate.username_fragment)
+  );
+}
+
+function decimalU64(value: unknown): boolean {
+  if (typeof value !== "string" || !/^(0|[1-9][0-9]{0,19})$/.test(value)) return false;
+  return BigInt(value) <= 0xffff_ffff_ffff_ffffn;
+}
+
+function positiveSafeInteger(value: unknown): boolean {
+  return Number.isSafeInteger(value) && (value as number) > 0;
+}
+
+function nonnegativeSafeInteger(value: unknown): boolean {
+  return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
+function nullableSignalingString(value: unknown): boolean {
+  return value === null || (typeof value === "string" && value.length <= 256);
+}
+
+function oneOf(value: unknown, choices: readonly string[]): boolean {
+  return typeof value === "string" && choices.includes(value);
+}
+
+function directFileFailureMessage(reason: Extract<DirectFileResponse, { type: "rejected" }>["reason"]): string {
+  switch (reason) {
+    case "disabled": return "direct file transfers are disabled on the host";
+    case "busy": return "another direct file transfer is already active";
+    case "unsupported": return "this host does not support direct file transfers";
+    case "file_unavailable": return "the completed file is no longer available";
+    case "direct_unavailable": return "a direct connection could not be established";
+    case "cancelled": return "the direct file transfer was cancelled";
+    case "circuit_closed": return "the remote connection closed";
+    default: return "the direct file transfer request was rejected";
+  }
 }
 
 function rejectUnsupportedApplicationBreadth(encoded: string): void {

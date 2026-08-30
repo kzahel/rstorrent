@@ -67,6 +67,14 @@ export function createRemoteSecurityClient(
     },
     requirePasswordEverywhere: async () =>
       expectCount(await control({ type: "require_password_everywhere" })),
+    setDirectFileTransfersEnabled: async (enabled) => {
+      expectComplete(await control({ type: "set_direct_file_transfers", enabled }));
+      return securityView(await control({ type: "inspect" }));
+    },
+    stopDirectFileTransfers: async () => {
+      expectComplete(await control({ type: "stop_direct_file_transfers" }));
+      return securityView(await control({ type: "inspect" }));
+    },
     clearHistory: async () => {
       expectComplete(await control({ type: "clear_history" }));
       return true;
@@ -99,9 +107,17 @@ function expectCount(outcome: RemoteControlOutcome): number {
   return outcome.count;
 }
 
+function securityView(outcome: RemoteControlOutcome): RemoteSecurityView {
+  if (outcome.type !== "security" || !isSecurityView(outcome.security)) {
+    throw new Error("remote host returned an invalid security view");
+  }
+  return outcome.security;
+}
+
 function isSecurityView(value: unknown): value is RemoteSecurityView {
   if (!hasExactKeys(value, [
     "authority",
+    "direct_file",
     "enabled",
     "host_pin",
     "live_circuits",
@@ -121,7 +137,21 @@ function isSecurityView(value: unknown): value is RemoteSecurityView {
     nullableSnapshot(candidate.retained_history) &&
     Array.isArray(candidate.live_circuits) &&
     candidate.live_circuits.every(isLiveCircuit)
+    && isDirectFileSecurity(candidate.direct_file)
   );
+}
+
+function isDirectFileSecurity(value: unknown): boolean {
+  if (!hasExactKeys(value, [
+    "active_circuit_id", "active_requests", "active_tasks", "bytes_sent",
+    "candidate_class", "compiled", "enabled", "open_sockets", "queued_bytes", "state",
+  ])) return false;
+  const direct = value as Record<string, unknown>;
+  return typeof direct.compiled === "boolean" && typeof direct.enabled === "boolean" &&
+    typeof direct.state === "string" && nullableString(direct.active_circuit_id) &&
+    nullableString(direct.candidate_class) && numbers(direct, [
+      "bytes_sent", "active_tasks", "open_sockets", "active_requests", "queued_bytes",
+    ]);
 }
 
 function nullableSnapshot(value: unknown): boolean {
@@ -173,7 +203,7 @@ function isTombstone(value: unknown): boolean {
 function isSecurityEvent(value: unknown): boolean {
   if (!hasExactKeys(value, [
     "authentication_method", "circuit_id", "client_build", "client_id", "event_id",
-    "kind", "reason_class", "result", "route", "timestamp",
+    "direct_file", "kind", "reason_class", "result", "route", "timestamp",
   ])) return false;
   const event = value as Record<string, unknown>;
   return strings(event, ["event_id", "kind"]) && nonnegativeInteger(event.timestamp) &&
@@ -181,7 +211,17 @@ function isSecurityEvent(value: unknown): boolean {
     nullableString(event.circuit_id) &&
     (event.authentication_method === null || oneOf(event.authentication_method, ["password", "resume"])) &&
     nullableString(event.route) && nullableString(event.client_build) &&
-    nullableString(event.reason_class);
+    nullableString(event.reason_class) && nullableDirectFileAudit(event.direct_file);
+}
+
+function nullableDirectFileAudit(value: unknown): boolean {
+  if (value === null) return true;
+  if (!hasExactKeys(value, ["byte_count", "candidate_class", "file_index", "torrent_id"])) {
+    return false;
+  }
+  const audit = value as Record<string, unknown>;
+  return typeof audit.torrent_id === "string" && nonnegativeInteger(audit.file_index) &&
+    nonnegativeInteger(audit.byte_count) && nullableString(audit.candidate_class);
 }
 
 function isFailedAttempt(value: unknown): boolean {

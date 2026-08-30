@@ -31,12 +31,18 @@ describe("authenticated remote security client", () => {
     await client.revoke("client-two");
     expect(await client.revokeAllOther("client-one")).toBe(2);
     expect(await client.requirePasswordEverywhere()).toBe(2);
+    expect((await client.setDirectFileTransfersEnabled(false)).direct_file.compiled).toBe(true);
+    await client.stopDirectFileTransfers();
     expect(operations).toEqual([
       { type: "inspect" },
       { type: "rename", client_id: "client-one", label: "Renamed" },
       { type: "revoke", client_id: "client-two" },
       { type: "revoke_all_other", retained_client_id: "client-one" },
       { type: "require_password_everywhere" },
+      { type: "set_direct_file_transfers", enabled: false },
+      { type: "inspect" },
+      { type: "stop_direct_file_transfers" },
+      { type: "inspect" },
     ]);
   });
 
@@ -79,6 +85,7 @@ describe("authenticated remote security client", () => {
               authority: null,
               retained_history: null,
               live_circuits: "not-an-array",
+              direct_file: directFileSecurity(),
             },
           }),
         }) as unknown as RemoteApplicationWebSocket,
@@ -103,6 +110,7 @@ function result(operation: RemoteControlOperation): RemoteControlOutcome {
           authority: null,
           retained_history: null,
           live_circuits: [],
+          direct_file: directFileSecurity(),
         },
       };
     case "revoke_all_other":
@@ -113,6 +121,21 @@ function result(operation: RemoteControlOperation): RemoteControlOutcome {
     default:
       return { type: "complete" };
   }
+}
+
+function directFileSecurity(enabled = true): Record<string, unknown> {
+  return {
+    compiled: true,
+    enabled,
+    state: "idle",
+    active_circuit_id: null,
+    bytes_sent: 0,
+    candidate_class: null,
+    active_tasks: 0,
+    open_sockets: 0,
+    active_requests: 0,
+    queued_bytes: 0,
+  };
 }
 
 function store(overrides: Partial<RemoteClientStore> = {}): RemoteClientStore {

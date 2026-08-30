@@ -232,6 +232,27 @@ async fn desktop_remote_access_require_password(
 }
 
 #[tauri::command]
+async fn desktop_remote_access_set_direct_file_transfers(
+    state: State<'_, DesktopState>,
+    enabled: bool,
+) -> Result<RemoteSecurityView, String> {
+    remote_access_owner(&state)?
+        .set_direct_file_transfers_enabled(enabled)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn desktop_remote_access_stop_direct_file_transfers(
+    state: State<'_, DesktopState>,
+) -> Result<RemoteSecurityView, String> {
+    remote_access_owner(&state)?
+        .stop_direct_file_transfers()
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 async fn desktop_remote_access_change_passphrase(
     state: State<'_, DesktopState>,
     passphrase: String,
@@ -1982,6 +2003,8 @@ pub fn run() {
             desktop_remote_access_revoke_all_other,
             desktop_remote_access_close_circuit,
             desktop_remote_access_require_password,
+            desktop_remote_access_set_direct_file_transfers,
+            desktop_remote_access_stop_direct_file_transfers,
             desktop_remote_access_change_passphrase,
             desktop_remote_access_disable,
             desktop_remote_access_recover,

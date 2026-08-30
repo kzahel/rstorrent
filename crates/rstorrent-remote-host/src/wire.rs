@@ -110,6 +110,10 @@ pub struct AuthenticationSucceeded {
     pub authorization: Option<AuthorizationSucceeded>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub capabilities: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub circuit_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connection_generation: Option<u64>,
 }
 
 #[cfg(feature = "direct-file-webrtc")]
@@ -281,6 +285,8 @@ pub enum RemoteControlOperation {
     RevokeAllOther { retained_client_id: String },
     CloseCircuit { circuit_id: String },
     RequirePasswordEverywhere,
+    SetDirectFileTransfers { enabled: bool },
+    StopDirectFileTransfers,
     SignOutThisBrowser,
     ClearHistory,
 }

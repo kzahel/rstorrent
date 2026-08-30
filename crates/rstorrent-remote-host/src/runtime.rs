@@ -381,6 +381,8 @@ async fn authenticate_password(
             protocol_version: advertised_protocol(owner),
             authorization,
             capabilities: advertised_capabilities(owner),
+            circuit_id: (advertised_protocol(owner) >= 2).then(|| encode_id(circuit_id.as_slice())),
+            connection_generation: (advertised_protocol(owner) >= 2).then_some(generation),
         },
         connection_generation: generation,
     })
@@ -469,6 +471,8 @@ async fn authenticate_resume(
                 fingerprint,
             }),
             capabilities: advertised_capabilities(owner),
+            circuit_id: (advertised_protocol(owner) >= 2).then(|| encode_id(circuit_id.as_slice())),
+            connection_generation: (advertised_protocol(owner) >= 2).then_some(generation),
         },
         connection_generation: generation,
     })
@@ -657,6 +661,14 @@ async fn execute_remote_control(
             .require_password_everywhere()
             .await
             .map(|count| RemoteControlOutcome::Count { count }),
+        RemoteControlOperation::SetDirectFileTransfers { enabled } => owner
+            .set_direct_file_transfers_enabled(enabled)
+            .await
+            .map(|()| RemoteControlOutcome::Complete),
+        RemoteControlOperation::StopDirectFileTransfers => owner
+            .stop_direct_file_transfers("operator_stop")
+            .await
+            .map(|()| RemoteControlOutcome::Complete),
         RemoteControlOperation::SignOutThisBrowser => match authenticated_client_id {
             Some(client_id) => owner
                 .revoke(&encode_id(client_id.as_bytes()))
