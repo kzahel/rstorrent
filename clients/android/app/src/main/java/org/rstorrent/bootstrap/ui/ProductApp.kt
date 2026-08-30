@@ -82,6 +82,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.launch
 import org.rstorrent.bootstrap.ProductEngineService
+import org.rstorrent.bootstrap.ProductNotificationNavigation
+import org.rstorrent.bootstrap.ProductNotificationPreference
 import org.rstorrent.bootstrap.ProductState
 import org.rstorrent.bootstrap.ExternalIntakeKind
 import org.rstorrent.bootstrap.ExternalIntakeNoticeKind
@@ -118,6 +120,9 @@ fun ProductApp(
     onThemeMode: (ProductThemeMode) -> Unit,
     onDynamicColor: (Boolean) -> Unit,
     stateOverride: ProductState? = null,
+    notificationNavigation: ProductNotificationNavigation? = null,
+    onNotificationNavigationConsumed: (Long) -> Unit = {},
+    onUpdateNotificationPreference: ((ProductNotificationPreference, Boolean) -> Unit)? = null,
     onUpdateClientSettings: ((ClientSettingsPatch) -> Unit)? = null,
     onUpdateTorrentSettings: ((String, TorrentSettingsPatch) -> Unit)? = null,
     onRepairStorage: (String) -> Unit = {},
@@ -137,6 +142,7 @@ fun ProductApp(
                 collected
             }
         val snackbar = remember { SnackbarHostState() }
+        val notificationScope = rememberCoroutineScope()
         LaunchedEffect(state.externalIntakeNotice?.sequence) {
             state.externalIntakeNotice?.let { notice ->
                 snackbar.showSnackbar(externalIntakeNoticeText(notice.kind))
@@ -153,6 +159,16 @@ fun ProductApp(
                     notificationsGranted = notificationsGranted,
                     onRequestNotifications = onRequestNotifications,
                     onOpenNotificationSettings = onOpenNotificationSettings,
+                    notificationNavigation = notificationNavigation,
+                    onNotificationNavigationConsumed = onNotificationNavigationConsumed,
+                    onNotificationNavigationFallback = { message ->
+                        notificationScope.launch { snackbar.showSnackbar(message) }
+                    },
+                    onUpdateNotificationPreference =
+                        onUpdateNotificationPreference ?: { preference, enabled ->
+                            service?.setNotificationPreference(preference, enabled)
+                            Unit
+                        },
                     themeMode = themeMode,
                     dynamicColor = dynamicColor,
                     onThemeMode = onThemeMode,
@@ -352,6 +368,10 @@ private fun ProductNavHost(
     notificationsGranted: Boolean,
     onRequestNotifications: () -> Unit,
     onOpenNotificationSettings: () -> Unit,
+    notificationNavigation: ProductNotificationNavigation?,
+    onNotificationNavigationConsumed: (Long) -> Unit,
+    onNotificationNavigationFallback: (String) -> Unit,
+    onUpdateNotificationPreference: (ProductNotificationPreference, Boolean) -> Unit,
     themeMode: ProductThemeMode,
     dynamicColor: Boolean,
     onThemeMode: (ProductThemeMode) -> Unit,
@@ -362,6 +382,36 @@ private fun ProductNavHost(
     val navController = rememberNavController()
     var removeTargets by remember { mutableStateOf(emptySet<String>()) }
     var removeStorageRoot by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(notificationNavigation?.sequence, state.ready) {
+        val target = notificationNavigation ?: return@LaunchedEffect
+        if (!state.ready) return@LaunchedEffect
+        when (target) {
+            is ProductNotificationNavigation.Torrent -> {
+                if (target.torrentId in state.torrents) {
+                    navController.navigate(ProductRoutes.detail(target.torrentId)) {
+                        launchSingleTop = true
+                    }
+                } else {
+                    if (!navController.popBackStack(ProductRoutes.LIBRARY, inclusive = false)) {
+                        navController.navigate(ProductRoutes.LIBRARY) { launchSingleTop = true }
+                    }
+                    onNotificationNavigationFallback("That torrent is no longer available.")
+                }
+            }
+            is ProductNotificationNavigation.StorageRepair -> {
+                navController.navigate(ProductRoutes.SETTINGS_STORAGE) { launchSingleTop = true }
+                if (
+                    target.rootId != null &&
+                    state.storage?.roots?.none { it.rootId == target.rootId } == true
+                ) {
+                    onNotificationNavigationFallback(
+                        "That download folder is no longer registered.",
+                    )
+                }
+            }
+        }
+        onNotificationNavigationConsumed(target.sequence)
+    }
     LaunchedEffect(state.externalIntake?.intakeId) {
         if (state.externalIntake != null) {
             if (!navController.popBackStack(ProductRoutes.LIBRARY, inclusive = false)) {
@@ -373,8 +423,17 @@ private fun ProductNavHost(
         composable(ProductRoutes.LIBRARY) {
             LibraryScreen(
                 state = state,
-                notificationsGranted = notificationsGranted,
-                onRequestNotifications = onRequestNotifications,
+                notificationsGranted =
+                    notificationsGranted &&
+                        state.notifications.appNotificationsEnabled &&
+                        state.notifications.backgroundChannelEnabled,
+                onRequestNotifications =
+                    if (notificationsGranted) {
+                        onOpenNotificationSettings
+                    } else {
+                        onRequestNotifications
+                    },
+                notificationActionLabel = if (notificationsGranted) "Manage" else "Enable",
                 onSelectStorage = onSelectStorage,
                 onOpenTorrent = { navController.navigate(ProductRoutes.detail(it)) },
                 onAddMagnet = { magnet, start ->
@@ -550,13 +609,70 @@ private fun ProductNavHost(
         }
         composable(ProductRoutes.SETTINGS_NOTIFICATIONS) {
             SettingsPage("Notifications", navController::popBackStack) {
+                val notificationState = state.notifications
+                val backgroundVisible =
+                    notificationsGranted &&
+                        notificationState.appNotificationsEnabled &&
+                        notificationState.backgroundChannelEnabled
                 SettingAction(
-                    title = if (notificationsGranted) "Notifications enabled" else "Notifications disabled",
-                    detail = "Foreground-service status is managed by Android.",
+                    title =
+                        when {
+                            !notificationsGranted -> "Notifications disabled"
+                            !notificationState.appNotificationsEnabled -> "Notifications blocked"
+                            !notificationState.backgroundChannelEnabled ->
+                                "Background activity blocked"
+                            else -> "Notifications enabled"
+                        },
+                    detail =
+                        if (backgroundVisible) {
+                            "Android can show foreground status. Background lifetime is still provisional."
+                        } else {
+                            "RSTorrent works while Android is visible. Leaving Android stops background work."
+                        },
                     onClick = if (notificationsGranted) onOpenNotificationSettings else onRequestNotifications,
                     action = if (notificationsGranted) "Manage" else "Enable",
                 )
-                UnavailableSetting("Completion notifications")
+                NotificationToggleSetting(
+                    title = "Download completed",
+                    detail =
+                        if (notificationState.completionChannelEnabled) {
+                            "Notify when a download genuinely finishes."
+                        } else {
+                            "Blocked in Android system settings."
+                        },
+                    checked = notificationState.preferences.downloadComplete,
+                    onChecked = {
+                        onUpdateNotificationPreference(
+                            ProductNotificationPreference.DOWNLOAD_COMPLETE,
+                            it,
+                        )
+                    },
+                )
+                NotificationToggleSetting(
+                    title = "Needs attention",
+                    detail =
+                        if (notificationState.attentionChannelEnabled) {
+                            "Notify when a torrent or download folder needs repair."
+                        } else {
+                            "Blocked in Android system settings."
+                        },
+                    checked = notificationState.preferences.needsAttention,
+                    onChecked = {
+                        onUpdateNotificationPreference(
+                            ProductNotificationPreference.NEEDS_ATTENTION,
+                            it,
+                        )
+                    },
+                )
+                notificationState.preferenceError?.let {
+                    ReadOnlySetting("Setting not saved", it)
+                }
+                SettingAction(
+                    title = "Manage system notification settings",
+                    detail = "Review Android app and channel controls.",
+                    onClick = onOpenNotificationSettings,
+                    action = "Open",
+                )
             }
         }
         composable(ProductRoutes.SETTINGS_NETWORK) {
@@ -1152,6 +1268,24 @@ private fun ReadOnlySetting(
     detail: String,
 ) {
     ListItem(headlineContent = { Text(title) }, supportingContent = { Text(detail) })
+    HorizontalDivider()
+}
+
+@Composable
+private fun NotificationToggleSetting(
+    title: String,
+    detail: String,
+    checked: Boolean,
+    onChecked: (Boolean) -> Unit,
+) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = { Text(detail) },
+        trailingContent = { Switch(checked = checked, onCheckedChange = null) },
+        modifier =
+            Modifier.clickable { onChecked(!checked) }
+                .semantics(mergeDescendants = true) { role = Role.Switch },
+    )
     HorizontalDivider()
 }
 

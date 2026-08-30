@@ -2,7 +2,7 @@ package org.rstorrent.bootstrap
 
 import java.util.concurrent.atomic.AtomicBoolean
 
-internal enum class ProductNotificationPreference {
+enum class ProductNotificationPreference {
     DOWNLOAD_COMPLETE,
     NEEDS_ATTENTION,
 }
@@ -114,4 +114,18 @@ data class ProductNotificationState(
                 backgroundChannelEnabled,
                 interactionLeaseCount,
             )
+}
+
+sealed interface ProductNotificationNavigation {
+    val sequence: Long
+
+    data class Torrent(
+        override val sequence: Long,
+        val torrentId: String,
+    ) : ProductNotificationNavigation
+
+    data class StorageRepair(
+        override val sequence: Long,
+        val rootId: String?,
+    ) : ProductNotificationNavigation
 }

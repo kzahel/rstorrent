@@ -25,6 +25,7 @@ class MainActivity : ComponentActivity() {
     private var pendingCommand: Intent? = null
     private val productService = mutableStateOf<ProductEngineService?>(null)
     private val notificationsGranted = mutableStateOf(false)
+    private val notificationNavigation = mutableStateOf<ProductNotificationNavigation?>(null)
     private val themeMode = mutableStateOf(ProductThemeMode.SYSTEM)
     private val dynamicColor = mutableStateOf(true)
     private var productBound = false
@@ -48,6 +49,7 @@ class MainActivity : ComponentActivity() {
     private var pendingProductIpv6Policy: String? = null
     private var pendingProductTorrentAction: Pair<String, String>? = null
     private var pendingNotificationSettingsReturn = false
+    private var notificationNavigationSequence = 0L
     private val productTreePicker =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             productService.value?.setInteractionLease(
@@ -230,6 +232,9 @@ class MainActivity : ComponentActivity() {
             savedInstanceState?.getString(STATE_PENDING_COMPANION_ROOT_CANCELLED)
         pendingProductTorrentStartContent =
             savedInstanceState?.getBoolean(STATE_PENDING_TORRENT_START, true) ?: true
+        notificationNavigationSequence =
+            savedInstanceState?.getLong(STATE_NOTIFICATION_SEQUENCE, 0L) ?: 0L
+        notificationNavigation.value = restoreNotificationNavigation(savedInstanceState)
         route(intent)
     }
 
@@ -246,6 +251,27 @@ class MainActivity : ComponentActivity() {
             outState.putString(STATE_PENDING_COMPANION_ROOT_CANCELLED, it)
         }
         outState.putBoolean(STATE_PENDING_TORRENT_START, pendingProductTorrentStartContent)
+        notificationNavigation.value?.let { target ->
+            outState.putLong(STATE_NOTIFICATION_SEQUENCE, target.sequence)
+            when (target) {
+                is ProductNotificationNavigation.Torrent -> {
+                    outState.putString(
+                        STATE_NOTIFICATION_ROUTE,
+                        AndroidNotificationContract.ROUTE_TORRENT,
+                    )
+                    outState.putString(STATE_NOTIFICATION_TORRENT_ID, target.torrentId)
+                }
+                is ProductNotificationNavigation.StorageRepair -> {
+                    outState.putString(
+                        STATE_NOTIFICATION_ROUTE,
+                        AndroidNotificationContract.ROUTE_STORAGE_REPAIR,
+                    )
+                    target.rootId?.let {
+                        outState.putString(STATE_NOTIFICATION_STORAGE_ROOT_ID, it)
+                    }
+                }
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -314,14 +340,75 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun route(command: Intent) {
-        if (isDiagnostic(command)) {
+        val routed = consumeNotificationRoute(command) ?: command
+        if (isDiagnostic(routed)) {
             showDiagnosticSurface()
-            handleDiagnostic(command)
+            handleDiagnostic(routed)
         } else {
-            val productCommand = consumeExternalView(command) ?: command
+            val productCommand = consumeExternalView(routed) ?: routed
             showProductSurface(productCommand)
         }
     }
+
+    private fun restoreNotificationNavigation(state: Bundle?): ProductNotificationNavigation? =
+        when (state?.getString(STATE_NOTIFICATION_ROUTE)) {
+            AndroidNotificationContract.ROUTE_TORRENT ->
+                state
+                    .getString(STATE_NOTIFICATION_TORRENT_ID)
+                    ?.takeIf(TORRENT_ID_PATTERN::matches)
+                    ?.let {
+                        ProductNotificationNavigation.Torrent(
+                            notificationNavigationSequence,
+                            it,
+                        )
+                    }
+            AndroidNotificationContract.ROUTE_STORAGE_REPAIR ->
+                ProductNotificationNavigation.StorageRepair(
+                    notificationNavigationSequence,
+                    state
+                        .getString(STATE_NOTIFICATION_STORAGE_ROOT_ID)
+                        ?.takeIf(::validRootId),
+                )
+            else -> null
+        }
+
+    private fun consumeNotificationRoute(command: Intent): Intent? {
+        val action = command.action ?: return null
+        if (!action.startsWith("$packageName.action.NOTIFICATION_ROUTE.")) return null
+        notificationNavigationSequence += 1
+        notificationNavigation.value =
+            when (command.getStringExtra(AndroidNotificationContract.EXTRA_ROUTE)) {
+                AndroidNotificationContract.ROUTE_TORRENT -> {
+                    val torrentId =
+                        command
+                            .getStringExtra(AndroidNotificationContract.EXTRA_TORRENT_ID)
+                            ?.takeIf(TORRENT_ID_PATTERN::matches)
+                            ?: return sanitizeProductIntent()
+                    ProductNotificationNavigation.Torrent(
+                        notificationNavigationSequence,
+                        torrentId,
+                    )
+                }
+                AndroidNotificationContract.ROUTE_STORAGE_REPAIR ->
+                    ProductNotificationNavigation.StorageRepair(
+                        notificationNavigationSequence,
+                        command
+                            .getStringExtra(AndroidNotificationContract.EXTRA_STORAGE_ROOT_ID)
+                            ?.takeIf(::validRootId),
+                    )
+                else -> return sanitizeProductIntent()
+            }
+        return sanitizeProductIntent()
+    }
+
+    private fun sanitizeProductIntent(): Intent =
+        Intent(this, MainActivity::class.java).apply {
+            action = Intent.ACTION_MAIN
+            addCategory(Intent.CATEGORY_LAUNCHER)
+            this@MainActivity.setIntent(this)
+        }
+
+    private fun validRootId(value: String): Boolean = value.isNotBlank() && value.length <= 128
 
     private fun consumeExternalView(command: Intent): Intent? {
         if (command.action != Intent.ACTION_VIEW || isChromeOsCompanionLaunch(command)) {
@@ -399,6 +486,12 @@ class MainActivity : ComponentActivity() {
                     notificationsGranted = notificationsGranted.value,
                     onRequestNotifications = ::requestNotificationPermission,
                     onOpenNotificationSettings = ::openNotificationSettings,
+                    notificationNavigation = notificationNavigation.value,
+                    onNotificationNavigationConsumed = { sequence ->
+                        if (notificationNavigation.value?.sequence == sequence) {
+                            notificationNavigation.value = null
+                        }
+                    },
                     themeMode = themeMode.value,
                     dynamicColor = dynamicColor.value,
                     onThemeMode = ::setThemeMode,
@@ -806,8 +899,13 @@ class MainActivity : ComponentActivity() {
             "pending_companion_repair_root"
         private const val STATE_PENDING_COMPANION_ROOT_CANCELLED =
             "pending_companion_root_cancelled"
+        private const val STATE_NOTIFICATION_SEQUENCE = "notification_sequence"
+        private const val STATE_NOTIFICATION_ROUTE = "notification_route"
+        private const val STATE_NOTIFICATION_TORRENT_ID = "notification_torrent_id"
+        private const val STATE_NOTIFICATION_STORAGE_ROOT_ID = "notification_storage_root_id"
         private const val CHROMEOS_COMPANION_SCHEME = "rstorrent"
         private const val CHROMEOS_COMPANION_HOST = "chromeos-companion"
+        private val TORRENT_ID_PATTERN = Regex("^t1-[0-9a-f]{32}$")
         const val EXTRA_PRODUCT_MAGNET = "product_magnet"
         const val EXTRA_PRODUCT_TRACKER_HTTPS_POLICY = "product_tracker_https_policy"
         const val EXTRA_PRODUCT_ENCRYPTION_POLICY = "product_encryption_policy"

@@ -345,6 +345,148 @@ class ProductNavigationTest {
         assertEquals(listOf(43L), retries)
     }
 
+    @Test
+    fun notificationSettingsExposePermissionChannelsAndDurableChoices() {
+        val changes = mutableListOf<Pair<ProductNotificationPreference, Boolean>>()
+        compose.setContent {
+            ProductApp(
+                service = null,
+                onSelectStorage = {},
+                onBrowseTorrent = {},
+                notificationsGranted = true,
+                onRequestNotifications = {},
+                onOpenNotificationSettings = {},
+                themeMode = ProductThemeMode.LIGHT,
+                dynamicColor = false,
+                onThemeMode = {},
+                onDynamicColor = {},
+                stateOverride =
+                    ProductState(
+                        ready = true,
+                        notifications =
+                            ProductNotificationState(
+                                permissionGranted = true,
+                                completionChannelEnabled = false,
+                            ),
+                    ),
+                onUpdateNotificationPreference = { preference, enabled ->
+                    changes += preference to enabled
+                },
+            )
+        }
+
+        compose.onNodeWithContentDescription("More options").performClick()
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Notifications").performClick()
+        compose.onNodeWithText("Notifications enabled").assertIsDisplayed()
+        compose.onNodeWithText("Blocked in Android system settings.").assertIsDisplayed()
+        compose.onNodeWithText("Download completed").performClick()
+        compose.onNodeWithText("Needs attention").performClick()
+        compose.onNodeWithText("Manage system notification settings").assertIsDisplayed()
+        assertEquals(
+            listOf(
+                ProductNotificationPreference.DOWNLOAD_COMPLETE to false,
+                ProductNotificationPreference.NEEDS_ATTENTION to false,
+            ),
+            changes,
+        )
+    }
+
+    @Test
+    fun blockedBackgroundChannelExplainsVisibleOnlyOperation() {
+        compose.setContent {
+            ProductApp(
+                service = null,
+                onSelectStorage = {},
+                onBrowseTorrent = {},
+                notificationsGranted = true,
+                onRequestNotifications = {},
+                onOpenNotificationSettings = {},
+                themeMode = ProductThemeMode.LIGHT,
+                dynamicColor = false,
+                onThemeMode = {},
+                onDynamicColor = {},
+                stateOverride =
+                    ProductState(
+                        ready = true,
+                        notifications =
+                            ProductNotificationState(
+                                permissionGranted = true,
+                                backgroundChannelEnabled = false,
+                            ),
+                    ),
+            )
+        }
+
+        compose.onNodeWithContentDescription("More options").performClick()
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Notifications").performClick()
+        compose.onNodeWithText("Background activity blocked").assertIsDisplayed()
+        compose.onNodeWithText(
+            "RSTorrent works while Android is visible. Leaving Android stops background work.",
+        ).assertIsDisplayed()
+    }
+
+    @Test
+    fun notificationNavigationSelectsExactTorrentAndConsumesOnce() {
+        val consumed = mutableListOf<Long>()
+        val torrent = torrent()
+        compose.setContent {
+            ProductApp(
+                service = null,
+                onSelectStorage = {},
+                onBrowseTorrent = {},
+                notificationsGranted = true,
+                onRequestNotifications = {},
+                onOpenNotificationSettings = {},
+                themeMode = ProductThemeMode.LIGHT,
+                dynamicColor = false,
+                onThemeMode = {},
+                onDynamicColor = {},
+                stateOverride =
+                    ProductState(
+                        ready = true,
+                        torrents = mapOf(torrent.torrentId to torrent),
+                    ),
+                notificationNavigation =
+                    ProductNotificationNavigation.Torrent(7L, torrent.torrentId),
+                onNotificationNavigationConsumed = { consumed += it },
+            )
+        }
+
+        compose.onNodeWithText("Info hash (v1)").assertIsDisplayed()
+        assertEquals(listOf(7L), consumed)
+    }
+
+    @Test
+    fun staleNotificationTargetFallsBackToLibrary() {
+        val consumed = mutableListOf<Long>()
+        compose.setContent {
+            ProductApp(
+                service = null,
+                onSelectStorage = {},
+                onBrowseTorrent = {},
+                notificationsGranted = true,
+                onRequestNotifications = {},
+                onOpenNotificationSettings = {},
+                themeMode = ProductThemeMode.LIGHT,
+                dynamicColor = false,
+                onThemeMode = {},
+                onDynamicColor = {},
+                stateOverride = ProductState(ready = true),
+                notificationNavigation =
+                    ProductNotificationNavigation.Torrent(
+                        8L,
+                        "t1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    ),
+                onNotificationNavigationConsumed = { consumed += it },
+            )
+        }
+
+        compose.onNodeWithText("That torrent is no longer available.").assertIsDisplayed()
+        assertEquals(listOf(8L), consumed)
+    }
+
     private fun torrent(): TorrentView =
         TorrentView(
             torrentId = "t1-0123456789abcdef0123456789abcdef",

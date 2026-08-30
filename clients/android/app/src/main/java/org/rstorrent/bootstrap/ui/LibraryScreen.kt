@@ -74,6 +74,7 @@ internal fun LibraryScreen(
     state: ProductState,
     notificationsGranted: Boolean,
     onRequestNotifications: () -> Unit,
+    notificationActionLabel: String,
     onSelectStorage: () -> Unit,
     onOpenTorrent: (String) -> Unit,
     onAddMagnet: (String, Boolean) -> Unit,
@@ -223,10 +224,10 @@ internal fun LibraryScreen(
                 if (!notificationsGranted) {
                     item("notifications") {
                         SetupCard(
-                            title = "Enable notifications",
+                            title = "$notificationActionLabel notifications",
                             detail =
-                                "RSTorrent uses a foreground notification while torrents are active.",
-                            action = "Enable",
+                                "RSTorrent works while Android is visible. Leaving Android stops background work.",
+                            action = notificationActionLabel,
                             onAction = onRequestNotifications,
                         )
                     }
