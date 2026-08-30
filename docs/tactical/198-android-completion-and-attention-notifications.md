@@ -1,11 +1,12 @@
 # Tactical 198: Android Completion And Attention Notifications
 
-Status: **Ready as of 2026-08-30.** Maintainer direction selected
+Status: **Active as of 2026-08-30.** User direction authorized end-to-end
+implementation. Maintainer direction selected
 JSTorrent-like notification transparency: Android notification permission is
 not a technical prerequisite for starting a foreground service, but RSTorrent
 will not retain an invisible long-running Android application or ChromeOS
-companion owner after the visible interaction ends. No implementation or
-release action has occurred yet.
+companion owner after the visible interaction ends. No release action is
+authorized.
 
 Topics: `android-jstorrent-replacement`, `beta-release-readiness`,
 `client-surfaces`, `capability-readiness`

@@ -859,6 +859,9 @@ exactly.
   signed replacement/relaunch evidence plus Windows firewall-consent
   characterization. Prove clean launch or bounded reset and payload safety,
   not retention of disposable `0.1.x` application state.
+- Execute **Tactical `198`** for Android completion and fatal/storage-repair
+  notifications, permission transparency, exact tap routing, and joined
+  target-35 `dataSync` timeout shutdown.
 
 ### Blocked
 
@@ -878,12 +881,6 @@ exactly.
   fail-closed live application prerequisite that quiesces every BitTorrent
   peer/tracker/DHT/listener/mapping owner without rewriting torrent intent or
   closing Compose/ChromeOS control. VPN privacy and proxying remain separate.
-- Execute **Tactical `198`** for Android completion and fatal/storage-repair
-  notifications. Add one service-native edge owner, default-on app
-  preferences, bounded low/default/high channels, exact tap routing, and
-  JSTorrent-like permission transparency for standalone and ChromeOS
-  companion use. Handle the target-35 `dataSync` timeout safely without
-  claiming the later granted-background lifecycle.
 - Declare the future first supported version and freeze its fresh application
   identities and persistence/API baseline only from that version forward.
   Complete changelog, privacy/support presentation, and the repeatable beta

@@ -980,7 +980,7 @@ streaming demand, expiry, and revocation remain unchanged.
 - Android's foreground notification reports service/activity state but does
   not yet provide JSTorrent-shaped edge-triggered completion or actionable
   fatal/storage-failure notifications when Compose is absent. This is a core
-  background-product parity gap. Ready Tactical
+  background-product parity gap. Active Tactical
   [`198`](../tactical/198-android-completion-and-attention-notifications.md)
   owns one service-native edge reducer, bounded channels/settings, exact tap
   routing, JSTorrent-like denied/blocked-notification transparency for

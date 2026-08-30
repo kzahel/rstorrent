@@ -626,7 +626,7 @@ disposition of current JSTorrent Android features.
   attention while Compose is absent. A supported Android lane needs a bounded
   native notification owner with permission denial, initial/reset suppression,
   duplicate avoidance, tap/action routing, restart, and cleanup evidence.
-  Ready Tactical
+  Active Tactical
   [`198`](../tactical/198-android-completion-and-attention-notifications.md)
   selects default-on completion/attention preferences and JSTorrent-like
   transparency: blocked notification visibility permits interactive use but

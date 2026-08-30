@@ -162,7 +162,7 @@ daemon architecture.
   privacy, grant-revocation, and cleanup evidence pass under the exact filters
   and ephemeral service-owned queue.
 - [ ] **JAR-007 — Add background completion and actionable failure
-  notifications.** This is also beta gate `AND-009`. Ready Tactical
+  notifications.** This is also beta gate `AND-009`. Active Tactical
   [`198`](../tactical/198-android-completion-and-attention-notifications.md)
   owns one native edge owner for completion plus fatal/storage-repair
   attention, default-on app preferences, low/default/high system channels,
@@ -418,7 +418,7 @@ live run.
    [`197`](../tactical/197-android-external-torrent-intake.md) as the `JAR-006`
    external-intake regression gate while the provisional product identity is
    replaced later under `JAR-004`.
-3. Execute ready Tactical
+3. Complete active Tactical
    [`198`](../tactical/198-android-completion-and-attention-notifications.md)
    for `JAR-007` completion/failure notifications, companion-aware permission
    transparency, and fail-safe target-35 timeout shutdown.

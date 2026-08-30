@@ -109,7 +109,7 @@ that scope and its cleanup or compatibility rules explicitly.
   preserving torrent intent and Compose/ChromeOS control. VPN privacy, proxy,
   background lifecycle, and production migration remain separate.
 - [`198-android-completion-and-attention-notifications.md`](198-android-completion-and-attention-notifications.md):
-  ready; adds one Android-native edge owner for completion and fatal/storage-
+  active; adds one Android-native edge owner for completion and fatal/storage-
   repair attention, default-on app preferences, bounded low/default/high
   channels, exact tap routing, and JSTorrent-like permission transparency.
   Denied or blocked notification visibility permits interactive use but stops
@@ -117,11 +117,12 @@ that scope and its cleanup or compatibility rules explicitly.
   also fails safely on the target-35 `dataSync` timeout without claiming an
   indefinite background lifecycle.
 - [`197-android-external-torrent-intake.md`](197-android-external-torrent-intake.md):
-  ready; makes the one Compose/product-service owner a bounded Android handler
-  for cold and warm `magnet:` plus temporary-grant `content://` `.torrent`
-  activation. It preserves root/start confirmation, serializes hostile source
-  reads, rejects file/HTTP/octet-stream breadth, and requires exact AVD
-  manifest, lifecycle, privacy, resource, and controlled-transfer evidence.
+  complete; makes the one Compose/product-service owner a bounded Android
+  handler for cold and warm `magnet:` plus temporary-grant `content://`
+  `.torrent` activation. It preserves root/start confirmation, serializes
+  hostile source reads, rejects file/HTTP/octet-stream breadth, and requires
+  exact AVD manifest, lifecycle, privacy, resource, and controlled-transfer
+  evidence.
 - [`196-remote-direct-file-product-integration.md`](196-remote-direct-file-product-integration.md):
   active with implementation complete and qualification open; the retained
   lower-`rtc` endpoint is now a default-compiled but lazy desktop/headless
