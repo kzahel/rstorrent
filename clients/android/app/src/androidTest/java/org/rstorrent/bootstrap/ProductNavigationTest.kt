@@ -4,7 +4,10 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isToggleable
+import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
@@ -296,7 +299,9 @@ class ProductNavigationTest {
         compose.onNodeWithText("Torrent file from another app").assertIsDisplayed()
         compose.onNodeWithText("safe.torrent").assertIsDisplayed()
         compose.onNodeWithText("Add").assertIsNotEnabled()
-        compose.onNodeWithText("Select folder").performClick()
+        compose.onNode(
+            hasText("Select folder") and hasAnyAncestor(isDialog()),
+        ).performClick()
         compose.onNodeWithText("Cancel").performClick()
         assertEquals(1, selections.size)
         assertEquals(listOf(42L), cancellations)
