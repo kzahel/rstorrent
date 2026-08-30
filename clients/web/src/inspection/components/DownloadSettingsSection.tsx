@@ -82,7 +82,12 @@ export function DownloadSettingsSection({
                   >
                     <div>
                       <strong>{root.label}</strong>
-                      <span>{root.path ?? "Location is unavailable"}</span>
+                      <span>
+                        {root.path ??
+                          (oneCurrentRoot && root.availability === "available"
+                            ? "Managed by Android"
+                            : "Location is unavailable")}
+                      </span>
                       <small>
                         {root.availability === "available"
                           ? root.id === storage.defaultRoot

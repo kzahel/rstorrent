@@ -2391,7 +2391,7 @@ describe("inspection application", () => {
       type: "snapshot",
       snapshot: liveSnapshot({
         roots: [
-          downloadRoot("root_a", "Current Downloads"),
+          downloadRoot("root_a", "Current Downloads", "available", null),
           downloadRoot("root_b", "Earlier Downloads"),
         ],
         defaultRoot: "root_a",
@@ -2434,6 +2434,10 @@ describe("inspection application", () => {
     const dialog = screen.getByRole("dialog", { name: "Settings" });
     await user.click(within(dialog).getByRole("tab", { name: "Downloads" }));
     expect(within(dialog).getByText("Current download folder")).toBeVisible();
+    expect(within(dialog).getByText("Managed by Android")).toBeVisible();
+    expect(
+      within(dialog).queryByText("Location is unavailable"),
+    ).not.toBeInTheDocument();
     expect(
       within(dialog).queryByRole("checkbox", {
         name: /Show options when adding torrents/,
@@ -3588,7 +3592,7 @@ function downloadRoot(
   id: string,
   label: string,
   availability: "available" | "unavailable" = "available",
-  path = `/Users/test/${label}`,
+  path: string | null = `/Users/test/${label}`,
 ) {
   return {
     id,
