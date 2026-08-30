@@ -11,10 +11,10 @@ completed verified file over authenticated RDF signaling, direct-only ICE,
 and 16-KiB DataChannel messages; Remote Access settings own the kill switch,
 live resources, stop action, and redacted audit. Public Cloudflare STUN and
 strict UUIDv4 `.local` mDNS candidates are implemented lazily. The complete
-current-host product verifier and native Linux ARM64 build pass. Native
-Windows compilation with a complete C toolchain, an independent-network
-selected pair, and a real streaming save picker remain bounded evidence gaps,
-so the capability stays unadvertised. TURN remains explicitly unplanned.
+current-host product verifier plus native Windows and Linux ARM64 builds pass.
+An independent-network selected pair and a real streaming save picker remain
+bounded evidence gaps, so the capability stays unadvertised. TURN remains
+explicitly unplanned.
 
 Completed Tactical
 [`195`](../tactical/195-webrtc-direct-file-feasibility-spike.md) retains lower

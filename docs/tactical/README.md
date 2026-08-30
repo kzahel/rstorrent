@@ -119,11 +119,10 @@ that scope and its cleanup or compatibility rules explicitly.
   product path. It authenticates bounded signaling inside the existing remote
   circuit, adds completed-file **Save file...**, default-on operator control
   and audit, and direct-only ICE through public Cloudflare STUN and strict mDNS
-  candidates. The current-host product verifier and native Linux ARM64 build
-  pass. Native Windows with a complete C toolchain, an independent-network
-  selected pair, and a real streaming save picker remain open. OPFS, TURN,
-  relay payload, incomplete files, general Open/Play, UPnP, deployment, and
-  release remain excluded.
+  candidates. The current-host product verifier plus native Windows and Linux
+  ARM64 builds pass. An independent-network selected pair and a real streaming
+  save picker remain open. OPFS, TURN, relay payload, incomplete files,
+  general Open/Play, UPnP, deployment, and release remain excluded.
 - [`195-webrtc-direct-file-feasibility-spike.md`](195-webrtc-direct-file-feasibility-spike.md):
   complete with a corrected Proceed recommendation; retains lower `rtc` behind
   a default-off feature after Chromium/Firefox and current Playwright WebKit

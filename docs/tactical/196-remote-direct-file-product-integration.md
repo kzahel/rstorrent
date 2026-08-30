@@ -3,10 +3,10 @@
 Status: **Implementation complete; qualification remains active.** The product
 path, operator controls, audit, default build graph, direct-only signaling,
 and completed-file Save are implemented and pass the current-host product
-matrix. Native Linux ARM64 compilation also passes. Native Windows
-compilation, an independent-network direct path, and a real browser streaming
-save picker remain bounded evidence gaps, so this tactical does not yet claim
-completion or supported availability. This tactical turns completed Tactical
+matrix. Native Windows and Linux ARM64 compilation also pass. An
+independent-network direct path and a real browser streaming save picker
+remain bounded evidence gaps, so this tactical does not yet claim completion
+or supported availability. This tactical turns completed Tactical
 [`195`](195-webrtc-direct-file-feasibility-spike.md)'s retained lower-`rtc`
 endpoint into one default-compiled, lazy, authenticated remote-file product
 slice. It adds completed-file **Save file...** from the remote React UI,
@@ -633,20 +633,22 @@ Passing evidence:
   and the native endpoint in isolated probes;
 - earlier retained endpoint traces for exact 8-MiB Chromium and Firefox
   saves, cancellation, bounded 16-KiB messages, and zero-owner cleanup, plus
-  WebKit DTLS/DataChannel/range success independent of OPFS; and
+  WebKit DTLS/DataChannel/range success independent of OPFS;
 - a native Ubuntu 24.04 ARM64 `cargo check -p rstorrent-headless` of the
-  default RTC graph in an isolated VM.
+  default RTC graph in an isolated VM; and
+- native Windows 11 ARM64
+  `cargo check -p rstorrent-direct-file --features webrtc` and
+  `cargo check -p rstorrent-desktop` with the CI-equivalent web-dist
+  prerequisite. The checks compile Ring, AWS-LC, and the complete retained RTC
+  graph through the default desktop leaf using Rust 1.97 and the Visual Studio
+  C++/Windows SDK plus LLVM toolchain.
 
-Qualification remains open for three bounded reasons:
+Qualification remains open for two bounded reasons:
 
-1. The available Windows VM has Rust but no LLVM/MSVC C compiler or CMake, so
-   Ring stops in its build script. A macOS cross-check reaches the same Ring C
-   build but lacks the Windows SDK headers. A native Windows test image with
-   LLVM or MSVC, CMake, and the Windows SDK must compile the default graph.
-2. Browser and native public-STUN gathering pass separately and the complete
+1. Browser and native public-STUN gathering pass separately and the complete
    product payload path passes on the current host, but no available
    independent-network topology selected a server-reflexive pair.
-3. The product verifier deliberately exercises the bounded Blob fallback.
+2. The product verifier deliberately exercises the bounded Blob fallback.
    Unit sink seams prove incremental write-before-ack behavior, but a real
    browser exposing `showSaveFilePicker` has not yet supplied the large-file
    streaming-save evidence. Actual Safari and physical mobile remain
@@ -655,7 +657,9 @@ Qualification remains open for three bounded reasons:
 These gaps do not reopen the implementation architecture. They keep Tactical
 `196` active and the capability unadvertised until the exact stopping
 condition is met. All temporary browser profiles, fixtures, downloads, VM
-sources, toolchains, archives, and testbed claims were removed or released.
+sources, archives, and testbed claims were removed or released. The standard
+Windows native development toolchain remains installed in its dedicated
+appliance.
 
 ## Escalation Contract
 
