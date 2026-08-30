@@ -1,12 +1,15 @@
 # Tactical 195: WebRTC Direct-File Feasibility Spike
 
-Status: **Complete as of 2026-08-30; Continue narrowly.** The local experiment
-proves that lower `webrtc-rs/rtc` can provide a bounded, lazy, real-file
-DataChannel path in Chromium and Firefox at a measured optional package cost.
-Playwright WebKit did not complete ICE/DTLS, so product integration waits on
-one focused Safari/WebKit interoperability investigation. The retained Cargo
-feature remains off by default and has no production signaling, UI,
-deployment, TURN, UPnP, or supported remote-file claim.
+Status: **Complete as of 2026-08-30; Proceed after post-completion
+correction.** The local experiment proves that lower `webrtc-rs/rtc` can
+provide a bounded, lazy, real-file DataChannel path in Chromium, Firefox, and
+Playwright WebKit at a measured optional package cost. The original WebKit
+run timed out during ICE, but two subsequent runs completed ICE, authenticated
+DTLS, opened the DataChannel, and transferred the exact range corpus. Their
+repeatable failure was instead OPFS startup in Playwright's non-persistent
+context; a focused persistent-context probe completed OPFS create/write/close.
+The retained Cargo feature remains off by default and has no production
+signaling, UI, deployment, TURN, UPnP, or supported remote-file claim.
 
 Topics:
 [`direct-remote-file-streaming`](../topics/direct-remote-file-streaming.md),
@@ -798,27 +801,36 @@ public IPv6, STUN, NAT traversal, firewall/mapping behavior, TURN, Safari,
 Linux/Windows link size, or production signaling. These are explicit future
 gates, not inferred from LAN success.
 
-### Final recommendation: Continue narrowly
+### Post-completion correction and final recommendation: Proceed
 
 | Candidate | Version/revision | Runtime/crypto | Browser evidence | Stripped probe delta | Ownership | Disposition |
 | --- | --- | --- | --- | ---: | --- | --- |
-| lower `rtc` | 0.20.4 / `bbc1866` | caller-owned Sans-I/O + Ring | Chromium and Firefox pass; WebKit times out | +926,528 B | one joinable task/socket | Retain, optional |
+| lower `rtc` | 0.20.4 / `bbc1866` | caller-owned Sans-I/O + Ring | Chromium and Firefox pass; current Playwright WebKit reruns complete transport and exact ranges | +926,528 B | one joinable task/socket | Retain and integrate |
 | `str0m` | 0.23.1 / `120401c` | caller-owned Sans-I/O + RustCrypto/AWS-LC | upstream focused tests only | +2,499,864 B | explicit caller ownership | Remove/not added |
 | high-level `webrtc` | 0.20.4 / `843d52e` | async driver + Tokio + Ring | upstream focused tests only | +2,651,208 B | library driver plus caller callbacks | Remove/not added |
 
-The transport is technically sound in Chromium and Firefox, the lower-`rtc`
-ownership model fits RSTorrent, and OPFS proves bounded file consumption. The
-measured current-host cost is material but credible for an optional feature:
-about 3.6 MiB stripped or 1.6--1.8 MiB compressed/package. It is not yet a
-case for default enablement.
+The transport is technically sound in Chromium, Firefox, and the currently
+installed Playwright WebKit build, the lower-`rtc` ownership model fits
+RSTorrent, and the incremental sink proves bounded file consumption. The
+measured current-host cost is material but accepted for default desktop and
+headless compilation: about 3.6 MiB stripped or 1.6--1.8 MiB
+compressed/package.
 
-The one feasibility question that prevents **Proceed** is: **can this retained
-lower-`rtc` endpoint reliably complete candidate selection and DTLS with real
-Safari/WebKit, or is a bounded adapter/fix unavailable?** Retain the codec,
-lazy endpoint, optional manifests, browser harness, and CI gate while answering
-that question in a focused follow-up. Do not add production signaling or UI
-until it passes or the maintainer explicitly accepts a Chromium/Firefox-only
-first product boundary. If it passes, the next product tactical should begin
-completed-file-only, keep the feature default-off, authenticate signaling
-inside the existing remote circuit, and separately select a native
-Download/Open/Play browser adapter.
+The original completion evidence remains important: one WebKit run supplied
+only one remote candidate and timed out before a selected pair. It is now an
+ICE reliability observation rather than a demonstrated interoperability
+blocker. Two post-completion reruns reached `ready`, verified the DTLS
+fingerprint, completed the concurrent exact-range/cancel/hostile-input corpus,
+and transferred about 404 KiB before the browser sink failed. A minimal probe
+then isolated that failure to `navigator.storage.getDirectory()` in
+Playwright's ordinary non-persistent context; the same WebKit build completed
+root, file handle, writable, write, and close in a persistent context. OPFS was
+only an experiment sink and is not selected for the product.
+
+That corrected evidence supports **Proceed**. Actual branded Safari and
+repeated ICE reliability remain proportional product evidence, not reasons to
+misclassify the retained Rust transport. Ready Tactical
+[`196`](196-remote-direct-file-product-integration.md) begins
+completed-file-only, compiles the endpoint by default in desktop/headless,
+authenticates signaling inside the existing remote circuit, uses no OPFS or
+TURN, and lands **Save file...** before general Open/Play adapters.

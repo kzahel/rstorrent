@@ -79,7 +79,7 @@ compatibility behavior rather than silently replacing the documented contract.
 
 ## Direct Remote Transport References
 
-The design-only
+The
 [`direct remote file streaming topic`](topics/direct-remote-file-streaming.md)
 uses the following primary protocol and browser sources:
 
@@ -89,6 +89,8 @@ uses the following primary protocol and browser sources:
 - [RFC 8445](https://www.rfc-editor.org/rfc/rfc8445.html) defines ICE host,
   server-reflexive, peer-reflexive, and relayed candidates plus connectivity
   checks and candidate lifecycle;
+- [RFC 8489](https://www.rfc-editor.org/rfc/rfc8489.html) defines STUN binding,
+  transaction, retransmission, response-validation, and security behavior;
 - the [W3C WebRTC Recommendation](https://www.w3.org/TR/webrtc/) defines the
   browser `RTCPeerConnection` and `RTCDataChannel` APIs;
 - the [W3C WebTransport specification](https://www.w3.org/TR/webtransport/)
@@ -107,8 +109,16 @@ Completed Tactical
 `rtc` 0.20.4, corresponding to reviewed package revision
 `bbc18664cf2dcb690e023c6a1a436eb15253ca7f`, behind a default-off feature. Its
 execution record owns the exact source/test, transitive license/unsafe,
-Chromium/Firefox/WebKit, lifecycle, binary and package evidence. No upstream
-source, fixture, test vector, or asset was copied.
+Chromium/Firefox/WebKit, lifecycle, binary and package evidence. Post-completion
+WebKit reruns correct the earlier timeout conclusion: transport and exact ranges
+pass, while OPFS fails only in Playwright's non-persistent context and succeeds
+in a persistent-context primitive probe. Ready Tactical
+[`196`](tactical/196-remote-direct-file-product-integration.md) selects only
+Cloudflare's documented free public
+[`stun.cloudflare.com`](https://developers.cloudflare.com/realtime/turn/faq/)
+STUN endpoint for the first direct-only product slice; it selects no TURN
+service or credential. No upstream source, fixture, test vector, or asset was
+copied.
 
 Tactical
 [`113`](tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md) uses

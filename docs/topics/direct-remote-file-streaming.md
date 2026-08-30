@@ -2,15 +2,18 @@
 
 Topic: `direct-remote-file-streaming`
 
-Status: Direction accepted and Tactical
-[`195`](../tactical/195-webrtc-direct-file-feasibility-spike.md) completed on
-2026-08-30 with a **Continue narrowly** recommendation. The repository retains
-lower `webrtc-rs/rtc` 0.20.4 behind the default-off `direct-file-webrtc`
+Status: Direction accepted and ready Tactical
+[`196`](../tactical/196-remote-direct-file-product-integration.md) owns the
+first product slice. Completed Tactical
+[`195`](../tactical/195-webrtc-direct-file-feasibility-spike.md) retains lower
+`webrtc-rs/rtc` 0.20.4 behind the current default-off `direct-file-webrtc`
 feature, a lazy supervised endpoint, bounded verified-range codec, and local
-real-browser harness. Chromium and Firefox pass; Playwright WebKit reaches
-signaling but times out before ICE/DTLS completion. There is still no product
-signaling, visible UI, runtime setting, STUN/TURN service, public reachability,
-deployment, default enablement, or support claim.
+real-browser harness. Chromium and Firefox pass. Post-completion Playwright
+WebKit reruns also complete ICE, DTLS, DataChannel, and exact range traffic;
+their repeatable OPFS failure belongs to Playwright's non-persistent test
+context rather than the transport. Product signaling, visible UI, runtime
+setting, public STUN, default compilation, and support claims remain absent
+until Tactical `196`; TURN is explicitly not planned for that slice.
 
 ## Purpose And Ownership
 
@@ -86,14 +89,17 @@ not silently send file bytes through the control relay as a fallback.
   contain a Rust WebRTC endpoint when compiled with the feature. A hidden
   desktop WebView, browser extension, companion daemon, and Google libwebrtc
   process are not the selected architecture.
-- **Compilation and activation are separate.** Including the optional code in
-  a package must not bind UDP, enumerate interfaces, contact STUN, create a
-  mapping, generate continuing traffic, or retain a background task. Runtime
-  work begins only for an authorized file request and ends observably.
-- **The release default is evidence-driven.** The first experimental feature is
-  default-off. No permanent enabled-by-default or disabled-by-default product
-  decision exists until exact binary and package deltas, idle behavior, active
-  resource use, compatibility, and maintenance costs are recorded.
+- **Compilation and activation are separate.** Ready Tactical `196` accepts the
+  measured package cost and will compile the endpoint by default in desktop and
+  configured-headless leaf products. Compilation must not bind UDP, enumerate
+  interfaces, contact STUN, create a mapping, generate continuing traffic, or
+  retain a background task. Runtime work begins only for an authorized file
+  request and ends observably.
+- **Runtime direct transfer defaults on with a kill switch.** Once Tactical
+  `196` lands, enabling remote access also permits an explicit remote Save
+  action to attempt a direct path. The operator can disable direct file
+  transfers independently; disable cancels and joins active peers without
+  disabling ordinary remote control.
 - **No unencrypted hole.** UPnP or an IPv6 firewall pinhole may make a UDP
   candidate reachable, but every accepted file byte still travels through the
   endpoint-authenticated DTLS transport. RSTorrent must never publish a plain
@@ -101,9 +107,17 @@ not silently send file bytes through the control relay as a fallback.
 - **Existing file authority remains final.** A transport grant names an opaque
   registry entry, never a path. It cannot browse directories, read neighboring
   files, widen a range beyond one logical file, or serve unverified content.
-- **No TURN in the first direct-only slice.** NATs that cannot establish a
-  direct candidate pair produce a clear unavailable result. TURN or another
-  byte-relay fallback remains a separate cost, privacy, and product decision.
+- **No TURN is planned.** NATs that cannot establish a direct candidate pair
+  produce a clear unavailable result. Tactical `196` supplies no TURN URL,
+  credential, allocation, or relayed candidate and rejects silent byte-relay
+  fallback. Any future reversal requires a separate explicit product, privacy,
+  abuse, availability, and operating-cost decision.
+- **One public STUN service starts the product path.** Tactical `196` selects
+  only `stun:stun.cloudflare.com:3478`, which Cloudflare documents as free and
+  unlimited. It is contacted lazily by an authenticated file request, learns
+  public endpoint/timing metadata but no file or account identity, and cannot
+  relay payload. Outage degrades to other direct candidates or a truthful
+  unavailable result.
 - **No new mobile-host claim.** The first investigation targets the already
   implemented desktop and configured headless remote hosts. Android and iOS
   hosting, background policy, and platform file presentation remain separate.
@@ -246,11 +260,11 @@ called `direct-file-webrtc`; the implementing tactical may refine the name.
 - CI must build and test both feature-off and feature-on graphs. The off build
   must prove that WebRTC and its unique crypto/SCTP dependencies are absent.
 
-The first experimental feature-on artifact remains opt-in. Whether ordinary
-desktop or headless releases enable it later depends on measured installed and
-compressed package deltas, platform reliability, security maintenance burden,
-and the percentage of real connections that become direct. No arbitrary size
-budget is accepted yet.
+The feasibility artifact remains opt-in until Tactical `196` lands. That
+tactical accepts the measured installed/compressed cost for default desktop and
+configured-headless compilation while preserving explicit feature-off CI and
+dependency-tree proof for every excluded target. Runtime activation remains
+separate and lazy.
 
 ### Tactical 195 measured result
 
@@ -273,14 +287,18 @@ verify four concurrent ranges and a complete 8-MiB OPFS stream at roughly
 307,374-byte combined queue high water. Active Rust-process RSS rose about
 5.2 MiB above each harness idle sample.
 
-Playwright WebKit supplied one remote candidate but selected no pair, verified
-no fingerprint, transferred no bytes, and reached the 20-second negotiation
-timeout with clean task/socket teardown. That specific Safari/WebKit question
-is the next feasibility gate. The current retained OPFS adapter proves bounded
-consumption but is not a native Download/Open/Play or seekable-media product
-route. Only completed verified files were exercised; a first product slice
-must stay completed-file-only until active verified waiting and revocation are
-separately proved.
+The original Playwright WebKit run supplied one remote candidate, selected no
+pair, and reached the 20-second negotiation timeout with clean teardown. Two
+post-completion reruns then reached `ready`, authenticated the DTLS fingerprint,
+opened the DataChannel, and completed the exact concurrent-range corpus before
+failing at OPFS startup. A minimal probe reproduces
+`navigator.storage.getDirectory()` failure in Playwright's ordinary
+non-persistent context and completes OPFS create/write/close in a persistent
+context. This makes the earlier timeout an ICE reliability observation, not a
+demonstrated lower-rtc/WebKit incompatibility. OPFS remains only a bounded test
+sink, not a native Download/Open/Play route. Only completed verified files
+were exercised; Tactical `196` stays completed-file-only until active verified
+waiting and revocation are separately proved.
 
 ## Runtime Ownership And Cancellation
 
@@ -483,24 +501,13 @@ cost and success-rate evidence.
 
 ## Open Decisions
 
-- Can the retained lower-`rtc` endpoint complete real Safari/WebKit
-  negotiation through a bounded fix or adapter?
-- Is the measured 3.6-MiB stripped and 1.6--1.8-MiB compressed/package cost
-  acceptable for a future default, after platform breadth and direct-path
-  success rates exist? It remains acceptable only as a default-off experiment.
-- Should runtime direct streaming default on when compiled, or require a host
-  setting before any interface/STUN/UPnP work?
-- Which STUN service, privacy statement, abuse policy, and availability model
-  are acceptable?
+- How reliable are repeated ICE negotiations in branded Safari and physical
+  mobile browsers after Playwright WebKit's corrected transport pass?
 - Is UPnP mapping attempted automatically after an authenticated request,
   separately opted in, or omitted from the first product slice?
-- Should one direct peer live per browser authorization, live control circuit,
-  or file-transfer generation?
-- How long may an active direct transfer survive temporary control-relay loss?
-- Which browser adapter gives portable range and save behavior without
-  unbounded memory or container-specific code?
-- Is an explicit user-selected TURN/file-relay fallback ever desirable, and
-  who operates and pays for it?
+- Which later browser adapters provide portable large-file saving and
+  Open/Play/seek behavior without OPFS, unbounded memory, or container-specific
+  code?
 - When should Android or iOS act as a remote controller or host, if ever?
 
 ## Deliberate Non-Goals
@@ -527,6 +534,9 @@ cost and success-rate evidence.
 - [RFC 8445, Interactive Connectivity Establishment](https://www.rfc-editor.org/rfc/rfc8445.html)
   defines host, server-reflexive, peer-reflexive, and relayed candidates plus
   connectivity checks and candidate lifecycle.
+- [RFC 8489, Session Traversal Utilities for NAT](https://www.rfc-editor.org/rfc/rfc8489.html)
+  defines STUN binding transactions, retransmission, response validation, and
+  security behavior.
 - The [W3C WebRTC Recommendation](https://www.w3.org/TR/webrtc/) defines the
   browser `RTCPeerConnection` and `RTCDataChannel` API surface.
 - The [W3C WebTransport specification](https://www.w3.org/TR/webtransport/)
@@ -540,5 +550,9 @@ cost and success-rate evidence.
   pure-Rust candidates observed during the 2026-08-30 survey.
 - [`str0m`](https://github.com/algesten/str0m) is the alternative Sans-I/O Rust
   candidate observed during the same survey.
+- Cloudflare's official
+  [Realtime TURN FAQ](https://developers.cloudflare.com/realtime/turn/faq/)
+  documents `stun.cloudflare.com` as a free unlimited STUN service. Tactical
+  `196` selects only that unauthenticated STUN endpoint, not Cloudflare TURN.
 
 No external source, fixture, or test data has been copied into RSTorrent.
