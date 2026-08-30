@@ -1,6 +1,6 @@
 # Tactical 195: WebRTC Direct-File Feasibility Spike
 
-Status: **Ready as of 2026-08-30.** The maintainer authorized a real WebRTC
+Status: **Active as of 2026-08-30.** The maintainer authorized a real WebRTC
 experiment to determine its binary/package cost and whether a browser-to-Rust
 DataChannel can become a good direct-file solution. This tactical authorizes a
 local-only, feature-off-by-default prototype, dependency bake-off, real-browser
@@ -552,4 +552,97 @@ record the result.
 
 ## Execution Record
 
-Not started.
+### 2026-08-30: source and cost preflight
+
+The first-stage comparison used Rust 1.97.0 on
+`aarch64-apple-darwin`, macOS 26.6.1, Apple clang 21.0.0, and Apple
+`ld` 1267. Exact inspected releases and crate-package source revisions were:
+
+- `webrtc` 0.20.4, revision
+  `843d52e3af05c26e6257154e18ddf0caa241d0ad`;
+- its lower `rtc` 0.20.4 API, revision
+  `bbc18664cf2dcb690e023c6a1a436eb15253ca7f`; and
+- `str0m` 0.23.1, revision
+  `120401c9affd97fd4246d9e7faf0ad4ca099c1bc`.
+
+The inspected `webrtc-rs` paths were `webrtc/src/peer_connection/mod.rs`,
+`webrtc/src/data_channel/mod.rs`, `webrtc/src/peer_connection/driver.rs`,
+`webrtc/tests/custom_runtime_interop.rs`,
+`webrtc/tests/data_channel_send_backpressure.rs`, the
+`data-channels-simple`, `data-channels-close`, and `data-channels-flow-control`
+examples, plus `rtc/src/peer_connection/mod.rs`, its `sansio::Protocol`
+handler stack, and the lower-level `data-channels-flow-control` example. The
+inspected `str0m` paths were `src/lib.rs`, `src/channel.rs`, `src/config.rs`,
+`src/change/{sdp,direct}.rs`, `src/sctp/mod.rs`, `src/sdp/parser.rs`, and the
+`data-channel`, `data-channel-direct`, `dtls-close`, `dtls-security`,
+`ice-candidates`, `handshake-direct`, and `mtu-compliance` tests.
+
+The source comparison found:
+
+- high-level `webrtc` owns UDP reactors and a background peer driver. It
+  exposes awaited peer/channel close and an explicit bounded DataChannel send
+  buffer, but application callback tasks remain the caller's responsibility;
+- lower `rtc` leaves sockets, time, task creation, polling, and joining with
+  the caller through `sansio::Protocol`. It retains the same ICE/DTLS/SCTP and
+  SDP implementation while making the direct supervisor the sole runtime
+  owner;
+- `str0m` is also Sans-I/O and has the clearest documented mutate-then-drain
+  rule. Its channel API exposes queued bytes and low-water notification, and
+  its deterministic test suite covers channel churn, direct setup, MTU
+  fragmentation, DTLS security, and graceful close;
+- all candidates expose the authenticated DTLS fingerprint through the
+  offer/answer or direct API. None substitutes transport reachability for
+  authorization, and the experiment must compare the accepted fingerprint to
+  the bounded signaling transcript before admitting a file request; and
+- none of the APIs replaces the experiment's aggregate SDP, candidate-count,
+  control-frame, request, or queue limits. Those bounds remain outside the
+  dependency and are enforced before parsing or mutation.
+
+All three releases are MIT/Apache-2.0 dual licensed and dynamically require
+only macOS system libraries in these probes. `rtc` uses `ring`. A notable
+`str0m` packaging surprise is that its nominal `rust-crypto` feature still
+links AWS-LC: `str0m-rust-crypto` enables `dimpl/rcgen`, and that `dimpl`
+feature enables `aws-lc-rs`. It therefore invokes a CMake/native crypto build
+on this host. No OpenSSL dynamic dependency appeared.
+
+#### Isolated release probes
+
+Each probe had one reachable endpoint-construction path: bind loopback UDP,
+generate an ephemeral certificate/fingerprint, create a reliable ordered
+DataChannel, and create local signaling state. The high-level probe also
+awaited peer close. The profile used `codegen-units = 1`, LTO, aborting panics,
+and no Cargo stripping. Post-link stripping used `strip -S -x`; compression
+used `gzip -9`. Each feature was linked in a separate Cargo invocation so
+crypto features could not unify across candidates.
+
+| Probe | Cargo packages | Unstripped | Stripped | Stripped gzip | Stripped delta |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| loopback UDP baseline | 1 | 403,080 B | 302,992 B | 144,462 B | - |
+| lower `rtc` 0.20.4 + `ring` | 180 | 1,462,552 B | 1,229,520 B | 669,134 B | +926,528 B |
+| `str0m` 0.23.1 + `rust-crypto` | 111 | 3,102,448 B | 2,802,856 B | 1,388,030 B | +2,499,864 B |
+| high-level `webrtc` 0.20.4 + Tokio | 202 | 3,724,096 B | 2,954,200 B | 1,538,334 B | +2,651,208 B |
+
+Package count is the unique normal/build package count from `cargo tree` and
+is descriptive rather than a size proxy. The lower `rtc` probe's stripped
+increment was 0.93 MB, 1.57 MB below `str0m` and 1.72 MB below high-level
+`webrtc`. This is a credible size and lifecycle reason to use the lower API,
+not evidence that an unused crate will have the same product-link cost.
+
+Upstream checks passed without public STUN/TURN:
+
+- `webrtc` 0.20.4 `custom_runtime_interop` (2 tests) and
+  `data_channel_send_backpressure` (1 test);
+- lower `rtc` 0.20.4 focused DataChannel tests (14) and candidate tests (27);
+  and
+- `str0m` 0.23.1 `data-channel`, `data-channel-direct`, `dtls-close`,
+  `dtls-security`, and `mtu-compliance` (20 tests total). The crate's own
+  `_internal_test_exports` feature was required to compile those integration
+  tests with default features disabled.
+
+The Stage 1 provisional selection is **lower `webrtc-rs/rtc` 0.20.4 with
+`ring`**. It combines the smallest measured fixed cost with explicit runtime
+ownership and deterministic protocol driving. `str0m` remains the strongest
+alternative if browser interoperability exposes an `rtc` defect; high-level
+`webrtc` remains the fallback if writing a correct driver proves materially
+riskier than its 1.72 MB probe delta. No rejected candidate dependency will be
+added to the repository.
