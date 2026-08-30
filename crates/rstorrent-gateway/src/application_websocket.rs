@@ -663,7 +663,7 @@ struct OutboundFrame {
 }
 
 enum WriterCommand {
-    Frame(OutboundFrame),
+    Frame(Box<OutboundFrame>),
     Transport(Message),
 }
 
@@ -1734,11 +1734,12 @@ async fn run_writer(
             Err(mpsc::error::TryRecvError::Empty) => tokio::select! {
                 biased;
                 command = control.recv() => command,
-                frame = data.recv() => frame.map(WriterCommand::Frame),
+                frame = data.recv() => frame.map(|frame| WriterCommand::Frame(Box::new(frame))),
             },
-            Err(mpsc::error::TryRecvError::Disconnected) => {
-                data.recv().await.map(WriterCommand::Frame)
-            }
+            Err(mpsc::error::TryRecvError::Disconnected) => data
+                .recv()
+                .await
+                .map(|frame| WriterCommand::Frame(Box::new(frame))),
         };
         let Some(command) = command else {
             break;
@@ -1787,11 +1788,11 @@ async fn send_control(
     reservation: Option<OwnedSemaphorePermit>,
 ) -> Result<(), ()> {
     outgoing
-        .send(WriterCommand::Frame(OutboundFrame {
+        .send(WriterCommand::Frame(Box::new(OutboundFrame {
             frame,
             _reservation: reservation,
             queued_at: Instant::now(),
-        }))
+        })))
         .await
         .map_err(|_| ())
 }
