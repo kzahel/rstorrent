@@ -56,6 +56,7 @@ PROFILE_CHOICES = (
     "product-mse",
     "product-concurrent-downloads",
     "product-ipv6-policy",
+    "product-unmetered-network",
     "product-external-intake",
     "slow-storage",
     "cancellation",
@@ -1703,6 +1704,435 @@ def run_product_ipv6_policy_profile(
         "reenabled_effective": enabled.get("effective") == "true",
         "reenabled_application": enabled.get("application"),
     }
+
+
+def launch_product_unmetered_network_policy(target: Any, mode: str) -> None:
+    result = target.shell(
+        [
+            "am",
+            "start",
+            "-W",
+            "-n",
+            ACTIVITY,
+            "--es",
+            "product_unmetered_network_policy",
+            mode,
+        ],
+        timeout=30,
+        check=False,
+    )
+    if "Error:" in result.stdout or "Error:" in result.stderr or (
+        result.returncode != 0 and "Starting:" not in result.stdout
+    ):
+        raise BootstrapFailure(
+            f"could not exercise Android unmetered policy mode {mode}: "
+            f"code={result.returncode} stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+
+
+def wait_product_unmetered_network_policy(
+    target: Any,
+    mode: str,
+    *,
+    timeout: float = 35,
+) -> dict[str, str]:
+    marker = f"network_policy mode={mode} "
+    deadline = time.monotonic() + timeout
+    logs = ""
+    while time.monotonic() < deadline:
+        logs = product_logs(target)
+        rows = [line for line in logs.splitlines() if marker in line]
+        if rows:
+            return dict(re.findall(r"([a-z_]+)=([^ ]+)", rows[-1]))
+        if "product service initialization failed" in logs:
+            break
+        time.sleep(0.1)
+    raise BootstrapFailure(
+        f"timed out waiting for Android unmetered policy {mode}\n{logs}"
+    )
+
+
+def set_avd_wifi_metered(target: Any, metered: bool) -> str:
+    listing = target.shell(
+        ["cmd", "netpolicy", "list", "wifi-networks"],
+        timeout=15,
+        check=False,
+    )
+    network_ids = [
+        line.rsplit(";", 1)[0].strip()
+        for line in listing.stdout.splitlines()
+        if ";" in line and line.rsplit(";", 1)[0].strip()
+    ]
+    network_id = network_ids[0] if network_ids else "AndroidWifi"
+    changed = target.shell(
+        [
+            "cmd",
+            "netpolicy",
+            "set",
+            "metered-network",
+            network_id,
+            str(metered).lower(),
+        ],
+        timeout=15,
+        check=False,
+    )
+    observed = target.shell(
+        ["cmd", "netpolicy", "list", "wifi-networks"],
+        timeout=15,
+        check=False,
+    ).stdout
+    expected = f"{network_id};{str(metered).lower()}"
+    if expected not in observed.splitlines():
+        raise BootstrapFailure(
+            f"could not set AVD Wi-Fi metered={metered}: "
+            f"code={changed.returncode} stdout={changed.stdout!r} "
+            f"stderr={changed.stderr!r} observed={observed!r}"
+        )
+    return network_id
+
+
+def wait_product_text(
+    target: Any,
+    probe: ModuleType,
+    expected: str,
+    *,
+    timeout: float = 20,
+) -> None:
+    deadline = time.monotonic() + timeout
+    visible: list[str] = []
+    while time.monotonic() < deadline:
+        visible = [
+            value
+            for node in probe.ui_nodes(target)
+            for value in (
+                node.attrib.get("text", "").strip(),
+                node.attrib.get("content-desc", "").strip(),
+            )
+            if value
+        ]
+        if any(expected in value for value in visible):
+            return
+        time.sleep(0.2)
+    raise BootstrapFailure(
+        f"Android product did not present {expected!r}; visible={visible!r}"
+    )
+
+
+def run_product_unmetered_network_profile(
+    target: Any,
+    target_kind: str,
+    identity: dict[str, str],
+    probe: ModuleType,
+    interop: ModuleType,
+    ordinal: int,
+    storage: str,
+) -> dict[str, Any]:
+    if target_kind != "avd":
+        raise BootstrapFailure("product-unmetered-network is an owned-AVD profile")
+    if not storage.startswith("saf-"):
+        raise BootstrapFailure("product-unmetered-network requires a SAF storage mode")
+    grant_storage = "sdcard" if storage == "saf-sdcard" else "internal"
+    fixture = SeedFixture.create(
+        interop,
+        f"{target_kind}-product-unmetered-network-{ordinal}",
+        root_name=f"network-running-{ordinal}",
+    )
+    paused_fixture = SeedFixture.create(
+        interop,
+        f"{target_kind}-product-unmetered-paused-{ordinal}",
+        root_name=f"network-paused-{ordinal}",
+        content_offset=interop.SELECTIVE_TOTAL_SIZE,
+    )
+    fixture.handle.set_upload_limit(8 * 1024)
+    peer_transport: ReverseTransport | None = None
+    torrent_id = "unallocated"
+    paused_torrent_id = "unallocated"
+    output_root = f"{probe.grant_path(grant_storage)}/{fixture.name}"
+    staging_root = f"{probe.grant_path(grant_storage)}/.unallocated.rstorrent-staging"
+    part_path = f"{probe.grant_path(grant_storage)}/.unallocated.rstorrent-parts"
+    paused_output_root = f"{probe.grant_path(grant_storage)}/{paused_fixture.name}"
+    paused_staging_root = (
+        f"{probe.grant_path(grant_storage)}/.unallocated.rstorrent-staging"
+    )
+    paused_part_path = f"{probe.grant_path(grant_storage)}/.unallocated.rstorrent-parts"
+    wifi_network_id = "AndroidWifi"
+    peer_high_water = 0
+
+    try:
+        set_avd_wifi_metered(target, False)
+        clear_application(target)
+        prepare_product_saf(target, probe, grant_storage)
+        launch_product_unmetered_network_policy(target, "default")
+        default = wait_product_unmetered_network_policy(target, "default")
+        if not (
+            default.get("enabled") == "false"
+            and default.get("allowed") == "true"
+            and default.get("application") == "ALLOWED"
+        ):
+            raise BootstrapFailure(
+                f"fresh Android unmetered policy was not default-off: {default}"
+            )
+
+        launch_product_unmetered_network_policy(target, "enable")
+        enabled = wait_product_unmetered_network_policy(target, "enable")
+        if not (
+            enabled.get("enabled") == "true"
+            and enabled.get("eligibility") == "UNRESTRICTED"
+            and enabled.get("allowed") == "true"
+            and enabled.get("application") == "ALLOWED"
+        ):
+            raise BootstrapFailure(
+                f"unmetered Android network did not permit the engine: {enabled}"
+            )
+
+        baseline_fds = product_fd_count(target)
+        peer_transport = ReverseTransport.create(
+            target,
+            target_kind,
+            fixture.host_port,
+            ordinal,
+        )
+        magnet = (
+            f"magnet:?xt=urn:btih:{fixture.info_hash}"
+            f"&dn={fixture.name}&x.pe=127.0.0.1:{peer_transport.device_port}"
+        )
+        add_count = product_add_count(target, fixture.info_hash)
+        started = target.shell(
+            [
+                "am",
+                "start",
+                "-n",
+                ACTIVITY,
+                "--es",
+                "product_magnet",
+                shlex.quote(magnet),
+            ],
+            timeout=30,
+            check=False,
+        )
+        if "Error:" in started.stdout:
+            raise BootstrapFailure("could not add unmetered-network profile magnet")
+        torrent_id = wait_product_torrent_id(target, fixture.info_hash, add_count)
+        staging_root = f"{probe.grant_path(grant_storage)}/.{torrent_id}.rstorrent-staging"
+        part_path = f"{probe.grant_path(grant_storage)}/.{torrent_id}.rstorrent-parts"
+        wait_product_torrent_progress(
+            target,
+            torrent_id,
+            state="DOWNLOADING",
+            verified=1,
+            description="first verified piece before metered transition",
+            timeout=45,
+        )
+        peer_high_water = max(peer_high_water, peer_count(fixture))
+
+        close_started = time.monotonic()
+        wifi_network_id = set_avd_wifi_metered(target, True)
+        launch_product_unmetered_network_policy(target, "metered")
+        blocked = wait_product_unmetered_network_policy(target, "metered")
+        close_millis = int((time.monotonic() - close_started) * 1000)
+        if not (
+            blocked.get("enabled") == "true"
+            and blocked.get("eligibility") == "WAITING_FOR_UNMETERED_NETWORK"
+            and blocked.get("allowed") == "false"
+            and blocked.get("application") == "BLOCKED"
+            and blocked.get("tcp") == "0"
+            and blocked.get("udp") == "0"
+            and blocked.get("connected_peers") == "0"
+        ):
+            raise BootstrapFailure(
+                f"metered Android network did not quiesce the engine: {blocked}"
+            )
+        wait_product_text(target, probe, "Waiting for an unmetered network")
+        time.sleep(0.5)
+        blocked_upload = int(fixture.handle.status().total_upload)
+        time.sleep(1)
+        if int(fixture.handle.status().total_upload) != blocked_upload:
+            raise BootstrapFailure("controlled payload advanced after blocked convergence")
+
+        connections_before_restart = peer_count(fixture)
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+        target.run(["logcat", "-c"], timeout=15, check=False)
+        launch_product_unmetered_network_policy(target, "restart_metered")
+        restarted = wait_product_unmetered_network_policy(target, "restart_metered")
+        if not (
+            restarted.get("enabled") == "true"
+            and restarted.get("allowed") == "false"
+            and restarted.get("application") == "BLOCKED"
+            and restarted.get("tcp") == "0"
+            and restarted.get("udp") == "0"
+        ):
+            raise BootstrapFailure(
+                f"metered process restart did not start closed: {restarted}"
+            )
+        time.sleep(1)
+        if int(fixture.handle.status().total_upload) != blocked_upload:
+            raise BootstrapFailure("metered process restart transferred controlled payload")
+        if peer_count(fixture) != connections_before_restart:
+            raise BootstrapFailure("metered process restart opened a controlled peer")
+
+        paused_add_count = product_unknown_add_count(target)
+        paused_add = target.shell(
+            [
+                "am",
+                "start",
+                "-n",
+                ACTIVITY,
+                "--es",
+                "product_torrent_base64",
+                base64.b64encode(paused_fixture.torrent_path.read_bytes()).decode("ascii"),
+                "--ez",
+                "product_start_content",
+                "false",
+            ],
+            timeout=30,
+            check=False,
+        )
+        if "Error:" in paused_add.stdout:
+            raise BootstrapFailure("could not add paused network-policy torrent")
+        paused_torrent_id = wait_product_unknown_torrent_id(
+            target,
+            paused_add_count,
+        )
+        paused_staging_root = (
+            f"{probe.grant_path(grant_storage)}/"
+            f".{paused_torrent_id}.rstorrent-staging"
+        )
+        paused_part_path = (
+            f"{probe.grant_path(grant_storage)}/.{paused_torrent_id}.rstorrent-parts"
+        )
+        request_product_torrent_action(target, paused_torrent_id, "observe")
+        if (
+            f"torrent_state torrent={paused_torrent_id} state=PAUSED"
+            not in product_logs(target)
+        ):
+            raise BootstrapFailure("new blocked torrent did not retain paused intent")
+        paused_connections_before_block = peer_count(paused_fixture)
+
+        allow_started = time.monotonic()
+        set_avd_wifi_metered(target, False)
+        launch_product_unmetered_network_policy(target, "unmetered")
+        unmetered = wait_product_unmetered_network_policy(target, "unmetered")
+        allow_millis = int((time.monotonic() - allow_started) * 1000)
+        if not (
+            unmetered.get("enabled") == "true"
+            and unmetered.get("eligibility") == "UNRESTRICTED"
+            and unmetered.get("allowed") == "true"
+            and unmetered.get("application") == "ALLOWED"
+        ):
+            raise BootstrapFailure(
+                f"unmetered Android recovery did not reopen the engine: {unmetered}"
+            )
+        def sample_resumed_peer() -> None:
+            nonlocal peer_high_water
+            peer_high_water = max(peer_high_water, peer_count(fixture))
+
+        metrics, fd_high_water = wait_product_completion(
+            target,
+            torrent_id,
+            baseline_fds,
+            sample_resumed_peer,
+        )
+        request_product_torrent_action(target, paused_torrent_id, "observe")
+        if (
+            f"torrent_state torrent={paused_torrent_id} state=PAUSED"
+            not in product_logs(target)
+        ):
+            raise BootstrapFailure("user-paused torrent changed intent after recovery")
+        if (
+            peer_count(paused_fixture) != paused_connections_before_block
+            or int(paused_fixture.handle.status().total_upload) != 0
+        ):
+            raise BootstrapFailure("user-paused torrent resumed after network recovery")
+
+        for relative_path, _, padding in fixture_files():
+            path = f"{output_root}/{relative_path}"
+            exists = target.shell(["test", "-f", path], check=False).returncode == 0
+            if padding:
+                if exists:
+                    raise BootstrapFailure(
+                        f"network-policy transfer created padding file {relative_path}"
+                    )
+                continue
+            if not exists:
+                raise BootstrapFailure(
+                    f"network-policy output is absent: {relative_path}"
+                )
+            digest = target.shell(["sha1sum", path]).stdout.split()[0]
+            if digest != fixture.expected_file_hashes[relative_path]:
+                raise BootstrapFailure(
+                    f"network-policy output hash differs: {relative_path}"
+                )
+
+        launch_product_unmetered_network_policy(target, "disable")
+        disabled = wait_product_unmetered_network_policy(target, "disable")
+        if not (
+            disabled.get("enabled") == "false"
+            and disabled.get("allowed") == "true"
+            and disabled.get("application") == "ALLOWED"
+        ):
+            raise BootstrapFailure(
+                f"Android unmetered policy did not disable cleanly: {disabled}"
+            )
+        request_product_torrent_action(target, torrent_id, "remove")
+        wait_product_log(
+            target,
+            f"saf_removal_confirmed torrent={torrent_id}",
+            "network-policy transfer removal",
+        )
+        request_product_torrent_action(target, paused_torrent_id, "remove")
+        wait_product_log(
+            target,
+            f"saf_removal_confirmed torrent={paused_torrent_id}",
+            "network-policy paused removal",
+        )
+
+        return {
+            "target": target_kind,
+            "profile": "product-unmetered-network",
+            "run": ordinal,
+            "identity": identity,
+            "wifi_network_id": wifi_network_id,
+            "torrent_id": torrent_id,
+            "paused_torrent_id": paused_torrent_id,
+            "pieces": len(fixture.piece_hashes),
+            "blocked_after_verified_pieces": 1,
+            "blocked_payload_bytes": blocked_upload,
+            "close_convergence_millis": close_millis,
+            "allow_convergence_millis": allow_millis,
+            "peer_connections_high_water": peer_high_water,
+            "peer_connections_terminal": peer_count(fixture),
+            "paused_peer_connections": peer_count(paused_fixture),
+            "storage_metrics": metrics,
+            "process_fds": {
+                "baseline": baseline_fds,
+                "high_water": fd_high_water,
+                "final": product_fd_count(target),
+            },
+            "default_off": True,
+            "metered_restart_traffic": 0,
+            "blocked_interval_traffic": 0,
+            "automatic_resume": "complete",
+            "paused_intent": "retained",
+            "payload_hashes": "exact",
+            "preference_restored": True,
+        }
+    finally:
+        set_avd_wifi_metered(target, False)
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+        for exact_path in (
+            output_root,
+            staging_root,
+            part_path,
+            paused_output_root,
+            paused_staging_root,
+            paused_part_path,
+        ):
+            target.shell(["rm", "-rf", exact_path], check=False)
+        probe.remove_grant_folder(target, grant_storage)
+        if peer_transport is not None:
+            peer_transport.close()
+        paused_fixture.close()
+        fixture.close()
 
 
 def start_product_tracker_evidence(target: Any, torrent_id: str) -> None:
@@ -5445,7 +5875,7 @@ def parse_arguments() -> argparse.Namespace:
         required=True,
     )
     parser.add_argument("--avd", default="jstorrent-tablet")
-    parser.add_argument("--avd-api", choices=["34", "35"], default="34")
+    parser.add_argument("--avd-api", choices=["28", "34", "35"], default="34")
     parser.add_argument("--runs", type=int, choices=range(1, 6), default=1)
     parser.add_argument(
         "--storage",
@@ -5554,6 +5984,7 @@ def main() -> int:
                     "product-https-tracker",
                     "product-mse",
                     "product-concurrent-downloads",
+                    "product-unmetered-network",
                     "product-external-intake",
                 )
                 else 1
@@ -5695,6 +6126,16 @@ def main() -> int:
                         arguments.target,
                         identity,
                         ordinal,
+                    )
+                elif profile == "product-unmetered-network":
+                    result = run_product_unmetered_network_profile(
+                        target,
+                        arguments.target,
+                        identity,
+                        probe,
+                        interop,
+                        ordinal,
+                        arguments.storage,
                     )
                 elif profile == "product-external-intake":
                     result = run_product_external_intake_profile(

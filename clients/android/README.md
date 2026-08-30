@@ -164,6 +164,16 @@ files for source leakage, proves settled descriptors and temporary-grant
 revocation, and removes every app, provider, transport, grant, and payload
 artifact.
 
+The `product-unmetered-network` profile runs only on a fresh task-owned API 28
+or API 35 AVD. It enables the persisted default-off cost policy, crosses a
+real controlled SAF download from unmetered to emulator-marked metered Wi-Fi,
+proves flat payload traffic and zero native transport endpoints after bounded
+convergence, restarts the process while still blocked, and then resumes to
+exact hashes when Wi-Fi becomes unmetered. A separately user-paused torrent
+remains paused throughout recovery. The runner restores the emulator metered
+override, preference, package data, reverse transport, payloads, and SAF
+tree.
+
 Every device command is addressed through the exact verified target
 controller. The runner owns and removes its reverse port, controlled seed,
 grant child, app-private run IDs, application, and fresh AVD session.

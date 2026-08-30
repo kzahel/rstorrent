@@ -217,12 +217,14 @@ class AvdSession:
 
 def start_avd(avd_name: str, expected_api: str = EXPECTED_AVD_API) -> AvdSession:
     allowed = avd_name == EXPECTED_AVD and expected_api == EXPECTED_AVD_API
-    task_owned_api35 = avd_name.startswith("rstorrent-") and expected_api == "35"
-    if not allowed and not task_owned_api35:
+    task_owned_campaign_avd = (
+        avd_name.startswith("rstorrent-") and expected_api in ("28", "35")
+    )
+    if not allowed and not task_owned_campaign_avd:
         raise ProbeFailure(
             f"refusing unlisted AVD {avd_name!r} for API {expected_api}; "
             f"expected {EXPECTED_AVD!r} at API {EXPECTED_AVD_API} or a "
-            "task-owned 'rstorrent-' AVD at API 35"
+            "task-owned 'rstorrent-' AVD at API 28 or 35"
         )
     adb = local_adb_path()
     emulator = emulator_path()
@@ -352,6 +354,12 @@ def verify_target(
         variants = (
             (expected_avd_api, "sdk_gphone64_x86_64", "emu64xa", "x86_64"),
             (expected_avd_api, "sdk_gphone64_arm64", "emu64a", "arm64-v8a"),
+            (
+                expected_avd_api,
+                "Android SDK built for arm64",
+                "generic_arm64",
+                "arm64-v8a",
+            ),
         )
         matched = next(
             (

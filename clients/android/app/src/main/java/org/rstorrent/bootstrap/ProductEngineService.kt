@@ -1345,6 +1345,34 @@ class ProductEngineService : Service() {
         }
     }
 
+    fun exerciseUnmeteredNetworkPolicyForTest(mode: String) {
+        check(ProductSafDocuments.isDebuggable(this)) {
+            "unmetered network policy evidence is debug-only"
+        }
+        scope.launch {
+            try {
+                clientReady.await()
+                val (expectedEnabled, expectedAllowed) =
+                    when (mode) {
+                        "default" -> false to true
+                        "enable" -> true to true
+                        "metered", "restart_metered" -> true to false
+                        "unmetered" -> true to true
+                        "disable" -> false to true
+                        else -> error("unknown unmetered network policy evidence mode")
+                    }
+                when (mode) {
+                    "enable" -> setUnmeteredNetworksOnly(true)
+                    "disable" -> setUnmeteredNetworksOnly(false)
+                }
+                val observed = awaitUnmeteredNetworkPolicy(expectedEnabled, expectedAllowed)
+                logUnmeteredNetworkPolicyEvidence(mode, observed)
+            } catch (error: Throwable) {
+                reportError(error)
+            }
+        }
+    }
+
     fun exerciseBandwidthPolicyForTest(mode: String) {
         check(ProductSafDocuments.isDebuggable(this)) {
             "bandwidth policy evidence is debug-only"
@@ -1445,6 +1473,56 @@ class ProductEngineService : Service() {
             "ipv6_settings mode=$mode configured=${observed.configured.ipv6Enabled} " +
                 "effective=${observed.effectiveIpv6Enabled} application=$application " +
                 "tcp=${ipv6?.tcpEndpoint ?: "none"} udp=${ipv6?.udpEndpoint ?: "none"}",
+        )
+    }
+
+    private suspend fun awaitUnmeteredNetworkPolicy(
+        expectedEnabled: Boolean,
+        expectedAllowed: Boolean,
+    ): ProductState =
+        withTimeout(30_000) {
+            while (true) {
+                val product = mutableState.value
+                val application = product.clientSettings?.applicationNetwork
+                val expectedState = if (expectedAllowed) "ALLOWED" else "BLOCKED"
+                if (
+                    product.ready &&
+                        product.network.unmeteredNetworksOnly == expectedEnabled &&
+                        product.network.effectiveNetworkAllowed == expectedAllowed &&
+                        application?.state?.name == expectedState
+                ) {
+                    return@withTimeout product
+                }
+                delay(25)
+            }
+            error("unreachable")
+        }
+
+    private fun logUnmeteredNetworkPolicyEvidence(
+        mode: String,
+        product: ProductState,
+    ) {
+        val network = product.network
+        val settings = requireNotNull(product.clientSettings)
+        val application = settings.applicationNetwork
+        val tcpEndpoints =
+            settings.transportFamilies.count { it.tcpEndpoint != null }
+        val udpEndpoints =
+            settings.transportFamilies.count { it.udpEndpoint != null }
+        val connectedPeers =
+            product.peers.values.sumOf { peers ->
+                peers.values.count { it.lifecycle.name == "CONNECTED" }
+            }
+        Log.i(
+            TAG,
+            "network_policy mode=$mode enabled=${network.unmeteredNetworksOnly} " +
+                "eligibility=${network.eligibility} allowed=${network.effectiveNetworkAllowed} " +
+                "generation=${network.effectiveGeneration} callback=${network.callbackRegistered} " +
+                "application=${application.state} requested=${application.requestedPrerequisite} " +
+                "effective=${application.effectivePrerequisite} tcp=$tcpEndpoints udp=$udpEndpoints " +
+                "listener=${settings.listenerStatus} mapping=${settings.portMappingStatus} " +
+                "udp_mapping=${settings.udpPortMappingStatus} dht=${product.dht?.lifecycle} " +
+                "connected_peers=$connectedPeers",
         )
     }
 
@@ -1979,6 +2057,24 @@ class ProductEngineService : Service() {
                     }
                     action == "pause" -> dispatchAwait(Command.Pause(torrentId))
                     action == "resume" -> dispatchAwait(Command.Resume(torrentId))
+                    action == "observe" -> {
+                        val torrent =
+                            withTimeout(10_000) {
+                                while (true) {
+                                    mutableState.value.torrents[torrentId]?.let {
+                                        return@withTimeout it
+                                    }
+                                    delay(25)
+                                }
+                                error("unreachable")
+                            }
+                        Log.i(
+                            TAG,
+                            "torrent_state torrent=$torrentId state=${torrent.state} " +
+                                "operational=${torrent.operationalState} " +
+                                "progress=${torrent.progress.reason}",
+                        )
+                    }
                     action == "force_recheck" -> forceRecheckAndAwaitForTest(torrentId)
                     action == "remove" ->
                         dispatchAwait(

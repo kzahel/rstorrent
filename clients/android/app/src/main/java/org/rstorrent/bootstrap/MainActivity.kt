@@ -47,6 +47,7 @@ class MainActivity : ComponentActivity() {
     private var pendingProductDownloadAdmissionEvidence: String? = null
     private var pendingProductBandwidthPolicy: String? = null
     private var pendingProductIpv6Policy: String? = null
+    private var pendingProductUnmeteredNetworkPolicy: String? = null
     private var pendingProductTorrentAction: Pair<String, String>? = null
     private var pendingNotificationSettingsReturn = false
     private var notificationNavigationSequence = 0L
@@ -195,6 +196,11 @@ class MainActivity : ComponentActivity() {
                     pendingProductIpv6Policy = null
                     android.util.Log.i("RSTorrentProduct", "ipv6_settings_bound mode=$it")
                     service.exerciseIpv6PolicyForTest(it)
+                }
+                pendingProductUnmeteredNetworkPolicy?.let {
+                    pendingProductUnmeteredNetworkPolicy = null
+                    android.util.Log.i("RSTorrentProduct", "network_policy_bound mode=$it")
+                    service.exerciseUnmeteredNetworkPolicyForTest(it)
                 }
                 pendingProductTorrentAction?.let { (torrentId, action) ->
                     pendingProductTorrentAction = null
@@ -565,6 +571,19 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             command
+                .getStringExtra(EXTRA_PRODUCT_UNMETERED_NETWORK_POLICY)
+                ?.takeIf(String::isNotBlank)
+                ?.let {
+                    command.removeExtra(EXTRA_PRODUCT_UNMETERED_NETWORK_POLICY)
+                    android.util.Log.i("RSTorrentProduct", "network_policy_intent mode=$it")
+                    val service = productService.value
+                    if (service == null) {
+                        pendingProductUnmeteredNetworkPolicy = it
+                    } else {
+                        service.exerciseUnmeteredNetworkPolicyForTest(it)
+                    }
+                }
+            command
                 .getStringExtra(EXTRA_PRODUCT_TORRENT_ACTION)
                 ?.takeIf(String::isNotBlank)
                 ?.let { action ->
@@ -930,6 +949,8 @@ class MainActivity : ComponentActivity() {
             "product_download_admission_evidence"
         const val EXTRA_PRODUCT_BANDWIDTH_POLICY = "product_bandwidth_policy"
         const val EXTRA_PRODUCT_IPV6_POLICY = "product_ipv6_policy"
+        const val EXTRA_PRODUCT_UNMETERED_NETWORK_POLICY =
+            "product_unmetered_network_policy"
         const val EXTRA_PRODUCT_TORRENT_ACTION = "product_torrent_action"
         const val EXTRA_PRODUCT_TORRENT_ID = "product_torrent_id"
         const val EXTRA_PRODUCT_TORRENT_BASE64 = "product_torrent_base64"
