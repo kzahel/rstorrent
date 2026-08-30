@@ -14,7 +14,9 @@ import android.net.Uri
 import android.os.Binder
 import android.os.Build
 import android.os.CancellationSignal
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.os.PowerManager
 import android.os.SystemClock
@@ -122,6 +124,8 @@ class ProductEngineService : Service() {
     private val foreground = AtomicBoolean(true)
     private val backgroundAdmitted = AtomicBoolean(false)
     private val recoveryNetworkGateClosed = AtomicBoolean(false)
+    private val productQuotaRestartEvidenceArmed = AtomicBoolean(false)
+    private var quotaExhaustedStartRejected = false
     private val shutdownComplete = CompletableDeferred<Unit>()
     private val clientReady = CompletableDeferred<Unit>()
     private val presentationReady = CompletableDeferred<Unit>()
@@ -211,6 +215,11 @@ class ProductEngineService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        if (ProductDataSyncQuotaFence.isExhausted(this)) {
+            quotaExhaustedStartRejected = true
+            Log.w(TAG, "product_quota_restart blocked=true")
+            return
+        }
         notificationCoordinator = AndroidNotificationCoordinator(this, mutableState)
         notificationCoordinator.initialize(interactionLeases.size)
         startForeground(
@@ -425,6 +434,10 @@ class ProductEngineService : Service() {
         flags: Int,
         startId: Int,
     ): Int {
+        if (quotaExhaustedStartRejected) {
+            if (!stopSelfResult(startId)) stopSelf()
+            return START_NOT_STICKY
+        }
         latestStartId.set(startId)
         startCommandReceived = true
         if (!firstStartCommand.isCompleted) firstStartCommand.complete(intent == null)
@@ -449,9 +462,15 @@ class ProductEngineService : Service() {
         }
     }
 
-    override fun onBind(intent: Intent?): IBinder = binder
+    override fun onBind(intent: Intent?): IBinder? =
+        if (quotaExhaustedStartRejected) null else binder
 
     override fun onDestroy() {
+        if (quotaExhaustedStartRejected) {
+            scope.cancel()
+            super.onDestroy()
+            return
+        }
         runBlocking(Dispatchers.IO) {
             shutdown("destroy")
         }
@@ -472,8 +491,36 @@ class ProductEngineService : Service() {
         fgsType: Int,
     ) {
         Log.w(TAG, "product_service_timeout type=data_sync")
+        if (!ProductDataSyncQuotaFence.markExhausted(this)) {
+            Log.e(TAG, "product_quota_fence persist_failed=true")
+        }
+        if (productQuotaRestartEvidenceArmed.compareAndSet(true, false)) {
+            scheduleProductQuotaRestartEvidence()
+        }
         lifecycleCoordinator.terminal(ProductLifetimeStopReason.DATA_SYNC_TIMEOUT)
         requestStop("data_sync_timeout", startId)
+    }
+
+    private fun scheduleProductQuotaRestartEvidence() {
+        val application = applicationContext
+        Handler(Looper.getMainLooper()).postDelayed(
+            {
+                val outcome =
+                    runCatching {
+                        application.startForegroundService(
+                            Intent(application, ProductEngineService::class.java),
+                        )
+                        "accepted"
+                    }.fold(
+                        onSuccess = { it },
+                        onFailure = { failure ->
+                            "rejected_${failure.javaClass.simpleName}"
+                        },
+                    )
+                Log.i(TAG, "product_quota_restart outcome=$outcome")
+            },
+            PRODUCT_QUOTA_RESTART_DELAY_MILLIS,
+        )
     }
 
     private fun admitExternalIntent(command: Intent) {
@@ -1475,6 +1522,14 @@ class ProductEngineService : Service() {
                 "deadline=${lifecycle?.scheduledDeadlineMillis ?: "none"} " +
                 "reason=${product.lifecycle.reason ?: "none"}",
         )
+    }
+
+    fun armProductQuotaRestartEvidenceForTest() {
+        check(ProductSafDocuments.isDebuggable(this)) {
+            "product quota restart evidence is debug-only"
+        }
+        productQuotaRestartEvidenceArmed.set(true)
+        Log.i(TAG, "product_quota_restart armed=true")
     }
 
     fun exerciseBandwidthPolicyForTest(mode: String) {
@@ -3636,6 +3691,7 @@ class ProductEngineService : Service() {
         private const val EXTERNAL_PROVIDER_TIMEOUT_MILLIS = 30_000L
         private const val SAF_PROVIDER_CONCURRENCY = 4
         private const val ANDROID_RATE_BYTES_PER_SECOND = 24 * 1024
+        private const val PRODUCT_QUOTA_RESTART_DELAY_MILLIS = 3_000L
         private const val TAG = "RSTorrentProduct"
     }
 }

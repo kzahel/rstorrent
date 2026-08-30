@@ -49,6 +49,7 @@ class MainActivity : ComponentActivity() {
     private var pendingProductIpv6Policy: String? = null
     private var pendingProductUnmeteredNetworkPolicy: String? = null
     private var pendingProductLifecycleEvidence: String? = null
+    private var pendingProductQuotaRestartEvidence = false
     private var pendingProductTorrentAction: Pair<String, String>? = null
     private var pendingNotificationSettingsReturn = false
     private var pendingBackgroundEnable = false
@@ -219,6 +220,10 @@ class MainActivity : ComponentActivity() {
                 pendingProductLifecycleEvidence?.let {
                     pendingProductLifecycleEvidence = null
                     service.exerciseProductLifecycleForTest(it)
+                }
+                if (pendingProductQuotaRestartEvidence) {
+                    pendingProductQuotaRestartEvidence = false
+                    service.armProductQuotaRestartEvidenceForTest()
                 }
                 pendingProductTorrentAction?.let { (torrentId, action) ->
                     pendingProductTorrentAction = null
@@ -481,6 +486,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showProductSurface(command: Intent) {
+        if (!ProductDataSyncQuotaFence.clearForUserVisibleStart(this)) {
+            android.util.Log.w(
+                "RSTorrentProduct",
+                "product_quota_fence clear_failed=true",
+            )
+        }
         if (
             ProductSafDocuments.isDebuggable(this) &&
             command.getBooleanExtra(EXTRA_PRODUCT_RELEASE_SAF_GRANT, false)
@@ -520,6 +531,15 @@ class MainActivity : ComponentActivity() {
             }
         }
         if (ProductSafDocuments.isDebuggable(this)) {
+            if (command.getBooleanExtra(EXTRA_PRODUCT_QUOTA_RESTART_EVIDENCE, false)) {
+                command.removeExtra(EXTRA_PRODUCT_QUOTA_RESTART_EVIDENCE)
+                val service = productService.value
+                if (service == null) {
+                    pendingProductQuotaRestartEvidence = true
+                } else {
+                    service.armProductQuotaRestartEvidenceForTest()
+                }
+            }
             command
                 .getStringExtra(EXTRA_PRODUCT_TRACKER_HTTPS_POLICY)
                 ?.takeIf(String::isNotBlank)
@@ -1009,6 +1029,8 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_PRODUCT_UNMETERED_NETWORK_POLICY =
             "product_unmetered_network_policy"
         const val EXTRA_PRODUCT_LIFECYCLE_EVIDENCE = "product_lifecycle_evidence"
+        const val EXTRA_PRODUCT_QUOTA_RESTART_EVIDENCE =
+            "product_quota_restart_evidence"
         const val EXTRA_PRODUCT_TORRENT_ACTION = "product_torrent_action"
         const val EXTRA_PRODUCT_TORRENT_ID = "product_torrent_id"
         const val EXTRA_PRODUCT_TORRENT_BASE64 = "product_torrent_base64"

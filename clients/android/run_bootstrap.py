@@ -1793,7 +1793,7 @@ def product_service_state(target: Any) -> tuple[bool, bool]:
         ["dumpsys", "activity", "services", PACKAGE], timeout=20, check=False
     ).stdout
     rows = [line for line in dump.splitlines() if "ProductEngineService" in line]
-    running = bool(rows)
+    running = bool(rows) and "app=null" not in dump
     foreground = running and (
         "isForeground=true" in dump
         or "foregroundServiceType=0x1" in dump
@@ -1820,7 +1820,12 @@ def wait_product_service_state(
         time.sleep(0.1)
     raise BootstrapFailure(
         "Android product service state did not converge: "
-        f"expected running={running} foreground={foreground} observed={observed}"
+        f"expected running={running} foreground={foreground} observed={observed}\n"
+        + target.shell(
+            ["dumpsys", "activity", "services", PACKAGE],
+            timeout=20,
+            check=False,
+        ).stdout
     )
 
 
@@ -1859,6 +1864,122 @@ def maximum_product_verified_count(logs: str, torrent_id: str) -> int | None:
         if (match := pattern.search(line)) is not None
     ]
     return max(counts) if counts else None
+
+
+def run_product_data_sync_quota_probe(target: Any) -> dict[str, Any]:
+    namespace = "activity_manager"
+    key = "data_sync_fgs_timeout_duration"
+    original = target.shell(["device_config", "get", namespace, key]).stdout.strip()
+    restored = ""
+    try:
+        changed = target.shell(
+            ["device_config", "put", namespace, key, "1000"],
+            timeout=20,
+            check=False,
+        )
+        if changed.returncode != 0:
+            raise BootstrapFailure(
+                "could not shorten Android dataSync quota: "
+                f"stdout={changed.stdout!r} stderr={changed.stderr!r}"
+            )
+        target.run(["logcat", "-c"], check=False)
+        result = target.shell(
+            [
+                "am",
+                "start",
+                "-W",
+                "-n",
+                ACTIVITY,
+                "--es",
+                "product_lifecycle_evidence",
+                "enable_background",
+                "--ez",
+                "product_quota_restart_evidence",
+                "true",
+            ],
+            timeout=30,
+            check=False,
+        )
+        if "Error:" in result.stdout or result.returncode != 0:
+            raise BootstrapFailure(
+                "could not start Android dataSync quota probe: "
+                f"stdout={result.stdout!r} stderr={result.stderr!r}"
+            )
+        wait_product_log(
+            target,
+            "lifecycle_evidence mode=enable_background",
+            "dataSync quota setup",
+            timeout=30,
+        )
+        target.shell(["input", "keyevent", "KEYCODE_HOME"], check=False)
+        wait_product_log(
+            target,
+            "product_service_timeout type=data_sync",
+            "Android dataSync quota callback",
+            timeout=15,
+        )
+        wait_product_log(
+            target,
+            "product_shutdown_complete reason=lifecycle_data_sync_timeout",
+            "Android dataSync quota shutdown",
+            timeout=15,
+        )
+        retry = wait_product_log(
+            target,
+            "product_quota_restart outcome=",
+            "Android exhausted-quota restart",
+            timeout=15,
+        )
+        match = re.search(r"product_quota_restart outcome=(\S+)", retry)
+        outcome = match.group(1) if match is not None else "missing"
+        if outcome == "accepted":
+            wait_product_log(
+                target,
+                "product_quota_restart blocked=true",
+                "exhausted dataSync product fence",
+                timeout=15,
+            )
+            outcome = "accepted_then_product_blocked"
+        elif outcome != "rejected_ForegroundServiceStartNotAllowedException":
+            raise BootstrapFailure(
+                f"Android exhausted dataSync quota had an unexpected result: {outcome}\n{retry}"
+            )
+        wait_product_service_state(target, running=False, timeout=30)
+        if product_has_ongoing_notification(target):
+            raise BootstrapFailure(
+                "Android dataSync timeout left the ongoing notification active"
+            )
+        return {
+            "duration_millis": 1_000,
+            "timeout_callback": True,
+            "joined_shutdown": True,
+            "quota_restart": outcome,
+            "service_running": False,
+            "ongoing_notification": False,
+        }
+    finally:
+        if original in ("", "null"):
+            target.shell(
+                ["device_config", "delete", namespace, key],
+                timeout=20,
+                check=False,
+            )
+        else:
+            target.shell(
+                ["device_config", "put", namespace, key, original],
+                timeout=20,
+                check=False,
+            )
+        restored = target.shell(
+            ["device_config", "get", namespace, key],
+            timeout=20,
+            check=False,
+        ).stdout.strip()
+        if restored != original:
+            raise BootstrapFailure(
+                "Android dataSync quota override was not restored: "
+                f"original={original!r} restored={restored!r}"
+            )
 
 
 def run_product_background_lifecycle_profile(
@@ -2060,6 +2181,10 @@ def run_product_background_lifecycle_profile(
         )
         launch_product_lifecycle_evidence(target, "disable_background")
 
+        quota = None
+        if int(identity["api"]) >= 35:
+            quota = run_product_data_sync_quota_probe(target)
+
         return {
             "target": target_kind,
             "profile": "product-background-lifecycle",
@@ -2074,6 +2199,7 @@ def run_product_background_lifecycle_profile(
             "completion_shutdown": True,
             "keep_seeding_upload_bytes": uploaded_bytes,
             "seeding_disable_shutdown": True,
+            "data_sync_quota": quota,
             "payload_hashes": "exact",
             "storage_metrics": metrics,
             "process_fds": {

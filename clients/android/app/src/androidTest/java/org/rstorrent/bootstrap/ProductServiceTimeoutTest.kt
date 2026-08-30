@@ -30,6 +30,7 @@ class ProductServiceTimeoutTest {
     fun dataSyncTimeoutUsesJoinedNonStickyShutdown() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         ProductInteractionRegistry.resetForTest()
+        assertTrue(ProductDataSyncQuotaFence.clearForUserVisibleStart(context))
         context.startForegroundService(Intent(context, ProductEngineService::class.java))
         val binder: IBinder =
             serviceRule.bindService(Intent(context, ProductEngineService::class.java))
@@ -44,6 +45,7 @@ class ProductServiceTimeoutTest {
         }
 
         assertTrue(snapshot.shutdownComplete)
+        assertTrue(ProductDataSyncQuotaFence.isExhausted(context))
         assertEquals(0, snapshot.interactionLeases)
         assertFalse(snapshot.notificationReceiverRegistered)
         assertFalse(snapshot.wakeLockHeld)
@@ -54,6 +56,7 @@ class ProductServiceTimeoutTest {
                 .any { it.id == AndroidNotificationContract.ONGOING_NOTIFICATION_ID },
         )
         context.stopService(Intent(context, ProductEngineService::class.java))
+        assertTrue(ProductDataSyncQuotaFence.clearForUserVisibleStart(context))
         ProductInteractionRegistry.resetForTest()
     }
 }
