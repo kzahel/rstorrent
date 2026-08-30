@@ -1,0 +1,976 @@
+use std::collections::{HashMap, VecDeque};
+use std::error::Error;
+use std::fmt;
+use std::net::{IpAddr, SocketAddr};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex as StdMutex};
+use std::time::{Duration, Instant};
+
+use bytes::BytesMut;
+use rstorrent_session::{ApplicationService, MediaRangeError, MediaReadError, MediaResolveError};
+use rtc::data_channel::RTCDataChannelId;
+use rtc::peer_connection::RTCPeerConnectionBuilder;
+use rtc::peer_connection::event::{RTCDataChannelEvent, RTCPeerConnectionEvent};
+use rtc::peer_connection::message::RTCMessage;
+use rtc::peer_connection::sdp::{RTCSdpType, RTCSessionDescription};
+use rtc::peer_connection::state::RTCPeerConnectionState;
+use rtc::peer_connection::transport::{
+    CandidateConfig, CandidateHostConfig, RTCIceCandidate, RTCIceCandidateInit,
+};
+use rtc::sansio::Protocol;
+use rtc::shared::{TaggedBytesMut, TransportContext, TransportProtocol};
+use rtc::statistics::StatsSelector;
+use rtc::statistics::stats::ice_candidate_pair::RTCStatsIceCandidatePairState;
+use serde::{Deserialize, Serialize};
+use tokio::net::UdpSocket;
+use tokio::sync::{Mutex, mpsc, oneshot};
+use tokio::task::{JoinHandle, JoinSet};
+use tokio_util::sync::CancellationToken;
+
+use crate::codec::{
+    ControlFrame, MAX_CHUNK_BYTES, MAX_RANGE_REQUESTS, RangeErrorCode, decode_control,
+    encode_range_accepted, encode_range_chunk, encode_range_complete, encode_range_error,
+};
+
+pub const MAX_REMOTE_CANDIDATES: usize = 32;
+pub const MAX_SIGNALING_BYTES: usize = 64 * 1024;
+pub const NEGOTIATION_TIMEOUT: Duration = Duration::from_secs(20);
+pub const REQUEST_INACTIVE_TIMEOUT: Duration = Duration::from_secs(60);
+pub const EXPERIMENT_LIFETIME: Duration = Duration::from_secs(10 * 60);
+pub const MAX_APPLICATION_QUEUE_BYTES: usize = 512 * 1024;
+pub const MAX_TRANSPORT_QUEUE_BYTES: usize = 512 * 1024;
+const TRANSPORT_QUEUE_LOW_BYTES: u32 = 256 * 1024;
+const MAX_DATAGRAM_BYTES: usize = 2_000;
+const DRIVER_FALLBACK_TIMEOUT: Duration = Duration::from_secs(24 * 60 * 60);
+const STATS_INTERVAL: Duration = Duration::from_millis(250);
+const DATA_CHANNEL_LABEL: &str = "rstorrent-direct-file-v1";
+
+type SharedApplication = Arc<Mutex<ApplicationService>>;
+
+#[derive(Debug)]
+pub enum DirectFileEndpointError {
+    InvalidOffer(&'static str),
+    SignalingLimit,
+    CapabilityUnavailable,
+    Bind(std::io::Error),
+    WebRtc(String),
+    DriverClosed,
+    Driver(String),
+    Join(String),
+}
+
+impl fmt::Display for DirectFileEndpointError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidOffer(reason) => write!(formatter, "invalid WebRTC offer: {reason}"),
+            Self::SignalingLimit => formatter.write_str("WebRTC signaling input exceeds its limit"),
+            Self::CapabilityUnavailable => formatter.write_str("media capability is unavailable"),
+            Self::Bind(error) => write!(formatter, "bind direct-file UDP socket: {error}"),
+            Self::WebRtc(error) => write!(formatter, "WebRTC setup failed: {error}"),
+            Self::DriverClosed => formatter.write_str("direct-file driver is closed"),
+            Self::Driver(error) => write!(formatter, "direct-file driver failed: {error}"),
+            Self::Join(error) => write!(formatter, "join direct-file driver: {error}"),
+        }
+    }
+}
+
+impl Error for DirectFileEndpointError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Bind(error) => Some(error),
+            Self::InvalidOffer(_)
+            | Self::SignalingLimit
+            | Self::CapabilityUnavailable
+            | Self::WebRtc(_)
+            | Self::DriverClosed
+            | Self::Driver(_)
+            | Self::Join(_) => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct OfferAnswer {
+    pub answer: RTCSessionDescription,
+    pub udp_address: SocketAddr,
+    pub local_fingerprint: String,
+    pub remote_fingerprint: String,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DirectFileEndpointSnapshot {
+    pub state: String,
+    pub terminal_reason: Option<String>,
+    pub active_tasks: usize,
+    pub open_sockets: usize,
+    pub active_requests: usize,
+    pub request_high_water: usize,
+    pub queued_bytes: usize,
+    pub queue_high_water: usize,
+    pub transport_buffered_bytes: usize,
+    pub transport_high_water: usize,
+    pub bytes_sent: u64,
+    pub bytes_received: u64,
+    pub remote_candidates: usize,
+    pub signaling_bytes: usize,
+    pub fingerprint_verified: bool,
+    pub selected_candidate_class: Option<String>,
+    pub rtt_micros: Option<u64>,
+}
+
+#[derive(Debug, Default)]
+struct EndpointMetrics {
+    state: StdMutex<String>,
+    terminal_reason: StdMutex<Option<String>>,
+    active_tasks: AtomicUsize,
+    open_sockets: AtomicUsize,
+    active_requests: AtomicUsize,
+    request_high_water: AtomicUsize,
+    queued_bytes: AtomicUsize,
+    queue_high_water: AtomicUsize,
+    transport_buffered_bytes: AtomicUsize,
+    transport_high_water: AtomicUsize,
+    bytes_sent: AtomicU64,
+    bytes_received: AtomicU64,
+    remote_candidates: AtomicUsize,
+    signaling_bytes: AtomicUsize,
+    fingerprint_verified: AtomicBool,
+    selected_candidate_class: StdMutex<Option<String>>,
+    rtt_micros: AtomicU64,
+    has_rtt: AtomicBool,
+}
+
+impl EndpointMetrics {
+    fn snapshot(&self) -> DirectFileEndpointSnapshot {
+        DirectFileEndpointSnapshot {
+            state: lock_unpoisoned(&self.state).clone(),
+            terminal_reason: lock_unpoisoned(&self.terminal_reason).clone(),
+            active_tasks: self.active_tasks.load(Ordering::Acquire),
+            open_sockets: self.open_sockets.load(Ordering::Acquire),
+            active_requests: self.active_requests.load(Ordering::Acquire),
+            request_high_water: self.request_high_water.load(Ordering::Acquire),
+            queued_bytes: self.queued_bytes.load(Ordering::Acquire),
+            queue_high_water: self.queue_high_water.load(Ordering::Acquire),
+            transport_buffered_bytes: self.transport_buffered_bytes.load(Ordering::Acquire),
+            transport_high_water: self.transport_high_water.load(Ordering::Acquire),
+            bytes_sent: self.bytes_sent.load(Ordering::Acquire),
+            bytes_received: self.bytes_received.load(Ordering::Acquire),
+            remote_candidates: self.remote_candidates.load(Ordering::Acquire),
+            signaling_bytes: self.signaling_bytes.load(Ordering::Acquire),
+            fingerprint_verified: self.fingerprint_verified.load(Ordering::Acquire),
+            selected_candidate_class: lock_unpoisoned(&self.selected_candidate_class).clone(),
+            rtt_micros: self
+                .has_rtt
+                .load(Ordering::Acquire)
+                .then(|| self.rtt_micros.load(Ordering::Acquire)),
+        }
+    }
+
+    fn set_state(&self, state: &str) {
+        *lock_unpoisoned(&self.state) = state.to_owned();
+    }
+
+    fn set_terminal(&self, reason: &str) {
+        *lock_unpoisoned(&self.terminal_reason) = Some(reason.to_owned());
+    }
+}
+
+fn lock_unpoisoned<T>(mutex: &StdMutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+#[derive(Clone)]
+pub struct DirectFileEndpointFactory {
+    application: SharedApplication,
+}
+
+impl DirectFileEndpointFactory {
+    pub fn new(application: SharedApplication) -> Self {
+        Self { application }
+    }
+
+    pub fn idle_snapshot(&self) -> DirectFileEndpointSnapshot {
+        DirectFileEndpointSnapshot {
+            state: "idle".to_owned(),
+            ..DirectFileEndpointSnapshot::default()
+        }
+    }
+
+    pub async fn answer_offer(
+        &self,
+        capability: String,
+        bind_ip: IpAddr,
+        offer: RTCSessionDescription,
+    ) -> Result<(OfferAnswer, DirectFileEndpoint), DirectFileEndpointError> {
+        let remote_fingerprint = validate_offer(&offer)?;
+        {
+            let mut application = self.application.lock().await;
+            let lease = application
+                .resolve_media_capability(&capability)
+                .map_err(|_| DirectFileEndpointError::CapabilityUnavailable)?;
+            drop(lease);
+        }
+
+        let socket = UdpSocket::bind(SocketAddr::new(bind_ip, 0))
+            .await
+            .map_err(DirectFileEndpointError::Bind)?;
+        let local_addr = socket.local_addr().map_err(DirectFileEndpointError::Bind)?;
+        let host_candidate = CandidateHostConfig {
+            base_config: CandidateConfig {
+                network: "udp".to_owned(),
+                address: local_addr.ip().to_string(),
+                port: local_addr.port(),
+                component: 1,
+                ..CandidateConfig::default()
+            },
+            ..CandidateHostConfig::default()
+        }
+        .new_candidate_host()
+        .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?;
+
+        let mut peer = RTCPeerConnectionBuilder::new()
+            .with_sctp_receive_buffer_size(MAX_TRANSPORT_QUEUE_BYTES as u32)
+            .build()
+            .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?;
+        peer.add_local_candidate(
+            RTCIceCandidate::from(&host_candidate)
+                .to_json()
+                .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?,
+        )
+        .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?;
+        peer.set_remote_description(offer.clone())
+            .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?;
+        let answer = peer
+            .create_answer(None)
+            .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?;
+        peer.set_local_description(answer.clone())
+            .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?;
+        let local_fingerprint = fingerprint_from_sdp(&answer.sdp)?;
+
+        let metrics = Arc::new(EndpointMetrics::default());
+        metrics.set_state("negotiating");
+        metrics.open_sockets.store(1, Ordering::Release);
+        metrics.active_tasks.store(1, Ordering::Release);
+        metrics
+            .signaling_bytes
+            .store(offer.sdp.len(), Ordering::Release);
+        let (command_tx, command_rx) = mpsc::channel(64);
+        let cancellation = CancellationToken::new();
+        let driver_cancellation = cancellation.clone();
+        let driver_metrics = metrics.clone();
+        let application = self.application.clone();
+        let task = tokio::spawn(async move {
+            let result = run_driver(
+                peer,
+                socket,
+                local_addr,
+                application,
+                capability,
+                command_rx,
+                driver_cancellation,
+                driver_metrics.clone(),
+            )
+            .await;
+            driver_metrics.active_tasks.store(0, Ordering::Release);
+            driver_metrics.open_sockets.store(0, Ordering::Release);
+            if let Err(error) = &result {
+                driver_metrics.set_terminal(&error.to_string());
+                driver_metrics.set_state("failed");
+            }
+            result
+        });
+        Ok((
+            OfferAnswer {
+                answer,
+                udp_address: local_addr,
+                local_fingerprint,
+                remote_fingerprint,
+            },
+            DirectFileEndpoint {
+                command_tx,
+                cancellation,
+                task: Some(task),
+                metrics,
+            },
+        ))
+    }
+}
+
+pub struct DirectFileEndpoint {
+    command_tx: mpsc::Sender<EndpointCommand>,
+    cancellation: CancellationToken,
+    task: Option<JoinHandle<Result<(), DirectFileEndpointError>>>,
+    metrics: Arc<EndpointMetrics>,
+}
+
+impl DirectFileEndpoint {
+    pub fn snapshot(&self) -> DirectFileEndpointSnapshot {
+        self.metrics.snapshot()
+    }
+
+    pub async fn add_remote_candidate(
+        &self,
+        candidate: RTCIceCandidateInit,
+    ) -> Result<(), DirectFileEndpointError> {
+        let candidate_bytes = candidate.candidate.len()
+            + candidate.sdp_mid.as_ref().map_or(0, String::len)
+            + candidate.username_fragment.as_ref().map_or(0, String::len);
+        if candidate.candidate.is_empty() || candidate_bytes > MAX_SIGNALING_BYTES {
+            return Err(DirectFileEndpointError::SignalingLimit);
+        }
+        let count = self
+            .metrics
+            .remote_candidates
+            .fetch_add(1, Ordering::AcqRel)
+            + 1;
+        if count > MAX_REMOTE_CANDIDATES {
+            self.metrics
+                .remote_candidates
+                .fetch_sub(1, Ordering::AcqRel);
+            return Err(DirectFileEndpointError::SignalingLimit);
+        }
+        if reserve_counter(
+            &self.metrics.signaling_bytes,
+            candidate_bytes,
+            MAX_SIGNALING_BYTES,
+        )
+        .is_err()
+        {
+            self.metrics
+                .remote_candidates
+                .fetch_sub(1, Ordering::AcqRel);
+            return Err(DirectFileEndpointError::SignalingLimit);
+        }
+        let (response_tx, response_rx) = oneshot::channel();
+        if self
+            .command_tx
+            .send(EndpointCommand::Candidate(candidate, response_tx))
+            .await
+            .is_err()
+        {
+            self.metrics
+                .remote_candidates
+                .fetch_sub(1, Ordering::AcqRel);
+            self.metrics
+                .signaling_bytes
+                .fetch_sub(candidate_bytes, Ordering::AcqRel);
+            return Err(DirectFileEndpointError::DriverClosed);
+        }
+        response_rx
+            .await
+            .map_err(|_| DirectFileEndpointError::DriverClosed)?
+            .map_err(DirectFileEndpointError::WebRtc)
+    }
+
+    pub async fn shutdown(&mut self) -> Result<(), DirectFileEndpointError> {
+        self.cancellation.cancel();
+        let Some(task) = self.task.take() else {
+            return Ok(());
+        };
+        task.await
+            .map_err(|error| DirectFileEndpointError::Join(error.to_string()))?
+    }
+}
+
+impl Drop for DirectFileEndpoint {
+    fn drop(&mut self) {
+        self.cancellation.cancel();
+        if let Some(task) = self.task.take() {
+            task.abort();
+        }
+    }
+}
+
+enum EndpointCommand {
+    Candidate(RTCIceCandidateInit, oneshot::Sender<Result<(), String>>),
+}
+
+struct OutboundFrame {
+    bytes: Vec<u8>,
+}
+
+struct ActiveRequest {
+    cancellation: CancellationToken,
+    ack: mpsc::Sender<u64>,
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_driver(
+    mut peer: rtc::peer_connection::RTCPeerConnection,
+    socket: UdpSocket,
+    local_addr: SocketAddr,
+    application: SharedApplication,
+    capability: String,
+    mut commands: mpsc::Receiver<EndpointCommand>,
+    cancellation: CancellationToken,
+    metrics: Arc<EndpointMetrics>,
+) -> Result<(), DirectFileEndpointError> {
+    let (outbound_tx, mut outbound_rx) = mpsc::channel::<OutboundFrame>(8);
+    let mut pending = VecDeque::<OutboundFrame>::new();
+    let mut requests = HashMap::<u32, ActiveRequest>::new();
+    let mut request_tasks = JoinSet::<(u32, &'static str)>::new();
+    let mut channel_id: Option<RTCDataChannelId> = None;
+    let mut receive_buffer = vec![0; MAX_DATAGRAM_BYTES];
+    let negotiation_deadline = tokio::time::Instant::now() + NEGOTIATION_TIMEOUT;
+    let lifetime_deadline = tokio::time::Instant::now() + EXPERIMENT_LIFETIME;
+    let mut stats_tick = tokio::time::interval(STATS_INTERVAL);
+    stats_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let terminal = 'driver: loop {
+        while let Some(transmit) = peer.poll_write() {
+            socket
+                .send_to(&transmit.message, transmit.transport.peer_addr)
+                .await
+                .map_err(|error| DirectFileEndpointError::Driver(error.to_string()))?;
+        }
+
+        while let Some(event) = peer.poll_event() {
+            match event {
+                RTCPeerConnectionEvent::OnConnectionStateChangeEvent(state) => match state {
+                    RTCPeerConnectionState::Connected => {
+                        metrics.set_state("connected");
+                        metrics.fingerprint_verified.store(true, Ordering::Release);
+                        *lock_unpoisoned(&metrics.selected_candidate_class) =
+                            Some("host".to_owned());
+                    }
+                    RTCPeerConnectionState::Failed => {
+                        break 'driver "connection_failed";
+                    }
+                    RTCPeerConnectionState::Closed => {
+                        break 'driver "peer_closed";
+                    }
+                    _ => {}
+                },
+                RTCPeerConnectionEvent::OnDataChannel(data_event) => match data_event {
+                    RTCDataChannelEvent::OnOpen(id) => {
+                        let mut channel = peer.data_channel(id).ok_or_else(|| {
+                            DirectFileEndpointError::Driver(
+                                "opened DataChannel disappeared".to_owned(),
+                            )
+                        })?;
+                        if channel.label() != DATA_CHANNEL_LABEL
+                            || !channel.ordered()
+                            || channel.max_packet_life_time().is_some()
+                            || channel.max_retransmits().is_some()
+                        {
+                            break 'driver "unsupported_data_channel";
+                        }
+                        channel.set_buffered_amount_low_threshold(TRANSPORT_QUEUE_LOW_BYTES);
+                        channel
+                            .set_buffered_amount_high_threshold(MAX_TRANSPORT_QUEUE_BYTES as u32);
+                        channel_id = Some(id);
+                        metrics.set_state("ready");
+                    }
+                    RTCDataChannelEvent::OnClose(id) | RTCDataChannelEvent::OnError(id)
+                        if Some(id) == channel_id =>
+                    {
+                        break 'driver "data_channel_closed";
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+
+        while let Some(message) = peer.poll_read() {
+            let RTCMessage::DataChannelMessage(id, message) = message else {
+                continue;
+            };
+            if Some(id) != channel_id || message.is_string {
+                try_queue_frame(
+                    &outbound_tx,
+                    &metrics,
+                    encode_range_error(0, RangeErrorCode::Malformed),
+                );
+                continue;
+            }
+            metrics.bytes_received.fetch_add(
+                u64::try_from(message.data.len()).unwrap_or(u64::MAX),
+                Ordering::AcqRel,
+            );
+            match decode_control(&message.data) {
+                Ok(ControlFrame::RangeRequest {
+                    request_id,
+                    offset,
+                    length,
+                }) => {
+                    if requests.contains_key(&request_id) {
+                        try_queue_frame(
+                            &outbound_tx,
+                            &metrics,
+                            encode_range_error(request_id, RangeErrorCode::DuplicateRequest),
+                        );
+                    } else if requests.len() >= MAX_RANGE_REQUESTS {
+                        try_queue_frame(
+                            &outbound_tx,
+                            &metrics,
+                            encode_range_error(request_id, RangeErrorCode::TooManyRequests),
+                        );
+                    } else {
+                        let request_cancellation = cancellation.child_token();
+                        let (ack_tx, ack_rx) = mpsc::channel(1);
+                        requests.insert(
+                            request_id,
+                            ActiveRequest {
+                                cancellation: request_cancellation.clone(),
+                                ack: ack_tx,
+                            },
+                        );
+                        let active = metrics.active_requests.fetch_add(1, Ordering::AcqRel) + 1;
+                        metrics
+                            .request_high_water
+                            .fetch_max(active, Ordering::AcqRel);
+                        let application = application.clone();
+                        let capability = capability.clone();
+                        let outbound = outbound_tx.clone();
+                        let request_metrics = metrics.clone();
+                        request_tasks.spawn(async move {
+                            let terminal = run_range_request(
+                                application,
+                                capability,
+                                request_id,
+                                offset,
+                                length,
+                                ack_rx,
+                                outbound,
+                                request_cancellation,
+                                request_metrics,
+                            )
+                            .await;
+                            (request_id, terminal)
+                        });
+                    }
+                }
+                Ok(ControlFrame::CancelRequest { request_id }) => {
+                    if let Some(request) = requests.get(&request_id) {
+                        request.cancellation.cancel();
+                    }
+                }
+                Ok(ControlFrame::ChunkAck {
+                    request_id,
+                    next_offset,
+                }) => {
+                    if let Some(request) = requests.get(&request_id) {
+                        let _ = request.ack.try_send(next_offset);
+                    }
+                }
+                Err(_) => try_queue_frame(
+                    &outbound_tx,
+                    &metrics,
+                    encode_range_error(0, RangeErrorCode::Malformed),
+                ),
+            }
+        }
+
+        while let Ok(frame) = outbound_rx.try_recv() {
+            pending.push_back(frame);
+        }
+
+        if let (Some(id), Some(frame)) = (channel_id, pending.front()) {
+            let mut channel = peer.data_channel(id).ok_or_else(|| {
+                DirectFileEndpointError::Driver("active DataChannel disappeared".to_owned())
+            })?;
+            let buffered = channel.outstanding_bytes();
+            metrics
+                .transport_buffered_bytes
+                .store(buffered, Ordering::Release);
+            metrics
+                .transport_high_water
+                .fetch_max(buffered, Ordering::AcqRel);
+            if buffered.saturating_add(frame.bytes.len()) <= MAX_TRANSPORT_QUEUE_BYTES {
+                let frame = pending.pop_front().expect("front frame exists");
+                channel
+                    .send(BytesMut::from(frame.bytes.as_slice()))
+                    .map_err(|error| DirectFileEndpointError::Driver(error.to_string()))?;
+                metrics
+                    .queued_bytes
+                    .fetch_sub(frame.bytes.len(), Ordering::AcqRel);
+                metrics.bytes_sent.fetch_add(
+                    u64::try_from(frame.bytes.len()).unwrap_or(u64::MAX),
+                    Ordering::AcqRel,
+                );
+                continue;
+            }
+        }
+
+        let timeout_at = peer
+            .poll_timeout()
+            .unwrap_or_else(|| Instant::now() + DRIVER_FALLBACK_TIMEOUT);
+        let timeout_delay = timeout_at
+            .checked_duration_since(Instant::now())
+            .unwrap_or(Duration::ZERO);
+        if timeout_delay.is_zero() {
+            peer.handle_timeout(Instant::now())
+                .map_err(|error| DirectFileEndpointError::Driver(error.to_string()))?;
+            continue;
+        }
+        let protocol_timer = tokio::time::sleep(timeout_delay);
+        tokio::pin!(protocol_timer);
+
+        tokio::select! {
+            biased;
+            _ = cancellation.cancelled() => {
+                break 'driver "shutdown";
+            }
+            _ = tokio::time::sleep_until(lifetime_deadline) => {
+                break 'driver "experiment_lifetime";
+            }
+            _ = tokio::time::sleep_until(negotiation_deadline), if channel_id.is_none() => {
+                break 'driver "negotiation_timeout";
+            }
+            Some(command) = commands.recv() => match command {
+                EndpointCommand::Candidate(candidate, response) => {
+                    let result = peer
+                        .add_remote_candidate(candidate)
+                        .map_err(|error| error.to_string());
+                    let _ = response.send(result);
+                }
+            },
+            Some(frame) = outbound_rx.recv() => pending.push_back(frame),
+            Some(joined) = request_tasks.join_next(), if !request_tasks.is_empty() => {
+                if let Ok((request_id, _request_terminal)) = joined {
+                    requests.remove(&request_id);
+                    metrics.active_requests.fetch_sub(1, Ordering::AcqRel);
+                }
+            }
+            _ = stats_tick.tick() => update_transport_metrics(&mut peer, &metrics),
+            _ = &mut protocol_timer => {
+                peer.handle_timeout(Instant::now())
+                    .map_err(|error| DirectFileEndpointError::Driver(error.to_string()))?;
+            }
+            received = socket.recv_from(&mut receive_buffer) => {
+                let (length, peer_addr) = received
+                    .map_err(|error| DirectFileEndpointError::Driver(error.to_string()))?;
+                peer.handle_read(TaggedBytesMut {
+                    now: Instant::now(),
+                    transport: TransportContext {
+                        local_addr,
+                        peer_addr,
+                        ecn: None,
+                        transport_protocol: TransportProtocol::UDP,
+                    },
+                    message: BytesMut::from(&receive_buffer[..length]),
+                })
+                .map_err(|error| DirectFileEndpointError::Driver(error.to_string()))?;
+            }
+        }
+    };
+
+    metrics.set_state("closing");
+    metrics.set_terminal(terminal);
+    cancellation.cancel();
+    for request in requests.values() {
+        request.cancellation.cancel();
+    }
+    while request_tasks.join_next().await.is_some() {}
+    requests.clear();
+    metrics.active_requests.store(0, Ordering::Release);
+    pending.clear();
+    while outbound_rx.try_recv().is_ok() {}
+    metrics.queued_bytes.store(0, Ordering::Release);
+    peer.close()
+        .map_err(|error| DirectFileEndpointError::Driver(error.to_string()))?;
+    while let Some(transmit) = peer.poll_write() {
+        let _ = socket
+            .send_to(&transmit.message, transmit.transport.peer_addr)
+            .await;
+    }
+    metrics.transport_buffered_bytes.store(0, Ordering::Release);
+    metrics.set_state("closed");
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_range_request(
+    application: SharedApplication,
+    capability: String,
+    request_id: u32,
+    offset: u64,
+    length: u32,
+    mut acknowledgements: mpsc::Receiver<u64>,
+    outbound: mpsc::Sender<OutboundFrame>,
+    cancellation: CancellationToken,
+    metrics: Arc<EndpointMetrics>,
+) -> &'static str {
+    let lease = {
+        let mut application = application.lock().await;
+        application.resolve_media_capability(&capability)
+    };
+    let mut lease = match lease {
+        Ok(lease) => lease,
+        Err(MediaResolveError::NotFound | MediaResolveError::Busy) => {
+            queue_frame(
+                &outbound,
+                &metrics,
+                encode_range_error(request_id, RangeErrorCode::CapabilityUnavailable),
+            )
+            .await;
+            return "capability_unavailable";
+        }
+    };
+    let Some(end) = offset.checked_add(u64::from(length)) else {
+        queue_frame(
+            &outbound,
+            &metrics,
+            encode_range_error(request_id, RangeErrorCode::InvalidRange),
+        )
+        .await;
+        return "invalid_range";
+    };
+    if end > lease.length() {
+        queue_frame(
+            &outbound,
+            &metrics,
+            encode_range_error(request_id, RangeErrorCode::InvalidRange),
+        )
+        .await;
+        return "invalid_range";
+    }
+    if !queue_frame(
+        &outbound,
+        &metrics,
+        encode_range_accepted(request_id, lease.length(), offset, length),
+    )
+    .await
+    {
+        return "queue_closed";
+    }
+
+    let mut current = offset;
+    while current < end {
+        let chunk_length = usize::try_from((end - current).min(MAX_CHUNK_BYTES as u64))
+            .expect("bounded chunk fits usize");
+        let ready = lease.wait_for_range(current, chunk_length);
+        let ready = tokio::select! {
+            _ = cancellation.cancelled() => return "cancelled",
+            result = ready => result,
+        };
+        if let Err(error) = ready {
+            let code = match error {
+                MediaRangeError::NoProgress
+                | MediaRangeError::Revoked
+                | MediaRangeError::Active(_) => RangeErrorCode::ReadUnavailable,
+                MediaRangeError::Saturated => RangeErrorCode::Inactive,
+            };
+            queue_frame(&outbound, &metrics, encode_range_error(request_id, code)).await;
+            return "range_unavailable";
+        }
+        let read = lease.read_range(current, chunk_length);
+        let bytes = tokio::select! {
+            _ = cancellation.cancelled() => return "cancelled",
+            result = read => match result {
+                Ok(bytes) if bytes.len() == chunk_length => bytes,
+                Ok(_) | Err(MediaReadError::Closed | MediaReadError::Verified(_) | MediaReadError::Active(_)) => {
+                    queue_frame(
+                        &outbound,
+                        &metrics,
+                        encode_range_error(request_id, RangeErrorCode::ReadUnavailable),
+                    ).await;
+                    return "read_unavailable";
+                }
+            },
+        };
+        let frame = match encode_range_chunk(request_id, current, &bytes) {
+            Ok(frame) => frame,
+            Err(_) => return "codec_error",
+        };
+        if !queue_frame(&outbound, &metrics, frame).await {
+            return "queue_closed";
+        }
+        let expected_next = current + chunk_length as u64;
+        let acknowledged = tokio::select! {
+            _ = cancellation.cancelled() => return "cancelled",
+            result = tokio::time::timeout(REQUEST_INACTIVE_TIMEOUT, acknowledgements.recv()) => result,
+        };
+        match acknowledged {
+            Ok(Some(next)) if next == expected_next => {
+                lease.touch_served(chunk_length);
+                current = expected_next;
+            }
+            Ok(Some(_)) => {
+                queue_frame(
+                    &outbound,
+                    &metrics,
+                    encode_range_error(request_id, RangeErrorCode::Malformed),
+                )
+                .await;
+                return "invalid_ack";
+            }
+            Ok(None) => return "driver_closed",
+            Err(_) => {
+                queue_frame(
+                    &outbound,
+                    &metrics,
+                    encode_range_error(request_id, RangeErrorCode::Inactive),
+                )
+                .await;
+                return "inactive";
+            }
+        }
+    }
+    queue_frame(&outbound, &metrics, encode_range_complete(request_id)).await;
+    "complete"
+}
+
+async fn queue_frame(
+    outbound: &mpsc::Sender<OutboundFrame>,
+    metrics: &EndpointMetrics,
+    bytes: Vec<u8>,
+) -> bool {
+    if reserve_queue(metrics, bytes.len()).is_err() {
+        return false;
+    }
+    let length = bytes.len();
+    if outbound.send(OutboundFrame { bytes }).await.is_err() {
+        metrics.queued_bytes.fetch_sub(length, Ordering::AcqRel);
+        return false;
+    }
+    true
+}
+
+fn try_queue_frame(
+    outbound: &mpsc::Sender<OutboundFrame>,
+    metrics: &EndpointMetrics,
+    bytes: Vec<u8>,
+) {
+    if reserve_queue(metrics, bytes.len()).is_err() {
+        return;
+    }
+    let length = bytes.len();
+    if outbound.try_send(OutboundFrame { bytes }).is_err() {
+        metrics.queued_bytes.fetch_sub(length, Ordering::AcqRel);
+    }
+}
+
+fn reserve_queue(metrics: &EndpointMetrics, bytes: usize) -> Result<(), ()> {
+    reserve_counter(&metrics.queued_bytes, bytes, MAX_APPLICATION_QUEUE_BYTES)?;
+    metrics.queue_high_water.fetch_max(
+        metrics.queued_bytes.load(Ordering::Acquire),
+        Ordering::AcqRel,
+    );
+    Ok(())
+}
+
+fn reserve_counter(counter: &AtomicUsize, amount: usize, limit: usize) -> Result<(), ()> {
+    let mut current = counter.load(Ordering::Acquire);
+    loop {
+        let next = current.checked_add(amount).ok_or(())?;
+        if next > limit {
+            return Err(());
+        }
+        match counter.compare_exchange_weak(current, next, Ordering::AcqRel, Ordering::Acquire) {
+            Ok(_) => return Ok(()),
+            Err(observed) => current = observed,
+        }
+    }
+}
+
+fn update_transport_metrics(
+    peer: &mut rtc::peer_connection::RTCPeerConnection,
+    metrics: &EndpointMetrics,
+) {
+    let report = peer.get_stats(Instant::now(), StatsSelector::None);
+    if let Some(pair) = report
+        .candidate_pairs()
+        .find(|pair| pair.nominated && pair.state == RTCStatsIceCandidatePairState::Succeeded)
+    {
+        let micros = if pair.current_round_trip_time.is_sign_negative()
+            || !pair.current_round_trip_time.is_finite()
+        {
+            0
+        } else {
+            (pair.current_round_trip_time * 1_000_000.0).round() as u64
+        };
+        metrics.rtt_micros.store(micros, Ordering::Release);
+        metrics.has_rtt.store(true, Ordering::Release);
+    }
+}
+
+fn validate_offer(offer: &RTCSessionDescription) -> Result<String, DirectFileEndpointError> {
+    if offer.sdp_type != RTCSdpType::Offer {
+        return Err(DirectFileEndpointError::InvalidOffer("description type"));
+    }
+    if offer.sdp.is_empty() || offer.sdp.len() > MAX_SIGNALING_BYTES {
+        return Err(DirectFileEndpointError::SignalingLimit);
+    }
+    let candidates = offer
+        .sdp
+        .lines()
+        .filter(|line| line.trim_end().starts_with("a=candidate:"))
+        .count();
+    if candidates > MAX_REMOTE_CANDIDATES {
+        return Err(DirectFileEndpointError::SignalingLimit);
+    }
+    fingerprint_from_sdp(&offer.sdp)
+}
+
+fn fingerprint_from_sdp(sdp: &str) -> Result<String, DirectFileEndpointError> {
+    let mut fingerprints = sdp.lines().filter_map(|line| {
+        line.trim_end()
+            .strip_prefix("a=fingerprint:sha-256 ")
+            .map(str::trim)
+    });
+    let fingerprint = fingerprints
+        .next()
+        .ok_or(DirectFileEndpointError::InvalidOffer(
+            "missing SHA-256 fingerprint",
+        ))?;
+    if fingerprint.len() != 95
+        || fingerprint.split(':').count() != 32
+        || !fingerprint
+            .bytes()
+            .all(|byte| byte == b':' || byte.is_ascii_hexdigit())
+    {
+        return Err(DirectFileEndpointError::InvalidOffer(
+            "malformed SHA-256 fingerprint",
+        ));
+    }
+    if fingerprints.any(|candidate| !candidate.eq_ignore_ascii_case(fingerprint)) {
+        return Err(DirectFileEndpointError::InvalidOffer(
+            "conflicting SHA-256 fingerprints",
+        ));
+    }
+    Ok(fingerprint.to_ascii_uppercase())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const FINGERPRINT: &str = "00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF";
+
+    #[test]
+    fn validates_one_consistent_sha256_fingerprint() {
+        let sdp = format!(
+            "v=0\r\na=fingerprint:sha-256 {FINGERPRINT}\r\na=fingerprint:sha-256 {}\r\n",
+            FINGERPRINT.to_ascii_lowercase()
+        );
+        assert_eq!(
+            fingerprint_from_sdp(&sdp).expect("fingerprint"),
+            FINGERPRINT
+        );
+    }
+
+    #[test]
+    fn rejects_missing_malformed_and_conflicting_fingerprints() {
+        assert!(fingerprint_from_sdp("v=0\r\n").is_err());
+        assert!(fingerprint_from_sdp("a=fingerprint:sha-256 00:11\r\n").is_err());
+        let conflicting = format!(
+            "a=fingerprint:sha-256 {FINGERPRINT}\r\na=fingerprint:sha-256 {}\r\n",
+            FINGERPRINT.replace("00", "01")
+        );
+        assert!(fingerprint_from_sdp(&conflicting).is_err());
+    }
+
+    #[test]
+    fn queue_reservation_is_atomic_and_bounded() {
+        let metrics = EndpointMetrics::default();
+        assert!(reserve_queue(&metrics, MAX_APPLICATION_QUEUE_BYTES).is_ok());
+        assert!(reserve_queue(&metrics, 1).is_err());
+        assert_eq!(
+            metrics.queue_high_water.load(Ordering::Acquire),
+            MAX_APPLICATION_QUEUE_BYTES
+        );
+    }
+}

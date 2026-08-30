@@ -6,3 +6,12 @@
 //! the ICE, DTLS, SCTP, and certificate dependency graph.
 
 pub mod codec;
+
+#[cfg(feature = "webrtc")]
+mod endpoint;
+
+#[cfg(feature = "webrtc")]
+pub use endpoint::{
+    DirectFileEndpoint, DirectFileEndpointError, DirectFileEndpointFactory,
+    DirectFileEndpointSnapshot, OfferAnswer,
+};
