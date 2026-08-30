@@ -632,6 +632,11 @@ disposition of current JSTorrent Android features.
   intent across network change. VPN-only may remain a disclosed later feature
   unless a dedicated tactical proves Android network binding, handover races,
   socket leakage, tracker/DHT/peer coverage, and fail-closed recovery.
+  Ready Tactical
+  [`199`](../tactical/199-android-live-unmetered-network-enforcement.md) owns
+  the required default-off unmetered cost policy, including fail-closed
+  startup, complete live BitTorrent egress convergence, automatic intent-
+  preserving recovery, AVD/physical evidence, and an explicit non-VPN claim.
 
 ## iOS/iPadOS Beta Checklist
 

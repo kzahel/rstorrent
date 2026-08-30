@@ -957,9 +957,13 @@ streaming demand, expiry, and revocation remain unchanged.
   exponentiation count. Deeper tracker-attempt, scheduler, and performance
   instrumentation remains to be added as those runtime owners grow.
 - Android has no connectivity, metered-network, or VPN-only settings yet.
-  Those controls should extend application network prerequisites while
-  preserving torrent intent; VPN-grade leak prevention requires explicit
-  Android network binding and race analysis.
+  Ready Tactical
+  [`199`](../tactical/199-android-live-unmetered-network-enforcement.md) owns
+  the default-off **Unmetered networks only** cost policy: ordered default-
+  network observation, fail-closed startup/live engine permission, complete
+  BitTorrent network convergence, intent-preserving automatic recovery, and
+  truthful Compose/companion state. VPN-grade leak prevention still requires
+  explicit Android network binding and race analysis; proxy remains separate.
 - Android's foreground notification reports service/activity state but does
   not yet provide JSTorrent-shaped edge-triggered completion or actionable
   fatal/storage-failure notifications when Compose is absent. This is a core
@@ -975,8 +979,9 @@ streaming demand, expiry, and revocation remain unchanged.
 - Android now has Compose connection/seeding settings for backed peer, upload-
   slot, active-download, listener, port-mapping, IPv6, and encryption values,
   including configured/effective/application truth, plus backed session and
-  per-torrent upload/download limits. VPN, metered-network, proxy, and power
-  policy remain separate product/engine slices.
+  per-torrent upload/download limits. Metered-network enforcement remains
+  absent with ready Tactical `199`; VPN, proxy, and power policy remain
+  separate product/engine slices.
 - Tracker HTTPS authentication is intentionally absent from ordinary React
   and Compose settings. The advanced typed `disabled` override exists for
   compatibility/debug use and remains visibly unauthenticated in tracker

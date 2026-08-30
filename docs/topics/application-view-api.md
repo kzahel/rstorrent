@@ -10,6 +10,15 @@ compatibility alias. Existing checking, root health, verified-range,
 wanted-completion, seeding, and repair facts are the sole authority. Earlier
 generated-contract history below remains as an implementation record.
 
+Ready Tactical
+[`199`](../tactical/199-android-live-unmetered-network-enforcement.md) will add
+one typed `WaitingForUnmeteredNetwork` progress reason plus truthful temporary
+session-network and DHT suspension state. The generated view remains a
+projection of application-owned platform-neutral truth: clients do not parse
+Android capabilities, infer eligibility, or receive a portable command that
+can override the Android-only preference. Fixed-policy `NetworkDisabled`
+remains distinct.
+
 Completed Tactical
 [`193`](../tactical/193-stateless-foreground-downloader.md) changes no view
 DTO, selector, cursor, delivery, acknowledgement, or generated binding. Its

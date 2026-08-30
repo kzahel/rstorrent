@@ -169,11 +169,12 @@ daemon architecture.
   interaction ends. The existing foreground **Stop** action remains; Pause
   All and Resume All are deferred.
 - [ ] **JAR-008 — Enforce unmetered-network policy live.** This is the required
-  part of beta gate `AND-010`. Present it as **Unmetered networks only**, not
-  literal Wi-Fi-only behavior. Preserve each torrent's user intent while
-  connectivity changes, fail closed while eligibility is unknown, and cover
-  initial startup, Wi-Fi/cellular/Ethernet changes, metered Wi-Fi, VPN
-  overlays, process recovery, and every tracker/DHT/peer transport owner.
+  part of beta gate `AND-010`. Ready Tactical
+  [`199`](../tactical/199-android-live-unmetered-network-enforcement.md) owns a
+  default-off **Unmetered networks only** preference, ordered default-network
+  observation, fail-closed initial/live application prerequisite, intent-
+  preserving automatic recovery, and complete peer/tracker/DHT/listener/
+  mapping closure evidence. It explicitly excludes VPN privacy and proxying.
 - [ ] **JAR-009 — Select and implement background lifecycle policy.** Current
   JSTorrent defaults background downloads off, requires notification
   permission to opt in, shuts the engine down when background work is not
@@ -229,7 +230,9 @@ Unmetered policy, VPN-only policy, and proxying are three different contracts:
 
 - **Unmetered-only** is a cost policy over Android network capabilities. It is
   required before supported phone replacement and should count any eligible
-  unmetered transport, not merely Wi-Fi.
+  unmetered transport, not merely Wi-Fi. Ready Tactical
+  [`199`](../tactical/199-android-live-unmetered-network-enforcement.md) owns
+  its exact callback, application-gate, presentation, and evidence contract.
 - **VPN-only** is a privacy boundary. Observing that Android's active default
   network has `TRANSPORT_VPN` and suspending the engine is not sufficient.
   Every newly created and already-open TCP/UDP socket, resolver route, tracker,
@@ -412,8 +415,10 @@ live run.
    [`198`](../tactical/198-android-completion-and-attention-notifications.md)
    for `JAR-007` completion/failure notifications, companion-aware permission
    transparency, and fail-safe target-35 timeout shutdown.
-4. Implement the unmetered portion of `JAR-008` without coupling it to a VPN
-   privacy claim.
+4. Execute ready Tactical
+   [`199`](../tactical/199-android-live-unmetered-network-enforcement.md) for
+   the unmetered portion of `JAR-008` without coupling it to a VPN privacy
+   claim.
 5. Select `JAR-009` background/seeding/idle policy, then reconcile low-battery
    and companion-idle controls against that owner.
 6. Design `JAR-005` with the production extension before either store update

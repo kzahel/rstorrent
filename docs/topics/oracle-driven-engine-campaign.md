@@ -694,6 +694,16 @@ uses a wired gigabit-effective Mac-to-desktop path, tests native Linux and
 native Windows separately when available, and attributes single-flow TCP/uTP
 packet-rate ceilings before proposing any production optimization.
 
+Ready Tactical
+[`199`](../tactical/199-android-live-unmetered-network-enforcement.md) is the
+dynamic network-policy restart checkpoint. Fixed `NetworkPolicy` remains the
+application-lifetime address/DNS boundary; the new live prerequisite must
+close every peer, tracker, DNS, DHT, listener, UDP, advertisement, and mapping
+generation without rewriting torrent intent or sending cleanup traffic over
+an ineligible network. The next executable action is its task-free Android
+eligibility reducer and persisted default-off preference, followed by the
+platform-neutral initial/live prerequisite before runtime socket changes.
+
 Durable seeding goals remain the leading unrelated policy candidate, while
 embedded playback, Android streaming presentation, and stable sharing have
 distinct ownership and security boundaries. The post-discovery Ubuntu stall

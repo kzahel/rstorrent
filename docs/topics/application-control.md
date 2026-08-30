@@ -231,7 +231,12 @@ reports `network_disabled` with an `enable_network` action; it does not turn
 the torrent into an error or durable pause. Future Android connectivity,
 metered-network, and VPN settings should combine platform facts and user
 preferences in an application-level owner, then change the engine permission
-without rewriting torrent intent.
+without rewriting torrent intent. Ready Tactical
+[`199`](../tactical/199-android-live-unmetered-network-enforcement.md) defines
+the first live prerequisite: Android's default-off unmetered cost policy
+closes every BitTorrent network generation while keeping the fixed address
+policy, durable torrent intent, local application work, and product control
+separate. VPN binding and proxy routing remain independent contracts.
 
 Typed diagnostics use a separate bounded reactive projection. They may explain
 the facts behind a progress assessment, but clients do not parse diagnostic

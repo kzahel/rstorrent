@@ -93,6 +93,12 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`199-android-live-unmetered-network-enforcement.md`](199-android-live-unmetered-network-enforcement.md):
+  ready; adds one default-off **Unmetered networks only** preference, an
+  ordered Android default-network observer, and a live application/engine
+  prerequisite that closes every BitTorrent DNS/socket/discovery owner while
+  preserving torrent intent and Compose/ChromeOS control. VPN privacy, proxy,
+  background lifecycle, and production migration remain separate.
 - [`198-android-completion-and-attention-notifications.md`](198-android-completion-and-attention-notifications.md):
   ready; adds one Android-native edge owner for completion and fatal/storage-
   repair attention, default-on app preferences, bounded low/default/high
