@@ -453,6 +453,11 @@ internal class AndroidNotificationCoordinator(
 internal fun productOngoingNotificationText(product: ProductState): String {
     if (!product.ready && product.error == null) return "Opening profile"
     if (product.error != null) return "RSTorrent needs attention"
+    when (product.lifecycle.reason) {
+        "retain_background_seeding" -> return "Seeding in background"
+        "retain_chromeos_companion" -> return "ChromeOS client connected"
+        "retain_chromeos_reconnect_grace" -> return "Waiting for ChromeOS to reconnect"
+    }
     val networkRuntime = product.clientSettings?.applicationNetwork
     if (
         networkRuntime?.requestedPrerequisite ==

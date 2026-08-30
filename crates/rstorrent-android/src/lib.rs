@@ -888,10 +888,6 @@ impl AndroidCompanionConnectionSubscription {
             }),
         }
     }
-
-    pub fn close(&self) {
-        self.closed.cancel();
-    }
 }
 
 impl Drop for AndroidCompanionConnectionSubscription {
@@ -2063,7 +2059,7 @@ mod tests {
         sender.send_replace(2);
         assert_eq!(subscription.next_count().await, Some(2));
 
-        subscription.close();
+        drop(sender);
         assert_eq!(subscription.next_count().await, None);
     }
 

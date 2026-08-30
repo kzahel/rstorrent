@@ -215,6 +215,15 @@ internal object ProductLifetimePolicy {
                 stickyAllowed = false,
             )
         }
+        if (facts.work == null) {
+            activeDeadline(facts.nowMillis, facts.startupDeadlineMillis)?.let {
+                return ProductLifetimeDecision.Wait(
+                    ProductLifetimeWaitReason.STARTUP,
+                    it,
+                    foregroundRequired = true,
+                )
+            }
+        }
         if (!facts.notificationEligible) {
             return ProductLifetimeDecision.Stop(
                 ProductLifetimeStopReason.NOTIFICATION_INELIGIBLE,
@@ -261,13 +270,6 @@ internal object ProductLifetimePolicy {
             )
         }
         if (work == null) {
-            activeDeadline(facts.nowMillis, facts.startupDeadlineMillis)?.let {
-                return ProductLifetimeDecision.Wait(
-                    ProductLifetimeWaitReason.STARTUP,
-                    it,
-                    foregroundRequired = true,
-                )
-            }
             activeDeadline(facts.nowMillis, facts.resyncDeadlineMillis)?.let {
                 return ProductLifetimeDecision.Wait(
                     ProductLifetimeWaitReason.VIEW_RESYNC,

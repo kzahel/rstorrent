@@ -56,6 +56,7 @@ internal class ProductLifecycleCoordinator(
     private var terminalReason: ProductLifetimeStopReason? = null
     private var deadlineJob: Job? = null
     private var scheduledDeadlineMillis: Long? = null
+    private var scheduledRevision: Long? = null
 
     fun start() {
         synchronized(ownership) {
@@ -175,6 +176,7 @@ internal class ProductLifecycleCoordinator(
             deadlineJob?.cancel()
             deadlineJob = null
             scheduledDeadlineMillis = null
+            scheduledRevision = null
         }
     }
 
@@ -252,28 +254,33 @@ internal class ProductLifecycleCoordinator(
     }
 
     private fun nextDeadline(decision: ProductLifetimeDecision): Long? =
-        when (decision) {
-            is ProductLifetimeDecision.Wait -> decision.deadlineMillis
-            is ProductLifetimeDecision.Retain ->
-                if (
-                    decision.reason ==
-                        ProductLifetimeRetentionReason.CHROMEOS_RECONNECT_GRACE
-                ) {
-                    companionGraceDeadlineMillis
-                } else {
-                    null
-                }
-            is ProductLifetimeDecision.Stop -> null
-        }
+        listOfNotNull(
+            startupDeadlineMillis,
+            resyncDeadlineMillis,
+            when (decision) {
+                is ProductLifetimeDecision.Wait -> decision.deadlineMillis
+                is ProductLifetimeDecision.Retain ->
+                    if (
+                        decision.reason ==
+                            ProductLifetimeRetentionReason.CHROMEOS_RECONNECT_GRACE
+                    ) {
+                        companionGraceDeadlineMillis
+                    } else {
+                        null
+                    }
+                is ProductLifetimeDecision.Stop -> null
+            },
+        ).minOrNull()
 
     private fun replaceDeadlineLocked(
         deadlineMillis: Long?,
         now: Long,
     ) {
-        if (scheduledDeadlineMillis == deadlineMillis) return
+        if (scheduledDeadlineMillis == deadlineMillis && scheduledRevision == revision) return
         deadlineJob?.cancel()
         deadlineJob = null
         scheduledDeadlineMillis = deadlineMillis
+        scheduledRevision = revision.takeIf { deadlineMillis != null }
         if (deadlineMillis == null) return
         val expectedRevision = revision
         deadlineJob =
@@ -289,6 +296,18 @@ internal class ProductLifecycleCoordinator(
                     }
                     deadlineJob = null
                     scheduledDeadlineMillis = null
+                    scheduledRevision = null
+                    when (deadlineMillis) {
+                        startupDeadlineMillis -> {
+                            startupDeadlineMillis = null
+                            terminalReason = ProductLifetimeStopReason.INITIALIZATION_FAILED
+                        }
+                        resyncDeadlineMillis -> {
+                            resyncDeadlineMillis = null
+                            terminalReason =
+                                ProductLifetimeStopReason.AUTHORITATIVE_STATE_UNAVAILABLE
+                        }
+                    }
                     advanceRevisionLocked()
                     evaluateLocked(clockMillis())
                 }

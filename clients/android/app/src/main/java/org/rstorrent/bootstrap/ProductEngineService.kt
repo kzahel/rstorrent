@@ -55,6 +55,7 @@ import org.rstorrent.bootstrap.uniffi.AndroidApplicationClient
 import org.rstorrent.bootstrap.uniffi.AndroidApplicationConfig
 import org.rstorrent.bootstrap.uniffi.AndroidApplicationNetworkPrerequisite
 import org.rstorrent.bootstrap.uniffi.AndroidCompanionRootRequest
+import org.rstorrent.bootstrap.uniffi.AndroidCompanionConnectionSubscription
 import org.rstorrent.bootstrap.uniffi.AndroidNetworkPolicy
 import org.rstorrent.bootstrap.uniffi.AndroidPlatformStorageRoot
 import org.rstorrent.bootstrap.uniffi.AndroidViewSubscription
@@ -117,6 +118,10 @@ class ProductEngineService : Service() {
     private val stopRequested = AtomicBoolean(false)
     private val latestStartId = AtomicInteger(0)
     @Volatile private var startCommandReceived = false
+    private val firstStartCommand = CompletableDeferred<Boolean>()
+    private val foreground = AtomicBoolean(true)
+    private val backgroundAdmitted = AtomicBoolean(false)
+    private val recoveryNetworkGateClosed = AtomicBoolean(false)
     private val shutdownComplete = CompletableDeferred<Unit>()
     private val clientReady = CompletableDeferred<Unit>()
     private val presentationReady = CompletableDeferred<Unit>()
@@ -129,6 +134,11 @@ class ProductEngineService : Service() {
         val notificationReceiverRegistered: Boolean,
         val wakeLockHeld: Boolean,
         val networkCallbackRegistered: Boolean,
+        val foreground: Boolean,
+        val backgroundAdmitted: Boolean,
+        val lifecycleRevision: Long,
+        val lifecycleDeadlineScheduled: Boolean,
+        val companionConnections: Int,
     )
 
     @Volatile private lateinit var client: AndroidApplicationClient
@@ -136,6 +146,10 @@ class ProductEngineService : Service() {
     private var initializationJob: Job? = null
     private var powerNotificationJob: Job? = null
     private lateinit var notificationCoordinator: AndroidNotificationCoordinator
+    private lateinit var lifecycleCoordinator: ProductLifecycleCoordinator
+    private lateinit var lifecyclePreferenceStore: ProductLifecyclePreferenceStore
+    @Volatile private var lifecyclePreferences = ProductLifecyclePreferences()
+    private val lifecyclePreferenceOwnership = Any()
     private var notificationBlockReceiver: BroadcastReceiver? = null
     private val notificationEligibilityMutation = Mutex()
     private val interactionLeases = ConcurrentHashMap.newKeySet<String>()
@@ -144,6 +158,8 @@ class ProductEngineService : Service() {
     private var companionPairingJob: Job? = null
     private var companionRootJob: Job? = null
     private var companionRootRemovalJob: Job? = null
+    private var companionConnectionJob: Job? = null
+    private var companionConnectionSubscription: AndroidCompanionConnectionSubscription? = null
     private val companionOwnerMutation = Mutex()
     @Volatile private var safStorageJobs: List<Job> = emptyList()
     @Volatile private var defaultSafRootId: String? = null
@@ -197,16 +213,34 @@ class ProductEngineService : Service() {
         super.onCreate()
         notificationCoordinator = AndroidNotificationCoordinator(this, mutableState)
         notificationCoordinator.initialize(interactionLeases.size)
-        ProductInteractionRegistry.attach { leases ->
-            interactionLeases.clear()
-            interactionLeases.addAll(leases)
-            if (startCommandReceived) refreshNotificationEligibility("interaction")
-        }
-        registerNotificationBlockReceiver()
         startForeground(
             AndroidNotificationContract.ONGOING_NOTIFICATION_ID,
             notificationCoordinator.ongoingNotification("Opening profile"),
         )
+        lifecyclePreferenceStore = ProductLifecyclePreferenceStore(this)
+        lifecyclePreferences = lifecyclePreferenceStore.read()
+        val initialNotificationEligibility =
+            mutableState.value.notifications.eligibility.backgroundNotificationVisible
+        lifecycleCoordinator =
+            ProductLifecycleCoordinator(
+                scope = scope,
+                clockMillis = SystemClock::elapsedRealtime,
+                initialPreferences = lifecyclePreferences,
+                initialNotificationEligible = initialNotificationEligibility,
+                onDecision = ::applyLifecycleDecision,
+            )
+        publishLifecyclePreferences(initialNotificationEligibility)
+        ProductInteractionRegistry.attach { leases ->
+            interactionLeases.clear()
+            interactionLeases.addAll(leases)
+            lifecycleCoordinator.updateInteractions(
+                visible = INTERACTION_ACTIVITY in leases,
+                workflowLeaseCount = leases.count { it != INTERACTION_ACTIVITY },
+            )
+            if (startCommandReceived) refreshNotificationEligibility("interaction")
+        }
+        registerNotificationBlockReceiver()
+        lifecycleCoordinator.start()
         val safRegistry = ProductSafRootRegistry.load(this)
         val unmeteredNetworksOnly = ProductNetworkPreference.read(this)
         defaultNetworkObserver =
@@ -260,25 +294,37 @@ class ProductEngineService : Service() {
         }
         initializationJob = scope.launch {
             try {
+                val stickyRecovery =
+                    withTimeout(PRODUCT_LIFETIME_STARTUP_MILLIS) {
+                        firstStartCommand.await()
+                    }
+                if (stickyRecovery && !stickyRecoveryAllowed()) {
+                    Log.i(TAG, "lifecycle_recovery admitted=false")
+                    requestStop("sticky_recovery_ineligible")
+                    return@launch
+                }
+                recoveryNetworkGateClosed.set(stickyRecovery)
                 PlatformTrustBootstrap.ensureInitialized(applicationContext)
                 val profile = File(filesDir, "product-profile")
                 check(profile.mkdirs() || profile.isDirectory)
                 val openedClient =
-                    AndroidApplicationClient.open(
-                        AndroidApplicationConfig(
-                            profile.absolutePath,
-                            "default",
-                            "",
-                            true,
-                            safRegistry.roots.map {
-                                AndroidPlatformStorageRoot(it.rootId, it.label)
-                            },
-                            AndroidNetworkPolicy.ONLINE,
-                            desiredNetworkPrerequisite(initialNetworkState),
-                            15UL,
-                            60UL,
-                        ),
-                    )
+                    withTimeout(PRODUCT_LIFETIME_STARTUP_MILLIS) {
+                        AndroidApplicationClient.open(
+                            AndroidApplicationConfig(
+                                profile.absolutePath,
+                                "default",
+                                "",
+                                true,
+                                safRegistry.roots.map {
+                                    AndroidPlatformStorageRoot(it.rootId, it.label)
+                                },
+                                AndroidNetworkPolicy.ONLINE,
+                                desiredNetworkPrerequisite(initialNetworkState),
+                                15UL,
+                                60UL,
+                            ),
+                        )
+                    }
                 if (
                     desiredNetworkPrerequisite(defaultNetworkObserver.snapshot()) ==
                         AndroidApplicationNetworkPrerequisite.WAITING_FOR_UNMETERED_NETWORK
@@ -318,11 +364,21 @@ class ProductEngineService : Service() {
                         onUpdate = { update, product, driveSaf ->
                             updateSafRootState(product)
                             traceUpdate(update, product)
-                            if (driveSaf) advanceSaf(product)
+                            if (driveSaf) {
+                                lifecycleCoordinator.updateWork(
+                                    classifyProductLifetimeTorrentViews(
+                                        product.torrents.values,
+                                    ),
+                                )
+                                advanceSaf(product)
+                            }
                             driveSettingsMutations()
                         },
                         onTorrentListUpdate = notificationCoordinator::onTorrentListUpdate,
-                        onTorrentListReset = notificationCoordinator::onTorrentListReset,
+                        onTorrentListReset = {
+                            notificationCoordinator.onTorrentListReset()
+                            lifecycleCoordinator.resetWork()
+                        },
                         onError = ::reportError,
                     )
                 presentationRepository.start(client)
@@ -359,6 +415,7 @@ class ProductEngineService : Service() {
                     it.copy(ready = false, error = error.message ?: error.toString())
                 }
                 notificationCoordinator.updateOngoingNotification("RSTorrent needs attention")
+                lifecycleCoordinator.terminal(ProductLifetimeStopReason.INITIALIZATION_FAILED)
             }
         }
     }
@@ -370,7 +427,9 @@ class ProductEngineService : Service() {
     ): Int {
         latestStartId.set(startId)
         startCommandReceived = true
+        if (!firstStartCommand.isCompleted) firstStartCommand.complete(intent == null)
         if (intent?.action == ACTION_STOP) {
+            lifecycleCoordinator.terminal(ProductLifetimeStopReason.EXPLICIT_STOP)
             requestStop("notification_stop", startId)
         } else if (intent?.action == externalIntakeAction(packageName)) {
             admitExternalIntent(intent)
@@ -378,7 +437,16 @@ class ProductEngineService : Service() {
             enableChromeOsCompanion()
         }
         refreshNotificationEligibility("start")
-        return if (stopRequested.get()) START_NOT_STICKY else START_STICKY
+        return if (
+            backgroundAdmitted.get() &&
+                intent?.action != ACTION_BACKGROUND_REVOKED &&
+                intent?.action != ACTION_STOP &&
+                !stopRequested.get()
+        ) {
+            START_STICKY
+        } else {
+            START_NOT_STICKY
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
@@ -391,11 +459,20 @@ class ProductEngineService : Service() {
         super.onDestroy()
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        Log.i(
+            TAG,
+            "product_task_removed background_admitted=${backgroundAdmitted.get()}",
+        )
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onTimeout(
         startId: Int,
         fgsType: Int,
     ) {
         Log.w(TAG, "product_service_timeout type=data_sync")
+        lifecycleCoordinator.terminal(ProductLifetimeStopReason.DATA_SYNC_TIMEOUT)
         requestStop("data_sync_timeout", startId)
     }
 
@@ -1662,6 +1739,18 @@ class ProductEngineService : Service() {
             check(isChromeOs()) { "ChromeOS companion listener is unavailable on this device" }
             val port = client.startChromeosCompanion()
             mutableState.update { it.copy(companionPort = port) }
+            if (companionConnectionJob?.isActive != true) {
+                val subscription = client.observeChromeosCompanionConnections()
+                companionConnectionSubscription = subscription
+                companionConnectionJob =
+                    scope.launch {
+                        while (!stopped.get()) {
+                            val count = subscription.nextCount() ?: return@launch
+                            lifecycleCoordinator.updateCompanionConnections(count.toInt())
+                        }
+                    }
+            }
+            lifecycleCoordinator.companionStarted()
             if (companionPairingJob?.isActive != true) {
                 companionPairingJob =
                     scope.launch {
@@ -2481,6 +2570,7 @@ class ProductEngineService : Service() {
     }
 
     fun shutdownFromUi() {
+        lifecycleCoordinator.terminal(ProductLifetimeStopReason.EXPLICIT_STOP)
         requestStop("ui_stop")
     }
 
@@ -2544,7 +2634,9 @@ class ProductEngineService : Service() {
     private fun desiredNetworkPrerequisite(
         state: AndroidDefaultNetworkState,
     ): AndroidApplicationNetworkPrerequisite =
-        if (
+        if (recoveryNetworkGateClosed.get()) {
+            AndroidApplicationNetworkPrerequisite.WAITING_FOR_UNMETERED_NETWORK
+        } else if (
             state.unmeteredNetworksOnly &&
                 state.eligibility != AndroidNetworkEligibility.UNRESTRICTED
         ) {
@@ -2573,6 +2665,7 @@ class ProductEngineService : Service() {
 
     internal fun resourceSnapshotForTest(): ResourceSnapshot {
         check(ProductSafDocuments.isDebuggable(this)) { "resource snapshot is debug-only" }
+        val lifecycle = lifecycleCoordinator.snapshot()
         return ResourceSnapshot(
             shutdownComplete = shutdownComplete.isCompleted,
             interactionLeases = interactionLeases.size,
@@ -2580,6 +2673,11 @@ class ProductEngineService : Service() {
             wakeLockHeld = powerLock?.isHeld == true,
             networkCallbackRegistered =
                 ::defaultNetworkObserver.isInitialized && defaultNetworkObserver.isRegistered(),
+            foreground = foreground.get(),
+            backgroundAdmitted = backgroundAdmitted.get(),
+            lifecycleRevision = lifecycle?.revision ?: 0,
+            lifecycleDeadlineScheduled = lifecycle?.scheduledDeadlineMillis != null,
+            companionConnections = lifecycle?.companionConnections ?: 0,
         )
     }
 
@@ -3054,6 +3152,258 @@ class ProductEngineService : Service() {
     private fun rangeBytes(range: org.rstorrent.session.uniffi.IndexRange): ULong =
         (range.endExclusive - range.start).toULong()
 
+    internal fun setBackgroundDownloadsEnabled(enabled: Boolean) {
+        synchronized(lifecyclePreferenceOwnership) {
+            val eligible =
+                mutableState.value.notifications.eligibility.backgroundNotificationVisible
+            if (enabled && !eligible) {
+                mutableState.update {
+                    it.copy(
+                        lifecycle =
+                            it.lifecycle.copy(
+                                preferenceError =
+                                    "Visible background notifications are required.",
+                            ),
+                    )
+                }
+                return
+            }
+            persistLifecyclePreferences(
+                lifecyclePreferences.copy(backgroundDownloadsEnabled = enabled),
+            )
+        }
+    }
+
+    internal fun setKeepSeedingInBackground(enabled: Boolean) {
+        synchronized(lifecyclePreferenceOwnership) {
+            if (enabled && !lifecyclePreferences.backgroundDownloadsEnabled) {
+                mutableState.update {
+                    it.copy(
+                        lifecycle =
+                            it.lifecycle.copy(
+                                preferenceError = "Enable background downloads first.",
+                            ),
+                    )
+                }
+                return
+            }
+            persistLifecyclePreferences(
+                lifecyclePreferences.copy(
+                    completionPolicy =
+                        if (enabled) {
+                            ProductBackgroundCompletionPolicy.KEEP_SEEDING
+                        } else {
+                            ProductBackgroundCompletionPolicy.STOP_WHEN_DOWNLOADS_COMPLETE
+                        },
+                ),
+            )
+        }
+    }
+
+    private fun persistLifecyclePreferences(requested: ProductLifecyclePreferences) {
+        when (
+            val result =
+                persistProductLifecyclePreferences(
+                    lifecyclePreferences,
+                    requested,
+                    lifecyclePreferenceStore::write,
+                )
+        ) {
+            is ProductLifecyclePreferenceResult.Applied -> {
+                lifecyclePreferences = result.preferences
+                publishLifecyclePreferences(
+                    mutableState.value.notifications.eligibility.backgroundNotificationVisible,
+                    preferenceError = null,
+                )
+                lifecycleCoordinator.updatePreferences(result.preferences)
+                Log.i(
+                    TAG,
+                    "lifecycle_preferences background=" +
+                        "${result.preferences.backgroundDownloadsEnabled} " +
+                        "keep_seeding=${result.preferences.keepSeedingEnabled}",
+                )
+            }
+            ProductLifecyclePreferenceResult.Failed ->
+                mutableState.update {
+                    it.copy(
+                        lifecycle =
+                            it.lifecycle.copy(
+                                preferenceError = "Background setting could not be saved.",
+                            ),
+                    )
+                }
+        }
+    }
+
+    private fun disableBackgroundAfterPermissionRevocation() {
+        synchronized(lifecyclePreferenceOwnership) {
+            if (!lifecyclePreferences.backgroundDownloadsEnabled) return
+            persistLifecyclePreferences(
+                lifecyclePreferences.copy(backgroundDownloadsEnabled = false),
+            )
+        }
+    }
+
+    private fun publishLifecyclePreferences(
+        notificationEligible: Boolean,
+        preferenceError: String? = mutableState.value.lifecycle.preferenceError,
+    ) {
+        mutableState.update {
+            it.copy(
+                lifecycle =
+                    it.lifecycle.copy(
+                        backgroundDownloadsEnabled =
+                            lifecyclePreferences.backgroundDownloadsEnabled,
+                        keepSeedingEnabled =
+                            lifecyclePreferences.completionPolicy ==
+                                ProductBackgroundCompletionPolicy.KEEP_SEEDING,
+                        effectiveBackgroundDownloads =
+                            lifecyclePreferences.backgroundDownloadsEnabled &&
+                                notificationEligible,
+                        preferenceError = preferenceError,
+                    ),
+            )
+        }
+    }
+
+    private fun stickyRecoveryAllowed(): Boolean {
+        val notifications = mutableState.value.notifications.eligibility
+        if (!notifications.backgroundNotificationVisible) return false
+        return lifecyclePreferences.backgroundDownloadsEnabled ||
+            ProductCompanionPreference.shouldStart(
+                isChromeOs(),
+                ProductCompanionPreference.read(this),
+            )
+    }
+
+    private fun applyLifecycleDecision(snapshot: ProductLifecycleCoordinatorSnapshot) {
+        if (stopped.get() || stopRequested.get()) return
+        val decision = snapshot.decision
+        mutableState.update {
+            it.copy(
+                lifecycle =
+                    it.lifecycle.copy(
+                        foreground = foreground.get(),
+                        companionConnections = snapshot.companionConnections,
+                        reason = lifecycleDecisionReason(decision),
+                    ),
+            )
+        }
+        Log.i(
+            TAG,
+            "lifecycle_decision revision=${snapshot.revision} " +
+                "decision=${lifecycleDecisionReason(decision)} " +
+                "deadline=${snapshot.scheduledDeadlineMillis ?: "none"}",
+        )
+        when (decision) {
+            is ProductLifetimeDecision.Retain -> {
+                if (decision.foregroundRequired && !promoteForeground(snapshot)) return
+                if (!decision.foregroundRequired) demoteForeground()
+                updateStickyAdmission(decision.stickyAllowed)
+                if (decision.stickyAllowed) openRecoveryNetwork(decision.reason)
+            }
+            is ProductLifetimeDecision.Wait -> {
+                if (decision.foregroundRequired && !promoteForeground(snapshot)) return
+                updateStickyAdmission(false)
+            }
+            is ProductLifetimeDecision.Stop -> {
+                updateStickyAdmission(false)
+                requestStop("lifecycle_${decision.reason.name.lowercase()}")
+            }
+        }
+    }
+
+    private fun promoteForeground(snapshot: ProductLifecycleCoordinatorSnapshot): Boolean {
+        if (foreground.get()) return true
+        return runCatching {
+            startForeground(
+                AndroidNotificationContract.ONGOING_NOTIFICATION_ID,
+                notificationCoordinator.ongoingNotification(
+                    lifecycleNotificationText(snapshot),
+                ),
+            )
+            foreground.set(true)
+            mutableState.update { it.copy(lifecycle = it.lifecycle.copy(foreground = true)) }
+            Log.i(TAG, "product_foreground active=true")
+            true
+        }.getOrElse { error ->
+            Log.e(TAG, "foreground promotion failed", error)
+            recoveryNetworkGateClosed.set(true)
+            if (::client.isInitialized) runCatching { client.closeNetworkPrerequisite() }
+            lifecycleCoordinator.terminal(
+                ProductLifetimeStopReason.FOREGROUND_PROMOTION_FAILED,
+            )
+            false
+        }
+    }
+
+    private fun demoteForeground() {
+        if (!foreground.compareAndSet(true, false)) return
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        mutableState.update { it.copy(lifecycle = it.lifecycle.copy(foreground = false)) }
+        Log.i(TAG, "product_foreground active=false")
+    }
+
+    private fun updateStickyAdmission(admitted: Boolean) {
+        if (!backgroundAdmitted.compareAndSet(!admitted, admitted)) return
+        val action =
+            if (admitted) ACTION_BACKGROUND_ADMITTED else ACTION_BACKGROUND_REVOKED
+        runCatching {
+            startService(
+                Intent(this, ProductEngineService::class.java)
+                    .setPackage(packageName)
+                    .setAction(action),
+            )
+        }.onFailure { error ->
+            backgroundAdmitted.set(false)
+            Log.e(TAG, "background start admission failed", error)
+            recoveryNetworkGateClosed.set(true)
+            if (::client.isInitialized) runCatching { client.closeNetworkPrerequisite() }
+            lifecycleCoordinator.terminal(
+                ProductLifetimeStopReason.FOREGROUND_PROMOTION_FAILED,
+            )
+        }
+    }
+
+    private fun openRecoveryNetwork(reason: ProductLifetimeRetentionReason) {
+        if (
+            reason == ProductLifetimeRetentionReason.CHROMEOS_RECONNECT_GRACE ||
+                !recoveryNetworkGateClosed.compareAndSet(true, false)
+        ) {
+            return
+        }
+        Log.i(TAG, "lifecycle_recovery network_admitted=true reason=${reason.name.lowercase()}")
+        networkConvergenceWake.trySend(Unit)
+    }
+
+    private fun lifecycleDecisionReason(decision: ProductLifetimeDecision): String =
+        when (decision) {
+            is ProductLifetimeDecision.Retain -> "retain_${decision.reason.name.lowercase()}"
+            is ProductLifetimeDecision.Wait -> "wait_${decision.reason.name.lowercase()}"
+            is ProductLifetimeDecision.Stop -> "stop_${decision.reason.name.lowercase()}"
+        }
+
+    private fun lifecycleNotificationText(snapshot: ProductLifecycleCoordinatorSnapshot): String =
+        when ((snapshot.decision as? ProductLifetimeDecision.Retain)?.reason) {
+            ProductLifetimeRetentionReason.ACTIVE_DOWNLOAD -> {
+                val work = snapshot.work ?: ProductLifetimeWork()
+                when {
+                    work.downloading > 0 ->
+                        "Downloading ${work.downloading} " +
+                            if (work.downloading == 1) "torrent" else "torrents"
+                    work.checking > 0 -> "Checking downloads"
+                    else -> "Starting downloads"
+                }
+            }
+            ProductLifetimeRetentionReason.WAITING_FOR_UNMETERED_NETWORK ->
+                "Waiting for an unmetered network"
+            ProductLifetimeRetentionReason.BACKGROUND_SEEDING -> "Seeding in background"
+            ProductLifetimeRetentionReason.CHROMEOS_COMPANION -> "ChromeOS client connected"
+            ProductLifetimeRetentionReason.CHROMEOS_RECONNECT_GRACE ->
+                "Waiting for ChromeOS to reconnect"
+            else -> productOngoingNotificationText(mutableState.value)
+        }
+
     private fun observePowerAndNotification() {
         powerNotificationJob = scope.launch {
             state.collect { product ->
@@ -3061,9 +3411,11 @@ class ProductEngineService : Service() {
                     product.preventSleepDuringActiveDownloads &&
                         requiresSleepInhibition(product.torrents.values)
                 updatePowerLock(active)
-                notificationCoordinator.updateOngoingNotification(
-                    productOngoingNotificationText(product),
-                )
+                if (foreground.get()) {
+                    notificationCoordinator.updateOngoingNotification(
+                        productOngoingNotificationText(product),
+                    )
+                }
             }
         }
     }
@@ -3101,11 +3453,19 @@ class ProductEngineService : Service() {
         startId: Int? = null,
     ) {
         if (!stopRequested.compareAndSet(false, true)) return
+        recoveryNetworkGateClosed.set(true)
+        if (::client.isInitialized) {
+            runCatching { client.closeNetworkPrerequisite() }.onFailure { error ->
+                Log.w(TAG, "lifecycle network close failed", error)
+            }
+        }
         scope.launch {
             try {
                 shutdown(reason)
             } finally {
                 stopForeground(STOP_FOREGROUND_REMOVE)
+                foreground.set(false)
+                backgroundAdmitted.set(false)
                 val safeStartId = maxOf(startId ?: 0, latestStartId.get())
                 if (safeStartId == 0 || !stopSelfResult(safeStartId)) stopSelf()
             }
@@ -3119,6 +3479,7 @@ class ProductEngineService : Service() {
         }
         Log.i(TAG, "product_shutdown_begin reason=$reason")
         try {
+            lifecycleCoordinator.close()
             if (::defaultNetworkObserver.isInitialized) defaultNetworkObserver.close()
             unregisterNotificationBlockReceiver()
             ProductInteractionRegistry.detach()
@@ -3134,9 +3495,14 @@ class ProductEngineService : Service() {
             trackerEvidenceJob?.cancel()
             trackerEvidenceSubscription?.close()
             trackerEvidenceJob?.join()
+            companionConnectionJob?.cancel()
+            companionConnectionSubscription?.close()
             companionPairingJob?.cancel()
             companionRootJob?.cancel()
             companionRootRemovalJob?.cancel()
+            if (foreground.get()) {
+                notificationCoordinator.updateOngoingNotification("Finishing shutdown")
+            }
             notificationCoordinator.close()
             if (::client.isInitialized) {
                 try {
@@ -3144,6 +3510,7 @@ class ProductEngineService : Service() {
                     client.shutdown()
                     Log.i(TAG, "product_shutdown_client_complete")
                 } finally {
+                    companionConnectionJob?.join()
                     companionPairingJob?.join()
                     companionRootJob?.join()
                     companionRootRemovalJob?.join()
@@ -3170,15 +3537,19 @@ class ProductEngineService : Service() {
                 if (stopped.get()) return@withLock
                 val eligibility =
                     notificationCoordinator.refreshPlatformState(interactionLeases.size)
+                if (!eligibility.permissionGranted) {
+                    disableBackgroundAfterPermissionRevocation()
+                }
+                lifecycleCoordinator.updateNotificationEligibility(
+                    eligibility.backgroundNotificationVisible,
+                )
+                publishLifecyclePreferences(eligibility.backgroundNotificationVisible)
                 Log.i(
                     TAG,
                     "notification_eligibility reason=$reason visible=" +
                         "${eligibility.backgroundNotificationVisible} " +
                         "interaction=${eligibility.interactionLeaseCount > 0}",
                 )
-                if (eligibility.shouldStopOwner) {
-                    requestStop("notification_visibility")
-                }
             }
         }
     }
@@ -3218,6 +3589,10 @@ class ProductEngineService : Service() {
         const val ACTION_STOP = "org.rstorrent.bootstrap.PRODUCT_STOP"
         const val ACTION_ENABLE_CHROMEOS_COMPANION =
             "org.rstorrent.bootstrap.ENABLE_CHROMEOS_COMPANION"
+        private const val ACTION_BACKGROUND_ADMITTED =
+            "org.rstorrent.bootstrap.BACKGROUND_ADMITTED"
+        private const val ACTION_BACKGROUND_REVOKED =
+            "org.rstorrent.bootstrap.BACKGROUND_REVOKED"
         fun externalIntakeAction(packageName: String): String =
             "$packageName.action.EXTERNAL_TORRENT_INTAKE"
         private const val COMPANION_ROOT_PENDING_INTENT_ID = 43

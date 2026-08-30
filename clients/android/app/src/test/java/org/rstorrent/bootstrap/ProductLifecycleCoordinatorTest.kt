@@ -73,6 +73,30 @@ class ProductLifecycleCoordinatorTest {
         }
     }
 
+    @Test
+    fun startupDeadlineIsHardEvenWhileActivityRemainsVisible() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val stopped = CountDownLatch(1)
+        var terminal: ProductLifetimeDecision.Stop? = null
+        val coordinator =
+            coordinator(scope) { snapshot ->
+                (snapshot.decision as? ProductLifetimeDecision.Stop)?.let {
+                    terminal = it
+                    stopped.countDown()
+                }
+            }
+        try {
+            coordinator.start()
+            coordinator.updateInteractions(visible = true, workflowLeaseCount = 0)
+
+            assertTrue(stopped.await(1, TimeUnit.SECONDS))
+            assertEquals(ProductLifetimeStopReason.INITIALIZATION_FAILED, terminal?.reason)
+        } finally {
+            coordinator.close()
+            scope.cancel()
+        }
+    }
+
     private fun coordinator(
         scope: CoroutineScope,
         settleMillis: Long = 20,

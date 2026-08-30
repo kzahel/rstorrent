@@ -241,6 +241,28 @@ class ProductLifetimePolicyTest {
             ),
             reduce(work = null),
         )
+        assertEquals(
+            ProductLifetimeDecision.Wait(
+                ProductLifetimeWaitReason.STARTUP,
+                30_000L,
+                foregroundRequired = true,
+            ),
+            reduce(
+                notificationEligible = false,
+                work = null,
+                startupDeadlineMillis = 30_000L,
+            ),
+        )
+        assertEquals(
+            ProductLifetimeDecision.Stop(
+                ProductLifetimeStopReason.NOTIFICATION_INELIGIBLE,
+            ),
+            reduce(
+                notificationEligible = false,
+                work = null,
+                resyncDeadlineMillis = 5_000L,
+            ),
+        )
     }
 
     @Test
