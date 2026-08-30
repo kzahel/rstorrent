@@ -733,14 +733,17 @@ class ProductEngineService : Service() {
                             else -> "invalid_or_engine_failure"
                         }
                     externalIntakeMutation.withLock {
-                        if (
+                        val failureDisposition =
                             externalIntakeController.failSubmission(
                                 work.intakeId,
                                 retryable,
                                 currentSafRootForAdd() != null,
                             )
-                        ) {
-                            if (!retryable) {
+                        if (failureDisposition != null) {
+                            if (
+                                failureDisposition ==
+                                ExternalSubmissionFailureDisposition.TERMINAL
+                            ) {
                                 publishExternalNotice(
                                     ExternalIntakeNoticeKind.TERMINAL_FAILURE,
                                 )
@@ -749,10 +752,17 @@ class ProductEngineService : Service() {
                             logExternalIntake(
                                 work.intakeId,
                                 work.source.kind,
-                                if (retryable) "retry" else "terminal",
+                                when (failureDisposition) {
+                                    ExternalSubmissionFailureDisposition.RETRYABLE -> "retry"
+                                    ExternalSubmissionFailureDisposition.TERMINAL -> "terminal"
+                                },
                                 reason,
                                 durationMillis = SystemClock.elapsedRealtime() - started,
-                                disposition = if (retryable) "retryable" else "failed",
+                                disposition =
+                                    when (failureDisposition) {
+                                        ExternalSubmissionFailureDisposition.RETRYABLE -> "retryable"
+                                        ExternalSubmissionFailureDisposition.TERMINAL -> "failed"
+                                    },
                             )
                         }
                     }

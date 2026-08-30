@@ -144,13 +144,19 @@ class ExternalTorrentIntakeTest {
         assertEquals(firstId, controller.confirm(firstId, rootReady = true)?.intakeId)
         assertEquals(ExternalIntakePhase.SUBMITTING, controller.snapshot().presentation?.phase)
 
-        assertTrue(controller.failSubmission(firstId, retryable = true, rootReady = true))
+        assertEquals(
+            ExternalSubmissionFailureDisposition.RETRYABLE,
+            controller.failSubmission(firstId, retryable = true, rootReady = true),
+        )
         assertEquals(
             ExternalIntakePhase.RETRYABLE_FAILURE,
             controller.snapshot().presentation?.phase,
         )
         assertEquals(firstId, controller.retry(firstId, rootReady = true)?.intakeId)
-        assertTrue(controller.failSubmission(firstId, retryable = true, rootReady = true))
+        assertEquals(
+            ExternalSubmissionFailureDisposition.TERMINAL,
+            controller.failSubmission(firstId, retryable = true, rootReady = true),
+        )
         assertEquals(second.intakeId, controller.snapshot().presentation?.intakeId)
         assertEquals(1, controller.descriptorCount())
     }

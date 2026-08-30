@@ -159,6 +159,11 @@ internal enum class ExternalAdmissionDisposition {
     QUEUE_FULL,
 }
 
+internal enum class ExternalSubmissionFailureDisposition {
+    RETRYABLE,
+    TERMINAL,
+}
+
 internal data class ExternalAdmissionResult(
     val disposition: ExternalAdmissionDisposition,
     val intakeId: Long?,
@@ -308,17 +313,18 @@ internal class ExternalIntakeController(
         intakeId: Long,
         retryable: Boolean,
         rootReady: Boolean,
-    ): Boolean {
+    ): ExternalSubmissionFailureDisposition? {
         val index = records.indexOfFirst { it.intakeId == intakeId }
-        if (index < 0 || records[index].phase != ExternalIntakePhase.SUBMITTING) return false
+        if (index < 0 || records[index].phase != ExternalIntakePhase.SUBMITTING) return null
         val record = records[index]
         if (retryable && !record.retryUsed) {
             record.phase = ExternalIntakePhase.RETRYABLE_FAILURE
+            return ExternalSubmissionFailureDisposition.RETRYABLE
         } else {
             records.removeAt(index)
             promote(rootReady)
+            return ExternalSubmissionFailureDisposition.TERMINAL
         }
-        return true
     }
 
     fun completeSubmission(
