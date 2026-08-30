@@ -607,6 +607,126 @@ impl SessionStore {
         Ok((revision, root_id.to_owned()))
     }
 
+    pub fn install_platform_storage_root(
+        &mut self,
+        root_id: &str,
+        label: &str,
+        make_default: bool,
+    ) -> Result<u64, StoreError> {
+        validate_identifier(root_id, "storage root", crate::control::MAX_ROOT_ID_LENGTH)
+            .map_err(|(_, message)| StoreError::Configuration(message))?;
+        validate_root_label(label)?;
+        let existing = self
+            .connection
+            .query_row(
+                "SELECT kind, locator, label FROM storage_roots WHERE root_id = ?1",
+                [root_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                },
+            )
+            .optional()?;
+        if let Some((kind, locator, current_label)) = existing {
+            if kind != "platform" || locator != "platform-capability:" {
+                return Err(StoreError::Configuration(format!(
+                    "storage root {root_id} is not a platform capability"
+                )));
+            }
+            let current_default = self.connection.query_row(
+                "SELECT default_root FROM storage_settings WHERE singleton = 1",
+                [],
+                |row| row.get::<_, Option<String>>(0),
+            )?;
+            if current_label == label
+                && current_default.is_some()
+                && (!make_default || current_default.as_deref() == Some(root_id))
+            {
+                return self.revision();
+            }
+        } else {
+            let count: i64 =
+                self.connection
+                    .query_row("SELECT COUNT(*) FROM storage_roots", [], |row| row.get(0))?;
+            if count >= i64::try_from(MAX_STORAGE_ROOTS).expect("root bound fits i64") {
+                return Err(StoreError::Configuration(format!(
+                    "storage root count exceeds {MAX_STORAGE_ROOTS}"
+                )));
+            }
+        }
+
+        let transaction = self.connection.transaction()?;
+        let revision = increment_revision(&transaction)?;
+        transaction.execute(
+            "INSERT INTO storage_roots(root_id, label, kind, locator)
+             VALUES (?1, ?2, 'platform', 'platform-capability:')
+             ON CONFLICT(root_id) DO UPDATE SET label = excluded.label",
+            params![root_id, label],
+        )?;
+        if make_default {
+            transaction.execute(
+                "UPDATE storage_settings SET default_root = ?1 WHERE singleton = 1",
+                [root_id],
+            )?;
+        } else {
+            transaction.execute(
+                "UPDATE storage_settings SET default_root = ?1
+                 WHERE singleton = 1 AND default_root IS NULL",
+                [root_id],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(revision)
+    }
+
+    pub fn repair_platform_storage_root(
+        &mut self,
+        root_id: &str,
+        label: &str,
+    ) -> Result<u64, StoreError> {
+        validate_identifier(root_id, "storage root", crate::control::MAX_ROOT_ID_LENGTH)
+            .map_err(|(_, message)| StoreError::Configuration(message))?;
+        validate_root_label(label)?;
+        let current = self
+            .connection
+            .query_row(
+                "SELECT kind, locator, label FROM storage_roots WHERE root_id = ?1",
+                [root_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let Some((kind, locator, current_label)) = current else {
+            return Err(StoreError::Configuration(format!(
+                "storage root {root_id} is not configured"
+            )));
+        };
+        if kind != "platform" || locator != "platform-capability:" {
+            return Err(StoreError::Configuration(format!(
+                "storage root {root_id} is not a platform capability"
+            )));
+        }
+        if current_label == label {
+            return self.revision();
+        }
+        let transaction = self.connection.transaction()?;
+        let revision = increment_revision(&transaction)?;
+        transaction.execute(
+            "UPDATE storage_roots SET label = ?2 WHERE root_id = ?1",
+            params![root_id, label],
+        )?;
+        transaction.commit()?;
+        Ok(revision)
+    }
+
     pub fn repair_path_storage_root(
         &mut self,
         root_id: &str,
@@ -7794,6 +7914,70 @@ mod tests {
         assert_eq!(persisted.torrents[0].storage_root, installed);
         drop(reopened);
         fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
+    fn platform_roots_install_repair_and_change_default_without_rebinding() {
+        let root = test_root("platform-root-registry");
+        let mut store = SessionStore::open(&root, "default", &[]).expect("open fresh profile");
+        assert_eq!(
+            store
+                .install_platform_storage_root("root_a", "Folder A", false)
+                .expect("install first platform root"),
+            1
+        );
+        assert_eq!(
+            store
+                .install_platform_storage_root("root_b", "Folder B", true)
+                .expect("install current platform root"),
+            2
+        );
+        let snapshot = store.snapshot().expect("platform root snapshot");
+        assert_eq!(snapshot.storage.roots.len(), 2);
+        assert_eq!(snapshot.storage.default_root.as_deref(), Some("root_b"));
+
+        let mut add = add_request("add-platform-a");
+        let Command::AddMagnet { storage_root, .. } = &mut add.command else {
+            unreachable!("test request is add magnet")
+        };
+        *storage_root = "root_a".to_owned();
+        store
+            .handle_durable(&add)
+            .expect("bind existing torrent to first root");
+        assert_eq!(
+            store
+                .repair_platform_storage_root("root_a", "Repaired A")
+                .expect("repair platform root label"),
+            4
+        );
+        assert_eq!(
+            store
+                .install_platform_storage_root("root_b", "Folder B", true)
+                .expect("idempotent current root"),
+            4
+        );
+        let repaired = store.snapshot().expect("repaired snapshot");
+        assert_eq!(repaired.storage.default_root.as_deref(), Some("root_b"));
+        assert_eq!(
+            repaired
+                .storage
+                .roots
+                .iter()
+                .find(|candidate| candidate.root_id == "root_a")
+                .expect("first root")
+                .label,
+            "Repaired A"
+        );
+        assert_eq!(repaired.torrents[0].storage_root, "root_a");
+        drop(store);
+
+        let reopened = SessionStore::open(&root, "default", &[]).expect("reopen profile");
+        let persisted = reopened.snapshot().expect("persisted platform roots");
+        assert_eq!(persisted.storage.roots.len(), 2);
+        assert_eq!(persisted.storage.default_root.as_deref(), Some("root_b"));
+        assert_eq!(persisted.torrents[0].storage_root, "root_a");
+        drop(reopened);
+        fs::remove_dir_all(root).expect("remove platform root profile");
     }
 
     #[test]

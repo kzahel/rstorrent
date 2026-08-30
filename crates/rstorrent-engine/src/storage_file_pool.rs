@@ -659,6 +659,13 @@ impl PlatformStorageClient {
         .collect()
     }
 
+    fn clear_root_failure(&self, root_id: &str) {
+        self.root_failures
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(root_id);
+    }
+
     fn set_health_wake(&self, wake: Arc<Notify>) {
         *self
             .health_wake
@@ -1142,6 +1149,12 @@ impl StorageFilePool {
             .platform
             .as_ref()
             .map_or_else(Vec::new, PlatformStorageClient::take_root_failures)
+    }
+
+    pub fn clear_platform_root_failure(&self, root_id: &str) {
+        if let Some(platform) = &self.inner.platform {
+            platform.clear_root_failure(root_id);
+        }
     }
 
     pub fn set_platform_health_wake(&self, wake: Arc<Notify>) {

@@ -1,5 +1,6 @@
 //! Coarse Android control plane for an in-process RSTorrent engine.
 
+use std::collections::BTreeSet;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::net::{Ipv4Addr, SocketAddr};
@@ -23,8 +24,8 @@ use rstorrent_protocol::identity::V1InfoHash;
 use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo};
 use rstorrent_session::{
     AddTorrentBytesRequest, ApplicationConfig, ApplicationService, ConfiguredStorageRoot,
-    PlatformRemovalPlan, RequestEnvelope, ResponseEnvelope, SubscriptionSpec, ViewSubscription,
-    ViewUpdate,
+    MAX_STORAGE_ROOTS, PlatformRemovalPlan, RequestEnvelope, ResponseEnvelope, StorageRootSnapshot,
+    SubscriptionSpec, ViewSubscription, ViewUpdate,
 };
 use sha1::{Digest, Sha1};
 use tokio::sync::Mutex as AsyncMutex;
@@ -61,9 +62,16 @@ pub struct AndroidApplicationConfig {
     pub profile_id: String,
     pub storage_root: String,
     pub platform_storage: bool,
+    pub platform_storage_roots: Vec<AndroidPlatformStorageRoot>,
     pub network_policy: AndroidNetworkPolicy,
     pub peer_connect_timeout_seconds: u64,
     pub peer_io_timeout_seconds: u64,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct AndroidPlatformStorageRoot {
+    pub root_id: String,
+    pub label: String,
 }
 
 #[derive(Clone, Copy, Debug, uniffi::Enum)]
@@ -257,6 +265,52 @@ impl AndroidApplicationClient {
             .map_err(|error| AndroidClientError::message(error.to_string()))
     }
 
+    pub async fn allocate_saf_storage_root_id(&self) -> Result<String, AndroidClientError> {
+        self.service
+            .lock()
+            .await
+            .as_ref()
+            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
+            .allocate_storage_root_id()
+            .map_err(|error| AndroidClientError::message(error.to_string()))
+    }
+
+    pub async fn install_saf_storage_root(
+        &self,
+        root_id: String,
+        label: String,
+        make_default: bool,
+    ) -> Result<StorageRootSnapshot, AndroidClientError> {
+        self.service
+            .lock()
+            .await
+            .as_mut()
+            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
+            .install_platform_storage_root(&root_id, &label, make_default)
+            .await
+            .map_err(|error| AndroidClientError::message(error.to_string()))
+    }
+
+    pub async fn repair_saf_storage_root(
+        &self,
+        root_id: String,
+        label: String,
+    ) -> Result<SafStorageRootMutation, AndroidClientError> {
+        let (root, restart_torrent_ids) = self
+            .service
+            .lock()
+            .await
+            .as_mut()
+            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
+            .repair_platform_storage_root(&root_id, &label)
+            .await
+            .map_err(|error| AndroidClientError::message(error.to_string()))?;
+        Ok(SafStorageRootMutation {
+            root,
+            restart_torrent_ids,
+        })
+    }
+
     pub async fn mark_saf_unavailable(
         &self,
         torrent_id: String,
@@ -272,15 +326,17 @@ impl AndroidApplicationClient {
             .map_err(|error| AndroidClientError::message(error.to_string()))
     }
 
-    pub async fn prepare_saf_tree_replacement(&self) -> Result<Option<String>, AndroidClientError> {
+    pub async fn prepare_saf_tree_replacement(
+        &self,
+        root_id: String,
+    ) -> Result<Vec<String>, AndroidClientError> {
         self.service
             .lock()
             .await
             .as_mut()
             .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
-            .prepare_platform_storage_replacement("downloads")
+            .prepare_platform_storage_replacement(&root_id)
             .await
-            .map(|torrent_ids| torrent_ids.into_iter().next())
             .map_err(|error| AndroidClientError::message(error.to_string()))
     }
 
@@ -558,10 +614,36 @@ fn validate_application_config(
             "peer I/O timeout must be 1..={MAX_TIMEOUT_SECONDS} seconds"
         )));
     }
-    let storage_root = if config.platform_storage {
-        ConfiguredStorageRoot::platform("downloads")
+    let storage_roots = if config.platform_storage {
+        if config.platform_storage_roots.len() > MAX_STORAGE_ROOTS {
+            return Err(AndroidClientError::message(format!(
+                "platform storage root count exceeds {MAX_STORAGE_ROOTS}"
+            )));
+        }
+        let mut root_ids = BTreeSet::new();
+        config
+            .platform_storage_roots
+            .into_iter()
+            .map(|root| {
+                if !root_ids.insert(root.root_id.clone()) {
+                    return Err(AndroidClientError::message(format!(
+                        "platform storage root {} is duplicated",
+                        root.root_id
+                    )));
+                }
+                Ok(ConfiguredStorageRoot::platform(root.root_id).with_label(root.label))
+            })
+            .collect::<Result<Vec<_>, AndroidClientError>>()?
     } else {
-        ConfiguredStorageRoot::path("downloads", path(config.storage_root, "storage root")?)
+        if !config.platform_storage_roots.is_empty() {
+            return Err(AndroidClientError::message(
+                "path storage cannot include platform storage roots",
+            ));
+        }
+        vec![ConfiguredStorageRoot::path(
+            "downloads",
+            path(config.storage_root, "storage root")?,
+        )]
     };
     let network_policy = match config.network_policy {
         AndroidNetworkPolicy::Offline => NetworkPolicy::Offline,
@@ -571,7 +653,7 @@ fn validate_application_config(
     let mut application = ApplicationConfig::new(
         path(config.profile_root, "profile root")?,
         config.profile_id,
-        vec![storage_root],
+        storage_roots,
         NetworkConfig::new(
             network_policy,
             Duration::from_secs(config.peer_connect_timeout_seconds),
@@ -673,6 +755,12 @@ pub struct SafStorageRequest {
     pub operation: SafStorageOperation,
     pub access: SafStorageAccess,
     pub timeout_millis: u64,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct SafStorageRootMutation {
+    pub root: StorageRootSnapshot,
+    pub restart_torrent_ids: Vec<String>,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -1668,6 +1756,10 @@ mod tests {
             profile_id: "test".to_owned(),
             storage_root: String::new(),
             platform_storage: true,
+            platform_storage_roots: vec![AndroidPlatformStorageRoot {
+                root_id: "downloads".to_owned(),
+                label: "Downloads".to_owned(),
+            }],
             network_policy: AndroidNetworkPolicy::Online,
             peer_connect_timeout_seconds: 15,
             peer_io_timeout_seconds: 60,
@@ -1703,6 +1795,7 @@ mod tests {
             profile_id: "test".to_owned(),
             storage_root: content.display().to_string(),
             platform_storage: false,
+            platform_storage_roots: Vec::new(),
             network_policy: AndroidNetworkPolicy::Offline,
             peer_connect_timeout_seconds: 15,
             peer_io_timeout_seconds: 60,
@@ -1749,6 +1842,10 @@ mod tests {
             profile_id: "test".to_owned(),
             storage_root: String::new(),
             platform_storage: true,
+            platform_storage_roots: vec![AndroidPlatformStorageRoot {
+                root_id: "downloads".to_owned(),
+                label: "Downloads".to_owned(),
+            }],
             network_policy: AndroidNetworkPolicy::Offline,
             peer_connect_timeout_seconds: 15,
             peer_io_timeout_seconds: 60,

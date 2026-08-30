@@ -2196,6 +2196,100 @@ impl ApplicationService {
             })
     }
 
+    pub async fn install_platform_storage_root(
+        &mut self,
+        root_id: &str,
+        label: &str,
+        make_default: bool,
+    ) -> Result<StorageRootSnapshot, ApplicationError> {
+        self.probe_platform_storage_root_candidate(root_id).await?;
+        self.store_mut()?
+            .install_platform_storage_root(root_id, label, make_default)?;
+        self.healthy_platform_roots.insert(root_id.to_owned());
+        self.reload_storage_roots()?;
+        self.refresh_views()?;
+        self.storage_snapshot()?
+            .roots
+            .into_iter()
+            .find(|root| root.root_id == root_id)
+            .ok_or_else(|| {
+                ApplicationError::Configuration(
+                    "installed platform root is missing from the durable snapshot".to_owned(),
+                )
+            })
+    }
+
+    pub async fn repair_platform_storage_root(
+        &mut self,
+        root_id: &str,
+        label: &str,
+    ) -> Result<(StorageRootSnapshot, Vec<String>), ApplicationError> {
+        let root = self
+            .storage_snapshot()?
+            .roots
+            .into_iter()
+            .find(|root| root.root_id == root_id)
+            .ok_or_else(|| {
+                ApplicationError::Configuration(format!("storage root {root_id} is not configured"))
+            })?;
+        if root.availability == crate::StorageRootAvailability::Available {
+            return Err(ApplicationError::Configuration(
+                "an available platform root cannot be repaired".to_owned(),
+            ));
+        }
+        let restarts = self.prepare_platform_storage_replacement(root_id).await?;
+        self.probe_platform_storage_root_candidate(root_id).await?;
+        self.store_mut()?
+            .repair_platform_storage_root(root_id, label)?;
+        self.healthy_platform_roots.insert(root_id.to_owned());
+        self.reload_storage_roots()?;
+        self.refresh_views()?;
+        let root = self
+            .storage_snapshot()?
+            .roots
+            .into_iter()
+            .find(|root| root.root_id == root_id)
+            .ok_or_else(|| {
+                ApplicationError::Configuration(
+                    "repaired platform root is missing from the durable snapshot".to_owned(),
+                )
+            })?;
+        Ok((root, restarts))
+    }
+
+    async fn probe_platform_storage_root_candidate(
+        &mut self,
+        root_id: &str,
+    ) -> Result<(), ApplicationError> {
+        self.reap_finished().await?;
+        let storage_id = format!("root-candidate:{root_id}");
+        let reference = StorageFileReference::new(
+            self.storage_file_pool.clone(),
+            StorageFileKey {
+                storage_id: storage_id.clone(),
+                storage_generation: 0,
+                role: StorageFileRole::ContentRoot,
+            },
+            StorageFileLocator::Platform(rstorrent_engine::PlatformStorageTarget {
+                root_id: root_id.to_owned(),
+                storage_id,
+                storage_generation: 0,
+                role: StorageFileRole::ContentRoot,
+                path: Vec::new(),
+            }),
+        );
+        let observation = reference.observe().await;
+        self.storage_file_pool.clear_platform_root_failure(root_id);
+        let observation =
+            observation.map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+        if !observation.exists || observation.kind != Some(StorageObjectKind::Directory) {
+            return Err(ApplicationError::Configuration(
+                "selected platform storage root is missing or not a directory".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
     pub fn repair_path_storage_root(
         &mut self,
         root_id: &str,
@@ -2238,7 +2332,7 @@ impl ApplicationService {
             })
     }
 
-    fn allocate_storage_root_id(&self) -> Result<String, ApplicationError> {
+    pub fn allocate_storage_root_id(&self) -> Result<String, ApplicationError> {
         let existing = self
             .store_mut()?
             .storage_roots()?
@@ -2441,6 +2535,9 @@ impl ApplicationService {
             self.pause(torrent_id).await?;
         }
         self.storage_file_pool.invalidate_all();
+        self.healthy_platform_roots.remove(root_id);
+        self.reload_storage_roots()?;
+        self.refresh_views()?;
         Ok(restarts)
     }
 
@@ -14426,6 +14523,146 @@ mod tests {
         );
         drop(service);
         fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn platform_roots_install_and_repair_independently() {
+        let root = test_root("platform-root-registry");
+        let mut configuration = config(&root);
+        configuration.storage_roots.clear();
+        let (client, broker) = platform_storage_channel();
+        configuration.platform_storage_client = Some(client);
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("open service without a platform root");
+
+        let installs = tokio::spawn(async move {
+            for expected_root in ["root_a", "root_b"] {
+                let request = broker.next_request().await.expect("candidate probe");
+                assert_eq!(request.root_id, expected_root);
+                assert_eq!(request.operation, PlatformStorageOperation::Observe);
+                assert!(request.path.is_empty());
+                assert!(
+                    broker.complete_observation(
+                        request.request_id,
+                        StorageObservation::present(StorageObjectKind::Directory, None, None)
+                            .expect("root observation"),
+                    )
+                );
+            }
+            broker
+        });
+        let first = service
+            .install_platform_storage_root("root_a", "Folder A", false)
+            .await
+            .expect("install first root");
+        assert_eq!(
+            first.availability,
+            crate::StorageRootAvailability::Available
+        );
+        let second = service
+            .install_platform_storage_root("root_b", "Folder B", true)
+            .await
+            .expect("install current root");
+        assert_eq!(
+            second.availability,
+            crate::StorageRootAvailability::Available
+        );
+        let broker = installs.await.expect("join install provider");
+        let storage = service.storage_snapshot().expect("installed roots");
+        assert_eq!(storage.default_root.as_deref(), Some("root_b"));
+        assert_eq!(storage.roots.len(), 2);
+
+        let probe_broker = broker.clone();
+        let revoke = tokio::spawn(async move {
+            let first = probe_broker
+                .next_request()
+                .await
+                .expect("first health probe");
+            assert_eq!(first.root_id, "root_a");
+            assert!(probe_broker.complete_error(
+                first.request_id,
+                PlatformStorageFailure::new(
+                    PlatformStorageFailureKind::GrantUnavailable,
+                    "test first grant revoked",
+                ),
+            ));
+            let second = probe_broker
+                .next_request()
+                .await
+                .expect("second health probe");
+            assert_eq!(second.root_id, "root_b");
+            assert!(
+                probe_broker.complete_observation(
+                    second.request_id,
+                    StorageObservation::present(StorageObjectKind::Directory, None, None)
+                        .expect("root observation"),
+                )
+            );
+        });
+        assert!(
+            !service
+                .probe_platform_storage_roots()
+                .await
+                .expect("probe independent roots")
+        );
+        revoke.await.expect("join revoke provider");
+        let storage = service.storage_snapshot().expect("root availability");
+        assert_eq!(storage.default_root.as_deref(), Some("root_b"));
+        assert_eq!(
+            storage
+                .roots
+                .iter()
+                .find(|root| root.root_id == "root_a")
+                .expect("first root")
+                .availability,
+            crate::StorageRootAvailability::Unavailable
+        );
+        assert_eq!(
+            storage
+                .roots
+                .iter()
+                .find(|root| root.root_id == "root_b")
+                .expect("second root")
+                .availability,
+            crate::StorageRootAvailability::Available
+        );
+
+        let repair_broker = broker.clone();
+        let repair = tokio::spawn(async move {
+            let request = repair_broker.next_request().await.expect("repair probe");
+            assert_eq!(request.root_id, "root_a");
+            assert!(
+                repair_broker.complete_observation(
+                    request.request_id,
+                    StorageObservation::present(StorageObjectKind::Directory, None, None)
+                        .expect("root observation"),
+                )
+            );
+        });
+        let (repaired, restarts) = service
+            .repair_platform_storage_root("root_a", "Repaired A")
+            .await
+            .expect("repair first root");
+        repair.await.expect("join repair provider");
+        assert!(restarts.is_empty());
+        assert_eq!(repaired.label, "Repaired A");
+        assert_eq!(
+            repaired.availability,
+            crate::StorageRootAvailability::Available
+        );
+        assert_eq!(
+            service
+                .storage_snapshot()
+                .expect("repaired storage")
+                .default_root
+                .as_deref(),
+            Some("root_b")
+        );
+
+        service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove root");
     }
 
     #[tokio::test]
