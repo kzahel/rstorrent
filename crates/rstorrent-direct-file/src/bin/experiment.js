@@ -301,6 +301,7 @@ async function streamToOpfs(fixture) {
 }
 
 async function run() {
+  const startedAt = performance.now();
   startButton.disabled = true;
   setPhase("Connecting");
   const fixture = await fetch("/fixture").then((response) => response.json());
@@ -318,6 +319,20 @@ async function run() {
     return received;
   }));
 
+  // Prove that one oversized hostile control frame and a stale ACK do not
+  // disturb subsequent valid requests. The server reports the former on the
+  // reserved request id 0, which the experiment intentionally ignores.
+  channel.send(new Uint8Array(4097));
+  channel.send(ackFrame(0xffffffff, 0));
+
+  let outOfRangeRejected = false;
+  try {
+    await range(fixture.length, 1);
+  } catch (error) {
+    outOfRangeRejected = error.message.startsWith("range error ");
+  }
+  if (!outOfRangeRejected) throw new Error("out-of-range request was not rejected");
+
   setPhase("Checking cancellation");
   let cancellationObserved = false;
   try {
@@ -328,7 +343,9 @@ async function run() {
   if (!cancellationObserved) throw new Error("range cancellation was not observed");
 
   setPhase("Streaming to OPFS");
+  const streamStartedAt = performance.now();
   const streamed = await streamToOpfs(fixture);
+  const streamElapsedMillis = performance.now() - streamStartedAt;
   if (streamed.bytes !== fixture.length || streamed.digest !== fixture.sha256) {
     throw new Error("full streamed fixture digest mismatch");
   }
@@ -343,8 +360,15 @@ async function run() {
       remoteFingerprint: exchange.remote_fingerprint,
     },
     verifiedRanges: verified.length,
+    hostileControlSurvived: true,
+    outOfRangeRejected,
     cancellationObserved,
     streamed,
+    timing: {
+      totalElapsedMillis: performance.now() - startedAt,
+      streamElapsedMillis,
+      streamMibPerSecond: (streamed.bytes / (1024 * 1024)) / (streamElapsedMillis / 1000),
+    },
     server,
   };
   window.__result = outcome;

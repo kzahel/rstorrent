@@ -65,6 +65,7 @@ struct FixtureView {
 #[derive(Serialize)]
 struct ReadyView {
     url: String,
+    pid: u32,
     udp_ip: IpAddr,
     fixture: FixtureView,
 }
@@ -114,6 +115,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let ready = ReadyView {
         url: format!("{origin}/"),
+        pid: std::process::id(),
         udp_ip,
         fixture: state.fixture.clone(),
     };
