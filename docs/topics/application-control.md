@@ -239,16 +239,18 @@ remain separate. Deterministic and API 28/35 installed-product evidence passes;
 the supported-phone gate still awaits explicitly authorized physical handoff
 evidence. VPN binding and proxy routing remain independent contracts.
 
-Android process lifetime is also not torrent lifecycle intent. Ready Tactical
-[`200`](../tactical/200-android-product-background-lifecycle.md) makes the one
-Android service/application owner decide whether visible interaction,
+Android process lifetime is also not torrent lifecycle intent. Tactical
+[`200`](../tactical/200-android-product-background-lifecycle.md) now makes the
+one Android service/application owner decide whether visible interaction,
 explicitly allowed active background work, optional seeding, a bounded
 interaction, or an authenticated companion retains that generation. Idle,
 completion, timeout, notification ineligibility, task removal, and companion
 disconnect may join and close the generation, but never synthesize Pause,
 Pause All, Stop Torrent, or a queue mutation. A later visible launch opens the
 same profile and applies its durable desired-running and paused state through
-ordinary admission.
+ordinary admission. Android-15 quota exhaustion is a platform-owned durable
+fence cleared by that visible launch; an invisible recreation never becomes
+a second source of torrent intent or foreground authority.
 
 Typed diagnostics use a separate bounded reactive projection. They may explain
 the facts behind a progress assessment, but clients do not parse diagnostic

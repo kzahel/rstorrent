@@ -189,20 +189,23 @@ daemon architecture.
   gate remains open only for the explicitly authorized physical-phone handoff
   campaign; no physical device was used. VPN privacy and proxying remain
   excluded.
-- [ ] **JAR-009 — Implement the selected background lifecycle policy.** Ready
+- [ ] **JAR-009 — Implement the selected background lifecycle policy.**
   Tactical
-  [`200`](../tactical/200-android-product-background-lifecycle.md) replaces the
-  always-sticky owner with JSTorrent-shaped standalone outcomes over
-  RSTorrent's one service/application owner. Background downloads remain an
+  [`200`](../tactical/200-android-product-background-lifecycle.md) now replaces
+  the always-sticky owner with JSTorrent-shaped standalone outcomes over
+  RSTorrent's one service/application owner. Background downloads are an
   explicit default-off opt-in gated by notification eligibility; active
   download/metadata/checking and unmetered waiting qualify, completion closes
   unattended work by default, and continued seeding is separately opt-in.
   Visible Compose use remains unrestricted, shutdown preserves torrent
-  intent, task removal follows policy, reboot does not launch work, and the
-  target-35 `dataSync` duration is a disclosed finite limit. Authenticated
-  ChromeOS companion work receives one fixed reconnect grace rather than the
-  legacy daemon's configurable idle timer. Tactical `198` supplies the
-  notification/timeout owner and Tactical `199` the live network prerequisite.
+  intent, task removal follows policy, reboot has no launch receiver, and the
+  target-35 `dataSync` duration is finite with a persistent exhausted-quota
+  fence. Authenticated ChromeOS companion work receives one fixed reconnect
+  grace rather than the legacy daemon's configurable idle timer. Pure policy,
+  connected API 28/35, controlled transfer/recovery/task-removal/seeding,
+  shortened-timeout, dual-ABI, and repository gates pass. Keep this item open
+  only for the exact-target phone and ChromeOS campaigns required by the
+  tactical; neither physical target was used.
 - [ ] **JAR-010 — Qualify the signed Play replacement.** Produce and inspect
   the protected-key release AAB, remove or deliberately retain diagnostic
   components, close current Android API deprecations, complete store/privacy/
@@ -270,14 +273,15 @@ pause/resume shortcut that overwrites torrent intent.
 
 Sleep inhibition and background continuation are independent. Tactical `165`
 answers whether active work may keep the CPU awake after the product has
-already decided it is allowed to run. Ready Tactical
-[`200`](../tactical/200-android-product-background-lifecycle.md) now selects
+already decided it is allowed to run. Tactical
+[`200`](../tactical/200-android-product-background-lifecycle.md) now implements
 the `JAR-009` outcome when Compose leaves, an active download completes, only
 seeding remains, the task is removed, the process restarts, or the device
 reboots. Tactical `198` separately supplies its notification-visibility
 prerequisite: denial or blocking permits interactive use but ends the owner
-when visible interaction ends, and target-35 `dataSync` timeout enters prompt
-joined shutdown rather than an ANR or sticky restart.
+when visible interaction ends. Target-35 `dataSync` timeout commits a durable
+exhausted edge, enters prompt joined shutdown, and refuses invisible
+recreation until a later visible launch resets the platform allowance.
 
 The replacement policy must identify one owner for:
 
@@ -440,11 +444,12 @@ live run.
    bounded physical-phone Wi-Fi/metered handoff and cleanup gate, then close
    the unmetered portion of `JAR-008` without coupling it to a VPN privacy
    claim. The implementation and owned-AVD evidence are already complete.
-5. Execute ready Tactical
-   [`200`](../tactical/200-android-product-background-lifecycle.md) for
-   `JAR-009` background/seeding/idle ownership after Tactical `198` exposes
-   notification eligibility. Retain its fixed companion reconnect grace;
-   low-battery shutdown remains a separately bounded decision.
+5. After explicit exact-target authorization, finish Tactical
+   [`200`](../tactical/200-android-product-background-lifecycle.md)'s phone and
+   ChromeOS qualification and close `JAR-009`. Its background/seeding/idle
+   implementation, fixed companion reconnect grace, connected suites, owned-
+   AVD campaigns, and repository gates already pass. Low-battery shutdown
+   remains a separately bounded decision.
 6. Design `JAR-005` with the production extension before either store update
    is scheduled.
 7. Decide VPN, proxy, DHT/PEX controls, search/plugins, playback,

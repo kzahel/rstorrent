@@ -1,11 +1,13 @@
 # Tactical 200: Android Product Background Lifecycle
 
-Status: **Active as of 2026-08-30.** Maintainer direction selected
-JSTorrent-like standalone lifetime semantics for the Android replacement and
-then explicitly authorized end-to-end implementation. VPN, proxy, low-battery
-thresholds, and configurable companion-idle policy remain deferred. Physical
-phone and ChromeOS campaigns still require their separately stated exact
-target authorization.
+Status: **Repository implementation and owned-AVD qualification complete as
+of 2026-08-31; physical qualification remains authorization-gated.**
+Maintainer direction selected JSTorrent-like standalone lifetime semantics
+for the Android replacement and explicitly authorized end-to-end repository
+implementation. VPN, proxy, low-battery thresholds, and configurable
+companion-idle policy remain deferred. `JAR-009` and this tactical stay open
+only for the exact-target phone and ChromeOS campaigns required by the
+stopping condition; no physical target was used.
 
 Topics: `android-jstorrent-replacement`, `beta-release-readiness`,
 `application-control`, `client-surfaces`, `capability-readiness`
@@ -918,34 +920,126 @@ An ordinary Kotlin, Rust boundary, Compose, service, notification, timeout,
 AVD, controlled-transfer, process-recovery, build, or cleanup failure is not
 an escalation. Diagnose it within the declared owner and bounds.
 
+## Implementation And Evidence Record
+
+The repository slice landed as these reviewable commits:
+
+- `28af8f8` activated the bounded tactical and readiness entry;
+- `78a8093` added the pure task-free lifetime reducer, authoritative work
+  classifier, preference values, limits, and exhaustive JVM matrix;
+- `7af2d2a` exposed only the current authenticated companion connection count
+  through a latest-value, cancellation-aware Android UniFFI subscription;
+- `7490be1` added one serialized service coordinator and replaceable monotonic
+  deadline owner;
+- `890164e` integrated activity/workflow leases, notification eligibility,
+  authoritative torrent work, companion grace, foreground handoff, sticky
+  admission, fail-closed network recovery, and joined terminal shutdown;
+- `4b9ba5b` added the default-off Power Management controls, effective-state
+  truth, notification routing, finite-duration disclosure, and keep-seeding
+  warning;
+- `19a8b6e` added the installed controlled-transfer campaign, connected
+  visibility/terminal test, and terminal foreground-ordering repair;
+- `7112331` added the persistent Android-15 exhausted-quota fence and the real
+  shortened-timeout/restart-refusal campaign; and
+- `ed8282a` added exact API-35 recent-task removal while admitted background
+  work remains owned.
+
+`ProductLifetimePolicy` is the closed deterministic reducer.
+`ProductLifecycleCoordinator` is the only deadline/revision serializer.
+`ProductEngineService` remains the sole application/profile/engine,
+notification, wake-lock, network-prerequisite, SAF-worker, and companion
+lifetime owner. `MainActivity` publishes genuine visible state and bounded
+result-workflow leases; it does not issue torrent lifecycle commands.
+`CompanionPairingOwner` publishes a count without identities or credentials,
+and the Android adapter owns one closable latest-value subscription. No
+service, daemon, worker scheduler, reboot receiver, portable lifecycle
+command, generated application view field, new dependency, or source import
+was added.
+
+The API-35 quota campaign exposed a material edge beyond the initial direct
+`onTimeout` test: a prohibited post-timeout `startForegroundService` could be
+accepted before foreground promotion and leave a crashed service record.
+`ProductDataSyncQuotaFence` now commits the exhausted edge before joined
+shutdown, refuses non-visible recreation before foreground creation, and is
+cleared only by a later visible Activity launch. The final installed campaign
+observed the real platform callback at 1,000 ms, joined shutdown, an accepted
+start request blocked by that fence, no live service, and no ongoing
+notification. The original `device_config` value was `null` and was restored
+to `null` in `finally`.
+
+Deterministic evidence includes 16 `ProductLifetimePolicyTest` cases, three
+coordinator/deadline cases, the existing notification/network/service tests,
+gateway authenticated-count transitions, and the Android latest-value
+subscription close test. The final connected suites passed 20/20 tests on API
+28 and 22/22 on API 35. The API-35 suite includes direct timeout convergence;
+the installed profile additionally exercises the real system timeout.
+
+The final owned-AVD controlled campaigns used package
+`org.rstorrent.bootstrap`, target SDK 35, arm64-v8a Google API images, one
+private five-piece SAF fixture, and no public swarm:
+
+- API 28 (`generic_arm64`, Android 9 fingerprint
+  `Android/sdk_gphone_arm64/generic_arm64:9/PSR1.210301.009.B6/9767327:userdebug/dev-keys`)
+  proved default-off Home shutdown, exact foreground reopen at 1/1 verified
+  piece or better, opted-in background foreground-service ownership, killed-
+  process sticky recovery, completion shutdown, a 133,304-byte controlled
+  background upload, seeding-disable shutdown, exact payload hashes, and
+  cleanup. Descriptor baseline/high/final was 75/75/75; SAF ownership peaked
+  at 6/40 handles and 1/16 pending requests.
+- API 35 (`emu64a`, Android 15 fingerprint
+  `google/sdk_gphone64_arm64/emu64a:15/AE3A.240806.043/12960925:userdebug/dev-keys`)
+  proved the same cohort at 1/1 retained verified piece, plus exact recent-
+  task removal with `background_admitted=true`, real shortened quota and
+  fenced restart refusal. It uploaded 133,304 controlled bytes, retained
+  exact payload hashes, peaked at 6/40 SAF handles and 1/16 pending requests,
+  and recorded descriptor baseline/high/final 148/148/118 before exact
+  cleanup.
+
+The final debug APK is 111,125,527 bytes with SHA-256
+`64f462a895dd7bdcd3cbb9c66f91fb6369ff8a37aefd562ec04193917bb40209`.
+It contains `librstorrent_android.so` for arm64-v8a (23,727,744 bytes) and
+x86_64 (26,700,104 bytes). Both task-owned AVD definitions, package/process
+state, SAF fixture tree, reverse transport, controlled payload, notification,
+quota override, and host fixture were removed. An attached phone was left
+untouched.
+
+The final repository baseline passed:
+
+```text
+cargo fmt --all -- --check
+cargo clippy --workspace -- -D warnings
+cargo test --workspace
+npm run generate --prefix clients/web
+npm run typecheck --prefix clients/web
+npm run test --prefix clients/web       # 365 passed, 2 skipped
+./gradlew lintDebug testDebugUnitTest assembleDebug assembleDebugAndroidTest
+./clients/android/build.sh               # x86_64 and arm64-v8a
+python3 -m py_compile clients/android/run_bootstrap.py
+```
+
+The generated portable web contract remained unchanged. Android's existing
+deprecated Activity-result/theme warnings and the existing Android-target
+`rstorrent-platform` dead-code warnings remain pre-existing output; lint,
+clippy, and every commanded gate passed.
+
 ## Restart Checkpoint And Next Action
 
-The exact implementation checkpoint is:
+Repository work and owned-AVD evidence are complete. Do not reopen policy,
+defaults, the work classifier, persistence shape, foreground owner, quota
+fence, or the generated application boundary absent new contrary evidence.
 
-- one `ProductEngineService` always enters foreground, opens one application
-  profile, optionally starts the companion, returns sticky, and runs until
-  explicit Stop or failure;
-- `MainActivity` binds/unbinds but provides no product visibility fact;
-- joined shutdown, authoritative torrent projections, partial wake-lock
-  policy, durable torrent intent, external intake, and physical same-device
-  companion behavior already exist;
-- notification eligibility/timeout and the live network prerequisite are
-  implemented by Tacticals `198` and `199`, including their service-facing
-  Kotlin state and joined native owners;
-- the companion gateway counts active authenticated connections internally but
-  does not expose a count-only Android lifecycle observation; and
-- maintained JSTorrent supplies the selected standalone defaults and lifetime
-  outcomes, while its split owners, low-battery Pause All, Wi-Fi lock, legacy
-  daemon, weaker tests, and Android-15 timeout gap are not adopted.
+The only remaining stopping-condition work is physical and still requires
+explicit exact-target authorization:
 
-The next executable action is Stage 1: implement the task-free lifecycle
-reducer, closed work classifier, preference codec, monotonic deadline
-replacement, and exhaustive JVM matrix. Then install the one service
-coordinator and visible-interaction handoff before changing sticky recovery or
-companion behavior. Do not begin with Compose toggles, Pause All, an idle
-polling loop, or a second service.
+- on a current phone, run the bounded screen-off/Doze, task-removal,
+  controlled process-recovery, notification Stop, completion, optional seed,
+  and cleanup cohort; and
+- on the approved ChromeOS target, run authenticated count/grace,
+  disconnect/reconnect/expiry, transfer/seed composition, notification loss,
+  explicit Stop, relaunch, and terminal ARC-listener cleanup.
 
-After this tactical closes, prioritize production handoff/reset-support work
-or the separately bounded Android playback presentation. VPN and proxy remain
-explicit post-release candidates rather than the presumed continuation of
-the lifecycle campaign.
+Until both are authorized and pass, retain this tactical in the blocked
+physical-qualification set and leave `JAR-009` unchecked. After closure,
+prioritize production handoff/reset-support work or the separately bounded
+Android playback presentation. VPN and proxy remain explicit post-release
+candidates rather than an implied continuation.

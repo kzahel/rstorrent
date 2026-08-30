@@ -631,12 +631,18 @@ disposition of current JSTorrent Android features.
   remains open only for the physical Chromebook companion permission,
   disconnect/reconnect, notification-tap, and terminal cleanup matrix; its
   authoritative doctor found SSH unreachable and the profile locked. This
-  slice does not claim a complete granted-background lifecycle. Ready Tactical
-  [`200`](../tactical/200-android-product-background-lifecycle.md) owns that
-  granted-background contract: explicit default-off continuation, qualifying
+  slice does not by itself claim a complete granted-background lifecycle.
+  Tactical
+  [`200`](../tactical/200-android-product-background-lifecycle.md) now
+  implements that contract: explicit default-off continuation, qualifying
   active work, default stop on completion, optional continued seeding,
-  activity handoff, intent-preserving joined shutdown, finite duration, and a
-  bounded authenticated-companion reconnect grace. Reboot autostart,
+  activity handoff, intent-preserving joined shutdown, finite duration,
+  Android-15 exhausted-quota fencing, and a bounded authenticated-companion
+  reconnect grace. Connected API 28/35, controlled Home/reopen, task removal,
+  process recovery, completion, seeding upload, shortened timeout, dual-ABI,
+  and repository gates pass. Its physical phone and ChromeOS closure remains
+  exact-target authorization-gated, so it does not close this notification
+  item's independent physical Chromebook matrix. Reboot autostart,
   low-battery shutdown, VPN, and proxy remain outside both slices.
 - [ ] **AND-010 — Add metered-network safety and bound VPN policy.** JSTorrent
   Android enforces unmetered/Wi-Fi-only and VPN-only prerequisites. Tactical

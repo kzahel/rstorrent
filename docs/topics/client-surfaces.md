@@ -656,16 +656,20 @@ own correctness.
   preference and exactly one partial CPU wake lock for the same active state
   set while removing its Wi-Fi lock. iOS retains finite background work and
   exposes no misleading general keep-awake control.
-- Ready Tactical
+- Tactical
   [`200`](../tactical/200-android-product-background-lifecycle.md) replaces
   Android's always-sticky lifetime with one activity-aware owner. Visible
   Compose retains interactive use; background download continuation is
   default-off and notification-gated; completion stops unattended work by
   default; continued seeding is separately opt-in; and every policy stop joins
   the generation without rewriting durable torrent intent. Authenticated
-  ChromeOS companion work receives a fixed reconnect grace. No reboot launch,
-  second daemon, indefinite Android-15 `dataSync` claim, or low-battery policy
-  is added.
+  ChromeOS companion work receives a fixed reconnect grace through a count-
+  only subscription. Android-15 timeout persists an exhausted edge and blocks
+  invisible recreation until a visible launch. Connected API 28/35 and owned-
+  AVD transfer/recovery/seeding/task-removal/timeout evidence passes; the
+  exact-target phone and ChromeOS qualification remains authorization-gated.
+  No reboot launch, second daemon, indefinite `dataSync` claim, or low-battery
+  policy is added.
 - The Linux headless process owns one application service, profile, one or
   more explicitly configured gateways, and engine independently from browser
   connections. Its systemd user unit forwards stop to the adapter, whose
@@ -990,19 +994,22 @@ streaming demand, expiry, and revocation remain unchanged.
   [`198`](../tactical/198-android-completion-and-attention-notifications.md)
   has passing deterministic, dual-ABI, API 34/35 connected and genuine
   transfer/repair evidence, but its physical Chromebook companion matrix is
-  still blocked by an unreachable, locked testbed. Ready Tactical
-  [`200`](../tactical/200-android-product-background-lifecycle.md) owns the
-  granted-background activity/active-work/completion/seeding/task-removal/
-  reboot contract and accepts Android 15+ `dataSync` operation as finite;
-  VPN policy remains separate from Tactical `194`'s connection transport.
+  still blocked by an unreachable, locked testbed. Tactical
+  [`200`](../tactical/200-android-product-background-lifecycle.md) implements
+  the granted-background activity/active-work/completion/seeding/task-removal
+  contract and accepts Android 15+ `dataSync` operation as finite. Its
+  connected API 28/35 and owned-AVD campaigns pass; physical phone and
+  ChromeOS qualification remains authorization-gated. VPN policy remains
+  separate from Tactical `194`'s connection transport.
 - Android now has Compose connection/seeding settings for backed peer, upload-
   slot, active-download, listener, port-mapping, IPv6, and encryption values,
   including configured/effective/application truth, plus backed session and
   per-torrent upload/download limits. The default-off metered-network cost
   policy is implemented by Tactical `199` and AVD-qualified, with only its
-  authorized physical-phone gate open. Background lifetime remains absent
-  with ready Tactical `200`; VPN, proxy, low-battery, and broader seeding
-  policy remain separate product/engine slices.
+  authorized physical-phone gate open. Background lifetime is implemented and
+  AVD-qualified by Tactical `200`, with its exact-target physical gates still
+  open. VPN, proxy, low-battery, and broader seeding policy remain separate
+  product/engine slices.
 - Tracker HTTPS authentication is intentionally absent from ordinary React
   and Compose settings. The advanced typed `disabled` override exists for
   compatibility/debug use and remains visibly unauthenticated in tracker
