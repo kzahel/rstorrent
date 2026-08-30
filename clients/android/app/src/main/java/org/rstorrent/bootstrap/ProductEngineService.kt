@@ -121,8 +121,17 @@ class ProductEngineService : Service() {
     private val mutableState = MutableStateFlow(ProductState())
     val state: StateFlow<ProductState> = mutableState.asStateFlow()
 
+    internal data class ResourceSnapshot(
+        val shutdownComplete: Boolean,
+        val interactionLeases: Int,
+        val notificationReceiverRegistered: Boolean,
+        val wakeLockHeld: Boolean,
+    )
+
     private lateinit var client: AndroidApplicationClient
     private lateinit var presentationRepository: AndroidPresentationRepository
+    private var initializationJob: Job? = null
+    private var powerNotificationJob: Job? = null
     private lateinit var notificationCoordinator: AndroidNotificationCoordinator
     private var notificationBlockReceiver: BroadcastReceiver? = null
     private val notificationEligibilityMutation = Mutex()
@@ -198,7 +207,7 @@ class ProductEngineService : Service() {
                 preventSleepDuringActiveDownloads = ProductPowerPreference.read(this),
             )
         }
-        scope.launch {
+        initializationJob = scope.launch {
             try {
                 PlatformTrustBootstrap.ensureInitialized(applicationContext)
                 val profile = File(filesDir, "product-profile")
@@ -255,6 +264,7 @@ class ProductEngineService : Service() {
                 }
                 observePowerAndNotification()
             } catch (error: Throwable) {
+                if (error is CancellationException && stopped.get()) return@launch
                 if (!clientReady.isCompleted) {
                     clientReady.completeExceptionally(error)
                 }
@@ -2306,6 +2316,16 @@ class ProductEngineService : Service() {
         notificationCoordinator.setPreference(preference, enabled, interactionLeases.size)
     }
 
+    internal fun resourceSnapshotForTest(): ResourceSnapshot {
+        check(ProductSafDocuments.isDebuggable(this)) { "resource snapshot is debug-only" }
+        return ResourceSnapshot(
+            shutdownComplete = shutdownComplete.isCompleted,
+            interactionLeases = interactionLeases.size,
+            notificationReceiverRegistered = notificationBlockReceiver != null,
+            wakeLockHeld = powerLock?.isHeld == true,
+        )
+    }
+
     fun selectTorrent(torrentId: String) {
         withPresentation { it.selectTorrent(torrentId) }
     }
@@ -2778,7 +2798,7 @@ class ProductEngineService : Service() {
         (range.endExclusive - range.start).toULong()
 
     private fun observePowerAndNotification() {
-        scope.launch {
+        powerNotificationJob = scope.launch {
             state.collect { product ->
                 val active =
                     product.preventSleepDuringActiveDownloads &&
@@ -2845,6 +2865,8 @@ class ProductEngineService : Service() {
             unregisterNotificationBlockReceiver()
             ProductInteractionRegistry.detach()
             interactionLeases.clear()
+            initializationJob?.cancelAndJoin()
+            powerNotificationJob?.cancelAndJoin()
             externalAdmissionCancellationSignal?.cancel()
             externalCancellationSignal?.cancel()
             externalAdmissionJob?.cancelAndJoin()
