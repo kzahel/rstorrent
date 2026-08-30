@@ -23,6 +23,9 @@ import org.junit.Rule
 import org.junit.Test
 import org.rstorrent.bootstrap.ui.ProductApp
 import org.rstorrent.bootstrap.ui.ProductThemeMode
+import org.rstorrent.session.uniffi.ApplicationNetworkPrerequisiteView
+import org.rstorrent.session.uniffi.ApplicationNetworkRuntimeState
+import org.rstorrent.session.uniffi.ApplicationNetworkRuntimeView
 import org.rstorrent.session.uniffi.ProgressAssessment
 import org.rstorrent.session.uniffi.ProgressDisposition
 import org.rstorrent.session.uniffi.ProgressPhase
@@ -554,6 +557,15 @@ class ProductNavigationTest {
             )
         return ClientSettingsRuntimeView(
             configured = configured,
+            applicationNetwork =
+                ApplicationNetworkRuntimeView(
+                    requestedGeneration = "1",
+                    requestedPrerequisite = ApplicationNetworkPrerequisiteView.ALLOWED,
+                    effectiveGeneration = "1",
+                    effectivePrerequisite = ApplicationNetworkPrerequisiteView.ALLOWED,
+                    state = ApplicationNetworkRuntimeState.ALLOWED,
+                    degradedDetail = null,
+                ),
             effectiveListener =
                 EffectiveListenerSettings(
                     listener = ListenerPolicy.Disabled,

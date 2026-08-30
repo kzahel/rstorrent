@@ -1,6 +1,5 @@
 package org.rstorrent.bootstrap
 
-import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -8,7 +7,6 @@ import android.os.IBinder
 import android.os.SystemClock
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.rule.GrantPermissionRule
 import androidx.test.rule.ServiceTestRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -22,7 +20,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class ProductServiceTimeoutTest {
     private val permissionRule =
-        GrantPermissionRule.grant(Manifest.permission.POST_NOTIFICATIONS)
+        NotificationPermissionRule()
     private val serviceRule = ServiceTestRule()
 
     @get:Rule

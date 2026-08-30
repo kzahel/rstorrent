@@ -1,13 +1,12 @@
 package org.rstorrent.bootstrap
 
-import android.Manifest
 import android.app.Notification
 import android.app.NotificationManager
 import android.content.Context
+import android.os.Build
 import android.os.SystemClock
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.rule.GrantPermissionRule
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -20,6 +19,9 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.MethodSorters
+import org.rstorrent.session.uniffi.ApplicationNetworkPrerequisiteView
+import org.rstorrent.session.uniffi.ApplicationNetworkRuntimeState
+import org.rstorrent.session.uniffi.ApplicationNetworkRuntimeView
 import org.rstorrent.session.uniffi.ProgressAssessment
 import org.rstorrent.session.uniffi.AdvertisedPeerEndpointStatus
 import org.rstorrent.session.uniffi.BandwidthDirectionRuntimeView
@@ -57,8 +59,7 @@ import org.rstorrent.session.uniffi.ViewUpdatePayload
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
 class AndroidNotificationInstrumentationTest {
     @get:Rule
-    val notificationPermission: GrantPermissionRule =
-        GrantPermissionRule.grant(Manifest.permission.POST_NOTIFICATIONS)
+    val notificationPermission = NotificationPermissionRule()
 
     private lateinit var context: Context
     private lateinit var manager: NotificationManager
@@ -133,7 +134,9 @@ class AndroidNotificationInstrumentationTest {
             completion.notification.extras.getCharSequence(Notification.EXTRA_TEXT),
         )
         assertEquals(context.packageName, completion.notification.contentIntent.creatorPackage)
-        assertTrue(completion.notification.contentIntent.isImmutable)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            assertTrue(completion.notification.contentIntent.isImmutable)
+        }
 
         val repaired = complete.copy(state = TorrentState.PAUSED, receivedBytes = "1")
         coordinator.onTorrentListUpdate(
@@ -156,7 +159,9 @@ class AndroidNotificationInstrumentationTest {
             attention.notification.extras.getCharSequence(Notification.EXTRA_TEXT),
         )
         assertEquals(context.packageName, attention.notification.contentIntent.creatorPackage)
-        assertTrue(attention.notification.contentIntent.isImmutable)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            assertTrue(attention.notification.contentIntent.isImmutable)
+        }
 
         coordinator.close()
     }
@@ -401,6 +406,7 @@ class AndroidNotificationInstrumentationTest {
             )
         return ClientSettingsRuntimeView(
             configured = configured,
+            applicationNetwork = allowedApplicationNetwork(),
             effectiveListener =
                 EffectiveListenerSettings(
                     listener = ListenerPolicy.Disabled,
@@ -437,6 +443,16 @@ class AndroidNotificationInstrumentationTest {
             transportFamilies = emptyList(),
         )
     }
+
+    private fun allowedApplicationNetwork(): ApplicationNetworkRuntimeView =
+        ApplicationNetworkRuntimeView(
+            requestedGeneration = "1",
+            requestedPrerequisite = ApplicationNetworkPrerequisiteView.ALLOWED,
+            effectiveGeneration = "1",
+            effectivePrerequisite = ApplicationNetworkPrerequisiteView.ALLOWED,
+            state = ApplicationNetworkRuntimeState.ALLOWED,
+            degradedDetail = null,
+        )
 
     private fun bandwidthDirection(): BandwidthDirectionRuntimeView =
         BandwidthDirectionRuntimeView(
