@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Notification
 import android.app.NotificationManager
 import android.content.Context
+import android.os.SystemClock
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.rule.GrantPermissionRule
@@ -14,9 +15,11 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.FixMethodOrder
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.junit.runners.MethodSorters
 import org.rstorrent.session.uniffi.ProgressAssessment
 import org.rstorrent.session.uniffi.AdvertisedPeerEndpointStatus
 import org.rstorrent.session.uniffi.BandwidthDirectionRuntimeView
@@ -51,6 +54,7 @@ import org.rstorrent.session.uniffi.ViewUpdate
 import org.rstorrent.session.uniffi.ViewUpdatePayload
 
 @RunWith(AndroidJUnit4::class)
+@FixMethodOrder(MethodSorters.NAME_ASCENDING)
 class AndroidNotificationInstrumentationTest {
     @get:Rule
     val notificationPermission: GrantPermissionRule =
@@ -72,7 +76,7 @@ class AndroidNotificationInstrumentationTest {
     }
 
     @Test
-    fun createsThreeTruthfulChannelsWithoutChangingUserPolicy() {
+    fun aCreatesThreeTruthfulChannelsWithoutChangingUserPolicy() {
         val coordinator = coordinator()
 
         val background =
@@ -97,7 +101,7 @@ class AndroidNotificationInstrumentationTest {
     }
 
     @Test
-    fun postsOpaqueExactCompletionAndAttentionNotifications() {
+    fun bPostsOpaqueExactCompletionAndAttentionNotifications() {
         val state = MutableStateFlow(ProductState())
         val coordinator = coordinator(state)
         val initial = torrent(ID, TorrentState.DOWNLOADING, received = 0UL)
@@ -156,7 +160,7 @@ class AndroidNotificationInstrumentationTest {
     }
 
     @Test
-    fun evictsOnlyTheOldestAutomaticNotificationInItsCategory() {
+    fun zEvictsOnlyTheOldestAutomaticNotificationInItsCategory() {
         val state = MutableStateFlow(ProductState())
         val coordinator = coordinator(state)
         val initial =
@@ -166,16 +170,47 @@ class AndroidNotificationInstrumentationTest {
         val baseline = ProductState(ready = true, torrents = initial.associateBy { it.torrentId })
         state.value = baseline
         coordinator.onTorrentListUpdate(snapshot(initial), baseline)
-        val errors = initial.map { it.copy(state = TorrentState.ERROR, error = "hidden") }
-        val errorState = baseline.copy(torrents = errors.associateBy { it.torrentId })
-        state.value = errorState
-        coordinator.onTorrentListUpdate(patch(errors), errorState)
+        var rows = baseline.torrents
+        initial.forEach { row ->
+            val error = row.copy(state = TorrentState.ERROR, error = "hidden")
+            rows = rows + (row.torrentId to error)
+            val errorState = baseline.copy(torrents = rows)
+            state.value = errorState
+            coordinator.onTorrentListUpdate(patch(listOf(error)), errorState)
+            SystemClock.sleep(250L)
+        }
 
-        val active =
-            manager.activeNotifications.filter {
-                it.tag?.startsWith("rstorrent-needs_attention-") == true
+        val deadline = SystemClock.elapsedRealtime() + 5_000L
+        var active = emptyList<android.service.notification.StatusBarNotification>()
+        while (SystemClock.elapsedRealtime() < deadline) {
+            active =
+                manager.activeNotifications.filter {
+                    it.tag?.startsWith("rstorrent-needs_attention-") == true
+                }
+            if (active.size == 32) {
+                break
             }
+            SystemClock.sleep(50L)
+        }
         assertEquals(32, active.size)
+        assertFalse(
+            active.any {
+                it.tag ==
+                    productNotificationTag(
+                        ProductNotificationCategory.NEEDS_ATTENTION,
+                        initial.first().torrentId,
+                    )
+            },
+        )
+        assertTrue(
+            active.any {
+                it.tag ==
+                    productNotificationTag(
+                        ProductNotificationCategory.NEEDS_ATTENTION,
+                        initial.last().torrentId,
+                    )
+            },
+        )
         assertEquals(
             0,
             manager.activeNotifications.count {

@@ -79,6 +79,8 @@ internal class AndroidNotificationCoordinator(
 ) {
     private val policy = AndroidNotificationPolicy()
     private var preferences = preferenceStore.read()
+    private val submittedTags =
+        ProductNotificationCategory.entries.associateWith { ArrayDeque<String>() }
 
     fun initialize(interactionLeaseCount: Int) {
         createChannels()
@@ -345,6 +347,7 @@ internal class AndroidNotificationCoordinator(
                 ).setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
                 .build()
         runCatching { manager.notify(tag, eventNotificationId(edge.category), notification) }
+            .onSuccess { rememberSubmitted(edge.category, tag) }
             .onFailure { error ->
                 Log.w(
                     TAG,
@@ -373,17 +376,34 @@ internal class AndroidNotificationCoordinator(
                 )
                 return false
             }
-        active.take((active.size - MAX_ACTIVE_PER_CATEGORY + 1).coerceAtLeast(0))
-            .forEach { manager.cancel(it.tag, it.id) }
+        val submitted = submittedTags.getValue(category)
+        active.forEach { notification ->
+            val tag = notification.tag ?: return@forEach
+            if (tag !in submitted) submitted.addLast(tag)
+        }
+        while (submitted.size >= MAX_ACTIVE_PER_CATEGORY) {
+            manager.cancel(submitted.removeFirst(), id)
+        }
         return true
+    }
+
+    private fun rememberSubmitted(
+        category: ProductNotificationCategory,
+        tag: String,
+    ) {
+        val submitted = submittedTags.getValue(category)
+        submitted.remove(tag)
+        submitted.addLast(tag)
     }
 
     private fun cancelTorrentNotifications(torrentId: String) {
         ProductNotificationCategory.entries.forEach { category ->
+            val tag = productNotificationTag(category, torrentId)
             manager.cancel(
-                productNotificationTag(category, torrentId),
+                tag,
                 eventNotificationId(category),
             )
+            submittedTags.getValue(category).remove(tag)
         }
     }
 

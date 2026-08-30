@@ -58,9 +58,10 @@ class ExternalActivityLifecycleTest {
             assertSanitized(requireNotNull(activity))
 
             while (service.state.value.externalIntakeDepth > 0) {
+                val expectedDepth = service.state.value.externalIntakeDepth - 1
                 val intakeId = requireNotNull(service.state.value.externalIntake?.intakeId)
                 service.cancelExternalIntake(intakeId)
-                awaitDepth(service, service.state.value.externalIntakeDepth - 1)
+                awaitDepth(service, expectedDepth)
             }
         } finally {
             activity?.let { current ->
