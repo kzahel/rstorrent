@@ -57,6 +57,24 @@ object ProductSafDocuments {
         check(!hasGrant(context, uri)) { "SAF tree grant survived debug release" }
     }
 
+    fun releaseTreeForTest(
+        context: Context,
+        rootId: String,
+    ) {
+        check(isDebuggable(context)) { "SAF grant release is debug-only" }
+        val root =
+            ProductSafRootRegistry.load(context).roots.singleOrNull { it.rootId == rootId }
+                ?: error("SAF root is not registered")
+        val uri = Uri.parse(root.treeUri)
+        context.contentResolver.releasePersistableUriPermission(uri, GRANT_FLAGS)
+        check(
+            ProductSafRootRegistry.load(context).roots.any {
+                it.rootId == rootId && it.treeUri == uri.toString()
+            },
+        ) { "debug grant release must retain stale platform identity" }
+        check(!hasGrant(context, uri)) { "SAF tree grant survived debug release" }
+    }
+
     fun openDynamic(
         context: Context,
         treeUri: Uri,

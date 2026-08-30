@@ -293,6 +293,12 @@ class MainActivity : ComponentActivity() {
             command.removeExtra(EXTRA_PRODUCT_RELEASE_SAF_GRANT)
             ProductSafDocuments.releaseSelectedTreeForTest(this)
         }
+        if (ProductSafDocuments.isDebuggable(this)) {
+            command.getStringExtra(EXTRA_PRODUCT_RELEASE_SAF_ROOT)?.let { rootId ->
+                command.removeExtra(EXTRA_PRODUCT_RELEASE_SAF_ROOT)
+                ProductSafDocuments.releaseTreeForTest(this, rootId)
+            }
+        }
         if (!productMode) {
             productMode = true
             setContent {
@@ -702,6 +708,7 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_PRODUCT_TRACKER_EVIDENCE_TORRENT = "product_tracker_evidence_torrent"
         const val EXTRA_PRODUCT_SELECT_SAF = "product_select_saf"
         const val EXTRA_PRODUCT_RELEASE_SAF_GRANT = "product_release_saf_grant"
+        const val EXTRA_PRODUCT_RELEASE_SAF_ROOT = "product_release_saf_root"
         const val EXTRA_COMPANION_ROOT_REQUEST = "companion_root_request"
         const val EXTRA_COMPANION_REPAIR_ROOT = "companion_repair_root"
     }
