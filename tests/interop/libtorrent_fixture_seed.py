@@ -28,6 +28,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--metainfo", type=Path, required=True)
     parser.add_argument("--storage-root", type=Path, required=True)
     parser.add_argument("--timeout-seconds", type=int, default=90)
+    parser.add_argument("--upload-rate-limit", type=int, default=0)
     values = parser.parse_args()
     if (
         not values.metainfo.is_absolute()
@@ -35,8 +36,15 @@ def parse_arguments() -> argparse.Namespace:
         or not values.storage_root.is_absolute()
         or not values.storage_root.is_dir()
         or not 1 <= values.timeout_seconds <= 300
+        or not (
+            values.upload_rate_limit == 0
+            or 16 * 1024 <= values.upload_rate_limit <= 1024 * 1024
+        )
     ):
-        parser.error("fixture paths must be absolute and timeout must be 1..300 seconds")
+        parser.error(
+            "fixture paths must be absolute, timeout must be 1..300 seconds, "
+            "and upload rate must be 0 or 16384..1048576 bytes per second"
+        )
     return values
 
 
@@ -80,6 +88,7 @@ def run(arguments: argparse.Namespace) -> None:
             "allow_multiple_connections_per_ip": False,
             "connections_limit": 1,
             "alert_queue_size": 512,
+            "upload_rate_limit": arguments.upload_rate_limit,
         }
     )
     parameters = lt.add_torrent_params()
@@ -110,6 +119,7 @@ def run(arguments: argparse.Namespace) -> None:
                 "payload_bytes": torrent_info.total_size(),
                 "piece_count": torrent_info.num_pieces(),
                 "sha1": file_sha1(payload),
+                "upload_rate_limit": arguments.upload_rate_limit,
             }
         )
 
