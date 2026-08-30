@@ -16,7 +16,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, watch};
 use tokio_util::sync::CancellationToken;
 
 use super::{
@@ -495,6 +495,7 @@ struct PairingInner {
     instance_id: String,
     runtime: Mutex<PairingRuntime>,
     next_connection: AtomicU64,
+    active_connections: watch::Sender<usize>,
 }
 
 #[derive(Default)]
@@ -549,12 +550,19 @@ impl Drop for CompanionPairingLease {
         let Some(owner) = self.owner.upgrade() else {
             return;
         };
-        owner
-            .runtime
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .active
-            .remove(&self.connection_id);
+        let count = {
+            let mut runtime = owner
+                .runtime
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            runtime
+                .active
+                .remove(&self.connection_id)
+                .map(|_| runtime.active.len())
+        };
+        if let Some(count) = count {
+            owner.active_connections.send_replace(count);
+        }
     }
 }
 
@@ -604,12 +612,14 @@ impl CompanionPairingOwner {
             "INSERT OR IGNORE INTO companion_metadata(singleton, instance_id) VALUES (1, ?1)",
             [&instance_id],
         )?;
+        let (active_connections, _) = watch::channel(0);
         Ok(Arc::new(Self {
             inner: Arc::new(PairingInner {
                 database: Mutex::new(connection),
                 instance_id,
                 runtime: Mutex::new(PairingRuntime::default()),
                 next_connection: AtomicU64::new(1),
+                active_connections,
             }),
         }))
     }
@@ -620,6 +630,11 @@ impl CompanionPairingOwner {
 
     pub fn instance_id(&self) -> &str {
         &self.inner.instance_id
+    }
+
+    /// Observes only the count of currently authenticated companion sessions.
+    pub fn active_connection_counts(&self) -> watch::Receiver<usize> {
+        self.inner.active_connections.subscribe()
     }
 
     pub fn hello(&self, origin: &str, port: u16) -> Result<CompanionHello, CompanionPairingError> {
@@ -924,18 +939,22 @@ impl CompanionPairingOwner {
         }
         let connection_id = self.inner.next_connection.fetch_add(1, Ordering::Relaxed);
         let cancellation = CancellationToken::new();
-        self.inner
-            .runtime
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .active
-            .insert(
+        let count = {
+            let mut runtime = self
+                .inner
+                .runtime
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            runtime.active.insert(
                 connection_id,
                 ActiveConnection {
                     pairing_key: pairing_key(origin, installation_id),
                     cancellation: cancellation.clone(),
                 },
             );
+            runtime.active.len()
+        };
+        self.inner.active_connections.send_replace(count);
         Some(CompanionPairingLease {
             owner: Arc::downgrade(&self.inner),
             connection_id,
@@ -1476,6 +1495,8 @@ mod tests {
     #[test]
     fn approval_persists_only_a_digest_and_revocation_cancels_connections() {
         let (owner, root) = owner("approval");
+        let mut active_connections = owner.active_connection_counts();
+        assert_eq!(*active_connections.borrow_and_update(), 0);
         let pending = request(&owner, "installation_1234");
         owner.approve(&pending.request_id).expect("approve pairing");
         let poll = owner
@@ -1491,6 +1512,8 @@ mod tests {
         let lease = owner
             .authenticate(BETA_EXTENSION_ORIGIN, "installation_1234", &credential)
             .expect("authenticate pairing");
+        assert!(active_connections.has_changed().expect("count sender open"));
+        assert_eq!(*active_connections.borrow_and_update(), 1);
         assert!(!lease.cancellation().is_cancelled());
         assert!(
             owner
@@ -1504,6 +1527,8 @@ mod tests {
                 .is_none()
         );
         drop(lease);
+        assert!(active_connections.has_changed().expect("count sender open"));
+        assert_eq!(*active_connections.borrow_and_update(), 0);
         drop(owner);
 
         let database = Connection::open(root.join("pairings.sqlite")).expect("reopen database");

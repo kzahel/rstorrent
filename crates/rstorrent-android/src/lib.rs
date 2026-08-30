@@ -31,7 +31,7 @@ use rstorrent_session::{
     SubscriptionSpec, ViewSubscription, ViewUpdate,
 };
 use sha1::{Digest, Sha1};
-use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::{Mutex as AsyncMutex, watch};
 use tokio::task::JoinHandle as TaskJoinHandle;
 use tokio_util::sync::CancellationToken;
 
@@ -195,6 +195,23 @@ struct AndroidCompanionRuntime {
 #[derive(Debug, uniffi::Object)]
 pub struct AndroidViewSubscription {
     subscription: ViewSubscription,
+}
+
+#[derive(Debug, uniffi::Object)]
+pub struct AndroidCompanionConnectionSubscription {
+    receiver: AsyncMutex<watch::Receiver<usize>>,
+    initial: AtomicBool,
+    closed: CancellationToken,
+}
+
+impl AndroidCompanionConnectionSubscription {
+    fn new(receiver: watch::Receiver<usize>) -> Arc<Self> {
+        Arc::new(Self {
+            receiver: AsyncMutex::new(receiver),
+            initial: AtomicBool::new(true),
+            closed: CancellationToken::new(),
+        })
+    }
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -662,6 +679,15 @@ impl AndroidApplicationClient {
         self.stop_companion_inner().await
     }
 
+    pub fn observe_chromeos_companion_connections(
+        &self,
+    ) -> Result<Arc<AndroidCompanionConnectionSubscription>, AndroidClientError> {
+        self.ensure_running()?;
+        Ok(AndroidCompanionConnectionSubscription::new(
+            self.companion_pairings.active_connection_counts(),
+        ))
+    }
+
     pub fn pending_companion_pairing(&self) -> Option<AndroidCompanionPairingPending> {
         self.companion_pairings
             .pending()
@@ -838,6 +864,39 @@ impl AndroidViewSubscription {
 impl Drop for AndroidViewSubscription {
     fn drop(&mut self) {
         self.subscription.close();
+    }
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+impl AndroidCompanionConnectionSubscription {
+    pub async fn next_count(&self) -> Option<u32> {
+        if self.closed.is_cancelled() {
+            return None;
+        }
+        let mut receiver = self.receiver.lock().await;
+        if self.initial.swap(false, Ordering::AcqRel) {
+            return Some(
+                u32::try_from(*receiver.borrow())
+                    .expect("authenticated companion count exceeds u32"),
+            );
+        }
+        tokio::select! {
+            _ = self.closed.cancelled() => None,
+            changed = receiver.changed() => changed.ok().map(|()| {
+                u32::try_from(*receiver.borrow_and_update())
+                    .expect("authenticated companion count exceeds u32")
+            }),
+        }
+    }
+
+    pub fn close(&self) {
+        self.closed.cancel();
+    }
+}
+
+impl Drop for AndroidCompanionConnectionSubscription {
+    fn drop(&mut self) {
+        self.closed.cancel();
     }
 }
 
@@ -1993,6 +2052,20 @@ mod tests {
     }
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    #[tokio::test]
+    async fn companion_connection_subscription_is_latest_value_and_closable() {
+        let (sender, receiver) = watch::channel(0_usize);
+        let subscription = AndroidCompanionConnectionSubscription::new(receiver);
+        assert_eq!(subscription.next_count().await, Some(0));
+
+        sender.send_replace(1);
+        sender.send_replace(2);
+        assert_eq!(subscription.next_count().await, Some(2));
+
+        subscription.close();
+        assert_eq!(subscription.next_count().await, None);
+    }
 
     fn test_path(label: &str) -> PathBuf {
         let sequence = TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
