@@ -4550,10 +4550,15 @@ dependencies = [
 name = "rstorrent-direct-file"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "bytes",
  "rstorrent-session",
  "rtc",
  "serde",
+ "serde_json",
+ "sha1",
+ "sha2",
+ "tempfile",
  "tokio",
  "tokio-util",
 ]

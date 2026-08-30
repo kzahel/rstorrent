@@ -9,11 +9,29 @@ publish = false
 [features]
 default = []
 webrtc = ["dep:bytes", "dep:rtc", "dep:serde"]
+experiment = [
+    "webrtc",
+    "dep:axum",
+    "dep:serde_json",
+    "dep:sha1",
+    "dep:sha2",
+    "dep:tempfile",
+]
 
 [dependencies]
+axum = { workspace = true, optional = true }
 bytes = { version = "1.12.1", optional = true }
 rtc = { version = "=0.20.4", default-features = false, features = ["ring"], optional = true }
 rstorrent-session = { path = "../rstorrent-session" }
 serde = { workspace = true, features = ["derive"], optional = true }
-tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
+serde_json = { workspace = true, optional = true }
+sha1 = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-util.workspace = true
+
+[[bin]]
+name = "rstorrent-direct-file-experiment"
+path = "src/bin/experiment.rs"
+required-features = ["experiment"]

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RSTorrent direct-file WebRTC experiment</title>
+  </head>
+  <body>
+    <main>
+      <h1>Direct-file WebRTC experiment</h1>
+      <p>This local-only page streams verified RSTorrent ranges over one DataChannel.</p>
+      <p>
+        <button id="start" type="button">Start and verify</button>
+        <button id="cancel" type="button" disabled>Cancel active range</button>
+        <button id="close" type="button" disabled>Close</button>
+      </p>
+      <p id="phase" role="status">Idle</p>
+      <pre id="result"></pre>
+    </main>
+    <script src="/experiment.js"></script>
+  </body>
+</html>
