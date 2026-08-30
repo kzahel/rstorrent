@@ -1,0 +1,91 @@
+package org.rstorrent.bootstrap
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+import org.rstorrent.session.uniffi.ProgressAssessment
+import org.rstorrent.session.uniffi.ProgressDisposition
+import org.rstorrent.session.uniffi.ProgressPhase
+import org.rstorrent.session.uniffi.ProgressReason
+import org.rstorrent.session.uniffi.StorageState
+import org.rstorrent.session.uniffi.TorrentEtaView
+import org.rstorrent.session.uniffi.TorrentOperationalState
+import org.rstorrent.session.uniffi.TorrentProtocolIdentities
+import org.rstorrent.session.uniffi.TorrentState
+import org.rstorrent.session.uniffi.TorrentTransferLimits
+import org.rstorrent.session.uniffi.TorrentView
+import org.rstorrent.session.uniffi.TransferRateLimit
+
+class ProductOngoingNotificationTest {
+    @Test
+    fun ongoingTextIsGenericAndCountBased() {
+        assertEquals("Opening profile", productOngoingNotificationText(ProductState()))
+        assertEquals(
+            "RSTorrent needs attention",
+            productOngoingNotificationText(
+                ProductState(ready = false, error = "/secret/path magnet:?xt=private"),
+            ),
+        )
+        assertEquals(
+            "Downloading 1 torrent",
+            productOngoingNotificationText(
+                ProductState(ready = true, torrents = mapOf("one" to torrent("one"))),
+            ),
+        )
+        assertEquals(
+            "Downloading 2 torrents",
+            productOngoingNotificationText(
+                ProductState(
+                    ready = true,
+                    torrents = mapOf("one" to torrent("one"), "two" to torrent("two")),
+                ),
+            ),
+        )
+        assertEquals(
+            "Ready for Chrome",
+            productOngoingNotificationText(ProductState(ready = true, companionPort = 9876U)),
+        )
+        assertEquals("Ready", productOngoingNotificationText(ProductState(ready = true)))
+    }
+
+    private fun torrent(id: String) =
+        TorrentView(
+            torrentId = id,
+            protocolIdentities = TorrentProtocolIdentities(v1 = null, v2 = null),
+            displayName = "Secret name",
+            sourceDisplayName = null,
+            state = TorrentState.DOWNLOADING,
+            operationalState = TorrentOperationalState.DOWNLOADING,
+            downloadQueuePosition = null,
+            transferLimits =
+                TorrentTransferLimits(TransferRateLimit.Unlimited, TransferRateLimit.Unlimited),
+            storageState = StorageState.AVAILABLE,
+            storageRoot = "secret-root",
+            metadataAvailable = true,
+            pieceCount = 1U,
+            totalSizeBytes = "1",
+            verifiedPieceCount = 0U,
+            requestedBytes = "1",
+            receivedBytes = "1",
+            storedBytes = "0",
+            activePeerConnections = 1U,
+            configuredTrackerCount = 1U,
+            payloadDownloadRateBytes = "1",
+            requiredPayloadBytes = "1",
+            remainingPayloadBytes = "1",
+            etaPayloadDownloadRateBytes = "1",
+            eta = TorrentEtaView.Unavailable,
+            progress =
+                ProgressAssessment(
+                    ProgressDisposition.ACTIVE,
+                    ProgressPhase.TRANSFER,
+                    ProgressReason.TRANSFERRING_PIECES,
+                    emptyList(),
+                ),
+            checking = null,
+            archived = false,
+            removalState = null,
+            deleteDataSupported = true,
+            forceRecheckAvailable = true,
+            error = null,
+        )
+}

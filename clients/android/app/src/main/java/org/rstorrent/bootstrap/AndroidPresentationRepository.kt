@@ -31,6 +31,8 @@ internal class AndroidPresentationRepository(
     private val state: MutableStateFlow<ProductState>,
     private val stopped: AtomicBoolean,
     private val onUpdate: (ViewUpdate, ProductState, Boolean) -> Unit,
+    private val onTorrentListUpdate: (ViewUpdate, ProductState) -> Unit = { _, _ -> },
+    private val onTorrentListReset: () -> Unit = {},
     private val onError: (Throwable) -> Unit,
 ) {
     private val ownership = Mutex()
@@ -231,11 +233,15 @@ internal class AndroidPresentationRepository(
                             state.update { current ->
                                 ProductStateReducer.reduce(current, update).also { reduced = it }
                             }
-                            onUpdate(update, requireNotNull(reduced), driveSaf)
+                            val product = requireNotNull(reduced)
+                            if (driveSaf) onTorrentListUpdate(update, product)
+                            onUpdate(update, product, driveSaf)
                         } catch (_: ViewResetRequiredException) {
+                            if (driveSaf) onTorrentListReset()
                             state.update { it.copy(diagnosticResets = it.diagnosticResets + 1UL) }
                             subscription.resync()
                         } catch (_: ViewContinuityException) {
+                            if (driveSaf) onTorrentListReset()
                             state.update { it.copy(diagnosticResets = it.diagnosticResets + 1UL) }
                             subscription.resync()
                         }
