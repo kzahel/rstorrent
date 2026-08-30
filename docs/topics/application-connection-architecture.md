@@ -79,14 +79,14 @@ credential is issued or accepted. The installed current-host service proves
 exact HTTP/WebSocket success and wrong-Host/Origin `403` behavior. This is a
 truthfully warned trusted-LAN operator mode, not authenticated application
 authority or a stable remote protocol.
-Blocked Tactical
+Completed Tactical
 [`194`](../tactical/194-chromeos-android-extension-control.md) implements a
 separate first-party same-device adapter: the packaged extension React page
 attaches to the one Android-owned application service across ChromeOS's fixed
 ARC host. Exact extension Origin, Host, explicit Android-approved bearer
 pairing, backend/profile identity, optional host permission, current Local
-Network Access behavior, revocation, and physical non-LAN reachability are
-required around the unchanged typed application WebSocket. Android serves no
+Network Access behavior, revocation, and physical non-LAN reachability surround
+the unchanged typed application WebSocket. Android serves no
 application assets, raw IO, filesystem, piece, or media endpoint in that
 slice, and no general LAN/remote compatibility claim follows from it. The
 existing `chooseDownloadRoot` platform seam is deliberately adjacent to the
@@ -95,11 +95,12 @@ owner to launch its SAF picker and return a root snapshot, but the URI and
 grant remain outside application frames. Retained root IDs let one Android
 current/default root govern new adds while older torrents continue through
 their original grants. Physical identity, pairing, Compose convergence,
-retained-root lifecycle, detached transfer, and reconnect pass. The accepted
-transport boundary does not: ChromeOS forwards the Android wildcard listener
-through Wi-Fi, and caller-controlled Host/Origin values reach the real hello
-route from another LAN device. A non-LAN-reachable OS transport is required;
-this must not be reframed as a general remote-control or trusted-LAN surface.
+retained-root lifecycle, detached transfer, and reconnect pass. The listener is
+fixed to ARC's guest address rather than wildcard: the exact extension connects
+from ChromeOS, while the Chromebook Wi-Fi address refuses raw TCP and the
+formerly successful caller-controlled Host/Origin request from another LAN
+device. This remains a same-device transport, not a general remote-control or
+trusted-LAN surface.
 
 ## Purpose And Scope
 

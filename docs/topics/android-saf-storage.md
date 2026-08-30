@@ -508,8 +508,8 @@ bridge; after acquisition, payload I/O remains in Rust.
 
 Do not restore or extend the diagnostic-only fixed-manifest or publication
 APIs. Preserve Tactical `194`'s bounded retained-root registry and
-extension-triggered picker while its independent ChromeOS transport blocker is
-resolved. Desktop-shaped per-add choice among old roots, cloud/removable
+extension-triggered picker plus its exact ARC-address transport boundary.
+Desktop-shaped per-add choice among old roots, cloud/removable
 provider support, relocation, and an exposed advanced file-pool setting still
 require their own product decisions.
 Completed Tactical `120` consumes exact existence, kind, and length as

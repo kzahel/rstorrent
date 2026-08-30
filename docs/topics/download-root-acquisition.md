@@ -16,8 +16,8 @@ is not implemented and has no tactical yet. Tactical
 Android's extension-triggered SAF picker and retained-root registry. It keeps
 the same React acquisition action as Crostini while leaving the resulting URI
 and grant entirely in Android. Physical two-root selection, future defaulting,
-independent repair, restart, and cleanup pass; its companion transport blocker
-is independent of the acquisition contract.
+independent repair, restart, cleanup, companion connection, and same-LAN refusal
+pass.
 
 ## Conclusion
 
@@ -73,7 +73,7 @@ filesystem API, or authorize a presentation to enumerate the backend machine.
 | Local gateway/browser | Windows | The native adapter is compiled as unsupported for every operating system except macOS and Linux | Clicking **Add folder...** reaches the HTTP platform route and returns `501` with “download folder picker is not implemented on this platform” |
 | ChromeOS Linux/Crostini | Linux user service, ChromeOS browser presentation | Crostini injects the same Linux native helper adapter as local WebUI | `~/Downloads` is preconfigured, so first use does not require a picker. Additional selection is conditional on a usable Linux graphical session and Zenity or KDialog; exact installed interaction is unproved |
 | Hosted Linux headless | Linux service with or without a display | `rstorrent-headless` uses the hosted gateway preparation that injects `UnavailableDownloadDirectoryPicker` | TOML supplies at least one root. The shared UI still renders native-picker add/repair controls, but those calls return `501` |
-| Android/ChromeOS Android | Android activity/foreground service | Compose and the packaged shared React presentation launch Android Storage Access Framework tree selection through one foreground owner | Tactical `194` physically proves multiple bounded grants, one current root for new downloads, durable old-torrent binding, independent repair, and opaque-root-only Rust/React values. The extension transport remains blocked by LAN reachability, not SAF acquisition. |
+| Android/ChromeOS Android | Android activity/foreground service | Compose and the packaged shared React presentation launch Android Storage Access Framework tree selection through one foreground owner | Tactical `194` physically proves multiple bounded grants, one current root for new downloads, durable old-torrent binding, independent repair, opaque-root-only Rust/React values, exact ARC-address extension connection, and same-LAN refusal. |
 | iOS/iPadOS | First-party iOS application | System directory picker followed by a qualified security-scoped bookmark | System picker; accepted local roots retain opaque identity and platform-owned reopening state |
 
 “Web UI on Windows” is ambiguous and must be qualified:
@@ -365,8 +365,8 @@ gateway.
 ## Next Bounded Work
 
 The recommended next unowned tactical is one headless path-acquisition slice
-with this stopping condition; Android acquisition is implemented by Tactical
-`194` while its transport decision remains separate:
+with this stopping condition; Android acquisition and its bounded same-device
+extension transport are implemented by Tactical `194`:
 
 - a typed and runtime-gated server-path operation exists for Linux headless;
 - capability/provenance facts drive the React controls;

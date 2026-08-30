@@ -590,11 +590,11 @@ authentication as separate future operations or slices.
 Tactical `194` implements the first migration-critical Android
 JSTorrent-parity slice and physically proves the extension-controlled ChromeOS
 journey, retained SAF-root selection/repair, and one Android engine/profile
-owner. It is blocked from release because ChromeOS forwards the Android
-wildcard listener through the Chromebook's Wi-Fi address. Select and prove a
-non-LAN-reachable ChromeOS/ARC transport before resuming that tactical;
-completion/error notifications and metered/VPN enforcement remain the next
-core Android release slices rather than additions to its transport boundary.
+owner. Its companion now binds only to ARC's fixed guest address: the exact
+extension connects from ChromeOS while the Chromebook Wi-Fi address refuses
+raw TCP and the formerly successful spoofed-Host/Origin request. Completion/
+error notifications and metered/VPN enforcement remain the next core Android
+release slices rather than additions to its completed transport boundary.
 When JSTorrent graduation is separately authorized, create one bounded
 tactical that fixes the production handoff and the intentionally best-effort
 legacy-state scope from then-current evidence.

@@ -508,8 +508,8 @@ source, fixture, or asset is imported by this topic.
 Preserve Tactical `194`'s implemented Android retained-root/current-default
 model and React folder action through the Android-owned SAF picker. Its
 physical two-root binding, independent grant loss/repair, restart, and cleanup
-evidence passes; the separate extension transport remains blocked by
-same-LAN reachability. Preserve completed Tactical `191`'s direct layout,
+evidence passes, as does the separate extension transport's exact ARC bind and
+same-LAN refusal. Preserve completed Tactical `191`'s direct layout,
 stable per-torrent root binding, root-specific broker routing, and exact
 cleanup across every retained grant.
 

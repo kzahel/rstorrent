@@ -597,37 +597,7 @@ impl AndroidApplicationClient {
     }
 
     pub async fn start_chromeos_companion(&self) -> Result<u16, AndroidClientError> {
-        self.ensure_running()?;
-        let mut active = self.companion.lock().await;
-        if active
-            .as_ref()
-            .is_some_and(|runtime| !runtime.task.is_finished())
-        {
-            return Ok(active.as_ref().expect("active companion").port);
-        }
-        if let Some(previous) = active.take() {
-            previous.shutdown.cancel();
-            let _ = previous.task.await;
-        }
-        let server = rstorrent_gateway::bind_companion(
-            self.companion_pairings.clone(),
-            self.companion_platform.clone(),
-            self.service.clone(),
-            &self.companion_profile_id,
-            env!("CARGO_PKG_VERSION"),
-        )
-        .await
-        .map_err(|error| AndroidClientError::message(error.to_string()))?;
-        let port = server.local_addr().port();
-        let shutdown = CancellationToken::new();
-        let task_shutdown = shutdown.clone();
-        let task = tokio::spawn(server.serve(task_shutdown));
-        *active = Some(AndroidCompanionRuntime {
-            port,
-            shutdown,
-            task,
-        });
-        Ok(port)
+        self.start_chromeos_companion_on(None).await
     }
 
     pub async fn stop_chromeos_companion(&self) -> Result<(), AndroidClientError> {
@@ -733,6 +703,60 @@ impl AndroidApplicationClient {
             .await
             .map_err(|error| AndroidClientError::message(error.to_string()))?
             .map_err(|error| AndroidClientError::message(error.to_string()))
+    }
+}
+
+impl AndroidApplicationClient {
+    async fn start_chromeos_companion_on(
+        &self,
+        bind_address: Option<Ipv4Addr>,
+    ) -> Result<u16, AndroidClientError> {
+        self.ensure_running()?;
+        let mut active = self.companion.lock().await;
+        if active
+            .as_ref()
+            .is_some_and(|runtime| !runtime.task.is_finished())
+        {
+            return Ok(active.as_ref().expect("active companion").port);
+        }
+        if let Some(previous) = active.take() {
+            previous.shutdown.cancel();
+            let _ = previous.task.await;
+        }
+        let server = match bind_address {
+            Some(bind_address) => {
+                rstorrent_gateway::bind_companion_on(
+                    bind_address,
+                    self.companion_pairings.clone(),
+                    self.companion_platform.clone(),
+                    self.service.clone(),
+                    &self.companion_profile_id,
+                    env!("CARGO_PKG_VERSION"),
+                )
+                .await
+            }
+            None => {
+                rstorrent_gateway::bind_companion(
+                    self.companion_pairings.clone(),
+                    self.companion_platform.clone(),
+                    self.service.clone(),
+                    &self.companion_profile_id,
+                    env!("CARGO_PKG_VERSION"),
+                )
+                .await
+            }
+        }
+        .map_err(|error| AndroidClientError::message(error.to_string()))?;
+        let port = server.local_addr().port();
+        let shutdown = CancellationToken::new();
+        let task_shutdown = shutdown.clone();
+        let task = tokio::spawn(server.serve(task_shutdown));
+        *active = Some(AndroidCompanionRuntime {
+            port,
+            shutdown,
+            task,
+        });
+        Ok(port)
     }
 }
 
@@ -2085,7 +2109,7 @@ mod tests {
         .await
         .expect("open product application");
         let port = client
-            .start_chromeos_companion()
+            .start_chromeos_companion_on(Some(Ipv4Addr::LOCALHOST))
             .await
             .expect("start companion");
         assert!(rstorrent_gateway::ANDROID_COMPANION_PORTS.contains(&port));

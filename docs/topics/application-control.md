@@ -266,8 +266,8 @@ Android remains authoritative for URI/grant acquisition, repair, and release.
 Root lifecycle therefore needs a joined platform handshake and crash-recovery
 journal, but no SAF locator becomes a command or application frame. Physical
 two-root binding, repair, restart, Compose/React convergence, and detached
-transfer pass; the separate ChromeOS listener remains release-blocked by
-same-LAN reachability.
+transfer pass. The separate ChromeOS listener now binds only to ARC's fixed
+guest address; ChromeOS extension connection and same-LAN refusal pass.
 
 Tactical `062` keeps publication naming behind this boundary. Verified
 metainfo and the selected root resolve a durable relative publication

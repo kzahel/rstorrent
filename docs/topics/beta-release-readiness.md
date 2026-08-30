@@ -592,7 +592,7 @@ is still pending and is not the compatibility oracle.
   and retains only one service-owned partial CPU wake lock. A physical API 37
   device proves persistence, acquisition through screen-off Dozing, absence of
   a Wi-Fi lock, service-stop release, and exact data/root cleanup.
-- [ ] **AND-008 — Qualify ChromeOS Android extension control.** Tactical `194`
+- [x] **AND-008 — Qualify ChromeOS Android extension control.** Tactical `194`
   carries the release-built shared React presentation through explicit
   Android-approved pairing to the one foreground-service application/engine/
   profile owner. Physical ChromeOS 150 now passes pairing, identity, packaged
@@ -600,14 +600,12 @@ is still pending and is not the compatibility oracle.
   current/default future binding, referenced-root rejection, independent grant
   loss/repair, restart persistence, local `.torrent` intake, two controlled
   root-bound transfers, a detached 4 MiB transfer, reconnect, and exact
-  cleanup without exposing a URI or descriptor. It remains blocked because
-  ChromeOS forwards the Android wildcard listener through the Chromebook's
-  Wi-Fi address: another LAN device reached the real hello route by supplying
-  the expected Host and extension Origin. Header admission cannot make a
-  cleartext bearer same-device-only. A non-LAN-reachable OS transport decision
-  and a repeat of the physical rejection/shutdown matrix are required. This
-  blocks only the advertised extension-controlled Android ChromeOS lane;
-  Android-through-Compose remains a separate supported choice.
+  cleanup without exposing a URI or descriptor. The product listener now binds
+  only to ARC's fixed guest address. The exact extension connects from ChromeOS,
+  while the Chromebook Wi-Fi address refuses raw TCP and the formerly
+  successful spoofed-Host/Origin request from another LAN device. Shutdown,
+  credential removal, uninstall, and post-cleanup refusal pass. Android-through-
+  Compose remains a separate supported choice.
 - [ ] **AND-009 — Add background completion and actionable failure
   notifications.** Current Android has the required foreground-service status
   but not JSTorrent-shaped edge-triggered completion or fatal/storage-repair
@@ -806,7 +804,7 @@ concurrently when directed, without demoting other active work.
     enabled healthy current-host x86_64 service campaign pass. No public
     publication, unattended update, system-wide service, firewall change, or
     Raspberry Pi mutation occurred. Tactical `158` remains active.
-20. **Blocked — Tactical `194`: ChromeOS Android extension control.** Preserve
+20. **Complete — Tactical `194`: ChromeOS Android extension control.** Preserve
     the JSTorrent companion user journey without its extension-owned engine or
     raw IO daemon: package the shared React UI in the beta extension, pair it
     explicitly over the same-device ARC boundary, and attach it to the one
@@ -814,11 +812,11 @@ concurrently when directed, without demoting other active work.
     through Android's SAF picker and retain older grants for their bound
     torrents when a new root becomes current. Physical cold launch, pairing,
     coexistence, two-root lifecycle, repair, detached transfer, reconnect, and
-    cleanup pass. ChromeOS 150 exposes the wildcard Android listener through
-    Wi-Fi, so same-device routing isolation fails and a different OS transport
-    decision is required. Store publication, production JSTorrent extension
-    changes, state import, media, notifications, and dynamic network policy
-    remain outside the slice.
+    cleanup pass. The companion is fixed to ARC's guest address; ChromeOS
+    connects through ARC while the Chromebook Wi-Fi address refuses the same
+    port and the formerly successful spoofed-Host/Origin request. Store
+    publication, production JSTorrent extension changes, state import, media,
+    notifications, and dynamic network policy remain outside the slice.
 
 Each implementation item requires its own bounded tactical. These status
 classifications are not authorization to tag, publish, alter production

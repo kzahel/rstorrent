@@ -1,16 +1,15 @@
 # Tactical 194: ChromeOS Android Extension Control And Retained SAF Roots
 
-Status: **Blocked on physical same-LAN isolation as of 2026-08-30.** Explicit
-maintainer direction selects a focused Android release-parity campaign against
-current JSTorrent Android and makes ChromeOS companion presentation the first
-migration-critical slice. Implementation, packaging, retained-root, pairing,
-coexistence, and detached-transfer evidence have landed, but ChromeOS forwards
-the Android wildcard listener through the Chromebook's Wi-Fi address. The
-cleartext route is therefore not releaseable under this tactical's accepted
-same-device boundary. This tactical authorizes design and implementation in
-the repository, but it does not authorize Chrome Web Store or Google Play
-publication, production JSTorrent extension mutation, release signing,
-legacy-profile import, or silently widening the companion into a LAN API.
+Status: **Complete as of 2026-08-30.** Explicit maintainer direction selected a
+focused Android release-parity campaign against current JSTorrent Android and
+made ChromeOS companion presentation the first migration-critical slice. The
+implementation, packaging, retained-root, pairing, coexistence, detached-
+transfer, and same-device isolation gates pass. Android now binds the companion
+only to ARC's fixed guest address; the exact extension remains reachable from
+ChromeOS while the Chromebook Wi-Fi address refuses the same port. This
+tactical does not authorize Chrome Web Store or Google Play publication,
+production JSTorrent extension mutation, release signing, legacy-profile
+import, or silently widening the companion into a LAN API.
 
 Topics:
 [`product-surfaces-and-migration`](../topics/product-surfaces-and-migration.md),
@@ -696,16 +695,61 @@ not supply the selected same-device transport boundary: those headers are
 caller-controlled, and a paired bearer would cross a LAN-reachable cleartext
 listener.
 
-Testing stopped at the tactical's escalation boundary. The app was
-force-stopped immediately and Wi-Fi port 3030 then refused connections. The
-Android companion credential key was removed from exact extension storage,
+The original physical run stopped at the tactical's escalation boundary. The
+app was force-stopped immediately and Wi-Fi port 3030 then refused connections.
+The Android companion credential key was removed from exact extension storage,
 the test APK was uninstalled, all ADB reverses and SSH fixture forwards were
 closed, controlled payloads/root folders/staged APKs/torrents were removed,
 power policy was restored, and the Wi-Fi port remained refused. The generated
 local fixture directory and screenshots were also deleted. These artifacts
 are not recoverable, but every removed item was created by this controlled
-run. A maintainer decision on a non-LAN-reachable ChromeOS/ARC transport is now
-required before this tactical can resume or `AND-008` can pass.
+run. A maintainer decision on a non-LAN-reachable ChromeOS/ARC transport was
+then required before this tactical could resume or `AND-008` could pass.
+
+### ARC-only resolution and closeout
+
+Maintainer direction selected one limited follow-up: test whether the Android
+listener can bind directly to ARC's fixed guest address before considering any
+protocol or cryptographic redesign. A disposable physical A/B first established
+the routing fact. ChromeOS reached an Android listener bound to
+`100.115.92.2:39194`, while another device on the same Wi-Fi received connection
+refused; an adjacent wildcard listener on port `39195` was reachable from both.
+Both diagnostic listeners were then removed.
+
+The product listener now binds each fixed companion port only to
+`100.115.92.2`. The Android product call has no configurable address or
+wildcard fallback. A hidden address-injection seam exists only so host-side
+integration tests can retain the shared-owner lifecycle check on loopback. A
+gateway regression test fixes the production address and all five port socket
+addresses.
+
+The follow-up automated gate passed:
+
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace -- -D warnings`;
+- `cargo test --workspace`;
+- the focused gateway production-address and Android shared-owner tests;
+- `clients/android/build.sh`, including both release native ABIs, UniFFI
+  regeneration, debug APK assembly, and Android unit tests; and
+- `(cd clients/android && ./gradlew lintDebug)`.
+
+On the same physical Chromebook, `chromeos doctor` reported ten passing checks
+and no failures; missing SSH autostart and a local DevTools tunnel were
+non-blocking warnings. The rebuilt APK and exact installed beta extension
+completed Android launch, explicit approval, authenticated connection, and the
+packaged React application. Android `ss` showed only
+`100.115.92.2:3030` for the companion. ChromeOS received the real bounded hello
+response at that ARC address. From the same external Mac that had previously
+reached the wildcard listener, both raw TCP to `192.168.1.106:3030` and the
+formerly successful request with spoofed expected Host and extension Origin
+failed to connect. After force-stop/uninstall, the Wi-Fi port still refused.
+
+Closeout removed the exact extension credential, test APK/application state,
+diagnostic listeners, test tabs, staged APK, screenshots, and temporary SSH
+tunnel, and restored default ChromeOS power policy. The extension installation
+itself was retained. This closes the same-device transport blocker and
+`AND-008`. Completion/error notifications and metered/VPN enforcement remain
+the next core Android release slices.
 
 ## Non-Goals
 

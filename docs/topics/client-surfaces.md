@@ -23,10 +23,9 @@ engine, profile, and SAF owner while the beta extension packages the shared
 React UI as a detachable authenticated presentation. The same React folder
 action used by Crostini delegates to Android's SAF picker; a new current root
 does not discard grants required by older torrents. It does not recreate
-JSTorrent's extension-owned engine/raw IO daemon. Deterministic, Android, and
-the retained-root/coexistence/detached-transfer physical gates pass, but the
-presentation is release-blocked because ChromeOS exposes the wildcard Android
-listener through Wi-Fi. A non-LAN-reachable OS transport remains required.
+JSTorrent's extension-owned engine/raw IO daemon. Deterministic, Android,
+retained-root/coexistence/detached-transfer, exact ARC binding, and physical
+same-LAN rejection gates pass.
 
 Completed Tactical
 [`190`](../tactical/190-opaque-wasm-relay-foundation.md) adds no selectable
@@ -995,10 +994,10 @@ surface for authorization inspection and revocation. The public client/relay
 are active as an unadvertised canary, while support remains with the active
 deployment tactical; dynamic Android network controls and broader desktop
 lifecycle work remain later capability boundaries.
-Blocked Tactical `194` now owns only the non-LAN-reachable ChromeOS Android
-extension transport; the retained-root SAF workflow is implemented and
-physically proven. Its eventual completion must not be described as full
-JSTorrent Android feature parity.
+Completed Tactical `194` owns the bounded same-device ChromeOS Android
+extension transport and retained-root SAF workflow. Its exact ARC-address bind,
+ChromeOS extension connection, and same-LAN refusal are physically proven. Its
+completion must not be described as full JSTorrent Android feature parity.
 Signed
 distribution, updating, CI, product identity, and beta MVP triage are tracked
 in [`beta-release-readiness.md`](beta-release-readiness.md).

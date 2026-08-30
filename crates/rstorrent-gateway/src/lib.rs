@@ -17,7 +17,7 @@ pub use chromeos_companion::{
     CompanionPairingOwner, CompanionPairingPending, CompanionPairingPoll,
     CompanionPairingPollStatus, CompanionPlatformError, CompanionPlatformOwner,
     CompanionRootRemovalRequest, CompanionRootRequest, CompanionServer,
-    PRODUCTION_EXTENSION_ORIGIN, bind_companion,
+    PRODUCTION_EXTENSION_ORIGIN, bind_companion, bind_companion_on,
 };
 pub use web_auth::{
     AuthorizedWebSession, INITIAL_WINDOW_SECONDS, IssuedWebSession, PairingTicket, WebAccessPolicy,

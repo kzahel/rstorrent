@@ -27,6 +27,7 @@ use super::{
 use rstorrent_session::{RequestEnvelope, ResponseEnvelope, StorageRootSnapshot};
 
 pub const ARC_COMPANION_HOST: &str = "100.115.92.2";
+const ARC_COMPANION_ADDRESS: Ipv4Addr = Ipv4Addr::new(100, 115, 92, 2);
 pub const ANDROID_COMPANION_PORTS: [u16; 5] = [3030, 3031, 3032, 3033, 3034];
 pub const BETA_EXTENSION_ORIGIN: &str = "chrome-extension://gcgoepclopkgijmclmlheafaglmbjlcc";
 pub const PRODUCTION_EXTENSION_ORIGIN: &str = "chrome-extension://dbokmlpefliilbjldladbimlcfgbolhk";
@@ -1061,7 +1062,34 @@ impl CompanionServer {
     }
 }
 
+/// Binds the Android companion only to ARC's fixed guest address.
+///
+/// This is a same-device transport boundary: product callers must never widen
+/// it to a wildcard or LAN-reachable listener.
 pub async fn bind_companion(
+    pairings: Arc<CompanionPairingOwner>,
+    platform: Arc<CompanionPlatformOwner>,
+    service: Arc<tokio::sync::Mutex<rstorrent_session::ApplicationService>>,
+    profile_id: &str,
+    product_version: &str,
+) -> Result<CompanionServer, GatewayError> {
+    bind_companion_on(
+        ARC_COMPANION_ADDRESS,
+        pairings,
+        platform,
+        service,
+        profile_id,
+        product_version,
+    )
+    .await
+}
+
+/// Address-injection seam for deterministic host-side integration tests.
+/// Product callers must use [`bind_companion`], which is fixed to the ARC
+/// interface.
+#[doc(hidden)]
+pub async fn bind_companion_on(
+    bind_address: Ipv4Addr,
     pairings: Arc<CompanionPairingOwner>,
     platform: Arc<CompanionPlatformOwner>,
     service: Arc<tokio::sync::Mutex<rstorrent_session::ApplicationService>>,
@@ -1071,7 +1099,7 @@ pub async fn bind_companion(
     let mut last_error = None;
     let mut bound = None;
     for port in ANDROID_COMPANION_PORTS {
-        match tokio::net::TcpListener::bind(SocketAddr::from((Ipv4Addr::UNSPECIFIED, port))).await {
+        match tokio::net::TcpListener::bind(SocketAddr::from((bind_address, port))).await {
             Ok(listener) => {
                 bound = Some((port, listener));
                 break;
@@ -1404,6 +1432,20 @@ mod tests {
     use super::*;
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn production_companion_address_is_the_arc_interface() {
+        assert_eq!(ARC_COMPANION_ADDRESS.to_string(), ARC_COMPANION_HOST);
+        assert!(!ARC_COMPANION_ADDRESS.is_unspecified());
+        for port in ANDROID_COMPANION_PORTS {
+            assert_eq!(
+                SocketAddr::from((ARC_COMPANION_ADDRESS, port)),
+                format!("{ARC_COMPANION_HOST}:{port}")
+                    .parse()
+                    .expect("ARC companion socket"),
+            );
+        }
+    }
 
     fn owner(label: &str) -> (Arc<CompanionPairingOwner>, std::path::PathBuf) {
         let sequence = TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
