@@ -85,6 +85,7 @@ fn classify_session_socket_bind_failure(error: &SessionSocketError) -> Option<Li
 pub(crate) struct SessionNetworkConfig {
     pub settings: ClientSettings,
     pub network: NetworkConfig,
+    pub network_cancellation: CancellationToken,
     pub dht: DhtConfig,
     pub initial_dht_snapshot: Option<DhtSnapshot>,
     pub byte_metric_sink: Arc<dyn ByteMetricSink>,
@@ -309,6 +310,7 @@ struct SessionNetworkOwner {
     dht_bind_address: std::net::SocketAddr,
     address_families: AddressFamilyPolicy,
     incoming_handshake_timeout: Duration,
+    network_cancellation: CancellationToken,
     advertised_endpoint: AdvertisedPeerEndpointSelector,
     peer_budget: PeerBudget,
     mse_dh: MseDhWorkOwner,
@@ -338,6 +340,7 @@ impl SessionNetworkRuntime {
         let SessionNetworkConfig {
             settings,
             mut network,
+            network_cancellation,
             mut dht,
             initial_dht_snapshot,
             byte_metric_sink,
@@ -350,6 +353,11 @@ impl SessionNetworkRuntime {
             peer_budget_max_open_files_for_testing,
             peer_transport_policy,
         } = config;
+        if network_cancellation.is_cancelled() {
+            return Err(SessionNetworkError::Configuration(
+                "network prerequisite generation is closed".to_owned(),
+            ));
+        }
         let requested_address_families = if settings.ipv6_enabled {
             AddressFamilyPolicy::dual_stack()
         } else {
@@ -397,6 +405,11 @@ impl SessionNetworkRuntime {
         .with_address_families(requested_address_families);
         let mut listener_failure = None;
         let socket_set = SessionSocketSet::bind(socket_config).await?;
+        if network_cancellation.is_cancelled() {
+            return Err(SessionNetworkError::Configuration(
+                "network prerequisite generation closed during socket bind".to_owned(),
+            ));
+        }
         let (ipv4, ipv6) = socket_set.into_families();
         let ipv6_unavailable = ipv6.error().map(ToString::to_string);
         let address_families = if requested_address_families.ipv6_enabled() && ipv6.is_bound() {
@@ -436,6 +449,11 @@ impl SessionNetworkRuntime {
                 ));
             }
         };
+        if network_cancellation.is_cancelled() {
+            return Err(SessionNetworkError::Configuration(
+                "network prerequisite generation closed during fallback bind".to_owned(),
+            ));
+        }
         let tcp_peer_address = ipv4.tcp_peer_address();
         let udp_address = ipv4.udp_address();
         let coordinated_with_tcp = ipv4.ports_match();
@@ -444,12 +462,18 @@ impl SessionNetworkRuntime {
             let (listener, udp) = ipv6.into_parts();
             (listener, Some(udp))
         });
-        let (mut session_udp, dht_transport) = SessionUdpService::start(udp_socket)?;
+        let (mut session_udp, dht_transport) = SessionUdpService::start_with_cancellation(
+            udp_socket,
+            network_cancellation.child_token(),
+        )?;
         if let Some(ipv6_udp) = ipv6_udp {
             session_udp.replace_socket(ipv6_udp).await?;
         }
         let session_udp_handle = session_udp.handle();
-        let incoming_runtime = match IncomingPeerRuntime::start(incoming_config) {
+        let incoming_runtime = match IncomingPeerRuntime::start_with_cancellation(
+            incoming_config,
+            network_cancellation.child_token(),
+        ) {
             Ok(runtime) => runtime,
             Err(error) => {
                 drop(dht_transport);
@@ -539,7 +563,13 @@ impl SessionNetworkRuntime {
             }
         };
         let utp_handle = session_utp.as_ref().map(SessionUtpPeerService::handle);
-        let dht = match DhtService::start_with_transport(dht, dht_transport).await {
+        let dht = match DhtService::start_with_transport_and_cancellation(
+            dht,
+            dht_transport,
+            network_cancellation.child_token(),
+        )
+        .await
+        {
             Ok(dht) => dht,
             Err(error) => {
                 if let Some(acceptor) = incoming_acceptor.take() {
@@ -570,11 +600,12 @@ impl SessionNetworkRuntime {
             },
         ));
         let discovery_advertisement =
-            DiscoveryAdvertisementService::start_with_https_authentication(
+            DiscoveryAdvertisementService::start_with_https_authentication_and_cancellation(
                 network,
                 advertised_endpoint.subscribe_wire(),
                 dht.handle(),
                 settings.tracker_https_authentication(),
+                network_cancellation.child_token(),
             )?;
         let initial_tracker_https_authentication = discovery_advertisement
             .initial_https_authentication()
@@ -634,6 +665,7 @@ impl SessionNetworkRuntime {
             dht_bind_address,
             address_families,
             incoming_handshake_timeout,
+            network_cancellation: network_cancellation.clone(),
             advertised_endpoint: advertised_endpoint.clone(),
             peer_budget: peer_budget.clone(),
             mse_dh: mse_dh.clone(),
@@ -701,7 +733,7 @@ impl SessionNetworkRuntime {
             listener_active,
             pending_owner: Some(pending_owner),
             settings_sender: None,
-            reconciliation_cancellation: CancellationToken::new(),
+            reconciliation_cancellation: network_cancellation.child_token(),
             reconciliation_task: None,
             convergence: Arc::new(Mutex::new(convergence)),
             initial_mapping_generation,
@@ -872,6 +904,7 @@ impl SessionNetworkRuntime {
                     .and_then(ipv6_acceptor_address),
                 blocks: ReachabilityBlocks::default(),
                 evidence: owner.reachability_evidence.clone(),
+                cancellation: owner.network_cancellation.clone(),
             },
             views.clone(),
             owner.advertised_endpoint.clone(),
@@ -1584,6 +1617,7 @@ impl SessionNetworkOwner {
                         pinhole: self.uncertain_pinhole.is_some(),
                     },
                     evidence: self.reachability_evidence.clone(),
+                    cancellation: self.network_cancellation.clone(),
                 },
                 views.clone(),
                 self.advertised_endpoint.clone(),
@@ -1658,6 +1692,7 @@ impl SessionNetworkOwner {
                                 pinhole: self.uncertain_pinhole.is_some(),
                             },
                             evidence: self.reachability_evidence.clone(),
+                            cancellation: self.network_cancellation.clone(),
                         },
                         views.clone(),
                         self.advertised_endpoint.clone(),
@@ -2131,6 +2166,7 @@ impl SessionNetworkOwner {
                     pinhole: pinhole_blocked,
                 },
                 evidence: self.reachability_evidence.clone(),
+                cancellation: self.network_cancellation.clone(),
             },
             views.clone(),
             self.advertised_endpoint.clone(),

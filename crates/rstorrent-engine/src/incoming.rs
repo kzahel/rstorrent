@@ -1494,6 +1494,13 @@ pub struct IncomingPeerRuntime {
 
 impl IncomingPeerRuntime {
     pub fn start(config: IncomingPeerServiceConfig) -> Result<Self, IncomingPeerError> {
+        Self::start_with_cancellation(config, CancellationToken::new())
+    }
+
+    pub fn start_with_cancellation(
+        config: IncomingPeerServiceConfig,
+        cancellation: CancellationToken,
+    ) -> Result<Self, IncomingPeerError> {
         validate_service_config(&config)?;
         let upload_coordinator = UploadCoordinator::new(config.upload_scheduler)
             .map_err(IncomingPeerError::InvalidScheduler)?;
@@ -1501,7 +1508,6 @@ impl IncomingPeerRuntime {
             .upload_scheduler
             .unchoke_interval
             .min(config.upload_scheduler.optimistic_interval);
-        let cancellation = CancellationToken::new();
         let shared = Arc::new(Shared {
             cancellation: cancellation.clone(),
             listener: Mutex::new(IncomingListenerObservation {
@@ -1563,7 +1569,7 @@ impl IncomingPeerRuntime {
                 source,
             })?;
         validate_supplied_listener(bootstrap, listen_address)?;
-        let cancellation = CancellationToken::new();
+        let cancellation = self.cancellation.child_token();
         let task = tokio::spawn(run_accept_loop(
             listener,
             handshake_timeout,

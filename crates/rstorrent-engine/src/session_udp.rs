@@ -222,6 +222,7 @@ struct SessionUdpEgress {
     socket: Arc<UdpSocket>,
     exclusion: Mutex<()>,
     active: AtomicBool,
+    cancellation: CancellationToken,
     ipv4_fragmentation_protection: Ipv4FragmentationProtectionStatus,
     repair_sender: watch::Sender<Option<SessionUdpRepairRequest>>,
     stats: Arc<SessionUdpStats>,
@@ -249,6 +250,7 @@ impl SessionUdpEgress {
         socket: Arc<UdpSocket>,
         stats: Arc<SessionUdpStats>,
         repair_sender: watch::Sender<Option<SessionUdpRepairRequest>>,
+        cancellation: CancellationToken,
     ) -> Result<Self, SessionUdpError> {
         let local_address = socket.local_addr().map_err(SessionUdpError::Io)?;
         let ipv4_fragmentation_protection = if family == AddressFamily::Ipv4 {
@@ -263,6 +265,7 @@ impl SessionUdpEgress {
             socket,
             exclusion: Mutex::new(()),
             active: AtomicBool::new(true),
+            cancellation,
             ipv4_fragmentation_protection,
             repair_sender,
             stats,
@@ -275,14 +278,23 @@ impl SessionUdpEgress {
         target: SocketAddr,
     ) -> Result<Result<usize, io::Error>, SessionUdpEgressError> {
         let _guard = self.lock().await;
-        if !self.active.load(Ordering::Acquire) {
+        if self.cancellation.is_cancelled() || !self.active.load(Ordering::Acquire) {
             self.stats.record_retired_egress_rejection();
             return Err(SessionUdpEgressError::Retired {
                 family: self.family,
                 generation: self.generation,
             });
         }
-        let result = self.socket.send_to(bytes, target).await;
+        let result = tokio::select! {
+            biased;
+            _ = self.cancellation.cancelled() => {
+                return Err(SessionUdpEgressError::Retired {
+                    family: self.family,
+                    generation: self.generation,
+                });
+            }
+            result = self.socket.send_to(bytes, target) => result,
+        };
         if let Ok(length) = result {
             self.stats.record_datagram_sent(length);
         }
@@ -302,7 +314,7 @@ impl SessionUdpEgress {
                 .map(|result| result.map(|length| (length, DatagramSendResult::Sent)));
         }
         let _guard = self.lock().await;
-        if !self.active.load(Ordering::Acquire) {
+        if self.cancellation.is_cancelled() || !self.active.load(Ordering::Acquire) {
             self.stats.record_retired_egress_rejection();
             return Err(SessionUdpEgressError::Retired {
                 family: self.family,
@@ -886,6 +898,7 @@ pub struct SessionUdpService {
     generation_sender: watch::Sender<SessionUdpGenerations>,
     repair_sender: watch::Sender<Option<SessionUdpRepairRequest>>,
     stats: Arc<SessionUdpStats>,
+    cancellation: CancellationToken,
 }
 
 #[derive(Debug)]
@@ -916,6 +929,13 @@ impl Drop for SessionUdpGeneration {
 
 impl SessionUdpService {
     pub fn start(socket: UdpSocket) -> Result<(Self, SessionUdpTransport), SessionUdpError> {
+        Self::start_with_cancellation(socket, CancellationToken::new())
+    }
+
+    pub fn start_with_cancellation(
+        socket: UdpSocket,
+        cancellation: CancellationToken,
+    ) -> Result<(Self, SessionUdpTransport), SessionUdpError> {
         let local_address = socket.local_addr().map_err(SessionUdpError::Io)?;
         let family = AddressFamily::of(local_address.ip());
         let socket = Arc::new(socket);
@@ -930,6 +950,7 @@ impl SessionUdpService {
             socket.clone(),
             stats.clone(),
             repair_sender.clone(),
+            cancellation.child_token(),
         )?);
         let current = Arc::new(RwLock::new(SessionUdpCurrent {
             families: BTreeMap::from([(
@@ -953,6 +974,7 @@ impl SessionUdpService {
                 ingress_sender.clone(),
                 utp_ingress_sender.clone(),
                 stats.clone(),
+                cancellation.child_token(),
             ),
         )]);
         let handle = SessionUdpHandle {
@@ -972,6 +994,7 @@ impl SessionUdpService {
                 generation_sender,
                 repair_sender,
                 stats: stats.clone(),
+                cancellation,
             },
             SessionUdpTransport {
                 current,
@@ -1082,6 +1105,7 @@ impl SessionUdpService {
             socket.clone(),
             self.stats.clone(),
             self.repair_sender.clone(),
+            self.cancellation.child_token(),
         )?);
         let candidate = start_generation(
             generation,
@@ -1090,6 +1114,7 @@ impl SessionUdpService {
             self.ingress_sender.clone(),
             self.utp_ingress_sender.clone(),
             self.stats.clone(),
+            self.cancellation.child_token(),
         );
         let previous_egress = self
             .handle
@@ -1190,6 +1215,7 @@ impl SessionUdpService {
 
 impl Drop for SessionUdpService {
     fn drop(&mut self) {
+        self.cancellation.cancel();
         self.active.clear();
     }
 }
@@ -1201,8 +1227,8 @@ fn start_generation(
     ingress_sender: mpsc::Sender<SessionUdpIngress>,
     utp_ingress_sender: mpsc::Sender<SessionUtpIngress>,
     stats: Arc<SessionUdpStats>,
+    cancellation: CancellationToken,
 ) -> SessionUdpGeneration {
-    let cancellation = CancellationToken::new();
     let tasks = stats.tasks.fetch_add(1, Ordering::AcqRel).saturating_add(1);
     stats.task_high_water.fetch_max(tasks, Ordering::AcqRel);
     let task = tokio::spawn(run_receive_loop(
@@ -1417,6 +1443,38 @@ mod tests {
         assert_eq!(terminal.datagrams_received, 1);
         assert_eq!(terminal.datagrams_dropped, 0);
         assert_eq!(terminal.egress_waiters, 0);
+    }
+
+    #[tokio::test]
+    async fn network_generation_cancellation_fences_udp_egress() {
+        let cancellation = CancellationToken::new();
+        let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let (service, transport) =
+            SessionUdpService::start_with_cancellation(socket, cancellation.clone()).unwrap();
+        let remote = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let target = remote.local_addr().unwrap();
+
+        transport.send_to(b"before", target).await.unwrap();
+        let mut bytes = [0_u8; 16];
+        let (length, _) = timeout(Duration::from_secs(1), remote.recv_from(&mut bytes))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(&bytes[..length], b"before");
+
+        cancellation.cancel();
+        assert!(matches!(
+            transport.send_to(b"after", target).await,
+            Err(SessionUdpError::RetiredGeneration { .. })
+        ));
+        assert!(
+            timeout(Duration::from_millis(100), remote.recv_from(&mut bytes))
+                .await
+                .is_err()
+        );
+        let terminal = service.shutdown().await.unwrap();
+        assert_eq!(terminal.tasks, 0);
+        assert_eq!(terminal.maximum_datagram_bytes_sent, b"before".len());
     }
 
     #[tokio::test]

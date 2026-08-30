@@ -383,12 +383,47 @@ impl DiscoveryAdvertisementService {
         )
     }
 
+    pub fn start_with_https_authentication_and_cancellation(
+        network: NetworkConfig,
+        endpoint: watch::Receiver<PeerAdvertisementEndpoint>,
+        dht: DhtHandle,
+        https_authentication: TrackerHttpsAuthentication,
+        cancellation: CancellationToken,
+    ) -> Result<Self, DiscoveryAdvertisementError> {
+        Self::start_with_http_client_factory_and_cancellation(
+            network,
+            endpoint,
+            dht,
+            https_authentication,
+            HttpTrackerClients::new_with_authentication,
+            cancellation,
+        )
+    }
+
     fn start_with_http_client_factory(
         network: NetworkConfig,
         endpoint: watch::Receiver<PeerAdvertisementEndpoint>,
         dht: DhtHandle,
         https_authentication: TrackerHttpsAuthentication,
         http_client_factory: HttpTrackerClientFactory,
+    ) -> Result<Self, DiscoveryAdvertisementError> {
+        Self::start_with_http_client_factory_and_cancellation(
+            network,
+            endpoint,
+            dht,
+            https_authentication,
+            http_client_factory,
+            CancellationToken::new(),
+        )
+    }
+
+    fn start_with_http_client_factory_and_cancellation(
+        network: NetworkConfig,
+        endpoint: watch::Receiver<PeerAdvertisementEndpoint>,
+        dht: DhtHandle,
+        https_authentication: TrackerHttpsAuthentication,
+        http_client_factory: HttpTrackerClientFactory,
+        cancellation: CancellationToken,
     ) -> Result<Self, DiscoveryAdvertisementError> {
         let (http_clients, initial_https_authentication, initial_https_error) =
             match http_client_factory(network.policy, https_authentication) {
@@ -427,6 +462,7 @@ impl DiscoveryAdvertisementService {
                 http_clients: Arc::new(http_clients),
                 desired_https_authentication: https_authentication,
                 http_client_factory,
+                cancellation,
             },
             receiver,
             queued,
@@ -580,6 +616,7 @@ struct TorrentEntry {
     control: DownloadControl,
     lanes: Vec<DiscoveryAdvertisementLane>,
     tracker_cancellation: CancellationToken,
+    network_cancellation: CancellationToken,
     schedule_epoch: u64,
     removal: Option<Removal>,
     pending_replacement: Option<DiscoveryAdvertisementRegistration>,
@@ -606,14 +643,16 @@ struct DiscoveryAdvertisementRuntime {
     http_clients: Arc<HttpTrackerClients>,
     desired_https_authentication: TrackerHttpsAuthentication,
     http_client_factory: HttpTrackerClientFactory,
+    cancellation: CancellationToken,
 }
 
 impl TorrentEntry {
     fn new(
         registration: DiscoveryAdvertisementRegistration,
         https_authentication: TrackerHttpsAuthentication,
+        network_cancellation: CancellationToken,
     ) -> Result<Self, DiscoveryAdvertisementError> {
-        let control = DownloadControl::new();
+        let control = DownloadControl::new_with_cancellation(network_cancellation.child_token());
         control.set_activity_sink(registration.activity_sink.clone());
         let mut lanes = Vec::with_capacity(registration.info_hashes.identity_count());
         for swarm_key in registration.swarm_keys() {
@@ -647,7 +686,8 @@ impl TorrentEntry {
             registration,
             control,
             lanes,
-            tracker_cancellation: CancellationToken::new(),
+            tracker_cancellation: network_cancellation.child_token(),
+            network_cancellation,
             schedule_epoch: 1,
             removal: None,
             pending_replacement: None,
@@ -686,7 +726,7 @@ impl TorrentEntry {
     ) {
         self.registration.desired_running = false;
         self.tracker_cancellation.cancel();
-        self.tracker_cancellation = CancellationToken::new();
+        self.tracker_cancellation = self.network_cancellation.child_token();
         self.schedule_epoch = self.schedule_epoch.saturating_add(1);
         self.dht_epoch = self.dht_epoch.saturating_add(1);
         for lane in &self.lanes {
@@ -764,6 +804,7 @@ async fn run_service(
         mut http_clients,
         mut desired_https_authentication,
         http_client_factory,
+        cancellation,
     } = runtime;
     let mut endpoint = *endpoint_receiver.borrow_and_update();
     let mut entries = BTreeMap::<[u8; 20], TorrentEntry>::new();
@@ -777,6 +818,10 @@ async fn run_service(
     let mut shutdown_deadline = None;
 
     loop {
+        if cancellation.is_cancelled() {
+            entries.clear();
+            break;
+        }
         finish_stopped_entries(
             &mut entries,
             shutdown_deadline,
@@ -823,6 +868,11 @@ async fn run_service(
 
         tokio::select! {
             biased;
+            _ = cancellation.cancelled(), if !shutting_down => {
+                shutting_down = true;
+                immediate_shutdown = true;
+                entries.clear();
+            }
             command = receiver.recv(), if !shutting_down => {
                 let Some(command) = command else {
                     shutting_down = true;
@@ -841,10 +891,11 @@ async fn run_service(
                             .map_err(|error| {
                                 DiscoveryAdvertisementError::Convergence(error.to_string())
                             })?;
-                        let effect = apply_registration(
+                        let effect = apply_registration_with_cancellation(
                             &mut entries,
                             registration,
                             desired_https_authentication,
+                            cancellation.clone(),
                         )?;
                         for swarm_key in effect.cancel_dht {
                             let _ = dht.cancel_lookup(swarm_key.into_bytes()).await;
@@ -1098,10 +1149,25 @@ fn discovery_swarm_keys(entries: &BTreeMap<[u8; 20], TorrentEntry>) -> Vec<Swarm
         .collect()
 }
 
+#[cfg(test)]
 fn apply_registration(
     entries: &mut BTreeMap<[u8; 20], TorrentEntry>,
     registration: DiscoveryAdvertisementRegistration,
     https_authentication: TrackerHttpsAuthentication,
+) -> Result<RegistrationEffect, DiscoveryAdvertisementError> {
+    apply_registration_with_cancellation(
+        entries,
+        registration,
+        https_authentication,
+        CancellationToken::new(),
+    )
+}
+
+fn apply_registration_with_cancellation(
+    entries: &mut BTreeMap<[u8; 20], TorrentEntry>,
+    registration: DiscoveryAdvertisementRegistration,
+    https_authentication: TrackerHttpsAuthentication,
+    network_cancellation: CancellationToken,
 ) -> Result<RegistrationEffect, DiscoveryAdvertisementError> {
     let info_hash = registration.info_hash;
     let private_peers =
@@ -1109,7 +1175,7 @@ fn apply_registration(
     let Some(entry) = entries.get_mut(&registration.info_hash) else {
         entries.insert(
             registration.info_hash,
-            TorrentEntry::new(registration, https_authentication)?,
+            TorrentEntry::new(registration, https_authentication, network_cancellation)?,
         );
         return Ok(RegistrationEffect {
             info_hash,
@@ -1238,9 +1304,10 @@ fn finish_stopped_entries(
             if shutdown_deadline.is_none()
                 && let Some(replacement) = entry.pending_replacement.take()
             {
+                let network_cancellation = entry.network_cancellation.clone();
                 entries.insert(
                     info_hash,
-                    TorrentEntry::new(replacement, https_authentication)?,
+                    TorrentEntry::new(replacement, https_authentication, network_cancellation)?,
                 );
             }
         }

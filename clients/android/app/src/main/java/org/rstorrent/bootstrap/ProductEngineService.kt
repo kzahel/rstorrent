@@ -131,7 +131,7 @@ class ProductEngineService : Service() {
         val networkCallbackRegistered: Boolean,
     )
 
-    private lateinit var client: AndroidApplicationClient
+    @Volatile private lateinit var client: AndroidApplicationClient
     private lateinit var presentationRepository: AndroidPresentationRepository
     private var initializationJob: Job? = null
     private var powerNotificationJob: Job? = null
@@ -210,7 +210,26 @@ class ProductEngineService : Service() {
         val safRegistry = ProductSafRootRegistry.load(this)
         val unmeteredNetworksOnly = ProductNetworkPreference.read(this)
         defaultNetworkObserver =
-            AndroidDefaultNetworkObserver(this, unmeteredNetworksOnly) { networkState ->
+            AndroidDefaultNetworkObserver(this, unmeteredNetworksOnly) observer@{ networkState ->
+                if (
+                    desiredNetworkPrerequisite(networkState) ==
+                        AndroidApplicationNetworkPrerequisite.WAITING_FOR_UNMETERED_NETWORK &&
+                        ::client.isInitialized
+                ) {
+                    runCatching { client.closeNetworkPrerequisite() }.onFailure { error ->
+                        Log.e(TAG, "synchronous network prerequisite close failed", error)
+                        mutableState.update {
+                            it.copy(
+                                network =
+                                    it.network.copy(
+                                        runtimeError = error.message ?: error.toString(),
+                                    ),
+                            )
+                        }
+                        requestStop("network_prerequisite_close_failed")
+                        return@observer
+                    }
+                }
                 mutableState.update {
                     it.copy(
                         network =
@@ -244,7 +263,7 @@ class ProductEngineService : Service() {
                 PlatformTrustBootstrap.ensureInitialized(applicationContext)
                 val profile = File(filesDir, "product-profile")
                 check(profile.mkdirs() || profile.isDirectory)
-                client =
+                val openedClient =
                     AndroidApplicationClient.open(
                         AndroidApplicationConfig(
                             profile.absolutePath,
@@ -260,6 +279,13 @@ class ProductEngineService : Service() {
                             60UL,
                         ),
                     )
+                if (
+                    desiredNetworkPrerequisite(defaultNetworkObserver.snapshot()) ==
+                        AndroidApplicationNetworkPrerequisite.WAITING_FOR_UNMETERED_NETWORK
+                ) {
+                    openedClient.closeNetworkPrerequisite()
+                }
+                client = openedClient
                 networkConvergenceJob =
                     scope.launch {
                         for (ignored in networkConvergenceWake) {

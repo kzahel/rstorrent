@@ -678,6 +678,8 @@ impl ApplicationService {
         let session_network_config = SessionNetworkConfig {
             settings: active_client_settings.clone(),
             network,
+            network_cancellation: network_prerequisite
+                .cancellation_token(initial_network_prerequisite),
             dht: config.dht,
             initial_dht_snapshot,
             byte_metric_sink: speed_recorder.clone(),
@@ -1034,8 +1036,10 @@ impl ApplicationService {
         }
         let snapshot = self.store_mut()?.snapshot()?;
         self.session_network_config.settings = snapshot.client_settings.clone();
-        let mut candidate =
-            SessionNetworkRuntime::start(self.session_network_config.clone()).await?;
+        let mut candidate_config = self.session_network_config.clone();
+        candidate_config.network_cancellation =
+            self.network_prerequisite.cancellation_token(requested);
+        let mut candidate = SessionNetworkRuntime::start(candidate_config).await?;
         if self.network_prerequisite.load() != requested {
             let terminal = candidate
                 .shutdown_for_network_prerequisite(&self.views)
@@ -3808,7 +3812,10 @@ impl ApplicationService {
         torrent_id: &str,
     ) -> Result<(DownloadControl, u64), ApplicationError> {
         let eta_generation = self.views.reserve_eta_generation(torrent_id)?;
-        let control = DownloadControl::new();
+        let control = DownloadControl::new_with_cancellation(
+            self.network_prerequisite
+                .cancellation_token(self.effective_network_prerequisite),
+        );
         let runtime_generation = self
             .torrent_runtimes
             .get(torrent_id)
@@ -6586,7 +6593,7 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use rstorrent_engine::dht::BootstrapNode;
     use rstorrent_engine::peer::{PeerEndpoint, PeerObservation, PeerSource};
@@ -6822,6 +6829,86 @@ mod tests {
         );
 
         application.shutdown().await.expect("shutdown application");
+    }
+
+    #[tokio::test]
+    async fn blocked_network_preserves_add_and_pause_intent() {
+        let root = test_root("network-prerequisite-intent");
+        let configuration = default_config(&root).with_initial_network_prerequisite(
+            ApplicationNetworkPrerequisite::WaitingForUnmeteredNetwork,
+        );
+        let mut store = SessionStore::open(
+            configuration
+                .durable_profile_root()
+                .expect("durable profile root"),
+            &configuration.profile_id,
+            &configuration.storage_roots,
+        )
+        .expect("open blocked intent store");
+        let raw_info = single_file_info("paused.bin", b"paused payload", 14);
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        let torrent_id = add_store_torrent(
+            &mut store,
+            "add-blocked-intent",
+            &super::encode_info_hash(info_hash),
+        );
+        store
+            .record_metadata(&torrent_id, &raw_info)
+            .expect("record blocked intent metadata");
+        drop(store);
+        let mut application = ApplicationService::open(configuration)
+            .await
+            .expect("open blocked intent application");
+        assert!(application.active_download_ids().is_empty());
+        assert!(
+            application
+                .store_mut()
+                .expect("store")
+                .load_resume(&torrent_id)
+                .expect("added blocked torrent")
+                .desired_running
+        );
+
+        application
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "pause-while-network-blocked".to_owned(),
+                expected_revision: None,
+                command: Command::Pause {
+                    torrent_id: torrent_id.clone(),
+                },
+            })
+            .await
+            .expect("pause while blocked");
+        assert!(
+            !application
+                .store_mut()
+                .expect("store")
+                .load_resume(&torrent_id)
+                .expect("paused blocked torrent")
+                .desired_running
+        );
+
+        application
+            .network_prerequisite_handle()
+            .allow()
+            .expect("allow paused blocked application");
+        application
+            .reconcile_network_prerequisite()
+            .await
+            .expect("start owners around paused torrent");
+        assert!(application.active_download_ids().is_empty());
+        assert!(
+            !application
+                .store_mut()
+                .expect("store")
+                .load_resume(&torrent_id)
+                .expect("paused torrent after allow")
+                .desired_running
+        );
+
+        application.shutdown().await.expect("shutdown application");
+        fs::remove_dir_all(root).expect("remove test root");
     }
 
     #[tokio::test]
@@ -8165,6 +8252,317 @@ mod tests {
                 message => panic!("unexpected content message: {message:?}"),
             }
         }
+    }
+
+    async fn read_peer_message_or_closed(
+        stream: &mut TcpStream,
+        decoder: &mut FrameDecoder,
+        pending: &mut std::collections::VecDeque<PeerMessage>,
+    ) -> Option<PeerMessage> {
+        loop {
+            if let Some(message) = pending.pop_front() {
+                return Some(message);
+            }
+            let mut bytes = [0_u8; 1_024];
+            let length = stream.read(&mut bytes).await.expect("read peer message");
+            if length == 0 {
+                return None;
+            }
+            pending.extend(decoder.push(&bytes[..length]).expect("decode peer message"));
+        }
+    }
+
+    async fn serve_restartable_two_piece_peer(
+        listener: TcpListener,
+        info_hash: [u8; 20],
+        payload: Vec<u8>,
+        piece_length: usize,
+        withheld_request: tokio::sync::oneshot::Sender<()>,
+        first_connection_closed: tokio::sync::oneshot::Sender<()>,
+        connections: Arc<AtomicU64>,
+        wire_writes: Arc<AtomicU64>,
+    ) {
+        let mut first_piece = None;
+        let mut withheld_request = Some(withheld_request);
+        let mut first_connection_closed = Some(first_connection_closed);
+        for connection_index in 0..2 {
+            let (mut stream, _) = listener.accept().await.expect("accept restartable peer");
+            connections.fetch_add(1, Ordering::Relaxed);
+            let mut handshake = [0; HANDSHAKE_LENGTH];
+            stream
+                .read_exact(&mut handshake)
+                .await
+                .expect("read restartable peer handshake");
+            decode_handshake(&handshake, info_hash).expect("restartable peer identity");
+            stream
+                .write_all(&encode_handshake(info_hash, *b"-RS-NET-GATE-0000000"))
+                .await
+                .expect("send restartable peer handshake");
+            wire_writes.fetch_add(1, Ordering::Relaxed);
+            stream
+                .write_all(&encode_message(&PeerMessage::Bitfield(vec![0xc0])).expect("bitfield"))
+                .await
+                .expect("send restartable peer bitfield");
+            wire_writes.fetch_add(1, Ordering::Relaxed);
+            let mut decoder = FrameDecoder::new();
+            let mut pending = std::collections::VecDeque::new();
+            loop {
+                let Some(message) =
+                    read_peer_message_or_closed(&mut stream, &mut decoder, &mut pending).await
+                else {
+                    assert_eq!(connection_index, 0, "resumed peer closed before completion");
+                    first_connection_closed
+                        .take()
+                        .expect("first close signal")
+                        .send(())
+                        .ok();
+                    break;
+                };
+                match message {
+                    PeerMessage::Interested => {
+                        stream
+                            .write_all(&encode_message(&PeerMessage::Unchoke).expect("unchoke"))
+                            .await
+                            .expect("send restartable peer unchoke");
+                        wire_writes.fetch_add(1, Ordering::Relaxed);
+                    }
+                    PeerMessage::Request(request) => {
+                        let selected = *first_piece.get_or_insert(request.index);
+                        if connection_index == 0 && request.index != selected {
+                            if let Some(signal) = withheld_request.take() {
+                                signal.send(()).ok();
+                            }
+                            continue;
+                        }
+                        let piece_index = usize::try_from(request.index).expect("piece index");
+                        let piece_start =
+                            piece_index.checked_mul(piece_length).expect("piece start");
+                        let piece_end = piece_start.saturating_add(piece_length).min(payload.len());
+                        let begin = usize::try_from(request.begin).expect("request begin");
+                        let length = usize::try_from(request.length).expect("request length");
+                        let end = begin.checked_add(length).expect("request end");
+                        assert!(piece_start + end <= piece_end);
+                        stream
+                            .write_all(
+                                &encode_message(&PeerMessage::Piece {
+                                    index: request.index,
+                                    begin: request.begin,
+                                    block: payload[piece_start + begin..piece_start + end].to_vec(),
+                                })
+                                .expect("piece"),
+                            )
+                            .await
+                            .expect("send restartable peer piece");
+                        wire_writes.fetch_add(1, Ordering::Relaxed);
+                        if connection_index == 1
+                            && request.index != selected
+                            && end == piece_end - piece_start
+                        {
+                            return;
+                        }
+                    }
+                    PeerMessage::KeepAlive
+                    | PeerMessage::NotInterested
+                    | PeerMessage::Have(_)
+                    | PeerMessage::Bitfield(_) => {}
+                    message => panic!("unexpected restartable peer message: {message:?}"),
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn live_network_prerequisite_resumes_verified_controlled_transfer() {
+        let root = test_root("live-network-controlled-transfer");
+        let configuration = config(&root);
+        let piece_length = 16 * 1_024;
+        let payload = (0..piece_length * 2)
+            .map(|index| u8::try_from(index % 251).expect("fixture byte"))
+            .collect::<Vec<_>>();
+        let raw_info = single_file_info("network-gate.bin", &payload, piece_length);
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        let info_hash_hex = super::encode_info_hash(info_hash);
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind restartable controlled peer");
+        let peer = listener.local_addr().expect("restartable peer address");
+        let (withheld_sender, withheld_receiver) = tokio::sync::oneshot::channel();
+        let (closed_sender, closed_receiver) = tokio::sync::oneshot::channel();
+        let connections = Arc::new(AtomicU64::new(0));
+        let wire_writes = Arc::new(AtomicU64::new(0));
+        let peer_task = tokio::spawn(serve_restartable_two_piece_peer(
+            listener,
+            info_hash,
+            payload.clone(),
+            piece_length,
+            withheld_sender,
+            closed_sender,
+            connections.clone(),
+            wire_writes.clone(),
+        ));
+
+        let mut store = SessionStore::open(
+            configuration
+                .durable_profile_root()
+                .expect("durable profile root"),
+            &configuration.profile_id,
+            &configuration.storage_roots,
+        )
+        .expect("open controlled transfer store");
+        let response = store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "add-network-gate-transfer".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!("magnet:?xt=urn:btih:{info_hash_hex}&x.pe={peer}"),
+                    storage_root: "downloads".to_owned(),
+                    start_content: true,
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("add controlled network-gate torrent");
+        let torrent_id = match response.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("controlled network-gate add result"),
+        };
+        store
+            .record_metadata(&torrent_id, &raw_info)
+            .expect("record controlled network-gate metadata");
+        drop(store);
+
+        let service = Arc::new(tokio::sync::Mutex::new(
+            ApplicationService::open(configuration)
+                .await
+                .expect("open controlled network-gate application"),
+        ));
+        ApplicationService::ensure_maintenance_owner(&service).await;
+        tokio::time::timeout(Duration::from_secs(5), withheld_receiver)
+            .await
+            .expect("second piece request deadline")
+            .expect("second piece request signal");
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let verified = {
+                    let service = service.lock().await;
+                    service
+                        .store_mut()
+                        .expect("store")
+                        .load_resume(&torrent_id)
+                        .expect("controlled resume")
+                        .have
+                        .as_ref()
+                        .map_or(0, |have| {
+                            have.pieces().iter().filter(|piece| **piece).count()
+                        })
+                };
+                if verified == 1 {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("first controlled piece was not verified");
+
+        let prerequisite = service.lock().await.network_prerequisite_handle();
+        let close_started = Instant::now();
+        let blocked = prerequisite.close().expect("close controlled generation");
+        assert!(close_started.elapsed() < Duration::from_millis(50));
+        assert!(
+            service
+                .lock()
+                .await
+                .active_download_for(&torrent_id)
+                .expect("controlled download exists at synchronous close")
+                .control
+                .is_cancelled()
+        );
+        tokio::time::timeout(Duration::from_secs(5), async {
+            service.lock().await.reconcile_network_prerequisite().await
+        })
+        .await
+        .expect("network close convergence deadline")
+        .expect("network close convergence");
+        tokio::time::timeout(Duration::from_secs(1), closed_receiver)
+            .await
+            .expect("controlled peer close deadline")
+            .expect("controlled peer close signal");
+        let writes_after_close = wire_writes.load(Ordering::Acquire);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(wire_writes.load(Ordering::Acquire), writes_after_close);
+        assert_eq!(connections.load(Ordering::Acquire), 1);
+
+        {
+            let service = service.lock().await;
+            assert_eq!(service.effective_network_prerequisite(), blocked);
+            assert!(service.session_network.is_none());
+            let resume = service
+                .store_mut()
+                .expect("store")
+                .load_resume(&torrent_id)
+                .expect("blocked controlled resume");
+            assert!(resume.desired_running);
+            assert_eq!(
+                resume
+                    .have
+                    .as_ref()
+                    .expect("verified pieces")
+                    .pieces()
+                    .iter()
+                    .filter(|piece| **piece)
+                    .count(),
+                1
+            );
+            assert_eq!(
+                service
+                    .session_download_resource_snapshot()
+                    .registered_generations,
+                0
+            );
+        }
+
+        let allowed = prerequisite.allow().expect("allow controlled generation");
+        tokio::time::timeout(Duration::from_secs(5), async {
+            service.lock().await.reconcile_network_prerequisite().await
+        })
+        .await
+        .expect("network allow convergence deadline")
+        .expect("network allow convergence");
+        assert_eq!(
+            service.lock().await.effective_network_prerequisite(),
+            allowed
+        );
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                let complete = {
+                    let service = service.lock().await;
+                    service
+                        .store_mut()
+                        .expect("store")
+                        .load_resume(&torrent_id)
+                        .expect("resumed controlled transfer")
+                        .state
+                        == TorrentState::Complete
+                };
+                if complete {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("controlled transfer did not resume automatically");
+        peer_task.await.expect("restartable peer task");
+        assert_eq!(connections.load(Ordering::Acquire), 2);
+        assert_eq!(
+            fs::read(root.join("payload/network-gate.bin")).expect("read completed payload"),
+            payload
+        );
+
+        service.lock().await.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
     }
 
     #[tokio::test]

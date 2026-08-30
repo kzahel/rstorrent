@@ -284,6 +284,16 @@ impl AndroidApplicationClient {
         })
     }
 
+    /// Closes the active network generation without waiting for the
+    /// application mutex or joined owner convergence.
+    pub fn close_network_prerequisite(&self) -> Result<String, AndroidClientError> {
+        self.ensure_running()?;
+        self.network_prerequisite
+            .close()
+            .map(|snapshot| snapshot.generation.to_string())
+            .map_err(|error| AndroidClientError::message(error.to_string()))
+    }
+
     pub async fn add_torrent_bytes(
         &self,
         request: AddTorrentBytesRequest,
@@ -2094,6 +2104,9 @@ mod tests {
             .expect("allow product network owners");
         assert!(allowed.allowed);
         assert_eq!(allowed.requested_generation, allowed.effective_generation);
+        let synchronously_closed = client
+            .close_network_prerequisite()
+            .expect("close product network permit without application lock");
         let blocked = client
             .set_network_prerequisite(
                 AndroidApplicationNetworkPrerequisite::WaitingForUnmeteredNetwork,
@@ -2102,6 +2115,7 @@ mod tests {
             .expect("block product network owners");
         assert!(!blocked.allowed);
         assert_eq!(blocked.requested_generation, blocked.effective_generation);
+        assert_eq!(blocked.requested_generation, synchronously_closed);
 
         client
             .shutdown()

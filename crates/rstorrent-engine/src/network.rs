@@ -1,10 +1,11 @@
 use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tokio::sync::watch;
+use tokio_util::sync::CancellationToken;
 
 pub const DEFAULT_PEER_ID: [u8; 20] = *b"-RS0001-000000000000";
 
@@ -49,7 +50,14 @@ impl NetworkPrerequisiteSnapshot {
 #[derive(Clone, Debug)]
 pub struct NetworkPrerequisiteHandle {
     state: Arc<AtomicU64>,
+    generation: Arc<Mutex<NetworkPrerequisiteGeneration>>,
     updates: watch::Sender<NetworkPrerequisiteSnapshot>,
+}
+
+#[derive(Debug)]
+struct NetworkPrerequisiteGeneration {
+    snapshot: NetworkPrerequisiteSnapshot,
+    cancellation: CancellationToken,
 }
 
 impl NetworkPrerequisiteHandle {
@@ -60,8 +68,16 @@ impl NetworkPrerequisiteHandle {
             prerequisite: initial,
         };
         let (updates, _) = watch::channel(snapshot);
+        let cancellation = CancellationToken::new();
+        if !snapshot.is_allowed() {
+            cancellation.cancel();
+        }
         Self {
             state: Arc::new(AtomicU64::new(encode_network_prerequisite(snapshot))),
+            generation: Arc::new(Mutex::new(NetworkPrerequisiteGeneration {
+                snapshot,
+                cancellation,
+            })),
             updates,
         }
     }
@@ -75,34 +91,44 @@ impl NetworkPrerequisiteHandle {
         &self,
         prerequisite: ApplicationNetworkPrerequisite,
     ) -> Result<NetworkPrerequisiteSnapshot, NetworkPrerequisiteError> {
-        let mut encoded = self.state.load(Ordering::Acquire);
-        loop {
-            let current = decode_network_prerequisite(encoded);
-            if current.prerequisite == prerequisite {
-                return Ok(current);
-            }
-            let generation = current
-                .generation
-                .checked_add(1)
-                .filter(|generation| *generation <= NETWORK_PREREQUISITE_MAX_GENERATION)
-                .ok_or(NetworkPrerequisiteError::GenerationExhausted)?;
-            let next = NetworkPrerequisiteSnapshot {
-                generation,
-                prerequisite,
-            };
-            match self.state.compare_exchange_weak(
-                encoded,
-                encode_network_prerequisite(next),
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => {
-                    self.updates.send_replace(next);
-                    return Ok(next);
-                }
-                Err(observed) => encoded = observed,
-            }
+        let mut active = self
+            .generation
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let current = decode_network_prerequisite(self.state.load(Ordering::Acquire));
+        debug_assert_eq!(active.snapshot, current);
+        if current.prerequisite == prerequisite {
+            return Ok(current);
         }
+        let generation = current
+            .generation
+            .checked_add(1)
+            .filter(|generation| *generation <= NETWORK_PREREQUISITE_MAX_GENERATION)
+            .ok_or(NetworkPrerequisiteError::GenerationExhausted)?;
+        let next = NetworkPrerequisiteSnapshot {
+            generation,
+            prerequisite,
+        };
+        let cancellation = CancellationToken::new();
+        if next.is_allowed() {
+            *active = NetworkPrerequisiteGeneration {
+                snapshot: next,
+                cancellation,
+            };
+            self.state
+                .store(encode_network_prerequisite(next), Ordering::Release);
+        } else {
+            self.state
+                .store(encode_network_prerequisite(next), Ordering::Release);
+            active.cancellation.cancel();
+            cancellation.cancel();
+            *active = NetworkPrerequisiteGeneration {
+                snapshot: next,
+                cancellation,
+            };
+        }
+        self.updates.send_replace(next);
+        Ok(next)
     }
 
     pub fn close(&self) -> Result<NetworkPrerequisiteSnapshot, NetworkPrerequisiteError> {
@@ -118,11 +144,37 @@ impl NetworkPrerequisiteHandle {
         self.updates.subscribe()
     }
 
+    /// Returns a child cancellation domain only when `snapshot` is the live
+    /// allowed generation. Stale, blocked, and superseded generations receive
+    /// an already-cancelled token.
+    #[must_use]
+    pub fn cancellation_token(&self, snapshot: NetworkPrerequisiteSnapshot) -> CancellationToken {
+        let active = self
+            .generation
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if active.snapshot == snapshot && snapshot.is_allowed() {
+            active.cancellation.child_token()
+        } else {
+            let cancellation = CancellationToken::new();
+            cancellation.cancel();
+            cancellation
+        }
+    }
+
     #[cfg(test)]
     fn with_snapshot_for_test(snapshot: NetworkPrerequisiteSnapshot) -> Self {
         let (updates, _) = watch::channel(snapshot);
+        let cancellation = CancellationToken::new();
+        if !snapshot.is_allowed() {
+            cancellation.cancel();
+        }
         Self {
             state: Arc::new(AtomicU64::new(encode_network_prerequisite(snapshot))),
+            generation: Arc::new(Mutex::new(NetworkPrerequisiteGeneration {
+                snapshot,
+                cancellation,
+            })),
             updates,
         }
     }
@@ -483,10 +535,14 @@ mod tests {
         let mut updates = handle.subscribe();
         assert_eq!(handle.load().generation, 1);
         assert!(handle.load().is_allowed());
+        let first = handle.cancellation_token(handle.load());
+        assert!(!first.is_cancelled());
 
         let closed = handle.close().expect("close available generation");
         assert_eq!(closed.generation, 2);
         assert!(!closed.is_allowed());
+        assert!(first.is_cancelled());
+        assert!(handle.cancellation_token(closed).is_cancelled());
         updates.changed().await.expect("close update");
         assert_eq!(*updates.borrow_and_update(), closed);
 
@@ -497,6 +553,11 @@ mod tests {
         assert_eq!(allowed.generation, 3);
         assert!(allowed.is_allowed());
         assert_eq!(handle.load(), allowed);
+        let third = handle.cancellation_token(allowed);
+        assert!(!third.is_cancelled());
+        assert!(handle.cancellation_token(closed).is_cancelled());
+        handle.close().expect("close third generation");
+        assert!(third.is_cancelled());
     }
 
     #[test]

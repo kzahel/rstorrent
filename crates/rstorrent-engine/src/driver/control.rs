@@ -849,13 +849,17 @@ struct CheckpointProgressSnapshot {
 
 impl DownloadControl {
     pub fn new() -> Self {
+        Self::new_with_cancellation(CancellationToken::new())
+    }
+
+    pub fn new_with_cancellation(cancellation: CancellationToken) -> Self {
         let (selection_updates, _) = watch::channel(None);
         let (streaming_updates, _) = watch::channel(StreamingDemandSnapshot::default());
         let (checking_paused, _) = watch::channel(false);
         Self {
             inner: Arc::new(DownloadControlInner {
                 started_at: Instant::now(),
-                cancellation: CancellationToken::new(),
+                cancellation,
                 buffered_payload_bytes: AtomicUsize::new(0),
                 payload_high_water: AtomicUsize::new(0),
                 outstanding_request_bytes: AtomicUsize::new(0),

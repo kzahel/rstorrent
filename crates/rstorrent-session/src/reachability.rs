@@ -152,6 +152,7 @@ pub(crate) struct ReachabilityStartInputs {
     pub ipv6_listener: Option<SocketAddrV6>,
     pub blocks: ReachabilityBlocks,
     pub evidence: ReachabilityEvidenceProbe,
+    pub cancellation: CancellationToken,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -235,6 +236,7 @@ struct ReachabilityTaskContext {
     discovery_config: Option<UpnpDiscoveryConfig>,
     evidence: ReachabilityEvidenceProbe,
     cleanup_permitted: Arc<AtomicBool>,
+    network_cancellation: Option<CancellationToken>,
 }
 
 #[derive(Debug)]
@@ -260,7 +262,9 @@ impl ReachabilityCoordinator {
             ipv6_listener,
             blocks,
             evidence,
+            cancellation,
         } = inputs;
+        let network_cancellation = cancellation;
         let generation = endpoint_selector.begin_mapping_generation();
         let mut tcp_mapping_state = ReachabilityState::new(generation, settings, listener_status);
         let mut udp_mapping_state =
@@ -286,7 +290,7 @@ impl ReachabilityCoordinator {
         );
         let _ =
             views.set_ipv6_pinhole_status_for(settings_generation, pinhole_state.status().clone());
-        let cancellation = CancellationToken::new();
+        let cancellation = network_cancellation.child_token();
         let counters = Arc::new(ReachabilityCounters::default());
         let cleanup_permitted = Arc::new(AtomicBool::new(true));
         let has_work = tcp_mapping_state.local_endpoint().is_some()
@@ -314,6 +318,7 @@ impl ReachabilityCoordinator {
                         discovery_config: None,
                         evidence,
                         cleanup_permitted: task_cleanup_permitted,
+                        network_cancellation: Some(network_cancellation),
                     },
                 )
                 .await;
@@ -523,6 +528,7 @@ fn context_without_discovery(
         discovery_config: None,
         evidence: ReachabilityEvidenceProbe::default(),
         cleanup_permitted: Arc::new(AtomicBool::new(true)),
+        network_cancellation: None,
     }
 }
 
@@ -884,6 +890,7 @@ async fn run_ipv4_mapping(
         discovery_config: _,
         evidence: _,
         cleanup_permitted,
+        network_cancellation,
     } = context;
     if let Err(error) = publish_mapping_status(
         kind,
@@ -1008,7 +1015,9 @@ async fn run_ipv4_mapping(
             }
         }
     }
-    if !cleanup_permitted.load(Ordering::Acquire) {
+    if !cleanup_permitted.load(Ordering::Acquire)
+        || network_cancellation.is_some_and(|cancellation| cancellation.is_cancelled())
+    {
         counters.mappings.fetch_sub(1, Ordering::AcqRel);
         let uncertain_mapping = Some(UncertainMappingLease {
             transport: kind.transport(),
@@ -1097,6 +1106,7 @@ async fn run_ipv6_pinhole(
         discovery_config: _,
         evidence,
         cleanup_permitted,
+        network_cancellation,
     } = context;
     let status = match firewall.firewall_status(&cancellation).await {
         Ok(status) => status,
@@ -1317,7 +1327,11 @@ async fn run_ipv6_pinhole(
             }
         }
 
-        if !cleanup_permitted.load(Ordering::Acquire) {
+        if !cleanup_permitted.load(Ordering::Acquire)
+            || network_cancellation
+                .as_ref()
+                .is_some_and(CancellationToken::is_cancelled)
+        {
             counters.pinholes.store(0, Ordering::Release);
             return ReachabilityRunOutcome {
                 uncertain_pinhole: (latest_possible_deadline > Instant::now()).then(|| {
@@ -2301,6 +2315,7 @@ mod tests {
                 discovery_config: Some(config),
                 evidence: evidence.clone(),
                 cleanup_permitted: Arc::new(AtomicBool::new(true)),
+                network_cancellation: None,
             },
         ));
         tokio::time::timeout(Duration::from_secs(3), async {

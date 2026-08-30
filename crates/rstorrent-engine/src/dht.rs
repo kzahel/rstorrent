@@ -466,7 +466,7 @@ impl DhtService {
             .map_err(|error| DhtError::Io(error.to_string()))?;
         let (udp, transport) =
             SessionUdpService::start(socket).map_err(|error| DhtError::Io(error.to_string()))?;
-        match Self::start_inner(config, transport).await {
+        match Self::start_inner(config, transport, CancellationToken::new()).await {
             Ok(mut dht) => {
                 dht.owned_udp = Some(udp);
                 Ok(dht)
@@ -482,12 +482,21 @@ impl DhtService {
         config: DhtConfig,
         transport: SessionUdpTransport,
     ) -> Result<Self, DhtError> {
-        Self::start_inner(config, transport).await
+        Self::start_inner(config, transport, CancellationToken::new()).await
+    }
+
+    pub async fn start_with_transport_and_cancellation(
+        config: DhtConfig,
+        transport: SessionUdpTransport,
+        cancellation: CancellationToken,
+    ) -> Result<Self, DhtError> {
+        Self::start_inner(config, transport, cancellation).await
     }
 
     async fn start_inner(
         mut config: DhtConfig,
         transport: SessionUdpTransport,
+        cancellation: CancellationToken,
     ) -> Result<Self, DhtError> {
         config.validate()?;
         validate_transport(&config, transport.local_address())?;
@@ -497,7 +506,11 @@ impl DhtService {
             .map(DhtSnapshot::validate)
             .transpose()?;
         let transport_handle = transport.handle();
-        let bootstrap = resolve_bootstrap(&config, snapshot.as_ref()).await;
+        let bootstrap = tokio::select! {
+            biased;
+            _ = cancellation.cancelled() => return Err(DhtError::Cancelled),
+            bootstrap = resolve_bootstrap(&config, snapshot.as_ref()) => bootstrap,
+        };
         let now = Instant::now();
         let mut nodes = BTreeMap::new();
         let mut identity_hints = BTreeMap::from([
@@ -542,7 +555,6 @@ impl DhtService {
         let (sender, receiver) = mpsc::channel(DHT_COMMAND_QUEUE);
         let (observation_sender, observations) =
             watch::channel(DhtObservation::initial(config.network_policy, &nodes));
-        let cancellation = CancellationToken::new();
         let task_cancellation = cancellation.clone();
         let actor = Actor::new(
             config,
