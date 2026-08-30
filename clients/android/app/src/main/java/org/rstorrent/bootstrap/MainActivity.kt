@@ -52,7 +52,7 @@ class MainActivity : ComponentActivity() {
     private var notificationNavigationSequence = 0L
     private val productTreePicker =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            productService.value?.setInteractionLease(
+            ProductInteractionRegistry.setLease(
                 ProductEngineService.INTERACTION_SAF_PICKER,
                 false,
             )
@@ -84,7 +84,7 @@ class MainActivity : ComponentActivity() {
         }
     private val productTorrentPicker =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            productService.value?.setInteractionLease(
+            ProductInteractionRegistry.setLease(
                 ProductEngineService.INTERACTION_TORRENT_PICKER,
                 false,
             )
@@ -106,7 +106,7 @@ class MainActivity : ComponentActivity() {
     private val notificationPermissionRequest =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {
             notificationsGranted.value = notificationPermissionGranted()
-            productService.value?.setInteractionLease(
+            ProductInteractionRegistry.setLease(
                 ProductEngineService.INTERACTION_NOTIFICATION_PERMISSION,
                 false,
             )
@@ -134,10 +134,6 @@ class MainActivity : ComponentActivity() {
                     service.cancelCompanionRootRequest(it)
                 }
                 productService.value = service
-                service.setInteractionLease(
-                    ProductEngineService.INTERACTION_ACTIVITY,
-                    lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED),
-                )
                 pendingProductMagnet?.let {
                     pendingProductMagnet = null
                     val policy = pendingProductTrackerPolicy
@@ -282,7 +278,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        ProductActivityVisibility.setVisible(true)
+        ProductInteractionRegistry.setActivityVisible(true)
         if (productMode) bindProductService()
     }
 
@@ -291,7 +287,7 @@ class MainActivity : ComponentActivity() {
         notificationsGranted.value = notificationPermissionGranted()
         if (pendingNotificationSettingsReturn) {
             pendingNotificationSettingsReturn = false
-            productService.value?.setInteractionLease(
+            ProductInteractionRegistry.setLease(
                 ProductEngineService.INTERACTION_NOTIFICATION_SETTINGS,
                 false,
             )
@@ -300,12 +296,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
-        ProductActivityVisibility.setVisible(false)
+        ProductInteractionRegistry.setActivityVisible(false)
         if (productBound) {
-            productService.value?.setInteractionLease(
-                ProductEngineService.INTERACTION_ACTIVITY,
-                false,
-            )
             unbindService(productConnection)
             productBound = false
             productService.value = null
@@ -744,45 +736,61 @@ class MainActivity : ComponentActivity() {
 
     private fun launchProductTreePicker(repairRootId: String? = null) {
         pendingProductRepairRootId = repairRootId
-        productService.value?.setInteractionLease(
+        ProductInteractionRegistry.setLease(
             ProductEngineService.INTERACTION_SAF_PICKER,
             true,
         )
-        productTreePicker.launch(
-            Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-                addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-                addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
-                putExtra(
-                    "android.provider.extra.INITIAL_URI",
-                    android.net.Uri.parse(
-                        "content://com.android.externalstorage.documents/document/" +
-                            "primary%3ADownload",
-                    ),
-                )
-            },
-        )
+        try {
+            productTreePicker.launch(
+                Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                    addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                    addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
+                    putExtra(
+                        "android.provider.extra.INITIAL_URI",
+                        android.net.Uri.parse(
+                            "content://com.android.externalstorage.documents/document/" +
+                                "primary%3ADownload",
+                        ),
+                    )
+                },
+            )
+        } catch (error: RuntimeException) {
+            ProductInteractionRegistry.setLease(
+                ProductEngineService.INTERACTION_SAF_PICKER,
+                false,
+            )
+            throw error
+        }
     }
 
     private fun launchProductTorrentPicker(startContent: Boolean) {
         pendingProductTorrentStartContent = startContent
-        productService.value?.setInteractionLease(
+        ProductInteractionRegistry.setLease(
             ProductEngineService.INTERACTION_TORRENT_PICKER,
             true,
         )
-        productTorrentPicker.launch(
-            Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                addCategory(Intent.CATEGORY_OPENABLE)
-                type = "application/x-bittorrent"
-                putExtra(
-                    Intent.EXTRA_MIME_TYPES,
-                    arrayOf("application/x-bittorrent", "application/octet-stream"),
-                )
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-            },
-        )
+        try {
+            productTorrentPicker.launch(
+                Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "application/x-bittorrent"
+                    putExtra(
+                        Intent.EXTRA_MIME_TYPES,
+                        arrayOf("application/x-bittorrent", "application/octet-stream"),
+                    )
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                },
+            )
+        } catch (error: RuntimeException) {
+            ProductInteractionRegistry.setLease(
+                ProductEngineService.INTERACTION_TORRENT_PICKER,
+                false,
+            )
+            throw error
+        }
     }
 
     private fun bindProductService() {
@@ -801,11 +809,19 @@ class MainActivity : ComponentActivity() {
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
         ) {
-            productService.value?.setInteractionLease(
+            ProductInteractionRegistry.setLease(
                 ProductEngineService.INTERACTION_NOTIFICATION_PERMISSION,
                 true,
             )
-            notificationPermissionRequest.launch(Manifest.permission.POST_NOTIFICATIONS)
+            try {
+                notificationPermissionRequest.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } catch (error: RuntimeException) {
+                ProductInteractionRegistry.setLease(
+                    ProductEngineService.INTERACTION_NOTIFICATION_PERMISSION,
+                    false,
+                )
+                throw error
+            }
         } else {
             notificationsGranted.value = true
             productService.value?.refreshNotificationEligibility()
@@ -818,7 +834,7 @@ class MainActivity : ComponentActivity() {
             PackageManager.PERMISSION_GRANTED
 
     private fun openNotificationSettings() {
-        productService.value?.setInteractionLease(
+        ProductInteractionRegistry.setLease(
             ProductEngineService.INTERACTION_NOTIFICATION_SETTINGS,
             true,
         )
@@ -831,7 +847,7 @@ class MainActivity : ComponentActivity() {
             )
         }.onFailure {
             pendingNotificationSettingsReturn = false
-            productService.value?.setInteractionLease(
+            ProductInteractionRegistry.setLease(
                 ProductEngineService.INTERACTION_NOTIFICATION_SETTINGS,
                 false,
             )

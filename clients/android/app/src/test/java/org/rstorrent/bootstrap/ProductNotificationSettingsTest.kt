@@ -105,16 +105,24 @@ class ProductNotificationSettingsTest {
 
     @Test
     fun activityVisibilityConvergesBeforeAndAfterServiceAttachment() {
-        ProductActivityVisibility.resetForTest()
-        val observed = mutableListOf<Boolean>()
+        ProductInteractionRegistry.resetForTest()
+        val observed = mutableListOf<Set<String>>()
 
-        ProductActivityVisibility.setVisible(true)
-        ProductActivityVisibility.attach(observed::add)
-        ProductActivityVisibility.setVisible(false)
-        ProductActivityVisibility.detach()
-        ProductActivityVisibility.setVisible(true)
+        ProductInteractionRegistry.setActivityVisible(true)
+        ProductInteractionRegistry.attach(observed::add)
+        ProductInteractionRegistry.setLease("picker", true)
+        ProductInteractionRegistry.setActivityVisible(false)
+        ProductInteractionRegistry.detach()
+        ProductInteractionRegistry.setActivityVisible(true)
 
-        assertEquals(listOf(true, false), observed)
-        ProductActivityVisibility.resetForTest()
+        assertEquals(
+            listOf(
+                setOf(ProductEngineService.INTERACTION_ACTIVITY),
+                setOf(ProductEngineService.INTERACTION_ACTIVITY, "picker"),
+                setOf("picker"),
+            ),
+            observed,
+        )
+        ProductInteractionRegistry.resetForTest()
     }
 }

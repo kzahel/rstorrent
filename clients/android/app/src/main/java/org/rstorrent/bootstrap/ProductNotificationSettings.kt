@@ -1,6 +1,5 @@
 package org.rstorrent.bootstrap
 
-import java.util.concurrent.atomic.AtomicBoolean
 
 enum class ProductNotificationPreference {
     DOWNLOAD_COMPLETE,
@@ -67,23 +66,38 @@ internal data class NotificationEligibility(
         get() = visibleOnly && interactionLeaseCount == 0
 }
 
-/** Process-local activity visibility; process death deliberately resets it to absent. */
-internal object ProductActivityVisibility {
-    private val visible = AtomicBoolean(false)
+/** Process-local interaction leases; process death deliberately resets them to absent. */
+internal object ProductInteractionRegistry {
     private val ownership = Any()
-    private var listener: ((Boolean) -> Unit)? = null
+    private val leases = mutableSetOf<String>()
+    private var listener: ((Set<String>) -> Unit)? = null
 
-    fun setVisible(value: Boolean) {
-        visible.set(value)
-        synchronized(ownership) { listener }?.invoke(value)
+    fun setLease(
+        token: String,
+        held: Boolean,
+    ) {
+        val callback: ((Set<String>) -> Unit)?
+        val snapshot: Set<String>
+        synchronized(ownership) {
+            if (held) leases.add(token) else leases.remove(token)
+            callback = listener
+            snapshot = leases.toSet()
+        }
+        callback?.invoke(snapshot)
     }
 
-    fun attach(listener: (Boolean) -> Unit) {
+    fun setActivityVisible(visible: Boolean) {
+        setLease(ProductEngineService.INTERACTION_ACTIVITY, visible)
+    }
+
+    fun attach(listener: (Set<String>) -> Unit) {
+        val snapshot: Set<String>
         synchronized(ownership) {
-            check(this.listener == null) { "activity visibility already has a service owner" }
+            check(this.listener == null) { "interaction leases already have a service owner" }
             this.listener = listener
+            snapshot = leases.toSet()
         }
-        listener(visible.get())
+        listener(snapshot)
     }
 
     fun detach() {
@@ -91,8 +105,10 @@ internal object ProductActivityVisibility {
     }
 
     internal fun resetForTest() {
-        synchronized(ownership) { listener = null }
-        visible.set(false)
+        synchronized(ownership) {
+            listener = null
+            leases.clear()
+        }
     }
 }
 

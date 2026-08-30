@@ -26,6 +26,7 @@ import java.io.FileNotFoundException
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
@@ -112,6 +113,8 @@ class ProductEngineService : Service() {
     private val requestIds = AtomicLong(1)
     private val stopped = AtomicBoolean(false)
     private val stopRequested = AtomicBoolean(false)
+    private val latestStartId = AtomicInteger(0)
+    @Volatile private var startCommandReceived = false
     private val shutdownComplete = CompletableDeferred<Unit>()
     private val clientReady = CompletableDeferred<Unit>()
     private val presentationReady = CompletableDeferred<Unit>()
@@ -177,8 +180,10 @@ class ProductEngineService : Service() {
         super.onCreate()
         notificationCoordinator = AndroidNotificationCoordinator(this, mutableState)
         notificationCoordinator.initialize(interactionLeases.size)
-        ProductActivityVisibility.attach { visible ->
-            setInteractionLease(INTERACTION_ACTIVITY, visible)
+        ProductInteractionRegistry.attach { leases ->
+            interactionLeases.clear()
+            interactionLeases.addAll(leases)
+            if (startCommandReceived) refreshNotificationEligibility("interaction")
         }
         registerNotificationBlockReceiver()
         startForeground(
@@ -270,6 +275,8 @@ class ProductEngineService : Service() {
         flags: Int,
         startId: Int,
     ): Int {
+        latestStartId.set(startId)
+        startCommandReceived = true
         if (intent?.action == ACTION_STOP) {
             requestStop("notification_stop", startId)
         } else if (intent?.action == externalIntakeAction(packageName)) {
@@ -2288,14 +2295,6 @@ class ProductEngineService : Service() {
         requestStop("ui_stop")
     }
 
-    fun setInteractionLease(
-        token: String,
-        held: Boolean,
-    ) {
-        if (held) interactionLeases.add(token) else interactionLeases.remove(token)
-        refreshNotificationEligibility("interaction")
-    }
-
     fun refreshNotificationEligibility() {
         refreshNotificationEligibility("activity_result")
     }
@@ -2830,7 +2829,8 @@ class ProductEngineService : Service() {
                 shutdown(reason)
             } finally {
                 stopForeground(STOP_FOREGROUND_REMOVE)
-                if (startId == null) stopSelf() else stopSelfResult(startId)
+                val safeStartId = maxOf(startId ?: 0, latestStartId.get())
+                if (safeStartId == 0 || !stopSelfResult(safeStartId)) stopSelf()
             }
         }
     }
@@ -2843,7 +2843,7 @@ class ProductEngineService : Service() {
         Log.i(TAG, "product_shutdown_begin reason=$reason")
         try {
             unregisterNotificationBlockReceiver()
-            ProductActivityVisibility.detach()
+            ProductInteractionRegistry.detach()
             interactionLeases.clear()
             externalAdmissionCancellationSignal?.cancel()
             externalCancellationSignal?.cancel()
@@ -2870,9 +2870,9 @@ class ProductEngineService : Service() {
                     client.close()
                 }
             }
-            releasePowerLock()
             Log.i(TAG, "product_shutdown_complete reason=$reason")
         } finally {
+            releasePowerLock()
             shutdownComplete.complete(Unit)
         }
     }
