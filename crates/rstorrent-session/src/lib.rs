@@ -34,8 +34,8 @@ mod views;
 
 pub use application::{
     ApplicationConfig, ApplicationError, ApplicationPersistence, ApplicationService,
-    PathRootStartupPolicy, PlatformFilePlan, PlatformRemovalPath, PlatformRemovalPlan,
-    application_error_response,
+    CompletedMediaCapability, PathRootStartupPolicy, PlatformFilePlan, PlatformRemovalPath,
+    PlatformRemovalPlan, application_error_response,
 };
 pub use application_connection::{
     AcknowledgedViewStream, AcknowledgedViewStreamError, ApplicationCall, ApplicationCallError,

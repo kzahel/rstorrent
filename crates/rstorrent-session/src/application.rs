@@ -466,6 +466,12 @@ pub struct PlatformFilePlan {
     pub length: u64,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompletedMediaCapability {
+    pub token: String,
+    pub length: u64,
+}
+
 #[derive(Debug)]
 pub struct ApplicationService {
     store: Arc<Mutex<SessionStore>>,
@@ -2486,6 +2492,85 @@ impl ApplicationService {
             storage_root: resume.storage_root,
             components: artifact.qualified_components,
             length: file.length,
+        })
+    }
+
+    /// Create one opaque, in-memory verified-file authority without requiring
+    /// an HTTP media origin. Remote transports keep this token inside the
+    /// native owner and expose only their own circuit-bound signaling.
+    pub async fn create_completed_media_capability(
+        &mut self,
+        torrent_id: &str,
+        file_index: u32,
+    ) -> Result<CompletedMediaCapability, ApplicationError> {
+        let plan = self.platform_file_plan(torrent_id, file_index).await?;
+        let resume = self.load_resume_conservative(&plan.torrent_id)?;
+        let content = parse_resume_content(&resume)
+            .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+        let index = usize::try_from(file_index).map_err(|_| {
+            ApplicationError::Configuration("file index exceeds this platform".to_owned())
+        })?;
+        let have = resume.have.as_ref().ok_or_else(|| {
+            ApplicationError::Configuration("torrent has no verified piece state".to_owned())
+        })?;
+        let storage_root = self
+            .storage_roots
+            .get(&resume.storage_root)
+            .ok_or_else(|| {
+                ApplicationError::Configuration("storage root is unavailable".to_owned())
+            })?;
+        let read_jobs = self.media.read_jobs();
+        let reader = match storage_root {
+            StorageRootLocation::Path(root) => {
+                VerifiedFileReader::open_verified_content_with_pool(
+                    root,
+                    &content,
+                    have.pieces(),
+                    index,
+                    self.storage_file_pool.clone(),
+                    resume.torrent_id,
+                    read_jobs,
+                )
+                .await
+            }
+            StorageRootLocation::PlatformCapability => {
+                VerifiedFileReader::open_verified_content_with_platform(
+                    &PlatformStorageSpec {
+                        pool: self.storage_file_pool.clone(),
+                        root_id: resume.storage_root,
+                        storage_id: plan.torrent_id.clone(),
+                        content_shape: ContentShape::from_content(&content),
+                        content_name: content.name().to_owned(),
+                        storage_generation: 1,
+                    },
+                    &content,
+                    have.pieces(),
+                    index,
+                    read_jobs,
+                )
+                .await
+            }
+        }
+        .map_err(|error| {
+            ApplicationError::Configuration(format!("open verified direct file: {error}"))
+        })?;
+        let token = self
+            .media
+            .create_internal(plan.torrent_id, file_index, reader)
+            .map_err(|error| match error {
+                MediaRegistryError::ResourceLimit => {
+                    ApplicationError::Configuration("direct-file capability limit".to_owned())
+                }
+                MediaRegistryError::Random(error) => ApplicationError::Configuration(format!(
+                    "allocate direct-file capability: {error}"
+                )),
+                MediaRegistryError::ServerUnavailable => ApplicationError::Configuration(
+                    "internal direct-file capability is unavailable".to_owned(),
+                ),
+            })?;
+        Ok(CompletedMediaCapability {
+            token,
+            length: plan.length,
         })
     }
 
@@ -14867,6 +14952,22 @@ mod tests {
         assert_eq!(plan.storage_root, "downloads");
         assert_eq!(plan.components, ["seed.bin"]);
         assert_eq!(plan.length, payload.len() as u64);
+        let internal = service
+            .create_completed_media_capability(&torrent_id, 0)
+            .await
+            .expect("internal verified capability");
+        assert_eq!(internal.length, payload.len() as u64);
+        assert!(!internal.token.is_empty());
+        let mut lease = service
+            .resolve_media_capability(&internal.token)
+            .expect("resolve internal capability");
+        assert_eq!(
+            lease
+                .read_range(0, payload.len())
+                .await
+                .expect("read internal capability"),
+            payload
+        );
 
         service.shutdown().await.expect("shutdown");
         drop(service);

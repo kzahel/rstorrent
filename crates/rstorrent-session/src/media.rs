@@ -721,7 +721,25 @@ impl MediaCapabilities {
         file_index: u32,
         reader: VerifiedFileReader,
     ) -> Result<MediaUrlOutcome, MediaRegistryError> {
-        self.create_reader(
+        let origin = self
+            .origin
+            .clone()
+            .ok_or(MediaRegistryError::ServerUnavailable)?;
+        let token = self.upsert_reader(
+            torrent_id,
+            file_index,
+            MediaCapabilityReader::Verified(reader),
+        )?;
+        Ok(created_outcome(&origin, &token))
+    }
+
+    pub(crate) fn create_internal(
+        &mut self,
+        torrent_id: String,
+        file_index: u32,
+        reader: VerifiedFileReader,
+    ) -> Result<String, MediaRegistryError> {
+        self.upsert_reader(
             torrent_id,
             file_index,
             MediaCapabilityReader::Verified(reader),
@@ -753,12 +771,22 @@ impl MediaCapabilities {
         file_index: u32,
         reader: MediaCapabilityReader,
     ) -> Result<MediaUrlOutcome, MediaRegistryError> {
-        let now = Instant::now();
-        self.purge_expired(now);
         let origin = self
             .origin
             .clone()
             .ok_or(MediaRegistryError::ServerUnavailable)?;
+        let token = self.upsert_reader(torrent_id, file_index, reader)?;
+        Ok(created_outcome(&origin, &token))
+    }
+
+    fn upsert_reader(
+        &mut self,
+        torrent_id: String,
+        file_index: u32,
+        reader: MediaCapabilityReader,
+    ) -> Result<String, MediaRegistryError> {
+        let now = Instant::now();
+        self.purge_expired(now);
         let key = (torrent_id.clone(), file_index);
         if let Some(token) = self.by_file.get(&key).cloned()
             && let Some(entry) = self.entries.get_mut(&token)
@@ -768,7 +796,7 @@ impl MediaCapabilities {
                 .last_used
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner()) = now;
-            return Ok(created_outcome(&origin, &token));
+            return Ok(token);
         }
         if self.entries.len() >= MAX_MEDIA_CAPABILITIES {
             return Err(MediaRegistryError::ResourceLimit);
@@ -787,7 +815,7 @@ impl MediaCapabilities {
             },
         );
         self.by_file.insert(key, token.clone());
-        Ok(created_outcome(&origin, &token))
+        Ok(token)
     }
 
     pub(crate) fn resolve(
