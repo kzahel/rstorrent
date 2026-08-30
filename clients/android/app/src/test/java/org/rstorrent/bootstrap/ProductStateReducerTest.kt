@@ -1143,6 +1143,7 @@ class ProductStateReducerTest {
                     TransferRateLimit.Unlimited,
                 ),
             storageState = StorageState.AVAILABLE,
+            storageRoot = "downloads",
             metadataAvailable = true,
             pieceCount = 100_000U,
             totalSizeBytes = "1638400000",

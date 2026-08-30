@@ -1488,6 +1488,7 @@ function torrent(): TorrentView {
       download: { type: "unlimited" },
     },
     storage_state: "available",
+    storage_root: "downloads",
     metadata_available: true,
     piece_count: 8,
     total_size_bytes: "131072",

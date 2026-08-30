@@ -1164,6 +1164,7 @@ pub struct TorrentView {
     #[serde(default)]
     pub transfer_limits: TorrentTransferLimits,
     pub storage_state: StorageState,
+    pub storage_root: String,
     pub metadata_available: bool,
     pub piece_count: u32,
     #[schemars(required, schema_with = "required_nullable_string_schema")]

@@ -7559,6 +7559,9 @@
         "state": {
           "$ref": "#/$defs/TorrentState"
         },
+        "storage_root": {
+          "type": "string"
+        },
         "storage_state": {
           "$ref": "#/$defs/StorageState"
         },
@@ -7598,6 +7601,7 @@
         "state",
         "operational_state",
         "storage_state",
+        "storage_root",
         "metadata_available",
         "piece_count",
         "total_size_bytes",

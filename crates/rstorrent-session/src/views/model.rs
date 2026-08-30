@@ -713,6 +713,7 @@ impl TorrentModel {
                 download_queue_position: snapshot.download_queue_position,
                 transfer_limits: snapshot.transfer_limits,
                 storage_state: snapshot.storage_state,
+                storage_root: snapshot.storage_root.clone(),
                 metadata_available: snapshot.metadata_available,
                 piece_count: snapshot.piece_count,
                 total_size_bytes: None,

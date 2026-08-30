@@ -22,37 +22,36 @@ class SafStorageRequestException(
 ) : IllegalStateException(message)
 
 object ProductSafDocuments {
-    private const val PREFERENCES = "product-saf"
-    private const val TREE_URI = "tree-uri"
     private const val MIME_BINARY = "application/octet-stream"
 
     fun persistTree(
         context: Context,
         treeUri: Uri,
-    ) {
-        require(hasGrant(context, treeUri)) {
-            "selected SAF tree has no persisted read/write grant"
-        }
-        check(
-            context
-                .getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-                .edit()
-                .putString(TREE_URI, treeUri.toString())
-                .commit(),
-        ) { "could not synchronously persist the SAF tree" }
-    }
+        repairRootId: String? = null,
+    ) = ProductSafRootRegistry.recordSelectionCandidate(context, treeUri, repairRootId)
 
     fun selectedTree(context: Context): Uri? {
-        val encoded = selectedTreeText(context) ?: return null
-        val uri = Uri.parse(encoded)
-        return uri.takeIf { hasGrant(context, it) }
+        val state = ProductSafRootRegistry.load(context)
+        val encoded =
+            state.selectionCandidate
+                ?: state.roots.singleOrNull()?.treeUri
+                ?: return null
+        return Uri.parse(encoded).takeIf { hasGrant(context, it) }
     }
 
     fun releaseSelectedTreeForTest(context: Context) {
         check(isDebuggable(context)) { "SAF grant release is debug-only" }
-        val uri = Uri.parse(requireNotNull(selectedTreeText(context)) { "no SAF tree is stored" })
+        val state = ProductSafRootRegistry.load(context)
+        val encoded =
+            state.selectionCandidate
+                ?: state.roots.singleOrNull()?.treeUri
+                ?: error("no unambiguous SAF tree is stored")
+        val uri = Uri.parse(encoded)
         context.contentResolver.releasePersistableUriPermission(uri, GRANT_FLAGS)
-        check(selectedTreeText(context) == uri.toString()) {
+        check(
+            ProductSafRootRegistry.load(context).roots.any { it.treeUri == uri.toString() } ||
+                ProductSafRootRegistry.load(context).selectionCandidate == uri.toString(),
+        ) {
             "debug grant release must retain stale platform identity"
         }
         check(!hasGrant(context, uri)) { "SAF tree grant survived debug release" }
@@ -191,13 +190,44 @@ object ProductSafDocuments {
         return current
     }
 
-    private fun hasGrant(
+    fun treeLabel(
+        context: Context,
+        treeUri: Uri,
+    ): String {
+        require(hasGrant(context, treeUri)) { "persisted SAF grant is unavailable" }
+        val document = documentUri(treeUri)
+        return context.contentResolver
+            .query(
+                document,
+                arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+                null,
+                null,
+                null,
+            )?.use { cursor ->
+                if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getString(0) else null
+            }?.takeIf(String::isNotBlank)
+            ?: "Download folder"
+    }
+
+    internal fun hasGrant(
         context: Context,
         treeUri: Uri,
     ): Boolean =
         context.contentResolver.persistedUriPermissions.any {
             it.uri == treeUri && it.isReadPermission && it.isWritePermission
         }
+
+    internal fun releaseGrantIfUnregistered(
+        context: Context,
+        treeUri: Uri,
+    ): Boolean {
+        if (ProductSafRootRegistry.load(context).roots.any { it.treeUri == treeUri.toString() }) {
+            return false
+        }
+        if (!hasGrant(context, treeUri)) return false
+        context.contentResolver.releasePersistableUriPermission(treeUri, GRANT_FLAGS)
+        return true
+    }
 
     private fun requireValidComponent(component: String) {
         require(
@@ -348,10 +378,6 @@ object ProductSafDocuments {
     fun isDebuggable(context: Context): Boolean =
         context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
 
-    private fun selectedTreeText(context: Context): String? =
-        context
-            .getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-            .getString(TREE_URI, null)
 }
 
 internal fun <T> deleteDataArtifacts(

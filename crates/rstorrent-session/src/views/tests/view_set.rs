@@ -37,6 +37,7 @@ fn torrent_view(id: &str, verified: u32) -> TorrentView {
         download_queue_position: None,
         transfer_limits: Default::default(),
         storage_state: StorageState::Available,
+        storage_root: "downloads".to_owned(),
         metadata_available: true,
         piece_count: 3,
         total_size_bytes: Some("32771".to_owned()),

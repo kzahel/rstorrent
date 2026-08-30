@@ -1095,6 +1095,7 @@ function torrentBatch(displayName: string) {
                 download: { type: "unlimited" as const },
               },
               storage_state: "available",
+              storage_root: "downloads",
               metadata_available: true,
               piece_count: 1,
               total_size_bytes: "65536",

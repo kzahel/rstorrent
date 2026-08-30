@@ -93,6 +93,7 @@ import org.rstorrent.session.uniffi.DiagnosticSeverity
 import org.rstorrent.session.uniffi.ClientSettingsPatch
 import org.rstorrent.session.uniffi.FilePriority
 import org.rstorrent.session.uniffi.RemovalDataPolicy
+import org.rstorrent.session.uniffi.StorageRootAvailability
 import org.rstorrent.session.uniffi.TorrentOperationalState
 import org.rstorrent.session.uniffi.TorrentSettingsPatch
 import org.rstorrent.session.uniffi.TorrentView
@@ -112,6 +113,7 @@ fun ProductApp(
     stateOverride: ProductState? = null,
     onUpdateClientSettings: ((ClientSettingsPatch) -> Unit)? = null,
     onUpdateTorrentSettings: ((String, TorrentSettingsPatch) -> Unit)? = null,
+    onRepairStorage: (String) -> Unit = {},
 ) {
     RstorrentTheme(mode = themeMode, dynamicColor = dynamicColor) {
         val state =
@@ -128,6 +130,7 @@ fun ProductApp(
                 state = state,
                 service = service,
                 onSelectStorage = onSelectStorage,
+                onRepairStorage = onRepairStorage,
                 onBrowseTorrent = onBrowseTorrent,
                 notificationsGranted = notificationsGranted,
                 onRequestNotifications = onRequestNotifications,
@@ -156,6 +159,7 @@ private fun ProductNavHost(
     state: ProductState,
     service: ProductEngineService?,
     onSelectStorage: () -> Unit,
+    onRepairStorage: (String) -> Unit,
     onBrowseTorrent: (Boolean) -> Unit,
     notificationsGranted: Boolean,
     onRequestNotifications: () -> Unit,
@@ -228,7 +232,9 @@ private fun ProductNavHost(
                 },
                 onDownloadFile = { service?.downloadFileNow(torrentId, it.fileIndex) },
                 onOpenFile = { file ->
-                    torrent?.displayName?.let { service?.openCompletedFile(it, file) }
+                    torrent?.displayName?.let {
+                        service?.openCompletedFile(torrent.storageRoot, it, file)
+                    }
                 },
                 onFilePage = {
                     service?.presentCatalogPage(torrentId, TorrentPresentation.FILES, it)
@@ -275,11 +281,22 @@ private fun ProductNavHost(
                     action = if (state.storageRootReady) "Change" else "Select",
                 )
                 state.storage?.roots.orEmpty().forEach { root ->
-                    ReadOnlySettingsRow(
-                        root.label + if (root.rootId == state.storage?.defaultRoot) " (default)" else "",
+                    val title =
+                        root.label +
+                            if (root.rootId == state.storage?.defaultRoot) " (default)" else ""
+                    val detail =
                         root.availability.name.lowercase() +
-                            (root.displayPath?.let { " · $it" } ?: " · Android document provider"),
-                    )
+                            (root.displayPath?.let { " · $it" } ?: " · Android document provider")
+                    if (root.availability == StorageRootAvailability.UNAVAILABLE) {
+                        SettingAction(
+                            title = title,
+                            detail = detail,
+                            onClick = { onRepairStorage(root.rootId) },
+                            action = "Repair",
+                        )
+                    } else {
+                        ReadOnlySettingsRow(title, detail)
+                    }
                 }
             }
         }

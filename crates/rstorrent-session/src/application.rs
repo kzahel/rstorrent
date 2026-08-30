@@ -2232,6 +2232,9 @@ impl ApplicationService {
             .ok_or_else(|| {
                 ApplicationError::Configuration(format!("storage root {root_id} is not configured"))
             })?;
+        if root.availability == crate::StorageRootAvailability::Available && root.label == label {
+            return Ok((root, Vec::new()));
+        }
         if root.availability == crate::StorageRootAvailability::Available {
             return Err(ApplicationError::Configuration(
                 "an available platform root cannot be repaired".to_owned(),
@@ -14659,6 +14662,12 @@ mod tests {
                 .as_deref(),
             Some("root_b")
         );
+        let (replayed, replay_restarts) = service
+            .repair_platform_storage_root("root_a", "Repaired A")
+            .await
+            .expect("replay completed repair");
+        assert_eq!(replayed, repaired);
+        assert!(replay_restarts.is_empty());
 
         service.shutdown().await.expect("shutdown");
         drop(service);

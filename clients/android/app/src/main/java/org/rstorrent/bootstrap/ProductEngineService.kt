@@ -36,10 +36,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import org.rstorrent.bootstrap.uniffi.AndroidApplicationClient
 import org.rstorrent.bootstrap.uniffi.AndroidApplicationConfig
 import org.rstorrent.bootstrap.uniffi.AndroidNetworkPolicy
+import org.rstorrent.bootstrap.uniffi.AndroidPlatformStorageRoot
 import org.rstorrent.bootstrap.uniffi.AndroidViewSubscription
 import org.rstorrent.bootstrap.uniffi.SafStorageFailureKind
 import org.rstorrent.bootstrap.uniffi.SafStorageOperation
@@ -71,6 +74,7 @@ import org.rstorrent.session.uniffi.RemovalDataPolicy
 import org.rstorrent.session.uniffi.ResponseOutcome
 import org.rstorrent.session.uniffi.SpeedMetric
 import org.rstorrent.session.uniffi.SpeedRange
+import org.rstorrent.session.uniffi.StorageRootAvailability
 import org.rstorrent.session.uniffi.SubscriptionSpec
 import org.rstorrent.session.uniffi.TorrentState
 import org.rstorrent.session.uniffi.TorrentSettingsPatch
@@ -104,7 +108,8 @@ class ProductEngineService : Service() {
     private var trackerEvidenceSubscription: AndroidViewSubscription? = null
     private var trackerEvidenceJob: Job? = null
     @Volatile private var safStorageJobs: List<Job> = emptyList()
-    @Volatile private var safTreeUri: Uri? = null
+    @Volatile private var defaultSafRootId: String? = null
+    private val safRootMutation = Mutex()
     private val safWork = ConcurrentHashMap.newKeySet<String>()
     private val safDirectCompletions = ConcurrentHashMap.newKeySet<String>()
     private val clientSettingsRequestActive = AtomicBoolean(false)
@@ -115,11 +120,11 @@ class ProductEngineService : Service() {
         super.onCreate()
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, notification("Opening profile"))
-        safTreeUri = ProductSafDocuments.selectedTree(this)
+        val safRegistry = ProductSafRootRegistry.load(this)
         mutableState.update {
             it.copy(
                 storageRootReady = false,
-                storageRootLabel = safTreeUri?.lastPathSegment,
+                storageRootLabel = safRegistry.roots.singleOrNull()?.label,
                 preventSleepDuringActiveDownloads = ProductPowerPreference.read(this),
             )
         }
@@ -135,6 +140,9 @@ class ProductEngineService : Service() {
                             "default",
                             "",
                             true,
+                            safRegistry.roots.map {
+                                AndroidPlatformStorageRoot(it.rootId, it.label)
+                            },
                             AndroidNetworkPolicy.ONLINE,
                             15UL,
                             60UL,
@@ -146,6 +154,7 @@ class ProductEngineService : Service() {
                         mutableState,
                         stopped,
                         onUpdate = { update, product, driveSaf ->
+                            updateSafRootState(product)
                             traceUpdate(update, product)
                             if (driveSaf) advanceSaf(product)
                             driveSettingsMutations()
@@ -158,20 +167,11 @@ class ProductEngineService : Service() {
                     List(SAF_PROVIDER_CONCURRENCY) {
                         scope.launch(Dispatchers.IO) { driveSafStorageRequests() }
                     }
+                reconcileSafRootRegistry()
                 val storageRootHealthy = client.probeSafStorageRoots()
                 Log.i(TAG, "saf_root_health source=startup available=$storageRootHealthy")
-                mutableState.update {
-                    it.copy(
-                        ready = true,
-                        storageRootReady = storageRootHealthy,
-                        error =
-                            if (safTreeUri != null && !storageRootHealthy) {
-                                "Selected download folder is unavailable"
-                            } else {
-                                null
-                            },
-                    )
-                }
+                refreshSafRootState()
+                mutableState.update { it.copy(ready = true) }
                 clientReady.complete(Unit)
                 observePowerAndNotification()
             } catch (error: Throwable) {
@@ -220,7 +220,8 @@ class ProductEngineService : Service() {
         skipFiles: List<UInt> = emptyList(),
         startContent: Boolean = true,
     ) {
-        if (safTreeUri == null) {
+        val storageRoot = currentSafRootForAdd()
+        if (storageRoot == null) {
             mutableState.update { it.copy(error = "Select a download folder first") }
             return
         }
@@ -228,7 +229,7 @@ class ProductEngineService : Service() {
             try {
                 clientReady.await()
                 dispatchAddAwait(
-                    Command.AddMagnet(magnet.trim(), "downloads", startContent, skipFiles),
+                    Command.AddMagnet(magnet.trim(), storageRoot, startContent, skipFiles),
                     magnetV1(magnet),
                     magnetV2(magnet),
                 )
@@ -242,7 +243,8 @@ class ProductEngineService : Service() {
         uri: Uri,
         startContent: Boolean = true,
     ) {
-        if (safTreeUri == null) {
+        val storageRoot = currentSafRootForAdd()
+        if (storageRoot == null) {
             mutableState.update { it.copy(error = "Select a download folder first") }
             return
         }
@@ -250,7 +252,7 @@ class ProductEngineService : Service() {
             try {
                 clientReady.await()
                 val source = readTorrentSource(uri)
-                dispatchTorrentSource(source, startContent)
+                dispatchTorrentSource(source, startContent, storageRoot = storageRoot)
             } catch (error: Throwable) {
                 reportError(error)
             }
@@ -262,7 +264,8 @@ class ProductEngineService : Service() {
         startContent: Boolean = true,
         selection: FileSelectionIntent = FileSelectionIntent.All,
     ) {
-        if (safTreeUri == null) {
+        val storageRoot = currentSafRootForAdd()
+        if (storageRoot == null) {
             mutableState.update { it.copy(error = "Select a download folder first") }
             return
         }
@@ -273,7 +276,7 @@ class ProductEngineService : Service() {
                 require(source.size <= MAX_TORRENT_SOURCE_BYTES) {
                     "Torrent file exceeds the ${MAX_TORRENT_SOURCE_BYTES / (1024 * 1024)} MiB limit"
                 }
-                dispatchTorrentSource(source, startContent, selection)
+                dispatchTorrentSource(source, startContent, selection, storageRoot)
             } catch (error: Throwable) {
                 reportError(error)
             }
@@ -284,13 +287,16 @@ class ProductEngineService : Service() {
         source: ByteArray,
         startContent: Boolean,
         selection: FileSelectionIntent = FileSelectionIntent.All,
+        storageRoot: String = requireNotNull(currentSafRootForAdd()) {
+            "Select a download folder first"
+        },
     ) {
         val request =
             AddTorrentBytesRequest(
                 version = 1U.toUShort(),
                 requestId = "android-$requestPrefix-${requestIds.getAndIncrement()}",
                 expectedRevision = null,
-                storageRoot = "downloads",
+                storageRoot = storageRoot,
                 startContent = startContent,
                 selection = selection,
                 sourceLength = source.size.toUInt(),
@@ -329,7 +335,8 @@ class ProductEngineService : Service() {
         check(ProductSafDocuments.isDebuggable(this)) {
             "tracker authentication injection is debug-only"
         }
-        if (safTreeUri == null) {
+        val storageRoot = currentSafRootForAdd()
+        if (storageRoot == null) {
             mutableState.update { it.copy(error = "Select a download folder first") }
             return
         }
@@ -362,7 +369,7 @@ class ProductEngineService : Service() {
                 )
                 awaitTrackerPolicy(policy)
                 val torrentId = dispatchAddAwait(
-                    Command.AddMagnet(magnet.trim(), "downloads", startContent, emptyList()),
+                    Command.AddMagnet(magnet.trim(), storageRoot, startContent, emptyList()),
                     v1InfoHash,
                 )
                 subscribeTrackerEvidenceForTest(torrentId)
@@ -380,7 +387,8 @@ class ProductEngineService : Service() {
         check(ProductSafDocuments.isDebuggable(this)) {
             "peer encryption injection is debug-only"
         }
-        if (safTreeUri == null) {
+        val storageRoot = currentSafRootForAdd()
+        if (storageRoot == null) {
             mutableState.update { it.copy(error = "Select a download folder first") }
             return
         }
@@ -415,7 +423,7 @@ class ProductEngineService : Service() {
                 )
                 awaitEncryptionPolicy(policy)
                 dispatchAddAwait(
-                    Command.AddMagnet(magnet.trim(), "downloads", true, skipFiles),
+                    Command.AddMagnet(magnet.trim(), storageRoot, true, skipFiles),
                     magnetV1(magnet),
                 )
             } catch (error: Throwable) {
@@ -739,36 +747,167 @@ class ProductEngineService : Service() {
         }
     }
 
-    fun setSafTree(treeUri: Uri) {
+    fun setSafTree(
+        treeUri: Uri,
+        repairRootId: String? = null,
+    ) {
+        ProductSafRootRegistry.recordSelectionCandidate(this, treeUri, repairRootId)
         scope.launch {
             try {
                 clientReady.await()
-                val restart = client.prepareSafTreeReplacement()
-                safTreeUri = treeUri
+                reconcileSafRootRegistry()
                 val storageRootHealthy = client.probeSafStorageRoots()
+                refreshSafRootState()
                 Log.i(TAG, "saf_root_health source=selection available=$storageRootHealthy")
-                Log.i(TAG, "saf_tree_ready uri=$treeUri")
-                mutableState.update {
-                    it.copy(
-                        storageRootReady = storageRootHealthy,
-                        storageRootLabel = treeUri.lastPathSegment,
-                        error =
-                            if (storageRootHealthy) {
-                                null
-                            } else {
-                                "Selected download folder is unavailable"
-                            },
-                    )
-                }
+                Log.i(TAG, "saf_tree_ready root=${defaultSafRootId ?: "none"}")
                 if (!storageRootHealthy) return@launch
                 advanceSaf(mutableState.value)
                 mutableState.value.torrents.values
                     .filter { it.state == TorrentState.AWAITING_STORAGE }
                     .forEach { resume(it.torrentId) }
-                restart?.let(::resume)
             } catch (error: Throwable) {
                 reportError(error)
             }
+        }
+    }
+
+    private suspend fun reconcileSafRootRegistry() {
+        safRootMutation.withLock {
+            var state = ProductSafRootRegistry.load(this@ProductEngineService)
+            if (state.pending != null) executeSafRootOperation(state.pending)
+            state = ProductSafRootRegistry.load(this@ProductEngineService)
+            if (state.selectionCandidate != null) {
+                val candidate = Uri.parse(state.selectionCandidate)
+                val label = ProductSafDocuments.treeLabel(this@ProductEngineService, candidate)
+                val operation =
+                    state.selectionRepairRootId?.let { rootId ->
+                        ProductSafRootRegistry.beginRepair(
+                            this@ProductEngineService,
+                            rootId,
+                            candidate,
+                            label,
+                        )
+                    } ?: ProductSafRootRegistry.beginSelection(
+                        this@ProductEngineService,
+                        client.allocateSafStorageRootId(),
+                        label,
+                    )
+                executeSafRootOperation(operation)
+            }
+            refreshSafRootState()
+        }
+    }
+
+    private suspend fun executeSafRootOperation(operation: ProductSafRootOperation) {
+        var nativeMutationComplete = false
+        try {
+            when (operation.kind) {
+                ProductSafRootOperationKind.ADD,
+                ProductSafRootOperationKind.SET_DEFAULT,
+                -> client.installSafStorageRoot(
+                    operation.rootId,
+                    operation.label,
+                    operation.makeDefault,
+                )
+                ProductSafRootOperationKind.REPAIR -> {
+                    val mutation =
+                        client.repairSafStorageRoot(operation.rootId, operation.label)
+                    mutation.restartTorrentIds.forEach(::resume)
+                }
+            }
+            nativeMutationComplete = true
+            ProductSafRootRegistry.completePending(this)
+            operation.previous?.let { previous ->
+                runCatching {
+                    ProductSafDocuments.releaseGrantIfUnregistered(
+                        this,
+                        Uri.parse(previous.treeUri),
+                    )
+                }.onFailure { releaseError ->
+                    Log.w(TAG, "could not release replaced SAF grant", releaseError)
+                }
+            }
+            Log.i(
+                TAG,
+                "saf_root_operation kind=${operation.kind.name.lowercase()} " +
+                    "root=${operation.rootId} result=complete",
+            )
+        } catch (error: Throwable) {
+            if (nativeMutationComplete) throw error
+            when (operation.kind) {
+                ProductSafRootOperationKind.ADD -> {
+                    ProductSafRootRegistry.rollbackAdd(this)
+                    releaseFailedSafSelection(operation)
+                }
+                ProductSafRootOperationKind.REPAIR -> {
+                    ProductSafRootRegistry.rollbackRepair(this)
+                    releaseFailedSafSelection(operation)
+                    client.probeSafStorageRoots()
+                    mutableState.value.torrents.values
+                        .filter { it.storageRoot == operation.rootId }
+                        .filter { it.state == TorrentState.AWAITING_STORAGE }
+                        .forEach { resume(it.torrentId) }
+                }
+                ProductSafRootOperationKind.SET_DEFAULT ->
+                    ProductSafRootRegistry.abandonPendingDefault(this)
+            }
+            throw error
+        }
+    }
+
+    private fun releaseFailedSafSelection(operation: ProductSafRootOperation) {
+        runCatching {
+            ProductSafDocuments.releaseGrantIfUnregistered(this, Uri.parse(operation.treeUri))
+        }.onFailure { releaseError ->
+            Log.w(TAG, "could not release rejected SAF grant", releaseError)
+        }
+    }
+
+    private suspend fun refreshSafRootState() {
+        val storage = client.safStorageSnapshot()
+        defaultSafRootId = storage.defaultRoot
+        val current = storage.roots.singleOrNull { it.rootId == storage.defaultRoot }
+        val ready =
+            current?.availability == StorageRootAvailability.AVAILABLE &&
+                ProductSafRootRegistry.treeForRoot(this, current.rootId) != null
+        mutableState.update {
+            it.copy(
+                storage = storage,
+                storageRootReady = ready,
+                storageRootLabel = current?.label,
+                error =
+                    when {
+                        current == null -> null
+                        ready -> it.error?.takeUnless { message ->
+                            message == "Selected download folder is unavailable"
+                        }
+                        else -> "Selected download folder is unavailable"
+                    },
+            )
+        }
+    }
+
+    private fun updateSafRootState(product: ProductState) {
+        val storage = product.storage ?: return
+        defaultSafRootId = storage.defaultRoot
+        val current = storage.roots.singleOrNull { it.rootId == storage.defaultRoot }
+        val ready =
+            current?.availability == StorageRootAvailability.AVAILABLE &&
+                ProductSafRootRegistry.treeForRoot(this, current.rootId) != null
+        mutableState.update {
+            it.copy(
+                storageRootReady = ready,
+                storageRootLabel = current?.label,
+            )
+        }
+    }
+
+    private fun currentSafRootForAdd(): String? {
+        val rootId = defaultSafRootId ?: return null
+        val root = mutableState.value.storage?.roots?.singleOrNull { it.rootId == rootId }
+        return rootId.takeIf {
+            root?.availability == StorageRootAvailability.AVAILABLE &&
+                ProductSafRootRegistry.treeForRoot(this, rootId) != null
         }
     }
 
@@ -973,13 +1112,16 @@ class ProductEngineService : Service() {
     }
 
     fun openCompletedFile(
+        storageRoot: String,
         torrentName: String,
         file: FileView,
     ) {
         scope.launch(Dispatchers.IO) {
             try {
                 require(file.verifiedBytes == file.lengthBytes) { "File is not complete" }
-                val tree = safTreeUri ?: error("Download folder is unavailable")
+                val tree =
+                    ProductSafRootRegistry.treeForRoot(this@ProductEngineService, storageRoot)
+                        ?: error("Download folder is unavailable")
                 val path =
                     if (file.path.firstOrNull() == torrentName) {
                         file.path
@@ -1470,7 +1612,6 @@ class ProductEngineService : Service() {
     }
 
     private fun advanceSaf(product: ProductState) {
-        val treeUri = safTreeUri ?: return
         safDirectCompletions.retainAll(product.torrents.keys)
         for (torrent in product.torrents.values) {
             if (torrent.state == TorrentState.COMPLETE && torrent.removalState == null) {
@@ -1502,6 +1643,14 @@ class ProductEngineService : Service() {
                         "removal" -> {
                             Log.i(TAG, "saf_removal_begin torrent=${torrent.torrentId}")
                             val plan = client.safRemovalPlan(torrent.torrentId)
+                            val treeUri =
+                                ProductSafRootRegistry.treeForRoot(
+                                    this@ProductEngineService,
+                                    plan.storageRoot,
+                                ) ?: throw SafStorageRequestException(
+                                    SafStorageFailureKind.GRANT_UNAVAILABLE,
+                                    "persisted SAF grant is unavailable for the torrent root",
+                                )
                             ProductSafDocuments.deleteData(
                                 this@ProductEngineService,
                                 treeUri,
@@ -1541,7 +1690,10 @@ class ProductEngineService : Service() {
             try {
                 withTimeout(request.timeoutMillis.toLong()) {
                     val treeUri =
-                        ProductSafDocuments.selectedTree(this@ProductEngineService)
+                        ProductSafRootRegistry.treeForRoot(
+                            this@ProductEngineService,
+                            request.rootId,
+                        )
                             ?: throw SafStorageRequestException(
                                 SafStorageFailureKind.GRANT_UNAVAILABLE,
                                 "persisted SAF grant is unavailable",

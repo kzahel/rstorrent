@@ -525,6 +525,7 @@ mod tests {
             download_queue_position: None,
             transfer_limits: TorrentTransferLimits::default(),
             storage_state: StorageState::Available,
+            storage_root: "downloads".to_owned(),
             metadata_available: false,
             piece_count: 1,
             total_size_bytes: None,

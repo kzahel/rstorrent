@@ -543,6 +543,7 @@ fn fixture_torrent(torrent_id: &str, verified: u32) -> TorrentView {
         download_queue_position: if verified == 3 { None } else { Some(1) },
         transfer_limits: TorrentTransferLimits::default(),
         storage_state: StorageState::Available,
+        storage_root: "downloads".to_owned(),
         metadata_available: true,
         piece_count: 3,
         total_size_bytes: Some("49152".to_owned()),

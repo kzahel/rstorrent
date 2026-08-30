@@ -22,6 +22,7 @@ function torrent(verified: number): TorrentView {
       download: { type: "unlimited" },
     },
     storage_state: "available",
+    storage_root: "downloads",
     metadata_available: true,
     piece_count: 3,
     total_size_bytes: "49152",

@@ -34,6 +34,7 @@ class MainActivity : ComponentActivity() {
     private var pendingProductTorrentBase64: String? = null
     private var pendingProductTorrentSelection: FileSelectionIntent = FileSelectionIntent.All
     private var pendingProductTorrentStartContent = true
+    private var pendingProductRepairRootId: String? = null
     private var pendingProductTrackerPolicy: String? = null
     private var pendingProductEncryptionPolicy: String? = null
     private var pendingProductStartContent = true
@@ -51,8 +52,10 @@ class MainActivity : ComponentActivity() {
             if (result.resultCode != RESULT_OK || treeUri == null) return@registerForActivityResult
             val flags = data.flags and ProductSafDocuments.GRANT_FLAGS
             contentResolver.takePersistableUriPermission(treeUri, flags)
-            ProductSafDocuments.persistTree(this, treeUri)
-            productService.value?.setSafTree(treeUri)
+            val repairRootId = pendingProductRepairRootId
+            pendingProductRepairRootId = null
+            ProductSafDocuments.persistTree(this, treeUri, repairRootId)
+            productService.value?.setSafTree(treeUri, repairRootId)
         }
     private val productTorrentPicker =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -82,7 +85,14 @@ class MainActivity : ComponentActivity() {
                 binder: IBinder,
             ) {
                 val service = (binder as ProductEngineService.LocalBinder).service
-                ProductSafDocuments.selectedTree(this@MainActivity)?.let(service::setSafTree)
+                ProductSafRootRegistry.load(this@MainActivity).let { registry ->
+                    registry.selectionCandidate?.let { encoded ->
+                        service.setSafTree(
+                            android.net.Uri.parse(encoded),
+                            registry.selectionRepairRootId,
+                        )
+                    }
+                }
                 productService.value = service
                 pendingProductMagnet?.let {
                     pendingProductMagnet = null
@@ -249,7 +259,8 @@ class MainActivity : ComponentActivity() {
             setContent {
                 ProductApp(
                     service = productService.value,
-                    onSelectStorage = ::launchProductTreePicker,
+                    onSelectStorage = { launchProductTreePicker() },
+                    onRepairStorage = { launchProductTreePicker(it) },
                     onBrowseTorrent = ::launchProductTorrentPicker,
                     notificationsGranted = notificationsGranted.value,
                     onRequestNotifications = ::requestNotificationPermission,
@@ -489,7 +500,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun launchProductTreePicker() {
+    private fun launchProductTreePicker(repairRootId: String? = null) {
+        pendingProductRepairRootId = repairRootId
         productTreePicker.launch(
             Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)

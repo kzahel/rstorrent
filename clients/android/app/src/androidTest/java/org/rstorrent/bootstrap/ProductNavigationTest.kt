@@ -235,6 +235,7 @@ class ProductNavigationTest {
                     TransferRateLimit.Unlimited,
                 ),
             storageState = StorageState.AVAILABLE,
+            storageRoot = "downloads",
             metadataAvailable = true,
             pieceCount = 4U,
             totalSizeBytes = "65536",

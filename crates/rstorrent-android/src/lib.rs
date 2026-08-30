@@ -25,7 +25,7 @@ use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo};
 use rstorrent_session::{
     AddTorrentBytesRequest, ApplicationConfig, ApplicationService, ConfiguredStorageRoot,
     MAX_STORAGE_ROOTS, PlatformRemovalPlan, RequestEnvelope, ResponseEnvelope, StorageRootSnapshot,
-    SubscriptionSpec, ViewSubscription, ViewUpdate,
+    StorageSettingsSnapshot, SubscriptionSpec, ViewSubscription, ViewUpdate,
 };
 use sha1::{Digest, Sha1};
 use tokio::sync::Mutex as AsyncMutex;
@@ -262,6 +262,18 @@ impl AndroidApplicationClient {
             .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
             .probe_platform_storage_roots()
             .await
+            .map_err(|error| AndroidClientError::message(error.to_string()))
+    }
+
+    pub async fn saf_storage_snapshot(
+        &self,
+    ) -> Result<StorageSettingsSnapshot, AndroidClientError> {
+        self.service
+            .lock()
+            .await
+            .as_ref()
+            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
+            .storage_snapshot()
             .map_err(|error| AndroidClientError::message(error.to_string()))
     }
 
