@@ -19,6 +19,8 @@ const INTERNAL_GATEWAY_CONNECTIONS: usize = 2;
 /// connection to the incumbent application service.
 pub struct RemoteApplicationRuntime {
     owner: Arc<RemoteAccessOwner>,
+    #[cfg(feature = "direct-file-webrtc")]
+    direct_file_factory: rstorrent_direct_file::DirectFileEndpointFactory,
     gateway_shutdown: CancellationToken,
     gateway_task:
         Mutex<Option<JoinHandle<std::result::Result<(), rstorrent_gateway::GatewayError>>>>,
@@ -73,6 +75,9 @@ impl RemoteApplicationRuntime {
         config: impl FnOnce(String, String, String) -> Result<RemoteHostConfig>,
     ) -> Result<Self> {
         let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(random_array::<32>()?);
+        #[cfg(feature = "direct-file-webrtc")]
+        let direct_file_factory =
+            rstorrent_direct_file::DirectFileEndpointFactory::new(service.clone());
         let gateway = bind(
             GatewayConfig {
                 bind: "127.0.0.1:0"
@@ -114,6 +119,8 @@ impl RemoteApplicationRuntime {
         };
         Ok(Self {
             owner,
+            #[cfg(feature = "direct-file-webrtc")]
+            direct_file_factory,
             gateway_shutdown,
             gateway_task: Mutex::new(Some(gateway_task)),
         })
@@ -121,6 +128,11 @@ impl RemoteApplicationRuntime {
 
     pub fn owner(&self) -> Arc<RemoteAccessOwner> {
         self.owner.clone()
+    }
+
+    #[cfg(feature = "direct-file-webrtc")]
+    pub fn direct_file_endpoint_factory(&self) -> rstorrent_direct_file::DirectFileEndpointFactory {
+        self.direct_file_factory.clone()
     }
 
     pub async fn shutdown(&self) -> Result<()> {

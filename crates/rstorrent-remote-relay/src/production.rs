@@ -632,14 +632,17 @@ impl TlsProductRelayServer {
         }
         let certificate = read_public_file(certificate_der, MAX_CERTIFICATE_BYTES)?;
         let private_key = read_private_file(private_key_der, MAX_PRIVATE_KEY_BYTES)?;
-        let mut configuration =
-            ServerConfig::builder_with_protocol_versions(&[&tokio_rustls::rustls::version::TLS13])
-                .with_no_client_auth()
-                .with_single_cert(
-                    vec![CertificateDer::from(certificate)],
-                    PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(private_key)),
-                )
-                .map_err(|_| ProductRelayError::Configuration("TLS certificate or private key"))?;
+        let mut configuration = ServerConfig::builder_with_provider(Arc::new(
+            tokio_rustls::rustls::crypto::aws_lc_rs::default_provider(),
+        ))
+        .with_protocol_versions(&[&tokio_rustls::rustls::version::TLS13])
+        .map_err(|_| ProductRelayError::Configuration("TLS protocol versions"))?
+        .with_no_client_auth()
+        .with_single_cert(
+            vec![CertificateDer::from(certificate)],
+            PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(private_key)),
+        )
+        .map_err(|_| ProductRelayError::Configuration("TLS certificate or private key"))?;
         configuration.alpn_protocols = vec![b"http/1.1".to_vec()];
 
         let relay = ProductRelay::open(root, allowed_client_origin)?;
@@ -667,14 +670,17 @@ impl TlsProductRelayServer {
         }
         let certificate = read_public_file(certificate_der, MAX_CERTIFICATE_BYTES)?;
         let private_key = read_private_file(private_key_der, MAX_PRIVATE_KEY_BYTES)?;
-        let mut configuration =
-            ServerConfig::builder_with_protocol_versions(&[&tokio_rustls::rustls::version::TLS13])
-                .with_no_client_auth()
-                .with_single_cert(
-                    vec![CertificateDer::from(certificate)],
-                    PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(private_key)),
-                )
-                .map_err(|_| ProductRelayError::Configuration("TLS certificate or private key"))?;
+        let mut configuration = ServerConfig::builder_with_provider(Arc::new(
+            tokio_rustls::rustls::crypto::aws_lc_rs::default_provider(),
+        ))
+        .with_protocol_versions(&[&tokio_rustls::rustls::version::TLS13])
+        .map_err(|_| ProductRelayError::Configuration("TLS protocol versions"))?
+        .with_no_client_auth()
+        .with_single_cert(
+            vec![CertificateDer::from(certificate)],
+            PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(private_key)),
+        )
+        .map_err(|_| ProductRelayError::Configuration("TLS certificate or private key"))?;
         configuration.alpn_protocols = vec![b"http/1.1".to_vec()];
         let relay = ProductRelay::open_with_options(root, options)?;
         Self::bind_relay(address, relay, configuration).await

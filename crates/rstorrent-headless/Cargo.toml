@@ -6,6 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+default = []
+direct-file-webrtc = ["rstorrent-remote-host/direct-file-webrtc"]
+
 [dependencies]
 base64 = { workspace = true }
 flate2 = { workspace = true }

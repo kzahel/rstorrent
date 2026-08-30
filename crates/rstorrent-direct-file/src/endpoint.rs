@@ -188,6 +188,10 @@ pub struct DirectFileEndpointFactory {
 
 impl DirectFileEndpointFactory {
     pub fn new(application: SharedApplication) -> Self {
+        // The default-off product feature stores this lazy factory at startup.
+        // Keep the real start path link-reachable without opening a socket,
+        // generating a certificate, or starting a task until an offer arrives.
+        std::hint::black_box(Self::answer_offer);
         Self { application }
     }
 

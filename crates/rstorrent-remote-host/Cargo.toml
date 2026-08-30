@@ -6,6 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+default = []
+direct-file-webrtc = ["dep:rstorrent-direct-file", "rstorrent-direct-file/webrtc"]
+
 [dependencies]
 base64.workspace = true
 futures-util = { workspace = true, features = ["sink"] }
@@ -14,6 +18,7 @@ p256.workspace = true
 rand = { workspace = true, features = ["std", "std_rng"] }
 reqwest.workspace = true
 rstorrent-gateway = { path = "../rstorrent-gateway" }
+rstorrent-direct-file = { path = "../rstorrent-direct-file", optional = true }
 rstorrent-remote-access = { path = "../rstorrent-remote-access" }
 rstorrent-remote-crypto = { path = "../rstorrent-remote-crypto", features = ["native"] }
 rstorrent-remote-relay = { path = "../rstorrent-remote-relay" }

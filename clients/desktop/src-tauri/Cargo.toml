@@ -6,6 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+default = []
+direct-file-webrtc = ["rstorrent-remote-host/direct-file-webrtc"]
+
 [lib]
 name = "rstorrent_desktop"
 crate-type = ["lib", "cdylib", "staticlib"]

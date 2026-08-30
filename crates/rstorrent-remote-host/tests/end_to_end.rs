@@ -510,9 +510,13 @@ async fn connect_routed(harness: &Harness) -> (ClientSocket, HostGreeting) {
     roots
         .add(CertificateDer::from(harness.certificate.clone()))
         .unwrap();
-    let tls = ClientConfig::builder()
-        .with_root_certificates(roots)
-        .with_no_client_auth();
+    let tls = ClientConfig::builder_with_provider(Arc::new(
+        tokio_rustls::rustls::crypto::aws_lc_rs::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .unwrap()
+    .with_root_certificates(roots)
+    .with_no_client_auth();
     let mut request = format!("wss://localhost:{}/client", harness.relay_address.port())
         .into_client_request()
         .unwrap();

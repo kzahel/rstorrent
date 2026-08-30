@@ -16,7 +16,7 @@ use rstorrent_remote_crypto::{
     ClientId, HostId, OperationSeed, RelayId, Username, random_operation_seed,
 };
 use rstorrent_remote_relay::{ReserveRouteRequest, ReserveRouteResponse};
-use rustls_platform_verifier::ConfigVerifierExt as _;
+use rustls_platform_verifier::BuilderVerifierExt as _;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
@@ -74,9 +74,13 @@ impl RemoteHostConfig {
         roots
             .add(certificate.clone())
             .map_err(|_| RemoteHostError::Configuration("relay certificate"))?;
-        let relay_tls = ClientConfig::builder()
-            .with_root_certificates(roots)
-            .with_no_client_auth();
+        let relay_tls = ClientConfig::builder_with_provider(Arc::new(
+            tokio_rustls::rustls::crypto::aws_lc_rs::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()
+        .map_err(|_| RemoteHostError::Configuration("relay TLS protocol versions"))?
+        .with_root_certificates(roots)
+        .with_no_client_auth();
         Self::finish(
             relay_base,
             relay_tls,
@@ -94,8 +98,14 @@ impl RemoteHostConfig {
         host_build: impl Into<String>,
     ) -> Result<Self> {
         let relay_base = parse_relay_base(PRODUCT_RELAY_BASE, RelayProfile::Product)?;
-        let relay_tls = ClientConfig::with_platform_verifier()
-            .map_err(|_| RemoteHostError::Configuration("platform relay certificate trust"))?;
+        let relay_tls = ClientConfig::builder_with_provider(Arc::new(
+            tokio_rustls::rustls::crypto::aws_lc_rs::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()
+        .map_err(|_| RemoteHostError::Configuration("relay TLS protocol versions"))?
+        .with_platform_verifier()
+        .map_err(|_| RemoteHostError::Configuration("platform relay certificate trust"))?
+        .with_no_client_auth();
         Self::finish(
             relay_base,
             relay_tls,

@@ -4741,6 +4741,7 @@ dependencies = [
  "rand 0.8.8",
  "rcgen",
  "reqwest",
+ "rstorrent-direct-file",
  "rstorrent-gateway",
  "rstorrent-remote-access",
  "rstorrent-remote-crypto",

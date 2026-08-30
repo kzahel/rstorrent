@@ -47,9 +47,13 @@ async fn tls_service_accepts_valid_clients_while_a_handshake_stalls() {
     roots
         .add(CertificateDer::from(certificate.clone()))
         .unwrap();
-    let client = ClientConfig::builder()
-        .with_root_certificates(roots)
-        .with_no_client_auth();
+    let client = ClientConfig::builder_with_provider(Arc::new(
+        tokio_rustls::rustls::crypto::aws_lc_rs::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .unwrap()
+    .with_root_certificates(roots)
+    .with_no_client_auth();
     let request = format!("wss://localhost:{}/host/nobody", address.port())
         .into_client_request()
         .unwrap();
