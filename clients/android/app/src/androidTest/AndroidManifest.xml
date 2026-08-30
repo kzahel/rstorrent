@@ -8,6 +8,8 @@
             android:grantUriPermissions="true" />
         <activity
             android:name="org.rstorrent.bootstrap.ExternalIntakeFixtureActivity"
-            android:exported="true" />
+            android:exported="true"
+            android:noHistory="true"
+            android:taskAffinity="" />
     </application>
 </manifest>

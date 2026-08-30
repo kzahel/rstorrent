@@ -52,6 +52,7 @@ PROFILE_CHOICES = (
     "product-mse",
     "product-concurrent-downloads",
     "product-ipv6-policy",
+    "product-external-intake",
     "slow-storage",
     "cancellation",
     "peer-failure",
@@ -157,6 +158,36 @@ def build_apk() -> Path:
     apk = Path(lines[-1]) if lines else Path()
     if not apk.is_file():
         raise BootstrapFailure("build did not report an APK")
+    return apk
+
+
+def build_android_test_apk() -> Path:
+    completed = subprocess.run(
+        [str(android_root() / "gradlew"), "assembleDebugAndroidTest"],
+        cwd=android_root(),
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise BootstrapFailure(
+            "Android external-intake fixture build failed\n"
+            f"stdout:\n{completed.stdout}\n"
+            f"stderr:\n{completed.stderr}"
+        )
+    apk = (
+        android_root()
+        / "app"
+        / "build"
+        / "outputs"
+        / "apk"
+        / "androidTest"
+        / "debug"
+        / "app-debug-androidTest.apk"
+    )
+    if not apk.is_file():
+        raise BootstrapFailure("Android external-intake fixture APK is unavailable")
     return apk
 
 
@@ -4385,6 +4416,510 @@ def run_product_https_platform_trust_profile(
         shutil.rmtree(certificate_root, ignore_errors=True)
 
 
+def run_product_external_intake_profile(
+    target: Any,
+    target_kind: str,
+    identity: dict[str, str],
+    probe: ModuleType,
+    interop: ModuleType,
+    tracker_support: ModuleType,
+    ordinal: int,
+    storage: str,
+) -> dict[str, Any]:
+    if target_kind != "avd":
+        raise BootstrapFailure("product-external-intake is an API 34 AVD profile")
+    if not storage.startswith("saf-"):
+        raise BootstrapFailure("product-external-intake requires a SAF storage mode")
+    grant_storage = "sdcard" if storage == "saf-sdcard" else "internal"
+    fixture = SeedFixture.create(
+        interop,
+        f"{target_kind}-product-external-intake-{ordinal}",
+    )
+    test_package = external_fixture_package(target)
+    authority = f"{test_package}.external-intake-fixture"
+    grant_root = probe.grant_path(grant_storage)
+    output_root = f"{grant_root}/{fixture.name}"
+    peer_transport: ReverseTransport | None = None
+    tracker_transport: ReverseTransport | None = None
+    controlled_tracker: Any | None = None
+    torrent_ids: list[str] = []
+    baseline_fds = 0
+    fd_high_water = 0
+    metrics: dict[str, int] = {}
+    try:
+        clear_application(target)
+        prepare_product_saf(target, probe, grant_storage)
+        baseline_fds = product_fd_count(target)
+        fd_high_water = baseline_fds
+        peer_transport = ReverseTransport.create(
+            target,
+            target_kind,
+            fixture.host_port,
+            ordinal,
+        )
+        controlled_tracker = tracker_support.ControlledHttpTracker(
+            fixture.info_hash,
+            peer_transport.device_port,
+        )
+        controlled_tracker.start()
+        tracker_transport = ReverseTransport.create(
+            target,
+            target_kind,
+            controlled_tracker.port,
+            ordinal,
+            slot=1,
+        )
+        source = tracker_metainfo(
+            fixture.torrent_path,
+            controlled_tracker.url_for_port(tracker_transport.device_port),
+        )
+
+        presented_count = external_log_count(target, "phase=presented")
+        launch_external_fixture(
+            target,
+            test_package,
+            "valid",
+            payload=source,
+            repeat=2,
+        )
+        wait_external_log(target, presented_count, "phase=presented")
+        duplicate_count = external_log_count(target, "phase=duplicate")
+        wait_external_log(
+            target,
+            duplicate_count,
+            "phase=duplicate",
+            "disposition=coalesced",
+        )
+        wait_and_click_product_text(
+            target,
+            probe,
+            "Start downloading immediately",
+        )
+        success_count = external_log_count(target, "phase=success")
+        wait_and_click_product_text(target, probe, "Add")
+        wait_external_log(
+            target,
+            success_count,
+            "phase=success",
+            "disposition=added",
+        )
+        paused_id = wait_product_view_torrent_id(target, fixture.info_hash)
+        torrent_ids.append(paused_id)
+        wait_product_torrent_state(
+            target,
+            paused_id,
+            state="PAUSED",
+            description="paused external torrent",
+        )
+
+        already_count = external_log_count(
+            target,
+            "phase=duplicate",
+            "disposition=already_present",
+        )
+        launch_external_fixture(target, test_package, "valid", payload=source)
+        wait_and_click_product_text(target, probe, "Add")
+        wait_external_log(
+            target,
+            already_count,
+            "phase=duplicate",
+            "disposition=already_present",
+        )
+        request_product_torrent_action(target, paused_id, "remove")
+        wait_product_log(
+            target,
+            f"saf_removal_confirmed torrent={paused_id}",
+            "external paused torrent removal",
+        )
+
+        success_count = external_log_count(target, "phase=success")
+        launch_external_fixture(target, test_package, "valid", payload=source)
+        wait_and_click_product_text(target, probe, "Add")
+        wait_external_log(
+            target,
+            success_count,
+            "phase=success",
+            "disposition=added",
+        )
+        started_id = wait_product_view_torrent_id(
+            target,
+            fixture.info_hash,
+            excluding=set(torrent_ids),
+        )
+        torrent_ids.append(started_id)
+        metrics, next_fd_high_water = wait_product_completion(
+            target,
+            started_id,
+            baseline_fds,
+        )
+        fd_high_water = max(fd_high_water, next_fd_high_water)
+        verify_external_fixture_files(target, fixture, output_root)
+        request_product_torrent_action(target, started_id, "remove")
+        wait_product_log(
+            target,
+            f"saf_removal_confirmed torrent={started_id}",
+            "external started torrent removal",
+        )
+
+        for fixture_case, terminal_reason in (
+            ("empty", "reason=empty"),
+            ("oversized", "reason=oversized"),
+        ):
+            terminal_count = external_log_count(
+                target,
+                "phase=terminal",
+                terminal_reason,
+            )
+            launch_external_fixture(target, test_package, fixture_case)
+            wait_and_click_product_text(target, probe, "Add")
+            wait_external_log(
+                target,
+                terminal_count,
+                "phase=terminal",
+                terminal_reason,
+            )
+
+        for fixture_case in ("denied", "failing"):
+            retry_count = external_log_count(target, "phase=retry")
+            launch_external_fixture(target, test_package, fixture_case)
+            wait_and_click_product_text(target, probe, "Add")
+            wait_external_log(target, retry_count, "phase=retry")
+            terminal_count = external_log_count(target, "phase=terminal")
+            wait_and_click_product_text(target, probe, "Retry")
+            wait_external_log(target, terminal_count, "phase=terminal")
+
+        cancelled_count = external_log_count(target, "phase=cancelled")
+        launch_external_fixture(
+            target,
+            test_package,
+            "delayed-once",
+            payload=source,
+        )
+        wait_and_click_product_text(target, probe, "Add")
+        time.sleep(0.5)
+        wait_and_click_product_text(target, probe, "Cancel")
+        wait_external_log(target, cancelled_count, "phase=cancelled")
+
+        retry_count = external_log_count(target, "phase=retry", "reason=timeout")
+        launch_external_fixture(
+            target,
+            test_package,
+            "delayed-once",
+            payload=source,
+        )
+        wait_and_click_product_text(target, probe, "Add")
+        wait_external_log(
+            target,
+            retry_count,
+            "phase=retry",
+            "reason=timeout",
+            timeout=40,
+        )
+        success_count = external_log_count(target, "phase=success")
+        wait_and_click_product_text(target, probe, "Retry")
+        wait_external_log(target, success_count, "phase=success")
+        retried_id = wait_product_view_torrent_id(
+            target,
+            fixture.info_hash,
+            excluding=set(torrent_ids),
+        )
+        torrent_ids.append(retried_id)
+        retry_metrics, retry_fd_high_water = wait_product_completion(
+            target,
+            retried_id,
+            baseline_fds,
+        )
+        if retry_metrics["limit"] != metrics["limit"]:
+            raise BootstrapFailure("external intake SAF handle limit changed during run")
+        metrics["owned_high_water"] = max(
+            metrics["owned_high_water"],
+            retry_metrics["owned_high_water"],
+        )
+        metrics["pending_high_water"] = max(
+            metrics["pending_high_water"],
+            retry_metrics["pending_high_water"],
+        )
+        fd_high_water = max(fd_high_water, retry_fd_high_water)
+        verify_external_fixture_files(target, fixture, output_root)
+        request_product_torrent_action(target, retried_id, "remove")
+        wait_product_log(
+            target,
+            f"saf_removal_confirmed torrent={retried_id}",
+            "retried external torrent removal",
+        )
+
+        rejected_count = external_log_count(
+            target,
+            "phase=rejected",
+            "reason=directory",
+        )
+        launch_external_fixture(target, test_package, "directory")
+        wait_external_log(target, rejected_count, "phase=rejected", "reason=directory")
+        rejected_count = external_log_count(
+            target,
+            "phase=rejected",
+            "reason=unsupported_content",
+        )
+        launch_external_fixture(
+            target,
+            test_package,
+            "generic-rejected",
+            mime_type="application/octet-stream",
+        )
+        wait_external_log(
+            target,
+            rejected_count,
+            "phase=rejected",
+            "reason=unsupported_content",
+        )
+        presented_count = external_log_count(target, "phase=presented")
+        launch_external_fixture(
+            target,
+            test_package,
+            "generic",
+            mime_type="application/octet-stream",
+        )
+        wait_external_log(target, presented_count, "phase=presented")
+        wait_and_click_product_text(target, probe, "Cancel")
+
+        fd_high_water = max(fd_high_water, product_fd_count(target))
+        if baseline_fds and fd_high_water - baseline_fds > 20:
+            raise BootstrapFailure(
+                "external intake descriptor delta exceeded its bounds: "
+                f"baseline={baseline_fds} high_water={fd_high_water}"
+            )
+        if fixture.handle.status().total_upload <= 0:
+            raise BootstrapFailure("external intake oracle uploaded no payload")
+        if metrics["owned_high_water"] > metrics["limit"]:
+            raise BootstrapFailure("external intake exceeded the SAF handle bound")
+
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+        grants = target.shell(["dumpsys", "package", PACKAGE], check=False).stdout
+        if authority in grants:
+            raise BootstrapFailure("temporary external content grant survived force-stop")
+
+        return {
+            "target": target_kind,
+            "profile": "product-external-intake",
+            "run": ordinal,
+            "identity": identity,
+            "torrent_ids": torrent_ids,
+            "v1_info_hash": fixture.info_hash,
+            "content_name": fixture.name,
+            "outcomes": {
+                "paused": "retained_without_start",
+                "started": "complete",
+                "already_present": "typed",
+                "empty": "terminal",
+                "oversized": "terminal",
+                "denied": "retry_then_terminal",
+                "failing": "retry_then_terminal",
+                "delayed": "cancelled_then_timeout_retry_complete",
+                "directory": "rejected",
+                "generic_name": "accepted_then_cancelled",
+                "generic_other": "rejected",
+            },
+            "storage_metrics": metrics,
+            "process_fds": {
+                "baseline": baseline_fds,
+                "high_water": fd_high_water,
+                "final": product_fd_count(target),
+            },
+            "temporary_grant": "revoked_on_force_stop",
+            "peer_connections": peer_count(fixture),
+            "removal": "exact",
+        }
+    finally:
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+        for torrent_id in torrent_ids:
+            target.shell(
+                [
+                    "rm",
+                    "-rf",
+                    f"{grant_root}/.{torrent_id}.rstorrent-staging",
+                ],
+                check=False,
+            )
+            target.shell(
+                ["rm", "-rf", f"{grant_root}/.{torrent_id}.rstorrent-parts"],
+                check=False,
+            )
+        target.shell(["rm", "-rf", output_root], check=False)
+        probe.remove_grant_folder(target, grant_storage)
+        if tracker_transport is not None:
+            tracker_transport.close()
+        if controlled_tracker is not None:
+            controlled_tracker.close()
+        if peer_transport is not None:
+            peer_transport.close()
+        fixture.close()
+
+
+def external_fixture_package(target: Any) -> str:
+    listing = target.shell(["pm", "list", "instrumentation"], timeout=15)
+    pattern = re.compile(r"instrumentation:([^/]+)/[^ ]+ \(target=([^)]+)\)")
+    for test_package, target_package in pattern.findall(listing.stdout):
+        if target_package == PACKAGE:
+            return test_package
+    raise BootstrapFailure("could not resolve the installed external-intake fixture package")
+
+
+def launch_external_fixture(
+    target: Any,
+    test_package: str,
+    fixture: str,
+    *,
+    mime_type: str | None = "application/x-bittorrent",
+    payload: bytes | None = None,
+    repeat: int = 1,
+) -> None:
+    target.shell(["am", "force-stop", test_package], check=False)
+    component = (
+        f"{test_package}/"
+        "org.rstorrent.bootstrap.ExternalIntakeFixtureActivity"
+    )
+    command = [
+        "am",
+        "start",
+        "-W",
+        "-n",
+        component,
+        "--es",
+        "target_package",
+        PACKAGE,
+        "--es",
+        "fixture",
+        fixture,
+        "--ei",
+        "repeat_count",
+        str(repeat),
+    ]
+    if mime_type is not None:
+        command.extend(["--es", "mime_type", mime_type])
+    if payload is not None:
+        command.extend(
+            ["--es", "payload_base64", base64.b64encode(payload).decode("ascii")]
+        )
+    started = target.shell(command, timeout=30, check=False)
+    if "Error:" in started.stdout or "Error:" in started.stderr:
+        raise BootstrapFailure(f"could not launch external fixture {fixture}")
+
+
+def wait_and_click_product_text(
+    target: Any,
+    probe: ModuleType,
+    label: str,
+    *,
+    timeout: float = 15,
+) -> None:
+    deadline = time.monotonic() + timeout
+    visible: list[str] = []
+    while time.monotonic() < deadline:
+        nodes = probe.ui_nodes(target)
+        visible = [
+            value
+            for node in nodes
+            for value in (
+                node.attrib.get("text", "").strip(),
+                node.attrib.get("content-desc", "").strip(),
+            )
+            if value
+        ]
+        if probe.click_from_nodes(target, nodes, [label]):
+            return
+        time.sleep(0.2)
+    raise BootstrapFailure(
+        f"could not click product UI action {label!r}; visible={visible!r}\n"
+        f"{product_logs(target)}"
+    )
+
+
+def external_log_count(target: Any, *markers: str) -> int:
+    return sum(
+        1
+        for line in product_logs(target).splitlines()
+        if "external_intake " in line and all(marker in line for marker in markers)
+    )
+
+
+def wait_external_log(
+    target: Any,
+    previous_count: int,
+    *markers: str,
+    timeout: float = 45,
+) -> str:
+    deadline = time.monotonic() + timeout
+    logs = ""
+    while time.monotonic() < deadline:
+        logs = product_logs(target)
+        matches = [
+            line
+            for line in logs.splitlines()
+            if "external_intake " in line
+            and all(marker in line for marker in markers)
+        ]
+        if len(matches) > previous_count:
+            return matches[-1]
+        if "product service initialization failed" in logs:
+            break
+        time.sleep(0.1)
+    raise BootstrapFailure(
+        "timed out waiting for external intake "
+        f"markers={markers!r}\n{logs}"
+    )
+
+
+def wait_product_view_torrent_id(
+    target: Any,
+    info_hash: str,
+    *,
+    excluding: set[str] | None = None,
+    timeout: float = 20,
+) -> str:
+    pattern = re.compile(
+        rf"torrent=(t1-[0-9a-f]{{32}}) v1={re.escape(info_hash)}\b"
+    )
+    excluded = excluding or set()
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        for torrent_id in reversed(pattern.findall(product_logs(target))):
+            if torrent_id not in excluded:
+                return torrent_id
+        time.sleep(0.1)
+    raise BootstrapFailure("timed out waiting for the external torrent projection")
+
+
+def tracker_metainfo(source: Path, announce_url: str) -> bytes:
+    import libtorrent as lt
+
+    metainfo = lt.bdecode(source.read_bytes())
+    metainfo[b"announce"] = announce_url.encode("utf-8")
+    return bytes(lt.bencode(metainfo))
+
+
+def verify_external_fixture_files(
+    target: Any,
+    fixture: SeedFixture,
+    output_root: str,
+) -> None:
+    for relative_path, _, padding in fixture_files():
+        path = f"{output_root}/{relative_path}"
+        exists = target.shell(["test", "-f", path], check=False).returncode == 0
+        if padding:
+            if exists:
+                raise BootstrapFailure(
+                    f"external intake created padding file {relative_path}"
+                )
+            continue
+        if not exists:
+            raise BootstrapFailure(f"external intake output is absent: {relative_path}")
+        digest = target.shell(["sha1sum", path]).stdout.split()[0]
+        if digest != fixture.expected_file_hashes[relative_path]:
+            raise BootstrapFailure(
+                f"external intake output hash differs: {relative_path}"
+            )
+
+
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -4423,6 +4958,7 @@ def main() -> int:
         pure_v2_support,
         hybrid_support,
     ) = load_support()
+    profiles = arguments.profiles or ["success"]
     apk = (
         android_root() / "app" / "build" / "outputs" / "apk" / "debug" /
         "app-debug.apk"
@@ -4433,9 +4969,26 @@ def main() -> int:
         print(f"bootstrap APK is unavailable at {apk}", file=sys.stderr)
         return 1
 
-    profiles = arguments.profiles or ["success"]
+    test_apk: Path | None = None
+    if "product-external-intake" in profiles:
+        test_apk = (
+            android_root()
+            / "app"
+            / "build"
+            / "outputs"
+            / "apk"
+            / "androidTest"
+            / "debug"
+            / "app-debug-androidTest.apk"
+            if arguments.no_build
+            else build_android_test_apk()
+        )
+        if not test_apk.is_file():
+            print(f"external-intake fixture APK is unavailable at {test_apk}", file=sys.stderr)
+            return 1
     avd_session = None
     target = None
+    installed_test_package: str | None = None
     results: list[dict[str, Any]] = []
     failure: BaseException | None = None
     try:
@@ -4460,6 +5013,9 @@ def main() -> int:
                 )
             )
         probe.install_apk(target, arguments.target, apk)
+        if test_apk is not None:
+            probe.install_apk(target, arguments.target, test_apk)
+            installed_test_package = external_fixture_package(target)
 
         for profile in profiles:
             repetitions = (
@@ -4475,6 +5031,7 @@ def main() -> int:
                     "product-https-tracker",
                     "product-mse",
                     "product-concurrent-downloads",
+                    "product-external-intake",
                 )
                 else 1
             )
@@ -4606,6 +5163,17 @@ def main() -> int:
                         identity,
                         ordinal,
                     )
+                elif profile == "product-external-intake":
+                    result = run_product_external_intake_profile(
+                        target,
+                        arguments.target,
+                        identity,
+                        probe,
+                        interop,
+                        tracker_support,
+                        ordinal,
+                        arguments.storage,
+                    )
                 else:
                     result = run_standard_profile(
                         target,
@@ -4626,6 +5194,12 @@ def main() -> int:
             target.shell(["am", "force-stop", PACKAGE], check=False)
             target.shell(["pm", "clear", PACKAGE], check=False)
             target.run(["reverse", "--remove-all"], timeout=15, check=False)
+            if installed_test_package is not None:
+                target.run(
+                    ["uninstall", installed_test_package],
+                    timeout=30,
+                    check=False,
+                )
             target.run(["uninstall", PACKAGE], timeout=30, check=False)
         if avd_session is not None:
             avd_session.close()
