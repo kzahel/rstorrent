@@ -86,6 +86,9 @@ python3 clients/android/run_bootstrap.py \
   --target avd --avd rstorrent-task-api35 --avd-api 35 \
   --storage saf-internal --runs 1 --profile product-notifications --no-build
 python3 clients/android/run_bootstrap.py \
+  --target avd --avd rstorrent-task-api35 --avd-api 35 \
+  --storage saf-internal --runs 1 --profile product-background-lifecycle --no-build
+python3 clients/android/run_bootstrap.py \
   --target avd --avd jstorrent-tablet --storage saf-internal --runs 1 \
   --profile product-external-intake --no-build
 python3 clients/android/run_bootstrap.py \
@@ -173,6 +176,17 @@ exact hashes when Wi-Fi becomes unmetered. A separately user-paused torrent
 remains paused throughout recovery. The runner restores the emulator metered
 override, preference, package data, reverse transport, payloads, and SAF
 tree.
+
+The `product-background-lifecycle` profile runs only on a fresh task-owned API
+28 or API 35 AVD. It proves the lifecycle preferences default off, a genuine
+partially verified transfer joins after Home without changing durable intent,
+and foreground reopening preserves verified progress. It then enables
+notification-backed background work, verifies foreground admission, crashes
+and observes one closed-network sticky recovery, waits for completion-driven
+shutdown, and performs a controlled upload from an opted-in background seed.
+Disabling keep-seeding joins the otherwise idle owner. The profile removes the
+package owner, reverse, controlled payloads, SAF tree, and host fixture; it
+uses no public swarm.
 
 Every device command is addressed through the exact verified target
 controller. The runner owns and removes its reverse port, controlled seed,

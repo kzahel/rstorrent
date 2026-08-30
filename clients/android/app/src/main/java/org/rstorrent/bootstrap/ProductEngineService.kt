@@ -1450,6 +1450,33 @@ class ProductEngineService : Service() {
         }
     }
 
+    fun exerciseProductLifecycleForTest(mode: String) {
+        check(ProductSafDocuments.isDebuggable(this)) {
+            "product lifecycle evidence is debug-only"
+        }
+        when (mode) {
+            "observe" -> Unit
+            "enable_background" -> setBackgroundDownloadsEnabled(true)
+            "disable_background" -> setBackgroundDownloadsEnabled(false)
+            "enable_seeding" -> setKeepSeedingInBackground(true)
+            "disable_seeding" -> setKeepSeedingInBackground(false)
+            else -> error("unknown product lifecycle evidence mode")
+        }
+        val lifecycle = lifecycleCoordinator.snapshot()
+        val product = mutableState.value
+        Log.i(
+            TAG,
+            "lifecycle_evidence mode=$mode " +
+                "background=${product.lifecycle.backgroundDownloadsEnabled} " +
+                "effective=${product.lifecycle.effectiveBackgroundDownloads} " +
+                "keep_seeding=${product.lifecycle.keepSeedingEnabled} " +
+                "foreground=${foreground.get()} admitted=${backgroundAdmitted.get()} " +
+                "revision=${lifecycle?.revision ?: 0} " +
+                "deadline=${lifecycle?.scheduledDeadlineMillis ?: "none"} " +
+                "reason=${product.lifecycle.reason ?: "none"}",
+        )
+    }
+
     fun exerciseBandwidthPolicyForTest(mode: String) {
         check(ProductSafDocuments.isDebuggable(this)) {
             "bandwidth policy evidence is debug-only"
@@ -3467,9 +3494,6 @@ class ProductEngineService : Service() {
             try {
                 shutdown(reason)
             } finally {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                foreground.set(false)
-                backgroundAdmitted.set(false)
                 val safeStartId = maxOf(startId ?: 0, latestStartId.get())
                 if (safeStartId == 0 || !stopSelfResult(safeStartId)) stopSelf()
             }
@@ -3525,6 +3549,9 @@ class ProductEngineService : Service() {
             Log.i(TAG, "product_shutdown_complete reason=$reason")
         } finally {
             releasePowerLock()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            foreground.set(false)
+            backgroundAdmitted.set(false)
             shutdownComplete.complete(Unit)
         }
     }

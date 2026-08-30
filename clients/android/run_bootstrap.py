@@ -57,6 +57,7 @@ PROFILE_CHOICES = (
     "product-concurrent-downloads",
     "product-ipv6-policy",
     "product-unmetered-network",
+    "product-background-lifecycle",
     "product-external-intake",
     "slow-storage",
     "cancellation",
@@ -1750,6 +1751,345 @@ def wait_product_unmetered_network_policy(
     raise BootstrapFailure(
         f"timed out waiting for Android unmetered policy {mode}\n{logs}"
     )
+
+
+def launch_product_lifecycle_evidence(target: Any, mode: str) -> dict[str, str]:
+    result = target.shell(
+        [
+            "am",
+            "start",
+            "-W",
+            "-n",
+            ACTIVITY,
+            "--es",
+            "product_lifecycle_evidence",
+            mode,
+        ],
+        timeout=30,
+        check=False,
+    )
+    if "Error:" in result.stdout or "Error:" in result.stderr or (
+        result.returncode != 0 and "Starting:" not in result.stdout
+    ):
+        raise BootstrapFailure(
+            f"could not exercise Android lifecycle mode {mode}: "
+            f"code={result.returncode} stdout={result.stdout!r} "
+            f"stderr={result.stderr!r}"
+        )
+    marker = f"lifecycle_evidence mode={mode} "
+    deadline = time.monotonic() + 30
+    logs = ""
+    while time.monotonic() < deadline:
+        logs = product_logs(target)
+        rows = [line for line in logs.splitlines() if marker in line]
+        if rows:
+            return dict(re.findall(r"([a-z_]+)=([^ ]+)", rows[-1]))
+        time.sleep(0.1)
+    raise BootstrapFailure(f"timed out waiting for lifecycle mode {mode}\n{logs}")
+
+
+def product_service_state(target: Any) -> tuple[bool, bool]:
+    dump = target.shell(
+        ["dumpsys", "activity", "services", PACKAGE], timeout=20, check=False
+    ).stdout
+    rows = [line for line in dump.splitlines() if "ProductEngineService" in line]
+    running = bool(rows)
+    foreground = running and (
+        "isForeground=true" in dump
+        or "foregroundServiceType=0x1" in dump
+        or "foregroundServiceType=1" in dump
+    )
+    return running, foreground
+
+
+def wait_product_service_state(
+    target: Any,
+    *,
+    running: bool,
+    foreground: bool | None = None,
+    timeout: float = 20,
+) -> tuple[bool, bool]:
+    deadline = time.monotonic() + timeout
+    observed = (False, False)
+    while time.monotonic() < deadline:
+        observed = product_service_state(target)
+        if observed[0] == running and (
+            foreground is None or observed[1] == foreground
+        ):
+            return observed
+        time.sleep(0.1)
+    raise BootstrapFailure(
+        "Android product service state did not converge: "
+        f"expected running={running} foreground={foreground} observed={observed}"
+    )
+
+
+def product_has_ongoing_notification(target: Any) -> bool:
+    dump = target.shell(
+        ["dumpsys", "notification", "--noredact"], timeout=20, check=False
+    ).stdout
+    return bool(
+        re.search(
+            rf"NotificationRecord\([^\n]*pkg={re.escape(PACKAGE)}[^\n]*id=42\b",
+            dump,
+        )
+    )
+
+
+def wait_product_pid_change(target: Any, previous: str, timeout: float = 30) -> str:
+    deadline = time.monotonic() + timeout
+    observed = ""
+    while time.monotonic() < deadline:
+        observed = target.shell(["pidof", PACKAGE], check=False).stdout.strip()
+        if observed and observed != previous:
+            return observed
+        time.sleep(0.1)
+    raise BootstrapFailure(
+        f"Android product process did not restart: previous={previous!r} observed={observed!r}"
+    )
+
+
+def maximum_product_verified_count(logs: str, torrent_id: str) -> int | None:
+    pattern = re.compile(
+        rf"view_update .*torrent={re.escape(torrent_id)} .*verified=(\d+)\b"
+    )
+    counts = [
+        int(match.group(1))
+        for line in logs.splitlines()
+        if (match := pattern.search(line)) is not None
+    ]
+    return max(counts) if counts else None
+
+
+def run_product_background_lifecycle_profile(
+    target: Any,
+    target_kind: str,
+    identity: dict[str, str],
+    probe: ModuleType,
+    interop: ModuleType,
+    ordinal: int,
+    storage: str,
+) -> dict[str, Any]:
+    if target_kind != "avd":
+        raise BootstrapFailure("product-background-lifecycle is an owned-AVD profile")
+    if not storage.startswith("saf-"):
+        raise BootstrapFailure("product-background-lifecycle requires a SAF storage mode")
+    grant_storage = "sdcard" if storage == "saf-sdcard" else "internal"
+    fixture = SeedFixture.create(
+        interop,
+        f"{target_kind}-product-background-lifecycle-{ordinal}",
+        root_name=f"background-lifecycle-{ordinal}",
+    )
+    fixture.handle.set_upload_limit(8 * 1024)
+    peer_transport: ReverseTransport | None = None
+    torrent_id = "unallocated"
+    output_root = f"{probe.grant_path(grant_storage)}/{fixture.name}"
+    staging_root = f"{probe.grant_path(grant_storage)}/.unallocated.rstorrent-staging"
+    part_path = f"{probe.grant_path(grant_storage)}/.unallocated.rstorrent-parts"
+    verified_before_stop = 0
+    verified_after_reopen = 0
+    recovery_pid = ""
+    uploaded_bytes = 0
+
+    try:
+        clear_application(target)
+        prepare_product_saf(target, probe, grant_storage)
+        default = launch_product_lifecycle_evidence(target, "observe")
+        if not (
+            default.get("background") == "false"
+            and default.get("keep_seeding") == "false"
+            and default.get("effective") == "false"
+        ):
+            raise BootstrapFailure(f"fresh lifecycle policy was not default-off: {default}")
+
+        baseline_fds = product_fd_count(target)
+        peer_transport = ReverseTransport.create(
+            target, target_kind, fixture.host_port, ordinal
+        )
+        magnet = (
+            f"magnet:?xt=urn:btih:{fixture.info_hash}"
+            f"&dn={fixture.name}&x.pe=127.0.0.1:{peer_transport.device_port}"
+        )
+        add_count = product_add_count(target, fixture.info_hash)
+        started = target.shell(
+            ["am", "start", "-n", ACTIVITY, "--es", "product_magnet", shlex.quote(magnet)],
+            timeout=30,
+            check=False,
+        )
+        if "Error:" in started.stdout:
+            raise BootstrapFailure("could not add background-lifecycle magnet")
+        torrent_id = wait_product_torrent_id(target, fixture.info_hash, add_count)
+        staging_root = f"{probe.grant_path(grant_storage)}/.{torrent_id}.rstorrent-staging"
+        part_path = f"{probe.grant_path(grant_storage)}/.{torrent_id}.rstorrent-parts"
+        wait_product_torrent_progress(
+            target,
+            torrent_id,
+            state="DOWNLOADING",
+            verified=1,
+            description="background-lifecycle first verified piece",
+            timeout=45,
+        )
+        verified_before_stop = 1
+
+        target.run(["logcat", "-c"], check=False)
+        target.shell(["input", "keyevent", "KEYCODE_HOME"], check=False)
+        wait_product_log(
+            target,
+            "product_shutdown_complete reason=lifecycle_idle",
+            "default-off Home shutdown",
+            timeout=20,
+        )
+        wait_product_service_state(target, running=False)
+        if product_has_ongoing_notification(target):
+            raise BootstrapFailure("default-off shutdown retained the ongoing notification")
+
+        target.run(["logcat", "-c"], check=False)
+        reopened = target.shell(["am", "start", "-W", "-n", ACTIVITY], check=False)
+        if "Error:" in reopened.stdout:
+            raise BootstrapFailure("could not reopen the default-off lifecycle profile")
+        logs = wait_product_log(
+            target,
+            f"view_update ",
+            "reopened authoritative torrent snapshot",
+            timeout=30,
+        )
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            logs = product_logs(target)
+            count = maximum_product_verified_count(logs, torrent_id)
+            if count is not None:
+                verified_after_reopen = max(verified_after_reopen, count)
+                if verified_after_reopen >= verified_before_stop:
+                    break
+            time.sleep(0.1)
+        if verified_after_reopen < verified_before_stop:
+            raise BootstrapFailure(
+                "foreground reopen lost verified progress: "
+                f"before={verified_before_stop} after={verified_after_reopen}"
+            )
+
+        enabled = launch_product_lifecycle_evidence(target, "enable_background")
+        if enabled.get("background") != "true" or enabled.get("effective") != "true":
+            raise BootstrapFailure(f"background lifecycle did not enable: {enabled}")
+        target.run(["logcat", "-c"], check=False)
+        target.shell(["input", "keyevent", "KEYCODE_HOME"], check=False)
+        wait_product_log(
+            target,
+            "decision=retain_active_download",
+            "active background admission",
+            timeout=20,
+        )
+        wait_product_service_state(target, running=True, foreground=True)
+        if not product_has_ongoing_notification(target):
+            raise BootstrapFailure("admitted background work had no ongoing notification")
+
+        prior_pid = target.shell(["pidof", PACKAGE], check=False).stdout.strip()
+        crashed = target.shell(["am", "crash", PACKAGE], timeout=20, check=False)
+        if crashed.returncode != 0:
+            raise BootstrapFailure(
+                f"could not crash admitted AVD process: {crashed.stderr!r}"
+            )
+        recovery_pid = wait_product_pid_change(target, prior_pid)
+        recovery_logs = wait_product_log(
+            target,
+            "lifecycle_recovery network_admitted=true reason=",
+            "closed-network sticky recovery admission",
+            timeout=30,
+        )
+        if not any(
+            f"lifecycle_recovery network_admitted=true reason={reason}" in recovery_logs
+            for reason in ("active_download", "waiting_for_unmetered_network")
+        ):
+            raise BootstrapFailure(
+                "sticky recovery opened for an unexpected lifetime reason\n" + recovery_logs
+            )
+        wait_product_service_state(target, running=True, foreground=True)
+
+        metrics, fd_high_water = wait_product_completion(
+            target, torrent_id, baseline_fds
+        )
+        wait_product_log(
+            target,
+            "product_shutdown_complete reason=lifecycle_idle",
+            "completion lifecycle shutdown",
+            timeout=20,
+        )
+        wait_product_service_state(target, running=False)
+
+        target.run(["logcat", "-c"], check=False)
+        target.shell(["am", "start", "-W", "-n", ACTIVITY], check=False)
+        wait_product_torrent_state(
+            target,
+            torrent_id,
+            state="COMPLETE",
+            description="complete torrent before seeding policy",
+            timeout=30,
+        )
+        request_product_torrent_action(target, torrent_id, "enable_upload")
+        launch_product_lifecycle_evidence(target, "enable_background")
+        seeded = launch_product_lifecycle_evidence(target, "enable_seeding")
+        if seeded.get("keep_seeding") != "true":
+            raise BootstrapFailure(f"keep-seeding lifecycle did not enable: {seeded}")
+        target.run(["logcat", "-c"], check=False)
+        target.shell(["input", "keyevent", "KEYCODE_HOME"], check=False)
+        wait_product_log(
+            target,
+            "decision=retain_background_seeding",
+            "background seeding admission",
+            timeout=20,
+        )
+        uploaded_bytes = verify_product_upload(target, fixture)
+
+        launch_product_lifecycle_evidence(target, "disable_seeding")
+        target.run(["logcat", "-c"], check=False)
+        target.shell(["input", "keyevent", "KEYCODE_HOME"], check=False)
+        wait_product_log(
+            target,
+            "product_shutdown_complete reason=lifecycle_idle",
+            "seed-only lifecycle shutdown",
+            timeout=20,
+        )
+        wait_product_service_state(target, running=False)
+
+        target.shell(["am", "start", "-W", "-n", ACTIVITY], check=False)
+        request_product_torrent_action(target, torrent_id, "remove")
+        wait_product_log(
+            target,
+            f"saf_removal_confirmed torrent={torrent_id}",
+            "background-lifecycle removal",
+        )
+        launch_product_lifecycle_evidence(target, "disable_background")
+
+        return {
+            "target": target_kind,
+            "profile": "product-background-lifecycle",
+            "run": ordinal,
+            "identity": identity,
+            "torrent_id": torrent_id,
+            "default_off_home_shutdown": True,
+            "verified_before_stop": verified_before_stop,
+            "verified_after_reopen": verified_after_reopen,
+            "background_foreground_service": True,
+            "sticky_recovery_pid": recovery_pid,
+            "completion_shutdown": True,
+            "keep_seeding_upload_bytes": uploaded_bytes,
+            "seeding_disable_shutdown": True,
+            "payload_hashes": "exact",
+            "storage_metrics": metrics,
+            "process_fds": {
+                "baseline": baseline_fds,
+                "high_water": fd_high_water,
+                "final": product_fd_count(target),
+            },
+        }
+    finally:
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+        for exact_path in (output_root, staging_root, part_path):
+            target.shell(["rm", "-rf", exact_path], check=False)
+        probe.remove_grant_folder(target, grant_storage)
+        if peer_transport is not None:
+            peer_transport.close()
+        fixture.close()
 
 
 def set_avd_wifi_metered(target: Any, metered: bool) -> str:
@@ -5985,6 +6325,7 @@ def main() -> int:
                     "product-mse",
                     "product-concurrent-downloads",
                     "product-unmetered-network",
+                    "product-background-lifecycle",
                     "product-external-intake",
                 )
                 else 1
@@ -6129,6 +6470,16 @@ def main() -> int:
                     )
                 elif profile == "product-unmetered-network":
                     result = run_product_unmetered_network_profile(
+                        target,
+                        arguments.target,
+                        identity,
+                        probe,
+                        interop,
+                        ordinal,
+                        arguments.storage,
+                    )
+                elif profile == "product-background-lifecycle":
+                    result = run_product_background_lifecycle_profile(
                         target,
                         arguments.target,
                         identity,
