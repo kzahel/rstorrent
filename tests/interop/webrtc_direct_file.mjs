@@ -98,8 +98,10 @@ try {
     const server = await fetch(new URL("status", details.url)).then((response) => response.json());
     throw new Error(`${outcome.error}; server=${JSON.stringify(server)}`);
   }
+  const closeStartedAt = performance.now();
   await page.click("#close");
   await page.waitForFunction(() => window.__terminal !== undefined, null, { timeout: 20_000 });
+  const teardownElapsedMillis = performance.now() - closeStartedAt;
   const terminal = await page.evaluate(() => window.__terminal);
   if (terminal.active_tasks !== 0 || terminal.open_sockets !== 0 || terminal.active_requests !== 0) {
     throw new Error(`resources remained after close: ${JSON.stringify(terminal)}`);
@@ -115,6 +117,7 @@ try {
     browser: browserName,
     outcome,
     terminal,
+    teardownElapsedMillis,
     process: { pid: rustPid, idleEndpoint, idle: idleProcess, highWater: processHighWater },
   }, null, 2)}\n`);
 } finally {

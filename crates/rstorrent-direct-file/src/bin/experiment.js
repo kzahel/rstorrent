@@ -306,6 +306,7 @@ async function run() {
   setPhase("Connecting");
   const fixture = await fetch("/fixture").then((response) => response.json());
   const exchange = await connect();
+  const connectElapsedMillis = performance.now() - startedAt;
   setPhase("Checking concurrent ranges");
   const checks = [
     [fixture.head_offset, fixture.head_length, fixture.head_sha256],
@@ -365,6 +366,7 @@ async function run() {
     cancellationObserved,
     streamed,
     timing: {
+      connectElapsedMillis,
       totalElapsedMillis: performance.now() - startedAt,
       streamElapsedMillis,
       streamMibPerSecond: (streamed.bytes / (1024 * 1024)) / (streamElapsedMillis / 1000),
