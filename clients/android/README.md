@@ -184,6 +184,9 @@ and foreground reopening preserves verified progress. It then enables
 notification-backed background work, verifies foreground admission, crashes
 and observes one closed-network sticky recovery, waits for completion-driven
 shutdown, and performs a controlled upload from an opted-in background seed.
+On API 35 it also removes the exact recent-task card while work is admitted,
+then applies and exactly restores a one-second `dataSync` quota override,
+requires the real timeout callback, and proves an exhausted restart is fenced.
 Disabling keep-seeding joins the otherwise idle owner. The profile removes the
 package owner, reverse, controlled payloads, SAF tree, and host fixture; it
 uses no public swarm.

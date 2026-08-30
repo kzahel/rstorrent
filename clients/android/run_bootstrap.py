@@ -1854,6 +1854,47 @@ def wait_product_pid_change(target: Any, previous: str, timeout: float = 30) -> 
     )
 
 
+def remove_product_task(target: Any) -> int:
+    dump = target.shell(
+        ["dumpsys", "activity", "activities", PACKAGE],
+        timeout=20,
+        check=False,
+    ).stdout
+    match = re.search(
+        rf"Task(?:Record)?\{{[^\n]*#(\d+)[^\n]*A=(?:\d+:)?{re.escape(PACKAGE)}\b",
+        dump,
+    )
+    if match is None:
+        raise BootstrapFailure(f"could not identify the Android product task\n{dump}")
+    task_id = int(match.group(1))
+    size_dump = target.shell(["wm", "size"], timeout=10, check=False).stdout
+    size_match = re.search(r"(?:Physical|Override) size: (\d+)x(\d+)", size_dump)
+    if size_match is None:
+        raise BootstrapFailure(f"could not identify the Android display size: {size_dump!r}")
+    width, height = (int(value) for value in size_match.groups())
+    target.shell(["input", "keyevent", "KEYCODE_APP_SWITCH"], check=False)
+    time.sleep(0.75)
+    removed = target.shell(
+        [
+            "input",
+            "swipe",
+            str(width // 2),
+            str(height * 2 // 3),
+            str(width // 2),
+            str(height // 8),
+            "350",
+        ],
+        timeout=20,
+        check=False,
+    )
+    if removed.returncode != 0:
+        raise BootstrapFailure(
+            f"could not remove Android product task {task_id}: "
+            f"stdout={removed.stdout!r} stderr={removed.stderr!r}"
+        )
+    return task_id
+
+
 def maximum_product_verified_count(logs: str, torrent_id: str) -> int | None:
     pattern = re.compile(
         rf"view_update .*torrent={re.escape(torrent_id)} .*verified=(\d+)\b"
@@ -2011,6 +2052,8 @@ def run_product_background_lifecycle_profile(
     verified_after_reopen = 0
     recovery_pid = ""
     uploaded_bytes = 0
+    removed_task_id = None
+    task_removal_retained = False
 
     try:
         clear_application(target)
@@ -2104,6 +2147,22 @@ def run_product_background_lifecycle_profile(
         if not product_has_ongoing_notification(target):
             raise BootstrapFailure("admitted background work had no ongoing notification")
 
+        if int(identity["api"]) >= 35:
+            target.run(["logcat", "-c"], check=False)
+            removed_task_id = remove_product_task(target)
+            wait_product_log(
+                target,
+                "product_task_removed background_admitted=true",
+                "admitted background task removal",
+                timeout=20,
+            )
+            wait_product_service_state(target, running=True, foreground=True)
+            if not product_has_ongoing_notification(target):
+                raise BootstrapFailure(
+                    "admitted background task removal lost the ongoing notification"
+                )
+            task_removal_retained = True
+
         prior_pid = target.shell(["pidof", PACKAGE], check=False).stdout.strip()
         crashed = target.shell(["am", "crash", PACKAGE], timeout=20, check=False)
         if crashed.returncode != 0:
@@ -2195,6 +2254,8 @@ def run_product_background_lifecycle_profile(
             "verified_before_stop": verified_before_stop,
             "verified_after_reopen": verified_after_reopen,
             "background_foreground_service": True,
+            "task_removal_retained": task_removal_retained,
+            "removed_task_id": removed_task_id,
             "sticky_recovery_pid": recovery_pid,
             "completion_shutdown": True,
             "keep_seeding_upload_bytes": uploaded_bytes,
