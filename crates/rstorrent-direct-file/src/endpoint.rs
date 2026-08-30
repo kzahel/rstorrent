@@ -1,7 +1,9 @@
 use std::collections::{HashMap, VecDeque};
 use std::error::Error;
 use std::fmt;
+use std::future::Future;
 use std::net::{IpAddr, SocketAddr};
+use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
@@ -183,16 +185,53 @@ fn lock_unpoisoned<T>(mutex: &StdMutex<T>) -> std::sync::MutexGuard<'_, T> {
 
 #[derive(Clone)]
 pub struct DirectFileEndpointFactory {
+    starter: Arc<dyn LazyEndpointStarter>,
+}
+
+type EndpointStartFuture = Pin<
+    Box<
+        dyn Future<Output = Result<(OfferAnswer, DirectFileEndpoint), DirectFileEndpointError>>
+            + Send,
+    >,
+>;
+
+trait LazyEndpointStarter: Send + Sync {
+    fn answer_offer(
+        &self,
+        capability: String,
+        bind_ip: IpAddr,
+        offer: RTCSessionDescription,
+    ) -> EndpointStartFuture;
+}
+
+struct RtcEndpointStarter {
     application: SharedApplication,
+}
+
+impl LazyEndpointStarter for RtcEndpointStarter {
+    fn answer_offer(
+        &self,
+        capability: String,
+        bind_ip: IpAddr,
+        offer: RTCSessionDescription,
+    ) -> EndpointStartFuture {
+        Box::pin(answer_offer(
+            self.application.clone(),
+            capability,
+            bind_ip,
+            offer,
+        ))
+    }
 }
 
 impl DirectFileEndpointFactory {
     pub fn new(application: SharedApplication) -> Self {
-        // The default-off product feature stores this lazy factory at startup.
-        // Keep the real start path link-reachable without opening a socket,
-        // generating a certificate, or starting a task until an offer arrives.
-        std::hint::black_box(Self::answer_offer);
-        Self { application }
+        Self {
+            // The dynamic lazy boundary makes the actual start path part of a
+            // feature-on product binary while leaving all WebRTC resources
+            // unopened until signaling supplies an offer.
+            starter: Arc::new(RtcEndpointStarter { application }),
+        }
     }
 
     pub fn idle_snapshot(&self) -> DirectFileEndpointSnapshot {
@@ -208,98 +247,107 @@ impl DirectFileEndpointFactory {
         bind_ip: IpAddr,
         offer: RTCSessionDescription,
     ) -> Result<(OfferAnswer, DirectFileEndpoint), DirectFileEndpointError> {
-        let remote_fingerprint = validate_offer(&offer)?;
-        {
-            let mut application = self.application.lock().await;
-            let lease = application
-                .resolve_media_capability(&capability)
-                .map_err(|_| DirectFileEndpointError::CapabilityUnavailable)?;
-            drop(lease);
-        }
-
-        let socket = UdpSocket::bind(SocketAddr::new(bind_ip, 0))
-            .await
-            .map_err(DirectFileEndpointError::Bind)?;
-        let local_addr = socket.local_addr().map_err(DirectFileEndpointError::Bind)?;
-        let host_candidate = CandidateHostConfig {
-            base_config: CandidateConfig {
-                network: "udp".to_owned(),
-                address: local_addr.ip().to_string(),
-                port: local_addr.port(),
-                component: 1,
-                ..CandidateConfig::default()
-            },
-            ..CandidateHostConfig::default()
-        }
-        .new_candidate_host()
-        .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?;
-
-        let mut peer = RTCPeerConnectionBuilder::new()
-            .with_sctp_receive_buffer_size(MAX_TRANSPORT_QUEUE_BYTES as u32)
-            .build()
-            .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?;
-        peer.add_local_candidate(
-            RTCIceCandidate::from(&host_candidate)
-                .to_json()
-                .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?,
-        )
-        .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?;
-        peer.set_remote_description(offer.clone())
-            .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?;
-        let answer = peer
-            .create_answer(None)
-            .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?;
-        peer.set_local_description(answer.clone())
-            .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?;
-        let local_fingerprint = fingerprint_from_sdp(&answer.sdp)?;
-
-        let metrics = Arc::new(EndpointMetrics::default());
-        metrics.set_state("negotiating");
-        metrics.open_sockets.store(1, Ordering::Release);
-        metrics.active_tasks.store(1, Ordering::Release);
-        metrics
-            .signaling_bytes
-            .store(offer.sdp.len(), Ordering::Release);
-        let (command_tx, command_rx) = mpsc::channel(64);
-        let cancellation = CancellationToken::new();
-        let driver_cancellation = cancellation.clone();
-        let driver_metrics = metrics.clone();
-        let application = self.application.clone();
-        let task = tokio::spawn(async move {
-            let result = run_driver(
-                peer,
-                socket,
-                local_addr,
-                application,
-                capability,
-                command_rx,
-                driver_cancellation,
-                driver_metrics.clone(),
-            )
-            .await;
-            driver_metrics.active_tasks.store(0, Ordering::Release);
-            driver_metrics.open_sockets.store(0, Ordering::Release);
-            if let Err(error) = &result {
-                driver_metrics.set_terminal(&error.to_string());
-                driver_metrics.set_state("failed");
-            }
-            result
-        });
-        Ok((
-            OfferAnswer {
-                answer,
-                udp_address: local_addr,
-                local_fingerprint,
-                remote_fingerprint,
-            },
-            DirectFileEndpoint {
-                command_tx,
-                cancellation,
-                task: Some(task),
-                metrics,
-            },
-        ))
+        self.starter.answer_offer(capability, bind_ip, offer).await
     }
+}
+
+async fn answer_offer(
+    application: SharedApplication,
+    capability: String,
+    bind_ip: IpAddr,
+    offer: RTCSessionDescription,
+) -> Result<(OfferAnswer, DirectFileEndpoint), DirectFileEndpointError> {
+    let remote_fingerprint = validate_offer(&offer)?;
+    {
+        let mut application = application.lock().await;
+        let lease = application
+            .resolve_media_capability(&capability)
+            .map_err(|_| DirectFileEndpointError::CapabilityUnavailable)?;
+        drop(lease);
+    }
+
+    let socket = UdpSocket::bind(SocketAddr::new(bind_ip, 0))
+        .await
+        .map_err(DirectFileEndpointError::Bind)?;
+    let local_addr = socket.local_addr().map_err(DirectFileEndpointError::Bind)?;
+    let host_candidate = CandidateHostConfig {
+        base_config: CandidateConfig {
+            network: "udp".to_owned(),
+            address: local_addr.ip().to_string(),
+            port: local_addr.port(),
+            component: 1,
+            ..CandidateConfig::default()
+        },
+        ..CandidateHostConfig::default()
+    }
+    .new_candidate_host()
+    .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?;
+
+    let mut peer = RTCPeerConnectionBuilder::new()
+        .with_sctp_receive_buffer_size(MAX_TRANSPORT_QUEUE_BYTES as u32)
+        .build()
+        .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?;
+    peer.add_local_candidate(
+        RTCIceCandidate::from(&host_candidate)
+            .to_json()
+            .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?,
+    )
+    .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?;
+    peer.set_remote_description(offer.clone())
+        .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?;
+    let answer = peer
+        .create_answer(None)
+        .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?;
+    peer.set_local_description(answer.clone())
+        .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?;
+    let local_fingerprint = fingerprint_from_sdp(&answer.sdp)?;
+
+    let metrics = Arc::new(EndpointMetrics::default());
+    metrics.set_state("negotiating");
+    metrics.open_sockets.store(1, Ordering::Release);
+    metrics.active_tasks.store(1, Ordering::Release);
+    metrics
+        .signaling_bytes
+        .store(offer.sdp.len(), Ordering::Release);
+    let (command_tx, command_rx) = mpsc::channel(64);
+    let cancellation = CancellationToken::new();
+    let driver_cancellation = cancellation.clone();
+    let driver_metrics = metrics.clone();
+    let application = application.clone();
+    let task = tokio::spawn(async move {
+        let result = run_driver(
+            peer,
+            socket,
+            local_addr,
+            application,
+            capability,
+            command_rx,
+            driver_cancellation,
+            driver_metrics.clone(),
+        )
+        .await;
+        driver_metrics.active_tasks.store(0, Ordering::Release);
+        driver_metrics.open_sockets.store(0, Ordering::Release);
+        if let Err(error) = &result {
+            driver_metrics.set_terminal(&error.to_string());
+            driver_metrics.set_state("failed");
+        }
+        result
+    });
+    Ok((
+        OfferAnswer {
+            answer,
+            udp_address: local_addr,
+            local_fingerprint,
+            remote_fingerprint,
+        },
+        DirectFileEndpoint {
+            command_tx,
+            cancellation,
+            task: Some(task),
+            metrics,
+        },
+    ))
 }
 
 pub struct DirectFileEndpoint {
