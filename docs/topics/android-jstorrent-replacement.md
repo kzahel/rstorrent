@@ -154,7 +154,9 @@ daemon architecture.
   `magnet:`, `application/x-bittorrent`, and supported `content://` `.torrent`
   delivery through one exported intake owner. Reuse the application add flow
   for cold, warm, duplicate, malformed, oversized, canceled, and storage-root
-  cases; do not create a second engine or profile owner.
+  cases; do not create a second engine or profile owner. Ready Tactical
+  [`197`](../tactical/197-android-external-torrent-intake.md) owns the exact
+  filters, ephemeral intake state, hostile-provider bounds, and AVD evidence.
 - [ ] **JAR-007 — Add background completion and actionable failure
   notifications.** This is also beta gate `AND-009`. Implement one native
   edge owner for completion plus fatal/storage-repair attention with
@@ -389,8 +391,10 @@ live run.
    It fixes the candidate identity, migration/reset boundary, payload safety,
    signing inputs, and exact old-version fixture before code changes make
    accidental compatibility promises.
-2. Implement `JAR-006` external Android torrent intake. It is small,
-   user-visible, and independent of the larger policy work.
+2. Execute ready Tactical
+   [`197`](../tactical/197-android-external-torrent-intake.md) for `JAR-006`
+   external Android torrent intake. It is small, user-visible, and independent
+   of the larger policy work.
 3. Implement `JAR-007` completion/failure notifications by adapting the
    already-proven desktop edge semantics to one Android-native owner.
 4. Implement the unmetered portion of `JAR-008` without coupling it to a VPN

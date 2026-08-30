@@ -93,6 +93,12 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`197-android-external-torrent-intake.md`](197-android-external-torrent-intake.md):
+  ready; makes the one Compose/product-service owner a bounded Android handler
+  for cold and warm `magnet:` plus temporary-grant `content://` `.torrent`
+  activation. It preserves root/start confirmation, serializes hostile source
+  reads, rejects file/HTTP/octet-stream breadth, and requires exact AVD
+  manifest, lifecycle, privacy, resource, and controlled-transfer evidence.
 - [`196-remote-direct-file-product-integration.md`](196-remote-direct-file-product-integration.md):
   ready; promotes the retained lower-`rtc` endpoint into one default-compiled
   but lazy desktop/headless product path. It authenticates bounded signaling

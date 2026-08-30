@@ -929,8 +929,12 @@ streaming demand, expiry, and revocation remain unchanged.
   and concurrent-admission state plus live Peers, Files, Trackers, Pieces,
   Disk, Swarm, Logs, Speed, and dual-family DHT projections. Search/plugins,
   playback, dynamic network policy, and tracker mutation remain explicitly
-  unavailable rather than discarded or simulated. Manual session and torrent
-  peer-transfer limits are implemented. Completed Tactical `175` carries
+  unavailable rather than discarded or simulated. External Android
+  `magnet:`/`.torrent` activation remains absent; ready Tactical
+  [`197`](../tactical/197-android-external-torrent-intake.md) owns that bounded
+  platform intake without changing the in-application Add capability. Manual
+  session and torrent peer-transfer limits are implemented. Completed
+  Tactical `175` carries
   exact retained Swarm payload download/upload totals through the generated
   UniFFI/Kotlin record and dual-ABI build. Compose currently presents only the
   Swarm catalog summary, not peer rows, so it does not fabricate a parallel
