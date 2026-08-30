@@ -123,6 +123,8 @@ fun ProductApp(
     notificationNavigation: ProductNotificationNavigation? = null,
     onNotificationNavigationConsumed: (Long) -> Unit = {},
     onUpdateNotificationPreference: ((ProductNotificationPreference, Boolean) -> Unit)? = null,
+    onBackgroundDownloads: ((Boolean) -> Unit)? = null,
+    onKeepSeedingInBackground: ((Boolean) -> Unit)? = null,
     onUnmeteredNetworksOnly: ((Boolean) -> Unit)? = null,
     onUpdateClientSettings: ((ClientSettingsPatch) -> Unit)? = null,
     onUpdateTorrentSettings: ((String, TorrentSettingsPatch) -> Unit)? = null,
@@ -144,6 +146,10 @@ fun ProductApp(
             }
         val snackbar = remember { SnackbarHostState() }
         val notificationScope = rememberCoroutineScope()
+        val lifecycleControlsEnabled =
+            service != null ||
+                onBackgroundDownloads != null ||
+                onKeepSeedingInBackground != null
         LaunchedEffect(state.externalIntakeNotice?.sequence) {
             state.externalIntakeNotice?.let { notice ->
                 snackbar.showSnackbar(externalIntakeNoticeText(notice.kind))
@@ -170,6 +176,17 @@ fun ProductApp(
                             service?.setNotificationPreference(preference, enabled)
                             Unit
                         },
+                    onBackgroundDownloads =
+                        onBackgroundDownloads ?: {
+                            service?.setBackgroundDownloadsEnabled(it)
+                            Unit
+                        },
+                    onKeepSeedingInBackground =
+                        onKeepSeedingInBackground ?: {
+                            service?.setKeepSeedingInBackground(it)
+                            Unit
+                        },
+                    lifecycleControlsEnabled = lifecycleControlsEnabled,
                     onUnmeteredNetworksOnly =
                         onUnmeteredNetworksOnly ?: {
                             service?.setUnmeteredNetworksOnly(it)
@@ -378,6 +395,9 @@ private fun ProductNavHost(
     onNotificationNavigationConsumed: (Long) -> Unit,
     onNotificationNavigationFallback: (String) -> Unit,
     onUpdateNotificationPreference: (ProductNotificationPreference, Boolean) -> Unit,
+    onBackgroundDownloads: (Boolean) -> Unit,
+    onKeepSeedingInBackground: (Boolean) -> Unit,
+    lifecycleControlsEnabled: Boolean,
     onUnmeteredNetworksOnly: (Boolean) -> Unit,
     themeMode: ProductThemeMode,
     dynamicColor: Boolean,
@@ -389,6 +409,7 @@ private fun ProductNavHost(
     val navController = rememberNavController()
     var removeTargets by remember { mutableStateOf(emptySet<String>()) }
     var removeStorageRoot by remember { mutableStateOf<String?>(null) }
+    var confirmKeepSeeding by remember { mutableStateOf(false) }
     LaunchedEffect(notificationNavigation?.sequence, state.ready) {
         val target = notificationNavigation ?: return@LaunchedEffect
         if (!state.ready) return@LaunchedEffect
@@ -725,6 +746,61 @@ private fun ProductNavHost(
         }
         composable(ProductRoutes.SETTINGS_POWER) {
             SettingsPage("Power Management", navController::popBackStack) {
+                val lifecycle = state.lifecycle
+                ListItem(
+                    headlineContent = { Text("Continue downloads in background") },
+                    supportingContent = {
+                        Text(
+                            when {
+                                lifecycle.effectiveBackgroundDownloads ->
+                                    "Uses a visible notification and stops when selected work completes."
+                                lifecycle.backgroundDownloadsEnabled ->
+                                    "Configured, but Android notification settings currently block it."
+                                else ->
+                                    "Allow selected downloads and checks to continue after leaving RSTorrent."
+                            },
+                        )
+                    },
+                    trailingContent = {
+                        Switch(
+                            checked = lifecycle.backgroundDownloadsEnabled,
+                            onCheckedChange = onBackgroundDownloads,
+                            enabled = lifecycleControlsEnabled,
+                            modifier =
+                                Modifier.semantics {
+                                    contentDescription = "Continue downloads in background"
+                                },
+                        )
+                    },
+                )
+                ListItem(
+                    headlineContent = { Text("Keep seeding in background") },
+                    supportingContent = {
+                        Text(
+                            if (lifecycle.backgroundDownloadsEnabled) {
+                                "Keep completed, desired-running torrents active after downloads finish."
+                            } else {
+                                "Enable background downloads first."
+                            },
+                        )
+                    },
+                    trailingContent = {
+                        Switch(
+                            checked = lifecycle.keepSeedingEnabled,
+                            onCheckedChange = { enabled ->
+                                if (enabled) confirmKeepSeeding = true
+                                else onKeepSeedingInBackground(false)
+                            },
+                            enabled =
+                                lifecycleControlsEnabled &&
+                                    lifecycle.backgroundDownloadsEnabled,
+                            modifier =
+                                Modifier.semantics {
+                                    contentDescription = "Keep seeding in background"
+                                },
+                        )
+                    },
+                )
                 ListItem(
                     headlineContent = {
                         Text("Prevent sleep during active downloads and checks")
@@ -745,7 +821,41 @@ private fun ProductNavHost(
                         )
                     },
                 )
-                UnavailableSetting("Battery policy")
+                ReadOnlySetting(
+                    "Android background limits",
+                    "Android may limit a long background session. Open RSTorrent again to continue; force-stop and reboot do not restart it.",
+                )
+                lifecycle.preferenceError?.let {
+                    ReadOnlySetting("Setting not saved", it)
+                }
+                UnavailableSetting("Low-battery shutdown")
+            }
+            if (confirmKeepSeeding) {
+                AlertDialog(
+                    onDismissRequest = { confirmKeepSeeding = false },
+                    title = { Text("Keep seeding in background?") },
+                    text = {
+                        Text(
+                            "Seeding can use battery and data after downloads finish. " +
+                                "Android may still stop a long session.",
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                confirmKeepSeeding = false
+                                onKeepSeedingInBackground(true)
+                            },
+                        ) {
+                            Text("Keep seeding")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { confirmKeepSeeding = false }) {
+                            Text("Cancel")
+                        }
+                    },
+                )
             }
         }
         composable(ProductRoutes.SETTINGS_ADVANCED) {

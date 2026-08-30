@@ -431,6 +431,49 @@ class ProductNavigationTest {
     }
 
     @Test
+    fun powerSettingsExposeBackgroundPolicyAndSeedingWarning() {
+        val backgroundChanges = mutableListOf<Boolean>()
+        val seedingChanges = mutableListOf<Boolean>()
+        compose.setContent {
+            ProductApp(
+                service = null,
+                onSelectStorage = {},
+                onBrowseTorrent = {},
+                notificationsGranted = true,
+                onRequestNotifications = {},
+                onOpenNotificationSettings = {},
+                themeMode = ProductThemeMode.LIGHT,
+                dynamicColor = false,
+                onThemeMode = {},
+                onDynamicColor = {},
+                stateOverride =
+                    ProductState(
+                        ready = true,
+                        lifecycle =
+                            ProductLifecycleState(
+                                backgroundDownloadsEnabled = true,
+                                effectiveBackgroundDownloads = true,
+                            ),
+                    ),
+                onBackgroundDownloads = { backgroundChanges += it },
+                onKeepSeedingInBackground = { seedingChanges += it },
+            )
+        }
+
+        compose.onNodeWithContentDescription("More options").performClick()
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Power Management").performScrollTo().performClick()
+        compose.onNodeWithText("Android background limits").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("Continue downloads in background").performClick()
+        compose.onNodeWithContentDescription("Keep seeding in background").performClick()
+        compose.onNodeWithText("Keep seeding in background?").assertIsDisplayed()
+        compose.onNodeWithText("Keep seeding").performClick()
+
+        assertEquals(listOf(false), backgroundChanges)
+        assertEquals(listOf(true), seedingChanges)
+    }
+
+    @Test
     fun notificationNavigationSelectsExactTorrentAndConsumesOnce() {
         val consumed = mutableListOf<Long>()
         val torrent = torrent()

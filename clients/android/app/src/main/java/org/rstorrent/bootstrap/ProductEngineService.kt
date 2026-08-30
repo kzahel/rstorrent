@@ -3155,7 +3155,11 @@ class ProductEngineService : Service() {
     internal fun setBackgroundDownloadsEnabled(enabled: Boolean) {
         synchronized(lifecyclePreferenceOwnership) {
             val eligible =
-                mutableState.value.notifications.eligibility.backgroundNotificationVisible
+                notificationCoordinator
+                    .refreshPlatformState(interactionLeases.size)
+                    .backgroundNotificationVisible
+            lifecycleCoordinator.updateNotificationEligibility(eligible)
+            publishLifecyclePreferences(eligible)
             if (enabled && !eligible) {
                 mutableState.update {
                     it.copy(

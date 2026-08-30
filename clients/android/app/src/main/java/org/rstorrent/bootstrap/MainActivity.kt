@@ -50,6 +50,7 @@ class MainActivity : ComponentActivity() {
     private var pendingProductUnmeteredNetworkPolicy: String? = null
     private var pendingProductTorrentAction: Pair<String, String>? = null
     private var pendingNotificationSettingsReturn = false
+    private var pendingBackgroundEnable = false
     private var notificationNavigationSequence = 0L
     private val productTreePicker =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -112,6 +113,14 @@ class MainActivity : ComponentActivity() {
                 false,
             )
             productService.value?.refreshNotificationEligibility()
+            if (pendingBackgroundEnable && notificationsGranted.value) {
+                productService.value?.let { service ->
+                    pendingBackgroundEnable = false
+                    service.setBackgroundDownloadsEnabled(true)
+                }
+            } else if (!notificationsGranted.value) {
+                pendingBackgroundEnable = false
+            }
         }
     private val productConnection =
         object : ServiceConnection {
@@ -120,6 +129,10 @@ class MainActivity : ComponentActivity() {
                 binder: IBinder,
             ) {
                 val service = (binder as ProductEngineService.LocalBinder).service
+                if (pendingBackgroundEnable && notificationPermissionGranted()) {
+                    pendingBackgroundEnable = false
+                    service.setBackgroundDownloadsEnabled(true)
+                }
                 ProductSafRootRegistry.load(this@MainActivity).let { registry ->
                     registry.selectionCandidate?.let { encoded ->
                         service.setSafTree(
@@ -234,6 +247,8 @@ class MainActivity : ComponentActivity() {
             savedInstanceState?.getString(STATE_PENDING_COMPANION_ROOT_CANCELLED)
         pendingProductTorrentStartContent =
             savedInstanceState?.getBoolean(STATE_PENDING_TORRENT_START, true) ?: true
+        pendingBackgroundEnable =
+            savedInstanceState?.getBoolean(STATE_PENDING_BACKGROUND_ENABLE, false) ?: false
         notificationNavigationSequence =
             savedInstanceState?.getLong(STATE_NOTIFICATION_SEQUENCE, 0L) ?: 0L
         notificationNavigation.value = restoreNotificationNavigation(savedInstanceState)
@@ -253,6 +268,7 @@ class MainActivity : ComponentActivity() {
             outState.putString(STATE_PENDING_COMPANION_ROOT_CANCELLED, it)
         }
         outState.putBoolean(STATE_PENDING_TORRENT_START, pendingProductTorrentStartContent)
+        outState.putBoolean(STATE_PENDING_BACKGROUND_ENABLE, pendingBackgroundEnable)
         notificationNavigation.value?.let { target ->
             outState.putLong(STATE_NOTIFICATION_SEQUENCE, target.sequence)
             when (target) {
@@ -484,6 +500,7 @@ class MainActivity : ComponentActivity() {
                     notificationsGranted = notificationsGranted.value,
                     onRequestNotifications = ::requestNotificationPermission,
                     onOpenNotificationSettings = ::openNotificationSettings,
+                    onBackgroundDownloads = ::setBackgroundDownloads,
                     notificationNavigation = notificationNavigation.value,
                     onNotificationNavigationConsumed = { sequence ->
                         if (notificationNavigation.value?.sequence == sequence) {
@@ -847,6 +864,28 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun setBackgroundDownloads(enabled: Boolean) {
+        val service = productService.value ?: return
+        if (!enabled) {
+            pendingBackgroundEnable = false
+            service.setBackgroundDownloadsEnabled(false)
+            return
+        }
+        if (!notificationPermissionGranted()) {
+            pendingBackgroundEnable = true
+            requestNotificationPermission()
+            return
+        }
+        val notifications = service.state.value.notifications
+        if (!notifications.appNotificationsEnabled || !notifications.backgroundChannelEnabled) {
+            pendingBackgroundEnable = false
+            openNotificationSettings()
+            return
+        }
+        pendingBackgroundEnable = false
+        service.setBackgroundDownloadsEnabled(true)
+    }
+
     private fun notificationPermissionGranted(): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
@@ -928,6 +967,7 @@ class MainActivity : ComponentActivity() {
         private const val PREFERENCE_DYNAMIC_COLOR = "dynamic_color"
         private const val STATE_PENDING_TORRENT_URI = "pending_torrent_uri"
         private const val STATE_PENDING_TORRENT_START = "pending_torrent_start"
+        private const val STATE_PENDING_BACKGROUND_ENABLE = "pending_background_enable"
         private const val STATE_PENDING_COMPANION_ROOT_REQUEST =
             "pending_companion_root_request"
         private const val STATE_PENDING_COMPANION_REPAIR_ROOT =
