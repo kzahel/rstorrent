@@ -222,27 +222,7 @@ internal object ProductLifetimePolicy {
         }
 
         val work = facts.work
-        if (work == null) {
-            activeDeadline(facts.nowMillis, facts.startupDeadlineMillis)?.let {
-                return ProductLifetimeDecision.Wait(
-                    ProductLifetimeWaitReason.STARTUP,
-                    it,
-                    foregroundRequired = true,
-                )
-            }
-            activeDeadline(facts.nowMillis, facts.resyncDeadlineMillis)?.let {
-                return ProductLifetimeDecision.Wait(
-                    ProductLifetimeWaitReason.VIEW_RESYNC,
-                    it,
-                    foregroundRequired = true,
-                )
-            }
-            return ProductLifetimeDecision.Stop(
-                ProductLifetimeStopReason.AUTHORITATIVE_STATE_UNAVAILABLE,
-            )
-        }
-
-        if (facts.preferences.backgroundDownloadsEnabled) {
+        if (work != null && facts.preferences.backgroundDownloadsEnabled) {
             if (work.hasDownloadWork) {
                 return ProductLifetimeDecision.Retain(
                     ProductLifetimeRetentionReason.ACTIVE_DOWNLOAD,
@@ -278,6 +258,25 @@ internal object ProductLifetimePolicy {
                 ProductLifetimeRetentionReason.CHROMEOS_RECONNECT_GRACE,
                 foregroundRequired = true,
                 stickyAllowed = true,
+            )
+        }
+        if (work == null) {
+            activeDeadline(facts.nowMillis, facts.startupDeadlineMillis)?.let {
+                return ProductLifetimeDecision.Wait(
+                    ProductLifetimeWaitReason.STARTUP,
+                    it,
+                    foregroundRequired = true,
+                )
+            }
+            activeDeadline(facts.nowMillis, facts.resyncDeadlineMillis)?.let {
+                return ProductLifetimeDecision.Wait(
+                    ProductLifetimeWaitReason.VIEW_RESYNC,
+                    it,
+                    foregroundRequired = true,
+                )
+            }
+            return ProductLifetimeDecision.Stop(
+                ProductLifetimeStopReason.AUTHORITATIVE_STATE_UNAVAILABLE,
             )
         }
         activeDeadline(facts.nowMillis, facts.settleDeadlineMillis)?.let {

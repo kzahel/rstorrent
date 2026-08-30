@@ -207,6 +207,14 @@ class ProductLifetimePolicyTest {
             ProductLifetimeDecision.Stop(ProductLifetimeStopReason.IDLE),
             reduce(nowMillis = 61_000L, companionGraceDeadlineMillis = 61_000L),
         )
+        assertEquals(
+            ProductLifetimeDecision.Retain(
+                ProductLifetimeRetentionReason.CHROMEOS_COMPANION,
+                foregroundRequired = true,
+                stickyAllowed = true,
+            ),
+            reduce(work = null, companionConnections = 1),
+        )
     }
 
     @Test
