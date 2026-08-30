@@ -1593,8 +1593,9 @@ impl ApplicationService {
                 )?;
                 self.drive_removal(&torrent_id).await?;
             }
-            Command::RemoveStorageRoot { .. } => {
+            Command::RemoveStorageRoot { storage_root } => {
                 self.media.revoke_all();
+                self.healthy_platform_roots.remove(&storage_root);
                 self.reload_storage_roots()?;
             }
             Command::SetDefaultStorageRoot { .. } | Command::SetShowAddOptions { .. } => {}

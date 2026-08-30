@@ -204,6 +204,7 @@ private fun ProductNavHost(
 ) {
     val navController = rememberNavController()
     var removeTargets by remember { mutableStateOf(emptySet<String>()) }
+    var removeStorageRoot by remember { mutableStateOf<String?>(null) }
     NavHost(navController = navController, startDestination = ProductRoutes.LIBRARY) {
         composable(ProductRoutes.LIBRARY) {
             LibraryScreen(
@@ -312,9 +313,11 @@ private fun ProductNavHost(
                     action = if (state.storageRootReady) "Change" else "Select",
                 )
                 state.storage?.roots.orEmpty().forEach { root ->
+                    val isCurrent = root.rootId == state.storage?.defaultRoot
+                    val isReferenced = state.torrents.values.any { it.storageRoot == root.rootId }
                     val title =
                         root.label +
-                            if (root.rootId == state.storage?.defaultRoot) " (default)" else ""
+                            if (isCurrent) " (current)" else ""
                     val detail =
                         root.availability.name.lowercase() +
                             (root.displayPath?.let { " · $it" } ?: " · Android document provider")
@@ -325,8 +328,23 @@ private fun ProductNavHost(
                             onClick = { onRepairStorage(root.rootId) },
                             action = "Repair",
                         )
+                    } else if (!isCurrent) {
+                        SettingAction(
+                            title = title,
+                            detail = detail,
+                            onClick = { service?.makeSafRootCurrent(root.rootId) },
+                            action = "Use",
+                        )
                     } else {
                         ReadOnlySettingsRow(title, detail)
+                    }
+                    if (!isCurrent && !isReferenced) {
+                        SettingAction(
+                            title = "Forget ${root.label}",
+                            detail = "Release Android access without deleting downloaded files.",
+                            onClick = { removeStorageRoot = root.rootId },
+                            action = "Remove",
+                        )
                     }
                 }
             }
@@ -477,6 +495,33 @@ private fun ProductNavHost(
             onDelete = {
                 removeTargets.forEach { service?.removeTorrent(it, RemovalDataPolicy.DELETE_DATA) }
                 removeTargets = emptySet()
+            },
+        )
+    }
+    removeStorageRoot?.let { rootId ->
+        val label = state.storage?.roots?.singleOrNull { it.rootId == rootId }?.label ?: rootId
+        AlertDialog(
+            onDismissRequest = { removeStorageRoot = null },
+            title = { Text("Forget $label?") },
+            text = {
+                Text(
+                    "RSTorrent will release access to this folder. Existing files are not deleted.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        service?.removeSafRoot(rootId)
+                        removeStorageRoot = null
+                    },
+                ) {
+                    Text("Remove")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { removeStorageRoot = null }) {
+                    Text("Cancel")
+                }
             },
         )
     }

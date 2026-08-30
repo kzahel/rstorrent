@@ -1064,9 +1064,7 @@ async fn companion_download_root(
     {
         Ok(root) => companion_json(StatusCode::OK, origin, &ChooseDownloadRootResponse { root }),
         Err(CompanionPlatformError::Busy) => companion_status(StatusCode::CONFLICT, origin),
-        Err(CompanionPlatformError::Revoked) => {
-            companion_status(StatusCode::UNAUTHORIZED, origin)
-        }
+        Err(CompanionPlatformError::Revoked) => companion_status(StatusCode::UNAUTHORIZED, origin),
         Err(CompanionPlatformError::Expired) => {
             companion_status(StatusCode::REQUEST_TIMEOUT, origin)
         }

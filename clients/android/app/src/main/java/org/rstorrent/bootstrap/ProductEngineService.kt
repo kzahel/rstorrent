@@ -956,6 +956,64 @@ class ProductEngineService : Service() {
         packageManager.hasSystemFeature("org.chromium.arc") ||
             packageManager.hasSystemFeature("org.chromium.arc.device_management")
 
+    fun makeSafRootCurrent(rootId: String) {
+        scope.launch {
+            try {
+                clientReady.await()
+                safRootMutation.withLock {
+                    val storage = client.safStorageSnapshot()
+                    val root = requireNotNull(storage.roots.singleOrNull { it.rootId == rootId }) {
+                        "Download folder is not registered"
+                    }
+                    require(root.availability == StorageRootAvailability.AVAILABLE) {
+                        "Repair this download folder before making it current"
+                    }
+                    if (storage.defaultRoot == rootId) return@withLock
+                    executeSafRootOperation(
+                        ProductSafRootRegistry.beginSetDefault(
+                            this@ProductEngineService,
+                            rootId,
+                        ),
+                    )
+                    refreshSafRootState()
+                }
+                mutableState.update { it.copy(error = null) }
+            } catch (error: Throwable) {
+                reportError(error)
+            }
+        }
+    }
+
+    fun removeSafRoot(rootId: String) {
+        scope.launch {
+            try {
+                clientReady.await()
+                safRootMutation.withLock {
+                    val storage = client.safStorageSnapshot()
+                    require(storage.defaultRoot != rootId) {
+                        "The current download folder cannot be removed"
+                    }
+                    require(storage.roots.any { it.rootId == rootId }) {
+                        "Download folder is not registered"
+                    }
+                    require(mutableState.value.torrents.values.none { it.storageRoot == rootId }) {
+                        "Download folder is still used by a retained torrent"
+                    }
+                    executeSafRootOperation(
+                        ProductSafRootRegistry.beginRemoval(
+                            this@ProductEngineService,
+                            rootId,
+                        ),
+                    )
+                    refreshSafRootState()
+                }
+                mutableState.update { it.copy(error = null) }
+            } catch (error: Throwable) {
+                reportError(error)
+            }
+        }
+    }
+
     private suspend fun reconcileSafRootRegistry() {
         safRootMutation.withLock {
             var state = ProductSafRootRegistry.load(this@ProductEngineService)
@@ -999,6 +1057,15 @@ class ProductEngineService : Service() {
                         client.repairSafStorageRoot(operation.rootId, operation.label)
                     mutation.restartTorrentIds.forEach(::resume)
                 }
+                ProductSafRootOperationKind.REMOVE -> {
+                    if (
+                        client.safStorageSnapshot().roots.any {
+                            it.rootId == operation.rootId
+                        }
+                    ) {
+                        dispatchAwait(Command.RemoveStorageRoot(operation.rootId))
+                    }
+                }
             }
             nativeMutationComplete = true
             ProductSafRootRegistry.completePending(this)
@@ -1035,6 +1102,8 @@ class ProductEngineService : Service() {
                 }
                 ProductSafRootOperationKind.SET_DEFAULT ->
                     ProductSafRootRegistry.abandonPendingDefault(this)
+                ProductSafRootOperationKind.REMOVE ->
+                    ProductSafRootRegistry.abandonPendingRemoval(this)
             }
             throw error
         }

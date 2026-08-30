@@ -3460,6 +3460,20 @@ fn remove_storage_root(
             format!("storage root {storage_root} is not configured"),
         ));
     }
+    let is_default = transaction
+        .query_row(
+            "SELECT COALESCE(default_root = ?1, 0)
+             FROM storage_settings WHERE singleton = 1",
+            [storage_root],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(internal_error)?;
+    if is_default {
+        return Err((
+            ErrorCode::StorageRootInUse,
+            format!("storage root {storage_root} is the current download root"),
+        ));
+    }
     let references: i64 = transaction
         .query_row(
             "SELECT COUNT(*) FROM torrents WHERE storage_root = ?1",
@@ -7935,6 +7949,26 @@ mod tests {
         let snapshot = store.snapshot().expect("platform root snapshot");
         assert_eq!(snapshot.storage.roots.len(), 2);
         assert_eq!(snapshot.storage.default_root.as_deref(), Some("root_b"));
+
+        let current_removal = store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "remove-current-platform-root".to_owned(),
+                expected_revision: None,
+                command: Command::RemoveStorageRoot {
+                    storage_root: "root_b".to_owned(),
+                },
+            })
+            .expect("current root removal response");
+        assert!(matches!(
+            current_removal.outcome,
+            ResponseOutcome::Error {
+                error: crate::ErrorResponse {
+                    code: ErrorCode::StorageRootInUse,
+                    ..
+                }
+            }
+        ));
 
         let mut add = add_request("add-platform-a");
         let Command::AddMagnet { storage_root, .. } = &mut add.command else {

@@ -74,4 +74,30 @@ class ProductSafRootRegistryTest {
             ),
         )
     }
+
+    @Test
+    fun pendingRemovalRoundTripsWithTheGrantNeededForRecovery() {
+        val root =
+            ProductSafRootGrant(
+                "root_a",
+                "Folder A",
+                "content://provider/tree/a",
+                1,
+            )
+        val state =
+            ProductSafRootRegistryState(
+                roots = listOf(root),
+                pending =
+                    ProductSafRootOperation(
+                        ProductSafRootOperationKind.REMOVE,
+                        root.rootId,
+                        root.label,
+                        root.treeUri,
+                        false,
+                        root,
+                    ),
+            )
+
+        assertEquals(state, ProductSafRootRegistryCodec.decode(ProductSafRootRegistryCodec.encode(state)))
+    }
 }

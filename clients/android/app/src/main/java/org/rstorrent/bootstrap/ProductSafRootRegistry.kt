@@ -19,6 +19,7 @@ internal enum class ProductSafRootOperationKind {
     ADD,
     REPAIR,
     SET_DEFAULT,
+    REMOVE,
 }
 
 internal data class ProductSafRootOperation(
@@ -273,11 +274,63 @@ internal object ProductSafRootRegistry {
     }
 
     @Synchronized
+    fun beginSetDefault(
+        context: Context,
+        rootId: String,
+    ): ProductSafRootOperation {
+        val state = load(context)
+        check(state.pending == null) { "another SAF root operation is pending" }
+        val root = requireNotNull(state.roots.singleOrNull { it.rootId == rootId }) {
+            "SAF root is not registered"
+        }
+        val operation =
+            ProductSafRootOperation(
+                kind = ProductSafRootOperationKind.SET_DEFAULT,
+                rootId = root.rootId,
+                label = root.label,
+                treeUri = root.treeUri,
+                makeDefault = true,
+            )
+        persist(context, state.copy(pending = operation))
+        return operation
+    }
+
+    @Synchronized
+    fun beginRemoval(
+        context: Context,
+        rootId: String,
+    ): ProductSafRootOperation {
+        val state = load(context)
+        check(state.pending == null) { "another SAF root operation is pending" }
+        val root = requireNotNull(state.roots.singleOrNull { it.rootId == rootId }) {
+            "SAF root is not registered"
+        }
+        val operation =
+            ProductSafRootOperation(
+                kind = ProductSafRootOperationKind.REMOVE,
+                rootId = root.rootId,
+                label = root.label,
+                treeUri = root.treeUri,
+                makeDefault = false,
+                previous = root,
+            )
+        persist(context, state.copy(pending = operation))
+        return operation
+    }
+
+    @Synchronized
     fun completePending(context: Context) {
         val state = load(context)
+        val retainedRoots =
+            if (state.pending?.kind == ProductSafRootOperationKind.REMOVE) {
+                state.roots.filterNot { it.rootId == state.pending.rootId }
+            } else {
+                state.roots
+            }
         persist(
             context,
             state.copy(
+                roots = retainedRoots,
                 pending = null,
                 selectionCandidate = null,
                 selectionRepairRootId = null,
@@ -336,6 +389,15 @@ internal object ProductSafRootRegistry {
                 selectionRepairRootId = null,
             ),
         )
+    }
+
+    @Synchronized
+    fun abandonPendingRemoval(context: Context) {
+        val state = load(context)
+        check(state.pending?.kind == ProductSafRootOperationKind.REMOVE) {
+            "pending SAF operation is not a removal"
+        }
+        persist(context, state.copy(pending = null))
     }
 
     fun treeForRoot(
