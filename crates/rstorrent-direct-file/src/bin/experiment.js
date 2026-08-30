@@ -176,6 +176,7 @@ async function connect() {
     if (!event.candidate) return;
     const candidate = event.candidate.toJSON();
     if (!candidate.candidate) return;
+    if (!directUdpCandidate(candidate.candidate)) return;
     if (signalingReady) {
       postJson("/candidate", candidate).catch(fail);
     } else {
@@ -199,6 +200,15 @@ async function connect() {
   ]);
   closeButton.disabled = false;
   return exchange;
+}
+
+function directUdpCandidate(candidate) {
+  const fields = candidate.split(/\s+/);
+  const typeIndex = fields.findIndex((field) => field.toLowerCase() === "typ");
+  return fields.length >= 8 &&
+    fields[2]?.toLowerCase() === "udp" &&
+    typeIndex >= 0 &&
+    ["host", "srflx", "prflx"].includes(fields[typeIndex + 1]?.toLowerCase());
 }
 
 function onMessage(event) {

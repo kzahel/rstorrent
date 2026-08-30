@@ -1,5 +1,6 @@
 use std::io::Write as _;
 use std::net::{IpAddr, Ipv4Addr};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -72,11 +73,33 @@ struct ReadyView {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let fixture_mib = parse_fixture_mib()?;
+    let mode = parse_mode()?;
+    let fixture_mib = match &mode {
+        ExperimentMode::Serve { fixture_mib }
+        | ExperimentMode::PrepareProfile { fixture_mib, .. } => *fixture_mib,
+    };
     let fixture_length = fixture_mib
         .checked_mul(1024 * 1024)
         .filter(|length| *length > 0 && *length <= MAX_FIXTURE_BYTES)
         .ok_or("fixture size must be between 1 and 256 MiB")?;
+    if let ExperimentMode::PrepareProfile {
+        profile_root,
+        payload_root,
+        profile_id,
+        ..
+    } = mode
+    {
+        let (torrent_id, fixture) =
+            persist_fixture(&profile_root, &payload_root, &profile_id, fixture_length)?;
+        println!(
+            "RSTORRENT_DIRECT_FILE_PROFILE_READY {}",
+            serde_json::to_string(&serde_json::json!({
+                "torrent_id": torrent_id,
+                "fixture": fixture,
+            }))?
+        );
+        return Ok(());
+    }
     let udp_ip = discover_private_ipv4();
     let temporary = tempfile::tempdir()?;
     let (application, capability, fixture_view) =
@@ -136,20 +159,65 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn parse_fixture_mib() -> Result<usize, Box<dyn std::error::Error>> {
+enum ExperimentMode {
+    Serve {
+        fixture_mib: usize,
+    },
+    PrepareProfile {
+        fixture_mib: usize,
+        profile_root: PathBuf,
+        payload_root: PathBuf,
+        profile_id: String,
+    },
+}
+
+fn parse_mode() -> Result<ExperimentMode, Box<dyn std::error::Error>> {
     let mut arguments = std::env::args().skip(1);
     let mut fixture_mib = DEFAULT_FIXTURE_MIB;
+    let mut profile_root = None;
+    let mut payload_root = None;
+    let mut profile_id = None;
     while let Some(argument) = arguments.next() {
-        if argument == "--fixture-mib" {
-            fixture_mib = arguments
-                .next()
-                .ok_or("--fixture-mib requires a value")?
-                .parse()?;
-        } else {
-            return Err(format!("unknown argument: {argument}").into());
+        match argument.as_str() {
+            "--fixture-mib" => {
+                fixture_mib = arguments
+                    .next()
+                    .ok_or("--fixture-mib requires a value")?
+                    .parse()?;
+            }
+            "--prepare-profile" => {
+                profile_root = Some(PathBuf::from(
+                    arguments
+                        .next()
+                        .ok_or("--prepare-profile requires a path")?,
+                ));
+            }
+            "--payload-root" => {
+                payload_root = Some(PathBuf::from(
+                    arguments.next().ok_or("--payload-root requires a path")?,
+                ));
+            }
+            "--profile-id" => {
+                profile_id = Some(arguments.next().ok_or("--profile-id requires a value")?);
+            }
+            _ => return Err(format!("unknown argument: {argument}").into()),
         }
     }
-    Ok(fixture_mib)
+    match (profile_root, payload_root, profile_id) {
+        (None, None, None) => Ok(ExperimentMode::Serve { fixture_mib }),
+        (Some(profile_root), Some(payload_root), Some(profile_id)) => {
+            Ok(ExperimentMode::PrepareProfile {
+                fixture_mib,
+                profile_root,
+                payload_root,
+                profile_id,
+            })
+        }
+        _ => Err(
+            "profile preparation requires --prepare-profile, --payload-root, and --profile-id"
+                .into(),
+        ),
+    }
 }
 
 fn discover_private_ipv4() -> IpAddr {
@@ -168,6 +236,31 @@ async fn create_fixture(
     temporary: &TempDir,
     length: usize,
 ) -> Result<(Arc<Mutex<ApplicationService>>, String, FixtureView), Box<dyn std::error::Error>> {
+    let profile_root = temporary.path().join("profile");
+    let payload_root = temporary.path().join("payload");
+    let profile_id = "webrtc-direct-file-experiment";
+    let (torrent_id, fixture) = persist_fixture(&profile_root, &payload_root, profile_id, length)?;
+    let roots = vec![ConfiguredStorageRoot::path("downloads", payload_root)];
+    let config = ApplicationConfig::new(
+        profile_root,
+        profile_id.to_owned(),
+        roots,
+        NetworkConfig::new(
+            NetworkPolicy::LoopbackOnly,
+            Duration::from_secs(2),
+            Duration::from_secs(2),
+        ),
+    );
+    let application = Arc::new(Mutex::new(ApplicationService::open(config).await?));
+    Ok((application, torrent_id, fixture))
+}
+
+fn persist_fixture(
+    profile_root: &Path,
+    payload_root: &Path,
+    profile_id: &str,
+    length: usize,
+) -> Result<(String, FixtureView), Box<dyn std::error::Error>> {
     let payload = (0..length)
         .map(|index| {
             let mixed = index
@@ -179,27 +272,13 @@ async fn create_fixture(
     let file_name = "webrtc-direct-file-fixture.bin";
     let raw_info = single_file_info(file_name, &payload, PIECE_LENGTH);
     let info_hash = hex(&Sha1::digest(&raw_info));
-    let payload_root = temporary.path().join("payload");
-    std::fs::create_dir_all(&payload_root)?;
+    std::fs::create_dir_all(payload_root)?;
     std::fs::write(payload_root.join(file_name), &payload)?;
-    let roots = vec![ConfiguredStorageRoot::path("downloads", payload_root)];
-    let config = ApplicationConfig::new(
-        temporary.path().join("profile"),
-        "webrtc-direct-file-experiment".to_owned(),
-        roots.clone(),
-        NetworkConfig::new(
-            NetworkPolicy::LoopbackOnly,
-            Duration::from_secs(2),
-            Duration::from_secs(2),
-        ),
-    );
-    let mut store = SessionStore::open(
-        config
-            .durable_profile_root()
-            .ok_or("missing profile root")?,
-        &config.profile_id,
-        &roots,
-    )?;
+    let roots = vec![ConfiguredStorageRoot::path(
+        "downloads",
+        payload_root.to_owned(),
+    )];
+    let mut store = SessionStore::open(profile_root, profile_id, &roots)?;
     let response = store.handle_durable(&RequestEnvelope {
         version: CONTROL_VERSION,
         request_id: "add-webrtc-direct-file-fixture".to_owned(),
@@ -229,25 +308,26 @@ async fn create_fixture(
     let seek_offset = (length / 3).min(length - seek_length);
     let overlap_length = length.min(80_003);
     let overlap_offset = (seek_offset + seek_length / 2).min(length - overlap_length);
-    let fixture = FixtureView {
-        file_name: file_name.to_owned(),
-        length,
-        sha256: sha256(&payload),
-        head_sha256: sha256(&payload[..head_length]),
-        tail_sha256: sha256(&payload[tail_offset..]),
-        seek_sha256: sha256(&payload[seek_offset..seek_offset + seek_length]),
-        overlap_sha256: sha256(&payload[overlap_offset..overlap_offset + overlap_length]),
-        head_offset: 0,
-        head_length,
-        tail_offset,
-        tail_length,
-        seek_offset,
-        seek_length,
-        overlap_offset,
-        overlap_length,
-    };
-    let application = Arc::new(Mutex::new(ApplicationService::open(config).await?));
-    Ok((application, torrent_id, fixture))
+    Ok((
+        torrent_id,
+        FixtureView {
+            file_name: file_name.to_owned(),
+            length,
+            sha256: sha256(&payload),
+            head_sha256: sha256(&payload[..head_length]),
+            tail_sha256: sha256(&payload[tail_offset..]),
+            seek_sha256: sha256(&payload[seek_offset..seek_offset + seek_length]),
+            overlap_sha256: sha256(&payload[overlap_offset..overlap_offset + overlap_length]),
+            head_offset: 0,
+            head_length,
+            tail_offset,
+            tail_length,
+            seek_offset,
+            seek_length,
+            overlap_offset,
+            overlap_length,
+        },
+    ))
 }
 
 async fn create_capability(

@@ -1075,7 +1075,7 @@ describe("inspection application", () => {
     await user.click(screen.getByRole("tab", { name: "Files" }));
     await user.click(within(screen.getByRole("grid", { name: "Torrent files" })).getByText(file.name));
     await user.click(screen.getByRole("button", { name: "More file actions" }));
-    const save = await screen.findByRole("menuitem", { name: "Save from remote device…" });
+    const save = await screen.findByRole("menuitem", { name: "Save file…" });
     await waitFor(() => expect(save).not.toHaveAttribute("aria-disabled"));
     await user.click(save);
 

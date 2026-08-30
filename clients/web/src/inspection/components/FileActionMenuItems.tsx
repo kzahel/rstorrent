@@ -35,7 +35,7 @@ export function FileActionMenuItems({
               aria-description={directSave.disabledReason}
               onAction={onDirectSave}
             >
-              Save from remote device…
+              Save file…
             </ActionMenuItem>
           )}
         </ActionMenuSection>

@@ -197,7 +197,9 @@ export function RemoteAccessSettingsSection({
             <p className={styles.note}>
               The relay carries encrypted connection setup only. File contents
               never pass through the relay, and completed verified files are the
-              only eligible source.
+              only eligible source. During an explicit attempt, the public STUN
+              service learns this device's public address and request timing,
+              but receives no account, torrent, file, or content data.
             </p>
             <dl className={styles.identity}>
               <div><dt>Active circuit</dt><dd><code>{security.direct_file.active_circuit_id ?? "none"}</code></dd></div>

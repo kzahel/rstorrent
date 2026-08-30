@@ -148,13 +148,13 @@ export async function saveDirectFile(
     abortIfRequested(request.signal);
     const local = peer.localDescription;
     if (local === null || local.type !== "offer") throw new Error("browser did not create a direct offer");
-    ensureDirectSdp(local.sdp);
+    const directOfferSdp = directOnlySdp(local.sdp);
     const response = await transport.directFile({
       ...identity,
       type: "open",
       torrent_id: request.torrentId,
       file_index: request.fileIndex,
-      offer: { type: "offer", sdp: local.sdp },
+      offer: { type: "offer", sdp: directOfferSdp },
     });
     if (response.type !== "opened") throw new Error("host returned an invalid direct offer result");
     opened = true;
@@ -452,9 +452,31 @@ function ensureDirectSdp(sdp: string): void {
 }
 
 function ensureDirectCandidate(candidate: string): void {
-  if (/\btyp\s+relay\b/i.test(candidate) || /\bTCP\b/i.test(candidate)) {
+  if (!isDirectCandidate(candidate)) {
     throw new Error("host offered a prohibited relay or TCP candidate");
   }
+}
+
+function directOnlySdp(sdp: string): string {
+  const newline = sdp.includes("\r\n") ? "\r\n" : "\n";
+  const terminalNewline = sdp.endsWith("\n");
+  const lines = sdp.split(/\r?\n/).filter((line) => {
+    if (!line.startsWith("a=candidate:")) return true;
+    return isDirectCandidate(line.slice(2));
+  });
+  if (terminalNewline && lines.at(-1) === "") lines.pop();
+  return `${lines.join(newline)}${terminalNewline ? newline : ""}`;
+}
+
+function isDirectCandidate(candidate: string): boolean {
+  const fields = candidate.split(/\s+/);
+  const typeIndex = fields.findIndex((field) => field.toLocaleLowerCase() === "typ");
+  return (
+    fields.length >= 8 &&
+    fields[2]?.toLocaleLowerCase() === "udp" &&
+    typeIndex >= 0 &&
+    ["host", "srflx", "prflx"].includes(fields[typeIndex + 1]?.toLocaleLowerCase() ?? "")
+  );
 }
 
 async function expectSignalResponse(

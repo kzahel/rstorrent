@@ -11,7 +11,10 @@ use std::time::{Duration, Instant};
 use bytes::BytesMut;
 use rstorrent_session::{ApplicationService, MediaRangeError, MediaReadError, MediaResolveError};
 use rtc::data_channel::RTCDataChannelId;
+use rtc::ice::mdns::MulticastDnsMode;
+use rtc::mdns::{MDNS_DEST_ADDR, MulticastSocket};
 use rtc::peer_connection::RTCPeerConnectionBuilder;
+use rtc::peer_connection::configuration::setting_engine::SettingEngine;
 use rtc::peer_connection::event::{RTCDataChannelEvent, RTCPeerConnectionEvent};
 use rtc::peer_connection::message::RTCMessage;
 use rtc::peer_connection::sdp::{RTCSdpType, RTCSessionDescription};
@@ -48,6 +51,7 @@ pub const STUN_PORT: u16 = 3478;
 pub const MAX_STUN_ADDRESSES: usize = 8;
 pub const STUN_RESOLUTION_TIMEOUT: Duration = Duration::from_secs(3);
 pub const STUN_BINDING_TIMEOUT: Duration = Duration::from_secs(4);
+pub const MDNS_RESOLUTION_TIMEOUT: Duration = Duration::from_secs(4);
 pub const NEGOTIATION_TIMEOUT: Duration = Duration::from_secs(20);
 pub const REQUEST_INACTIVE_TIMEOUT: Duration = Duration::from_secs(60);
 pub const EXPERIMENT_LIFETIME: Duration = Duration::from_secs(10 * 60);
@@ -340,7 +344,17 @@ async fn answer_offer(
     .new_candidate_host()
     .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?;
 
+    let mdns_socket = UdpSocket::from_std(
+        MulticastSocket::new()
+            .into_std()
+            .map_err(DirectFileEndpointError::Bind)?,
+    )
+    .map_err(DirectFileEndpointError::Bind)?;
+    let mut setting_engine = SettingEngine::default();
+    setting_engine.set_multicast_dns_mode(MulticastDnsMode::QueryOnly);
+    setting_engine.set_multicast_dns_timeout(Some(MDNS_RESOLUTION_TIMEOUT));
     let mut peer = RTCPeerConnectionBuilder::new()
+        .with_setting_engine(setting_engine)
         .with_sctp_receive_buffer_size(MAX_TRANSPORT_QUEUE_BYTES as u32)
         .build()
         .map_err(|error| DirectFileEndpointError::WebRtc(error.to_string()))?;
@@ -383,7 +397,7 @@ async fn answer_offer(
 
     let metrics = Arc::new(EndpointMetrics::default());
     metrics.set_state("negotiating");
-    metrics.open_sockets.store(1, Ordering::Release);
+    metrics.open_sockets.store(2, Ordering::Release);
     metrics.active_tasks.store(1, Ordering::Release);
     metrics
         .signaling_bytes
@@ -397,6 +411,7 @@ async fn answer_offer(
         let result = run_driver(
             peer,
             socket,
+            mdns_socket,
             local_addr,
             application,
             capability,
@@ -533,6 +548,7 @@ struct ActiveRequest {
 async fn run_driver(
     mut peer: rtc::peer_connection::RTCPeerConnection,
     socket: UdpSocket,
+    mdns_socket: UdpSocket,
     local_addr: SocketAddr,
     application: SharedApplication,
     capability: String,
@@ -546,13 +562,19 @@ async fn run_driver(
     let mut request_tasks = JoinSet::<(u32, &'static str)>::new();
     let mut channel_id: Option<RTCDataChannelId> = None;
     let mut receive_buffer = vec![0; MAX_DATAGRAM_BYTES];
+    let mut mdns_receive_buffer = vec![0; MAX_DATAGRAM_BYTES];
     let negotiation_deadline = tokio::time::Instant::now() + NEGOTIATION_TIMEOUT;
     let lifetime_deadline = tokio::time::Instant::now() + EXPERIMENT_LIFETIME;
     let mut stats_tick = tokio::time::interval(STATS_INTERVAL);
     stats_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let terminal = 'driver: loop {
         while let Some(transmit) = peer.poll_write() {
-            socket
+            let transmit_socket = if transmit.transport.peer_addr == MDNS_DEST_ADDR {
+                &mdns_socket
+            } else {
+                &socket
+            };
+            transmit_socket
                 .send_to(&transmit.message, transmit.transport.peer_addr)
                 .await
                 .map_err(|error| DirectFileEndpointError::Driver(error.to_string()))?;
@@ -785,6 +807,24 @@ async fn run_driver(
                 })
                 .map_err(|error| DirectFileEndpointError::Driver(error.to_string()))?;
             }
+            received = mdns_socket.recv_from(&mut mdns_receive_buffer) => {
+                let (length, peer_addr) = received
+                    .map_err(|error| DirectFileEndpointError::Driver(error.to_string()))?;
+                let mdns_local_addr = mdns_socket
+                    .local_addr()
+                    .map_err(|error| DirectFileEndpointError::Driver(error.to_string()))?;
+                peer.handle_read(TaggedBytesMut {
+                    now: Instant::now(),
+                    transport: TransportContext {
+                        local_addr: mdns_local_addr,
+                        peer_addr,
+                        ecn: None,
+                        transport_protocol: TransportProtocol::UDP,
+                    },
+                    message: BytesMut::from(&mdns_receive_buffer[..length]),
+                })
+                .map_err(|error| DirectFileEndpointError::Driver(error.to_string()))?;
+            }
         }
     };
 
@@ -803,7 +843,12 @@ async fn run_driver(
     peer.close()
         .map_err(|error| DirectFileEndpointError::Driver(error.to_string()))?;
     while let Some(transmit) = peer.poll_write() {
-        let _ = socket
+        let transmit_socket = if transmit.transport.peer_addr == MDNS_DEST_ADDR {
+            &mdns_socket
+        } else {
+            &socket
+        };
+        let _ = transmit_socket
             .send_to(&transmit.message, transmit.transport.peer_addr)
             .await;
     }
@@ -1037,14 +1082,46 @@ fn direct_udp_candidate(candidate: &str) -> bool {
     if fields.len() < 8 || !fields[2].eq_ignore_ascii_case("udp") {
         return false;
     }
-    fields
+    let Some(candidate_type) = fields
         .windows(2)
         .find(|fields| fields[0].eq_ignore_ascii_case("typ"))
-        .is_some_and(|fields| {
-            matches!(
-                fields[1].to_ascii_lowercase().as_str(),
-                "host" | "srflx" | "prflx"
-            )
+        .map(|fields| fields[1].to_ascii_lowercase())
+    else {
+        return false;
+    };
+    let Some(address) = fields.get(4) else {
+        return false;
+    };
+    match candidate_type.as_str() {
+        "host" => valid_direct_ip(address) || valid_mdns_host(address),
+        "srflx" | "prflx" => valid_direct_ip(address),
+        _ => false,
+    }
+}
+
+fn valid_direct_ip(address: &str) -> bool {
+    address
+        .parse::<IpAddr>()
+        .is_ok_and(|address| !address.is_unspecified() && !address.is_multicast())
+}
+
+fn valid_mdns_host(address: &str) -> bool {
+    let Some(label) = address
+        .get(..address.len().saturating_sub(".local".len()))
+        .filter(|_| address.ends_with(".local"))
+    else {
+        return false;
+    };
+    let bytes = label.as_bytes();
+    bytes.len() == 36
+        && bytes[14] == b'4'
+        && matches!(bytes[19].to_ascii_lowercase(), b'8' | b'9' | b'a' | b'b')
+        && bytes.iter().enumerate().all(|(index, byte)| {
+            if matches!(index, 8 | 13 | 18 | 23) {
+                *byte == b'-'
+            } else {
+                byte.is_ascii_hexdigit()
+            }
         })
 }
 
@@ -1303,6 +1380,9 @@ mod tests {
             "candidate:1 1 UDP 2130706431 192.0.2.1 5000 typ host"
         ));
         assert!(direct_udp_candidate(
+            "candidate:1 1 UDP 2113939711 61b445d2-6503-41ac-96ce-ee3edac00e9f.local 61163 typ host"
+        ));
+        assert!(direct_udp_candidate(
             "candidate:2 1 udp 1694498815 198.51.100.2 5001 typ srflx raddr 10.0.0.2 rport 4000"
         ));
         assert!(direct_udp_candidate(
@@ -1313,6 +1393,15 @@ mod tests {
         ));
         assert!(!direct_udp_candidate(
             "candidate:5 1 tcp 1518280447 192.0.2.5 9 typ host tcptype active"
+        ));
+        assert!(!direct_udp_candidate(
+            "candidate:6 1 udp 2113939711 attacker.example 61163 typ host"
+        ));
+        assert!(!direct_udp_candidate(
+            "candidate:7 1 udp 2113939711 not-a-uuid.local 61163 typ host"
+        ));
+        assert!(!direct_udp_candidate(
+            "candidate:8 1 udp 2113939711 224.0.0.251 5353 typ host"
         ));
         assert!(!direct_udp_candidate("candidate:short"));
     }

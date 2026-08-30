@@ -490,6 +490,10 @@ impl RemoteAccessOwner {
             return Err(error.into());
         }
         self.shared.state.lock().await.authority = Some(authority);
+        #[cfg(feature = "direct-file-webrtc")]
+        if let Some(supervisor) = &self.shared.direct_file {
+            supervisor.set_enabled(true).await;
+        }
         self.start_host().await;
         self.security_view().await
     }

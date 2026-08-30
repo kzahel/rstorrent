@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn, spawnSync } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   chmod,
   copyFile,
@@ -68,13 +68,14 @@ try {
   const headlessPort = await availablePort();
   const relayUrl = `wss://127.0.0.1:${relayPort}/client`;
   const clientOrigin = `https://127.0.0.1:${clientPort}`;
-  const buildId = `tactical-192-${gitRevision()}`;
+  const buildId = `tactical-196-${gitRevision()}`;
 
   buildArtifacts(relayUrl, buildId);
   await createLocalCertificate();
   const installed = await createInstalledHeadlessLayout();
   let headlessCommand = installed.headless;
   await createHeadlessConfiguration(headlessPort, relayPort);
+  const directFixture = prepareDirectFixture();
 
   clientServer = await serveRemoteClient(clientPort, relayUrl);
   relayProcess = await startRelay(relayPort, clientOrigin);
@@ -93,6 +94,12 @@ try {
     width: 1365,
     height: 900,
   });
+  await privateContext.addInitScript(() => {
+    Object.defineProperty(window, "showSaveFilePicker", {
+      configurable: true,
+      value: undefined,
+    });
+  });
   const privatePage = await privateContext.newPage();
   privatePage.on("pageerror", (error) => browserErrors.push(String(error)));
   const response = await privatePage.goto(`${clientOrigin}/remote/`);
@@ -100,7 +107,9 @@ try {
   await assertImmutableAssets(privateContext, clientOrigin);
   await signIn(privatePage, true, "Owner laptop");
   await expectProduct(privatePage);
+  const directSave = await saveDirectFixture(privatePage, directFixture);
   const firstAudit = remoteStatus(headlessCommand);
+  assertDirectFileTerminal(firstAudit, directFixture);
   const originalClient = onlyCurrentClient(firstAudit);
   await expectRemoteAudit(privatePage, "Owner laptop");
 
@@ -256,6 +265,7 @@ try {
       relayRestartResume: true,
       packageRollbackResume: true,
       completeRemoteAuditRendered: true,
+      directCompletedFileSave: directSave,
       exactRevocationRejectedResume: true,
       revocationTombstoneRetained: true,
       changedHostBlocked: true,
@@ -275,6 +285,24 @@ try {
   if (clientServer !== undefined) await closeServer(clientServer).catch(() => {});
   await rm(temporaryRoot, { recursive: true, force: true });
 }
+}
+
+function prepareDirectFixture() {
+  const result = run("cargo", [
+    "run", "--quiet",
+    "-p", "rstorrent-direct-file",
+    "--features", "experiment",
+    "--bin", "rstorrent-direct-file-experiment",
+    "--",
+    "--fixture-mib", "1",
+    "--prepare-profile", profileRoot,
+    "--payload-root", payloadRoot,
+    "--profile-id", "default",
+  ]).stdout.trim();
+  const prefix = "RSTORRENT_DIRECT_FILE_PROFILE_READY ";
+  const line = result.split(/\r?\n/).find((candidate) => candidate.startsWith(prefix));
+  if (line === undefined) throw new Error("direct fixture preparation emitted no result");
+  return JSON.parse(line.slice(prefix.length));
 }
 
 function buildArtifacts(relayUrl, buildId) {
@@ -558,10 +586,80 @@ async function expectRemoteAudit(page, label) {
   await expectText(page, label);
   await expectText(page, "This browser");
   await expectText(page, "Current security ledger");
+  await expectText(page, "direct file completed");
   if (await page.getByText("Change password", { exact: true }).count() !== 0) {
     throw new Error("remote audit exposed the local password-change operation");
   }
   await page.getByRole("button", { name: "Close settings" }).click();
+}
+
+async function saveDirectFixture(page, prepared) {
+  const fixture = prepared.fixture;
+  await page.getByRole("button", { name: "Workbench" }).click();
+  const torrentGrid = page.getByRole("grid", { name: "Torrent library" });
+  await torrentGrid.getByText(fixture.file_name, { exact: true }).click();
+  await page.getByRole("tab", { name: "Files" }).click();
+  const fileGrid = page.getByRole("grid", { name: "Torrent files" });
+  await fileGrid.getByText(fixture.file_name, { exact: true }).click();
+  await page.getByRole("button", { name: "More file actions" }).click();
+  const action = page.getByRole("menuitem", { name: "Save file…" });
+  await action.waitFor({ state: "visible", timeout: 20_000 });
+  await page.waitForFunction(
+    (element) => element.getAttribute("aria-disabled") !== "true",
+    await action.elementHandle(),
+    { timeout: 20_000 },
+  );
+  const downloadPromise = page.waitForEvent("download", { timeout: 60_000 });
+  await action.click();
+  const download = await downloadPromise.catch(async (error) => {
+    throw new Error(
+      `direct save produced no browser download: ${error}; UI=${await page.locator("body").innerText()}`,
+    );
+  });
+  const failure = await download.failure();
+  if (failure !== null) throw new Error(`direct fallback save failed: ${failure}`);
+  const stream = await download.createReadStream();
+  if (stream === null) throw new Error("direct fallback save exposed no bytes");
+  const digest = createHash("sha256");
+  let bytes = 0;
+  for await (const chunk of stream) {
+    digest.update(chunk);
+    bytes += chunk.length;
+  }
+  const sha256 = digest.digest("hex");
+  if (download.suggestedFilename() !== fixture.file_name) {
+    throw new Error("direct save changed the fixture file name");
+  }
+  if (bytes !== fixture.length || sha256 !== fixture.sha256) {
+    throw new Error("direct save bytes differed from the verified fixture");
+  }
+  await expectText(page, "Remote file saved.");
+  return { bytes, sha256, sink: "bounded_blob_fallback" };
+}
+
+function assertDirectFileTerminal(status, prepared) {
+  const direct = status.direct_file;
+  if (
+    direct?.state !== "idle" ||
+    direct.active_circuit_id !== null ||
+    direct.active_tasks !== 0 ||
+    direct.open_sockets !== 0 ||
+    direct.active_requests !== 0 ||
+    direct.queued_bytes !== 0
+  ) {
+    throw new Error(`direct transfer retained resources: ${JSON.stringify(direct)}`);
+  }
+  const completed = status.authority.events.find(
+    (event) => event.kind === "direct_file_completed" &&
+      event.direct_file?.torrent_id === prepared.torrent_id,
+  );
+  if (
+    completed === undefined ||
+    completed.direct_file.file_index !== 0 ||
+    completed.direct_file.byte_count !== prepared.fixture.length
+  ) {
+    throw new Error("direct transfer audit omitted the completed fixture");
+  }
 }
 
 function remoteStatus(headless) {
