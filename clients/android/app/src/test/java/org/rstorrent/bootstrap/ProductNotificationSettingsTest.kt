@@ -1,0 +1,105 @@
+package org.rstorrent.bootstrap
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class ProductNotificationSettingsTest {
+    @Test
+    fun preferencesDefaultOnAndMapToTheirOwnedCategories() {
+        val preferences = ProductNotificationPreferences()
+
+        assertTrue(preferences.enabled(ProductNotificationCategory.DOWNLOAD_COMPLETE))
+        assertTrue(preferences.enabled(ProductNotificationCategory.NEEDS_ATTENTION))
+    }
+
+    @Test
+    fun successfulPersistencePrecedesTheLiveChange() {
+        val current = ProductNotificationPreferences()
+        var persistedBeforeReturn = false
+
+        val result =
+            persistNotificationPreference(
+                current,
+                ProductNotificationPreference.DOWNLOAD_COMPLETE,
+                false,
+            ) { preference, enabled ->
+                assertEquals(ProductNotificationPreference.DOWNLOAD_COMPLETE, preference)
+                assertFalse(enabled)
+                persistedBeforeReturn = true
+                true
+            }
+
+        assertTrue(persistedBeforeReturn)
+        assertEquals(
+            ProductNotificationPreferenceResult.Applied(current.copy(downloadComplete = false)),
+            result,
+        )
+    }
+
+    @Test
+    fun failedPersistenceRetainsThePriorPolicy() {
+        val current = ProductNotificationPreferences()
+
+        val result =
+            persistNotificationPreference(
+                current,
+                ProductNotificationPreference.NEEDS_ATTENTION,
+                false,
+            ) { _, _ -> false }
+
+        assertSame(ProductNotificationPreferenceResult.Failed, result)
+        assertTrue(current.needsAttention)
+    }
+
+    @Test
+    fun duplicatePreferenceDoesNotWriteAgain() {
+        val current = ProductNotificationPreferences(downloadComplete = false)
+        var writes = 0
+
+        val result =
+            persistNotificationPreference(
+                current,
+                ProductNotificationPreference.DOWNLOAD_COMPLETE,
+                false,
+            ) { _, _ ->
+                writes += 1
+                true
+            }
+
+        assertEquals(0, writes)
+        assertEquals(ProductNotificationPreferenceResult.Applied(current), result)
+    }
+
+    @Test
+    fun notificationVisibilityAndInteractionAreIndependent() {
+        val visible =
+            NotificationEligibility(
+                permissionGranted = true,
+                appNotificationsEnabled = true,
+                backgroundChannelEnabled = true,
+                interactionLeaseCount = 0,
+            )
+        assertTrue(visible.backgroundNotificationVisible)
+        assertFalse(visible.shouldStopOwner)
+
+        val interactiveDenied = visible.copy(permissionGranted = false, interactionLeaseCount = 1)
+        assertTrue(interactiveDenied.visibleOnly)
+        assertFalse(interactiveDenied.shouldStopOwner)
+
+        val unattendedDenied = interactiveDenied.copy(interactionLeaseCount = 0)
+        assertTrue(unattendedDenied.shouldStopOwner)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun negativeInteractionLeaseCountIsRejected() {
+        NotificationEligibility(
+            permissionGranted = true,
+            appNotificationsEnabled = true,
+            backgroundChannelEnabled = true,
+            interactionLeaseCount = -1,
+        )
+    }
+}

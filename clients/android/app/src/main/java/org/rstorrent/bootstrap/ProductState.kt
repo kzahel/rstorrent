@@ -110,6 +110,7 @@ data class ProductState(
     val companionPort: UShort? = null,
     val companionPairing: CompanionPairingState? = null,
     val preventSleepDuringActiveDownloads: Boolean = true,
+    val notifications: ProductNotificationState = ProductNotificationState(),
     val selectedTorrent: String? = null,
     val torrents: Map<String, TorrentView> = emptyMap(),
     val preparations: Map<String, TorrentPreparationView> = emptyMap(),
