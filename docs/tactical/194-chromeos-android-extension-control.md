@@ -466,8 +466,12 @@ Chrome's current official extension guidance was also reviewed:
   for explicit cross-origin host permission;
 - <https://developer.chrome.com/docs/extensions/reference/api/permissions>
   for optional runtime permission and upgrade behavior; and
-- <https://developer.chrome.com/blog/local-network-access> plus the Chrome 147
-  beta note for current Local Network Access and WebSocket prompts.
+- <https://developer.chrome.com/blog/local-network-access>, the
+  <https://developer.chrome.com/release-notes/147> release note for WebSocket
+  prompting, and the current
+  <https://wicg.github.io/local-network-access/> address-space table. The
+  latter explicitly classifies ARC's `100.115.92.2` within `100.64.0.0/10` as
+  local rather than public.
 
 The retained-root portion was also checked against pinned libtorrent revision
 `7d7fc38fac61177fa5e02148f791b2f65250b09d`. Its
@@ -542,12 +546,11 @@ being mistaken for full Android feature readiness.
    one remains bound to root A while root B becomes current for the second.
    Revoke and repair A without interrupting B.
 7. **Physical ChromeOS gate:** before device work, read
-   `~/code/machine-control/platforms/chromeos/skills/SKILL.md`, run the common
-   Machine Control doctor, then execute the exact stopping-condition matrix on
-   the named x86_64 Chromebook. Capture
-   Chrome version, ARC topology, Local Network Access behavior, endpoint
-   reachability from the Chromebook and another LAN device, process IDs,
-   service notification/lifecycle, transfer result, resource high waters,
+   `~/code/chromeos-testbed/skills/SKILL.md`, run `chromeos doctor`, then
+   execute the exact stopping-condition matrix on the named x86_64 Chromebook.
+   Capture Chrome version, ARC topology, Local Network Access behavior,
+   endpoint reachability from the Chromebook and another LAN device, process
+   IDs, service notification/lifecycle, transfer result, resource high waters,
    and zero-residue cleanup.
 8. **Closeout gate:** update the tactical with exact commands, commits,
    artifacts, high-water marks, failures, physical evidence, known gaps, and
@@ -567,13 +570,76 @@ npm run test --prefix clients/web
 npm run build --prefix clients/web
 npm test --prefix clients/extension
 npm run package --prefix clients/extension
-./gradlew --project-dir clients/android lintDebug testDebugUnitTest assembleDebug
+(
+  cd clients/android
+  ./gradlew lintDebug testDebugUnitTest assembleDebug assembleDebugAndroidTest
+)
 ```
 
 Run the repository's generated-contract drift, deterministic browser,
 instrumented Android, controlled interoperability, and ChromeOS package/device
 commands documented by `DEVELOPMENT.md` in proportion to the landed paths.
 No public-swarm result is required for this transport slice.
+
+## Execution Checkpoint
+
+Implementation through the package gates landed on `main` in these bounded
+commits:
+
+- `92abce4` adds bounded dynamic platform roots to the Android application
+  boundary;
+- `83ca21d` installs the versioned retained-SAF registry, singleton migration,
+  root-specific broker lookup, and journal recovery;
+- `edd66bc` adds the authenticated companion admission and pairing owner;
+- `aca1a14` joins the Android lifecycle, shared application owner, ChromeOS
+  listener, approval surface, and picker-notification fallback;
+- `05569b5` completes current/repair/remove root management in Compose;
+- `c64fb70` joins authenticated backend identity and Android grant release to
+  semantic root removal;
+- `b9b63cd` packages the companion React application and exact-permission beta
+  extension; and
+- `be6d67e` keeps the shared WebSocket writer command allocation bounded under
+  the current Rust lint baseline.
+
+The implementation checkpoint passed the following automated evidence on
+2026-08-30:
+
+- `cargo fmt --all -- --check`, `cargo clippy --workspace -- -D warnings`, and
+  `cargo test --workspace`;
+- `npm run generate --prefix clients/web`, typecheck, 359 passing React tests
+  with 2 skipped, the production build, and its CSP-safe bundle check;
+- 16 extension tests, manifest/package validation, the exact three-asset
+  companion bundle, and
+  `target/extension/jstorrent-beta-0.4.0.zip`;
+- the complete two-ABI `clients/android/build.sh` build, followed by Android
+  lint, unit tests, debug APK assembly, and instrumentation APK assembly; and
+- 4 connected Compose instrumentation tests on an explicitly owned, headless
+  API 34 `jstorrent-tablet` AVD, followed by exact emulator shutdown.
+
+The physical x86_64 Chromebook checkpoint is intentionally incomplete.
+`chromeos doctor` reported 10 passing checks with no failures; its non-blocking
+warnings were a pending ChromeOS reboot, an initially absent local DevTools
+tunnel, and disconnected ARC ADB. The device runs ChromeOS milestone 150,
+build `16700.60.0`, Chrome `150.0.7871.213`, with the expected
+`100.115.92.0/30` ARC bridge. The exact beta extension ID
+`gcgoepclopkgijmclmlheafaglmbjlcc` was updated in place from `0.3.0` to
+`0.4.0`. Its explicit action requested only **Read and change your data on
+100.115.92.2**, opened one packaged companion page, and attempted the fixed
+`rstorrent://chromeos-companion` launch without claiming success. The packaged
+page remained in its bounded probe state because the new Android package was
+not yet running. Chrome reports the page's Local Network Access permission as
+`prompt`; the actual prompt, grant, denial, and revocation remain part of the
+live-listener matrix rather than a completed claim.
+
+The debug APK is built at
+`clients/android/app/build/outputs/apk/debug/app-debug.apk` and copied to the
+Chromebook, but ARC installation is paused at ChromeOS's secure **Allow USB
+debugging?** confirmation. The testbed cannot actuate that protected system
+dialog. No APK-install, pairing, retained-root, two-transfer, reconnect,
+coexistence, same-LAN isolation, listener high-water, or final-cleanup claim is
+therefore recorded yet. After one physical approval, resume with exact ADB
+target verification, install this artifact, and run stopping conditions 1--11
+before marking the tactical complete.
 
 ## Non-Goals
 
