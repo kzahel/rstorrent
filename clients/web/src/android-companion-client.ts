@@ -85,6 +85,7 @@ export interface AndroidCompanionConnection {
   readonly client: ApplicationViewClient;
   readonly hello: ApiHello;
   readonly endpoint: string;
+  readonly disconnected: Promise<void>;
 }
 
 export type AndroidCompanionStatus = (message: string) => void;
@@ -103,6 +104,7 @@ export async function connectAndroidCompanion(
   let connected: {
     readonly client: ApplicationViewClient;
     readonly hello: ApiHello;
+    readonly disconnected: Promise<void>;
   };
   try {
     connected = await openApplication(
@@ -232,12 +234,21 @@ async function openApplication(
   installationId: string,
   credential: string,
   signal?: AbortSignal,
-): Promise<{ readonly client: ApplicationViewClient; readonly hello: ApiHello }> {
+): Promise<{
+  readonly client: ApplicationViewClient;
+  readonly hello: ApiHello;
+  readonly disconnected: Promise<void>;
+}> {
   const platform = new AndroidPlatformClient(
     endpoint,
     installationId,
     credential,
   );
+  let connected = false;
+  let resolveDisconnected: (() => void) | undefined;
+  const disconnected = new Promise<void>((resolve) => {
+    resolveDisconnected = resolve;
+  });
   const socket = new WebSocketApplicationViewClient(
     endpoint,
     credential,
@@ -246,12 +257,19 @@ async function openApplication(
     {
       connectPath: `${API_ROOT}/connect`,
       platformClient: platform,
+      onConnectionState: (active) => {
+        if (active) {
+          connected = true;
+        } else if (connected) {
+          resolveDisconnected?.();
+        }
+      },
     },
   );
   const client = new AndroidCompanionApplicationClient(socket);
   try {
     const greeting = await client.hello(signal);
-    return { client, hello: greeting };
+    return { client, hello: greeting, disconnected };
   } catch (error) {
     await client.close();
     throw error;

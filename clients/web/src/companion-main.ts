@@ -4,11 +4,14 @@ import { startCompanionInspection } from "./inspection/companion-bootstrap";
 const abort = new AbortController();
 const status = requiredElement("companion-status");
 const cancel = requiredButton("companion-cancel");
-
-cancel.addEventListener("click", () => {
+let cancelAction = () => {
   abort.abort(new Error("Connection canceled"));
   cancel.disabled = true;
   status.textContent = "Connection canceled. Use the extension menu to try again.";
+};
+
+cancel.addEventListener("click", () => {
+  cancelAction();
 });
 
 void connectAndroidCompanion(
@@ -17,7 +20,7 @@ void connectAndroidCompanion(
   },
   abort.signal,
 )
-  .then(async ({ client, hello, endpoint }) => {
+  .then(async ({ client, hello, endpoint, disconnected }) => {
     const backend = hello.backend;
     if (backend === undefined || backend === null) {
       throw new Error("Android backend identity is unavailable");
@@ -29,7 +32,18 @@ void connectAndroidCompanion(
       `Android · profile ${backend.profile_id} · instance ${backend.instance_id} · ` +
       `RSTorrent ${backend.product_version} · protocol ${hello.api.minimum}–${hello.api.current} · ` +
       endpoint;
-    await startCompanionInspection(client);
+    const closeInspection = await startCompanionInspection(client);
+    void disconnected.then(async () => {
+      await closeInspection().catch(() => {});
+      requiredElement("app").hidden = true;
+      identity.hidden = true;
+      requiredElement("companion-bootstrap").hidden = false;
+      status.setAttribute("role", "alert");
+      status.textContent = "Android disconnected. Select Retry to reconnect.";
+      cancel.textContent = "Retry";
+      cancel.disabled = false;
+      cancelAction = () => window.location.reload();
+    });
   })
   .catch((error: unknown) => {
     if (abort.signal.aborted) return;
@@ -37,7 +51,7 @@ void connectAndroidCompanion(
     status.textContent = error instanceof Error ? error.message : String(error);
     cancel.textContent = "Close";
     cancel.disabled = false;
-    cancel.onclick = () => window.close();
+    cancelAction = () => window.close();
   });
 
 function requiredElement(id: string): HTMLElement {

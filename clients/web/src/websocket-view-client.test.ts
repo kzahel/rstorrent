@@ -428,6 +428,7 @@ describe("multiplexed application WebSocket adapter", () => {
 
   it("does not replay a pending command and reuses client identity on reconnect", async () => {
     const sockets: FakeWebSocket[] = [];
+    const connectionStates: boolean[] = [];
     const factory: ApplicationWebSocketFactory = (url) => {
       const socket = new FakeWebSocket(url, (frame, active) => {
         queueMicrotask(() => {
@@ -452,20 +453,24 @@ describe("multiplexed application WebSocket adapter", () => {
       null,
       factory,
       clientInstanceId,
+      { onConnectionState: (connected) => connectionStates.push(connected) },
     );
     const hello = client.hello();
     sockets[0]?.open();
     await hello;
+    expect(connectionStates).toEqual([true]);
     const pending = client.dispatch(snapshotRequest("not-replayed"));
     await Promise.resolve();
     sockets[0]?.close(1006, "abnormal");
     await expect(pending).rejects.toMatchObject({ code: "connection_closed" });
+    expect(connectionStates).toEqual([true, false]);
 
     const reopening = client.openViewSet({ views: [listView], options: {} });
     await new Promise((resolve) => setTimeout(resolve, 275));
     expect(sockets).toHaveLength(2);
     sockets[1]?.open();
     await reopening;
+    expect(connectionStates).toEqual([true, false, true]);
     const secondFrames = sockets[1]?.sent ?? [];
     expect(secondFrames[0]).toMatchObject({
       type: "connect",
@@ -478,6 +483,7 @@ describe("multiplexed application WebSocket adapter", () => {
       ),
     ).toBe(false);
     await client.close();
+    expect(connectionStates).toEqual([true, false, true, false]);
   });
 
   it("sends torrent bytes only after the server admits the upload", async () => {

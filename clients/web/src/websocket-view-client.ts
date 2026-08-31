@@ -63,6 +63,7 @@ export interface ApplicationWebSocketPlatformClient {
 export interface ApplicationWebSocketClientOptions {
   readonly connectPath?: string;
   readonly platformClient?: ApplicationWebSocketPlatformClient;
+  readonly onConnectionState?: (connected: boolean) => void;
 }
 
 interface PendingCorrelation {
@@ -106,7 +107,7 @@ export class WebSocketApplicationViewClient
     private readonly socketFactory: ApplicationWebSocketFactory = (url) =>
       new WebSocket(url),
     clientInstanceId: string = generateClientInstanceId(),
-    options: ApplicationWebSocketClientOptions = {},
+    private readonly options: ApplicationWebSocketClientOptions = {},
   ) {
     if (token !== null && (token.length === 0 || token.length > 128)) {
       throw new Error("gateway token must be 1..=128 characters");
@@ -518,6 +519,7 @@ export class WebSocketApplicationViewClient
           handshakeComplete = true;
           signal?.removeEventListener("abort", abort);
           this.connected = true;
+          this.options.onConnectionState?.(true);
           this.connectedHello = frame.hello;
           this.reconnectAttempt = 0;
           this.reconnectNotBefore = 0;
@@ -533,7 +535,9 @@ export class WebSocketApplicationViewClient
         signal?.removeEventListener("abort", abort);
         if (this.socket !== socket) return;
         this.socket = undefined;
+        const wasConnected = this.connected;
         this.connected = false;
+        if (wasConnected) this.options.onConnectionState?.(false);
         this.recordReconnectDelay();
         const failure = new ApplicationViewError(
           "connection_closed",

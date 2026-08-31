@@ -9,7 +9,7 @@ import "./global.css";
 
 export async function startCompanionInspection(
   client: ApplicationViewClient,
-): Promise<void> {
+): Promise<() => Promise<void>> {
   const application = await LiveApplication.open(client, {
     storagePolicy: "one_current_root",
   });
@@ -23,4 +23,5 @@ export async function startCompanionInspection(
       <App oneCurrentRoot />
     </InspectionProvider>,
   );
+  return () => controller.close();
 }
