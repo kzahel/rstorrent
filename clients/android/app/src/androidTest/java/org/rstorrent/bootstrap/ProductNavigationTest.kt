@@ -10,6 +10,7 @@ import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.isDialog
+import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -131,8 +132,10 @@ class ProductNavigationTest {
         }
 
         compose.onNodeWithText("Fixture torrent").performSemanticsAction(SemanticsActions.OnClick)
-        compose.onNodeWithText("Info hash (v1)").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Info hash (v2)").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Info hash (v1)").performScrollTo()
+        awaitDisplayed("Info hash (v1)")
+        compose.onNodeWithText("Info hash (v2)").performScrollTo()
+        awaitDisplayed("Info hash (v2)")
         listOf("Details", "Status", "Files", "Trackers", "Peers", "Pieces").forEach {
             compose
                 .onNodeWithText(it)
@@ -869,4 +872,11 @@ class ProductNavigationTest {
             throttleWaitHighWaterMicros = "0",
             currentBurstCreditBytes = "0",
         )
+
+    private fun awaitDisplayed(text: String) {
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onNodeWithText(text).isDisplayed()
+        }
+        compose.onNodeWithText(text).assertIsDisplayed()
+    }
 }
