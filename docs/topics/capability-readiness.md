@@ -871,6 +871,11 @@ exactly.
 
 ### Active
 
+- Implement **Tactical `204`** across shared React/Tauri, Android, and iOS.
+  Extract complete English product catalogs, keep typed Rust values language-
+  neutral, use platform locale/fallback and formatting, validate placeholders
+  and provenance, and prove long-LTR/RTL pseudo layouts. Do not claim a real
+  non-English locale until a separate reviewed translation cohort passes.
 - Finish qualification evidence for **Tactical `196`**. The implementation
   now supplies the default-compiled lazy desktop/headless endpoint,
   authenticated direct-only signaling, completed-file **Save file...**,

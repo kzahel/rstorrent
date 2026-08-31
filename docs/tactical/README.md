@@ -93,6 +93,12 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`204-cross-product-localization-foundation.md`](204-cross-product-localization-foundation.md):
+  active; makes shared React/Tauri, Android Compose/platform, and iOS
+  SwiftUI/platform presentation localization-ready through complete English
+  catalogs, system locale negotiation, locale-aware formatting, strict
+  catalog validation, and LTR/RTL pseudo evidence. It does not claim or import
+  a production non-English translation.
 - [`203-jstorrent-shaped-add-time-file-selection.md`](203-jstorrent-shaped-add-time-file-selection.md):
   complete; adds one durable application-owned pending-add state and a
   JSTorrent-shaped checked-Normal/unchecked-Skip selection stage to shared
