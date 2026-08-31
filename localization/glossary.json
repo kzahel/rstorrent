@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "terms": [
+    {
+      "term": "torrent",
+      "definition": "A BitTorrent transfer and its metainfo; do not replace it with download when seeding or metadata-only states are possible.",
+      "capitalization": "lowercase except at the start of a sentence"
+    },
+    {
+      "term": "tracker",
+      "definition": "A server that introduces peers; it does not carry payload data.",
+      "capitalization": "lowercase except at the start of a sentence"
+    },
+    {
+      "term": "peer",
+      "definition": "Another BitTorrent participant connected or eligible to connect to this torrent.",
+      "capitalization": "lowercase except at the start of a sentence"
+    },
+    {
+      "term": "seeding",
+      "definition": "Uploading verified data after all selected data is complete.",
+      "capitalization": "lowercase except at the start of a sentence"
+    },
+    {
+      "term": "download root",
+      "definition": "The user-selected directory or platform capability beneath which torrent data is stored.",
+      "capitalization": "sentence case in labels"
+    },
+    {
+      "term": "Normal",
+      "definition": "The ordinary selected-file priority. It means download this file without preferential scheduling.",
+      "capitalization": "title case as a compact priority label"
+    },
+    {
+      "term": "Skip",
+      "definition": "Do not download the selected file unless shared piece geometry requires bytes for another selected file.",
+      "capitalization": "title case as a compact priority label"
+    },
+    {
+      "term": "High",
+      "definition": "Prefer the selected file over files at Normal priority.",
+      "capitalization": "title case as a compact priority label"
+    },
+    {
+      "term": "checking",
+      "definition": "Verifying stored bytes against torrent hashes.",
+      "capitalization": "lowercase except at the start of a sentence"
+    },
+    {
+      "term": "paused",
+      "definition": "The transfer is retained but ordinary networking and scheduling are stopped by policy.",
+      "capitalization": "lowercase except at the start of a sentence"
+    },
+    {
+      "term": "completed",
+      "definition": "All selected data has been verified; the torrent may still be seeding.",
+      "capitalization": "lowercase except at the start of a sentence"
+    },
+    {
+      "term": "remove",
+      "definition": "Remove the torrent from RSTorrent while preserving downloaded data.",
+      "capitalization": "sentence case in actions"
+    },
+    {
+      "term": "delete data",
+      "definition": "Remove the torrent and delete only the data owned by that torrent after explicit confirmation.",
+      "capitalization": "sentence case in actions"
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "translatable": [
+    "React and Tauri visible product copy, labels, status summaries, dialogs, notifications, metadata, and accessibility text",
+    "Android Compose and platform visible product copy, labels, notifications, errors, and accessibility text",
+    "iOS SwiftUI and platform visible product copy, labels, notifications, errors, and accessibility text"
+  ],
+  "verbatim": [
+    "torrent names and user-selected file or directory names",
+    "URLs, magnet links, hashes, IP addresses, hostnames, protocol tokens, MIME types, and identifiers",
+    "serialized command values, persistence keys, route names, schema fields, and CSS selectors",
+    "logs, developer diagnostics, assertions, fixtures, test names, and source-study labels",
+    "exact byte geometry and machine-readable dates, times, rates, ports, and endpoints"
+  ],
+  "rules": [
+    {
+      "path": "clients/web/src",
+      "catalog": "web",
+      "ignored": ["**/*.test.ts", "**/*.test.tsx", "**/fixtures/**", "**/api/generated/**"]
+    },
+    {
+      "path": "clients/desktop/src-tauri/src",
+      "catalog": "web",
+      "ignored": ["**/*_test.rs"]
+    },
+    {
+      "path": "clients/android/app/src/main",
+      "catalog": "android",
+      "ignored": ["**/generated/**"]
+    },
+    {
+      "path": "clients/ios/App",
+      "catalog": "ios",
+      "ignored": ["**/Generated/**"]
+    }
+  ]
+}

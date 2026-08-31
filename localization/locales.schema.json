@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rstorrent.invalid/localization/locales.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sourceLocale",
+    "fallbackLocale",
+    "supportedLocales",
+    "testLocales",
+    "catalogs"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "sourceLocale": { "type": "string", "const": "en" },
+    "fallbackLocale": { "type": "string", "const": "en" },
+    "supportedLocales": {
+      "type": "array",
+      "const": ["en"]
+    },
+    "testLocales": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["tag", "direction", "purpose"],
+        "properties": {
+          "tag": { "enum": ["en-XA", "ar-XB"] },
+          "direction": { "enum": ["ltr", "rtl"] },
+          "purpose": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "catalogs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["web", "android", "ios"],
+      "properties": {
+        "web": { "type": "string", "minLength": 1 },
+        "android": { "type": "string", "minLength": 1 },
+        "ios": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

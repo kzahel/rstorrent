@@ -136,6 +136,9 @@ Topics own the current truth for a continuing concern. Tactical docs under
 - [`client-surfaces.md`](client-surfaces.md): shared browser/Tauri web
   presentation, Android Compose adaptation, generated client types, reactive
   view delivery, and platform lifecycle boundaries.
+- [`localization.md`](localization.md): cross-product locale policy, native
+  catalog ownership, terminology, provenance, translation review, and
+  repeatable extraction and qualification workflow.
 - [`desktop-inspection-surface.md`](desktop-inspection-surface.md): accepted
   pivot to a JSTorrent-derived detailed desktop/web product and debugging
   surface, an intentional Android presentation split, and the API questions

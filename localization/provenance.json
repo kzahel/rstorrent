@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "catalogs": [
+    {
+      "locale": "en",
+      "platform": "web",
+      "source": "RSTorrent product source copy",
+      "license": "MIT",
+      "reviewState": "source",
+      "reviewer": "maintainers"
+    },
+    {
+      "locale": "en",
+      "platform": "android",
+      "source": "RSTorrent product source copy",
+      "license": "MIT",
+      "reviewState": "source",
+      "reviewer": "maintainers"
+    },
+    {
+      "locale": "en",
+      "platform": "ios",
+      "source": "RSTorrent product source copy",
+      "license": "MIT",
+      "reviewState": "source",
+      "reviewer": "maintainers"
+    }
+  ]
+}

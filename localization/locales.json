@@ -1,0 +1,25 @@
+{
+  "$schema": "./locales.schema.json",
+  "sourceLocale": "en",
+  "fallbackLocale": "en",
+  "supportedLocales": [
+    "en"
+  ],
+  "testLocales": [
+    {
+      "tag": "en-XA",
+      "direction": "ltr",
+      "purpose": "expanded accented pseudo-localization"
+    },
+    {
+      "tag": "ar-XB",
+      "direction": "rtl",
+      "purpose": "mirrored bidirectional pseudo-localization"
+    }
+  ],
+  "catalogs": {
+    "web": "clients/web/src/localization/messages/en.json",
+    "android": "clients/android/app/src/main/res/values/strings.xml",
+    "ios": "clients/ios/App/Localization/Localizable.xcstrings"
+  }
+}
