@@ -3722,14 +3722,15 @@ impl ApplicationService {
                 TorrentAdmissionKind::Seed { rank }
             } else {
                 TorrentAdmissionKind::Download {
-                    // A magnet without verified metadata still needs one bounded
-                    // download admission slot even when its durable content intent
-                    // is paused or awaiting add-time file selection. Once metadata
-                    // lands, the missing queue position makes it ineligible again
-                    // until an explicit content-start transition appends it.
-                    queue_position: resume
-                        .download_queue_position
-                        .or_else(|| resume.raw_info.is_none().then_some(i64::MAX)),
+                    // A pending-selection magnet without verified metadata needs
+                    // one bounded download admission slot before it can present a
+                    // catalog. Ordinary magnets retain their durable FIFO rank.
+                    // Once pending metadata lands, the missing queue position makes
+                    // it ineligible again until atomic confirmation appends it.
+                    queue_position: resume.download_queue_position.or_else(|| {
+                        (torrent.awaiting_file_selection && resume.raw_info.is_none())
+                            .then_some(i64::MAX)
+                    }),
                 }
             };
             states.push(TorrentAdmissionState {

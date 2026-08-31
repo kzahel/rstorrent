@@ -4016,7 +4016,11 @@ fn add_magnet(
     if let Some(error) = identity_error {
         return Err(internal_error(error));
     }
-    if start_content && !await_file_selection {
+    // Magnets have always retained a durable queue position even when added
+    // paused so metadata acquisition remains FIFO and a later Resume keeps
+    // its original place. Only add-time selection is held outside the
+    // content queue until its atomic confirmation.
+    if !await_file_selection {
         download_queue::append(transaction, &torrent_id)
             .map_err(|error| internal_message(&error.to_string()))?;
     }
