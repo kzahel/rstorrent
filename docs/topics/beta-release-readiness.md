@@ -620,20 +620,22 @@ disposition of current JSTorrent Android features.
   successful spoofed-Host/Origin request from another LAN device. Shutdown,
   credential removal, uninstall, and post-cleanup refusal pass. Android-through-
   Compose remains a separate supported choice.
-- [ ] **AND-009 — Add background completion and actionable failure
+- [x] **AND-009 — Add background completion and actionable failure
   notifications.** Android now has the bounded service-native completion and
   fatal/storage-repair owner, default-on preferences, three truthful channels,
   initial/reset/recheck suppression, exact taps, denied/blocked visible-only
   shutdown, and prompt target-35 timeout handling. Deterministic, dual-ABI,
   API 34/35 connected, genuine controlled transfer/repair, resource, and
-  cleanup gates pass. Active Tactical
+  cleanup gates pass. Completed Tactical
   [`198`](../tactical/198-android-completion-and-attention-notifications.md)
-  remains open only for exact physical completion and repair notification-tap
-  cases. A later authorized ChromeOS 150/API-33 run passes denied-visible-only
-  behavior, Compose-explained permission grant, companion disconnect/
-  reconnect, the real ongoing-notification **Stop** action, listener refusal,
-  and exact package/credential/power cleanup. This slice does not by itself
-  claim a complete granted-background lifecycle.
+  also passes exact physical completion-to-torrent and attention-to-Storage
+  taps, notification removal, zero restart/recheck replay, genuine repair,
+  malformed-path restoration, and terminal cleanup on ChromeOS 150/API-33.
+  Composed evidence covers denied-visible-only behavior, Compose-explained
+  permission grant, companion disconnect/reconnect, the real ongoing-
+  notification **Stop** action, listener refusal, and exact package/
+  credential/power cleanup. This slice does not by itself claim a complete
+  granted-background lifecycle.
   Tactical
   [`200`](../tactical/200-android-product-background-lifecycle.md) now
   implements that contract: explicit default-off continuation, qualifying
@@ -647,9 +649,7 @@ disposition of current JSTorrent Android features.
   150/API-33 campaign directly adds Home/reopen, sticky recovery, completion,
   controlled background upload, seeding disable, authenticated companion
   retain/grace/reconnect/expiry, notification eligibility and Stop, relaunch,
-  listener refusal, and exact cleanup. That strengthening does not close
-  Tactical `198`'s independent completion/repair notification-tap cases.
-  Reboot autostart,
+  listener refusal, and exact cleanup. Reboot autostart,
   low-battery shutdown, VPN, and proxy remain outside both slices.
 - [ ] **AND-010 — Add metered-network safety and bound VPN policy.** JSTorrent
   Android enforces unmetered/Wi-Fi-only and VPN-only prerequisites. Tactical

@@ -1007,11 +1007,12 @@ demand, handoff, SAF, capability, and listener ownership.
   work but joins the service and companion after the last interaction lease;
   target-35 `dataSync` timeout uses the same joined non-sticky stop. Tactical
   [`198`](../tactical/198-android-completion-and-attention-notifications.md)
-  has passing deterministic, dual-ABI, API 34/35 connected and genuine
-  transfer/repair evidence. Its later physical Chromebook evidence covers
-  denied-visible-only behavior, permission grant, companion disconnect/
-  reconnect, ongoing-notification Stop, and cleanup; exact completion/repair
-  notification taps remain open. Tactical
+  is complete with passing deterministic, dual-ABI, API 34/35 connected and
+  genuine transfer/repair evidence. Its physical ChromeOS 150/API-33 evidence
+  proves exact completion-to-torrent and attention-to-Storage taps,
+  notification removal, zero restart/recheck replay, malformed-path
+  restoration, denied-visible-only behavior, permission grant, companion
+  disconnect/reconnect, ongoing-notification Stop, and cleanup. Tactical
   [`200`](../tactical/200-android-product-background-lifecycle.md) implements
   the granted-background activity/active-work/completion/seeding/task-removal
   contract and accepts Android 15+ `dataSync` operation as finite. Its

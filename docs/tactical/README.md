@@ -116,7 +116,7 @@ that scope and its cleanup or compatibility rules explicitly.
   preserving torrent intent and Compose/ChromeOS control. VPN privacy, proxy,
   background lifecycle, and production migration remain separate.
 - [`198-android-completion-and-attention-notifications.md`](198-android-completion-and-attention-notifications.md):
-  active with its physical gate blocked; adds one Android-native edge owner
+  complete; adds one Android-native edge owner
   for completion and fatal/storage-repair attention, default-on app
   preferences, bounded low/default/high
   channels, exact tap routing, and JSTorrent-like permission transparency.
@@ -124,8 +124,10 @@ that scope and its cleanup or compatibility rules explicitly.
   the application and ChromeOS companion after visible interaction ends. It
   also fails safely on the target-35 `dataSync` timeout without claiming an
   indefinite background lifecycle. Deterministic, dual-ABI, API 34/35
-  connected, genuine transfer/repair, timeout, and cleanup gates pass; the
-  Chromebook is currently unreachable and locked at the authoritative doctor.
+  connected, genuine transfer/repair, timeout, and cleanup gates pass.
+  Physical ChromeOS 150/API-33 proves exact completion-to-torrent and
+  attention-to-Storage activation, removal, zero replay, restoration, and
+  cleanup.
 - [`197-android-external-torrent-intake.md`](197-android-external-torrent-intake.md):
   complete; makes the one Compose/product-service owner a bounded Android
   handler for cold and warm `magnet:` plus temporary-grant `content://`

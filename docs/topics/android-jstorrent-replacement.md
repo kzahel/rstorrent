@@ -161,8 +161,8 @@ daemon architecture.
   manifest, connected API 34, hostile-provider, controlled-transfer, resource,
   privacy, grant-revocation, and cleanup evidence pass under the exact filters
   and ephemeral service-owned queue.
-- [ ] **JAR-007 — Add background completion and actionable failure
-  notifications.** This is also beta gate `AND-009`. Active Tactical
+- [x] **JAR-007 — Add background completion and actionable failure
+  notifications.** This is also beta gate `AND-009`. Completed Tactical
   [`198`](../tactical/198-android-completion-and-attention-notifications.md)
   owns one native edge owner for completion plus fatal/storage-repair
   attention, default-on app preferences, low/default/high system channels,
@@ -173,12 +173,14 @@ daemon architecture.
   interaction ends. The existing foreground **Stop** action remains; Pause
   All and Resume All are deferred. The implementation, deterministic suite,
   dual-ABI build, API 34/35 connected tests, genuine completion/repair
-  campaigns, timeout shutdown, and cleanup pass. The gate remains open only
-  for the exact physical completion and repair notification-tap cases. A later
-  authorized ChromeOS 150/API-33 campaign now passes denied-visible-only and
+  campaigns, timeout shutdown, and cleanup pass. The physical ChromeOS
+  150/API-33 campaign now also proves the exact completion tap to the fixture
+  torrent, notification removal, zero restart/recheck replay, genuine repair,
+  the exact attention tap to Storage, malformed-path restoration, and terminal
+  cleanup. Its composed lifecycle evidence covers denied-visible-only and
   Compose-explained permission grant, authenticated companion disconnect/
-  reconnect, the real ongoing-notification **Stop** action, terminal listener
-  refusal, and exact package/credential/power cleanup.
+  reconnect, the real ongoing-notification **Stop** action, listener refusal,
+  and exact package/credential/power cleanup.
 - [ ] **JAR-008 — Enforce unmetered-network policy live.** This is the required
   part of beta gate `AND-010`. Tactical
   [`199`](../tactical/199-android-live-unmetered-network-enforcement.md) now
@@ -446,10 +448,11 @@ live run.
    [`197`](../tactical/197-android-external-torrent-intake.md) as the `JAR-006`
    external-intake regression gate while the provisional product identity is
    replaced later under `JAR-004`.
-3. Complete active Tactical
+3. Preserve completed Tactical
    [`198`](../tactical/198-android-completion-and-attention-notifications.md)
-   for `JAR-007` completion/failure notifications, companion-aware permission
-   transparency, and fail-safe target-35 timeout shutdown.
+   as the `JAR-007` completion/failure notification, companion-aware
+   permission-transparency, exact activation, and target-35 timeout regression
+   gate.
 4. After explicit authorization, finish Tactical
    [`199`](../tactical/199-android-live-unmetered-network-enforcement.md)'s
    bounded physical-phone Wi-Fi/metered handoff and cleanup gate, then close

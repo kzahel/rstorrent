@@ -1,7 +1,6 @@
 # Tactical 198: Android Completion And Attention Notifications
 
-Status: **Active; implementation and AVD gates complete, physical ChromeOS
-gate blocked as of 2026-08-30.** User direction authorized end-to-end
+Status: **Complete as of 2026-08-31.** User direction authorized end-to-end
 implementation. Maintainer direction selected
 JSTorrent-like notification transparency: Android notification permission is
 not a technical prerequisite for starting a foreground service, but RSTorrent
@@ -747,11 +746,10 @@ changes shared React code; the accepted design keeps Android settings and
 notification delivery native. Regenerate no contract unless implementation
 finds a missing authoritative field and stops under the escalation contract.
 
-## Execution Record: Implementation And AVD Gates
+## Execution Record
 
-Implementation and every non-physical gate passed on 2026-08-30. The
-tactical remains active because the required physical Chromebook was
-unreachable at its authoritative doctor gate.
+Implementation and every non-physical gate passed on 2026-08-30. The final
+physical ChromeOS notification activation cases passed on 2026-08-31.
 
 ### Landed commits
 
@@ -780,7 +778,15 @@ unreachable at its authoritative doctor gate.
 - `47c0c74` proved durable preference suppression and enable-without-replay;
   and
 - `56125be` made installed adapter setup and teardown wait for Android's
-  asynchronous notification activation/cancellation.
+  asynchronous notification activation/cancellation;
+- `be936e7` made routed automatic-notification cancellation explicit, fenced
+  SAF setup behind the bound product lifecycle, staged host files through the
+  Chromebook before ARCVM ADB delivery, and reduced physical shade activation
+  to an explicit one-off checkpoint.
+
+Machine Control commits `742d5fc` and `5801e4a` separately isolated ChromeOS
+touch and swipe injection from accidental panel contacts. They changed the
+generic testbed controller, not RSTorrent product behavior.
 
 No Rust application type, UniFFI definition, generated Kotlin contract,
 shared React source, production identifier, signing input, extension package,
@@ -872,7 +878,7 @@ and uninstalled both app/test packages. The task-owned
 `rstorrent-t198-api35` AVD was deleted; no emulator remained. The reusable API
 35 system image is ordinary SDK tooling, not test state.
 
-### Remaining physical gate
+### Physical ChromeOS completion
 
 The required Machine Control ChromeOS guide was read before access. The common
 read-only command
@@ -881,36 +887,48 @@ read-only command
 ~/code/machine-control/bin/machine-control --target chromeos target doctor
 ```
 
-returned `ready=false`: SSH administration was unreachable, automatic SSH
-startup evidence was unavailable, and the ChromeOS profile was locked, so the
-resident client, semantic extension surface, capture, input, and ARCVM ADB were
-all unavailable. The guide requires physical VT2/login recovery for this state;
-no reboot, rootfs change, SSH repair, ADB prompt, APK install, extension change,
-or device policy mutation was attempted. The physical companion permission,
-disconnect/reconnect, notification tap, and terminal cleanup matrix remains the
-sole stopping-condition gap. `JAR-007` and `AND-009` therefore remain open.
+initially reported the locked/unreachable device on 2026-08-30. After the
+maintainer restored access, it returned `ready=true` with all 11 checks passing
+for the unlocked ChromeOS 150/API-33 `nami_cheets` target and ARCVM ADB.
 
-## Documentation And Completion Updates
+The final campaign used the existing runner and two one-off physical shade
+taps; it did not add notification-card position automation:
 
-Before marking this tactical complete:
+```text
+RSTORRENT_MANUAL_NOTIFICATION=1 \
+  python3 clients/android/run_bootstrap.py \
+  --target chromeos --storage saf-internal --runs 1 \
+  --profile product-notifications --no-build
+```
 
-- record exact commits, Android/JSTorrent source paths, tests, commands, AVDs,
-  physical Chromebook identity class, notification/channel/permission
-  outcomes, transfer/repair results, timeout behavior, resource high waters,
-  failures, and cleanup here;
-- mark `JAR-007` complete in
-  [`android-jstorrent-replacement.md`](../topics/android-jstorrent-replacement.md);
-- mark `AND-009` complete in
-  [`beta-release-readiness.md`](../topics/beta-release-readiness.md);
-- update Android notification, companion, and background truth in
-  [`client-surfaces.md`](../topics/client-surfaces.md) and
-  [`capability-readiness.md`](../topics/capability-readiness.md);
-- do not change `JAR-009` from this tactical: completed downstream Tactical
-  `200` owns its background-lifecycle closure, while target-35 timeout remains
-  finite; and
-- leave production channel IDs, strings, package identity, signing, Play
-  declarations, production extension rollout, and publication to `JAR-004`,
-  `JAR-005`, and `JAR-010`.
+The completion event had the exact title `Download complete`, bounded fixture
+body, count one, and an opaque tag. Its tap opened the exact fixture torrent,
+confirmed by the v1-only `Info hash` marker, and removed the automatic
+notification. Process restart and Force recheck each posted zero replay.
+Replacing the verified final file with a directory produced authoritative
+`NEEDS_REPAIR` state and exactly one `Download needs attention` event; its tap
+opened the exact Storage screen. The runner restored the malformed path,
+removed the torrent, observed zero remaining automatic events, and completed
+package, SAF, payload, reverse, and fixture-peer cleanup.
+
+The run reached 6/40 owned SAF handles and 3/16 pending platform requests.
+Process descriptor baseline/high/final was 137/141/142. The prior physical
+Tactical `200` campaign supplies the companion permission, reconnect,
+ongoing-notification **Stop**, listener-refusal, and power/credential cleanup
+coverage required by this tactical's composition rule.
+
+After the final harness/product changes, `python3 -m py_compile` and
+`git diff --check` passed. Android `lintDebug`, `testDebugUnitTest`,
+`assembleDebug`, `assembleDebugAndroidTest`, and `build.sh` also passed; the
+dual-ABI build retained `arm64-v8a` and `x86_64`.
+
+## Documentation Completion
+
+This record and its owning topics now close `JAR-007` and `AND-009`. Completed
+downstream Tactical `200` continues to own `JAR-009`; this tactical does not
+claim indefinite Android background duration. Production channel strings,
+package identity, signing, Play declarations, extension rollout, and
+publication remain owned by `JAR-004`, `JAR-005`, and `JAR-010`.
 
 ## Escalation Contract
 
@@ -946,18 +964,9 @@ bounds.
 
 ## Next Slice Boundary
 
-After `JAR-007` closes, execute the unmetered portion of `JAR-008` or plan
-`JAR-009` background lifecycle. `JAR-009` must use the transparency and
-target-35 facts fixed here to select:
-
-- whether background downloads remain opt-in and their fresh-install default;
-- the exact active download, checking, seeding, playback, companion, and idle
-  reasons to retain the owner;
-- task-removal, process-recovery, reboot, low-battery, and companion auto-close
-  behavior;
-- a truthful Android 15+ mechanism or explicit finite-duration limitation; and
-- cancellation, user-intent preservation, restart, and Play declaration
-  evidence.
-
-Notification implementation must not preselect those larger lifecycle answers
-or turn current sticky behavior into a supported long-run promise.
+No follow-on implementation is implied by this tactical. Tactical `199` owns
+the remaining physical-phone unmetered-network gate, completed Tactical `200`
+owns the bounded background-lifecycle contract, and the capability-readiness
+topic owns subsequent Android priorities. This notification implementation
+does not turn finite target-35 behavior into a supported indefinite-duration
+promise.
