@@ -427,6 +427,8 @@ final class IOSPresentationRepository: ObservableObject {
             case .remainingPayloadBytes(let value): next.remainingPayloadBytes = value
             case .etaPayloadDownloadRateBytes(let value): next.etaPayloadDownloadRateBytes = value
             case .eta(let value): next.eta = value
+            case .lifetime(let value): next.lifetime = value
+            case .seeding(let value): next.seeding = value
             case .progress(let value): next.progress = value
             case .checking(let value): next.checking = value
             case .archived(let value): next.archived = value
@@ -463,6 +465,8 @@ final class IOSPresentationRepository: ObservableObject {
         case .remainingPayloadBytes: return 18
         case .etaPayloadDownloadRateBytes: return 19
         case .eta: return 20
+        case .lifetime: return 29
+        case .seeding: return 30
         case .progress: return 21
         case .checking: return 22
         case .archived: return 23
