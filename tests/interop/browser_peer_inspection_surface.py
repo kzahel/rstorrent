@@ -73,6 +73,7 @@ def start_development_gateway(
     *,
     disk_pressure: bool,
     bearer: bool,
+    tcp_only: bool = False,
     lease_millis: int = 500,
     bind: str | None = None,
 ) -> tuple[subprocess.Popen[str], str]:
@@ -111,6 +112,8 @@ def start_development_gateway(
     if disk_pressure:
         environment["RSTORRENT_TEST_STORAGE_WRITE_DELAY_MILLIS"] = "150"
         environment["RSTORRENT_TEST_BUFFERED_PAYLOAD_BYTES"] = str(128 * 1024)
+    if tcp_only:
+        environment["RSTORRENT_TEST_PEER_TRANSPORT"] = "tcp_only"
     process = subprocess.Popen(
         [str(binary)],
         stdout=subprocess.PIPE,
@@ -202,7 +205,6 @@ def run_playwright(
         environment.update(
             {
                 "RSTORRENT_LIVE_FILE_SELECTION": "1",
-                "RSTORRENT_LIVE_GATEWAY_TOKEN": TOKEN,
                 "RSTORRENT_LIVE_STORAGE_PATH": str(storage),
             }
         )
@@ -211,7 +213,7 @@ def run_playwright(
         if disk_pressure
         else "live piece inspection"
         if piece_map
-        else "live metadata-only add and file selection"
+        else "live add-time file selection"
         if file_selection
         else "live peer inspection"
     )
@@ -378,7 +380,12 @@ def run(
             storage,
             origin,
             disk_pressure=disk_pressure,
-            bearer=file_selection,
+            bearer=False,
+            tcp_only=file_selection,
+            # This profile traverses several views and delivery intervals.
+            # Keep its view set alive long enough for delayed file-row patches
+            # while remaining far below production's five-minute lease.
+            lease_millis=30_000 if file_selection else 500,
         )
         vite = build_and_start_production_web(
             repository, origin, vite_port, address
@@ -438,7 +445,9 @@ def run(
                 print(f"Vite cleanup failed: {cleanup_error}", file=sys.stderr)
         if gateway is not None:
             try:
-                terminate_gateway(gateway)
+                gateway_diagnostics = terminate_gateway(gateway)
+                if failure is not None and gateway_diagnostics:
+                    print(gateway_diagnostics, file=sys.stderr)
             except BaseException as cleanup_error:
                 if failure is None:
                     raise
@@ -446,6 +455,10 @@ def run(
         if tracker is not None:
             tracker.close()
         if session is not None:
+            if failure is not None:
+                diagnostics.extend(alert.message() for alert in session.pop_alerts())
+                if diagnostics:
+                    print("\n".join(diagnostics), file=sys.stderr)
             if handle is not None:
                 try:
                     session.remove_torrent(handle)

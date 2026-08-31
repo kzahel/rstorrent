@@ -456,6 +456,13 @@ function applyTorrentUpdate(
       case "transfer_limits": next.transfer_limits = field.value; break;
       case "storage_state": next.storage_state = field.value; break;
       case "metadata_available": next.metadata_available = field.value; break;
+      case "awaiting_file_selection": next.awaiting_file_selection = field.value; break;
+      case "pending_file_selection_position": next.pending_file_selection_position = field.value; break;
+      case "file_catalog_id": next.file_catalog_id = field.value; break;
+      case "selectable_file_count": next.selectable_file_count = field.value; break;
+      case "selected_file_count": next.selected_file_count = field.value; break;
+      case "selectable_file_bytes": next.selectable_file_bytes = field.value; break;
+      case "selected_file_bytes": next.selected_file_bytes = field.value; break;
       case "piece_count": next.piece_count = field.value; break;
       case "total_size_bytes": next.total_size_bytes = field.value; break;
       case "verified_piece_count": next.verified_piece_count = field.value; break;
@@ -469,6 +476,8 @@ function applyTorrentUpdate(
       case "remaining_payload_bytes": next.remaining_payload_bytes = field.value; break;
       case "eta_payload_download_rate_bytes": next.eta_payload_download_rate_bytes = field.value; break;
       case "eta": next.eta = field.value; break;
+      case "lifetime": next.lifetime = field.value; break;
+      case "seeding": next.seeding = field.value; break;
       case "progress": next.progress = field.value; break;
       case "checking": next.checking = field.value; break;
       case "archived": next.archived = field.value; break;
@@ -476,6 +485,7 @@ function applyTorrentUpdate(
       case "delete_data_supported": next.delete_data_supported = field.value; break;
       case "force_recheck_available": next.force_recheck_available = field.value; break;
       case "error": next.error = field.value; break;
+      default: field satisfies never;
     }
   }
   validateTorrentView(next);
@@ -494,6 +504,7 @@ function applyFileUpdate(file: FileView, update: FileRowUpdate): FileView {
       case "done_bytes": next.done_bytes = field.value; break;
       case "verified_bytes": next.verified_bytes = field.value; break;
       case "media_availability": next.media_availability = field.value; break;
+      default: field satisfies never;
     }
   }
   validateFileView(next);

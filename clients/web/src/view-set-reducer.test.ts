@@ -231,6 +231,65 @@ describe("view-set reducer", () => {
     ).toBeUndefined();
   });
 
+  it("applies one atomic pending-selection confirmation patch", () => {
+    const pending = {
+      ...torrent(0),
+      state: "paused" as const,
+      operational_state: "paused" as const,
+      awaiting_file_selection: true,
+      pending_file_selection_position: 0,
+      file_catalog_id: "a".repeat(64),
+      selectable_file_count: 2,
+      selected_file_count: 2,
+      selectable_file_bytes: "65536",
+      selected_file_bytes: "65536",
+    };
+    const established = reduceUpdateBatch(
+      undefined,
+      batch("0", "1", [{
+        type: "snapshot",
+        view_id: "library",
+        snapshot: {
+          type: "torrent_list",
+          torrents: [pending],
+          storage: { roots: [], show_add_options: true, show_file_selection: true },
+          client_settings: clientSettingsRuntimeFixture(),
+        },
+      }]),
+    );
+    const confirmed = reduceUpdateBatch(
+      established,
+      batch("1", "2", [{
+        type: "patch",
+        view_id: "library",
+        patch: {
+          type: "torrent_list",
+          upsert: [],
+          updates: [{
+            torrent_id: torrentId,
+            fields: [
+              { field: "awaiting_file_selection", value: false },
+              { field: "pending_file_selection_position", value: null },
+              { field: "file_catalog_id", value: null },
+              { field: "selected_file_count", value: 1 },
+              { field: "selected_file_bytes", value: "49152" },
+            ],
+          }],
+          removed: [],
+        },
+      }]),
+    );
+    expect(confirmed.views.library).toMatchObject({
+      torrents: [{
+        awaiting_file_selection: false,
+        pending_file_selection_position: null,
+        file_catalog_id: null,
+        selected_file_count: 1,
+        selected_file_bytes: "49152",
+      }],
+    });
+  });
+
   it("replaces selected preparation atomically and enforces torrent identity", () => {
     let state = reduceUpdateBatch(
       undefined,

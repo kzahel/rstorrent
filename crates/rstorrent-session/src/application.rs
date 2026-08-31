@@ -1553,11 +1553,7 @@ impl ApplicationService {
                     .load_resume(&torrent_id)
                     .ok()
                     .map(|resume| resume.state);
-                (active
-                    && state.is_some_and(|state| {
-                        matches!(state, TorrentState::Paused | TorrentState::Complete)
-                    }))
-                .then_some(torrent_id)
+                (active && state == Some(TorrentState::Paused)).then_some(torrent_id)
             }
             _ => None,
         };
@@ -3677,7 +3673,13 @@ impl ApplicationService {
                 .get(&torrent.torrent_id)
                 .expect("torrent runtime exists during admission");
             let generation = runtime.generation();
-            let complete = resume.state == TorrentState::Complete;
+            // A completed selection that has been expanded is deliberately
+            // put back on the download queue. It still needs one content
+            // generation to promote already-verified boundary bytes from the
+            // part file (or fetch newly required pieces) before it is a seed
+            // again.
+            let complete =
+                resume.state == TorrentState::Complete && resume.download_queue_position.is_none();
             let active_seed = complete
                 && runtime
                     .handle()
@@ -4643,7 +4645,8 @@ impl ApplicationService {
                 continue;
             };
             state.lifetime = torrent_lifetime_view(accounting, state.total_size);
-            if torrent.state != TorrentState::Complete {
+            if torrent.state != TorrentState::Complete || torrent.download_queue_position.is_some()
+            {
                 continue;
             }
             state.seeding.goal = Some(torrent_seed_goal_view(
@@ -6755,7 +6758,13 @@ fn durable_view_state(
             .unwrap_or(0);
         let seeding = if torrent.state == TorrentState::Complete {
             crate::TorrentSeedingView {
-                admission: if torrent.desired_running
+                admission: if torrent.download_queue_position.is_some() {
+                    // A selection expansion can leave every newly wanted
+                    // piece verified while its bytes still need promotion
+                    // out of the part file. The download queue, not stale seed
+                    // admission, owns that materialization generation.
+                    crate::SeedAdmissionView::Ineligible
+                } else if torrent.desired_running
                     && !torrent.archived
                     && torrent.removal_state.is_none()
                 {
@@ -10367,6 +10376,131 @@ mod tests {
         assert!(!paths.part.exists());
         reopened.shutdown().await.expect("shutdown reopened");
         drop(reopened);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn download_files_publishes_normal_selection_from_skipped_default() {
+        let root = test_root("download-files-view-selection");
+        let raw_info = multi_file_info();
+        let mut source = b"d4:info".to_vec();
+        source.extend_from_slice(&raw_info);
+        source.push(b'e');
+        let mut service = ApplicationService::open(config(&root))
+            .await
+            .expect("open application");
+
+        let mut request = torrent_bytes_request("pending-file-view", &source, true);
+        request.await_file_selection = true;
+        let response = service
+            .add_torrent_bytes(request, source)
+            .await
+            .expect("add pending torrent bytes");
+        let torrent_id = match response.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("pending torrent bytes add result"),
+        };
+        let catalog_id = service
+            .store_mut()
+            .expect("store")
+            .snapshot()
+            .expect("pending snapshot")
+            .torrents[0]
+            .file_catalog_id
+            .clone()
+            .expect("pending file catalog");
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "confirm-skipped-default".to_owned(),
+                expected_revision: None,
+                command: Command::ConfirmPendingFileSelection {
+                    torrent_id: torrent_id.clone(),
+                    catalog_id,
+                    base: crate::PendingFileSelectionBase::None,
+                    overrides: vec![crate::FileSelectionOverride {
+                        range: crate::FileIndexRange {
+                            start: 1,
+                            end_exclusive: 2,
+                        },
+                        selected: true,
+                    }],
+                    disable_future: false,
+                },
+            })
+            .await
+            .expect("confirm one wanted file");
+
+        let owner = ViewSetOwner::trusted("file-view-test");
+        let opened = service
+            .open_view_set(
+                owner.clone(),
+                OpenViewSetRequest {
+                    views: vec![ViewSpec::TorrentFiles {
+                        view_id: "files".to_owned(),
+                        torrent_id: torrent_id.clone(),
+                        page: Some(CatalogPageRequest::default()),
+                        delivery: ViewDeliveryPolicy::default(),
+                    }],
+                    options: OpenViewSetOptions::default(),
+                },
+            )
+            .expect("open files view set");
+        let initial = opened
+            .initial
+            .updates
+            .iter()
+            .find_map(|update| match update {
+                ViewSetUpdate::Snapshot {
+                    snapshot: ViewSnapshot::Files { files, .. },
+                    ..
+                } => Some(files),
+                _ => None,
+            })
+            .expect("initial files snapshot");
+        assert_eq!(
+            initial[0].selection,
+            Some(crate::FileSelectionView::Skipped)
+        );
+        assert_eq!(initial[1].selection, Some(crate::FileSelectionView::Normal));
+        let view_set = service
+            .view_set(&owner, &opened.view_set_id)
+            .expect("files view set");
+
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "download-skipped-file-view".to_owned(),
+                expected_revision: None,
+                command: Command::DownloadFiles {
+                    torrent_id,
+                    file_indices: vec![0],
+                },
+            })
+            .await
+            .expect("download skipped file");
+        let update = view_set
+            .next_updates(&opened.initial.cursor, 1_000)
+            .await
+            .expect("selection update");
+        assert!(update.updates.iter().any(|update| matches!(
+            update,
+            ViewSetUpdate::Patch {
+                patch: ViewPatch::Files { updates, .. },
+                ..
+            } if updates.iter().any(|update| {
+                update.file_id == "0"
+                    && update.fields.iter().any(|field| matches!(
+                        field,
+                        crate::FileFieldUpdate::Selection {
+                            value: Some(crate::FileSelectionView::Normal)
+                        }
+                    ))
+            })
+        )));
+
+        service.shutdown().await.expect("shutdown application");
+        drop(service);
         fs::remove_dir_all(root).expect("remove test root");
     }
 

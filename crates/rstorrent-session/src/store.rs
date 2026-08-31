@@ -8202,6 +8202,7 @@ mod tests {
         let running = store.load_resume(&torrent_id).expect("load running intent");
         assert!(running.desired_running);
         assert_eq!(running.skip_files, [0]);
+        assert!(running.download_queue_position.is_some());
         assert_eq!(running.verification, verification_before);
 
         store

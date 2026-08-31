@@ -1038,14 +1038,12 @@ test("live Library media detail follows metadata through completion", async ({
   );
 });
 
-test("live metadata-only add and file selection", async ({ page }) => {
+test("live add-time file selection", async ({ page }) => {
   test.setTimeout(90_000);
   test.skip(
     !expectFileSelection ||
       gateway === undefined ||
-      gatewayToken === undefined ||
       magnet === undefined ||
-      torrentId === undefined ||
       torrentName === undefined ||
       fileCount === undefined ||
       storagePath === undefined,
@@ -1054,8 +1052,6 @@ test("live metadata-only add and file selection", async ({ page }) => {
 
   const storage = path.resolve(storagePath!);
   const output = path.join(storage, torrentName!);
-  const staging = path.join(storage, `.${torrentId!}.rstorrent-staging`);
-  const part = path.join(storage, `.${torrentId!}.rstorrent-parts`);
   const prefix = path.join(output, "nested", "prefix.bin");
   const payload = path.join(output, "payload.bin");
 
@@ -1071,19 +1067,60 @@ test("live metadata-only add and file selection", async ({ page }) => {
     name: "Choose download options",
   });
   await expect(addDialog).toBeVisible();
-  const startContent = addDialog.getByRole("checkbox", {
-    name: /Start downloading files when metadata is available/,
-  });
-  await expect(startContent).toBeChecked();
-  await startContent.uncheck();
-  await addDialog.getByRole("button", { name: "Add torrent" }).click();
+  await expect(addDialog.getByText("Choose files next")).toBeVisible();
   await expect(
-    page.getByRole("region", { name: "Transfers" }).getByRole("status"),
+    addDialog.getByRole("checkbox", {
+      name: /Start downloading files when metadata is available/,
+    }),
+  ).toHaveCount(0);
+  await addDialog.getByRole("button", { name: "Continue" }).click();
+  await expect(
+    page.getByRole("region", { name: "Transfers" }).locator("output"),
   ).toHaveText("Added");
 
+  const selection = page.getByRole("dialog").filter({
+    has: page.getByText("Choose files", { exact: true }),
+  });
+  await expect(selection).toBeVisible();
+  expect(await fs.readdir(storage)).toEqual([]);
+  const selectNone = selection.getByRole("button", { name: "None", exact: true });
+  await expect(selectNone).toBeVisible({ timeout: 30_000 });
+  await selectNone.click();
+  const checklist = selection.getByRole("list", { name: "Torrent files" });
+  await scrollToEnd(checklist);
+  const payloadChoice = selection.getByRole("checkbox", {
+    name: /payload\.bin/,
+  });
+  await expect(payloadChoice).toBeVisible();
+  await payloadChoice.check();
+  await expect(
+    selection.getByText(`1 of ${Number(fileCount!).toLocaleString()} selected`, {
+      exact: false,
+    }),
+  ).toBeVisible();
+  await expect(checklist).toHaveAttribute("data-cached-page-count", /^[1-3]$/);
+  const violations = (
+    await new AxeBuilder({ page }).include('[role="dialog"]').analyze()
+  ).violations.filter(
+    (violation) =>
+      violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(violations).toEqual([]);
+  expect(await fs.readdir(storage)).toEqual([]);
+  await selection.getByRole("button", { name: "Download" }).click();
+
   const transfers = page.getByRole("grid", { name: "Transfer queue" });
-  const transferRow = transfers.locator(`[data-row-id="${torrentId!}"]`);
+  const transferRow = transfers
+    .locator("[role=row][data-row-id]")
+    .filter({ hasText: torrentName! });
   await expect(transferRow).toBeVisible({ timeout: 10_000 });
+  const canonicalTorrentId = await transferRow.getAttribute("data-row-id");
+  expect(canonicalTorrentId).not.toBeNull();
+  const staging = path.join(
+    storage,
+    `.${canonicalTorrentId!}.rstorrent-staging`,
+  );
+  const part = path.join(storage, `.${canonicalTorrentId!}.rstorrent-parts`);
   await transferRow.click();
   await page
     .getByRole("navigation", { name: "Primary" })
@@ -1091,7 +1128,7 @@ test("live metadata-only add and file selection", async ({ page }) => {
     .click();
   const torrentRow = page
     .getByRole("grid", { name: "Torrent library" })
-    .locator(`[data-row-id="${torrentId!}"]`);
+    .locator(`[data-row-id="${canonicalTorrentId!}"]`);
   await expect(torrentRow).toBeVisible();
   await torrentRow.click();
   await page.getByRole("tab", { name: "Files" }).click();
@@ -1101,22 +1138,10 @@ test("live metadata-only add and file selection", async ({ page }) => {
     String(Number(fileCount!) + 1),
     { timeout: 20_000 },
   );
-  expect(await fs.readdir(storage)).toEqual([]);
-
   await scrollToEnd(files);
   const prefixRow = files.getByRole("row").filter({ hasText: "prefix.bin" });
   await expect(prefixRow).toBeVisible();
-  await prefixRow.click();
-  await page.getByRole("button", { name: "More file actions" }).click();
-  const fileActions = page.getByRole("menu", { name: "More file actions" });
-  await expect(fileActions.getByRole("menuitem")).toHaveCount(2);
-  await fileActions
-    .getByRole("menuitem", { name: "Skip", exact: true })
-    .click();
   await expect(prefixRow.getByText("Skip", { exact: true })).toBeVisible();
-  expect(await fs.readdir(storage)).toEqual([]);
-
-  await page.getByRole("button", { name: "Start", exact: true }).click();
   await expect(torrentRow).toContainText("complete", { timeout: 60_000 });
   await expect.poll(() => pathExists(payload)).toBe(true);
   await expect.poll(() => pathExists(part)).toBe(true);
@@ -1129,12 +1154,18 @@ test("live metadata-only add and file selection", async ({ page }) => {
     .getByRole("menu", { name: "More file actions" })
     .getByRole("menuitem", { name: "Download now", exact: true })
     .click();
-  await expect(prefixRow.getByText("Normal", { exact: true })).toBeVisible();
   await expect.poll(() => pathExists(prefix), { timeout: 20_000 }).toBe(true);
   await expect.poll(() => pathExists(part), { timeout: 20_000 }).toBe(false);
+  await scrollToEnd(files);
+  await expect(
+    files
+      .getByRole("row")
+      .filter({ hasText: "prefix.bin" })
+      .getByText("Normal", { exact: true }),
+  ).toBeVisible({ timeout: 20_000 });
   await expect(torrentRow).toContainText("complete", { timeout: 20_000 });
   console.log(
-    "file_selection_live_milestones metadata_only=no_artifacts skip=direct_part download_now=materialized_part_removed",
+    `file_selection_live_milestones add_time=no_artifacts selected=1/${fileCount!} cached_pages<=3 skipped=direct_part download_now=materialized_part_removed axe=${violations.length}`,
   );
 });
 
