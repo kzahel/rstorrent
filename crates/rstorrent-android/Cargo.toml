@@ -23,6 +23,7 @@ libc = "=0.2.189"
 # diagnostic harness. AndroidApplicationClient product storage is dynamic.
 rstorrent-engine = { path = "../rstorrent-engine", features = ["descriptor-storage-diagnostics"] }
 rstorrent-gateway = { path = "../rstorrent-gateway" }
+rstorrent-media = { path = "../rstorrent-media" }
 rstorrent-protocol = { path = "../rstorrent-protocol" }
 rstorrent-session = { path = "../rstorrent-session", features = ["uniffi"] }
 sha1.workspace = true

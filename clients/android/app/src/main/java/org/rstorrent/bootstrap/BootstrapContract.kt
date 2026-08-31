@@ -5,7 +5,7 @@ object BootstrapContract {
     const val ACTION_CANCEL = "org.rstorrent.bootstrap.CANCEL"
     const val ACTION_OBSERVE = "org.rstorrent.bootstrap.OBSERVE"
     const val ACTION_VERIFY = "org.rstorrent.bootstrap.VERIFY"
-    const val EXPECTED_INTERFACE = "rstorrent-android/0.3.0;uniffi/0.31.0"
+    const val EXPECTED_INTERFACE = "rstorrent-android/0.4.0;uniffi/0.31.0"
     const val MAX_METAINFO_BASE64_CHARS = 256 * 1024
     const val MAX_RUN_ID_CHARS = 64
 

@@ -22,20 +22,21 @@ use rstorrent_engine::{
     plan_descriptor_storage, platform_storage_channel,
 };
 use rstorrent_gateway::{CompanionPairingOwner, CompanionPlatformOwner};
+use rstorrent_media::LoopbackMediaServer;
 use rstorrent_protocol::identity::V1InfoHash;
 use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo};
 use rstorrent_session::{
     AddTorrentBytesRequest, ApplicationConfig, ApplicationNetworkPrerequisite, ApplicationService,
-    ConfiguredStorageRoot, MAX_STORAGE_ROOTS, NetworkPrerequisiteHandle, PlatformRemovalPlan,
-    RequestEnvelope, ResponseEnvelope, StorageRootSnapshot, StorageSettingsSnapshot,
-    SubscriptionSpec, ViewSubscription, ViewUpdate,
+    ConfiguredStorageRoot, MAX_STORAGE_ROOTS, MediaUrlResponse, NetworkPrerequisiteHandle,
+    PlatformRemovalPlan, RequestEnvelope, ResponseEnvelope, StorageRootSnapshot,
+    StorageSettingsSnapshot, SubscriptionSpec, ViewSubscription, ViewUpdate,
 };
 use sha1::{Digest, Sha1};
 use tokio::sync::{Mutex as AsyncMutex, watch};
 use tokio::task::JoinHandle as TaskJoinHandle;
 use tokio_util::sync::CancellationToken;
 
-const INTERFACE_VERSION: &str = "rstorrent-android/0.3.0;uniffi/0.31.0";
+const INTERFACE_VERSION: &str = "rstorrent-android/0.4.0;uniffi/0.31.0";
 const MIN_PAYLOAD_BYTES: u64 = 16 * 1024;
 const MAX_PAYLOAD_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_TIMEOUT_SECONDS: u64 = 5 * 60;
@@ -183,6 +184,7 @@ pub struct AndroidApplicationClient {
     companion_platform: Arc<CompanionPlatformOwner>,
     companion_profile_id: String,
     companion: AsyncMutex<Option<AndroidCompanionRuntime>>,
+    media_server: AsyncMutex<Option<LoopbackMediaServer>>,
 }
 
 #[derive(Debug)]
@@ -245,6 +247,7 @@ impl AndroidApplicationClient {
             companion_platform: CompanionPlatformOwner::new(),
             companion_profile_id,
             companion: AsyncMutex::new(None),
+            media_server: AsyncMutex::new(None),
         }))
     }
 
@@ -267,6 +270,35 @@ impl AndroidApplicationClient {
             .lock()
             .await
             .dispatch(request)
+            .await
+            .map_err(|error| AndroidClientError::message(error.to_string()))
+    }
+
+    pub async fn create_media_url(
+        &self,
+        torrent_id: String,
+        file_index: u32,
+    ) -> Result<MediaUrlResponse, AndroidClientError> {
+        self.ensure_running()?;
+        {
+            let mut media_server = self.media_server.lock().await;
+            self.ensure_running()?;
+            if media_server.is_none() {
+                let mut server = LoopbackMediaServer::bind(self.service.clone())
+                    .await
+                    .map_err(|error| AndroidClientError::message(error.to_string()))?;
+                if let Err(error) = self.ensure_running() {
+                    let _ = server.shutdown().await;
+                    return Err(error);
+                }
+                *media_server = Some(server);
+            }
+        }
+        self.ensure_running()?;
+        self.service
+            .lock()
+            .await
+            .create_media_url(&torrent_id, file_index)
             .await
             .map_err(|error| AndroidClientError::message(error.to_string()))
     }
@@ -765,15 +797,39 @@ impl AndroidApplicationClient {
         if self.shutdown.swap(true, Ordering::AcqRel) {
             return Ok(());
         }
-        self.stop_companion_inner().await?;
+        let companion_result = self.stop_companion_inner().await;
         self.companion_platform.close();
         self.platform_storage.cancel_all();
-        self.service
+        let mut media_server = self.media_server.lock().await.take();
+        let service_result = self
+            .service
             .lock()
             .await
             .shutdown()
             .await
-            .map_err(|error| AndroidClientError::message(error.to_string()))
+            .map_err(|error| AndroidClientError::message(error.to_string()));
+        let media_result = match &mut media_server {
+            Some(server) => server
+                .shutdown()
+                .await
+                .map_err(|error| AndroidClientError::message(error.to_string())),
+            None => Ok(()),
+        };
+        let mut failures = Vec::new();
+        if let Err(error) = companion_result {
+            failures.push(format!("companion shutdown: {error}"));
+        }
+        if let Err(error) = service_result {
+            failures.push(format!("application shutdown: {error}"));
+        }
+        if let Err(error) = media_result {
+            failures.push(format!("media shutdown: {error}"));
+        }
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(AndroidClientError::message(failures.join("; ")))
+        }
     }
 
     async fn stop_companion_inner(&self) -> Result<(), AndroidClientError> {
@@ -2190,6 +2246,81 @@ mod tests {
             .shutdown()
             .await
             .expect("shutdown product application");
+        drop(client);
+        fs::remove_dir_all(root).expect("remove product fixture");
+    }
+
+    #[tokio::test]
+    async fn product_media_server_starts_once_on_demand_and_stops_with_application() {
+        let root = test_path("application-media-server");
+        let content = root.join("content");
+        fs::create_dir_all(&content).expect("create content root");
+        let client = AndroidApplicationClient::open(AndroidApplicationConfig {
+            profile_root: root.join("profile").display().to_string(),
+            profile_id: "test".to_owned(),
+            storage_root: content.display().to_string(),
+            platform_storage: false,
+            platform_storage_roots: Vec::new(),
+            network_policy: AndroidNetworkPolicy::Offline,
+            initial_network_prerequisite: AndroidApplicationNetworkPrerequisite::Allowed,
+            peer_connect_timeout_seconds: 15,
+            peer_io_timeout_seconds: 60,
+        })
+        .await
+        .expect("open product application");
+
+        assert!(client.media_server.lock().await.is_none());
+        let (first, second) = tokio::join!(
+            client.create_media_url("not-a-torrent".to_owned(), 0),
+            client.create_media_url("also-not-a-torrent".to_owned(), 1),
+        );
+        assert!(matches!(
+            first.expect("first media request").outcome,
+            rstorrent_session::MediaUrlOutcome::Unavailable {
+                reason: rstorrent_session::MediaFileAvailability::MetadataUnavailable
+            }
+        ));
+        assert!(matches!(
+            second.expect("second media request").outcome,
+            rstorrent_session::MediaUrlOutcome::Unavailable {
+                reason: rstorrent_session::MediaFileAvailability::MetadataUnavailable
+            }
+        ));
+        let media_addr = client
+            .media_server
+            .lock()
+            .await
+            .as_ref()
+            .expect("media listener after first request")
+            .local_addr();
+        assert_eq!(media_addr.ip(), Ipv4Addr::LOCALHOST);
+        client
+            .create_media_url("third-invalid-torrent".to_owned(), 2)
+            .await
+            .expect("reuse media listener");
+        assert_eq!(
+            client
+                .media_server
+                .lock()
+                .await
+                .as_ref()
+                .expect("same media listener")
+                .local_addr(),
+            media_addr
+        );
+
+        client
+            .shutdown()
+            .await
+            .expect("shutdown product application");
+        assert!(client.media_server.lock().await.is_none());
+        assert!(tokio::net::TcpStream::connect(media_addr).await.is_err());
+        assert!(
+            client
+                .create_media_url("post-shutdown".to_owned(), 0)
+                .await
+                .is_err()
+        );
         drop(client);
         fs::remove_dir_all(root).expect("remove product fixture");
     }
