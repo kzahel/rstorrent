@@ -10,10 +10,12 @@ import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -167,7 +169,8 @@ class ProductNavigationTest {
         }
 
         compose.onNodeWithText("Fixture torrent").performClick()
-        compose.onNodeWithText("Torrent download limit").performScrollTo().performClick()
+        compose.onNodeWithTag("torrent-details").performScrollToIndex(13)
+        compose.onNodeWithText("Torrent download limit").performClick()
         compose.onNode(isToggleable()).performClick().assertIsOn()
         repeat(24) { index ->
             compose.runOnIdle {
@@ -227,6 +230,55 @@ class ProductNavigationTest {
         assertEquals(TransferRateLimit.Unlimited, patches.single().downloadRateLimit)
         assertNull(patches.single().uploadRateLimit)
         assertNull(patches.single().peerConnectionLimit)
+    }
+
+    @Test
+    fun speedSettingsExposeSeedCapacityAndPriorityGoals() {
+        val patches = mutableListOf<ClientSettingsPatch>()
+        compose.setContent {
+            ProductApp(
+                service = null,
+                onSelectStorage = {},
+                onBrowseTorrent = {},
+                notificationsGranted = true,
+                onRequestNotifications = {},
+                onOpenNotificationSettings = {},
+                themeMode = ProductThemeMode.LIGHT,
+                dynamicColor = false,
+                onThemeMode = {},
+                onDynamicColor = {},
+                stateOverride =
+                    ProductState(
+                        ready = true,
+                        storageRootReady = true,
+                        clientSettings = clientSettings(),
+                    ),
+                onUpdateClientSettings = { patches += it },
+            )
+        }
+
+        compose.onNodeWithContentDescription("More options").performClick()
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Speed & Connection Limits").performClick()
+        compose.onNodeWithText("Active seeds").performScrollTo().performClick()
+        compose
+            .onNodeWithText("The fixed shared 500-torrent ceiling remains")
+            .assertIsDisplayed()
+        compose.onNode(isToggleable()).performClick().assertIsOn()
+        compose.onNodeWithText("Apply").performClick()
+        compose
+            .onNodeWithText("Share-ratio priority goal (%)")
+            .performScrollTo()
+            .assertIsDisplayed()
+        compose
+            .onNodeWithText("A goal-met torrent may continue seeding while capacity is available")
+            .performScrollTo()
+            .assertIsDisplayed()
+
+        assertEquals(1, patches.size)
+        assertEquals(ActiveSeedLimit.Unlimited, patches.single().activeSeeds)
+        assertNull(patches.single().shareRatioLimitPercent)
+        assertNull(patches.single().finishedTimeLimitSeconds)
     }
 
     @Test

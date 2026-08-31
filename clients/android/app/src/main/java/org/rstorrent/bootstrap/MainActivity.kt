@@ -46,6 +46,7 @@ class MainActivity : ComponentActivity() {
     private var pendingProductTrackerEvidenceTorrent: String? = null
     private var pendingProductMseEvidence = false
     private var pendingProductDownloadAdmissionEvidence: String? = null
+    private var pendingProductSeedAdmissionEvidence: String? = null
     private var pendingProductBandwidthPolicy: String? = null
     private var pendingProductIpv6Policy: String? = null
     private var pendingProductUnmeteredNetworkPolicy: String? = null
@@ -203,6 +204,10 @@ class MainActivity : ComponentActivity() {
                 pendingProductDownloadAdmissionEvidence?.let {
                     pendingProductDownloadAdmissionEvidence = null
                     service.logDownloadAdmissionEvidenceForTest(it)
+                }
+                pendingProductSeedAdmissionEvidence?.let {
+                    pendingProductSeedAdmissionEvidence = null
+                    service.logSeedAdmissionEvidenceForTest(it)
                 }
                 pendingProductBandwidthPolicy?.let {
                     pendingProductBandwidthPolicy = null
@@ -590,6 +595,18 @@ class MainActivity : ComponentActivity() {
                         pendingProductDownloadAdmissionEvidence = it
                     } else {
                         service.logDownloadAdmissionEvidenceForTest(it)
+                    }
+                }
+            command
+                .getStringExtra(EXTRA_PRODUCT_SEED_ADMISSION_EVIDENCE)
+                ?.takeIf(String::isNotBlank)
+                ?.let {
+                    command.removeExtra(EXTRA_PRODUCT_SEED_ADMISSION_EVIDENCE)
+                    val service = productService.value
+                    if (service == null) {
+                        pendingProductSeedAdmissionEvidence = it
+                    } else {
+                        service.logSeedAdmissionEvidenceForTest(it)
                     }
                 }
             command
@@ -1031,6 +1048,8 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_PRODUCT_MSE_EVIDENCE = "product_mse_evidence"
         const val EXTRA_PRODUCT_DOWNLOAD_ADMISSION_EVIDENCE =
             "product_download_admission_evidence"
+        const val EXTRA_PRODUCT_SEED_ADMISSION_EVIDENCE =
+            "product_seed_admission_evidence"
         const val EXTRA_PRODUCT_BANDWIDTH_POLICY = "product_bandwidth_policy"
         const val EXTRA_PRODUCT_IPV6_POLICY = "product_ipv6_policy"
         const val EXTRA_PRODUCT_UNMETERED_NETWORK_POLICY =

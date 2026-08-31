@@ -92,6 +92,7 @@ import org.rstorrent.session.uniffi.RequestEnvelope
 import org.rstorrent.session.uniffi.RemovalState
 import org.rstorrent.session.uniffi.RemovalDataPolicy
 import org.rstorrent.session.uniffi.ResponseOutcome
+import org.rstorrent.session.uniffi.SeedAdmissionView
 import org.rstorrent.session.uniffi.SpeedMetric
 import org.rstorrent.session.uniffi.SpeedRange
 import org.rstorrent.session.uniffi.StorageRootAvailability
@@ -1394,6 +1395,91 @@ class ProductEngineService : Service() {
             }
         }
     }
+
+    fun logSeedAdmissionEvidenceForTest(mode: String) {
+        check(ProductSafDocuments.isDebuggable(this)) {
+            "seed admission evidence is debug-only"
+        }
+        scope.launch {
+            try {
+                clientReady.await()
+                val expected = ActiveSeedLimit.Limited(1U.toUShort())
+                when (mode) {
+                    "configure_one" ->
+                        dispatchAwait(
+                            Command.UpdateClientSettings(
+                                clientSettingsPatch(activeSeeds = expected),
+                            ),
+                        )
+                    "reopened_one", "background_one" -> Unit
+                    else -> error("unknown seed admission evidence mode")
+                }
+                val (settings, admissions) =
+                    awaitSeedAdmission(expected, active = 1, queued = 2)
+                Log.i(
+                    TAG,
+                    "seed_admission mode=$mode configured=1 effective=1 " +
+                        "share=${settings.configured.shareRatioLimitPercent} " +
+                        "finished_ratio=${settings.configured.finishedDownloadRatioLimitPercent} " +
+                        "finished_time=${settings.configured.finishedTimeLimitSeconds} " +
+                        "active=${admissions.active} queued=${admissions.queued} " +
+                        "inactive=${admissions.inactive} ineligible=${admissions.ineligible} " +
+                        "counted=${settings.activeSeedCount} exempt=${settings.inactiveSeedCount}",
+                )
+            } catch (error: Throwable) {
+                reportError(error)
+            }
+        }
+    }
+
+    private data class SeedAdmissionCounts(
+        val active: Int,
+        val queued: Int,
+        val inactive: Int,
+        val ineligible: Int,
+    )
+
+    private suspend fun awaitSeedAdmission(
+        expected: ActiveSeedLimit,
+        active: Int,
+        queued: Int,
+    ): Pair<ClientSettingsRuntimeView, SeedAdmissionCounts> =
+        withTimeout(10_000) {
+            while (true) {
+                val product = mutableState.value
+                val settings = product.clientSettings
+                val admissions =
+                    SeedAdmissionCounts(
+                        active =
+                            product.torrents.values.count {
+                                it.seeding.admission == SeedAdmissionView.ACTIVE
+                            },
+                        queued =
+                            product.torrents.values.count {
+                                it.seeding.admission == SeedAdmissionView.QUEUED
+                            },
+                        inactive =
+                            product.torrents.values.count {
+                                it.seeding.admission == SeedAdmissionView.INACTIVE_EXEMPT
+                            },
+                        ineligible =
+                            product.torrents.values.count {
+                                it.seeding.admission == SeedAdmissionView.INELIGIBLE
+                            },
+                    )
+                if (
+                    settings?.configured?.activeSeeds == expected &&
+                    settings.effectiveActiveSeeds == expected &&
+                    settings.activeSeedCount.toInt() == active &&
+                    admissions.active == active &&
+                    admissions.queued == queued
+                ) {
+                    return@withTimeout settings to admissions
+                }
+                delay(25)
+            }
+            error("unreachable")
+        }
 
     private suspend fun awaitDownloadAdmission(active: UShort): ClientSettingsRuntimeView {
         val subscription =

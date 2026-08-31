@@ -67,6 +67,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -1167,7 +1168,10 @@ private fun TorrentDetails(
     onTransferLimits: (TorrentSettingsPatch) -> Unit,
     vararg rows: Pair<String, String>,
 ) {
-    LazyColumn(contentPadding = PaddingValues(vertical = 8.dp)) {
+    LazyColumn(
+        modifier = Modifier.testTag("torrent-details"),
+        contentPadding = PaddingValues(vertical = 8.dp),
+    ) {
         items(rows.toList()) { (label, value) -> ReadOnlySetting(label, value) }
         item("download-rate-limit") {
             RateLimitSetting(

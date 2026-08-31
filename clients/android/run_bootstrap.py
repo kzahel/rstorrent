@@ -5384,6 +5384,44 @@ def request_download_admission_evidence(
     )
 
 
+def request_seed_admission_evidence(
+    target: Any,
+    mode: str,
+) -> dict[str, int]:
+    result = target.shell(
+        [
+            "am",
+            "start",
+            "-n",
+            ACTIVITY,
+            "--es",
+            "product_seed_admission_evidence",
+            mode,
+        ],
+        timeout=30,
+        check=False,
+    )
+    if "Error:" in result.stdout or (
+        result.returncode != 0 and "Starting:" not in result.stdout
+    ):
+        raise BootstrapFailure("could not request Android seed admission evidence")
+    marker = f"seed_admission mode={mode} "
+    deadline = time.monotonic() + 15
+    logs = ""
+    while time.monotonic() < deadline:
+        logs = product_logs(target)
+        rows = [line for line in logs.splitlines() if marker in line]
+        if rows:
+            return {
+                key: int(value)
+                for key, value in re.findall(r"([a-z_]+)=(\d+)", rows[-1])
+            }
+        time.sleep(0.2)
+    raise BootstrapFailure(
+        f"timed out waiting for Android seed admission {mode}\n{logs}"
+    )
+
+
 def request_bandwidth_evidence(
     target: Any,
     mode: str,
@@ -5551,7 +5589,7 @@ def run_product_concurrent_downloads_profile(
             or terminal.get("registered") != 0
             # Android admits at most two downloads. One separately bounded
             # Completion observation may overlap the next promoted download.
-            or terminal.get("registered_high") != 3
+            or terminal.get("registered_high", 0) not in range(2, 4)
         ):
             raise BootstrapFailure(f"Android terminal admission did not drain: {terminal}")
         validate_resource_ceilings(terminal)
@@ -5596,6 +5634,81 @@ def run_product_concurrent_downloads_profile(
             if fixture.handle.status().total_upload <= 0:
                 raise BootstrapFailure(f"host oracle uploaded no payload for {fixture.info_hash}")
 
+        configured_seed = request_seed_admission_evidence(target, "configure_one")
+        expected_seed = {
+            "configured": 1,
+            "effective": 1,
+            "share": 200,
+            "finished_ratio": 700,
+            "finished_time": 86_400,
+            "active": 1,
+            "queued": 2,
+            "inactive": 0,
+            "ineligible": 0,
+            "counted": 1,
+            "exempt": 0,
+        }
+        if any(configured_seed.get(key) != value for key, value in expected_seed.items()):
+            raise BootstrapFailure(
+                f"Android configured seed admission diverged: {configured_seed}"
+            )
+
+        target.run(["logcat", "-c"], check=False)
+        target.shell(["input", "keyevent", "KEYCODE_HOME"], check=False)
+        wait_product_log(
+            target,
+            "product_shutdown_complete reason=lifecycle_idle",
+            "default-off queued-seed shutdown",
+            timeout=20,
+        )
+        wait_product_service_state(target, running=False)
+        if product_has_ongoing_notification(target):
+            raise BootstrapFailure(
+                "default-off queued-seed shutdown retained the ongoing notification"
+            )
+        reopened_seed = request_seed_admission_evidence(target, "reopened_one")
+        if any(reopened_seed.get(key) != value for key, value in expected_seed.items()):
+            raise BootstrapFailure(
+                f"Android reopened seed admission diverged: {reopened_seed}"
+            )
+
+        enabled = launch_product_lifecycle_evidence(target, "enable_background")
+        seeded = launch_product_lifecycle_evidence(target, "enable_seeding")
+        if enabled.get("effective") != "true" or seeded.get("keep_seeding") != "true":
+            raise BootstrapFailure(
+                "Android background seed admission did not enable: "
+                f"background={enabled} seeding={seeded}"
+            )
+        background_seed = request_seed_admission_evidence(target, "background_one")
+        if any(background_seed.get(key) != value for key, value in expected_seed.items()):
+            raise BootstrapFailure(
+                f"Android background seed admission diverged: {background_seed}"
+            )
+        target.run(["logcat", "-c"], check=False)
+        target.shell(["input", "keyevent", "KEYCODE_HOME"], check=False)
+        wait_product_log(
+            target,
+            "decision=retain_background_seeding",
+            "queued-seed background admission",
+            timeout=20,
+        )
+        wait_product_service_state(target, running=True, foreground=True)
+        if not product_has_ongoing_notification(target):
+            raise BootstrapFailure(
+                "background queued-seed admission had no ongoing notification"
+            )
+        launch_product_lifecycle_evidence(target, "disable_seeding")
+        target.run(["logcat", "-c"], check=False)
+        target.shell(["input", "keyevent", "KEYCODE_HOME"], check=False)
+        wait_product_log(
+            target,
+            "product_shutdown_complete reason=lifecycle_idle",
+            "queued-seed background disable",
+            timeout=20,
+        )
+        wait_product_service_state(target, running=False)
+        launch_product_lifecycle_evidence(target, "disable_background")
+
         return {
             "target": target_kind,
             "profile": "product-concurrent-downloads",
@@ -5605,6 +5718,13 @@ def run_product_concurrent_downloads_profile(
             "v1_info_hashes": [fixture.info_hash for fixture in fixtures],
             "active_admission": active,
             "terminal_admission": terminal,
+            "seed_admission": {
+                "visible": configured_seed,
+                "reopened_background_disabled": reopened_seed,
+                "background_enabled": background_seed,
+                "background_retained": True,
+                "background_disable_shutdown": True,
+            },
             "bandwidth": {
                 "configured": configured_bandwidth,
                 "active": active_bandwidth,

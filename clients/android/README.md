@@ -191,6 +191,14 @@ Disabling keep-seeding joins the otherwise idle owner. The profile removes the
 package owner, reverse, controlled payloads, SAF tree, and host fixture; it
 uses no public swarm.
 
+The `product-concurrent-downloads` profile also carries the installed seed-
+admission matrix. After three controlled downloads complete, it applies an
+active-seed limit of one through the real typed settings path and requires one
+active plus two queued seeds with the exact default priority goals. It repeats
+that view after default-off Home shutdown and reopen, then proves the same
+queue under opted-in notification-backed background seeding and joined
+shutdown when keep-seeding is disabled.
+
 Every device command is addressed through the exact verified target
 controller. The runner owns and removes its reverse port, controlled seed,
 grant child, app-private run IDs, application, and fresh AVD session.
