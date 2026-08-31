@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import { progressPercent } from "../updater/controller";
 import type {
   DesktopUpdater,
@@ -21,36 +22,36 @@ export function AboutUpdatesSettingsSection({
   return (
     <div className={styles.aboutUpdates}>
       <fieldset className={styles.section}>
-        <legend>Application</legend>
+        <legend>{localizedMessage("inspection.components.about.updates.settings.section.application")}</legend>
         <dl className={styles.releaseFacts}>
           <div>
-            <dt>Version</dt>
+            <dt>{localizedMessage("inspection.components.about.updates.settings.section.version")}</dt>
             <dd>{info.version}</dd>
           </div>
           <div>
-            <dt>Build</dt>
+            <dt>{localizedMessage("inspection.components.about.updates.settings.section.build")}</dt>
             <dd title={info.buildId}>{shortBuildId(info.buildId)}</dd>
           </div>
           <div>
-            <dt>Target</dt>
+            <dt>{localizedMessage("inspection.components.about.updates.settings.section.target")}</dt>
             <dd>{info.target}</dd>
           </div>
           <div>
-            <dt>Package</dt>
+            <dt>{localizedMessage("inspection.components.about.updates.settings.section.package")}</dt>
             <dd>{packageLabel(info.bundleType)}</dd>
           </div>
         </dl>
       </fieldset>
 
       <fieldset className={styles.section}>
-        <legend>Updates</legend>
+        <legend>{localizedMessage("inspection.components.about.updates.settings.section.updates")}</legend>
         <div className={styles.updateStatus} aria-live="polite">
           <strong>{statusTitle(state)}</strong>
           <span>{statusDetail(state, info.version)}</span>
         </div>
         {state.phase === "downloading" ? (
           <progress
-            aria-label="Update download progress"
+            aria-label={localizedMessage("inspection.components.about.updates.settings.section.update.download.progress")}
             max={100}
             {...(progressPercent(state) === undefined
               ? {}
@@ -59,17 +60,15 @@ export function AboutUpdatesSettingsSection({
         ) : null}
         {state.phase === "available" && state.notes ? (
           <div className={styles.releaseNotes}>
-            <strong>Release notes</strong>
+            <strong>{localizedMessage("inspection.components.about.updates.settings.section.release.notes")}</strong>
             <p>{state.notes}</p>
           </div>
         ) : null}
         {state.phase === "available" && state.manualApply !== undefined ? (
           <div className={styles.manualUpdate}>
-            <strong>Apply from a shell on this server</strong>
+            <strong>{localizedMessage("inspection.components.about.updates.settings.section.apply.from.a.shell.on.this.server")}</strong>
             <code>{state.manualApply.command}</code>
-            <a href={state.manualApply.releaseUrl} rel="noreferrer" target="_blank">
-              Review signed release
-            </a>
+            <a href={state.manualApply.releaseUrl} rel="noreferrer" target="_blank">{localizedMessage("inspection.components.about.updates.settings.section.review.signed.release")}</a>
           </div>
         ) : null}
         <div className={styles.updateActions}>
@@ -78,7 +77,7 @@ export function AboutUpdatesSettingsSection({
             disabled={state.phase === "checking" || isInstalling(state)}
             onClick={() => void updater.check("manual")}
           >
-            {state.phase === "checking" ? "Checking…" : "Check for updates"}
+            {state.phase === "checking" ? localizedMessage("inspection.components.about.updates.settings.section.checking") : localizedMessage("inspection.components.about.updates.settings.section.check.for.updates")}
           </button>
           {(state.phase === "available" && state.manualApply === undefined) ||
           (state.phase === "error" && state.operation === "install") ? (
@@ -87,21 +86,15 @@ export function AboutUpdatesSettingsSection({
               className={styles.primaryAction}
               disabled={isInstalling(state)}
               onClick={() => void updater.install()}
-            >
-              Install and restart
-            </button>
+            >{localizedMessage("inspection.components.about.updates.settings.section.install.and.restart")}</button>
           ) : null}
           {state.phase === "manual-install" ? (
-            <a href={RELEASES_URL} rel="noreferrer" target="_blank">
-              Open release downloads
-            </a>
+            <a href={RELEASES_URL} rel="noreferrer" target="_blank">{localizedMessage("inspection.components.about.updates.settings.section.open.release.downloads")}</a>
           ) : null}
         </div>
-        <p className={styles.updatePrivacy}>
-          RSTorrent checks automatically after startup and about once per day.
-          {info.checkPrivacy === "anonymous"
-            ? " Headless checks include no installation identifier."
-            : " Checks include a random resettable installation identifier used only to estimate active installations."}
+        <p className={styles.updatePrivacy}>{localizedMessage("inspection.components.about.updates.settings.section.rstorrent.checks.automatically.after.startup.and.about")}{info.checkPrivacy === "anonymous"
+            ? localizedMessage("inspection.components.about.updates.settings.section.headless.checks.include.no.installation.identifier")
+            : localizedMessage("inspection.components.about.updates.settings.section.checks.include.a.random.resettable.installation.identifier")}
         </p>
       </fieldset>
     </div>
@@ -111,15 +104,15 @@ export function AboutUpdatesSettingsSection({
 function statusTitle(state: UpdaterState): string {
   switch (state.phase) {
     case "idle":
-      return "Automatic updates enabled";
+      return localizedMessage("inspection.components.about.updates.settings.section.automatic.updates.enabled");
     case "checking":
-      return "Checking for updates";
+      return localizedMessage("inspection.components.about.updates.settings.section.checking.for.updates");
     case "up-to-date":
-      return "RSTorrent is up to date";
+      return localizedMessage("inspection.components.about.updates.settings.section.rstorrent.is.up.to.date");
     case "available":
       return `RSTorrent ${state.version} is available`;
     case "manual-install":
-      return "Manual update required";
+      return localizedMessage("inspection.components.about.updates.settings.section.manual.update.required");
     case "downloading":
       return `Downloading RSTorrent ${state.version}`;
     case "installing":
@@ -136,7 +129,7 @@ function statusDetail(state: UpdaterState, currentVersion: string): string {
     case "idle":
       return `Currently running ${currentVersion}.`;
     case "checking":
-      return "Contacting the RSTorrent update service.";
+      return localizedMessage("inspection.components.about.updates.settings.section.contacting.the.rstorrent.update.service");
     case "up-to-date":
       return `Version ${currentVersion} is the newest compatible release.`;
     case "available":
@@ -152,7 +145,7 @@ function statusDetail(state: UpdaterState, currentVersion: string): string {
         : `${percent}% · ${formatBytes(state.downloadedBytes)} downloaded.`;
     }
     case "installing":
-      return "RSTorrent will relaunch after installation succeeds.";
+      return localizedMessage("inspection.components.about.updates.settings.section.rstorrent.will.relaunch.after.installation.succeeds");
     case "error":
       return state.message;
   }
@@ -169,21 +162,21 @@ function shortBuildId(buildId: string): string {
 function packageLabel(bundleType: DesktopUpdaterSnapshot["info"]["bundleType"]): string {
   switch (bundleType) {
     case "app":
-      return "macOS app";
+      return localizedMessage("inspection.components.about.updates.settings.section.macos.app");
     case "nsis":
-      return "Windows NSIS";
+      return localizedMessage("inspection.components.about.updates.settings.section.windows.nsis");
     case "appimage":
-      return "Linux AppImage";
+      return localizedMessage("inspection.components.about.updates.settings.section.linux.appimage");
     case "msi":
-      return "Windows MSI";
+      return localizedMessage("inspection.components.about.updates.settings.section.windows.msi");
     case "deb":
-      return "Linux DEB";
+      return localizedMessage("inspection.components.about.updates.settings.section.linux.deb");
     case "rpm":
-      return "Linux RPM";
+      return localizedMessage("inspection.components.about.updates.settings.section.linux.rpm");
     case "headless":
-      return "Linux headless service";
+      return localizedMessage("inspection.components.about.updates.settings.section.linux.headless.service");
     case "unknown":
-      return "Development build";
+      return localizedMessage("inspection.components.about.updates.settings.section.development.build");
   }
 }
 

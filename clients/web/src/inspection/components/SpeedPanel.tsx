@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { SpeedMetric, SpeedRange } from "../../api";
@@ -13,13 +14,13 @@ import {
 import styles from "./SpeedPanel.module.css";
 
 const RANGES: readonly { value: SpeedRange; label: string }[] = [
-  { value: "seconds30", label: "30 sec" },
-  { value: "minutes2", label: "2 min" },
-  { value: "minutes10", label: "10 min" },
-  { value: "hour1", label: "1 hour" },
-  { value: "hours24", label: "24 hours" },
-  { value: "days30", label: "30 days" },
-  { value: "years2", label: "2 years" },
+  { value: "seconds30", label: localizedMessage("inspection.components.speed.panel.30.sec") },
+  { value: "minutes2", label: localizedMessage("inspection.components.speed.panel.2.min") },
+  { value: "minutes10", label: localizedMessage("inspection.components.speed.panel.10.min") },
+  { value: "hour1", label: localizedMessage("inspection.components.speed.panel.1.hour") },
+  { value: "hours24", label: localizedMessage("inspection.components.speed.panel.24.hours") },
+  { value: "days30", label: localizedMessage("inspection.components.speed.panel.30.days") },
+  { value: "years2", label: localizedMessage("inspection.components.speed.panel.2.years") },
 ];
 
 const METRIC_LABELS: Readonly<Record<SpeedMetric, string>> = {
@@ -87,18 +88,15 @@ export function SpeedPanel() {
   );
 
   return (
-    <div className={styles.panel} aria-label="Session speed history">
+    <div className={styles.panel} aria-label={localizedMessage("inspection.components.speed.panel.session.speed.history")}>
       <header className={styles.header}>
         <div>
-          <p className={styles.eyebrow}>Session · All torrents</p>
-          <h2>Transfer velocity</h2>
-          <p className={styles.subtitle}>
-            Received, staged, and verified bytes stay visually
-            distinct—including retries.
-          </p>
+          <p className={styles.eyebrow}>{localizedMessage("inspection.components.speed.panel.session.all.torrents")}</p>
+          <h2>{localizedMessage("inspection.components.speed.panel.transfer.velocity")}</h2>
+          <p className={styles.subtitle}>{localizedMessage("inspection.components.speed.panel.received.staged.and.verified.bytes.stay.visually")}</p>
         </div>
         <label className={styles.range}>
-          <span>History</span>
+          <span>{localizedMessage("inspection.components.speed.panel.history")}</span>
           <select
             value={range}
             onChange={(event) => setRange(event.target.value as SpeedRange)}
@@ -112,7 +110,7 @@ export function SpeedPanel() {
         </label>
       </header>
 
-      <div className={styles.heroRates} aria-label="Current transfer rates">
+      <div className={styles.heroRates} aria-label={localizedMessage("inspection.components.speed.panel.current.transfer.rates")}>
         {(
           ["payload_received", "staged_write", "payload_verified"] as const
         ).map((metric) => (
@@ -132,7 +130,7 @@ export function SpeedPanel() {
       {status.status === "unsupported" || status.status === "unavailable" ? (
         <div className={styles.message}>{status.reason}</div>
       ) : history === null ? (
-        <div className={styles.message}>Preparing speed history…</div>
+        <div className={styles.message}>{localizedMessage("inspection.components.speed.panel.preparing.speed.history")}</div>
       ) : (
         <>
           <SpeedCanvas
@@ -144,16 +142,14 @@ export function SpeedPanel() {
         </>
       )}
 
-      <section className={styles.seriesPicker} aria-label="Chart series">
+      <section className={styles.seriesPicker} aria-label={localizedMessage("inspection.components.speed.panel.chart.series")}>
         <div className={styles.sectionHeading}>
           <div>
-            <strong>Series</strong>
-            <span>{selected.length} of 8</span>
+            <strong>{localizedMessage("inspection.components.speed.panel.series")}</strong>
+            <span>{selected.length}{" "}{localizedMessage("inspection.components.speed.panel.of.8")}</span>
           </div>
           {history?.persistence === "degraded" ? (
-            <span className={styles.warning}>
-              History persistence interrupted
-            </span>
+            <span className={styles.warning}>{localizedMessage("inspection.components.speed.panel.history.persistence.interrupted")}</span>
           ) : null}
         </div>
         <div className={styles.chips}>
@@ -294,7 +290,7 @@ function SpeedCanvas({
         className={styles.canvas}
         role="img"
         tabIndex={0}
-        aria-label="Speed history chart. Use left and right arrow keys to inspect exact samples."
+        aria-label={localizedMessage("inspection.components.speed.panel.speed.history.chart.use.left.and.right")}
         onPointerMove={(event) => selectAt(event.clientX)}
         onPointerLeave={() => setCursor(null)}
         onFocus={() => setCursor((value) => value ?? Math.max(0, samples - 1))}
@@ -310,7 +306,7 @@ function SpeedCanvas({
       {cursor === null ? null : (
         <ExactSample history={history} index={cursor} dataUnits={dataUnits} />
       )}
-      {frozen ? <span className={styles.stale}>Frozen · stale</span> : null}
+      {frozen ? <span className={styles.stale}>{localizedMessage("inspection.components.speed.panel.frozen.stale")}</span> : null}
     </div>
   );
 }
@@ -516,14 +512,14 @@ function WindowSummaries({
   return (
     <section
       className={styles.windowSummary}
-      aria-label="Selected speed window summaries"
+      aria-label={localizedMessage("inspection.components.speed.panel.selected.speed.window.summaries")}
     >
       <div className={styles.summaryHeader} aria-hidden="true">
-        <span>Series</span>
-        <span>Current</span>
-        <span>Average</span>
-        <span>Peak</span>
-        <span>Total</span>
+        <span>{localizedMessage("inspection.components.speed.panel.series")}</span>
+        <span>{localizedMessage("inspection.components.speed.panel.current")}</span>
+        <span>{localizedMessage("inspection.components.speed.panel.average")}</span>
+        <span>{localizedMessage("inspection.components.speed.panel.peak")}</span>
+        <span>{localizedMessage("inspection.components.speed.panel.total")}</span>
       </div>
       {history.series.map((series) => {
         const covered = series.values.filter(
@@ -545,11 +541,10 @@ function WindowSummaries({
               {METRIC_LABELS[series.metric]}
               {covered.length === series.values.length ? null : (
                 <small>
-                  {covered.length}/{series.values.length} covered
-                </small>
+                  {covered.length}/{series.values.length}{" "}{localizedMessage("inspection.components.speed.panel.covered")}</small>
               )}
             </strong>
-            <span data-label="Current">
+            <span data-label={localizedMessage("inspection.components.speed.panel.current")}>
               {nullableSpeedRate(
                 series.current_rate_bytes === null
                   ? null
@@ -557,9 +552,9 @@ function WindowSummaries({
                 dataUnits,
               )}
             </span>
-            <span data-label="Average">{speedRate(average, dataUnits)}</span>
-            <span data-label="Peak">{speedRate(peak, dataUnits)}</span>
-            <span data-label="Total">
+            <span data-label={localizedMessage("inspection.components.speed.panel.average")}>{speedRate(average, dataUnits)}</span>
+            <span data-label={localizedMessage("inspection.components.speed.panel.peak")}>{speedRate(peak, dataUnits)}</span>
+            <span data-label={localizedMessage("inspection.components.speed.panel.total")}>
               {formatExactBytes(total.toString(), dataUnits)}
             </span>
           </div>
@@ -587,14 +582,14 @@ function TrafficBreakdown({
   ];
   return (
     <details className={styles.breakdown}>
-      <summary>Traffic breakdown</summary>
+      <summary>{localizedMessage("inspection.components.speed.panel.traffic.breakdown")}</summary>
       <div
         className={styles.breakdownGrid}
-        aria-label="Current traffic breakdown"
+        aria-label={localizedMessage("inspection.components.speed.panel.current.traffic.breakdown")}
       >
-        <span>Source</span>
-        <span>In</span>
-        <span>Out</span>
+        <span>{localizedMessage("inspection.components.speed.panel.source")}</span>
+        <span>{localizedMessage("inspection.components.speed.panel.in")}</span>
+        <span>{localizedMessage("inspection.components.speed.panel.out")}</span>
         {rows.map(([label, incoming, outgoing]) => (
           <div className={styles.breakdownRow} key={label}>
             <strong>{label}</strong>
@@ -603,14 +598,14 @@ function TrafficBreakdown({
           </div>
         ))}
         <div className={styles.breakdownRow}>
-          <strong>Hash read</strong>
+          <strong>{localizedMessage("inspection.components.speed.panel.hash.read")}</strong>
           <span>
             {nullableSpeedRate(current.get("logical_hash_read"), dataUnits)}
           </span>
           <span>—</span>
         </div>
         <div className={styles.breakdownRow}>
-          <strong>Redundant / failed</strong>
+          <strong>{localizedMessage("inspection.components.speed.panel.redundant.failed")}</strong>
           <span>
             {nullableSpeedRate(current.get("payload_redundant"), dataUnits)}
           </span>
@@ -621,7 +616,7 @@ function TrafficBreakdown({
       </div>
       {history.catalog.find((entry) => entry.metric === "payload_uploaded")
         ?.available === false ? (
-        <p>Payload upload is unavailable until upload and seeding exist.</p>
+        <p>{localizedMessage("inspection.components.speed.panel.payload.upload.is.unavailable.until.upload.and")}</p>
       ) : null}
     </details>
   );
@@ -648,7 +643,7 @@ function sampleLabel(
   bucketMillis: number,
   dataUnits: DataUnits,
 ): string {
-  if (value === null || value === undefined) return "gap";
+  if (value === null || value === undefined) return localizedMessage("inspection.components.speed.panel.gap");
   return `${speedRate((number(value) * 1_000) / bucketMillis, dataUnits)} · ${formatExactBytes(value, dataUnits)}`;
 }
 

@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import { useMemo } from "react";
 
 import { useInspectionStore } from "../context";
@@ -42,13 +43,11 @@ export function TransfersView({
       <div className={styles.heading}>
         <div>
           <p>{categoryLabel(category)}</p>
-          <h1 id="transfers-heading">Transfers</h1>
+          <h1 id="transfers-heading">{localizedMessage("inspection.components.transfers.view.transfers")}</h1>
         </div>
         <span>
-          {visibleCount.toLocaleString()} shown
-          <span aria-hidden="true"> · </span>
-          {activeCount.toLocaleString()} active
-        </span>
+          {visibleCount.toLocaleString()}{" "}{localizedMessage("inspection.components.transfers.view.shown")}<span aria-hidden="true"> · </span>
+          {activeCount.toLocaleString()}{" "}{localizedMessage("inspection.components.transfers.view.active")}</span>
       </div>
       <TorrentActions
         showCrostiniStorageHelp={showCrostiniStorageHelp}
@@ -64,18 +63,18 @@ export function TransfersView({
 function categoryLabel(category: TorrentCategory): string {
   switch (category) {
     case "all":
-      return "All torrents";
+      return localizedMessage("inspection.components.transfers.view.all.torrents");
     case "active":
-      return "Active";
+      return localizedMessage("inspection.components.transfers.view.active.9234069");
     case "downloading":
-      return "Downloading";
+      return localizedMessage("inspection.components.transfers.view.downloading");
     case "completed":
-      return "Completed";
+      return localizedMessage("inspection.components.transfers.view.completed");
     case "paused":
-      return "Paused";
+      return localizedMessage("inspection.components.transfers.view.paused");
     case "errors":
-      return "Needs attention";
+      return localizedMessage("inspection.components.transfers.view.needs.attention");
     case "archived":
-      return "Archived";
+      return localizedMessage("inspection.components.transfers.view.archived");
   }
 }

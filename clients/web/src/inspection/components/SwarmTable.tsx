@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import { useMemo } from "react";
 
 import { useInspectionStore } from "../context";
@@ -10,7 +11,7 @@ import styles from "./SwarmTable.module.css";
 const columns = (dataUnits: DataUnits): readonly VirtualColumn<SwarmRow>[] => [
   {
     id: "state",
-    label: "State",
+    label: localizedMessage("inspection.components.swarm.table.state"),
     width: 132,
     sortable: true,
     sortValue: (row) => row.state,
@@ -32,7 +33,7 @@ const columns = (dataUnits: DataUnits): readonly VirtualColumn<SwarmRow>[] => [
   },
   {
     id: "endpoint",
-    label: "Address",
+    label: localizedMessage("inspection.components.swarm.table.address"),
     width: 192,
     minimumWidth: 150,
     maximumWidth: 360,
@@ -46,7 +47,7 @@ const columns = (dataUnits: DataUnits): readonly VirtualColumn<SwarmRow>[] => [
   },
   {
     id: "sources",
-    label: "Sources",
+    label: localizedMessage("inspection.components.swarm.table.sources"),
     width: 136,
     sortable: true,
     sortValue: (row) => row.sources.join(","),
@@ -58,7 +59,7 @@ const columns = (dataUnits: DataUnits): readonly VirtualColumn<SwarmRow>[] => [
   },
   {
     id: "lastSeen",
-    label: "Last seen",
+    label: localizedMessage("inspection.components.swarm.table.last.seen"),
     width: 92,
     align: "right",
     sortable: true,
@@ -68,7 +69,7 @@ const columns = (dataUnits: DataUnits): readonly VirtualColumn<SwarmRow>[] => [
   },
   {
     id: "retry",
-    label: "Retry",
+    label: localizedMessage("inspection.components.swarm.table.retry"),
     width: 82,
     align: "right",
     sortable: true,
@@ -78,41 +79,33 @@ const columns = (dataUnits: DataUnits): readonly VirtualColumn<SwarmRow>[] => [
   },
   {
     id: "downloaded",
-    label: "Downloaded",
+    label: localizedMessage("inspection.components.swarm.table.downloaded"),
     width: 104,
     align: "right",
     sortable: true,
     sortKind: "decimal",
     sortValue: (row) => row.payloadDownloadedBytes,
     headerHelp: (
-      <p>
-        Useful payload received from this peer across every connection retained
-        by this Swarm record. It resets when the engine restarts or the record
-        is evicted.
-      </p>
+      <p>{localizedMessage("inspection.components.swarm.table.useful.payload.received.from.this.peer.across")}</p>
     ),
     render: (row) => formatExactBytes(row.payloadDownloadedBytes, dataUnits),
   },
   {
     id: "uploaded",
-    label: "Uploaded",
+    label: localizedMessage("inspection.components.swarm.table.uploaded"),
     width: 104,
     align: "right",
     sortable: true,
     sortKind: "decimal",
     sortValue: (row) => row.payloadUploadedBytes,
     headerHelp: (
-      <p>
-        Payload sent to this peer across every connection retained by this
-        Swarm record. It excludes protocol traffic and resets with the engine
-        or record.
-      </p>
+      <p>{localizedMessage("inspection.components.swarm.table.payload.sent.to.this.peer.across.every")}</p>
     ),
     render: (row) => formatExactBytes(row.payloadUploadedBytes, dataUnits),
   },
   {
     id: "attempts",
-    label: "Dials",
+    label: localizedMessage("inspection.components.swarm.table.dials"),
     width: 62,
     align: "right",
     sortable: true,
@@ -122,7 +115,7 @@ const columns = (dataUnits: DataUnits): readonly VirtualColumn<SwarmRow>[] => [
   },
   {
     id: "failures",
-    label: "Fails",
+    label: localizedMessage("inspection.components.swarm.table.fails"),
     width: 62,
     align: "right",
     sortable: true,
@@ -132,7 +125,7 @@ const columns = (dataUnits: DataUnits): readonly VirtualColumn<SwarmRow>[] => [
   },
   {
     id: "failure",
-    label: "Last failure",
+    label: localizedMessage("inspection.components.swarm.table.last.failure"),
     width: 112,
     defaultVisible: false,
     sortable: true,
@@ -141,7 +134,7 @@ const columns = (dataUnits: DataUnits): readonly VirtualColumn<SwarmRow>[] => [
   },
   {
     id: "firstSeen",
-    label: "Known for",
+    label: localizedMessage("inspection.components.swarm.table.known.for"),
     width: 92,
     defaultVisible: false,
     align: "right",
@@ -152,7 +145,7 @@ const columns = (dataUnits: DataUnits): readonly VirtualColumn<SwarmRow>[] => [
   },
   {
     id: "lastDial",
-    label: "Last dial",
+    label: localizedMessage("inspection.components.swarm.table.last.dial"),
     width: 92,
     defaultVisible: false,
     align: "right",
@@ -163,7 +156,7 @@ const columns = (dataUnits: DataUnits): readonly VirtualColumn<SwarmRow>[] => [
   },
   {
     id: "trust",
-    label: "Trust",
+    label: localizedMessage("inspection.components.swarm.table.trust"),
     width: 64,
     align: "right",
     sortable: true,
@@ -173,7 +166,7 @@ const columns = (dataUnits: DataUnits): readonly VirtualColumn<SwarmRow>[] => [
   },
   {
     id: "parole",
-    label: "Parole",
+    label: localizedMessage("inspection.components.swarm.table.parole"),
     width: 72,
     sortable: true,
     sortValue: (row) => (row.onParole ? 1 : 0),
@@ -182,7 +175,7 @@ const columns = (dataUnits: DataUnits): readonly VirtualColumn<SwarmRow>[] => [
   },
   {
     id: "integrity",
-    label: "Integrity",
+    label: localizedMessage("inspection.components.swarm.table.integrity"),
     width: 110,
     defaultVisible: false,
     sortable: true,
@@ -215,7 +208,7 @@ export function SwarmTable({ torrentId }: { readonly torrentId: string }) {
       <SwarmSummary swarm={swarm} />
       <VirtualTable
         tableId="swarm"
-        label="Known swarm peers"
+        label={localizedMessage("inspection.components.swarm.table.known.swarm.peers")}
         rows={rows}
         getRowId={(row) => row.recordId}
         columns={displayColumns}
@@ -234,27 +227,27 @@ function SwarmSummary({ swarm }: { readonly swarm: SwarmSet | undefined }) {
   return (
     <div
       className={styles.summary}
-      aria-label="Swarm registry summary"
+      aria-label={localizedMessage("inspection.components.swarm.table.swarm.registry.summary")}
       tabIndex={0}
     >
       <strong>{total.toLocaleString()}</strong>
-      <span>known</span>
+      <span>{localizedMessage("inspection.components.swarm.table.known")}</span>
       <span className={styles.separator} aria-hidden="true" />
-      <SummaryCount label="eligible" value={counts?.eligible ?? 0} tone="ready" />
+      <SummaryCount label={localizedMessage("inspection.components.swarm.table.eligible")} value={counts?.eligible ?? 0} tone="ready" />
       <SummaryCount
-        label="not connectable"
+        label={localizedMessage("inspection.components.swarm.table.not.connectable")}
         value={counts?.not_connectable ?? 0}
         tone="blocked"
       />
-      <SummaryCount label="dialing" value={counts?.dialing ?? 0} tone="waiting" />
-      <SummaryCount label="connected" value={counts?.connected ?? 0} tone="connected" />
-      <SummaryCount label="backed off" value={counts?.backed_off ?? 0} tone="waiting" />
+      <SummaryCount label={localizedMessage("inspection.components.swarm.table.dialing")} value={counts?.dialing ?? 0} tone="waiting" />
+      <SummaryCount label={localizedMessage("inspection.components.swarm.table.connected")} value={counts?.connected ?? 0} tone="connected" />
+      <SummaryCount label={localizedMessage("inspection.components.swarm.table.backed.off")} value={counts?.backed_off ?? 0} tone="waiting" />
       <SummaryCount
-        label="failure limited"
+        label={localizedMessage("inspection.components.swarm.table.failure.limited")}
         value={counts?.failure_limited ?? 0}
         tone="limited"
       />
-      <SummaryCount label="banned" value={counts?.banned ?? 0} tone="limited" />
+      <SummaryCount label={localizedMessage("inspection.components.swarm.table.banned")} value={counts?.banned ?? 0} tone="limited" />
       <span className={styles.capacity}>{total.toLocaleString()} / {capacity.toLocaleString()}</span>
     </div>
   );
@@ -283,9 +276,9 @@ function swarmEmptyMessage(
 ): string {
   switch (materialization.status) {
     case "not_requested":
-      return "Swarm inspection is not requested.";
+      return localizedMessage("inspection.components.swarm.table.swarm.inspection.is.not.requested");
     case "loading":
-      return "Loading known swarm peers…";
+      return localizedMessage("inspection.components.swarm.table.loading.known.swarm.peers");
     case "unavailable":
     case "unsupported":
     case "stale":
@@ -314,11 +307,11 @@ function formatLabel(value: string): string {
 function shortSource(source: SwarmRow["sources"][number]): string {
   switch (source) {
     case "peer_exchange":
-      return "PEX";
+      return localizedMessage("inspection.components.swarm.table.pex");
     case "local_discovery":
-      return "LSD";
+      return localizedMessage("inspection.components.swarm.table.lsd");
     case "magnet_hint":
-      return "Magnet";
+      return localizedMessage("inspection.components.swarm.table.magnet");
     default:
       return source.toUpperCase();
   }

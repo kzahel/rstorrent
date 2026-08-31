@@ -1,0 +1,19 @@
+{
+  "dialog.download-folder.title": "Native directory-picker title",
+  "dialog.settings-save.body": "Run-in-background persistence failure detail",
+  "dialog.settings-save.title": "Run-in-background persistence failure title",
+  "dialog.shutdown.body": "Safe-shutdown failure detail",
+  "dialog.shutdown.title": "Safe-shutdown failure title",
+  "notification.download-complete.body": "Completion notification body; name is a user-controlled torrent display name",
+  "notification.download-complete.title": "Completion notification title",
+  "notification.needs-attention.body": "Repair-required notification body; name is a user-controlled torrent display name",
+  "notification.needs-attention.title": "Repair-required notification title",
+  "notification.open": "Linux notification action that restores the main window",
+  "notification.unnamed-torrent": "Bounded fallback when a torrent has no display name",
+  "power.active-transfer-reason": "Operating-system sleep-inhibition reason",
+  "tray.check-updates": "Desktop tray action that requests an update check",
+  "tray.quit": "Desktop tray action that safely shuts down RSTorrent",
+  "tray.run-in-background": "Desktop tray checkbox for background lifetime",
+  "tray.show": "Desktop tray action that restores the main window",
+  "tray.tooltip": "Desktop tray icon tooltip"
+}

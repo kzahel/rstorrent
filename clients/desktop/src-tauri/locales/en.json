@@ -1,0 +1,19 @@
+{
+  "dialog.download-folder.title": "Choose a download folder",
+  "dialog.settings-save.body": "RSTorrent could not save the Run in Background setting. The previous setting is still active.",
+  "dialog.settings-save.title": "RSTorrent setting was not saved",
+  "dialog.shutdown.body": "RSTorrent could not finish shutting down. Your data was not force-closed. Check the diagnostic log before trying again.",
+  "dialog.shutdown.title": "RSTorrent could not quit",
+  "notification.download-complete.body": "{name} finished downloading.",
+  "notification.download-complete.title": "Download complete",
+  "notification.needs-attention.body": "{name} needs attention. Open RSTorrent for details.",
+  "notification.needs-attention.title": "Download needs attention",
+  "notification.open": "Open RSTorrent",
+  "notification.unnamed-torrent": "Torrent",
+  "power.active-transfer-reason": "RSTorrent is downloading or checking content",
+  "tray.check-updates": "Check for Updates",
+  "tray.quit": "Quit RSTorrent",
+  "tray.run-in-background": "Run in Background",
+  "tray.show": "Show RSTorrent",
+  "tray.tooltip": "RSTorrent"
+}

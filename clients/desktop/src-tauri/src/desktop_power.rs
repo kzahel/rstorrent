@@ -6,6 +6,8 @@ use rstorrent_session::{
     TorrentFieldUpdate, TorrentOperationalState, TorrentRowUpdate, TorrentView,
 };
 
+use crate::desktop_localization;
+
 #[derive(Default)]
 pub(crate) struct DesktopPowerPolicy {
     established: bool,
@@ -221,7 +223,7 @@ fn acquire_platform_inhibitor() -> Result<keepawake::KeepAwake, String> {
         .idle(true)
         .display(false)
         .sleep(false)
-        .reason("RSTorrent is downloading or checking content")
+        .reason(desktop_localization::text("power.active-transfer-reason"))
         .app_name("RSTorrent")
         .app_reverse_domain("com.jstorrent.rstorrent")
         .create()

@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type {
@@ -28,27 +29,25 @@ export function DhtPanel() {
     return <div className={styles.message}>{status.reason}</div>;
   }
   if (inspection === null) {
-    return <div className={styles.message}>Preparing DHT observation…</div>;
+    return <div className={styles.message}>{localizedMessage("inspection.components.dht.panel.preparing.dht.observation")}</div>;
   }
   const family = inspection.families.find(
     (candidate) => candidate.family === selectedFamily,
   ) ?? inspection.families[0];
   if (family === undefined) {
-    return <div className={styles.message}>No DHT address family is active.</div>;
+    return <div className={styles.message}>{localizedMessage("inspection.components.dht.panel.no.dht.address.family.is.active")}</div>;
   }
 
   return (
-    <div className={styles.panel} aria-label="Session DHT observatory">
+    <div className={styles.panel} aria-label={localizedMessage("inspection.components.dht.panel.session.dht.observatory")}>
       <header className={styles.header}>
         <div>
-          <p className={styles.eyebrow}>Session · Mainline IPv4 + IPv6</p>
-          <h2>DHT observatory</h2>
-          <p className={styles.subtitle}>
-            Routing-space coverage, node freshness, and live lookup convergence.
-          </p>
+          <p className={styles.eyebrow}>{localizedMessage("inspection.components.dht.panel.session.mainline.ipv4.ipv6")}</p>
+          <h2>{localizedMessage("inspection.components.dht.panel.dht.observatory")}</h2>
+          <p className={styles.subtitle}>{localizedMessage("inspection.components.dht.panel.routing.space.coverage.node.freshness.and.live")}</p>
         </div>
-        <div className={styles.modeControl} aria-label="DHT address family">
-          <span>Network</span>
+        <div className={styles.modeControl} aria-label={localizedMessage("inspection.components.dht.panel.dht.address.family")}>
+          <span>{localizedMessage("inspection.components.dht.panel.network")}</span>
           <div>
             {inspection.families.map((candidate) => (
               <button
@@ -62,23 +61,19 @@ export function DhtPanel() {
             ))}
           </div>
         </div>
-        <div className={styles.modeControl} aria-label="Routing visualization">
-          <span>Encoding</span>
+        <div className={styles.modeControl} aria-label={localizedMessage("inspection.components.dht.panel.routing.visualization")}>
+          <span>{localizedMessage("inspection.components.dht.panel.encoding")}</span>
           <div>
             <button
               type="button"
               aria-pressed={mode === "normalized"}
               onClick={() => setMode("normalized")}
-            >
-              Depth · normalized
-            </button>
+            >{localizedMessage("inspection.components.dht.panel.depth.normalized")}</button>
             <button
               type="button"
               aria-pressed={mode === "literal"}
               onClick={() => setMode("literal")}
-            >
-              Buckets · literal
-            </button>
+            >{localizedMessage("inspection.components.dht.panel.buckets.literal")}</button>
           </div>
         </div>
       </header>
@@ -110,20 +105,20 @@ function StatusFacts({
     return bucket.questionable_nodes === 0 && age >= 12 * 60 * 1_000;
   }).length;
   return (
-    <div className={styles.statusFacts} aria-label="DHT status facts">
+    <div className={styles.statusFacts} aria-label={localizedMessage("inspection.components.dht.panel.dht.status.facts")}>
       <Fact
-        label="Participant"
+        label={localizedMessage("inspection.components.dht.panel.participant")}
         value={lifecycleLabel(inspection.lifecycle)}
         detail={`${policyLabel(inspection.network_policy)}${stale ? " · stale" : ""}`}
         tone={inspection.lifecycle === "participating" ? "good" : "neutral"}
       />
       <Fact
-        label="Routing nodes"
+        label={localizedMessage("inspection.components.dht.panel.routing.nodes")}
         value={family.routing_nodes.toLocaleString()}
         detail={`${family.occupied_buckets} occupied bands · ${familyLabel(family.family)}`}
       />
       <Fact
-        label="Deepest prefix"
+        label={localizedMessage("inspection.components.dht.panel.deepest.prefix")}
         value={
           family.deepest_shared_prefix_bits === null
             ? "—"
@@ -132,13 +127,13 @@ function StatusFacts({
         detail="Shared with local ID"
       />
       <Fact
-        label="Freshness"
+        label={localizedMessage("inspection.components.dht.panel.freshness")}
         value={questionable === 0 ? "Current" : `${questionable} questionable`}
         detail={`${aging} aging band${aging === 1 ? "" : "s"}`}
         tone={questionable > 0 || aging > 0 ? "warning" : "good"}
       />
       <Fact
-        label="Live work"
+        label={localizedMessage("inspection.components.dht.panel.live.work")}
         value={`${inspection.active_lookups} lookup${inspection.active_lookups === 1 ? "" : "s"}`}
         detail={`${inspection.active_transactions} transactions`}
       />
@@ -207,14 +202,10 @@ function RoutingDistribution({
     <section className={styles.routing} aria-labelledby="dht-routing-title">
       <div className={styles.sectionHeading}>
         <div>
-          <h3 id="dht-routing-title">{familyLabel(family.family)} routing-space distribution</h3>
-          <p>
-            Live nodes rise above the baseline; replacements mirror below it.
-          </p>
+          <h3 id="dht-routing-title">{familyLabel(family.family)}{" "}{localizedMessage("inspection.components.dht.panel.routing.space.distribution")}</h3>
+          <p>{localizedMessage("inspection.components.dht.panel.live.nodes.rise.above.the.baseline.replacements")}</p>
         </div>
-        <div className={styles.capture}>
-          Captured {formatTime(decimalNumber(inspection.captured_millis))} UTC
-        </div>
+        <div className={styles.capture}>{localizedMessage("inspection.components.dht.panel.captured")}{" "}{formatTime(decimalNumber(inspection.captured_millis))}{" "}{localizedMessage("inspection.components.dht.panel.utc")}</div>
       </div>
       <div ref={wrapRef} className={styles.canvasWrap} data-mode={mode}>
         <canvas
@@ -225,16 +216,16 @@ function RoutingDistribution({
           role="img"
         />
       </div>
-      <div className={styles.legend} aria-label="Routing chart legend">
-        <span data-kind="good">Good live</span>
-        <span data-kind="questionable">Questionable live</span>
-        <span data-kind="replacement">Replacements</span>
-        <span data-kind="freshness">Oldest response age · 0–15 min</span>
+      <div className={styles.legend} aria-label={localizedMessage("inspection.components.dht.panel.routing.chart.legend")}>
+        <span data-kind="good">{localizedMessage("inspection.components.dht.panel.good.live")}</span>
+        <span data-kind="questionable">{localizedMessage("inspection.components.dht.panel.questionable.live")}</span>
+        <span data-kind="replacement">{localizedMessage("inspection.components.dht.panel.replacements")}</span>
+        <span data-kind="freshness">{localizedMessage("inspection.components.dht.panel.oldest.response.age.0.15.min")}</span>
       </div>
       <p className={styles.encodingNote}>
         {mode === "normalized"
-          ? "Depth = 159 − bucket index. Moving right adds one shared bit and halves the XOR-distance band."
-          : "All 160 engine slots are shown in exact index order. Equal widths describe storage slots, not equal keyspace volumes."}
+          ? localizedMessage("inspection.components.dht.panel.depth.159.bucket.index.moving.right.adds")
+          : localizedMessage("inspection.components.dht.panel.all.160.engine.slots.are.shown.in")}
       </p>
     </section>
   );
@@ -516,39 +507,36 @@ function OperationalFacts({
       className={styles.operations}
       aria-labelledby="dht-operations-title"
     >
-      <h3 id="dht-operations-title">Cumulative session activity</h3>
+      <h3 id="dht-operations-title">{localizedMessage("inspection.components.dht.panel.cumulative.session.activity")}</h3>
       <dl>
-        <Metric label="Queries sent" value={inspection.queries_sent} />
+        <Metric label={localizedMessage("inspection.components.dht.panel.queries.sent")} value={inspection.queries_sent} />
         <Metric
-          label="Responses received"
+          label={localizedMessage("inspection.components.dht.panel.responses.received")}
           value={inspection.responses_received}
         />
-        <Metric label="Queries received" value={inspection.queries_received} />
+        <Metric label={localizedMessage("inspection.components.dht.panel.queries.received")} value={inspection.queries_received} />
         <Metric
-          label="Datagram traffic"
+          label={localizedMessage("inspection.components.dht.panel.datagram.traffic")}
           value={`${formatExactBytes(inspection.datagram_bytes_received, dataUnits)} in · ${formatExactBytes(inspection.datagram_bytes_sent, dataUnits)} out`}
         />
-        <Metric label="Peers discovered" value={inspection.discovered_peers} />
-        <Metric label="Malformed" value={inspection.malformed_received} />
-        <Metric label="Family mismatches" value={inspection.family_mismatched} />
-        <Metric label="Rate limited" value={inspection.rate_limited} />
+        <Metric label={localizedMessage("inspection.components.dht.panel.peers.discovered")} value={inspection.discovered_peers} />
+        <Metric label={localizedMessage("inspection.components.dht.panel.malformed")} value={inspection.malformed_received} />
+        <Metric label={localizedMessage("inspection.components.dht.panel.family.mismatches")} value={inspection.family_mismatched} />
+        <Metric label={localizedMessage("inspection.components.dht.panel.rate.limited")} value={inspection.rate_limited} />
         <Metric
-          label="Bootstrap attempts"
+          label={localizedMessage("inspection.components.dht.panel.bootstrap.attempts")}
           value={inspection.bootstrap_attempts}
         />
         <Metric
-          label="Routing refreshes"
+          label={localizedMessage("inspection.components.dht.panel.routing.refreshes")}
           value={inspection.routing_refreshes}
         />
         <Metric
-          label="Announcements"
+          label={localizedMessage("inspection.components.dht.panel.announcements")}
           value={`${inspection.announces_succeeded} succeeded · ${inspection.announces_failed} failed`}
         />
       </dl>
-      <p>
-        Traffic is complete UDP datagram bytes at the socket boundary, not
-        payload throughput.
-      </p>
+      <p>{localizedMessage("inspection.components.dht.panel.traffic.is.complete.udp.datagram.bytes.at")}</p>
     </section>
   );
 }
@@ -577,27 +565,24 @@ function LookupTable({
     <section className={styles.lookups} aria-labelledby="dht-lookups-title">
       <div className={styles.sectionHeading}>
         <div>
-          <h3 id="dht-lookups-title">Active lookups</h3>
-          <p>
-            Closest progress includes responded candidates with known node IDs
-            only.
-          </p>
+          <h3 id="dht-lookups-title">{localizedMessage("inspection.components.dht.panel.active.lookups")}</h3>
+          <p>{localizedMessage("inspection.components.dht.panel.closest.progress.includes.responded.candidates.with.known")}</p>
         </div>
-        <span>{inspection.lookups.length} of 32 combined</span>
+        <span>{inspection.lookups.length}{" "}{localizedMessage("inspection.components.dht.panel.of.32.combined")}</span>
       </div>
       {inspection.lookups.length === 0 ? (
-        <div className={styles.quiet}>No lookup is active.</div>
+        <div className={styles.quiet}>{localizedMessage("inspection.components.dht.panel.no.lookup.is.active")}</div>
       ) : (
         <div className={styles.tableWrap}>
           <table>
             <thead>
               <tr>
-                <th>Family</th>
-                <th>Target</th>
-                <th>Convergence</th>
-                <th>Candidates</th>
-                <th>Elapsed / left</th>
-                <th>Peers</th>
+                <th>{localizedMessage("inspection.components.dht.panel.family")}</th>
+                <th>{localizedMessage("inspection.components.dht.panel.target")}</th>
+                <th>{localizedMessage("inspection.components.dht.panel.convergence")}</th>
+                <th>{localizedMessage("inspection.components.dht.panel.candidates")}</th>
+                <th>{localizedMessage("inspection.components.dht.panel.elapsed.left")}</th>
+                <th>{localizedMessage("inspection.components.dht.panel.peers")}</th>
               </tr>
             </thead>
             <tbody>
@@ -608,17 +593,17 @@ function LookupTable({
                     <code title={lookup.target_id}>
                       {abbreviateId(lookup.target_id)}
                     </code>
-                    <small>lookup {lookup.lookup_id}</small>
+                    <small>{localizedMessage("inspection.components.dht.panel.lookup")}{" "}{lookup.lookup_id}</small>
                   </td>
                   <td>
                     <strong>
                       {lookup.closest_responded_prefix_bits === null
-                        ? "No response"
+                        ? localizedMessage("inspection.components.dht.panel.no.response")
                         : `${lookup.closest_responded_prefix_bits} shared bits`}
                     </strong>
                     <small>
                       {lookup.last_convergence_improvement_age_millis === null
-                        ? "No improvement yet"
+                        ? localizedMessage("inspection.components.dht.panel.no.improvement.yet")
                         : `${formatDuration(lookup.last_convergence_improvement_age_millis)} since improvement`}
                     </small>
                   </td>
@@ -628,8 +613,7 @@ function LookupTable({
                   <td>
                     <strong>{formatDuration(lookup.age_millis)}</strong>
                     <small>
-                      {formatDuration(lookup.deadline_in_millis)} left
-                    </small>
+                      {formatDuration(lookup.deadline_in_millis)}{" "}{localizedMessage("inspection.components.dht.panel.left")}</small>
                   </td>
                   <td>
                     <strong>{lookup.discovered_peers}</strong>
@@ -686,15 +670,15 @@ function ExactBucketTable({
 }) {
   return (
     <table className={styles.srOnly}>
-      <caption>Exact {familyLabel(family.family)} DHT routing bucket observations</caption>
+      <caption>{localizedMessage("inspection.components.dht.panel.exact")}{" "}{familyLabel(family.family)}{" "}{localizedMessage("inspection.components.dht.panel.dht.routing.bucket.observations")}</caption>
       <thead>
         <tr>
-          <th>Shared prefix depth</th>
-          <th>Bucket index</th>
-          <th>Good</th>
-          <th>Questionable</th>
-          <th>Replacements</th>
-          <th>Oldest response age</th>
+          <th>{localizedMessage("inspection.components.dht.panel.shared.prefix.depth")}</th>
+          <th>{localizedMessage("inspection.components.dht.panel.bucket.index")}</th>
+          <th>{localizedMessage("inspection.components.dht.panel.good")}</th>
+          <th>{localizedMessage("inspection.components.dht.panel.questionable")}</th>
+          <th>{localizedMessage("inspection.components.dht.panel.replacements")}</th>
+          <th>{localizedMessage("inspection.components.dht.panel.oldest.response.age")}</th>
         </tr>
       </thead>
       <tbody>
@@ -707,7 +691,7 @@ function ExactBucketTable({
             <td>{bucket.replacement_candidates}</td>
             <td>
               {bucket.oldest_live_response_age_millis === null
-                ? "Empty"
+                ? localizedMessage("inspection.components.dht.panel.empty")
                 : formatDuration(bucket.oldest_live_response_age_millis)}
             </td>
           </tr>
@@ -743,26 +727,26 @@ function formatDuration(value: string): string {
 function lifecycleLabel(lifecycle: DhtInspectionView["lifecycle"]): string {
   switch (lifecycle) {
     case "offline":
-      return "Offline";
+      return localizedMessage("inspection.components.dht.panel.offline");
     case "bootstrap_empty":
-      return "Bootstrapping";
+      return localizedMessage("inspection.components.dht.panel.bootstrapping");
     case "participating":
-      return "Participating";
+      return localizedMessage("inspection.components.dht.panel.participating");
     case "inactive":
-      return "Inactive";
+      return localizedMessage("inspection.components.dht.panel.inactive");
     case "suspended":
-      return "Suspended";
+      return localizedMessage("inspection.components.dht.panel.suspended");
   }
 }
 
 function policyLabel(policy: DhtInspectionView["network_policy"]): string {
   switch (policy) {
     case "offline":
-      return "Network disabled";
+      return localizedMessage("inspection.components.dht.panel.network.disabled");
     case "loopback_only":
-      return "Loopback only";
+      return localizedMessage("inspection.components.dht.panel.loopback.only");
     case "online":
-      return "Online policy";
+      return localizedMessage("inspection.components.dht.panel.online.policy");
   }
 }
 

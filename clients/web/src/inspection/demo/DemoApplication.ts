@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import type { InspectionApplication } from "../application";
 import type {
   ClientSettings,
@@ -179,7 +180,7 @@ export class DemoApplication implements InspectionApplication {
         if (torrent === undefined) return rejected("Torrent is not present");
         return {
           accepted: true,
-          message: "Magnet link ready",
+          message: localizedMessage("inspection.demo.demo.application.magnet.link.ready"),
           magnetExport: {
             magnet:
               `magnet:?xt=urn:btih:${torrent.infoHash}` +
@@ -477,7 +478,7 @@ function materializeDemoViews(
         desired.torrentId === null
           ? { status: "not_requested" }
           : selected === undefined
-            ? { status: "unavailable", reason: "Torrent is no longer present" }
+            ? { status: "unavailable", reason: localizedMessage("inspection.demo.demo.application.torrent.is.no.longer.present") }
             : { status: "ready" },
       peers:
         desired.detail === "peers"

@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import type { TorrentSettingsPatch, TransferRateLimit } from "../../api";
@@ -103,18 +104,17 @@ export function DetailPane({
   };
 
   return (
-    <section className={styles.detail} aria-label="Torrent details">
+    <section className={styles.detail} aria-label={localizedMessage("inspection.components.detail.pane.torrent.details")}>
       <div className={styles.mobileHeading}>
         <button type="button" onClick={closeDetail}>
-          <span aria-hidden="true">←</span> Torrents
-        </button>
-        <strong>{torrent?.name ?? "Torrent details"}</strong>
+          <span aria-hidden="true">←</span>{" "}{localizedMessage("inspection.components.detail.pane.torrents")}</button>
+        <strong>{torrent?.name ?? localizedMessage("inspection.components.detail.pane.torrent.details")}</strong>
       </div>
       <div
         ref={tabsRef}
         className={styles.tabs}
         role="tablist"
-        aria-label="Torrent detail views"
+        aria-label={localizedMessage("inspection.components.detail.pane.torrent.detail.views")}
       >
         {DETAIL_TABS.map((tab) => (
           <button
@@ -224,7 +224,7 @@ function GeneralDetail({
       <section className={styles.summaryCard}>
         <div>
           <p className={styles.eyebrow}>
-            {torrent.status === "checking" ? "Current check" : "Current transfer"}
+            {torrent.status === "checking" ? localizedMessage("inspection.components.detail.pane.current.check") : localizedMessage("inspection.components.detail.pane.current.transfer")}
           </p>
           <h2>{torrent.name}</h2>
           <p>
@@ -238,7 +238,7 @@ function GeneralDetail({
           <span
             data-indeterminate={visibleProgress === null || undefined}
             role="progressbar"
-            aria-label={`${torrent.name} ${torrent.status === "checking" ? "checking" : "download"} progress: ${progressLabel}`}
+            aria-label={`${torrent.name} ${torrent.status === "checking" ? localizedMessage("inspection.components.detail.pane.checking") : localizedMessage("inspection.components.detail.pane.download")} progress: ${progressLabel}`}
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={
@@ -262,90 +262,88 @@ function GeneralDetail({
       {checking === null ? null : (
         <dl className={`${styles.metrics} ${styles.checkingMetrics}`}>
           <Metric
-            label="Pieces checked"
+            label={localizedMessage("inspection.components.detail.pane.pieces.checked")}
             value={`${checking.piecesProcessed.toLocaleString()} / ${checking.piecesTotal.toLocaleString()}`}
           />
-          <Metric label="Matched" value={checking.piecesMatched.toLocaleString()} />
-          <Metric label="Absent" value={checking.piecesAbsent.toLocaleString()} />
+          <Metric label={localizedMessage("inspection.components.detail.pane.matched")} value={checking.piecesMatched.toLocaleString()} />
+          <Metric label={localizedMessage("inspection.components.detail.pane.absent")} value={checking.piecesAbsent.toLocaleString()} />
           <Metric
-            label="Mismatched"
+            label={localizedMessage("inspection.components.detail.pane.mismatched")}
             value={checking.piecesMismatched.toLocaleString()}
           />
-          <Metric label="Checker activity" value={checkerActivity(checking)} />
+          <Metric label={localizedMessage("inspection.components.detail.pane.checker.activity")} value={checkerActivity(checking)} />
         </dl>
       )}
       <dl className={styles.metrics}>
         <Metric
-          label="Status"
+          label={localizedMessage("inspection.components.detail.pane.status")}
           value={torrent.operationalState.replaceAll("_", " ")}
         />
         <Metric
-          label="Size"
+          label={localizedMessage("inspection.components.detail.pane.size")}
           value={formatBytes(torrent.sizeBytes, dataUnits)}
         />
         <Metric
-          label="Lifetime downloaded"
+          label={localizedMessage("inspection.components.detail.pane.lifetime.downloaded")}
           value={formatExactBytes(torrent.lifetimeDownloadedBytes, dataUnits)}
         />
         <Metric
-          label="Lifetime uploaded"
+          label={localizedMessage("inspection.components.detail.pane.lifetime.uploaded")}
           value={formatExactBytes(torrent.lifetimeUploadedBytes, dataUnits)}
         />
-        <Metric label="Share ratio" value={formatShareRatio(torrent.shareRatioHundredths)} />
-        <Metric label="Active time" value={formatElapsedSeconds(torrent.activeSeconds)} />
-        <Metric label="Finished time" value={formatElapsedSeconds(torrent.finishedSeconds)} />
-        <Metric label="Seeding time" value={formatElapsedSeconds(torrent.seedingSeconds)} />
+        <Metric label={localizedMessage("inspection.components.detail.pane.share.ratio")} value={formatShareRatio(torrent.shareRatioHundredths)} />
+        <Metric label={localizedMessage("inspection.components.detail.pane.active.time")} value={formatElapsedSeconds(torrent.activeSeconds)} />
+        <Metric label={localizedMessage("inspection.components.detail.pane.finished.time")} value={formatElapsedSeconds(torrent.finishedSeconds)} />
+        <Metric label={localizedMessage("inspection.components.detail.pane.seeding.time")} value={formatElapsedSeconds(torrent.seedingSeconds)} />
         <Metric
-          label="Download speed"
+          label={localizedMessage("inspection.components.detail.pane.download.speed")}
           value={formatRate(torrent.downloadRate, dataUnits)}
         />
         <Metric
-          label="Upload speed"
+          label={localizedMessage("inspection.components.detail.pane.upload.speed")}
           value={formatRate(torrent.uploadRate, dataUnits)}
         />
         <Metric
-          label="Connected peers"
+          label={localizedMessage("inspection.components.detail.pane.connected.peers")}
           value={torrent.peersConnected.toLocaleString()}
         />
         <Metric
-          label="Known peers"
+          label={localizedMessage("inspection.components.detail.pane.known.peers")}
           value={torrent.peersKnown?.toLocaleString() ?? "—"}
         />
         {torrent.seedGoal === null ? null : (
           <Metric
-            label="Seeding priority"
+            label={localizedMessage("inspection.components.detail.pane.seeding.priority")}
             value={`${seedAdmissionLabel(torrent.seedAdmission)} · goal ${torrent.seedGoal.status}`}
           />
         )}
       </dl>
       {torrent.seedGoal === null ? null : (
-        <p>
-          Seeding goals affect automatic priority; a goal-met torrent may keep
-          seeding while capacity is available. Met thresholds: {seedGoalThresholds(torrent.seedGoal)}.
+        <p>{localizedMessage("inspection.components.detail.pane.seeding.goals.affect.automatic.priority.a.goal")}{" "}{seedGoalThresholds(torrent.seedGoal)}.
         </p>
       )}
       {torrent.protocolIdentities?.v1 != null &&
       torrent.protocolIdentities.v2 != null ? (
         <>
           <div className={styles.identity}>
-            <span>Info hash (v1)</span>
+            <span>{localizedMessage("inspection.components.detail.pane.info.hash.v1")}</span>
             <code>{torrent.protocolIdentities.v1}</code>
           </div>
           <div className={styles.identity}>
-            <span>Info hash (v2)</span>
+            <span>{localizedMessage("inspection.components.detail.pane.info.hash.v2")}</span>
             <code>{torrent.protocolIdentities.v2}</code>
           </div>
         </>
       ) : (
         <div className={styles.identity}>
-          <span>Info hash</span>
+          <span>{localizedMessage("inspection.components.detail.pane.info.hash")}</span>
           <code>{torrent.infoHash}</code>
         </div>
       )}
       <TorrentRateLimits torrent={torrent} />
       {torrent.error === null ? null : (
         <div ref={errorRef} className={styles.error} role="alert" tabIndex={-1}>
-          <strong>Storage needs attention</strong>
+          <strong>{localizedMessage("inspection.components.detail.pane.storage.needs.attention")}</strong>
           <span>{torrent.error}</span>
         </div>
       )}
@@ -358,13 +356,13 @@ function seedAdmissionLabel(
 ): string {
   switch (admission) {
     case "active":
-      return "active seed";
+      return localizedMessage("inspection.components.detail.pane.active.seed");
     case "queued":
-      return "queued seed";
+      return localizedMessage("inspection.components.detail.pane.queued.seed");
     case "inactive_exempt":
-      return "active, inactive-exempt seed";
+      return localizedMessage("inspection.components.detail.pane.active.inactive.exempt.seed");
     case "ineligible":
-      return "not eligible to seed";
+      return localizedMessage("inspection.components.detail.pane.not.eligible.to.seed");
   }
 }
 
@@ -425,7 +423,7 @@ function TorrentRateLimits({
       if (result.resultingRevision === undefined) {
         throw new Error("Settings response did not include a durable revision.");
       }
-      setAcceptedMessage("Torrent peer transfer limits saved.");
+      setAcceptedMessage(localizedMessage("inspection.components.detail.pane.torrent.peer.transfer.limits.saved"));
       dispatchDraft({ type: "accept", revision: result.resultingRevision });
     } catch (error) {
       setAcceptedMessage(null);
@@ -444,12 +442,9 @@ function TorrentRateLimits({
   return (
     <form className={styles.rateLimits} onSubmit={(event) => void submit(event)}>
       <div>
-        <p className={styles.eyebrow}>Peer transfer limits</p>
-        <h3>Only this torrent</h3>
-        <p>
-          These caps combine with the All torrents limits. Trackers, DHT,
-          connection handshakes, and network headers are not counted.
-        </p>
+        <p className={styles.eyebrow}>{localizedMessage("inspection.components.detail.pane.peer.transfer.limits")}</p>
+        <h3>{localizedMessage("inspection.components.detail.pane.only.this.torrent")}</h3>
+        <p>{localizedMessage("inspection.components.detail.pane.these.caps.combine.with.the.all.torrents")}</p>
       </div>
       <TorrentRateField
         direction="upload"
@@ -495,7 +490,7 @@ function TorrentRateLimits({
       />
       <div className={styles.rateLimitActions}>
         <button type="submit" disabled={patch === null || pending}>
-          {pending ? "Saving…" : "Save torrent limits"}
+          {pending ? localizedMessage("inspection.components.detail.pane.saving") : localizedMessage("inspection.components.detail.pane.save.torrent.limits")}
         </button>
         {status === null ? null : (
           <output aria-live="polite">{status}</output>
@@ -560,10 +555,10 @@ function draftStatus(
   state: SettingsDraftState<TorrentRateDraft>,
   phase: SettingsDraftPhase,
 ): string | null {
-  if (phase === "submitting") return "Saving torrent limits…";
-  if (phase === "awaiting_view") return "Saved; waiting for the live view…";
+  if (phase === "submitting") return localizedMessage("inspection.components.detail.pane.saving.torrent.limits");
+  if (phase === "awaiting_view") return localizedMessage("inspection.components.detail.pane.saved.waiting.for.the.live.view");
   if (phase === "conflict") {
-    return "These limits changed elsewhere. Your draft is preserved for review.";
+    return localizedMessage("inspection.components.detail.pane.these.limits.changed.elsewhere.your.draft.is");
   }
   return state.failure;
 }
@@ -597,10 +592,8 @@ function TorrentRateField({
           checked={unlimited}
           disabled={disabled}
           onChange={(event) => onUnlimited(event.currentTarget.checked)}
-        />
-        Unlimited
-      </label>
-      <label htmlFor={id}>KiB/s</label>
+        />{localizedMessage("inspection.components.detail.pane.unlimited")}</label>
+      <label htmlFor={id}>{localizedMessage("inspection.components.detail.pane.kib.s")}</label>
       <input
         id={id}
         aria-label={`${label} in KiB per second`}
@@ -623,7 +616,7 @@ function TorrentRateField({
 function checkerActivity(
   checking: NonNullable<ReturnType<typeof useCurrentTorrent>>["checking"],
 ): string {
-  if (checking === null) return "Waiting";
+  if (checking === null) return localizedMessage("inspection.components.detail.pane.waiting");
   if (checking.oldestActiveJobAgeMs !== null) {
     return `${checking.activeHashJobs.toLocaleString()} active · oldest ${formatDuration(checking.oldestActiveJobAgeMs)}`;
   }
@@ -662,8 +655,8 @@ function EmptyDetail() {
       <span className={styles.emptyMark} aria-hidden="true">
         ↙
       </span>
-      <strong>Select a torrent to inspect it</strong>
-      <p>The detail surface preserves its tab and navigation context.</p>
+      <strong>{localizedMessage("inspection.components.detail.pane.select.a.torrent.to.inspect.it")}</strong>
+      <p>{localizedMessage("inspection.components.detail.pane.the.detail.surface.preserves.its.tab.and")}</p>
     </div>
   );
 }
@@ -674,11 +667,8 @@ function UnavailableDetail({ tab }: { readonly tab: DetailTab }) {
       <span className={styles.emptyMark} aria-hidden="true">
         ◇
       </span>
-      <strong>{titleCase(tab)} view scaffold</strong>
-      <p>
-        This named projection is not connected yet. The empty state is
-        intentional and does not claim that the engine has no {tab} data.
-      </p>
+      <strong>{titleCase(tab)}{" "}{localizedMessage("inspection.components.detail.pane.view.scaffold")}</strong>
+      <p>{localizedMessage("inspection.components.detail.pane.this.named.projection.is.not.connected.yet")}{" "}{tab}{" "}{localizedMessage("inspection.components.detail.pane.data")}</p>
     </div>
   );
 }

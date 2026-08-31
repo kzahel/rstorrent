@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import type { FileActionId, ResolvedFileAction } from "../file-actions";
 import { ActionMenuItem, ActionMenuSection } from "./overlays/AnchoredOverlay";
 
@@ -18,7 +19,7 @@ export function FileActionMenuItems({
   return (
     <>
       {open.length > 0 ? (
-        <ActionMenuSection label="Open">
+        <ActionMenuSection label={localizedMessage("inspection.components.file.action.menu.items.open")}>
           {open.map((action) => (
             <ActionMenuItem
               key={action.id}
@@ -34,14 +35,12 @@ export function FileActionMenuItems({
               isDisabled={directSave.disabled}
               aria-description={directSave.disabledReason}
               onAction={onDirectSave}
-            >
-              Save file…
-            </ActionMenuItem>
+            >{localizedMessage("inspection.components.file.action.menu.items.save.file")}</ActionMenuItem>
           )}
         </ActionMenuSection>
       ) : null}
       {download.length > 0 ? (
-        <ActionMenuSection label="Download">
+        <ActionMenuSection label={localizedMessage("inspection.components.file.action.menu.items.download")}>
           {download.map((action) => (
             <ActionMenuItem
               key={action.id}
@@ -54,7 +53,7 @@ export function FileActionMenuItems({
           ))}
         </ActionMenuSection>
       ) : null}
-      <ActionMenuSection label="Priority">
+      <ActionMenuSection label={localizedMessage("inspection.components.file.action.menu.items.priority")}>
         {priority.map((action) => (
           <ActionMenuItem
             key={action.id}

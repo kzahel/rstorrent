@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import { useMemo, useRef, useState, type FormEvent } from "react";
 
 import type {
@@ -148,7 +149,7 @@ export function ConnectionSeedingSettingsSection({
       if (result.resultingRevision === undefined) {
         throw new Error("Settings response did not include a durable revision.");
       }
-      setAcceptedMessage("Settings accepted and applying.");
+      setAcceptedMessage(localizedMessage("inspection.components.connection.seeding.settings.section.settings.accepted.and.applying"));
       dispatchDraft({ type: "accept", revision: result.resultingRevision });
     } catch (error) {
       setAcceptedMessage(null);
@@ -166,17 +167,11 @@ export function ConnectionSeedingSettingsSection({
 
   return (
     <fieldset className={styles.section}>
-      <legend>Connection &amp; seeding</legend>
+      <legend>{localizedMessage("inspection.components.connection.seeding.settings.section.connection.seeding")}</legend>
       {!manageable ? (
-        <p className={styles.storageNote}>
-          Connection and seeding settings are managed by the live application.
-        </p>
+        <p className={styles.storageNote}>{localizedMessage("inspection.components.connection.seeding.settings.section.connection.and.seeding.settings.are.managed.by")}</p>
       ) : null}
-      <p className={styles.sectionIntroduction}>
-        Incoming peer connections use IPv4 and, when available, IPv6.
-        Automatic port selection is recommended; choose a fixed port only when
-        your network requires one.
-      </p>
+      <p className={styles.sectionIntroduction}>{localizedMessage("inspection.components.connection.seeding.settings.section.incoming.peer.connections.use.ipv4.and.when")}</p>
       <form className={styles.settingsForm} onSubmit={(event) => void submit(event)}>
         <div
           className={styles.settingGroup}
@@ -184,13 +179,13 @@ export function ConnectionSeedingSettingsSection({
           aria-labelledby="listener-policy-heading"
         >
           <div className={styles.settingHeading}>
-            <strong id="listener-policy-heading">Incoming TCP listener</strong>
-            <span>Choose automatic or fixed port selection.</span>
+            <strong id="listener-policy-heading">{localizedMessage("inspection.components.connection.seeding.settings.section.incoming.tcp.listener")}</strong>
+            <span>{localizedMessage("inspection.components.connection.seeding.settings.section.choose.automatic.or.fixed.port.selection")}</span>
           </div>
           <div className={styles.options}>
             <ListenerOption
               mode="automatic"
-              label="Automatic port"
+              label={localizedMessage("inspection.components.connection.seeding.settings.section.automatic.port")}
               description="Choose an available TCP and UDP port automatically."
               selected={draft.listener.mode === "automatic"}
               disabled={!manageable}
@@ -204,7 +199,7 @@ export function ConnectionSeedingSettingsSection({
             />
             <ListenerOption
               mode="fixed"
-              label="Fixed port"
+              label={localizedMessage("inspection.components.connection.seeding.settings.section.fixed.port")}
               description="Always use the exact port entered below."
               selected={draft.listener.mode === "fixed"}
               disabled={!manageable}
@@ -220,7 +215,7 @@ export function ConnectionSeedingSettingsSection({
           {draft.listener.mode === "fixed" ? (
             <NumberField
               id="fixed-listener-port"
-              label="Fixed listener port"
+              label={localizedMessage("inspection.components.connection.seeding.settings.section.fixed.listener.port")}
               value={draft.listener.fixedPort}
               minimum={FIXED_PORT_MINIMUM}
               maximum={FIXED_PORT_MAXIMUM}
@@ -251,11 +246,8 @@ export function ConnectionSeedingSettingsSection({
             }
           />
           <span>
-            <strong>Enable IPv6</strong>
-            <small>
-              Use IPv6 for DHT, trackers, peer connections, and the incoming
-              listener when this device has an eligible address.
-            </small>
+            <strong>{localizedMessage("inspection.components.connection.seeding.settings.section.enable.ipv6")}</strong>
+            <small>{localizedMessage("inspection.components.connection.seeding.settings.section.use.ipv6.for.dht.trackers.peer.connections")}</small>
           </span>
         </label>
 
@@ -273,17 +265,14 @@ export function ConnectionSeedingSettingsSection({
             }
           />
           <span>
-            <strong>Map incoming TCP and uTP with UPnP</strong>
-            <small>
-              Request independent temporary TCP and UDP IGD v2 mappings when
-              a compatible gateway is available.
-            </small>
+            <strong>{localizedMessage("inspection.components.connection.seeding.settings.section.map.incoming.tcp.and.utp.with.upnp")}</strong>
+            <small>{localizedMessage("inspection.components.connection.seeding.settings.section.request.independent.temporary.tcp.and.udp.igd")}</small>
           </span>
         </label>
 
         <NumberField
           id="active-downloads"
-          label="Simultaneous downloads"
+          label={localizedMessage("inspection.components.connection.seeding.settings.section.simultaneous.downloads")}
           description="Incomplete torrents admitted at once. Additional runnable torrents remain queued and start automatically as capacity opens."
           value={draft.activeDownloads}
           minimum={ACTIVE_DOWNLOADS_MINIMUM}
@@ -301,12 +290,8 @@ export function ConnectionSeedingSettingsSection({
           aria-labelledby="seeding-priority-heading"
         >
           <div className={styles.settingHeading}>
-            <strong id="seeding-priority-heading">Automatic seeding priority</strong>
-            <span>
-              Goals rank completed torrents when active seed capacity is scarce.
-              Meeting a goal does not stop a torrent; it may keep seeding while
-              capacity is available.
-            </span>
+            <strong id="seeding-priority-heading">{localizedMessage("inspection.components.connection.seeding.settings.section.automatic.seeding.priority")}</strong>
+            <span>{localizedMessage("inspection.components.connection.seeding.settings.section.goals.rank.completed.torrents.when.active.seed")}</span>
           </div>
           <label className={styles.option}>
             <input
@@ -325,16 +310,13 @@ export function ConnectionSeedingSettingsSection({
               }
             />
             <span>
-              <strong>Unlimited active seeds</strong>
-              <small>
-                Remove the seed-only limit. The fixed shared 500-torrent safety
-                ceiling still applies.
-              </small>
+              <strong>{localizedMessage("inspection.components.connection.seeding.settings.section.unlimited.active.seeds")}</strong>
+              <small>{localizedMessage("inspection.components.connection.seeding.settings.section.remove.the.seed.only.limit.the.fixed")}</small>
             </span>
           </label>
           <NumberField
             id="active-seeds"
-            label="Active seeds"
+            label={localizedMessage("inspection.components.connection.seeding.settings.section.active.seeds")}
             description="Completed torrents counted in the active seed queue. Zero keeps eligible seeds queued."
             value={draft.activeSeeds.torrents}
             minimum={ACTIVE_SEEDS_MINIMUM}
@@ -351,7 +333,7 @@ export function ConnectionSeedingSettingsSection({
           />
           <NumberField
             id="share-ratio-limit"
-            label="Share-ratio priority goal (%)"
+            label={localizedMessage("inspection.components.connection.seeding.settings.section.share.ratio.priority.goal")}
             description="Uploaded payload as a percentage of the larger of downloaded payload or full torrent size."
             value={draft.shareRatioLimit}
             minimum={SEED_GOAL_MINIMUM}
@@ -364,7 +346,7 @@ export function ConnectionSeedingSettingsSection({
           />
           <NumberField
             id="finished-download-ratio-limit"
-            label="Finished/download time priority goal (%)"
+            label={localizedMessage("inspection.components.connection.seeding.settings.section.finished.download.time.priority.goal")}
             description="Finished active time as a percentage of active download time."
             value={draft.finishedDownloadRatioLimit}
             minimum={SEED_GOAL_MINIMUM}
@@ -381,7 +363,7 @@ export function ConnectionSeedingSettingsSection({
           />
           <NumberField
             id="finished-time-limit"
-            label="Finished-time priority goal (seconds)"
+            label={localizedMessage("inspection.components.connection.seeding.settings.section.finished.time.priority.goal.seconds")}
             description="Cumulative active finished time. Reaching any one priority goal marks the seeding goal met."
             value={draft.finishedTimeLimit}
             minimum={SEED_GOAL_MINIMUM}
@@ -400,15 +382,12 @@ export function ConnectionSeedingSettingsSection({
           aria-labelledby="peer-transfer-limits-heading"
         >
           <div className={styles.settingHeading}>
-            <strong id="peer-transfer-limits-heading">All torrents peer transfer limits</strong>
-            <span>
-              Caps established BitTorrent peer traffic across the session. Trackers, DHT,
-              connection handshakes, and network headers are not counted.
-            </span>
+            <strong id="peer-transfer-limits-heading">{localizedMessage("inspection.components.connection.seeding.settings.section.all.torrents.peer.transfer.limits")}</strong>
+            <span>{localizedMessage("inspection.components.connection.seeding.settings.section.caps.established.bittorrent.peer.traffic.across.the")}</span>
           </div>
           <RateLimitField
             id="all-torrents-upload-rate"
-            label="All torrents upload limit"
+            label={localizedMessage("inspection.components.connection.seeding.settings.section.all.torrents.upload.limit")}
             unlimited={draft.uploadRate.unlimited}
             valueKiB={draft.uploadRate.valueKiB}
             error={validation.uploadRateError}
@@ -430,7 +409,7 @@ export function ConnectionSeedingSettingsSection({
           />
           <RateLimitField
             id="all-torrents-download-rate"
-            label="All torrents download limit"
+            label={localizedMessage("inspection.components.connection.seeding.settings.section.all.torrents.download.limit")}
             unlimited={draft.downloadRate.unlimited}
             valueKiB={draft.downloadRate.valueKiB}
             error={validation.downloadRateError}
@@ -454,7 +433,7 @@ export function ConnectionSeedingSettingsSection({
 
         <NumberField
           id="peer-connection-limit"
-          label="Peer connection limit"
+          label={localizedMessage("inspection.components.connection.seeding.settings.section.peer.connection.limit")}
           description="Ordinary outgoing, established, and accepted peer connections across the session. The running process may use a lower safe limit."
           value={draft.peerLimit}
           minimum={PEER_LIMIT_MINIMUM}
@@ -472,13 +451,8 @@ export function ConnectionSeedingSettingsSection({
           aria-labelledby="encryption-policy-heading"
         >
           <div className={styles.settingHeading}>
-            <strong id="encryption-policy-heading">
-              Protocol obfuscation (MSE/PE)
-            </strong>
-            <span>
-              Improves compatibility with peers that require MSE/PE. This is
-              protocol obfuscation, not privacy or security.
-            </span>
+            <strong id="encryption-policy-heading">{localizedMessage("inspection.components.connection.seeding.settings.section.protocol.obfuscation.mse.pe")}</strong>
+            <span>{localizedMessage("inspection.components.connection.seeding.settings.section.improves.compatibility.with.peers.that.require.mse")}</span>
           </div>
           <div className={styles.options}>
             {ENCRYPTION_OPTIONS.map((option) => (
@@ -508,7 +482,7 @@ export function ConnectionSeedingSettingsSection({
 
         <NumberField
           id="upload-slots"
-          label="Payload upload slots"
+          label={localizedMessage("inspection.components.connection.seeding.settings.section.payload.upload.slots")}
           description="Peers allowed to receive piece payload at once. Zero keeps interested peers choked for piece payload; metadata and the listener remain available."
           value={draft.uploadSlots}
           minimum={UPLOAD_SLOTS_MINIMUM}
@@ -528,16 +502,14 @@ export function ConnectionSeedingSettingsSection({
             type="submit"
             disabled={!manageable || pending || patch === null}
           >
-            {pending ? "Saving…" : "Save settings"}
+            {pending ? localizedMessage("inspection.components.connection.seeding.settings.section.saving") : localizedMessage("inspection.components.connection.seeding.settings.section.save.settings")}
           </button>
           <button
             className={styles.secondaryAction}
             type="button"
             disabled={!manageable || dirtyFields.length === 0}
             onClick={resetDraft}
-          >
-            Cancel changes
-          </button>
+          >{localizedMessage("inspection.components.connection.seeding.settings.section.cancel.changes")}</button>
         </div>
         {status === null ? null : (
           <output
@@ -680,7 +652,7 @@ function RateLimitField({
     <div className={styles.numberField}>
       <span>
         <strong>{label}</strong>
-        <small id={descriptionId}>KiB/s of established peer traffic.</small>
+        <small id={descriptionId}>{localizedMessage("inspection.components.connection.seeding.settings.section.kib.s.of.established.peer.traffic")}</small>
       </span>
       <label className={styles.option}>
         <input
@@ -690,7 +662,7 @@ function RateLimitField({
           disabled={disabled}
           onChange={(event) => onUnlimitedChange(event.currentTarget.checked)}
         />
-        <span><strong>Unlimited</strong></span>
+        <span><strong>{localizedMessage("inspection.components.connection.seeding.settings.section.unlimited")}</strong></span>
       </label>
       <input
         id={id}
@@ -717,128 +689,103 @@ function RateLimitField({
 function RuntimeState({ settings }: { readonly settings: ClientSettingsRuntimeView }) {
   const listener = settings.listener_status;
   return (
-    <div className={styles.runtimeState} aria-label="Current runtime state">
-      <strong>Current runtime</strong>
+    <div className={styles.runtimeState} aria-label={localizedMessage("inspection.components.connection.seeding.settings.section.current.runtime.state")}>
+      <strong>{localizedMessage("inspection.components.connection.seeding.settings.section.current.runtime")}</strong>
       {listener.type === "disabled" ? (
-        <span>Incoming TCP is not running. Save settings to enable the ordinary listener.</span>
+        <span>{localizedMessage("inspection.components.connection.seeding.settings.section.incoming.tcp.is.not.running.save.settings")}</span>
       ) : listener.type === "listening" ? (
         settings.effective_listener != null &&
         isLoopbackListener(settings.effective_listener.listener) ? (
-          <span>
-            Incoming TCP is using a development-only loopback listener at port {listener.port}.
-            Save settings to listen on all IPv4 interfaces.
-          </span>
+          <span>{localizedMessage("inspection.components.connection.seeding.settings.section.incoming.tcp.is.using.a.development.only")}{" "}{listener.port}{localizedMessage("inspection.components.connection.seeding.settings.section.save.settings.to.listen.on.all.ipv4")}</span>
         ) : (
-          <span>Incoming TCP is listening on all IPv4 interfaces at port {listener.port}.</span>
+          <span>{localizedMessage("inspection.components.connection.seeding.settings.section.incoming.tcp.is.listening.on.all.ipv4")}{" "}{listener.port}.</span>
         )
       ) : (
-        <span className={styles.runtimeWarning}>
-          Listener could not start ({bindFailureLabel(listener.reason)}):{" "}
-          {listener.detail} Save settings to retry.
-        </span>
+        <span className={styles.runtimeWarning}>{localizedMessage("inspection.components.connection.seeding.settings.section.listener.could.not.start")}{bindFailureLabel(listener.reason)}):{" "}
+          {listener.detail}{" "}{localizedMessage("inspection.components.connection.seeding.settings.section.save.settings.to.retry")}</span>
       )}
       {settings.session_udp_status.type === "bound" ? (
-        <span>
-          Session UDP is bound on {settings.session_udp_status.address}:
+        <span>{localizedMessage("inspection.components.connection.seeding.settings.section.session.udp.is.bound.on")}{" "}{settings.session_udp_status.address}:
           {settings.session_udp_status.port}
           {settings.session_udp_status.coordinated_with_tcp
-            ? " with the TCP listener."
-            : " independently from TCP."}
+            ? localizedMessage("inspection.components.connection.seeding.settings.section.with.the.tcp.listener")
+            : localizedMessage("inspection.components.connection.seeding.settings.section.independently.from.tcp")}
         </span>
       ) : (
-        <span className={styles.runtimeWarning}>
-          Session UDP is not available in this snapshot.
-        </span>
+        <span className={styles.runtimeWarning}>{localizedMessage("inspection.components.connection.seeding.settings.section.session.udp.is.not.available.in.this")}</span>
       )}
       {settings.effective_listener == null ? (
-        <span className={styles.runtimeWarning}>
-          No incoming-listener policy has converged yet.
-        </span>
+        <span className={styles.runtimeWarning}>{localizedMessage("inspection.components.connection.seeding.settings.section.no.incoming.listener.policy.has.converged.yet")}</span>
       ) : (
-        <span>
-          Effective listener policy: {listenerPolicyLabel(settings.effective_listener.listener)}.
+        <span>{localizedMessage("inspection.components.connection.seeding.settings.section.effective.listener.policy")}{" "}{listenerPolicyLabel(settings.effective_listener.listener)}.
         </span>
       )}
-      <span>
-        Effective gateway mapping policy: {settings.effective_port_mapping === "upnp" ? "UPnP IGD v2" : "off"}.
+      <span>{localizedMessage("inspection.components.connection.seeding.settings.section.effective.gateway.mapping.policy")}{" "}{settings.effective_port_mapping === "upnp" ? localizedMessage("inspection.components.connection.seeding.settings.section.upnp.igd.v2") : localizedMessage("inspection.components.connection.seeding.settings.section.off")}.
       </span>
-      <PortMappingRuntime label="TCP" status={settings.port_mapping_status} />
+      <PortMappingRuntime label={localizedMessage("inspection.components.connection.seeding.settings.section.tcp")} status={settings.port_mapping_status} />
       <PortMappingRuntime
-        label="UDP/uTP"
+        label={localizedMessage("inspection.components.connection.seeding.settings.section.udp.utp")}
         status={settings.udp_port_mapping_status}
       />
       <Ipv6PinholeRuntime status={settings.ipv6_pinhole_status} />
       <AdvertisedEndpointRuntime status={settings.advertised_peer_endpoint} />
       {settings.transport_families.map((family) => (
         <span key={family.family}>
-          {family.family === "ipv4" ? "IPv4" : "IPv6"}: {family.configured ? "configured" : "disabled"}
+          {family.family === "ipv4" ? localizedMessage("inspection.components.connection.seeding.settings.section.ipv4") : localizedMessage("inspection.components.connection.seeding.settings.section.ipv6")}: {family.configured ? localizedMessage("inspection.components.connection.seeding.settings.section.configured") : localizedMessage("inspection.components.connection.seeding.settings.section.disabled")}
           {family.tcp_endpoint === null ? "" : ` · TCP ${family.tcp_endpoint}`}
           {family.udp_endpoint === null ? "" : ` · UDP ${family.udp_endpoint}`}
           {family.advertised_endpoint === null
-            ? " · outbound-only advertisement"
+            ? localizedMessage("inspection.components.connection.seeding.settings.section.outbound.only.advertisement")
             : ` · advertises ${family.advertised_endpoint}`}
         </span>
       ))}
-      <ApplicationState label="Transport" state={settings.transport_application} />
+      <ApplicationState label={localizedMessage("inspection.components.connection.seeding.settings.section.transport")} state={settings.transport_application} />
       <ApplicationState
-        label="Port mapping"
+        label={localizedMessage("inspection.components.connection.seeding.settings.section.port.mapping")}
         state={settings.port_mapping_application}
       />
       <ApplicationState
-        label="Peer connections"
+        label={localizedMessage("inspection.components.connection.seeding.settings.section.peer.connections")}
         state={settings.peer_connections_application}
       />
       <ApplicationState
-        label="Upload slots"
+        label={localizedMessage("inspection.components.connection.seeding.settings.section.upload.slots")}
         state={settings.upload_slots_application}
       />
-      <ApplicationState label="Peer transfer limits" state={settings.bandwidth_application} />
+      <ApplicationState label={localizedMessage("inspection.components.connection.seeding.settings.section.peer.transfer.limits")} state={settings.bandwidth_application} />
       <ApplicationState
-        label="Protocol obfuscation"
+        label={localizedMessage("inspection.components.connection.seeding.settings.section.protocol.obfuscation")}
         state={settings.encryption_application}
       />
       {settings.effective_peer_connection_limit <
       settings.configured.peer_connection_limit ? (
-        <span>
-          The configured {settings.configured.peer_connection_limit}-peer setting is
-          safely limited to {settings.effective_peer_connection_limit} by
-          available file descriptors.
-        </span>
+        <span>{localizedMessage("inspection.components.connection.seeding.settings.section.the.configured")}{" "}{settings.configured.peer_connection_limit}{localizedMessage("inspection.components.connection.seeding.settings.section.peer.setting.is.safely.limited.to")}{" "}{settings.effective_peer_connection_limit}{" "}{localizedMessage("inspection.components.connection.seeding.settings.section.by.available.file.descriptors")}</span>
       ) : (
-        <span>
-          Effective peer connection limit:{" "}
+        <span>{localizedMessage("inspection.components.connection.seeding.settings.section.effective.peer.connection.limit")}{" "}
           {settings.effective_peer_connection_limit}.
         </span>
       )}
-      <span>Effective payload upload slots: {settings.effective_upload_slots}.</span>
-      <span>
-        Effective peer upload limit: {rateLimitLabel(settings.effective_upload_rate_limit)}.
+      <span>{localizedMessage("inspection.components.connection.seeding.settings.section.effective.payload.upload.slots")}{" "}{settings.effective_upload_slots}.</span>
+      <span>{localizedMessage("inspection.components.connection.seeding.settings.section.effective.peer.upload.limit")}{" "}{rateLimitLabel(settings.effective_upload_rate_limit)}.
       </span>
-      <span>
-        Effective peer download limit: {rateLimitLabel(settings.effective_download_rate_limit)}.
+      <span>{localizedMessage("inspection.components.connection.seeding.settings.section.effective.peer.download.limit")}{" "}{rateLimitLabel(settings.effective_download_rate_limit)}.
       </span>
-      <span>
-        Active downloads: {settings.active_download_count} of {settings.effective_active_downloads}
+      <span>{localizedMessage("inspection.components.connection.seeding.settings.section.active.downloads")}{" "}{settings.active_download_count}{" "}{localizedMessage("inspection.components.connection.seeding.settings.section.of")}{" "}{settings.effective_active_downloads}
         {settings.checking_count === 0
           ? "."
           : ` · ${settings.checking_count} checking.`}
       </span>
-      <span>
-        Active seeds: {settings.active_seed_count} counted of {activeSeedLimitLabel(settings.effective_active_seeds)}
+      <span>{localizedMessage("inspection.components.connection.seeding.settings.section.active.seeds.604a98b")}{" "}{settings.active_seed_count}{" "}{localizedMessage("inspection.components.connection.seeding.settings.section.counted.of")}{" "}{activeSeedLimitLabel(settings.effective_active_seeds)}
         {settings.inactive_seed_count === 0
           ? "."
           : ` · ${settings.inactive_seed_count} active but inactive-exempt.`}
       </span>
       {settings.active_downloads_clamp_reason === "platform_limit" ? (
-        <span>
-          The configured {settings.configured.active_downloads}-download setting is limited to {settings.effective_active_downloads} on this platform.
-        </span>
+        <span>{localizedMessage("inspection.components.connection.seeding.settings.section.the.configured")}{" "}{settings.configured.active_downloads}{localizedMessage("inspection.components.connection.seeding.settings.section.download.setting.is.limited.to")}{" "}{settings.effective_active_downloads}{" "}{localizedMessage("inspection.components.connection.seeding.settings.section.on.this.platform")}</span>
       ) : null}
-      <span>
-        Effective protocol obfuscation policy: {settings.effective_encryption}.
+      <span>{localizedMessage("inspection.components.connection.seeding.settings.section.effective.protocol.obfuscation.policy")}{" "}{settings.effective_encryption}.
       </span>
-      <span>
-        Effective IPv6 policy: {settings.effective_ipv6_enabled ? "enabled" : "disabled"}.
+      <span>{localizedMessage("inspection.components.connection.seeding.settings.section.effective.ipv6.policy")}{" "}{settings.effective_ipv6_enabled ? localizedMessage("inspection.components.connection.seeding.settings.section.enabled") : localizedMessage("inspection.components.connection.seeding.settings.section.disabled")}.
       </span>
     </div>
   );
@@ -851,13 +798,13 @@ function activeSeedLimitLabel(limit: ActiveSeedLimit): string {
 function listenerPolicyLabel(listener: ListenerPolicy): string {
   switch (listener.type) {
     case "disabled":
-      return "development-only disabled mode";
+      return localizedMessage("inspection.components.connection.seeding.settings.section.development.only.disabled.mode");
     case "automatic_loopback":
-      return "development-only loopback mode";
+      return localizedMessage("inspection.components.connection.seeding.settings.section.development.only.loopback.mode");
     case "fixed_loopback":
       return `development-only loopback port ${listener.port}`;
     case "automatic_local_network":
-      return "automatic port";
+      return localizedMessage("inspection.components.connection.seeding.settings.section.automatic.port.c61a158");
     case "fixed_local_network":
       return `fixed port ${listener.port}`;
   }
@@ -872,12 +819,11 @@ function ApplicationState({
 }) {
   if (state.type === "applied") return null;
   if (state.type === "applying") {
-    return <span>{label}: applying…</span>;
+    return <span>{label}{localizedMessage("inspection.components.connection.seeding.settings.section.applying")}</span>;
   }
   return (
     <span className={styles.runtimeWarning}>
-      {label}: degraded ({state.detail}). Save settings to retry.
-    </span>
+      {label}{localizedMessage("inspection.components.connection.seeding.settings.section.degraded")}{state.detail}{localizedMessage("inspection.components.connection.seeding.settings.section.save.settings.to.retry.0312e9f")}</span>
   );
 }
 
@@ -888,41 +834,33 @@ function AdvertisedEndpointRuntime({
 }) {
   switch (status.type) {
     case "unavailable":
-      return <span>Peer advertisement endpoint is not available yet.</span>;
+      return <span>{localizedMessage("inspection.components.connection.seeding.settings.section.peer.advertisement.endpoint.is.not.available.yet")}</span>;
     case "outbound_only":
       return (
-        <span>
-          Tracker discovery is outbound-only; no connectable peer port is
-          advertised.
-        </span>
+        <span>{localizedMessage("inspection.components.connection.seeding.settings.section.tracker.discovery.is.outbound.only.no.connectable")}</span>
       );
     case "local":
       return (
-        <span>
-          Peer protocols may advertise local TCP port {status.port}; external
-          reachability is unverified
-          {status.incoming_observed ? ", but an incoming peer was observed." : "."}
+        <span>{localizedMessage("inspection.components.connection.seeding.settings.section.peer.protocols.may.advertise.local.tcp.port")}{" "}{status.port}{localizedMessage("inspection.components.connection.seeding.settings.section.external.reachability.is.unverified")}{status.incoming_observed ? localizedMessage("inspection.components.connection.seeding.settings.section.but.an.incoming.peer.was.observed") : "."}
         </span>
       );
     case "mapped":
       return (
-        <span>
-          Peer protocols may advertise mapped TCP port {status.external_port}
+        <span>{localizedMessage("inspection.components.connection.seeding.settings.section.peer.protocols.may.advertise.mapped.tcp.port")}{" "}{status.external_port}
           {status.incoming_observed
-            ? "; an incoming peer was observed."
-            : "; external reachability is not yet observed."}
+            ? localizedMessage("inspection.components.connection.seeding.settings.section.an.incoming.peer.was.observed")
+            : localizedMessage("inspection.components.connection.seeding.settings.section.external.reachability.is.not.yet.observed")}
         </span>
       );
     case "renewal_unhealthy":
       return (
-        <span className={styles.runtimeWarning}>
-          Mapped TCP port {status.external_port} remains valid for up to{" "}
-          {status.lease_seconds_remaining} seconds, but renewal is unhealthy:{" "}
+        <span className={styles.runtimeWarning}>{localizedMessage("inspection.components.connection.seeding.settings.section.mapped.tcp.port")}{" "}{status.external_port}{" "}{localizedMessage("inspection.components.connection.seeding.settings.section.remains.valid.for.up.to")}{" "}
+          {status.lease_seconds_remaining}{" "}{localizedMessage("inspection.components.connection.seeding.settings.section.seconds.but.renewal.is.unhealthy")}{" "}
           {status.detail}
         </span>
       );
     case "stopping":
-      return <span>Peer advertisement is stopping.</span>;
+      return <span>{localizedMessage("inspection.components.connection.seeding.settings.section.peer.advertisement.is.stopping")}</span>;
   }
 }
 
@@ -935,122 +873,98 @@ function PortMappingRuntime({
 }) {
   switch (status.type) {
     case "disabled":
-      return <span>Automatic {label} gateway mapping is off.</span>;
+      return <span>{localizedMessage("inspection.components.connection.seeding.settings.section.automatic")}{" "}{label}{" "}{localizedMessage("inspection.components.connection.seeding.settings.section.gateway.mapping.is.off")}</span>;
     case "ineligible":
       return (
         <span className={styles.runtimeWarning}>
-          {label} gateway mapping requires an active listener and a usable local network.
-        </span>
+          {label}{" "}{localizedMessage("inspection.components.connection.seeding.settings.section.gateway.mapping.requires.an.active.listener.and")}</span>
       );
     case "discovering":
-      return <span>Discovering a compatible UPnP IGD v2 gateway for {label}…</span>;
+      return <span>{localizedMessage("inspection.components.connection.seeding.settings.section.discovering.a.compatible.upnp.igd.v2.gateway")}{" "}{label}…</span>;
     case "mapping":
-      return <span>Requesting and verifying the temporary {label} mapping…</span>;
+      return <span>{localizedMessage("inspection.components.connection.seeding.settings.section.requesting.and.verifying.the.temporary")}{" "}{label}{" "}{localizedMessage("inspection.components.connection.seeding.settings.section.mapping")}</span>;
     case "mapped":
       return (
-        <span>
-          UPnP {label} mapped {status.external_address}:{status.external_port} to{" "}
-          {status.local_address}:{status.local_port} for {status.lease_seconds} seconds.
-        </span>
+        <span>{localizedMessage("inspection.components.connection.seeding.settings.section.upnp")}{" "}{label}{" "}{localizedMessage("inspection.components.connection.seeding.settings.section.mapped")}{" "}{status.external_address}:{status.external_port}{" "}{localizedMessage("inspection.components.connection.seeding.settings.section.to")}{" "}
+          {status.local_address}:{status.local_port}{" "}{localizedMessage("inspection.components.connection.seeding.settings.section.for")}{" "}{status.lease_seconds}{" "}{localizedMessage("inspection.components.connection.seeding.settings.section.seconds")}</span>
       );
     case "failed":
       return (
         <span className={styles.runtimeWarning}>
-          {label} gateway mapping failed during {status.stage.replaceAll("_", " ")}: {status.detail}
+          {label}{" "}{localizedMessage("inspection.components.connection.seeding.settings.section.gateway.mapping.failed.during")}{" "}{status.stage.replaceAll("_", " ")}: {status.detail}
         </span>
       );
     case "renewal_failed":
       return (
-        <span className={styles.runtimeWarning}>
-          The {label} mapping at {status.external_address}:{status.external_port} could not be renewed: {status.detail}
+        <span className={styles.runtimeWarning}>{localizedMessage("inspection.components.connection.seeding.settings.section.the")}{" "}{label}{" "}{localizedMessage("inspection.components.connection.seeding.settings.section.mapping.at")}{" "}{status.external_address}:{status.external_port}{" "}{localizedMessage("inspection.components.connection.seeding.settings.section.could.not.be.renewed")}{" "}{status.detail}
         </span>
       );
     case "cleanup_failed":
       return (
-        <span className={styles.runtimeWarning}>
-          The old {label} mapping at {status.external_address}:{status.external_port} could not be confirmed removed and may remain for {status.remaining_lease_seconds} seconds: {status.detail}
+        <span className={styles.runtimeWarning}>{localizedMessage("inspection.components.connection.seeding.settings.section.the.old")}{" "}{label}{" "}{localizedMessage("inspection.components.connection.seeding.settings.section.mapping.at")}{" "}{status.external_address}:{status.external_port}{" "}{localizedMessage("inspection.components.connection.seeding.settings.section.could.not.be.confirmed.removed.and.may")}{" "}{status.remaining_lease_seconds}{" "}{localizedMessage("inspection.components.connection.seeding.settings.section.seconds.a157a77")}{" "}{status.detail}
         </span>
       );
     case "stopping":
-      return <span>Removing the {label} gateway mapping…</span>;
+      return <span>{localizedMessage("inspection.components.connection.seeding.settings.section.removing.the")}{" "}{label}{" "}{localizedMessage("inspection.components.connection.seeding.settings.section.gateway.mapping")}</span>;
   }
 }
 
 function Ipv6PinholeRuntime({ status }: { readonly status: Ipv6PinholeStatus }) {
   switch (status.type) {
     case "disabled":
-      return <span>Automatic IPv6 firewall pinhole control is off.</span>;
+      return <span>{localizedMessage("inspection.components.connection.seeding.settings.section.automatic.ipv6.firewall.pinhole.control.is.off")}</span>;
     case "ineligible":
       return (
-        <span className={styles.runtimeWarning}>
-          IPv6 pinhole control requires a global-unicast IPv6 listener and UPnP gateway control.
-        </span>
+        <span className={styles.runtimeWarning}>{localizedMessage("inspection.components.connection.seeding.settings.section.ipv6.pinhole.control.requires.a.global.unicast")}</span>
       );
     case "discovering":
-      return <span>Discovering IPv6 firewall control on the UPnP gateway…</span>;
+      return <span>{localizedMessage("inspection.components.connection.seeding.settings.section.discovering.ipv6.firewall.control.on.the.upnp")}</span>;
     case "service_unavailable":
       return (
-        <span className={styles.runtimeWarning}>
-          The gateway does not advertise IPv6 firewall control. The IPv6 listener remains
-          advertised as global unicast; gateway filtering is unknown.
-        </span>
+        <span className={styles.runtimeWarning}>{localizedMessage("inspection.components.connection.seeding.settings.section.the.gateway.does.not.advertise.ipv6.firewall")}</span>
       );
     case "action_unavailable":
       return (
-        <span className={styles.runtimeWarning}>
-          The gateway IPv6 firewall service is incomplete: {status.detail}
+        <span className={styles.runtimeWarning}>{localizedMessage("inspection.components.connection.seeding.settings.section.the.gateway.ipv6.firewall.service.is.incomplete")}{" "}{status.detail}
         </span>
       );
     case "inbound_pinhole_disallowed":
       return (
-        <span className={styles.runtimeWarning}>
-          The gateway firewall is enabled but does not allow requested inbound pinholes.
-        </span>
+        <span className={styles.runtimeWarning}>{localizedMessage("inspection.components.connection.seeding.settings.section.the.gateway.firewall.is.enabled.but.does")}</span>
       );
     case "unfiltered":
       return (
-        <span>
-          The gateway reports IPv6 filtering disabled for {status.internal_address}:
-          {status.internal_port}. This is gateway state, not an observed incoming peer.
-        </span>
+        <span>{localizedMessage("inspection.components.connection.seeding.settings.section.the.gateway.reports.ipv6.filtering.disabled.for")}{" "}{status.internal_address}:
+          {status.internal_port}{localizedMessage("inspection.components.connection.seeding.settings.section.this.is.gateway.state.not.an.observed")}</span>
       );
     case "creating":
       return (
-        <span>
-          Requesting an IPv6 firewall pinhole for {status.internal_address}:
+        <span>{localizedMessage("inspection.components.connection.seeding.settings.section.requesting.an.ipv6.firewall.pinhole.for")}{" "}{status.internal_address}:
           {status.internal_port}…
         </span>
       );
     case "pinholed":
       return (
-        <span>
-          The gateway accepted an IPv6 pinhole for {status.internal_address}:
-          {status.internal_port} for {status.lease_seconds} seconds. This does not mean an
-          incoming peer has connected.
-        </span>
+        <span>{localizedMessage("inspection.components.connection.seeding.settings.section.the.gateway.accepted.an.ipv6.pinhole.for")}{" "}{status.internal_address}:
+          {status.internal_port}{" "}{localizedMessage("inspection.components.connection.seeding.settings.section.for")}{" "}{status.lease_seconds}{" "}{localizedMessage("inspection.components.connection.seeding.settings.section.seconds.this.does.not.mean.an.incoming")}</span>
       );
     case "failed":
       return (
-        <span className={styles.runtimeWarning}>
-          IPv6 pinhole control failed during {status.stage.replaceAll("_", " ")}: {status.detail}
+        <span className={styles.runtimeWarning}>{localizedMessage("inspection.components.connection.seeding.settings.section.ipv6.pinhole.control.failed.during")}{" "}{status.stage.replaceAll("_", " ")}: {status.detail}
         </span>
       );
     case "renewal_failed":
       return (
-        <span className={styles.runtimeWarning}>
-          The IPv6 pinhole for {status.internal_address}:{status.internal_port} could not be
-          renewed: {status.detail}
+        <span className={styles.runtimeWarning}>{localizedMessage("inspection.components.connection.seeding.settings.section.the.ipv6.pinhole.for")}{" "}{status.internal_address}:{status.internal_port}{" "}{localizedMessage("inspection.components.connection.seeding.settings.section.could.not.be.renewed")}{" "}{status.detail}
         </span>
       );
     case "cleanup_failed":
       return (
-        <span className={styles.runtimeWarning}>
-          The old IPv6 pinhole for {status.internal_address}:{status.internal_port} could not be
-          confirmed removed and may remain for {status.remaining_lease_seconds} seconds: {status.detail}
+        <span className={styles.runtimeWarning}>{localizedMessage("inspection.components.connection.seeding.settings.section.the.old.ipv6.pinhole.for")}{" "}{status.internal_address}:{status.internal_port}{" "}{localizedMessage("inspection.components.connection.seeding.settings.section.could.not.be.confirmed.removed.and.may")}{" "}{status.remaining_lease_seconds}{" "}{localizedMessage("inspection.components.connection.seeding.settings.section.seconds.a157a77")}{" "}{status.detail}
         </span>
       );
     case "stopping":
-      return <span>Removing the IPv6 firewall pinhole…</span>;
+      return <span>{localizedMessage("inspection.components.connection.seeding.settings.section.removing.the.ipv6.firewall.pinhole")}</span>;
   }
 }
 
@@ -1215,12 +1129,12 @@ function clientDraftStatus(
   state: SettingsDraftState<ClientSettingsDraft>,
   phase: SettingsDraftPhase,
 ): string | null {
-  if (phase === "submitting") return "Saving settings…";
+  if (phase === "submitting") return localizedMessage("inspection.components.connection.seeding.settings.section.saving.settings");
   if (phase === "awaiting_view") {
-    return "Settings accepted; waiting for the live view…";
+    return localizedMessage("inspection.components.connection.seeding.settings.section.settings.accepted.waiting.for.the.live.view");
   }
   if (phase === "conflict") {
-    return "One or more settings changed elsewhere. Your draft is preserved for review.";
+    return localizedMessage("inspection.components.connection.seeding.settings.section.one.or.more.settings.changed.elsewhere.your");
   }
   return state.failure;
 }
@@ -1410,23 +1324,23 @@ const ENCRYPTION_OPTIONS: ReadonlyArray<{
 }> = [
   {
     value: "disabled",
-    label: "Disabled",
-    description: "Use ordinary plaintext peer handshakes only.",
+    label: localizedMessage("inspection.components.connection.seeding.settings.section.disabled.75081b5"),
+    description: localizedMessage("inspection.components.connection.seeding.settings.section.use.ordinary.plaintext.peer.handshakes.only"),
   },
   {
     value: "allow",
-    label: "Allow",
-    description: "Accept MSE/PE while initiating ordinary connections.",
+    label: localizedMessage("inspection.components.connection.seeding.settings.section.allow"),
+    description: localizedMessage("inspection.components.connection.seeding.settings.section.accept.mse.pe.while.initiating.ordinary.connections"),
   },
   {
     value: "prefer",
-    label: "Prefer",
-    description: "Try MSE/PE first and use a bounded plaintext fallback.",
+    label: localizedMessage("inspection.components.connection.seeding.settings.section.prefer"),
+    description: localizedMessage("inspection.components.connection.seeding.settings.section.try.mse.pe.first.and.use.a"),
   },
   {
     value: "required",
-    label: "Required",
-    description: "Connect only when the peer negotiates MSE/PE.",
+    label: localizedMessage("inspection.components.connection.seeding.settings.section.required"),
+    description: localizedMessage("inspection.components.connection.seeding.settings.section.connect.only.when.the.peer.negotiates.mse"),
   },
 ];
 
@@ -1459,12 +1373,12 @@ function isLoopbackListener(listener: ListenerPolicy): boolean {
 function bindFailureLabel(reason: ListenerBindFailureReason): string {
   switch (reason) {
     case "address_in_use":
-      return "port already in use";
+      return localizedMessage("inspection.components.connection.seeding.settings.section.port.already.in.use");
     case "permission_denied":
-      return "permission denied";
+      return localizedMessage("inspection.components.connection.seeding.settings.section.permission.denied");
     case "address_unavailable":
-      return "address unavailable";
+      return localizedMessage("inspection.components.connection.seeding.settings.section.address.unavailable");
     case "other":
-      return "other system error";
+      return localizedMessage("inspection.components.connection.seeding.settings.section.other.system.error");
   }
 }

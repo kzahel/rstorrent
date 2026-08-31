@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../localization/runtime";
 import type { PeerMseMethodView } from "../api";
 import type { PeerFlag } from "./model";
 
@@ -37,82 +38,82 @@ export const PEER_FLAG_DEFINITIONS: Readonly<
 > = {
   incoming: {
     glyph: "I",
-    label: "Incoming",
+    label: localizedMessage("inspection.peer.flags.incoming"),
     group: "Connection",
   },
   encrypted: {
     glyph: "E",
-    label: "Encrypted or obfuscated",
+    label: localizedMessage("inspection.peer.flags.encrypted.or.obfuscated"),
     group: "Connection",
   },
   download_allowed: {
     glyph: "D",
-    label: "Download allowed",
+    label: localizedMessage("inspection.peer.flags.download.allowed"),
     group: "Transfer",
   },
   download_choked: {
     glyph: "d",
-    label: "Download choked",
+    label: localizedMessage("inspection.peer.flags.download.choked"),
     group: "Transfer",
   },
   upload_allowed: {
     glyph: "U",
-    label: "Upload allowed",
+    label: localizedMessage("inspection.peer.flags.upload.allowed"),
     group: "Transfer",
   },
   upload_choked: {
     glyph: "u",
-    label: "Upload choked",
+    label: localizedMessage("inspection.peer.flags.upload.choked"),
     group: "Transfer",
   },
   extension_protocol: {
     glyph: "x",
-    label: "Extension protocol",
+    label: localizedMessage("inspection.peer.flags.extension.protocol"),
     group: "Protocol",
   },
   metadata_extension: {
     glyph: "m",
-    label: "Metadata extension",
+    label: localizedMessage("inspection.peer.flags.metadata.extension"),
     group: "Protocol",
   },
   utp: {
     glyph: "T",
-    label: "uTP",
+    label: localizedMessage("inspection.peer.flags.utp"),
     group: "Connection",
   },
   hole_punched: {
     glyph: "h",
-    label: "Hole punched",
+    label: localizedMessage("inspection.peer.flags.hole.punched"),
     group: "Connection",
   },
   on_parole: {
     glyph: "p",
-    label: "On parole",
+    label: localizedMessage("inspection.peer.flags.on.parole"),
     group: "Scheduler / integrity",
   },
   optimistic_unchoke: {
     glyph: "O",
-    label: "Optimistic unchoke",
+    label: localizedMessage("inspection.peer.flags.optimistic.unchoke"),
     group: "Scheduler / integrity",
   },
   snubbed: {
     glyph: "S",
-    label: "Snubbed",
+    label: localizedMessage("inspection.peer.flags.snubbed"),
     group: "Scheduler / integrity",
   },
   upload_only: {
     glyph: "L",
-    label: "Upload only",
+    label: localizedMessage("inspection.peer.flags.upload.only"),
     group: "Transfer",
   },
   endgame: {
     glyph: "e",
-    label: "Endgame",
+    label: localizedMessage("inspection.peer.flags.endgame"),
     group: "Scheduler / integrity",
   },
   seed: {
     glyph: "s",
-    label: "Seed",
+    label: localizedMessage("inspection.peer.flags.seed"),
     group: "Transfer",
   },
 };

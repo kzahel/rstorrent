@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../localization/runtime";
 import type { IconName } from "./components/Icon";
 import type { TorrentRow } from "./model";
 
@@ -151,7 +152,7 @@ export function torrentActionAvailability(
   targets: readonly TorrentRow[],
 ): TorrentActionAvailability {
   if (targets.length === 0) {
-    return { disabled: true, reason: "Select a torrent to use this action." };
+    return { disabled: true, reason: localizedMessage("inspection.torrent.actions.select.a.torrent.to.use.this.action") };
   }
 
   if (actionId === "copy_magnet") return { disabled: false };
@@ -173,7 +174,7 @@ export function torrentActionAvailability(
   if (actionId !== "remove" && targets.some((row) => row.removalState !== null)) {
     return {
       disabled: true,
-      reason: "A selected torrent has a failed removal that must be retried or completed.",
+      reason: localizedMessage("inspection.torrent.actions.a.selected.torrent.has.a.failed.removal"),
     };
   }
 
@@ -214,7 +215,7 @@ export function torrentActionAvailability(
       if (targets.some((row) => row.archived === null)) {
         return {
           disabled: true,
-          reason: "Archive state is unavailable for a selected torrent.",
+          reason: localizedMessage("inspection.torrent.actions.archive.state.is.unavailable.for.a.selected"),
         };
       }
       const alreadySatisfied = targets.every((row) =>

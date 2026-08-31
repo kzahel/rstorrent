@@ -1,5 +1,8 @@
 import { connectAndroidCompanion } from "./android-companion-client";
 import { startCompanionInspection } from "./inspection/companion-bootstrap";
+import { localizeDocumentShell, message } from "./localization/runtime";
+
+localizeDocumentShell();
 
 const abort = new AbortController();
 const status = requiredElement("companion-status");
@@ -7,7 +10,7 @@ const cancel = requiredButton("companion-cancel");
 let cancelAction = () => {
   abort.abort(new Error("Connection canceled"));
   cancel.disabled = true;
-  status.textContent = "Connection canceled. Use the extension menu to try again.";
+  status.textContent = message("shell.companion.connection-canceled");
 };
 
 cancel.addEventListener("click", () => {
@@ -39,8 +42,8 @@ void connectAndroidCompanion(
       identity.hidden = true;
       requiredElement("companion-bootstrap").hidden = false;
       status.setAttribute("role", "alert");
-      status.textContent = "Android disconnected. Select Retry to reconnect.";
-      cancel.textContent = "Retry";
+      status.textContent = message("shell.companion.disconnected");
+      cancel.textContent = message("common.action.retry");
       cancel.disabled = false;
       cancelAction = () => window.location.reload();
     });
@@ -49,7 +52,7 @@ void connectAndroidCompanion(
     if (abort.signal.aborted) return;
     status.setAttribute("role", "alert");
     status.textContent = error instanceof Error ? error.message : String(error);
-    cancel.textContent = "Close";
+    cancel.textContent = message("common.action.close");
     cancel.disabled = false;
     cancelAction = () => window.close();
   });

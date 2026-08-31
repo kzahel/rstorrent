@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../localization/runtime";
 import type { DetailTab, DesiredInspectionViews } from "./model";
 
 export const DETAIL_TABS: readonly {
@@ -6,16 +7,16 @@ export const DETAIL_TABS: readonly {
   readonly scope: "torrent" | "session";
   readonly view: DesiredInspectionViews["detail"];
 }[] = [
-  { id: "general", label: "General", scope: "torrent", view: "general" },
-  { id: "trackers", label: "Trackers", scope: "torrent", view: "trackers" },
-  { id: "peers", label: "Peers", scope: "torrent", view: "peers" },
-  { id: "swarm", label: "Swarm", scope: "torrent", view: "swarm" },
-  { id: "files", label: "Files", scope: "torrent", view: "files" },
-  { id: "pieces", label: "Pieces", scope: "torrent", view: "pieces" },
-  { id: "disk", label: "Disk", scope: "session", view: "disk" },
-  { id: "logs", label: "Logs", scope: "session", view: "logs" },
-  { id: "speed", label: "Speed", scope: "session", view: "speed" },
-  { id: "dht", label: "DHT", scope: "session", view: "dht" },
+  { id: "general", label: localizedMessage("inspection.tabs.general"), scope: "torrent", view: "general" },
+  { id: "trackers", label: localizedMessage("inspection.tabs.trackers"), scope: "torrent", view: "trackers" },
+  { id: "peers", label: localizedMessage("inspection.tabs.peers"), scope: "torrent", view: "peers" },
+  { id: "swarm", label: localizedMessage("inspection.tabs.swarm"), scope: "torrent", view: "swarm" },
+  { id: "files", label: localizedMessage("inspection.tabs.files"), scope: "torrent", view: "files" },
+  { id: "pieces", label: localizedMessage("inspection.tabs.pieces"), scope: "torrent", view: "pieces" },
+  { id: "disk", label: localizedMessage("inspection.tabs.disk"), scope: "session", view: "disk" },
+  { id: "logs", label: localizedMessage("inspection.tabs.logs"), scope: "session", view: "logs" },
+  { id: "speed", label: localizedMessage("inspection.tabs.speed"), scope: "session", view: "speed" },
+  { id: "dht", label: localizedMessage("inspection.tabs.dht"), scope: "session", view: "dht" },
 ];
 
 export function desiredDetailForTab(

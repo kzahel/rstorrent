@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import { useState } from "react";
 
 import {
@@ -25,12 +26,12 @@ export function ScenarioBar() {
   };
 
   return (
-    <section className={styles.bar} aria-label="Demo scenario controls">
-      <span className={styles.badge}>Demo data</span>
+    <section className={styles.bar} aria-label={localizedMessage("inspection.components.scenario.bar.demo.scenario.controls")}>
+      <span className={styles.badge}>{localizedMessage("inspection.components.scenario.bar.demo.data")}</span>
       <label>
-        <span>Scenario</span>
+        <span>{localizedMessage("inspection.components.scenario.bar.scenario")}</span>
         <select
-          aria-label="Demo scenario"
+          aria-label={localizedMessage("inspection.components.scenario.bar.demo.scenario")}
           value={demo.scenarioId}
           onChange={(event) =>
             void send({
@@ -59,19 +60,15 @@ export function ScenarioBar() {
           }
         >
           <span aria-hidden="true">{demo.running ? "Ⅱ" : "▶"}</span>
-          {demo.running ? "Pause" : "Play"}
+          {demo.running ? localizedMessage("inspection.components.scenario.bar.pause") : localizedMessage("inspection.components.scenario.bar.play")}
         </button>
         <button
           type="button"
           onClick={() =>
             void send({ type: "advance_demo_clock", milliseconds: 10_000 })
           }
-        >
-          +10s
-        </button>
-        <button type="button" onClick={() => void send({ type: "reset_demo" })}>
-          Reset
-        </button>
+        >{localizedMessage("inspection.components.scenario.bar.10s")}</button>
+        <button type="button" onClick={() => void send({ type: "reset_demo" })}>{localizedMessage("inspection.components.scenario.bar.reset")}</button>
       </div>
       <output className={styles.message} aria-live="polite">
         {message}

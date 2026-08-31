@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../localization/runtime";
 import type { MediaFileAvailability } from "../api";
 
 export type FileActionId = "open" | "download_now" | "high" | "normal" | "skip";
@@ -32,11 +33,11 @@ export type ResolvedFileAction = FileActionDefinition & {
 };
 
 export const FILE_ACTIONS: readonly FileActionDefinition[] = [
-  { id: "open", label: "Open", group: "open" },
-  { id: "download_now", label: "Download now", group: "download" },
-  { id: "high", label: "High", group: "priority", priority: "high" },
-  { id: "normal", label: "Normal", group: "priority", priority: "normal" },
-  { id: "skip", label: "Skip", group: "priority", priority: "skip" },
+  { id: "open", label: localizedMessage("inspection.file.actions.open"), group: "open" },
+  { id: "download_now", label: localizedMessage("inspection.file.actions.download.now"), group: "download" },
+  { id: "high", label: localizedMessage("inspection.file.actions.high"), group: "priority", priority: "high" },
+  { id: "normal", label: localizedMessage("inspection.file.actions.normal"), group: "priority", priority: "normal" },
+  { id: "skip", label: localizedMessage("inspection.file.actions.skip"), group: "priority", priority: "skip" },
 ];
 
 export function resolveFileActions(

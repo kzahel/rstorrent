@@ -36,6 +36,7 @@ use tokio_util::sync::CancellationToken;
 use zeroize::Zeroizing;
 
 mod desktop_lifecycle;
+mod desktop_localization;
 mod desktop_notifications;
 mod desktop_power;
 mod external_intake;
@@ -793,7 +794,7 @@ async fn pick_download_directory(
         .dialog()
         .file()
         .set_parent(window)
-        .set_title("Choose a download folder")
+        .set_title(desktop_localization::text("dialog.download-folder.title"))
         .set_directory(starting_directory)
         .pick_folder(move |selection| {
             let _ = sender.send(selection);
@@ -1218,7 +1219,7 @@ async fn deliver_desktop_notification(
         .body(&notification.body)
         .icon("rstorrent-desktop")
         .timeout(notify_rust::Timeout::Never)
-        .action("default", "Open RSTorrent");
+        .action("default", desktop_localization::text("notification.open"));
     let handle = match native.show_async().await {
         Ok(handle) => {
             eprintln!("desktop notification displayed for {category}");
@@ -1442,8 +1443,8 @@ fn show_shutdown_failure(app: &AppHandle) {
     }
     let dialog = app
         .dialog()
-        .message("RSTorrent could not finish shutting down. Your data was not force-closed. Check the diagnostic log before trying again.")
-        .title("RSTorrent could not quit")
+        .message(desktop_localization::text("dialog.shutdown.body"))
+        .title(desktop_localization::text("dialog.shutdown.title"))
         .kind(MessageDialogKind::Error);
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
         dialog.parent(&window).show(|_| {});
@@ -1598,21 +1599,39 @@ fn build_desktop_tray_menu(
     app: &tauri::App,
     run_in_background: bool,
 ) -> Result<(Menu<tauri::Wry>, CheckMenuItem<tauri::Wry>), String> {
-    let show = MenuItem::with_id(app, TRAY_SHOW_ID, "Show RSTorrent", true, None::<&str>)
-        .map_err(|error| format!("create tray Show item: {error}"))?;
-    let update = MenuItem::with_id(app, TRAY_UPDATE_ID, "Check for Updates", true, None::<&str>)
-        .map_err(|error| format!("create tray update item: {error}"))?;
+    let show = MenuItem::with_id(
+        app,
+        TRAY_SHOW_ID,
+        desktop_localization::text("tray.show"),
+        true,
+        None::<&str>,
+    )
+    .map_err(|error| format!("create tray Show item: {error}"))?;
+    let update = MenuItem::with_id(
+        app,
+        TRAY_UPDATE_ID,
+        desktop_localization::text("tray.check-updates"),
+        true,
+        None::<&str>,
+    )
+    .map_err(|error| format!("create tray update item: {error}"))?;
     let background = CheckMenuItem::with_id(
         app,
         TRAY_BACKGROUND_ID,
-        "Run in Background",
+        desktop_localization::text("tray.run-in-background"),
         true,
         run_in_background,
         None::<&str>,
     )
     .map_err(|error| format!("create tray background item: {error}"))?;
-    let quit = MenuItem::with_id(app, TRAY_QUIT_ID, "Quit RSTorrent", true, None::<&str>)
-        .map_err(|error| format!("create tray Quit item: {error}"))?;
+    let quit = MenuItem::with_id(
+        app,
+        TRAY_QUIT_ID,
+        desktop_localization::text("tray.quit"),
+        true,
+        None::<&str>,
+    )
+    .map_err(|error| format!("create tray Quit item: {error}"))?;
     let separator = PredefinedMenuItem::separator(app)
         .map_err(|error| format!("create tray separator: {error}"))?;
     let menu = Menu::with_items(app, &[&show, &update, &background, &separator, &quit])
@@ -1624,7 +1643,7 @@ fn install_desktop_tray(app: &tauri::App, menu: &Menu<tauri::Wry>) -> Result<(),
     let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png"))
         .map_err(|error| format!("decode desktop tray icon: {error}"))?;
     TrayIconBuilder::with_id(TRAY_ID)
-        .tooltip("RSTorrent")
+        .tooltip(desktop_localization::text("tray.tooltip"))
         .icon(icon)
         .menu(menu)
         .show_menu_on_left_click(cfg!(target_os = "macos"))
@@ -1698,8 +1717,8 @@ fn show_settings_failure(app: &AppHandle) {
     }
     let dialog = app
         .dialog()
-        .message("RSTorrent could not save the Run in Background setting. The previous setting is still active.")
-        .title("RSTorrent setting was not saved")
+        .message(desktop_localization::text("dialog.settings-save.body"))
+        .title(desktop_localization::text("dialog.settings-save.title"))
         .kind(MessageDialogKind::Error);
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
         dialog.parent(&window).show(|_| {});

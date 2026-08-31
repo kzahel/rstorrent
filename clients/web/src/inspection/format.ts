@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../localization/runtime";
 import type { DataUnits } from "./appearance";
 import type {
   TorrentCheckingProgress,
@@ -106,7 +107,7 @@ export function formatRate(value: number | null, dataUnits: DataUnits): string {
 }
 
 export function formatProgress(value: number | null): string {
-  if (value === null) return "Metadata";
+  if (value === null) return localizedMessage("inspection.format.metadata");
   return `${(value * 100).toFixed(value >= 0.9995 ? 0 : 1)}%`;
 }
 
@@ -132,22 +133,22 @@ export function torrentVisibleProgress(row: TorrentRow): number | null {
 export function checkingStatusLabel(row: TorrentRow): string {
   if (row.status !== "checking") return formatProgress(row.progress);
   const checking = row.checking;
-  if (checking === null) return "Queued for checking";
+  if (checking === null) return localizedMessage("inspection.format.queued.for.checking");
   if (checking.phase === "hashing") {
     const ratio = checkingProgressRatio(checking);
     return ratio === null ? "Checking content" : `Checked ${formatProgress(ratio)}`;
   }
   switch (checking.phase) {
     case "queued":
-      return "Queued for checking";
+      return localizedMessage("inspection.format.queued.for.checking");
     case "preparing":
-      return "Preparing check";
+      return localizedMessage("inspection.format.preparing.check");
     case "reconciling_storage":
-      return "Updating file selection";
+      return localizedMessage("inspection.format.updating.file.selection");
     case "paused":
-      return "Checking paused";
+      return localizedMessage("inspection.format.checking.paused");
     case "finalizing":
-      return "Finalizing check";
+      return localizedMessage("inspection.format.finalizing.check");
   }
 }
 
@@ -181,11 +182,11 @@ export function etaAccessibleLabel(eta: TorrentEta): string {
         ? "ETA unavailable"
         : `Estimated time remaining: ${formatEta(eta)}`;
     case "warming_up":
-      return "Calculating ETA";
+      return localizedMessage("inspection.format.calculating.eta");
     case "stalled":
-      return "Transfer stalled";
+      return localizedMessage("inspection.format.transfer.stalled");
     case "unavailable":
-      return "ETA unavailable";
+      return localizedMessage("inspection.format.eta.unavailable");
   }
 }
 

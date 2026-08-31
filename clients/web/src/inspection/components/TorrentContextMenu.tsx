@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import type { TorrentRow } from "../model";
 import { useTorrentActions } from "./TorrentActionContext";
 import { TorrentActionMenuItems } from "./TorrentActionMenuItems";
@@ -15,7 +16,7 @@ export function TorrentContextMenu({
   const { actionsFor, runAction } = useTorrentActions();
 
   return (
-    <ActionMenuPopover label="Torrent actions">
+    <ActionMenuPopover label={localizedMessage("inspection.components.torrent.context.menu.torrent.actions")}>
       <TorrentActionMenuItems
         actions={actionsFor(targetIds)}
         onAction={(actionId) =>

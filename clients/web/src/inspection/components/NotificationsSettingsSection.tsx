@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import { useState } from "react";
 
 import type {
@@ -19,19 +20,19 @@ const OPTIONS: readonly {
 }[] = [
   {
     setting: "notify_download_complete",
-    label: "Download complete",
-    description: "Notify when a torrent finishes downloading.",
+    label: localizedMessage("inspection.components.notifications.settings.section.download.complete"),
+    description: localizedMessage("inspection.components.notifications.settings.section.notify.when.a.torrent.finishes.downloading"),
   },
   {
     setting: "notify_needs_attention",
-    label: "Download needs attention",
-    description: "Notify when a torrent enters a fatal or repair-required state.",
+    label: localizedMessage("inspection.components.notifications.settings.section.download.needs.attention"),
+    description: localizedMessage("inspection.components.notifications.settings.section.notify.when.a.torrent.enters.a.fatal"),
   },
   {
     setting: "notify_while_focused",
-    label: "Notify while RSTorrent is focused",
+    label: localizedMessage("inspection.components.notifications.settings.section.notify.while.rstorrent.is.focused"),
     description:
-      "Keep showing notifications while the main window is the active window.",
+      localizedMessage("inspection.components.notifications.settings.section.keep.showing.notifications.while.the.main.window"),
   },
 ];
 
@@ -53,7 +54,7 @@ export function NotificationsSettingsSection({
     setStatus(null);
     try {
       setSettings(await notifications.save(next));
-      setStatus({ type: "success", message: "Notification settings saved." });
+      setStatus({ type: "success", message: localizedMessage("inspection.components.notifications.settings.section.notification.settings.saved") });
     } catch (error) {
       setSettings(previous);
       setStatus({
@@ -67,11 +68,8 @@ export function NotificationsSettingsSection({
 
   return (
     <fieldset className={styles.section} disabled={pending}>
-      <legend>Notifications</legend>
-      <p className={styles.sectionIntroduction}>
-        Native desktop notifications are edge-triggered and are not replayed
-        after startup or a settings change.
-      </p>
+      <legend>{localizedMessage("inspection.components.notifications.settings.section.notifications")}</legend>
+      <p className={styles.sectionIntroduction}>{localizedMessage("inspection.components.notifications.settings.section.native.desktop.notifications.are.edge.triggered.and")}</p>
       {OPTIONS.map((option) => (
         <label className={styles.preference} key={option.setting}>
           <input

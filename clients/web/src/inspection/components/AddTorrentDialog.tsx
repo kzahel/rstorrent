@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import {
   useEffect,
   useMemo,
@@ -92,7 +93,7 @@ export function AddTorrentDialog({
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (selectedRoot === null) {
-      setError("Choose an available download folder first.");
+      setError(localizedMessage("inspection.components.add.torrent.dialog.choose.an.available.download.folder.first"));
       return;
     }
     setPending(true);
@@ -142,29 +143,26 @@ export function AddTorrentDialog({
         onSubmit={(event) => void submit(event)}
       >
         <header>
-          <p>Add torrent</p>
-          <h2 id="add-torrent-title">Choose download options</h2>
+          <p>{localizedMessage("inspection.components.add.torrent.dialog.add.torrent")}</p>
+          <h2 id="add-torrent-title">{localizedMessage("inspection.components.add.torrent.dialog.choose.download.options")}</h2>
         </header>
         <p id="add-torrent-description" className={styles.description}>
           {externalKind === "magnet"
-            ? "An external magnet link requested this add. "
+            ? localizedMessage("inspection.components.add.torrent.dialog.an.external.magnet.link.requested.this.add")
             : externalKind === "torrent_file"
-              ? "An external .torrent file requested this add. "
+              ? localizedMessage("inspection.components.add.torrent.dialog.an.external.torrent.file.requested.this.add")
               : null}
           {oneCurrentRoot
-            ? "This torrent will use Android's current download folder."
-            : "Choose where this torrent will download. This location applies only to this torrent unless you change the default in Settings."}
+            ? localizedMessage("inspection.components.add.torrent.dialog.this.torrent.will.use.android.s.current")
+            : localizedMessage("inspection.components.add.torrent.dialog.choose.where.this.torrent.will.download.this")}
         </p>
 
         {showCrostiniStorageHelp ? <CrostiniStorageHelp /> : null}
 
         <fieldset className={styles.locations} disabled={busy}>
-          <legend>Download location</legend>
+          <legend>{localizedMessage("inspection.components.add.torrent.dialog.download.location")}</legend>
           {roots.length === 0 ? (
-            <p className={styles.empty}>
-              A download folder is required before RSTorrent can add this
-              torrent.
-            </p>
+            <p className={styles.empty}>{localizedMessage("inspection.components.add.torrent.dialog.a.download.folder.is.required.before.rstorrent")}</p>
           ) : (
             roots
               .filter((root) => !oneCurrentRoot || root.id === defaultRoot)
@@ -189,7 +187,7 @@ export function AddTorrentDialog({
                       />
                       <span>
                         <strong>{root.label}</strong>
-                        <small>{root.path ?? "Location is not available"}</small>
+                        <small>{root.path ?? localizedMessage("inspection.components.add.torrent.dialog.location.is.not.available")}</small>
                         {performance === null ? null : (
                           <small className={styles.performance}>
                             {performance}
@@ -203,11 +201,11 @@ export function AddTorrentDialog({
                         disabled={busy}
                         onClick={() => void chooseFolder(root.id)}
                       >
-                        {choosingRoot === root.id ? "Repairing…" : "Repair…"}
+                        {choosingRoot === root.id ? localizedMessage("inspection.components.add.torrent.dialog.repairing") : localizedMessage("inspection.components.add.torrent.dialog.repair")}
                       </button>
                     ) : root.id === defaultRoot ? (
                       <span className={styles.defaultBadge}>
-                        {oneCurrentRoot ? "Current" : "Default"}
+                        {oneCurrentRoot ? localizedMessage("inspection.components.add.torrent.dialog.current") : localizedMessage("inspection.components.add.torrent.dialog.default")}
                       </span>
                     ) : null}
                   </div>
@@ -220,17 +218,14 @@ export function AddTorrentDialog({
             disabled={busy}
             onClick={() => void chooseFolder()}
           >
-            {choosingRoot === "new" ? "Choosing…" : "Choose folder…"}
+            {choosingRoot === "new" ? localizedMessage("inspection.components.add.torrent.dialog.choosing") : localizedMessage("inspection.components.add.torrent.dialog.choose.folder")}
           </button>
         </fieldset>
 
         {fileSelectionEnabled ? (
           <section className={styles.files}>
-            <strong>Choose files next</strong>
-            <small>
-              RSTorrent will load metadata without downloading content, then
-              show a Normal/Skip checklist.
-            </small>
+            <strong>{localizedMessage("inspection.components.add.torrent.dialog.choose.files.next")}</strong>
+            <small>{localizedMessage("inspection.components.add.torrent.dialog.rstorrent.will.load.metadata.without.downloading.content")}</small>
           </section>
         ) : (
         <section className={styles.files}>
@@ -242,10 +237,8 @@ export function AddTorrentDialog({
               onChange={(event) => setStartContent(event.currentTarget.checked)}
             />
             <span>
-              <strong>Start downloading files when metadata is available</strong>
-              <small>
-                Turn this off to fetch metadata first, then choose files in the Files tab.
-              </small>
+              <strong>{localizedMessage("inspection.components.add.torrent.dialog.start.downloading.files.when.metadata.is.available")}</strong>
+              <small>{localizedMessage("inspection.components.add.torrent.dialog.turn.this.off.to.fetch.metadata.first")}</small>
             </span>
           </label>
         </section>
@@ -260,9 +253,7 @@ export function AddTorrentDialog({
               onChange={(event) =>
                 setDontShowAgain(event.currentTarget.checked)
               }
-            />
-            Don’t show these options again when a usable default is available
-          </label>
+            />{localizedMessage("inspection.components.add.torrent.dialog.don.t.show.these.options.again.when")}</label>
         )}
 
         {error === "" ? null : (
@@ -276,19 +267,17 @@ export function AddTorrentDialog({
             type="button"
             disabled={busy}
             onClick={onCancel}
-          >
-            Cancel
-          </button>
+          >{localizedMessage("inspection.components.add.torrent.dialog.cancel")}</button>
           <button
             className={styles.confirm}
             type="submit"
             disabled={busy || selectedRoot === null}
           >
             {pending
-              ? "Adding…"
+              ? localizedMessage("inspection.components.add.torrent.dialog.adding")
               : fileSelectionEnabled
-                ? "Continue"
-                : "Add torrent"}
+                ? localizedMessage("inspection.components.add.torrent.dialog.continue")
+                : localizedMessage("inspection.components.add.torrent.dialog.add.torrent")}
           </button>
         </div>
       </form>

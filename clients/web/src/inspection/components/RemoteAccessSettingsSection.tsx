@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import { useEffect, useState, type FormEvent } from "react";
 
 import type {
@@ -48,17 +49,14 @@ export function RemoteAccessSettingsSection({
     }
   };
 
-  if (state === null) return <p className={styles.note}>Loading remote access…</p>;
+  if (state === null) return <p className={styles.note}>{localizedMessage("inspection.components.remote.access.settings.section.loading.remote.access")}</p>;
   if (!state.configured) {
     return (
       <div className={styles.panel}>
         <section className={styles.statusCard}>
-          <span>Remote access</span>
-          <strong>Unavailable</strong>
-          <p>
-            This application could not establish protected remote-access
-            storage or its relay connection owner. Remote access remains off.
-          </p>
+          <span>{localizedMessage("inspection.components.remote.access.settings.section.remote.access")}</span>
+          <strong>{localizedMessage("inspection.components.remote.access.settings.section.unavailable")}</strong>
+          <p>{localizedMessage("inspection.components.remote.access.settings.section.this.application.could.not.establish.protected.remote")}</p>
         </section>
       </div>
     );
@@ -67,27 +65,27 @@ export function RemoteAccessSettingsSection({
   const security = state.security;
   const local = remoteAccess.scope === "local";
   if (security === null) {
-    return <p className={styles.error}>Remote security state is unavailable.</p>;
+    return <p className={styles.error}>{localizedMessage("inspection.components.remote.access.settings.section.remote.security.state.is.unavailable")}</p>;
   }
 
   const enable = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (passphrase !== confirmation) {
-      setError("The password confirmation does not match.");
+      setError(localizedMessage("inspection.components.remote.access.settings.section.the.password.confirmation.does.not.match"));
       return;
     }
     void perform(async () => {
       await remoteAccess.enable(username, passphrase);
       setPassphrase("");
       setConfirmation("");
-      return "Remote access is enabled.";
+      return localizedMessage("inspection.components.remote.access.settings.section.remote.access.is.enabled");
     });
   };
 
   const changePassphrase = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (newPassphrase !== newConfirmation) {
-      setError("The new password confirmation does not match.");
+      setError(localizedMessage("inspection.components.remote.access.settings.section.the.new.password.confirmation.does.not.match"));
       return;
     }
     void perform(async () => {
@@ -102,39 +100,31 @@ export function RemoteAccessSettingsSection({
     <div className={styles.panel}>
       <section className={styles.statusCard}>
         <div>
-          <span>Remote access</span>
-          <strong>{security.enabled ? "Enabled" : "Disabled"}</strong>
+          <span>{localizedMessage("inspection.components.remote.access.settings.section.remote.access")}</span>
+          <strong>{security.enabled ? localizedMessage("inspection.components.remote.access.settings.section.enabled") : localizedMessage("inspection.components.remote.access.settings.section.disabled")}</strong>
         </div>
         {security.enabled ? (
           <dl className={styles.identity}>
-            <div><dt>Route</dt><dd>{security.route}</dd></div>
-            <div><dt>Username</dt><dd>{security.username}</dd></div>
-            <div><dt>Relay deployment</dt><dd><code>{security.relay_id}</code></dd></div>
-            <div><dt>Host identity</dt><dd><code>{security.host_pin}</code></dd></div>
+            <div><dt>{localizedMessage("inspection.components.remote.access.settings.section.route")}</dt><dd>{security.route}</dd></div>
+            <div><dt>{localizedMessage("inspection.components.remote.access.settings.section.username")}</dt><dd>{security.username}</dd></div>
+            <div><dt>{localizedMessage("inspection.components.remote.access.settings.section.relay.deployment")}</dt><dd><code>{security.relay_id}</code></dd></div>
+            <div><dt>{localizedMessage("inspection.components.remote.access.settings.section.host.identity")}</dt><dd><code>{security.host_pin}</code></dd></div>
           </dl>
         ) : (
-          <p>
-            The host authority is absent. Retained entries below are audit
-            evidence only and cannot authorize a connection.
-          </p>
+          <p>{localizedMessage("inspection.components.remote.access.settings.section.the.host.authority.is.absent.retained.entries")}</p>
         )}
-        <button type="button" disabled={busy} onClick={() => void perform(refresh)}>
-          Refresh audit
-        </button>
+        <button type="button" disabled={busy} onClick={() => void perform(refresh)}>{localizedMessage("inspection.components.remote.access.settings.section.refresh.audit")}</button>
       </section>
 
       {!security.enabled && local ? (
         <section className={styles.section}>
-          <h3>Enable remote access</h3>
-          <p className={styles.note}>
-            Choose the relay route username and a password of at least 12 characters.
-            The password is not stored.
-          </p>
+          <h3>{localizedMessage("inspection.components.remote.access.settings.section.enable.remote.access")}</h3>
+          <p className={styles.note}>{localizedMessage("inspection.components.remote.access.settings.section.choose.the.relay.route.username.and.a")}</p>
           <form className={styles.form} onSubmit={enable}>
-            <label>Route username<input required minLength={3} maxLength={32} pattern="[a-z0-9](?:[a-z0-9-]*[a-z0-9])?" value={username} onChange={(event) => setUsername(event.currentTarget.value)} /></label>
-            <label>Password<input required type="password" minLength={12} maxLength={256} autoComplete="new-password" value={passphrase} onChange={(event) => setPassphrase(event.currentTarget.value)} /></label>
-            <label>Confirm password<input required type="password" minLength={12} maxLength={256} autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.currentTarget.value)} /></label>
-            <button type="submit" disabled={busy}>Enable remote access</button>
+            <label>{localizedMessage("inspection.components.remote.access.settings.section.route.username")}<input required minLength={3} maxLength={32} pattern="[a-z0-9](?:[a-z0-9-]*[a-z0-9])?" value={username} onChange={(event) => setUsername(event.currentTarget.value)} /></label>
+            <label>{localizedMessage("inspection.components.remote.access.settings.section.password")}<input required type="password" minLength={12} maxLength={256} autoComplete="new-password" value={passphrase} onChange={(event) => setPassphrase(event.currentTarget.value)} /></label>
+            <label>{localizedMessage("inspection.components.remote.access.settings.section.confirm.password")}<input required type="password" minLength={12} maxLength={256} autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.currentTarget.value)} /></label>
+            <button type="submit" disabled={busy}>{localizedMessage("inspection.components.remote.access.settings.section.enable.remote.access")}</button>
           </form>
         </section>
       ) : (
@@ -152,18 +142,18 @@ export function RemoteAccessSettingsSection({
 
           <section className={styles.section}>
             <div className={styles.sectionHeading}>
-              <div><h3>Live circuits</h3><p>{security.live_circuits.length} active</p></div>
+              <div><h3>{localizedMessage("inspection.components.remote.access.settings.section.live.circuits")}</h3><p>{security.live_circuits.length}{" "}{localizedMessage("inspection.components.remote.access.settings.section.active")}</p></div>
             </div>
             {security.live_circuits.length === 0 ? (
-              <p className={styles.note}>No browser is connected.</p>
+              <p className={styles.note}>{localizedMessage("inspection.components.remote.access.settings.section.no.browser.is.connected")}</p>
             ) : (
               <ul className={styles.records}>
                 {security.live_circuits.map((circuit) => (
                   <li key={circuit.circuit_id}>
                     <div>
-                      <strong>{circuit.client_id === null ? "Shared browser" : labelForClient(security.authority, circuit.client_id)}</strong>
+                      <strong>{circuit.client_id === null ? localizedMessage("inspection.components.remote.access.settings.section.shared.browser") : labelForClient(security.authority, circuit.client_id)}</strong>
                       <small>
-                        {circuit.authentication_method} · generation {circuit.connection_generation} · started {formatDate(circuit.started)} · active {formatDate(circuit.last_activity)} · {circuit.route}
+                        {circuit.authentication_method}{" "}{localizedMessage("inspection.components.remote.access.settings.section.generation")}{" "}{circuit.connection_generation}{" "}{localizedMessage("inspection.components.remote.access.settings.section.started")}{" "}{formatDate(circuit.started)}{" "}{localizedMessage("inspection.components.remote.access.settings.section.active.506018d")}{" "}{formatDate(circuit.last_activity)} · {circuit.route}
                       </small>
                       <code>{circuit.circuit_id}</code>
                     </div>
@@ -171,9 +161,9 @@ export function RemoteAccessSettingsSection({
                       if (!window.confirm("Close this authenticated remote circuit?")) return;
                       void perform(async () => {
                         await remoteAccess.closeCircuit(circuit.circuit_id);
-                        return "The circuit was closed.";
+                        return localizedMessage("inspection.components.remote.access.settings.section.the.circuit.was.closed");
                       });
-                    }}>Close</button>
+                    }}>{localizedMessage("inspection.components.remote.access.settings.section.close")}</button>
                   </li>
                 ))}
               </ul>
@@ -183,29 +173,23 @@ export function RemoteAccessSettingsSection({
           <section className={styles.section}>
             <div className={styles.sectionHeading}>
               <div>
-                <h3>Direct file transfers</h3>
+                <h3>{localizedMessage("inspection.components.remote.access.settings.section.direct.file.transfers")}</h3>
                 <p>
                   {security.direct_file.compiled
                     ? security.direct_file.enabled
-                      ? "Enabled · file bytes use a direct encrypted WebRTC connection"
-                      : "Disabled by the operator"
-                    : "Not included in this host build"}
+                      ? localizedMessage("inspection.components.remote.access.settings.section.enabled.file.bytes.use.a.direct.encrypted")
+                      : localizedMessage("inspection.components.remote.access.settings.section.disabled.by.the.operator")
+                    : localizedMessage("inspection.components.remote.access.settings.section.not.included.in.this.host.build")}
                 </p>
               </div>
               <span className={styles.badge}>{humanize(security.direct_file.state)}</span>
             </div>
-            <p className={styles.note}>
-              The relay carries encrypted connection setup only. File contents
-              never pass through the relay, and completed verified files are the
-              only eligible source. During an explicit attempt, the public STUN
-              service learns this device's public address and request timing,
-              but receives no account, torrent, file, or content data.
-            </p>
+            <p className={styles.note}>{localizedMessage("inspection.components.remote.access.settings.section.the.relay.carries.encrypted.connection.setup.only")}</p>
             <dl className={styles.identity}>
-              <div><dt>Active circuit</dt><dd><code>{security.direct_file.active_circuit_id ?? "none"}</code></dd></div>
-              <div><dt>Payload sent</dt><dd>{security.direct_file.bytes_sent.toLocaleString()} bytes</dd></div>
-              <div><dt>Candidate class</dt><dd>{security.direct_file.candidate_class === null ? "none" : humanize(security.direct_file.candidate_class)}</dd></div>
-              <div><dt>Resources</dt><dd>{security.direct_file.active_tasks} tasks · {security.direct_file.open_sockets} sockets · {security.direct_file.active_requests} range requests · {security.direct_file.queued_bytes.toLocaleString()} queued bytes</dd></div>
+              <div><dt>{localizedMessage("inspection.components.remote.access.settings.section.active.circuit")}</dt><dd><code>{security.direct_file.active_circuit_id ?? localizedMessage("inspection.components.remote.access.settings.section.none")}</code></dd></div>
+              <div><dt>{localizedMessage("inspection.components.remote.access.settings.section.payload.sent")}</dt><dd>{security.direct_file.bytes_sent.toLocaleString()}{" "}{localizedMessage("inspection.components.remote.access.settings.section.bytes")}</dd></div>
+              <div><dt>{localizedMessage("inspection.components.remote.access.settings.section.candidate.class")}</dt><dd>{security.direct_file.candidate_class === null ? localizedMessage("inspection.components.remote.access.settings.section.none") : humanize(security.direct_file.candidate_class)}</dd></div>
+              <div><dt>{localizedMessage("inspection.components.remote.access.settings.section.resources")}</dt><dd>{security.direct_file.active_tasks}{" "}{localizedMessage("inspection.components.remote.access.settings.section.tasks")}{" "}{security.direct_file.open_sockets}{" "}{localizedMessage("inspection.components.remote.access.settings.section.sockets")}{" "}{security.direct_file.active_requests}{" "}{localizedMessage("inspection.components.remote.access.settings.section.range.requests")}{" "}{security.direct_file.queued_bytes.toLocaleString()}{" "}{localizedMessage("inspection.components.remote.access.settings.section.queued.bytes")}</dd></div>
             </dl>
             <div className={styles.actions}>
               <button
@@ -217,23 +201,21 @@ export function RemoteAccessSettingsSection({
                   return `Direct file transfers ${enabled ? "enabled" : "disabled"}.`;
                 })}
               >
-                {security.direct_file.enabled ? "Disable direct file transfers" : "Enable direct file transfers"}
+                {security.direct_file.enabled ? localizedMessage("inspection.components.remote.access.settings.section.disable.direct.file.transfers") : localizedMessage("inspection.components.remote.access.settings.section.enable.direct.file.transfers")}
               </button>
               <button
                 type="button"
                 disabled={busy || security.direct_file.active_circuit_id === null}
                 onClick={() => void perform(async () => {
                   await remoteAccess.stopDirectFileTransfers();
-                  return "Active direct file transfers stopped.";
+                  return localizedMessage("inspection.components.remote.access.settings.section.active.direct.file.transfers.stopped");
                 })}
-              >
-                Stop active transfers
-              </button>
+              >{localizedMessage("inspection.components.remote.access.settings.section.stop.active.transfers")}</button>
             </div>
           </section>
 
           <section className={styles.section}>
-            <h3>Authentication and recovery</h3>
+            <h3>{localizedMessage("inspection.components.remote.access.settings.section.authentication.and.recovery")}</h3>
             <div className={styles.actions}>
               <button type="button" disabled={busy || (security.authority?.clients.length ?? 0) === 0} onClick={() => {
                 if (!window.confirm("Require the password again on every browser and close their authorized circuits?")) return;
@@ -241,14 +223,14 @@ export function RemoteAccessSettingsSection({
                   const revoked = await remoteAccess.requirePasswordEverywhere();
                   return `Revoked ${revoked} browser authorization${revoked === 1 ? "" : "s"}.`;
                 });
-              }}>Require password everywhere</button>
+              }}>{localizedMessage("inspection.components.remote.access.settings.section.require.password.everywhere")}</button>
               {local ? <button className={styles.danger} type="button" disabled={busy} onClick={() => {
                 if (!window.confirm("Disable remote access, revoke every browser, and remove the host authority?")) return;
                 void perform(async () => {
                   const outcome = await remoteAccess.disable();
                   return `Remote access disabled. Authority removed: ${yesNo(outcome.authority_file_removed)}; route released: ${yesNo(outcome.route_released)}.`;
                 });
-              }}>Disable remote access</button> : null}
+              }}>{localizedMessage("inspection.components.remote.access.settings.section.disable.remote.access")}</button> : null}
               {remoteAccess.signOutThisBrowser === undefined ? null : (
                 <button className={styles.danger} type="button" disabled={busy} onClick={() => {
                   if (!window.confirm("Sign out this browser and revoke its private authorization, if present?")) return;
@@ -259,27 +241,27 @@ export function RemoteAccessSettingsSection({
                     setError(asMessage(cause));
                     setBusy(false);
                   });
-                }}>Sign out this browser</button>
+                }}>{localizedMessage("inspection.components.remote.access.settings.section.sign.out.this.browser")}</button>
               )}
             </div>
             {local ? <form className={styles.form} onSubmit={changePassphrase}>
-              <h4>Change password</h4>
-              <p className={styles.note}>Changing it revokes every private browser and closes every remote circuit.</p>
-              <label>New password<input required type="password" minLength={12} maxLength={256} autoComplete="new-password" value={newPassphrase} onChange={(event) => setNewPassphrase(event.currentTarget.value)} /></label>
-              <label>Confirm new password<input required type="password" minLength={12} maxLength={256} autoComplete="new-password" value={newConfirmation} onChange={(event) => setNewConfirmation(event.currentTarget.value)} /></label>
-              <button type="submit" disabled={busy}>Change password</button>
+              <h4>{localizedMessage("inspection.components.remote.access.settings.section.change.password")}</h4>
+              <p className={styles.note}>{localizedMessage("inspection.components.remote.access.settings.section.changing.it.revokes.every.private.browser.and")}</p>
+              <label>{localizedMessage("inspection.components.remote.access.settings.section.new.password")}<input required type="password" minLength={12} maxLength={256} autoComplete="new-password" value={newPassphrase} onChange={(event) => setNewPassphrase(event.currentTarget.value)} /></label>
+              <label>{localizedMessage("inspection.components.remote.access.settings.section.confirm.new.password")}<input required type="password" minLength={12} maxLength={256} autoComplete="new-password" value={newConfirmation} onChange={(event) => setNewConfirmation(event.currentTarget.value)} /></label>
+              <button type="submit" disabled={busy}>{localizedMessage("inspection.components.remote.access.settings.section.change.password")}</button>
             </form> : null}
           </section>
         </>
       )}
 
       <AuditHistory
-        title="Current security ledger"
+        title={localizedMessage("inspection.components.remote.access.settings.section.current.security.ledger")}
         snapshot={security.authority}
         busy={busy}
       />
       <AuditHistory
-        title="Retained security history"
+        title={localizedMessage("inspection.components.remote.access.settings.section.retained.security.history")}
         snapshot={security.retained_history}
         busy={busy}
         clear={() => {
@@ -311,19 +293,19 @@ function AuthorizationSection({ snapshot, busy, activeClientIds, currentClientId
   return (
     <section className={styles.section}>
       <div className={styles.sectionHeading}>
-        <div><h3>Authorized browsers</h3><p>{clients.length} of 32 current authorizations</p></div>
+        <div><h3>{localizedMessage("inspection.components.remote.access.settings.section.authorized.browsers")}</h3><p>{clients.length}{" "}{localizedMessage("inspection.components.remote.access.settings.section.of.32.current.authorizations")}</p></div>
       </div>
-      {clients.length === 0 ? <p className={styles.note}>No browser can resume without the password.</p> : (
+      {clients.length === 0 ? <p className={styles.note}>{localizedMessage("inspection.components.remote.access.settings.section.no.browser.can.resume.without.the.password")}</p> : (
         <ul className={styles.records}>
           {clients.map((client) => (
             <li key={client.client_id}>
               <div>
                 <strong>{client.label}</strong>
-                {client.client_id === currentClientId ? <span className={styles.badge}>This browser</span> : null}
-                <span className={styles.badge}>{activeClientIds.filter((id) => id === client.client_id).length} live</span>
-                <small>{client.state} · added {formatDate(client.created)} · password {formatDate(client.last_full_login)} · resume {formatOptionalDate(client.last_resume)} · seen {formatDate(client.last_seen)}</small>
-                <small>Idle expiry {formatDate(client.idle_expires)} · absolute expiry {formatDate(client.absolute_expires)} · build {client.client_build ?? "not reported"}</small>
-                <small>Route observation {client.route_observation ?? "not reported"} · browser observation {client.browser_observation ?? "not reported"}</small>
+                {client.client_id === currentClientId ? <span className={styles.badge}>{localizedMessage("inspection.components.remote.access.settings.section.this.browser")}</span> : null}
+                <span className={styles.badge}>{activeClientIds.filter((id) => id === client.client_id).length}{" "}{localizedMessage("inspection.components.remote.access.settings.section.live")}</span>
+                <small>{client.state}{" "}{localizedMessage("inspection.components.remote.access.settings.section.added")}{" "}{formatDate(client.created)}{" "}{localizedMessage("inspection.components.remote.access.settings.section.password.029c017")}{" "}{formatDate(client.last_full_login)}{" "}{localizedMessage("inspection.components.remote.access.settings.section.resume")}{" "}{formatOptionalDate(client.last_resume)}{" "}{localizedMessage("inspection.components.remote.access.settings.section.seen")}{" "}{formatDate(client.last_seen)}</small>
+                <small>{localizedMessage("inspection.components.remote.access.settings.section.idle.expiry")}{" "}{formatDate(client.idle_expires)}{" "}{localizedMessage("inspection.components.remote.access.settings.section.absolute.expiry")}{" "}{formatDate(client.absolute_expires)}{" "}{localizedMessage("inspection.components.remote.access.settings.section.build")}{" "}{client.client_build ?? localizedMessage("inspection.components.remote.access.settings.section.not.reported")}</small>
+                <small>{localizedMessage("inspection.components.remote.access.settings.section.route.observation")}{" "}{client.route_observation ?? localizedMessage("inspection.components.remote.access.settings.section.not.reported")}{" "}{localizedMessage("inspection.components.remote.access.settings.section.browser.observation")}{" "}{client.browser_observation ?? localizedMessage("inspection.components.remote.access.settings.section.not.reported")}</small>
                 <code title={client.fingerprint}>{client.fingerprint}</code>
               </div>
               <div className={styles.rowActions}>
@@ -332,23 +314,23 @@ function AuthorizationSection({ snapshot, busy, activeClientIds, currentClientId
                   if (label === null || label === client.label) return;
                   void perform(async () => {
                     await remoteAccess.rename(client.client_id, label);
-                    return "Browser authorization renamed.";
+                    return localizedMessage("inspection.components.remote.access.settings.section.browser.authorization.renamed");
                   });
-                }}>Rename</button>
+                }}>{localizedMessage("inspection.components.remote.access.settings.section.rename")}</button>
                 <button type="button" disabled={busy || clients.length <= 1} onClick={() => {
                   if (!window.confirm(`Revoke every browser except ${client.label}?`)) return;
                   void perform(async () => {
                     const revoked = await remoteAccess.revokeAllOther(client.client_id);
                     return `Revoked ${revoked} other browser${revoked === 1 ? "" : "s"}.`;
                   });
-                }}>Keep only this</button>
+                }}>{localizedMessage("inspection.components.remote.access.settings.section.keep.only.this")}</button>
                 <button className={styles.danger} type="button" disabled={busy} onClick={() => {
                   if (!window.confirm(`Revoke ${client.label} and close all of its circuits?`)) return;
                   void perform(async () => {
                     await remoteAccess.revoke(client.client_id);
                     return `${client.label} was revoked.`;
                   });
-                }}>Revoke</button>
+                }}>{localizedMessage("inspection.components.remote.access.settings.section.revoke")}</button>
               </div>
             </li>
           ))}
@@ -363,26 +345,25 @@ function AuditHistory({ title, snapshot, busy, clear }: { readonly title: string
   return (
     <section className={styles.section}>
       <div className={styles.sectionHeading}>
-        <div><h3>{title}</h3><p>{snapshot.events.length} owner events · {snapshot.tombstones.length} ended authorizations · {snapshot.failed_attempts.length} failed-attempt buckets</p></div>
-        {clear === undefined ? null : <button type="button" disabled={busy || (snapshot.events.length === 0 && snapshot.tombstones.length === 0 && snapshot.failed_attempts.length === 0)} onClick={clear}>Clear history</button>}
+        <div><h3>{title}</h3><p>{snapshot.events.length}{" "}{localizedMessage("inspection.components.remote.access.settings.section.owner.events")}{" "}{snapshot.tombstones.length}{" "}{localizedMessage("inspection.components.remote.access.settings.section.ended.authorizations")}{" "}{snapshot.failed_attempts.length}{" "}{localizedMessage("inspection.components.remote.access.settings.section.failed.attempt.buckets")}</p></div>
+        {clear === undefined ? null : <button type="button" disabled={busy || (snapshot.events.length === 0 && snapshot.tombstones.length === 0 && snapshot.failed_attempts.length === 0)} onClick={clear}>{localizedMessage("inspection.components.remote.access.settings.section.clear.history")}</button>}
       </div>
-      <p className={styles.note}>Generation {snapshot.generation}; authorization generation {snapshot.authorization_generation}. Entries below are complete and unfiltered.</p>
+      <p className={styles.note}>{localizedMessage("inspection.components.remote.access.settings.section.generation.40536dd")}{" "}{snapshot.generation}{localizedMessage("inspection.components.remote.access.settings.section.authorization.generation")}{" "}{snapshot.authorization_generation}{localizedMessage("inspection.components.remote.access.settings.section.entries.below.are.complete.and.unfiltered")}</p>
       <ol className={styles.audit}>
         {snapshot.events.map((event) => (
           <li key={event.event_id}>
             <strong>{humanize(event.kind)}</strong>
-            <small>{formatDate(event.timestamp)} · {event.result} · {event.authentication_method ?? "owner action"} · route {event.route ?? "none"}</small>
-            <small>client {event.client_id ?? "none"} · circuit {event.circuit_id ?? "none"} · build {event.client_build ?? "none"} · reason {event.reason_class ?? "none"}</small>
+            <small>{formatDate(event.timestamp)} · {event.result} · {event.authentication_method ?? localizedMessage("inspection.components.remote.access.settings.section.owner.action")}{" "}{localizedMessage("inspection.components.remote.access.settings.section.route.f7f55fb")}{" "}{event.route ?? localizedMessage("inspection.components.remote.access.settings.section.none")}</small>
+            <small>{localizedMessage("inspection.components.remote.access.settings.section.client")}{" "}{event.client_id ?? localizedMessage("inspection.components.remote.access.settings.section.none")}{" "}{localizedMessage("inspection.components.remote.access.settings.section.circuit")}{" "}{event.circuit_id ?? localizedMessage("inspection.components.remote.access.settings.section.none")}{" "}{localizedMessage("inspection.components.remote.access.settings.section.build")}{" "}{event.client_build ?? localizedMessage("inspection.components.remote.access.settings.section.none")}{" "}{localizedMessage("inspection.components.remote.access.settings.section.reason")}{" "}{event.reason_class ?? localizedMessage("inspection.components.remote.access.settings.section.none")}</small>
             {event.direct_file === null ? null : (
-              <small>
-                torrent {event.direct_file.torrent_id} · file index {event.direct_file.file_index} · {event.direct_file.byte_count.toLocaleString()} bytes · candidate {event.direct_file.candidate_class === null ? "none" : humanize(event.direct_file.candidate_class)}
+              <small>{localizedMessage("inspection.components.remote.access.settings.section.torrent")}{" "}{event.direct_file.torrent_id}{" "}{localizedMessage("inspection.components.remote.access.settings.section.file.index")}{" "}{event.direct_file.file_index} · {event.direct_file.byte_count.toLocaleString()}{" "}{localizedMessage("inspection.components.remote.access.settings.section.bytes.candidate")}{" "}{event.direct_file.candidate_class === null ? localizedMessage("inspection.components.remote.access.settings.section.none") : humanize(event.direct_file.candidate_class)}
               </small>
             )}
           </li>
         ))}
       </ol>
-      {snapshot.tombstones.length === 0 ? null : <details><summary>Ended browser authorizations ({snapshot.tombstones.length})</summary><ul className={styles.audit}>{snapshot.tombstones.map((item) => <li key={`${item.client_id}-${item.ended}`}><strong>{item.label} — {item.state}</strong><small>Added {formatDate(item.created)} · seen {formatDate(item.last_seen)} · ended {formatDate(item.ended)}</small><code>{item.fingerprint}</code></li>)}</ul></details>}
-      {snapshot.failed_attempts.length === 0 ? null : <details><summary>Failed authentication pressure ({snapshot.failed_attempts.length} buckets)</summary><ul className={styles.audit}>{snapshot.failed_attempts.map((item) => <li key={`${item.bucket_start}-${item.kind}-${item.route_class}`}><strong>{item.kind}: {item.attempts} attempts</strong><small>{formatDate(item.bucket_start)} · route class {item.route_class}</small></li>)}</ul></details>}
+      {snapshot.tombstones.length === 0 ? null : <details><summary>{localizedMessage("inspection.components.remote.access.settings.section.ended.browser.authorizations")}{snapshot.tombstones.length})</summary><ul className={styles.audit}>{snapshot.tombstones.map((item) => <li key={`${item.client_id}-${item.ended}`}><strong>{item.label} — {item.state}</strong><small>{localizedMessage("inspection.components.remote.access.settings.section.added.6b02e0d")}{" "}{formatDate(item.created)}{" "}{localizedMessage("inspection.components.remote.access.settings.section.seen")}{" "}{formatDate(item.last_seen)}{" "}{localizedMessage("inspection.components.remote.access.settings.section.ended")}{" "}{formatDate(item.ended)}</small><code>{item.fingerprint}</code></li>)}</ul></details>}
+      {snapshot.failed_attempts.length === 0 ? null : <details><summary>{localizedMessage("inspection.components.remote.access.settings.section.failed.authentication.pressure")}{snapshot.failed_attempts.length}{" "}{localizedMessage("inspection.components.remote.access.settings.section.buckets")}</summary><ul className={styles.audit}>{snapshot.failed_attempts.map((item) => <li key={`${item.bucket_start}-${item.kind}-${item.route_class}`}><strong>{item.kind}: {item.attempts}{" "}{localizedMessage("inspection.components.remote.access.settings.section.attempts")}</strong><small>{formatDate(item.bucket_start)}{" "}{localizedMessage("inspection.components.remote.access.settings.section.route.class")}{" "}{item.route_class}</small></li>)}</ul></details>}
     </section>
   );
 }

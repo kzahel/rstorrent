@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import { useState } from "react";
 
 import type { DesktopPower } from "../desktop-power/types";
@@ -27,7 +28,7 @@ export function PowerSettingsSection({ power }: PowerSettingsSectionProps) {
     setStatus(null);
     try {
       setSettings(await power.save(next));
-      setStatus({ type: "success", message: "Power setting saved." });
+      setStatus({ type: "success", message: localizedMessage("inspection.components.power.settings.section.power.setting.saved") });
     } catch (error) {
       setSettings(previous);
       setStatus({
@@ -41,11 +42,8 @@ export function PowerSettingsSection({ power }: PowerSettingsSectionProps) {
 
   return (
     <fieldset className={styles.section} disabled={pending}>
-      <legend>Power</legend>
-      <p className={styles.sectionIntroduction}>
-        RSTorrent can prevent automatic system sleep during active download and
-        verification work. Your display may still turn off normally.
-      </p>
+      <legend>{localizedMessage("inspection.components.power.settings.section.power")}</legend>
+      <p className={styles.sectionIntroduction}>{localizedMessage("inspection.components.power.settings.section.rstorrent.can.prevent.automatic.system.sleep.during")}</p>
       <label className={styles.preference}>
         <input
           type="checkbox"
@@ -53,11 +51,8 @@ export function PowerSettingsSection({ power }: PowerSettingsSectionProps) {
           onChange={(event) => void change(event.currentTarget.checked)}
         />
         <span>
-          <strong>Prevent sleep during active downloads and checks</strong>
-          <small>
-            Releases automatically for queued, paused, completed, seeding, or
-            failed torrents.
-          </small>
+          <strong>{localizedMessage("inspection.components.power.settings.section.prevent.sleep.during.active.downloads.and.checks")}</strong>
+          <small>{localizedMessage("inspection.components.power.settings.section.releases.automatically.for.queued.paused.completed.seeding")}</small>
         </span>
       </label>
       {status === null ? null : (

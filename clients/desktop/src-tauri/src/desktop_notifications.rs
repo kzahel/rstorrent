@@ -2,6 +2,8 @@ use std::collections::{HashMap, VecDeque};
 
 use rstorrent_session::{StorageState, TorrentRowUpdate, TorrentState, TorrentView};
 
+use crate::desktop_localization;
+
 const MAX_NOTIFICATION_NAME_CHARS: usize = 120;
 const MAX_RECENTLY_REMOVED_TORRENTS: usize = 256;
 
@@ -248,18 +250,21 @@ fn needs_attention(observation: &TorrentObservation) -> bool {
 fn completion_notification(observation: &TorrentObservation) -> DesktopNotification {
     DesktopNotification {
         kind: DesktopNotificationKind::DownloadComplete,
-        title: "Download complete",
-        body: format!("{} finished downloading.", notification_name(observation)),
+        title: desktop_localization::text("notification.download-complete.title"),
+        body: desktop_localization::format(
+            "notification.download-complete.body",
+            &[("name", &notification_name(observation))],
+        ),
     }
 }
 
 fn attention_notification(observation: &TorrentObservation) -> DesktopNotification {
     DesktopNotification {
         kind: DesktopNotificationKind::NeedsAttention,
-        title: "Download needs attention",
-        body: format!(
-            "{} needs attention. Open RSTorrent for details.",
-            notification_name(observation)
+        title: desktop_localization::text("notification.needs-attention.title"),
+        body: desktop_localization::format(
+            "notification.needs-attention.body",
+            &[("name", &notification_name(observation))],
         ),
     }
 }
@@ -273,7 +278,7 @@ fn notification_name(observation: &TorrentObservation) -> String {
         .collect::<Vec<_>>()
         .join(" ");
     if normalized.is_empty() {
-        return "Torrent".to_owned();
+        return desktop_localization::text("notification.unnamed-torrent").to_owned();
     }
     if normalized.chars().count() <= MAX_NOTIFICATION_NAME_CHARS {
         return normalized;

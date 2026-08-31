@@ -1,5 +1,8 @@
 import { applyStoredAppearance } from "./inspection/appearance";
 import { resolveInspectionBootstrapTarget } from "./inspection/bootstrap-target";
+import { localizeDocumentShell, message } from "./localization/runtime";
+
+localizeDocumentShell();
 
 const parameters = new URLSearchParams(window.location.search);
 const appearance = applyStoredAppearance();
@@ -41,10 +44,10 @@ function renderBootstrapError(error: unknown): void {
     console.error("Unable to start RSTorrent", error);
     return;
   }
-  const message = error instanceof Error ? error.message : String(error);
+  const errorMessage = error instanceof Error ? error.message : String(error);
   rootElement.replaceChildren();
   const alert = document.createElement("div");
   alert.setAttribute("role", "alert");
-  alert.textContent = `Unable to start RSTorrent: ${message}`;
+  alert.textContent = `${message("shell.app.start-failed")}: ${errorMessage}`;
   rootElement.append(alert);
 }

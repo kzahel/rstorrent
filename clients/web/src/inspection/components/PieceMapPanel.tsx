@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useInspectionStore } from "../context";
@@ -34,13 +35,13 @@ export function PieceMapPanel({ torrentId }: { readonly torrentId: string }) {
     <div className={styles.panel}>
       <header className={styles.summary}>
         <div>
-          <h2>Piece availability</h2>
+          <h2>{localizedMessage("inspection.components.piece.map.panel.piece.availability")}</h2>
           <p>{torrentName}</p>
         </div>
-        <div className={styles.counts} aria-label="Piece map summary">
-          <span>{countVerified(pieces).toLocaleString()} verified</span>
-          <span>{pieces.active.length.toLocaleString()} active</span>
-          <span>{pieces.pieceCount.toLocaleString()} pieces</span>
+        <div className={styles.counts} aria-label={localizedMessage("inspection.components.piece.map.panel.piece.map.summary")}>
+          <span>{countVerified(pieces).toLocaleString()}{" "}{localizedMessage("inspection.components.piece.map.panel.verified")}</span>
+          <span>{pieces.active.length.toLocaleString()}{" "}{localizedMessage("inspection.components.piece.map.panel.active")}</span>
+          <span>{pieces.pieceCount.toLocaleString()}{" "}{localizedMessage("inspection.components.piece.map.panel.pieces")}</span>
         </div>
       </header>
       <PieceCanvas pieces={pieces} />
@@ -85,7 +86,7 @@ function PieceCanvas({ pieces }: { readonly pieces: PieceMapSet }) {
 
   const label = `${pieces.pieceCount.toLocaleString()} pieces: ${summary.verifiedCount.toLocaleString()} verified, ${summary.activeCount.toLocaleString()} active`;
   return (
-    <section className={styles.mapSection} aria-label="Piece map visualization">
+    <section className={styles.mapSection} aria-label={localizedMessage("inspection.components.piece.map.panel.piece.map.visualization")}>
       <div ref={wrapRef} className={styles.canvasWrap}>
         <canvas
           ref={canvasRef}
@@ -94,7 +95,7 @@ function PieceCanvas({ pieces }: { readonly pieces: PieceMapSet }) {
           aria-label={label}
         />
       </div>
-      <div className={styles.legend} aria-label="Piece state legend">
+      <div className={styles.legend} aria-label={localizedMessage("inspection.components.piece.map.panel.piece.state.legend")}>
         {LEGEND.map(([label, color, pattern]) => (
           <span key={label}>
             <i
@@ -194,7 +195,7 @@ function EmptyPieceMap({
         : "Piece geometry will appear after verified metadata is available.";
   return (
     <div className={styles.empty}>
-      <strong>Piece map unavailable</strong>
+      <strong>{localizedMessage("inspection.components.piece.map.panel.piece.map.unavailable")}</strong>
       <p>{message}</p>
     </div>
   );

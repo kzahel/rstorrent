@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import { Icon } from "./Icon";
 import type { FileActionId, ResolvedFileAction } from "../file-actions";
 import {
@@ -32,10 +33,9 @@ export function FileActionsMenu({
     <ActionMenuTrigger isDisabled={pending}>
       <OverlayButton
         className={styles.trigger!}
-        aria-label="More file actions"
+        aria-label={localizedMessage("inspection.components.file.actions.menu.more.file.actions")}
         isDisabled={pending}
-      >
-        More <Icon name="chevronDown" />
+      >{localizedMessage("inspection.components.file.actions.menu.more")}{" "}<Icon name="chevronDown" />
       </OverlayButton>
       <ActionMenuPopover description={description}>
         <FileActionMenuItems

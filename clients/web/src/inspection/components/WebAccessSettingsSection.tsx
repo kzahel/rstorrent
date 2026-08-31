@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import { useEffect, useState } from "react";
 
 import type {
@@ -62,7 +63,7 @@ export function WebAccessSettingsSection({
   };
 
   if (status === null) {
-    return <p className={styles.note}>Loading web access…</p>;
+    return <p className={styles.note}>{localizedMessage("inspection.components.web.access.settings.section.loading.web.access")}</p>;
   }
 
   const paired = status.state === "session_valid";
@@ -70,13 +71,13 @@ export function WebAccessSettingsSection({
     <div className={styles.panel}>
       <section className={styles.statusCard}>
         <div>
-          <span>Current policy</span>
-          <strong>{paired ? "Approved browsers" : "Localhost open"}</strong>
+          <span>{localizedMessage("inspection.components.web.access.settings.section.current.policy")}</span>
+          <strong>{paired ? localizedMessage("inspection.components.web.access.settings.section.approved.browsers") : localizedMessage("inspection.components.web.access.settings.section.localhost.open")}</strong>
         </div>
         <p>
           {paired
-            ? "This browser is approved. New browser profiles need a four-digit code or an explicit restart pairing window."
-            : "Any browser on this computer can use this loopback RSTorrent service."}
+            ? localizedMessage("inspection.components.web.access.settings.section.this.browser.is.approved.new.browser.profiles")
+            : localizedMessage("inspection.components.web.access.settings.section.any.browser.on.this.computer.can.use")}
         </p>
         <button
           type="button"
@@ -85,17 +86,17 @@ export function WebAccessSettingsSection({
             void perform(async () => {
               if (paired) {
                 await client.setPolicy("local_open");
-                setMessage("Localhost access is now open.");
+                setMessage(localizedMessage("inspection.components.web.access.settings.section.localhost.access.is.now.open"));
               } else {
                 await client.setPolicy("paired", browserLabel());
-                setMessage("This browser is now remembered.");
+                setMessage(localizedMessage("inspection.components.web.access.settings.section.this.browser.is.now.remembered"));
               }
               setTicket(null);
               await refresh();
             })
           }
         >
-          {paired ? "Keep localhost open" : "Require browser approval"}
+          {paired ? localizedMessage("inspection.components.web.access.settings.section.keep.localhost.open") : localizedMessage("inspection.components.web.access.settings.section.require.browser.approval")}
         </button>
       </section>
 
@@ -104,8 +105,8 @@ export function WebAccessSettingsSection({
           <section className={styles.section}>
             <div className={styles.sectionHeading}>
               <div>
-                <h3>Approve another browser</h3>
-                <p>The code works once, for 10 minutes, with five attempts.</p>
+                <h3>{localizedMessage("inspection.components.web.access.settings.section.approve.another.browser")}</h3>
+                <p>{localizedMessage("inspection.components.web.access.settings.section.the.code.works.once.for.10.minutes")}</p>
               </div>
               <button
                 type="button"
@@ -114,12 +115,10 @@ export function WebAccessSettingsSection({
                   void perform(async () => {
                     const next = await client.createPairingTicket();
                     setTicket(next);
-                    setMessage("A new pairing code is ready.");
+                    setMessage(localizedMessage("inspection.components.web.access.settings.section.a.new.pairing.code.is.ready"));
                   })
                 }
-              >
-                Generate code
-              </button>
+              >{localizedMessage("inspection.components.web.access.settings.section.generate.code")}</button>
             </div>
             {ticket === null ? null : (
               <div className={styles.ticket} role="status">
@@ -129,7 +128,7 @@ export function WebAccessSettingsSection({
                 <span>
                   {ticketRemaining > 0
                     ? `Expires in ${formatRemaining(ticketRemaining)}`
-                    : "Expired — generate a new code"}
+                    : localizedMessage("inspection.components.web.access.settings.section.expired.generate.a.new.code")}
                 </span>
               </div>
             )}
@@ -138,8 +137,8 @@ export function WebAccessSettingsSection({
           <section className={styles.section}>
             <div className={styles.sectionHeading}>
               <div>
-                <h3>Authorized browsers</h3>
-                <p>{sessions.length} of 32 remembered sessions</p>
+                <h3>{localizedMessage("inspection.components.web.access.settings.section.authorized.browsers")}</h3>
+                <p>{sessions.length}{" "}{localizedMessage("inspection.components.web.access.settings.section.of.32.remembered.sessions")}</p>
               </div>
               <button
                 type="button"
@@ -152,18 +151,15 @@ export function WebAccessSettingsSection({
                     await refresh();
                   });
                 }}
-              >
-                Revoke all others
-              </button>
+              >{localizedMessage("inspection.components.web.access.settings.section.revoke.all.others")}</button>
             </div>
             <ul className={styles.sessions}>
               {sessions.map((session) => (
                 <li key={session.id}>
                   <div>
                     <strong>{session.label}</strong>
-                    {session.current ? <span className={styles.current}>This browser</span> : null}
-                    <small>
-                      Added {formatDate(session.created_at)} · Last used {formatDate(session.last_used_at)}
+                    {session.current ? <span className={styles.current}>{localizedMessage("inspection.components.web.access.settings.section.this.browser")}</span> : null}
+                    <small>{localizedMessage("inspection.components.web.access.settings.section.added")}{" "}{formatDate(session.created_at)}{" "}{localizedMessage("inspection.components.web.access.settings.section.last.used")}{" "}{formatDate(session.last_used_at)}
                     </small>
                   </div>
                   {session.current ? null : (
@@ -179,9 +175,7 @@ export function WebAccessSettingsSection({
                           await refresh();
                         });
                       }}
-                    >
-                      Revoke
-                    </button>
+                    >{localizedMessage("inspection.components.web.access.settings.section.revoke")}</button>
                   )}
                 </li>
               ))}
@@ -189,12 +183,8 @@ export function WebAccessSettingsSection({
           </section>
 
           <section className={styles.section}>
-            <h3>Recovery and sign out</h3>
-            <p className={styles.note}>
-              If every authorized cookie or browser profile is gone, stop the
-              server and restart the same command with <code>--pairing-window</code>.
-              The first explicit browser approval consumes that 10-minute window.
-            </p>
+            <h3>{localizedMessage("inspection.components.web.access.settings.section.recovery.and.sign.out")}</h3>
+            <p className={styles.note}>{localizedMessage("inspection.components.web.access.settings.section.if.every.authorized.cookie.or.browser.profile")}{" "}<code>{localizedMessage("inspection.components.web.access.settings.section.pairing.window")}</code>{localizedMessage("inspection.components.web.access.settings.section.the.first.explicit.browser.approval.consumes.that")}</p>
             <button
               className={styles.danger}
               type="button"
@@ -206,9 +196,7 @@ export function WebAccessSettingsSection({
                   onSignedOut();
                 });
               }}
-            >
-              Sign out this browser
-            </button>
+            >{localizedMessage("inspection.components.web.access.settings.section.sign.out.this.browser")}</button>
           </section>
         </>
       ) : null}

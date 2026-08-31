@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../localization/runtime";
 export const MAX_TORRENT_FILE_BYTES = 64 * 1024 * 1024;
 
 export interface TorrentFileSource {
@@ -7,10 +8,10 @@ export interface TorrentFileSource {
 
 export function torrentFileSizeError(size: number): string | null {
   if (!Number.isSafeInteger(size) || size <= 0) {
-    return "Torrent files must contain at least one byte.";
+    return localizedMessage("inspection.torrent.file.torrent.files.must.contain.at.least.one");
   }
   if (size > MAX_TORRENT_FILE_BYTES) {
-    return "Torrent files are limited to 64 MiB.";
+    return localizedMessage("inspection.torrent.file.torrent.files.are.limited.to.64.mib");
   }
   return null;
 }

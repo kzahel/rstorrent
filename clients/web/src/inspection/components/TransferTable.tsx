@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import { useMemo } from "react";
 
 import { useInspectionStore } from "../context";
@@ -25,7 +26,7 @@ const columns = (
 ): readonly VirtualColumn<TorrentRow>[] => [
   {
     id: "name",
-    label: "Name",
+    label: localizedMessage("inspection.components.transfer.table.name"),
     width: 430,
     minimumWidth: 210,
     sortable: true,
@@ -46,7 +47,7 @@ const columns = (
   },
   {
     id: "status",
-    label: "Status",
+    label: localizedMessage("inspection.components.transfer.table.status"),
     width: 132,
     sortable: true,
     sortValue: (row) =>
@@ -57,7 +58,7 @@ const columns = (
   },
   {
     id: "progress",
-    label: "Progress",
+    label: localizedMessage("inspection.components.transfer.table.progress"),
     width: 190,
     align: "right",
     sortable: true,
@@ -66,7 +67,7 @@ const columns = (
   },
   {
     id: "rate",
-    label: "Rate",
+    label: localizedMessage("inspection.components.transfer.table.rate"),
     width: 120,
     align: "right",
     sortable: true,
@@ -75,7 +76,7 @@ const columns = (
   },
   {
     id: "eta",
-    label: "ETA",
+    label: localizedMessage("inspection.components.transfer.table.eta"),
     width: 84,
     align: "right",
     sortable: true,
@@ -92,7 +93,7 @@ const columns = (
   },
   {
     id: "size",
-    label: "Size",
+    label: localizedMessage("inspection.components.transfer.table.size"),
     width: 104,
     align: "right",
     sortable: true,
@@ -153,7 +154,7 @@ export function TransferTable() {
   return (
     <VirtualTable
       tableId="transfers"
-      label="Transfer queue"
+      label={localizedMessage("inspection.components.transfer.table.transfer.queue")}
       rows={rows}
       getRowId={(row) => row.id}
       columns={displayColumns}
@@ -165,7 +166,7 @@ export function TransferTable() {
         onChange: setTorrentSelection,
       }}
       contextMenu={{
-        label: "Torrent actions",
+        label: localizedMessage("inspection.components.transfer.table.torrent.actions"),
         render: (row, targetIds) => (
           <TorrentContextMenu
             row={row}
@@ -178,9 +179,9 @@ export function TransferTable() {
         materialization.status !== "ready"
           ? materializationMessage(materialization)
           : category === "all" && demo === null
-            ? "No transfers are present in the live engine."
+            ? localizedMessage("inspection.components.transfer.table.no.transfers.are.present.in.the.live")
             : category === "all"
-              ? "No transfers yet. Add a generated demo transfer or choose another scenario."
+              ? localizedMessage("inspection.components.transfer.table.no.transfers.yet.add.a.generated.demo")
               : `No transfers in ${category}.`
       }
       initialSort={{ columnId: "name", direction: "asc" }}
@@ -208,14 +209,14 @@ function statusLabel(row: TorrentRow): string {
 function materializationMessage(materialization: ViewMaterialization): string {
   switch (materialization.status) {
     case "not_requested":
-      return "Transfer collection is not requested in this layout.";
+      return localizedMessage("inspection.components.transfer.table.transfer.collection.is.not.requested.in.this");
     case "loading":
-      return "Loading transfers…";
+      return localizedMessage("inspection.components.transfer.table.loading.transfers");
     case "unavailable":
     case "unsupported":
     case "stale":
       return materialization.reason;
     case "ready":
-      return "No transfers are present.";
+      return localizedMessage("inspection.components.transfer.table.no.transfers.are.present");
   }
 }

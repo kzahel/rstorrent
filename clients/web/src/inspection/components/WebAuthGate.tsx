@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import { useEffect, useState, type FormEvent } from "react";
 
 import type {
@@ -56,7 +57,7 @@ export function WebAuthGate({
   const redeem = (event: FormEvent) => {
     event.preventDefault();
     if (!/^[0-9]{4}$/.test(code)) {
-      setError("Enter the four-digit code shown by an approved browser.");
+      setError(localizedMessage("inspection.components.web.auth.gate.enter.the.four.digit.code.shown.by"));
       return;
     }
     void perform(() => client.redeem(code, browserLabel()));
@@ -65,23 +66,20 @@ export function WebAuthGate({
   return (
     <main className={styles.page}>
       <section className={styles.card} aria-labelledby="web-auth-title">
-        <div className={styles.brand} aria-hidden="true">RS</div>
+        <div className={styles.brand} aria-hidden="true">{localizedMessage("inspection.components.web.auth.gate.rs")}</div>
         {status.state === "initial_window_open" ? (
           <>
-            <p className={styles.eyebrow}>First launch</p>
-            <h1 id="web-auth-title">Choose web access</h1>
-            <p>
-              Initial setup is open on this computer for {formatRemaining(remaining)}.
-              Choose how future browser profiles should connect.
-            </p>
+            <p className={styles.eyebrow}>{localizedMessage("inspection.components.web.auth.gate.first.launch")}</p>
+            <h1 id="web-auth-title">{localizedMessage("inspection.components.web.auth.gate.choose.web.access")}</h1>
+            <p>{localizedMessage("inspection.components.web.auth.gate.initial.setup.is.open.on.this.computer")}{" "}{formatRemaining(remaining)}{localizedMessage("inspection.components.web.auth.gate.choose.how.future.browser.profiles.should.connect")}</p>
             <div className={styles.choices}>
               <button
                 type="button"
                 disabled={busy}
                 onClick={() => void perform(() => client.setPolicy("local_open"))}
               >
-                <strong>Keep localhost open</strong>
-                <span>Any browser on this computer can open RSTorrent.</span>
+                <strong>{localizedMessage("inspection.components.web.auth.gate.keep.localhost.open")}</strong>
+                <span>{localizedMessage("inspection.components.web.auth.gate.any.browser.on.this.computer.can.open")}</span>
               </button>
               <button
                 type="button"
@@ -90,49 +88,36 @@ export function WebAuthGate({
                   void perform(() => client.setPolicy("paired", browserLabel()))
                 }
               >
-                <strong>Remember this browser</strong>
-                <span>New browser profiles will need your approval.</span>
+                <strong>{localizedMessage("inspection.components.web.auth.gate.remember.this.browser")}</strong>
+                <span>{localizedMessage("inspection.components.web.auth.gate.new.browser.profiles.will.need.your.approval")}</span>
               </button>
             </div>
           </>
         ) : status.state === "initial_window_expired" ? (
           <>
-            <p className={styles.eyebrow}>Setup closed</p>
-            <h1 id="web-auth-title">Restart to finish setup</h1>
-            <p>
-              Initial setup was available for 10 minutes and has now closed.
-              Restart RSTorrent with the same profile to open a new 10-minute
-              setup window.
-            </p>
+            <p className={styles.eyebrow}>{localizedMessage("inspection.components.web.auth.gate.setup.closed")}</p>
+            <h1 id="web-auth-title">{localizedMessage("inspection.components.web.auth.gate.restart.to.finish.setup")}</h1>
+            <p>{localizedMessage("inspection.components.web.auth.gate.initial.setup.was.available.for.10.minutes")}</p>
           </>
         ) : status.state === "recovery_window_open" ? (
           <>
-            <p className={styles.eyebrow}>Recovery window</p>
-            <h1 id="web-auth-title">Approve this browser</h1>
-            <p>
-              RSTorrent was restarted with browser pairing enabled. This window
-              closes in {formatRemaining(remaining)} and the first approval
-              consumes it.
-            </p>
+            <p className={styles.eyebrow}>{localizedMessage("inspection.components.web.auth.gate.recovery.window")}</p>
+            <h1 id="web-auth-title">{localizedMessage("inspection.components.web.auth.gate.approve.this.browser")}</h1>
+            <p>{localizedMessage("inspection.components.web.auth.gate.rstorrent.was.restarted.with.browser.pairing.enabled")}{" "}{formatRemaining(remaining)}{" "}{localizedMessage("inspection.components.web.auth.gate.and.the.first.approval.consumes.it")}</p>
             <button
               className={styles.primary}
               type="button"
               disabled={busy}
               onClick={() => void perform(() => client.claimRecovery(browserLabel()))}
-            >
-              Approve this browser
-            </button>
+            >{localizedMessage("inspection.components.web.auth.gate.approve.this.browser")}</button>
           </>
         ) : (
           <>
-            <p className={styles.eyebrow}>Browser approval</p>
-            <h1 id="web-auth-title">This browser is not approved</h1>
-            <p>
-              In an approved browser, open Settings → Web access → Approve
-              another browser. Enter the displayed four-digit code here.
-            </p>
+            <p className={styles.eyebrow}>{localizedMessage("inspection.components.web.auth.gate.browser.approval")}</p>
+            <h1 id="web-auth-title">{localizedMessage("inspection.components.web.auth.gate.this.browser.is.not.approved")}</h1>
+            <p>{localizedMessage("inspection.components.web.auth.gate.in.an.approved.browser.open.settings.web")}</p>
             <form className={styles.codeForm} onSubmit={redeem}>
-              <label htmlFor="pairing-code">Four-digit code</label>
+              <label htmlFor="pairing-code">{localizedMessage("inspection.components.web.auth.gate.four.digit.code")}</label>
               <input
                 id="pairing-code"
                 value={code}
@@ -145,13 +130,9 @@ export function WebAuthGate({
                   setCode(event.currentTarget.value.replace(/[^0-9]/g, ""))
                 }
               />
-              <button className={styles.primary} type="submit" disabled={busy}>
-                Authorize browser
-              </button>
+              <button className={styles.primary} type="submit" disabled={busy}>{localizedMessage("inspection.components.web.auth.gate.authorize.browser")}</button>
             </form>
-            <p className={styles.help}>
-              If every approved browser profile or cookie is gone, stop the
-              server and restart the same command with <code>--pairing-window</code>.
+            <p className={styles.help}>{localizedMessage("inspection.components.web.auth.gate.if.every.approved.browser.profile.or.cookie")}{" "}<code>{localizedMessage("inspection.components.web.auth.gate.pairing.window")}</code>.
             </p>
           </>
         )}

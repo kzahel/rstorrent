@@ -1,0 +1,7513 @@
+{
+  "android.companion.client.approve.the.jstorrent.beta.pairing.request.in": [
+    {
+      "type": 0,
+      "value": "Approve the JSTorrent Beta pairing request in the Android app."
+    }
+  ],
+  "android.companion.client.looking.for.the.rstorrent.android.service": [
+    {
+      "type": 0,
+      "value": "Looking for the RSTorrent Android service…"
+    }
+  ],
+  "android.companion.client.the.saved.pairing.is.no.longer.accepted": [
+    {
+      "type": 0,
+      "value": "The saved pairing is no longer accepted. Approve a replacement in Android."
+    }
+  ],
+  "common.action.close": [
+    {
+      "type": 0,
+      "value": "Close"
+    }
+  ],
+  "common.action.retry": [
+    {
+      "type": 0,
+      "value": "Retry"
+    }
+  ],
+  "common.files.pending": [
+    {
+      "type": 6,
+      "value": "count",
+      "options": {
+        "one": {
+          "value": [
+            {
+              "type": 7
+            },
+            {
+              "type": 0,
+              "value": " more torrent pending"
+            }
+          ]
+        },
+        "other": {
+          "value": [
+            {
+              "type": 7
+            },
+            {
+              "type": 0,
+              "value": " more torrents pending"
+            }
+          ]
+        }
+      },
+      "offset": 0,
+      "pluralType": "cardinal"
+    }
+  ],
+  "common.files.selected": [
+    {
+      "type": 6,
+      "value": "selected",
+      "options": {
+        "one": {
+          "value": [
+            {
+              "type": 7
+            },
+            {
+              "type": 0,
+              "value": " of "
+            },
+            {
+              "type": 1,
+              "value": "total"
+            },
+            {
+              "type": 0,
+              "value": " selected"
+            }
+          ]
+        },
+        "other": {
+          "value": [
+            {
+              "type": 7
+            },
+            {
+              "type": 0,
+              "value": " of "
+            },
+            {
+              "type": 1,
+              "value": "total"
+            },
+            {
+              "type": 0,
+              "value": " selected"
+            }
+          ]
+        }
+      },
+      "offset": 0,
+      "pluralType": "cardinal"
+    }
+  ],
+  "common.rows.selected": [
+    {
+      "type": 6,
+      "value": "count",
+      "options": {
+        "one": {
+          "value": [
+            {
+              "type": 7
+            },
+            {
+              "type": 0,
+              "value": " selected for actions"
+            }
+          ]
+        },
+        "other": {
+          "value": [
+            {
+              "type": 7
+            },
+            {
+              "type": 0,
+              "value": " selected for actions"
+            }
+          ]
+        }
+      },
+      "offset": 0,
+      "pluralType": "cardinal"
+    },
+    {
+      "type": 6,
+      "value": "hidden",
+      "options": {
+        "=0": {
+          "value": []
+        },
+        "one": {
+          "value": [
+            {
+              "type": 0,
+              "value": " ("
+            },
+            {
+              "type": 7
+            },
+            {
+              "type": 0,
+              "value": " outside this view)"
+            }
+          ]
+        },
+        "other": {
+          "value": [
+            {
+              "type": 0,
+              "value": " ("
+            },
+            {
+              "type": 7
+            },
+            {
+              "type": 0,
+              "value": " outside this view)"
+            }
+          ]
+        }
+      },
+      "offset": 0,
+      "pluralType": "cardinal"
+    }
+  ],
+  "common.rows.total": [
+    {
+      "type": 6,
+      "value": "count",
+      "options": {
+        "one": {
+          "value": [
+            {
+              "type": 7
+            },
+            {
+              "type": 0,
+              "value": " row"
+            }
+          ]
+        },
+        "other": {
+          "value": [
+            {
+              "type": 7
+            },
+            {
+              "type": 0,
+              "value": " rows"
+            }
+          ]
+        }
+      },
+      "offset": 0,
+      "pluralType": "cardinal"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.application": [
+    {
+      "type": 0,
+      "value": "Application"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.apply.from.a.shell.on.this.server": [
+    {
+      "type": 0,
+      "value": "Apply from a shell on this server"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.automatic.updates.enabled": [
+    {
+      "type": 0,
+      "value": "Automatic updates enabled"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.build": [
+    {
+      "type": 0,
+      "value": "Build"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.check.for.updates": [
+    {
+      "type": 0,
+      "value": "Check for updates"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.checking": [
+    {
+      "type": 0,
+      "value": "Checking…"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.checking.for.updates": [
+    {
+      "type": 0,
+      "value": "Checking for updates"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.checks.include.a.random.resettable.installation.identifier": [
+    {
+      "type": 0,
+      "value": "Checks include a random resettable installation identifier used only to estimate active installations."
+    }
+  ],
+  "inspection.components.about.updates.settings.section.contacting.the.rstorrent.update.service": [
+    {
+      "type": 0,
+      "value": "Contacting the RSTorrent update service."
+    }
+  ],
+  "inspection.components.about.updates.settings.section.development.build": [
+    {
+      "type": 0,
+      "value": "Development build"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.headless.checks.include.no.installation.identifier": [
+    {
+      "type": 0,
+      "value": "Headless checks include no installation identifier."
+    }
+  ],
+  "inspection.components.about.updates.settings.section.install.and.restart": [
+    {
+      "type": 0,
+      "value": "Install and restart"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.linux.appimage": [
+    {
+      "type": 0,
+      "value": "Linux AppImage"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.linux.deb": [
+    {
+      "type": 0,
+      "value": "Linux DEB"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.linux.headless.service": [
+    {
+      "type": 0,
+      "value": "Linux headless service"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.linux.rpm": [
+    {
+      "type": 0,
+      "value": "Linux RPM"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.macos.app": [
+    {
+      "type": 0,
+      "value": "macOS app"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.manual.update.required": [
+    {
+      "type": 0,
+      "value": "Manual update required"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.open.release.downloads": [
+    {
+      "type": 0,
+      "value": "Open release downloads"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.package": [
+    {
+      "type": 0,
+      "value": "Package"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.release.notes": [
+    {
+      "type": 0,
+      "value": "Release notes"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.review.signed.release": [
+    {
+      "type": 0,
+      "value": "Review signed release"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.rstorrent.checks.automatically.after.startup.and.about": [
+    {
+      "type": 0,
+      "value": "RSTorrent checks automatically after startup and about once per day."
+    }
+  ],
+  "inspection.components.about.updates.settings.section.rstorrent.is.up.to.date": [
+    {
+      "type": 0,
+      "value": "RSTorrent is up to date"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.rstorrent.will.relaunch.after.installation.succeeds": [
+    {
+      "type": 0,
+      "value": "RSTorrent will relaunch after installation succeeds."
+    }
+  ],
+  "inspection.components.about.updates.settings.section.target": [
+    {
+      "type": 0,
+      "value": "Target"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.update.download.progress": [
+    {
+      "type": 0,
+      "value": "Update download progress"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.updates": [
+    {
+      "type": 0,
+      "value": "Updates"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.version": [
+    {
+      "type": 0,
+      "value": "Version"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.windows.msi": [
+    {
+      "type": 0,
+      "value": "Windows MSI"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.windows.nsis": [
+    {
+      "type": 0,
+      "value": "Windows NSIS"
+    }
+  ],
+  "inspection.components.add.torrent.dialog.a.download.folder.is.required.before.rstorrent": [
+    {
+      "type": 0,
+      "value": "A download folder is required before RSTorrent can add this torrent."
+    }
+  ],
+  "inspection.components.add.torrent.dialog.add.torrent": [
+    {
+      "type": 0,
+      "value": "Add torrent"
+    }
+  ],
+  "inspection.components.add.torrent.dialog.adding": [
+    {
+      "type": 0,
+      "value": "Adding…"
+    }
+  ],
+  "inspection.components.add.torrent.dialog.an.external.magnet.link.requested.this.add": [
+    {
+      "type": 0,
+      "value": "An external magnet link requested this add."
+    }
+  ],
+  "inspection.components.add.torrent.dialog.an.external.torrent.file.requested.this.add": [
+    {
+      "type": 0,
+      "value": "An external .torrent file requested this add."
+    }
+  ],
+  "inspection.components.add.torrent.dialog.cancel": [
+    {
+      "type": 0,
+      "value": "Cancel"
+    }
+  ],
+  "inspection.components.add.torrent.dialog.choose.an.available.download.folder.first": [
+    {
+      "type": 0,
+      "value": "Choose an available download folder first."
+    }
+  ],
+  "inspection.components.add.torrent.dialog.choose.download.options": [
+    {
+      "type": 0,
+      "value": "Choose download options"
+    }
+  ],
+  "inspection.components.add.torrent.dialog.choose.files.next": [
+    {
+      "type": 0,
+      "value": "Choose files next"
+    }
+  ],
+  "inspection.components.add.torrent.dialog.choose.folder": [
+    {
+      "type": 0,
+      "value": "Choose folder…"
+    }
+  ],
+  "inspection.components.add.torrent.dialog.choose.where.this.torrent.will.download.this": [
+    {
+      "type": 0,
+      "value": "Choose where this torrent will download. This location applies only to this torrent unless you change the default in Settings."
+    }
+  ],
+  "inspection.components.add.torrent.dialog.choosing": [
+    {
+      "type": 0,
+      "value": "Choosing…"
+    }
+  ],
+  "inspection.components.add.torrent.dialog.continue": [
+    {
+      "type": 0,
+      "value": "Continue"
+    }
+  ],
+  "inspection.components.add.torrent.dialog.current": [
+    {
+      "type": 0,
+      "value": "Current"
+    }
+  ],
+  "inspection.components.add.torrent.dialog.default": [
+    {
+      "type": 0,
+      "value": "Default"
+    }
+  ],
+  "inspection.components.add.torrent.dialog.don.t.show.these.options.again.when": [
+    {
+      "type": 0,
+      "value": "Don’t show these options again when a usable default is available"
+    }
+  ],
+  "inspection.components.add.torrent.dialog.download.location": [
+    {
+      "type": 0,
+      "value": "Download location"
+    }
+  ],
+  "inspection.components.add.torrent.dialog.location.is.not.available": [
+    {
+      "type": 0,
+      "value": "Location is not available"
+    }
+  ],
+  "inspection.components.add.torrent.dialog.repair": [
+    {
+      "type": 0,
+      "value": "Repair…"
+    }
+  ],
+  "inspection.components.add.torrent.dialog.repairing": [
+    {
+      "type": 0,
+      "value": "Repairing…"
+    }
+  ],
+  "inspection.components.add.torrent.dialog.rstorrent.will.load.metadata.without.downloading.content": [
+    {
+      "type": 0,
+      "value": "RSTorrent will load metadata without downloading content, then show a Normal/Skip checklist."
+    }
+  ],
+  "inspection.components.add.torrent.dialog.start.downloading.files.when.metadata.is.available": [
+    {
+      "type": 0,
+      "value": "Start downloading files when metadata is available"
+    }
+  ],
+  "inspection.components.add.torrent.dialog.this.torrent.will.use.android.s.current": [
+    {
+      "type": 0,
+      "value": "This torrent will use Android's current download folder."
+    }
+  ],
+  "inspection.components.add.torrent.dialog.turn.this.off.to.fetch.metadata.first": [
+    {
+      "type": 0,
+      "value": "Turn this off to fetch metadata first, then choose files in the Files tab."
+    }
+  ],
+  "inspection.components.app.authentication.is.off": [
+    {
+      "type": 0,
+      "value": "Authentication is off."
+    }
+  ],
+  "inspection.components.app.authentication.is.off.every.device.that.can": [
+    {
+      "type": 0,
+      "value": "Authentication is off; every device that can reach this service has full owner control."
+    }
+  ],
+  "inspection.components.app.demo.adapter": [
+    {
+      "type": 0,
+      "value": "Demo adapter"
+    }
+  ],
+  "inspection.components.app.dismiss.available.update": [
+    {
+      "type": 0,
+      "value": "Dismiss available update"
+    }
+  ],
+  "inspection.components.app.drag.to.resize.use.up.and.down": [
+    {
+      "type": 0,
+      "value": "Drag to resize; use Up and Down arrow keys for precise control"
+    }
+  ],
+  "inspection.components.app.every.device.on.this.lan.has.full": [
+    {
+      "type": 0,
+      "value": "Every device on this LAN has full owner control."
+    }
+  ],
+  "inspection.components.app.every.device.that.can.reach.this.service": [
+    {
+      "type": 0,
+      "value": "Every device that can reach this service has full owner control."
+    }
+  ],
+  "inspection.components.app.got.it": [
+    {
+      "type": 0,
+      "value": "Got it"
+    }
+  ],
+  "inspection.components.app.is.available": [
+    {
+      "type": 0,
+      "value": "is available"
+    }
+  ],
+  "inspection.components.app.later": [
+    {
+      "type": 0,
+      "value": "Later"
+    }
+  ],
+  "inspection.components.app.library": [
+    {
+      "type": 0,
+      "value": "Library"
+    }
+  ],
+  "inspection.components.app.network.access.has.no.authentication": [
+    {
+      "type": 0,
+      "value": "Network access has no authentication"
+    }
+  ],
+  "inspection.components.app.network.prerequisite.status": [
+    {
+      "type": 0,
+      "value": "Network prerequisite status"
+    }
+  ],
+  "inspection.components.app.network.security.notice": [
+    {
+      "type": 0,
+      "value": "Network security notice"
+    }
+  ],
+  "inspection.components.app.no.auth": [
+    {
+      "type": 0,
+      "value": "No auth"
+    }
+  ],
+  "inspection.components.app.primary": [
+    {
+      "type": 0,
+      "value": "Primary"
+    }
+  ],
+  "inspection.components.app.resize.torrent.details": [
+    {
+      "type": 0,
+      "value": "Resize torrent details"
+    }
+  ],
+  "inspection.components.app.review.the.update.when.you.are.ready": [
+    {
+      "type": 0,
+      "value": "Review the update when you are ready."
+    }
+  ],
+  "inspection.components.app.review.update": [
+    {
+      "type": 0,
+      "value": "Review update"
+    }
+  ],
+  "inspection.components.app.rs": [
+    {
+      "type": 0,
+      "value": "RS"
+    }
+  ],
+  "inspection.components.app.rstorrent": [
+    {
+      "type": 0,
+      "value": "RSTorrent"
+    }
+  ],
+  "inspection.components.app.session.transfer.rates": [
+    {
+      "type": 0,
+      "value": "Session transfer rates"
+    }
+  ],
+  "inspection.components.app.settings": [
+    {
+      "type": 0,
+      "value": "Settings"
+    }
+  ],
+  "inspection.components.app.transfers": [
+    {
+      "type": 0,
+      "value": "Transfers"
+    }
+  ],
+  "inspection.components.app.transfers.will.resume.automatically.when.one.is": [
+    {
+      "type": 0,
+      "value": "Transfers will resume automatically when one is usable."
+    }
+  ],
+  "inspection.components.app.waiting.for.an.unmetered.network": [
+    {
+      "type": 0,
+      "value": "Waiting for an unmetered network."
+    }
+  ],
+  "inspection.components.app.workbench": [
+    {
+      "type": 0,
+      "value": "Workbench"
+    }
+  ],
+  "inspection.components.app.workbench.torrent.collection": [
+    {
+      "type": 0,
+      "value": "Workbench torrent collection"
+    }
+  ],
+  "inspection.components.appearance.settings.section.always.use.the.dark.appearance": [
+    {
+      "type": 0,
+      "value": "Always use the dark appearance."
+    }
+  ],
+  "inspection.components.appearance.settings.section.always.use.the.light.appearance": [
+    {
+      "type": 0,
+      "value": "Always use the light appearance."
+    }
+  ],
+  "inspection.components.appearance.settings.section.appearance": [
+    {
+      "type": 0,
+      "value": "Appearance"
+    }
+  ],
+  "inspection.components.appearance.settings.section.auto": [
+    {
+      "type": 0,
+      "value": "Auto"
+    }
+  ],
+  "inspection.components.appearance.settings.section.balanced.text.controls.and.table.spacing": [
+    {
+      "type": 0,
+      "value": "Balanced text, controls, and table spacing."
+    }
+  ],
+  "inspection.components.appearance.settings.section.binary": [
+    {
+      "type": 0,
+      "value": "Binary"
+    }
+  ],
+  "inspection.components.appearance.settings.section.changes.apply.immediately": [
+    {
+      "type": 0,
+      "value": "Changes apply immediately."
+    }
+  ],
+  "inspection.components.appearance.settings.section.choose.a.palette.or.follow.your.system": [
+    {
+      "type": 0,
+      "value": "Choose a palette or follow your system."
+    }
+  ],
+  "inspection.components.appearance.settings.section.color.theme": [
+    {
+      "type": 0,
+      "value": "Color theme"
+    }
+  ],
+  "inspection.components.appearance.settings.section.compact": [
+    {
+      "type": 0,
+      "value": "Compact"
+    }
+  ],
+  "inspection.components.appearance.settings.section.dark": [
+    {
+      "type": 0,
+      "value": "Dark"
+    }
+  ],
+  "inspection.components.appearance.settings.section.data.units": [
+    {
+      "type": 0,
+      "value": "Data units"
+    }
+  ],
+  "inspection.components.appearance.settings.section.decimal": [
+    {
+      "type": 0,
+      "value": "Decimal"
+    }
+  ],
+  "inspection.components.appearance.settings.section.fit.more.information.on.screen": [
+    {
+      "type": 0,
+      "value": "Fit more information on screen."
+    }
+  ],
+  "inspection.components.appearance.settings.section.follow.your.system.appearance": [
+    {
+      "type": 0,
+      "value": "Follow your system appearance."
+    }
+  ],
+  "inspection.components.appearance.settings.section.interface.size": [
+    {
+      "type": 0,
+      "value": "Interface size"
+    }
+  ],
+  "inspection.components.appearance.settings.section.light": [
+    {
+      "type": 0,
+      "value": "Light"
+    }
+  ],
+  "inspection.components.appearance.settings.section.spacious": [
+    {
+      "type": 0,
+      "value": "Spacious"
+    }
+  ],
+  "inspection.components.appearance.settings.section.standard": [
+    {
+      "type": 0,
+      "value": "Standard"
+    }
+  ],
+  "inspection.components.appearance.settings.section.use.kb.mb.and.gb.in.powers": [
+    {
+      "type": 0,
+      "value": "Use kB, MB, and GB in powers of 1000."
+    }
+  ],
+  "inspection.components.appearance.settings.section.use.kib.mib.and.gib.in.powers": [
+    {
+      "type": 0,
+      "value": "Use KiB, MiB, and GiB in powers of 1024."
+    }
+  ],
+  "inspection.components.appearance.settings.section.use.larger.text.and.more.generous.targets": [
+    {
+      "type": 0,
+      "value": "Use larger text and more generous targets."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.accept.mse.pe.while.initiating.ordinary.connections": [
+    {
+      "type": 0,
+      "value": "Accept MSE/PE while initiating ordinary connections."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.active.downloads": [
+    {
+      "type": 0,
+      "value": "Active downloads:"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.active.seeds": [
+    {
+      "type": 0,
+      "value": "Active seeds"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.active.seeds.604a98b": [
+    {
+      "type": 0,
+      "value": "Active seeds:"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.address.unavailable": [
+    {
+      "type": 0,
+      "value": "address unavailable"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.all.torrents.download.limit": [
+    {
+      "type": 0,
+      "value": "All torrents download limit"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.all.torrents.peer.transfer.limits": [
+    {
+      "type": 0,
+      "value": "All torrents peer transfer limits"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.all.torrents.upload.limit": [
+    {
+      "type": 0,
+      "value": "All torrents upload limit"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.allow": [
+    {
+      "type": 0,
+      "value": "Allow"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.an.incoming.peer.was.observed": [
+    {
+      "type": 0,
+      "value": "; an incoming peer was observed."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.applying": [
+    {
+      "type": 0,
+      "value": ": applying…"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.automatic": [
+    {
+      "type": 0,
+      "value": "Automatic"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.automatic.ipv6.firewall.pinhole.control.is.off": [
+    {
+      "type": 0,
+      "value": "Automatic IPv6 firewall pinhole control is off."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.automatic.port": [
+    {
+      "type": 0,
+      "value": "Automatic port"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.automatic.port.c61a158": [
+    {
+      "type": 0,
+      "value": "automatic port"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.automatic.seeding.priority": [
+    {
+      "type": 0,
+      "value": "Automatic seeding priority"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.but.an.incoming.peer.was.observed": [
+    {
+      "type": 0,
+      "value": ", but an incoming peer was observed."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.by.available.file.descriptors": [
+    {
+      "type": 0,
+      "value": "by available file descriptors."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.cancel.changes": [
+    {
+      "type": 0,
+      "value": "Cancel changes"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.caps.established.bittorrent.peer.traffic.across.the": [
+    {
+      "type": 0,
+      "value": "Caps established BitTorrent peer traffic across the session. Trackers, DHT, connection handshakes, and network headers are not counted."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.choose.automatic.or.fixed.port.selection": [
+    {
+      "type": 0,
+      "value": "Choose automatic or fixed port selection."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.configured": [
+    {
+      "type": 0,
+      "value": "configured"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.connect.only.when.the.peer.negotiates.mse": [
+    {
+      "type": 0,
+      "value": "Connect only when the peer negotiates MSE/PE."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.connection.and.seeding.settings.are.managed.by": [
+    {
+      "type": 0,
+      "value": "Connection and seeding settings are managed by the live application."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.connection.seeding": [
+    {
+      "type": 0,
+      "value": "Connection & seeding"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.could.not.be.confirmed.removed.and.may": [
+    {
+      "type": 0,
+      "value": "could not be confirmed removed and may remain for"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.could.not.be.renewed": [
+    {
+      "type": 0,
+      "value": "could not be renewed:"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.counted.of": [
+    {
+      "type": 0,
+      "value": "counted of"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.current.runtime": [
+    {
+      "type": 0,
+      "value": "Current runtime"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.current.runtime.state": [
+    {
+      "type": 0,
+      "value": "Current runtime state"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.degraded": [
+    {
+      "type": 0,
+      "value": ": degraded ("
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.development.only.disabled.mode": [
+    {
+      "type": 0,
+      "value": "development-only disabled mode"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.development.only.loopback.mode": [
+    {
+      "type": 0,
+      "value": "development-only loopback mode"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.disabled": [
+    {
+      "type": 0,
+      "value": "disabled"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.disabled.75081b5": [
+    {
+      "type": 0,
+      "value": "Disabled"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.discovering.a.compatible.upnp.igd.v2.gateway": [
+    {
+      "type": 0,
+      "value": "Discovering a compatible UPnP IGD v2 gateway for"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.discovering.ipv6.firewall.control.on.the.upnp": [
+    {
+      "type": 0,
+      "value": "Discovering IPv6 firewall control on the UPnP gateway…"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.download.setting.is.limited.to": [
+    {
+      "type": 0,
+      "value": "-download setting is limited to"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.effective.gateway.mapping.policy": [
+    {
+      "type": 0,
+      "value": "Effective gateway mapping policy:"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.effective.ipv6.policy": [
+    {
+      "type": 0,
+      "value": "Effective IPv6 policy:"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.effective.listener.policy": [
+    {
+      "type": 0,
+      "value": "Effective listener policy:"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.effective.payload.upload.slots": [
+    {
+      "type": 0,
+      "value": "Effective payload upload slots:"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.effective.peer.connection.limit": [
+    {
+      "type": 0,
+      "value": "Effective peer connection limit:"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.effective.peer.download.limit": [
+    {
+      "type": 0,
+      "value": "Effective peer download limit:"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.effective.peer.upload.limit": [
+    {
+      "type": 0,
+      "value": "Effective peer upload limit:"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.effective.protocol.obfuscation.policy": [
+    {
+      "type": 0,
+      "value": "Effective protocol obfuscation policy:"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.enable.ipv6": [
+    {
+      "type": 0,
+      "value": "Enable IPv6"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.enabled": [
+    {
+      "type": 0,
+      "value": "enabled"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.external.reachability.is.not.yet.observed": [
+    {
+      "type": 0,
+      "value": "; external reachability is not yet observed."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.external.reachability.is.unverified": [
+    {
+      "type": 0,
+      "value": "; external reachability is unverified"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.finished.download.time.priority.goal": [
+    {
+      "type": 0,
+      "value": "Finished/download time priority goal (%)"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.finished.time.priority.goal.seconds": [
+    {
+      "type": 0,
+      "value": "Finished-time priority goal (seconds)"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.fixed.listener.port": [
+    {
+      "type": 0,
+      "value": "Fixed listener port"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.fixed.port": [
+    {
+      "type": 0,
+      "value": "Fixed port"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.for": [
+    {
+      "type": 0,
+      "value": "for"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.gateway.mapping": [
+    {
+      "type": 0,
+      "value": "gateway mapping…"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.gateway.mapping.failed.during": [
+    {
+      "type": 0,
+      "value": "gateway mapping failed during"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.gateway.mapping.is.off": [
+    {
+      "type": 0,
+      "value": "gateway mapping is off."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.gateway.mapping.requires.an.active.listener.and": [
+    {
+      "type": 0,
+      "value": "gateway mapping requires an active listener and a usable local network."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.goals.rank.completed.torrents.when.active.seed": [
+    {
+      "type": 0,
+      "value": "Goals rank completed torrents when active seed capacity is scarce. Meeting a goal does not stop a torrent; it may keep seeding while capacity is available."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.improves.compatibility.with.peers.that.require.mse": [
+    {
+      "type": 0,
+      "value": "Improves compatibility with peers that require MSE/PE. This is protocol obfuscation, not privacy or security."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.incoming.peer.connections.use.ipv4.and.when": [
+    {
+      "type": 0,
+      "value": "Incoming peer connections use IPv4 and, when available, IPv6. Automatic port selection is recommended; choose a fixed port only when your network requires one."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.incoming.tcp.is.listening.on.all.ipv4": [
+    {
+      "type": 0,
+      "value": "Incoming TCP is listening on all IPv4 interfaces at port"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.incoming.tcp.is.not.running.save.settings": [
+    {
+      "type": 0,
+      "value": "Incoming TCP is not running. Save settings to enable the ordinary listener."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.incoming.tcp.is.using.a.development.only": [
+    {
+      "type": 0,
+      "value": "Incoming TCP is using a development-only loopback listener at port"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.incoming.tcp.listener": [
+    {
+      "type": 0,
+      "value": "Incoming TCP listener"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.independently.from.tcp": [
+    {
+      "type": 0,
+      "value": "independently from TCP."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.ipv4": [
+    {
+      "type": 0,
+      "value": "IPv4"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.ipv6": [
+    {
+      "type": 0,
+      "value": "IPv6"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.ipv6.pinhole.control.failed.during": [
+    {
+      "type": 0,
+      "value": "IPv6 pinhole control failed during"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.ipv6.pinhole.control.requires.a.global.unicast": [
+    {
+      "type": 0,
+      "value": "IPv6 pinhole control requires a global-unicast IPv6 listener and UPnP gateway control."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.kib.s.of.established.peer.traffic": [
+    {
+      "type": 0,
+      "value": "KiB/s of established peer traffic."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.listener.could.not.start": [
+    {
+      "type": 0,
+      "value": "Listener could not start ("
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.map.incoming.tcp.and.utp.with.upnp": [
+    {
+      "type": 0,
+      "value": "Map incoming TCP and uTP with UPnP"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.mapped": [
+    {
+      "type": 0,
+      "value": "mapped"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.mapped.tcp.port": [
+    {
+      "type": 0,
+      "value": "Mapped TCP port"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.mapping": [
+    {
+      "type": 0,
+      "value": "mapping…"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.mapping.at": [
+    {
+      "type": 0,
+      "value": "mapping at"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.no.incoming.listener.policy.has.converged.yet": [
+    {
+      "type": 0,
+      "value": "No incoming-listener policy has converged yet."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.of": [
+    {
+      "type": 0,
+      "value": "of"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.off": [
+    {
+      "type": 0,
+      "value": "off"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.on.this.platform": [
+    {
+      "type": 0,
+      "value": "on this platform."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.one.or.more.settings.changed.elsewhere.your": [
+    {
+      "type": 0,
+      "value": "One or more settings changed elsewhere. Your draft is preserved for review."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.other.system.error": [
+    {
+      "type": 0,
+      "value": "other system error"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.outbound.only.advertisement": [
+    {
+      "type": 0,
+      "value": "· outbound-only advertisement"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.payload.upload.slots": [
+    {
+      "type": 0,
+      "value": "Payload upload slots"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.peer.advertisement.endpoint.is.not.available.yet": [
+    {
+      "type": 0,
+      "value": "Peer advertisement endpoint is not available yet."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.peer.advertisement.is.stopping": [
+    {
+      "type": 0,
+      "value": "Peer advertisement is stopping."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.peer.connection.limit": [
+    {
+      "type": 0,
+      "value": "Peer connection limit"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.peer.connections": [
+    {
+      "type": 0,
+      "value": "Peer connections"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.peer.protocols.may.advertise.local.tcp.port": [
+    {
+      "type": 0,
+      "value": "Peer protocols may advertise local TCP port"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.peer.protocols.may.advertise.mapped.tcp.port": [
+    {
+      "type": 0,
+      "value": "Peer protocols may advertise mapped TCP port"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.peer.setting.is.safely.limited.to": [
+    {
+      "type": 0,
+      "value": "-peer setting is safely limited to"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.peer.transfer.limits": [
+    {
+      "type": 0,
+      "value": "Peer transfer limits"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.permission.denied": [
+    {
+      "type": 0,
+      "value": "permission denied"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.port.already.in.use": [
+    {
+      "type": 0,
+      "value": "port already in use"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.port.mapping": [
+    {
+      "type": 0,
+      "value": "Port mapping"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.prefer": [
+    {
+      "type": 0,
+      "value": "Prefer"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.protocol.obfuscation": [
+    {
+      "type": 0,
+      "value": "Protocol obfuscation"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.protocol.obfuscation.mse.pe": [
+    {
+      "type": 0,
+      "value": "Protocol obfuscation (MSE/PE)"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.remains.valid.for.up.to": [
+    {
+      "type": 0,
+      "value": "remains valid for up to"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.remove.the.seed.only.limit.the.fixed": [
+    {
+      "type": 0,
+      "value": "Remove the seed-only limit. The fixed shared 500-torrent safety ceiling still applies."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.removing.the": [
+    {
+      "type": 0,
+      "value": "Removing the"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.removing.the.ipv6.firewall.pinhole": [
+    {
+      "type": 0,
+      "value": "Removing the IPv6 firewall pinhole…"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.request.independent.temporary.tcp.and.udp.igd": [
+    {
+      "type": 0,
+      "value": "Request independent temporary TCP and UDP IGD v2 mappings when a compatible gateway is available."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.requesting.an.ipv6.firewall.pinhole.for": [
+    {
+      "type": 0,
+      "value": "Requesting an IPv6 firewall pinhole for"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.requesting.and.verifying.the.temporary": [
+    {
+      "type": 0,
+      "value": "Requesting and verifying the temporary"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.required": [
+    {
+      "type": 0,
+      "value": "Required"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.save.settings": [
+    {
+      "type": 0,
+      "value": "Save settings"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.save.settings.to.listen.on.all.ipv4": [
+    {
+      "type": 0,
+      "value": ". Save settings to listen on all IPv4 interfaces."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.save.settings.to.retry": [
+    {
+      "type": 0,
+      "value": "Save settings to retry."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.save.settings.to.retry.0312e9f": [
+    {
+      "type": 0,
+      "value": "). Save settings to retry."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.saving": [
+    {
+      "type": 0,
+      "value": "Saving…"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.saving.settings": [
+    {
+      "type": 0,
+      "value": "Saving settings…"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.seconds": [
+    {
+      "type": 0,
+      "value": "seconds."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.seconds.a157a77": [
+    {
+      "type": 0,
+      "value": "seconds:"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.seconds.but.renewal.is.unhealthy": [
+    {
+      "type": 0,
+      "value": "seconds, but renewal is unhealthy:"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.seconds.this.does.not.mean.an.incoming": [
+    {
+      "type": 0,
+      "value": "seconds. This does not mean an incoming peer has connected."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.session.udp.is.bound.on": [
+    {
+      "type": 0,
+      "value": "Session UDP is bound on"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.session.udp.is.not.available.in.this": [
+    {
+      "type": 0,
+      "value": "Session UDP is not available in this snapshot."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.settings.accepted.and.applying": [
+    {
+      "type": 0,
+      "value": "Settings accepted and applying."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.settings.accepted.waiting.for.the.live.view": [
+    {
+      "type": 0,
+      "value": "Settings accepted; waiting for the live view…"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.share.ratio.priority.goal": [
+    {
+      "type": 0,
+      "value": "Share-ratio priority goal (%)"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.simultaneous.downloads": [
+    {
+      "type": 0,
+      "value": "Simultaneous downloads"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.tcp": [
+    {
+      "type": 0,
+      "value": "TCP"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.the": [
+    {
+      "type": 0,
+      "value": "The"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.the.configured": [
+    {
+      "type": 0,
+      "value": "The configured"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.the.gateway.accepted.an.ipv6.pinhole.for": [
+    {
+      "type": 0,
+      "value": "The gateway accepted an IPv6 pinhole for"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.the.gateway.does.not.advertise.ipv6.firewall": [
+    {
+      "type": 0,
+      "value": "The gateway does not advertise IPv6 firewall control. The IPv6 listener remains advertised as global unicast; gateway filtering is unknown."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.the.gateway.firewall.is.enabled.but.does": [
+    {
+      "type": 0,
+      "value": "The gateway firewall is enabled but does not allow requested inbound pinholes."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.the.gateway.ipv6.firewall.service.is.incomplete": [
+    {
+      "type": 0,
+      "value": "The gateway IPv6 firewall service is incomplete:"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.the.gateway.reports.ipv6.filtering.disabled.for": [
+    {
+      "type": 0,
+      "value": "The gateway reports IPv6 filtering disabled for"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.the.ipv6.pinhole.for": [
+    {
+      "type": 0,
+      "value": "The IPv6 pinhole for"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.the.old": [
+    {
+      "type": 0,
+      "value": "The old"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.the.old.ipv6.pinhole.for": [
+    {
+      "type": 0,
+      "value": "The old IPv6 pinhole for"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.this.is.gateway.state.not.an.observed": [
+    {
+      "type": 0,
+      "value": ". This is gateway state, not an observed incoming peer."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.to": [
+    {
+      "type": 0,
+      "value": "to"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.tracker.discovery.is.outbound.only.no.connectable": [
+    {
+      "type": 0,
+      "value": "Tracker discovery is outbound-only; no connectable peer port is advertised."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.transport": [
+    {
+      "type": 0,
+      "value": "Transport"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.try.mse.pe.first.and.use.a": [
+    {
+      "type": 0,
+      "value": "Try MSE/PE first and use a bounded plaintext fallback."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.udp.utp": [
+    {
+      "type": 0,
+      "value": "UDP/uTP"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.unlimited": [
+    {
+      "type": 0,
+      "value": "Unlimited"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.unlimited.active.seeds": [
+    {
+      "type": 0,
+      "value": "Unlimited active seeds"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.upload.slots": [
+    {
+      "type": 0,
+      "value": "Upload slots"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.upnp": [
+    {
+      "type": 0,
+      "value": "UPnP"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.upnp.igd.v2": [
+    {
+      "type": 0,
+      "value": "UPnP IGD v2"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.use.ipv6.for.dht.trackers.peer.connections": [
+    {
+      "type": 0,
+      "value": "Use IPv6 for DHT, trackers, peer connections, and the incoming listener when this device has an eligible address."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.use.ordinary.plaintext.peer.handshakes.only": [
+    {
+      "type": 0,
+      "value": "Use ordinary plaintext peer handshakes only."
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.with.the.tcp.listener": [
+    {
+      "type": 0,
+      "value": "with the TCP listener."
+    }
+  ],
+  "inspection.components.crostini.storage.help.a.shared.chromeos.folder.is.easier.to": [
+    {
+      "type": 0,
+      "value": "A shared ChromeOS folder is easier to use directly from My files, but torrent writes, verification, reading, and seeding can be much slower than Linux storage."
+    }
+  ],
+  "inspection.components.crostini.storage.help.add.folder": [
+    {
+      "type": 0,
+      "value": "Add folder…"
+    }
+  ],
+  "inspection.components.crostini.storage.help.choose.folder": [
+    {
+      "type": 0,
+      "value": "Choose folder…"
+    }
+  ],
+  "inspection.components.crostini.storage.help.chromebook.storage.guidance": [
+    {
+      "type": 0,
+      "value": "Chromebook storage guidance"
+    }
+  ],
+  "inspection.components.crostini.storage.help.chromeos.calls.this.permission.share.with.linux": [
+    {
+      "type": 0,
+      "value": "ChromeOS calls this permission “Share with Linux”:"
+    }
+  ],
+  "inspection.components.crostini.storage.help.chromeos.shared.folder.convenient.but.slower": [
+    {
+      "type": 0,
+      "value": "ChromeOS shared folder — convenient, but slower"
+    }
+  ],
+  "inspection.components.crostini.storage.help.downloads": [
+    {
+      "type": 0,
+      "value": "Downloads"
+    }
+  ],
+  "inspection.components.crostini.storage.help.how.to.use.a.folder.from.my": [
+    {
+      "type": 0,
+      "value": "How to use a folder from My files"
+    }
+  ],
+  "inspection.components.crostini.storage.help.if.you.shared": [
+    {
+      "type": 0,
+      "value": "if you shared"
+    }
+  ],
+  "inspection.components.crostini.storage.help.in.the.folder.picker.select.the.folder": [
+    {
+      "type": 0,
+      "value": "In the folder picker, select the folder you just shared. For example, choose"
+    }
+  ],
+  "inspection.components.crostini.storage.help.keep.downloads.in.linux.for.the.best": [
+    {
+      "type": 0,
+      "value": "Keep downloads in Linux for the best download, checking, and seeding performance. ChromeOS Files already shows them under"
+    }
+  ],
+  "inspection.components.crostini.storage.help.linux.downloads.faster.recommended": [
+    {
+      "type": 0,
+      "value": "Linux Downloads — faster (recommended)"
+    }
+  ],
+  "inspection.components.crostini.storage.help.linux.downloads.is.faster": [
+    {
+      "type": 0,
+      "value": "Linux Downloads is faster"
+    }
+  ],
+  "inspection.components.crostini.storage.help.linux.files": [
+    {
+      "type": 0,
+      "value": "Linux files"
+    }
+  ],
+  "inspection.components.crostini.storage.help.my.files": [
+    {
+      "type": 0,
+      "value": "My files"
+    }
+  ],
+  "inspection.components.crostini.storage.help.no.sharing.step.is.required": [
+    {
+      "type": 0,
+      "value": "; no sharing step is required."
+    }
+  ],
+  "inspection.components.crostini.storage.help.open.the.chromeos.files.app": [
+    {
+      "type": 0,
+      "value": "Open the ChromeOS Files app."
+    }
+  ],
+  "inspection.components.crostini.storage.help.or": [
+    {
+      "type": 0,
+      "value": "or"
+    }
+  ],
+  "inspection.components.crostini.storage.help.or.another.folder.and.choose": [
+    {
+      "type": 0,
+      "value": "or another folder and choose"
+    }
+  ],
+  "inspection.components.crostini.storage.help.return.to.rstorrent.and.choose": [
+    {
+      "type": 0,
+      "value": "Return to RSTorrent and choose"
+    }
+  ],
+  "inspection.components.crostini.storage.help.right.click": [
+    {
+      "type": 0,
+      "value": ", right-click"
+    }
+  ],
+  "inspection.components.crostini.storage.help.share.with.linux": [
+    {
+      "type": 0,
+      "value": "Share with Linux"
+    }
+  ],
+  "inspection.components.crostini.storage.help.under": [
+    {
+      "type": 0,
+      "value": "Under"
+    }
+  ],
+  "inspection.components.detail.pane.absent": [
+    {
+      "type": 0,
+      "value": "Absent"
+    }
+  ],
+  "inspection.components.detail.pane.active.inactive.exempt.seed": [
+    {
+      "type": 0,
+      "value": "active, inactive-exempt seed"
+    }
+  ],
+  "inspection.components.detail.pane.active.seed": [
+    {
+      "type": 0,
+      "value": "active seed"
+    }
+  ],
+  "inspection.components.detail.pane.active.time": [
+    {
+      "type": 0,
+      "value": "Active time"
+    }
+  ],
+  "inspection.components.detail.pane.checker.activity": [
+    {
+      "type": 0,
+      "value": "Checker activity"
+    }
+  ],
+  "inspection.components.detail.pane.checking": [
+    {
+      "type": 0,
+      "value": "checking"
+    }
+  ],
+  "inspection.components.detail.pane.connected.peers": [
+    {
+      "type": 0,
+      "value": "Connected peers"
+    }
+  ],
+  "inspection.components.detail.pane.current.check": [
+    {
+      "type": 0,
+      "value": "Current check"
+    }
+  ],
+  "inspection.components.detail.pane.current.transfer": [
+    {
+      "type": 0,
+      "value": "Current transfer"
+    }
+  ],
+  "inspection.components.detail.pane.data": [
+    {
+      "type": 0,
+      "value": "data."
+    }
+  ],
+  "inspection.components.detail.pane.download": [
+    {
+      "type": 0,
+      "value": "download"
+    }
+  ],
+  "inspection.components.detail.pane.download.speed": [
+    {
+      "type": 0,
+      "value": "Download speed"
+    }
+  ],
+  "inspection.components.detail.pane.finished.time": [
+    {
+      "type": 0,
+      "value": "Finished time"
+    }
+  ],
+  "inspection.components.detail.pane.info.hash": [
+    {
+      "type": 0,
+      "value": "Info hash"
+    }
+  ],
+  "inspection.components.detail.pane.info.hash.v1": [
+    {
+      "type": 0,
+      "value": "Info hash (v1)"
+    }
+  ],
+  "inspection.components.detail.pane.info.hash.v2": [
+    {
+      "type": 0,
+      "value": "Info hash (v2)"
+    }
+  ],
+  "inspection.components.detail.pane.kib.s": [
+    {
+      "type": 0,
+      "value": "KiB/s"
+    }
+  ],
+  "inspection.components.detail.pane.known.peers": [
+    {
+      "type": 0,
+      "value": "Known peers"
+    }
+  ],
+  "inspection.components.detail.pane.lifetime.downloaded": [
+    {
+      "type": 0,
+      "value": "Lifetime downloaded"
+    }
+  ],
+  "inspection.components.detail.pane.lifetime.uploaded": [
+    {
+      "type": 0,
+      "value": "Lifetime uploaded"
+    }
+  ],
+  "inspection.components.detail.pane.matched": [
+    {
+      "type": 0,
+      "value": "Matched"
+    }
+  ],
+  "inspection.components.detail.pane.mismatched": [
+    {
+      "type": 0,
+      "value": "Mismatched"
+    }
+  ],
+  "inspection.components.detail.pane.not.eligible.to.seed": [
+    {
+      "type": 0,
+      "value": "not eligible to seed"
+    }
+  ],
+  "inspection.components.detail.pane.only.this.torrent": [
+    {
+      "type": 0,
+      "value": "Only this torrent"
+    }
+  ],
+  "inspection.components.detail.pane.peer.transfer.limits": [
+    {
+      "type": 0,
+      "value": "Peer transfer limits"
+    }
+  ],
+  "inspection.components.detail.pane.pieces.checked": [
+    {
+      "type": 0,
+      "value": "Pieces checked"
+    }
+  ],
+  "inspection.components.detail.pane.queued.seed": [
+    {
+      "type": 0,
+      "value": "queued seed"
+    }
+  ],
+  "inspection.components.detail.pane.save.torrent.limits": [
+    {
+      "type": 0,
+      "value": "Save torrent limits"
+    }
+  ],
+  "inspection.components.detail.pane.saved.waiting.for.the.live.view": [
+    {
+      "type": 0,
+      "value": "Saved; waiting for the live view…"
+    }
+  ],
+  "inspection.components.detail.pane.saving": [
+    {
+      "type": 0,
+      "value": "Saving…"
+    }
+  ],
+  "inspection.components.detail.pane.saving.torrent.limits": [
+    {
+      "type": 0,
+      "value": "Saving torrent limits…"
+    }
+  ],
+  "inspection.components.detail.pane.seeding.goals.affect.automatic.priority.a.goal": [
+    {
+      "type": 0,
+      "value": "Seeding goals affect automatic priority; a goal-met torrent may keep seeding while capacity is available. Met thresholds:"
+    }
+  ],
+  "inspection.components.detail.pane.seeding.priority": [
+    {
+      "type": 0,
+      "value": "Seeding priority"
+    }
+  ],
+  "inspection.components.detail.pane.seeding.time": [
+    {
+      "type": 0,
+      "value": "Seeding time"
+    }
+  ],
+  "inspection.components.detail.pane.select.a.torrent.to.inspect.it": [
+    {
+      "type": 0,
+      "value": "Select a torrent to inspect it"
+    }
+  ],
+  "inspection.components.detail.pane.share.ratio": [
+    {
+      "type": 0,
+      "value": "Share ratio"
+    }
+  ],
+  "inspection.components.detail.pane.size": [
+    {
+      "type": 0,
+      "value": "Size"
+    }
+  ],
+  "inspection.components.detail.pane.status": [
+    {
+      "type": 0,
+      "value": "Status"
+    }
+  ],
+  "inspection.components.detail.pane.storage.needs.attention": [
+    {
+      "type": 0,
+      "value": "Storage needs attention"
+    }
+  ],
+  "inspection.components.detail.pane.the.detail.surface.preserves.its.tab.and": [
+    {
+      "type": 0,
+      "value": "The detail surface preserves its tab and navigation context."
+    }
+  ],
+  "inspection.components.detail.pane.these.caps.combine.with.the.all.torrents": [
+    {
+      "type": 0,
+      "value": "These caps combine with the All torrents limits. Trackers, DHT, connection handshakes, and network headers are not counted."
+    }
+  ],
+  "inspection.components.detail.pane.these.limits.changed.elsewhere.your.draft.is": [
+    {
+      "type": 0,
+      "value": "These limits changed elsewhere. Your draft is preserved for review."
+    }
+  ],
+  "inspection.components.detail.pane.this.named.projection.is.not.connected.yet": [
+    {
+      "type": 0,
+      "value": "This named projection is not connected yet. The empty state is intentional and does not claim that the engine has no"
+    }
+  ],
+  "inspection.components.detail.pane.torrent.detail.views": [
+    {
+      "type": 0,
+      "value": "Torrent detail views"
+    }
+  ],
+  "inspection.components.detail.pane.torrent.details": [
+    {
+      "type": 0,
+      "value": "Torrent details"
+    }
+  ],
+  "inspection.components.detail.pane.torrent.peer.transfer.limits.saved": [
+    {
+      "type": 0,
+      "value": "Torrent peer transfer limits saved."
+    }
+  ],
+  "inspection.components.detail.pane.torrents": [
+    {
+      "type": 0,
+      "value": "Torrents"
+    }
+  ],
+  "inspection.components.detail.pane.unlimited": [
+    {
+      "type": 0,
+      "value": "Unlimited"
+    }
+  ],
+  "inspection.components.detail.pane.upload.speed": [
+    {
+      "type": 0,
+      "value": "Upload speed"
+    }
+  ],
+  "inspection.components.detail.pane.view.scaffold": [
+    {
+      "type": 0,
+      "value": "view scaffold"
+    }
+  ],
+  "inspection.components.detail.pane.waiting": [
+    {
+      "type": 0,
+      "value": "Waiting"
+    }
+  ],
+  "inspection.components.dht.panel.active.lookups": [
+    {
+      "type": 0,
+      "value": "Active lookups"
+    }
+  ],
+  "inspection.components.dht.panel.all.160.engine.slots.are.shown.in": [
+    {
+      "type": 0,
+      "value": "All 160 engine slots are shown in exact index order. Equal widths describe storage slots, not equal keyspace volumes."
+    }
+  ],
+  "inspection.components.dht.panel.announcements": [
+    {
+      "type": 0,
+      "value": "Announcements"
+    }
+  ],
+  "inspection.components.dht.panel.bootstrap.attempts": [
+    {
+      "type": 0,
+      "value": "Bootstrap attempts"
+    }
+  ],
+  "inspection.components.dht.panel.bootstrapping": [
+    {
+      "type": 0,
+      "value": "Bootstrapping"
+    }
+  ],
+  "inspection.components.dht.panel.bucket.index": [
+    {
+      "type": 0,
+      "value": "Bucket index"
+    }
+  ],
+  "inspection.components.dht.panel.buckets.literal": [
+    {
+      "type": 0,
+      "value": "Buckets · literal"
+    }
+  ],
+  "inspection.components.dht.panel.candidates": [
+    {
+      "type": 0,
+      "value": "Candidates"
+    }
+  ],
+  "inspection.components.dht.panel.captured": [
+    {
+      "type": 0,
+      "value": "Captured"
+    }
+  ],
+  "inspection.components.dht.panel.closest.progress.includes.responded.candidates.with.known": [
+    {
+      "type": 0,
+      "value": "Closest progress includes responded candidates with known node IDs only."
+    }
+  ],
+  "inspection.components.dht.panel.convergence": [
+    {
+      "type": 0,
+      "value": "Convergence"
+    }
+  ],
+  "inspection.components.dht.panel.cumulative.session.activity": [
+    {
+      "type": 0,
+      "value": "Cumulative session activity"
+    }
+  ],
+  "inspection.components.dht.panel.datagram.traffic": [
+    {
+      "type": 0,
+      "value": "Datagram traffic"
+    }
+  ],
+  "inspection.components.dht.panel.deepest.prefix": [
+    {
+      "type": 0,
+      "value": "Deepest prefix"
+    }
+  ],
+  "inspection.components.dht.panel.depth.159.bucket.index.moving.right.adds": [
+    {
+      "type": 0,
+      "value": "Depth = 159 − bucket index. Moving right adds one shared bit and halves the XOR-distance band."
+    }
+  ],
+  "inspection.components.dht.panel.depth.normalized": [
+    {
+      "type": 0,
+      "value": "Depth · normalized"
+    }
+  ],
+  "inspection.components.dht.panel.dht.address.family": [
+    {
+      "type": 0,
+      "value": "DHT address family"
+    }
+  ],
+  "inspection.components.dht.panel.dht.observatory": [
+    {
+      "type": 0,
+      "value": "DHT observatory"
+    }
+  ],
+  "inspection.components.dht.panel.dht.routing.bucket.observations": [
+    {
+      "type": 0,
+      "value": "DHT routing bucket observations"
+    }
+  ],
+  "inspection.components.dht.panel.dht.status.facts": [
+    {
+      "type": 0,
+      "value": "DHT status facts"
+    }
+  ],
+  "inspection.components.dht.panel.elapsed.left": [
+    {
+      "type": 0,
+      "value": "Elapsed / left"
+    }
+  ],
+  "inspection.components.dht.panel.empty": [
+    {
+      "type": 0,
+      "value": "Empty"
+    }
+  ],
+  "inspection.components.dht.panel.encoding": [
+    {
+      "type": 0,
+      "value": "Encoding"
+    }
+  ],
+  "inspection.components.dht.panel.exact": [
+    {
+      "type": 0,
+      "value": "Exact"
+    }
+  ],
+  "inspection.components.dht.panel.family": [
+    {
+      "type": 0,
+      "value": "Family"
+    }
+  ],
+  "inspection.components.dht.panel.family.mismatches": [
+    {
+      "type": 0,
+      "value": "Family mismatches"
+    }
+  ],
+  "inspection.components.dht.panel.freshness": [
+    {
+      "type": 0,
+      "value": "Freshness"
+    }
+  ],
+  "inspection.components.dht.panel.good": [
+    {
+      "type": 0,
+      "value": "Good"
+    }
+  ],
+  "inspection.components.dht.panel.good.live": [
+    {
+      "type": 0,
+      "value": "Good live"
+    }
+  ],
+  "inspection.components.dht.panel.inactive": [
+    {
+      "type": 0,
+      "value": "Inactive"
+    }
+  ],
+  "inspection.components.dht.panel.left": [
+    {
+      "type": 0,
+      "value": "left"
+    }
+  ],
+  "inspection.components.dht.panel.live.nodes.rise.above.the.baseline.replacements": [
+    {
+      "type": 0,
+      "value": "Live nodes rise above the baseline; replacements mirror below it."
+    }
+  ],
+  "inspection.components.dht.panel.live.work": [
+    {
+      "type": 0,
+      "value": "Live work"
+    }
+  ],
+  "inspection.components.dht.panel.lookup": [
+    {
+      "type": 0,
+      "value": "lookup"
+    }
+  ],
+  "inspection.components.dht.panel.loopback.only": [
+    {
+      "type": 0,
+      "value": "Loopback only"
+    }
+  ],
+  "inspection.components.dht.panel.malformed": [
+    {
+      "type": 0,
+      "value": "Malformed"
+    }
+  ],
+  "inspection.components.dht.panel.network": [
+    {
+      "type": 0,
+      "value": "Network"
+    }
+  ],
+  "inspection.components.dht.panel.network.disabled": [
+    {
+      "type": 0,
+      "value": "Network disabled"
+    }
+  ],
+  "inspection.components.dht.panel.no.dht.address.family.is.active": [
+    {
+      "type": 0,
+      "value": "No DHT address family is active."
+    }
+  ],
+  "inspection.components.dht.panel.no.improvement.yet": [
+    {
+      "type": 0,
+      "value": "No improvement yet"
+    }
+  ],
+  "inspection.components.dht.panel.no.lookup.is.active": [
+    {
+      "type": 0,
+      "value": "No lookup is active."
+    }
+  ],
+  "inspection.components.dht.panel.no.response": [
+    {
+      "type": 0,
+      "value": "No response"
+    }
+  ],
+  "inspection.components.dht.panel.of.32.combined": [
+    {
+      "type": 0,
+      "value": "of 32 combined"
+    }
+  ],
+  "inspection.components.dht.panel.offline": [
+    {
+      "type": 0,
+      "value": "Offline"
+    }
+  ],
+  "inspection.components.dht.panel.oldest.response.age": [
+    {
+      "type": 0,
+      "value": "Oldest response age"
+    }
+  ],
+  "inspection.components.dht.panel.oldest.response.age.0.15.min": [
+    {
+      "type": 0,
+      "value": "Oldest response age · 0–15 min"
+    }
+  ],
+  "inspection.components.dht.panel.online.policy": [
+    {
+      "type": 0,
+      "value": "Online policy"
+    }
+  ],
+  "inspection.components.dht.panel.participant": [
+    {
+      "type": 0,
+      "value": "Participant"
+    }
+  ],
+  "inspection.components.dht.panel.participating": [
+    {
+      "type": 0,
+      "value": "Participating"
+    }
+  ],
+  "inspection.components.dht.panel.peers": [
+    {
+      "type": 0,
+      "value": "Peers"
+    }
+  ],
+  "inspection.components.dht.panel.peers.discovered": [
+    {
+      "type": 0,
+      "value": "Peers discovered"
+    }
+  ],
+  "inspection.components.dht.panel.preparing.dht.observation": [
+    {
+      "type": 0,
+      "value": "Preparing DHT observation…"
+    }
+  ],
+  "inspection.components.dht.panel.queries.received": [
+    {
+      "type": 0,
+      "value": "Queries received"
+    }
+  ],
+  "inspection.components.dht.panel.queries.sent": [
+    {
+      "type": 0,
+      "value": "Queries sent"
+    }
+  ],
+  "inspection.components.dht.panel.questionable": [
+    {
+      "type": 0,
+      "value": "Questionable"
+    }
+  ],
+  "inspection.components.dht.panel.questionable.live": [
+    {
+      "type": 0,
+      "value": "Questionable live"
+    }
+  ],
+  "inspection.components.dht.panel.rate.limited": [
+    {
+      "type": 0,
+      "value": "Rate limited"
+    }
+  ],
+  "inspection.components.dht.panel.replacements": [
+    {
+      "type": 0,
+      "value": "Replacements"
+    }
+  ],
+  "inspection.components.dht.panel.responses.received": [
+    {
+      "type": 0,
+      "value": "Responses received"
+    }
+  ],
+  "inspection.components.dht.panel.routing.chart.legend": [
+    {
+      "type": 0,
+      "value": "Routing chart legend"
+    }
+  ],
+  "inspection.components.dht.panel.routing.nodes": [
+    {
+      "type": 0,
+      "value": "Routing nodes"
+    }
+  ],
+  "inspection.components.dht.panel.routing.refreshes": [
+    {
+      "type": 0,
+      "value": "Routing refreshes"
+    }
+  ],
+  "inspection.components.dht.panel.routing.space.coverage.node.freshness.and.live": [
+    {
+      "type": 0,
+      "value": "Routing-space coverage, node freshness, and live lookup convergence."
+    }
+  ],
+  "inspection.components.dht.panel.routing.space.distribution": [
+    {
+      "type": 0,
+      "value": "routing-space distribution"
+    }
+  ],
+  "inspection.components.dht.panel.routing.visualization": [
+    {
+      "type": 0,
+      "value": "Routing visualization"
+    }
+  ],
+  "inspection.components.dht.panel.session.dht.observatory": [
+    {
+      "type": 0,
+      "value": "Session DHT observatory"
+    }
+  ],
+  "inspection.components.dht.panel.session.mainline.ipv4.ipv6": [
+    {
+      "type": 0,
+      "value": "Session · Mainline IPv4 + IPv6"
+    }
+  ],
+  "inspection.components.dht.panel.shared.prefix.depth": [
+    {
+      "type": 0,
+      "value": "Shared prefix depth"
+    }
+  ],
+  "inspection.components.dht.panel.suspended": [
+    {
+      "type": 0,
+      "value": "Suspended"
+    }
+  ],
+  "inspection.components.dht.panel.target": [
+    {
+      "type": 0,
+      "value": "Target"
+    }
+  ],
+  "inspection.components.dht.panel.traffic.is.complete.udp.datagram.bytes.at": [
+    {
+      "type": 0,
+      "value": "Traffic is complete UDP datagram bytes at the socket boundary, not payload throughput."
+    }
+  ],
+  "inspection.components.dht.panel.utc": [
+    {
+      "type": 0,
+      "value": "UTC"
+    }
+  ],
+  "inspection.components.disk.panel.0.ms": [
+    {
+      "type": 0,
+      "value": "0 ms"
+    }
+  ],
+  "inspection.components.disk.panel.active": [
+    {
+      "type": 0,
+      "value": "active"
+    }
+  ],
+  "inspection.components.disk.panel.active.storage.pieces": [
+    {
+      "type": 0,
+      "value": "Active storage pieces"
+    }
+  ],
+  "inspection.components.disk.panel.age": [
+    {
+      "type": 0,
+      "value": "Age"
+    }
+  ],
+  "inspection.components.disk.panel.attempt": [
+    {
+      "type": 0,
+      "value": "Attempt"
+    }
+  ],
+  "inspection.components.disk.panel.backpressured": [
+    {
+      "type": 0,
+      "value": "Backpressured"
+    }
+  ],
+  "inspection.components.disk.panel.checkpoint.backlog": [
+    {
+      "type": 0,
+      "value": "Checkpoint backlog"
+    }
+  ],
+  "inspection.components.disk.panel.checkpoint.commit": [
+    {
+      "type": 0,
+      "value": "Checkpoint commit"
+    }
+  ],
+  "inspection.components.disk.panel.checkpoint.stage": [
+    {
+      "type": 0,
+      "value": "Checkpoint stage"
+    }
+  ],
+  "inspection.components.disk.panel.disk.state.is.not.requested": [
+    {
+      "type": 0,
+      "value": "Disk state is not requested."
+    }
+  ],
+  "inspection.components.disk.panel.error": [
+    {
+      "type": 0,
+      "value": "Error"
+    }
+  ],
+  "inspection.components.disk.panel.hash.service": [
+    {
+      "type": 0,
+      "value": "Hash service"
+    }
+  ],
+  "inspection.components.disk.panel.loading.disk.state": [
+    {
+      "type": 0,
+      "value": "Loading disk state…"
+    }
+  ],
+  "inspection.components.disk.panel.no.pieces.are.waiting.on.storage": [
+    {
+      "type": 0,
+      "value": "No pieces are waiting on storage."
+    }
+  ],
+  "inspection.components.disk.panel.payload.sync": [
+    {
+      "type": 0,
+      "value": "Payload sync"
+    }
+  ],
+  "inspection.components.disk.panel.pending.work": [
+    {
+      "type": 0,
+      "value": "Pending work"
+    }
+  ],
+  "inspection.components.disk.panel.piece": [
+    {
+      "type": 0,
+      "value": "Piece"
+    }
+  ],
+  "inspection.components.disk.panel.piece.level.work.only.16.kib.block": [
+    {
+      "type": 0,
+      "value": "Piece-level work only; 16 KiB block jobs stay inside the engine."
+    }
+  ],
+  "inspection.components.disk.panel.receive.write": [
+    {
+      "type": 0,
+      "value": "Receive / write"
+    }
+  ],
+  "inspection.components.disk.panel.receive.write.verify.checkpoint": [
+    {
+      "type": 0,
+      "value": "Receive → write → verify → checkpoint"
+    }
+  ],
+  "inspection.components.disk.panel.received": [
+    {
+      "type": 0,
+      "value": "Received"
+    }
+  ],
+  "inspection.components.disk.panel.requested": [
+    {
+      "type": 0,
+      "value": "Requested"
+    }
+  ],
+  "inspection.components.disk.panel.resident.limit": [
+    {
+      "type": 0,
+      "value": "Resident / limit"
+    }
+  ],
+  "inspection.components.disk.panel.session.storage": [
+    {
+      "type": 0,
+      "value": "Session storage"
+    }
+  ],
+  "inspection.components.disk.panel.state": [
+    {
+      "type": 0,
+      "value": "State"
+    }
+  ],
+  "inspection.components.disk.panel.state.age": [
+    {
+      "type": 0,
+      "value": "State age"
+    }
+  ],
+  "inspection.components.disk.panel.storage.error": [
+    {
+      "type": 0,
+      "value": "Storage error"
+    }
+  ],
+  "inspection.components.disk.panel.stored": [
+    {
+      "type": 0,
+      "value": "Stored"
+    }
+  ],
+  "inspection.components.disk.panel.stored.verified": [
+    {
+      "type": 0,
+      "value": "Stored / verified"
+    }
+  ],
+  "inspection.components.disk.panel.torrent": [
+    {
+      "type": 0,
+      "value": "Torrent"
+    }
+  ],
+  "inspection.components.disk.panel.write.queue.wait": [
+    {
+      "type": 0,
+      "value": "Write queue wait"
+    }
+  ],
+  "inspection.components.disk.panel.write.service": [
+    {
+      "type": 0,
+      "value": "Write service"
+    }
+  ],
+  "inspection.components.download.settings.section.add.folder": [
+    {
+      "type": 0,
+      "value": "Add folder…"
+    }
+  ],
+  "inspection.components.download.settings.section.available": [
+    {
+      "type": 0,
+      "value": "Available"
+    }
+  ],
+  "inspection.components.download.settings.section.checked.means.normal.unchecked.means.skip": [
+    {
+      "type": 0,
+      "value": "Checked means Normal; unchecked means Skip."
+    }
+  ],
+  "inspection.components.download.settings.section.choosing": [
+    {
+      "type": 0,
+      "value": "Choosing…"
+    }
+  ],
+  "inspection.components.download.settings.section.current.download.folder": [
+    {
+      "type": 0,
+      "value": "Current download folder"
+    }
+  ],
+  "inspection.components.download.settings.section.default.download.folder": [
+    {
+      "type": 0,
+      "value": "Default download folder"
+    }
+  ],
+  "inspection.components.download.settings.section.download.folders": [
+    {
+      "type": 0,
+      "value": "Download folders"
+    }
+  ],
+  "inspection.components.download.settings.section.download.folders.are.managed.by.the.live": [
+    {
+      "type": 0,
+      "value": "Download folders are managed by the live application."
+    }
+  ],
+  "inspection.components.download.settings.section.downloads": [
+    {
+      "type": 0,
+      "value": "Downloads"
+    }
+  ],
+  "inspection.components.download.settings.section.location.is.unavailable": [
+    {
+      "type": 0,
+      "value": "Location is unavailable"
+    }
+  ],
+  "inspection.components.download.settings.section.make.current": [
+    {
+      "type": 0,
+      "value": "Make current"
+    }
+  ],
+  "inspection.components.download.settings.section.make.default": [
+    {
+      "type": 0,
+      "value": "Make default"
+    }
+  ],
+  "inspection.components.download.settings.section.managed.by.android": [
+    {
+      "type": 0,
+      "value": "Managed by Android"
+    }
+  ],
+  "inspection.components.download.settings.section.no.download.folder.has.been.chosen.yet": [
+    {
+      "type": 0,
+      "value": "No download folder has been chosen yet."
+    }
+  ],
+  "inspection.components.download.settings.section.options.are.always.shown.when.no.usable": [
+    {
+      "type": 0,
+      "value": "Options are always shown when no usable default exists."
+    }
+  ],
+  "inspection.components.download.settings.section.remove": [
+    {
+      "type": 0,
+      "value": "Remove"
+    }
+  ],
+  "inspection.components.download.settings.section.removing": [
+    {
+      "type": 0,
+      "value": "Removing…"
+    }
+  ],
+  "inspection.components.download.settings.section.repair": [
+    {
+      "type": 0,
+      "value": "Repair…"
+    }
+  ],
+  "inspection.components.download.settings.section.repairing": [
+    {
+      "type": 0,
+      "value": "Repairing…"
+    }
+  ],
+  "inspection.components.download.settings.section.show.file.selection.when.adding.torrents": [
+    {
+      "type": 0,
+      "value": "Show file selection when adding torrents"
+    }
+  ],
+  "inspection.components.download.settings.section.show.options.when.adding.torrents": [
+    {
+      "type": 0,
+      "value": "Show options when adding torrents"
+    }
+  ],
+  "inspection.components.download.settings.section.the.current.folder.applies.to.future.torrents": [
+    {
+      "type": 0,
+      "value": "The current folder applies to future torrents only. Existing torrents stay attached to their earlier folder."
+    }
+  ],
+  "inspection.components.download.settings.section.the.default.applies.to.future.torrents.only": [
+    {
+      "type": 0,
+      "value": "The default applies to future torrents only. Existing torrents stay attached to their selected folder."
+    }
+  ],
+  "inspection.components.download.settings.section.unavailable.repair.required": [
+    {
+      "type": 0,
+      "value": "Unavailable — repair required"
+    }
+  ],
+  "inspection.components.file.action.menu.items.download": [
+    {
+      "type": 0,
+      "value": "Download"
+    }
+  ],
+  "inspection.components.file.action.menu.items.open": [
+    {
+      "type": 0,
+      "value": "Open"
+    }
+  ],
+  "inspection.components.file.action.menu.items.priority": [
+    {
+      "type": 0,
+      "value": "Priority"
+    }
+  ],
+  "inspection.components.file.action.menu.items.save.file": [
+    {
+      "type": 0,
+      "value": "Save file…"
+    }
+  ],
+  "inspection.components.file.actions.menu.more": [
+    {
+      "type": 0,
+      "value": "More"
+    }
+  ],
+  "inspection.components.file.actions.menu.more.file.actions": [
+    {
+      "type": 0,
+      "value": "More file actions"
+    }
+  ],
+  "inspection.components.file.table.a.selected.file.is.no.longer.available": [
+    {
+      "type": 0,
+      "value": "A selected file is no longer available."
+    }
+  ],
+  "inspection.components.file.table.another.file.action.is.in.progress": [
+    {
+      "type": 0,
+      "value": "Another file action is in progress."
+    }
+  ],
+  "inspection.components.file.table.cancel.save": [
+    {
+      "type": 0,
+      "value": "Cancel save"
+    }
+  ],
+  "inspection.components.file.table.checking.direct.file.transfer.settings": [
+    {
+      "type": 0,
+      "value": "Checking direct file transfer settings…"
+    }
+  ],
+  "inspection.components.file.table.choose.where.to.save.this.remote.file": [
+    {
+      "type": 0,
+      "value": "Choose where to save this remote file."
+    }
+  ],
+  "inspection.components.file.table.connecting.directly.to.the.remote.device": [
+    {
+      "type": 0,
+      "value": "Connecting directly to the remote device…"
+    }
+  ],
+  "inspection.components.file.table.direct.file.transfers.are.disabled.on.the": [
+    {
+      "type": 0,
+      "value": "Direct file transfers are disabled on the host."
+    }
+  ],
+  "inspection.components.file.table.done": [
+    {
+      "type": 0,
+      "value": "Done"
+    }
+  ],
+  "inspection.components.file.table.file.actions": [
+    {
+      "type": 0,
+      "value": "File actions"
+    }
+  ],
+  "inspection.components.file.table.file.inspection.is.not.requested": [
+    {
+      "type": 0,
+      "value": "File inspection is not requested."
+    }
+  ],
+  "inspection.components.file.table.files": [
+    {
+      "type": 0,
+      "value": "files"
+    }
+  ],
+  "inspection.components.file.table.files.are.available.after.metadata.is.verified": [
+    {
+      "type": 0,
+      "value": "Files are available after metadata is verified."
+    }
+  ],
+  "inspection.components.file.table.folder": [
+    {
+      "type": 0,
+      "value": "Folder"
+    }
+  ],
+  "inspection.components.file.table.high": [
+    {
+      "type": 0,
+      "value": "High"
+    }
+  ],
+  "inspection.components.file.table.index": [
+    {
+      "type": 0,
+      "value": "Index"
+    }
+  ],
+  "inspection.components.file.table.loading.file.catalog": [
+    {
+      "type": 0,
+      "value": "Loading file catalog…"
+    }
+  ],
+  "inspection.components.file.table.name": [
+    {
+      "type": 0,
+      "value": "Name"
+    }
+  ],
+  "inspection.components.file.table.normal": [
+    {
+      "type": 0,
+      "value": "Normal"
+    }
+  ],
+  "inspection.components.file.table.only.completed.verified.files.can.be.saved": [
+    {
+      "type": 0,
+      "value": "Only completed, verified files can be saved remotely."
+    }
+  ],
+  "inspection.components.file.table.padding.hidden": [
+    {
+      "type": 0,
+      "value": "padding hidden"
+    }
+  ],
+  "inspection.components.file.table.pieces": [
+    {
+      "type": 0,
+      "value": "Pieces"
+    }
+  ],
+  "inspection.components.file.table.platform.managed.storage": [
+    {
+      "type": 0,
+      "value": "Platform-managed storage"
+    }
+  ],
+  "inspection.components.file.table.priority": [
+    {
+      "type": 0,
+      "value": "Priority"
+    }
+  ],
+  "inspection.components.file.table.progress": [
+    {
+      "type": 0,
+      "value": "Progress"
+    }
+  ],
+  "inspection.components.file.table.remote.file.saved": [
+    {
+      "type": 0,
+      "value": "Remote file saved."
+    }
+  ],
+  "inspection.components.file.table.select.one.completed.file.to.save": [
+    {
+      "type": 0,
+      "value": "Select one completed file to save."
+    }
+  ],
+  "inspection.components.file.table.size": [
+    {
+      "type": 0,
+      "value": "Size"
+    }
+  ],
+  "inspection.components.file.table.skip": [
+    {
+      "type": 0,
+      "value": "Skip"
+    }
+  ],
+  "inspection.components.file.table.storage.path": [
+    {
+      "type": 0,
+      "value": "Storage Path"
+    }
+  ],
+  "inspection.components.file.table.the.torrent.is.no.longer.present": [
+    {
+      "type": 0,
+      "value": "The torrent is no longer present."
+    }
+  ],
+  "inspection.components.file.table.this.remote.host.does.not.support.direct": [
+    {
+      "type": 0,
+      "value": "This remote host does not support direct file saves."
+    }
+  ],
+  "inspection.components.file.table.this.torrent.has.no.ordinary.files.to": [
+    {
+      "type": 0,
+      "value": "This torrent has no ordinary files to display."
+    }
+  ],
+  "inspection.components.file.table.torrent.files": [
+    {
+      "type": 0,
+      "value": "Torrent files"
+    }
+  ],
+  "inspection.components.file.table.torrent.offset": [
+    {
+      "type": 0,
+      "value": "Torrent offset"
+    }
+  ],
+  "inspection.components.file.table.type": [
+    {
+      "type": 0,
+      "value": "Type"
+    }
+  ],
+  "inspection.components.file.table.verified": [
+    {
+      "type": 0,
+      "value": "Verified"
+    }
+  ],
+  "inspection.components.library.detail.view.all.files": [
+    {
+      "type": 0,
+      "value": "All files"
+    }
+  ],
+  "inspection.components.library.detail.view.all.torrent.files": [
+    {
+      "type": 0,
+      "value": "All torrent files"
+    }
+  ],
+  "inspection.components.library.detail.view.another.media.file.is.opening": [
+    {
+      "type": 0,
+      "value": "Another media file is opening."
+    }
+  ],
+  "inspection.components.library.detail.view.available": [
+    {
+      "type": 0,
+      "value": "Available"
+    }
+  ],
+  "inspection.components.library.detail.view.available.offline": [
+    {
+      "type": 0,
+      "value": "Available offline"
+    }
+  ],
+  "inspection.components.library.detail.view.back.to.library": [
+    {
+      "type": 0,
+      "value": "Back to Library"
+    }
+  ],
+  "inspection.components.library.detail.view.checking": [
+    {
+      "type": 0,
+      "value": "Checking"
+    }
+  ],
+  "inspection.components.library.detail.view.checking.downloaded.data": [
+    {
+      "type": 0,
+      "value": "Checking downloaded data"
+    }
+  ],
+  "inspection.components.library.detail.view.content.details": [
+    {
+      "type": 0,
+      "value": "Content details"
+    }
+  ],
+  "inspection.components.library.detail.view.content.details.are.not.requested": [
+    {
+      "type": 0,
+      "value": "Content details are not requested"
+    }
+  ],
+  "inspection.components.library.detail.view.content.view": [
+    {
+      "type": 0,
+      "value": "Content view"
+    }
+  ],
+  "inspection.components.library.detail.view.done": [
+    {
+      "type": 0,
+      "value": "done ·"
+    }
+  ],
+  "inspection.components.library.detail.view.downloading": [
+    {
+      "type": 0,
+      "value": "Downloading"
+    }
+  ],
+  "inspection.components.library.detail.view.files": [
+    {
+      "type": 0,
+      "value": "files"
+    }
+  ],
+  "inspection.components.library.detail.view.finding.content.details": [
+    {
+      "type": 0,
+      "value": "Finding content details"
+    }
+  ],
+  "inspection.components.library.detail.view.high.priority": [
+    {
+      "type": 0,
+      "value": "High priority"
+    }
+  ],
+  "inspection.components.library.detail.view.incomplete": [
+    {
+      "type": 0,
+      "value": "Incomplete"
+    }
+  ],
+  "inspection.components.library.detail.view.invalid.file": [
+    {
+      "type": 0,
+      "value": "Invalid file"
+    }
+  ],
+  "inspection.components.library.detail.view.library": [
+    {
+      "type": 0,
+      "value": "Library"
+    }
+  ],
+  "inspection.components.library.detail.view.loading.content.details": [
+    {
+      "type": 0,
+      "value": "Loading content details…"
+    }
+  ],
+  "inspection.components.library.detail.view.media": [
+    {
+      "type": 0,
+      "value": "Media"
+    }
+  ],
+  "inspection.components.library.detail.view.metadata.pending": [
+    {
+      "type": 0,
+      "value": "Metadata pending"
+    }
+  ],
+  "inspection.components.library.detail.view.needs.attention": [
+    {
+      "type": 0,
+      "value": "Needs attention"
+    }
+  ],
+  "inspection.components.library.detail.view.no.content": [
+    {
+      "type": 0,
+      "value": "No content"
+    }
+  ],
+  "inspection.components.library.detail.view.normal.priority": [
+    {
+      "type": 0,
+      "value": "Normal priority"
+    }
+  ],
+  "inspection.components.library.detail.view.not.verified": [
+    {
+      "type": 0,
+      "value": "Not verified"
+    }
+  ],
+  "inspection.components.library.detail.view.of": [
+    {
+      "type": 0,
+      "value": "of"
+    }
+  ],
+  "inspection.components.library.detail.view.open.in.workbench": [
+    {
+      "type": 0,
+      "value": "Open in Workbench"
+    }
+  ],
+  "inspection.components.library.detail.view.opening.this.file.for.playback": [
+    {
+      "type": 0,
+      "value": "Opening this file for playback."
+    }
+  ],
+  "inspection.components.library.detail.view.padding": [
+    {
+      "type": 0,
+      "value": "Padding"
+    }
+  ],
+  "inspection.components.library.detail.view.paused": [
+    {
+      "type": 0,
+      "value": "Paused"
+    }
+  ],
+  "inspection.components.library.detail.view.recognized.video": [
+    {
+      "type": 0,
+      "value": "recognized video"
+    }
+  ],
+  "inspection.components.library.detail.view.recognized.video.files": [
+    {
+      "type": 0,
+      "value": "Recognized video files"
+    }
+  ],
+  "inspection.components.library.detail.view.removing": [
+    {
+      "type": 0,
+      "value": "Removing"
+    }
+  ],
+  "inspection.components.library.detail.view.server.unavailable": [
+    {
+      "type": 0,
+      "value": "Server unavailable"
+    }
+  ],
+  "inspection.components.library.detail.view.showing.the.first": [
+    {
+      "type": 0,
+      "value": "Showing the first"
+    }
+  ],
+  "inspection.components.library.detail.view.size.pending": [
+    {
+      "type": 0,
+      "value": "Size pending"
+    }
+  ],
+  "inspection.components.library.detail.view.skipped": [
+    {
+      "type": 0,
+      "value": "Skipped"
+    }
+  ],
+  "inspection.components.library.detail.view.storage.unavailable": [
+    {
+      "type": 0,
+      "value": "Storage unavailable"
+    }
+  ],
+  "inspection.components.library.detail.view.streamable": [
+    {
+      "type": 0,
+      "value": "Streamable"
+    }
+  ],
+  "inspection.components.library.detail.view.temporarily.unavailable": [
+    {
+      "type": 0,
+      "value": "Temporarily unavailable"
+    }
+  ],
+  "inspection.components.library.detail.view.torrent.content.summary": [
+    {
+      "type": 0,
+      "value": "Torrent content summary"
+    }
+  ],
+  "inspection.components.library.detail.view.verified": [
+    {
+      "type": 0,
+      "value": "verified"
+    }
+  ],
+  "inspection.components.library.view.all.content": [
+    {
+      "type": 0,
+      "value": "All content"
+    }
+  ],
+  "inspection.components.library.view.archived": [
+    {
+      "type": 0,
+      "value": "Archived"
+    }
+  ],
+  "inspection.components.library.view.artwork.playback.and.library.wide.media.grouping": [
+    {
+      "type": 0,
+      "value": "Artwork, playback, and Library-wide media grouping remain separate capabilities."
+    }
+  ],
+  "inspection.components.library.view.available.offline": [
+    {
+      "type": 0,
+      "value": "Available offline"
+    }
+  ],
+  "inspection.components.library.view.content.needs.attention": [
+    {
+      "type": 0,
+      "value": "Content needs attention"
+    }
+  ],
+  "inspection.components.library.view.downloading": [
+    {
+      "type": 0,
+      "value": "Downloading"
+    }
+  ],
+  "inspection.components.library.view.finding.content.details": [
+    {
+      "type": 0,
+      "value": "Finding content details"
+    }
+  ],
+  "inspection.components.library.view.library": [
+    {
+      "type": 0,
+      "value": "Library"
+    }
+  ],
+  "inspection.components.library.view.library.collection.is.not.requested.in.this": [
+    {
+      "type": 0,
+      "value": "Library collection is not requested in this layout"
+    }
+  ],
+  "inspection.components.library.view.loading.library.content": [
+    {
+      "type": 0,
+      "value": "Loading Library content…"
+    }
+  ],
+  "inspection.components.library.view.no.archived.content": [
+    {
+      "type": 0,
+      "value": "No archived content"
+    }
+  ],
+  "inspection.components.library.view.no.content.is.available.offline": [
+    {
+      "type": 0,
+      "value": "No content is available offline"
+    }
+  ],
+  "inspection.components.library.view.no.content.is.downloading": [
+    {
+      "type": 0,
+      "value": "No content is downloading"
+    }
+  ],
+  "inspection.components.library.view.no.content.sources.yet": [
+    {
+      "type": 0,
+      "value": "No content sources yet"
+    }
+  ],
+  "inspection.components.library.view.no.recently.added.content": [
+    {
+      "type": 0,
+      "value": "No recently added content"
+    }
+  ],
+  "inspection.components.library.view.recently.added": [
+    {
+      "type": 0,
+      "value": "Recently added"
+    }
+  ],
+  "inspection.components.library.view.source": [
+    {
+      "type": 0,
+      "value": "source"
+    }
+  ],
+  "inspection.components.library.view.sources": [
+    {
+      "type": 0,
+      "value": "sources"
+    }
+  ],
+  "inspection.components.library.view.torrent.backed.content": [
+    {
+      "type": 0,
+      "value": "torrent-backed content"
+    }
+  ],
+  "inspection.components.library.view.torrent.backed.content.b57b1e1": [
+    {
+      "type": 0,
+      "value": "Torrent-backed content"
+    }
+  ],
+  "inspection.components.log.console.all.torrents": [
+    {
+      "type": 0,
+      "value": "All torrents"
+    }
+  ],
+  "inspection.components.log.console.capture": [
+    {
+      "type": 0,
+      "value": "Capture"
+    }
+  ],
+  "inspection.components.log.console.category.prefix": [
+    {
+      "type": 0,
+      "value": "Category prefix"
+    }
+  ],
+  "inspection.components.log.console.chronological.diagnostic.events": [
+    {
+      "type": 0,
+      "value": "Chronological diagnostic events"
+    }
+  ],
+  "inspection.components.log.console.clear": [
+    {
+      "type": 0,
+      "value": "Clear"
+    }
+  ],
+  "inspection.components.log.console.code": [
+    {
+      "type": 0,
+      "value": "Code"
+    }
+  ],
+  "inspection.components.log.console.collapse": [
+    {
+      "type": 0,
+      "value": "Collapse"
+    }
+  ],
+  "inspection.components.log.console.copy.message": [
+    {
+      "type": 0,
+      "value": "Copy message"
+    }
+  ],
+  "inspection.components.log.console.copy.structured.record": [
+    {
+      "type": 0,
+      "value": "Copy structured record"
+    }
+  ],
+  "inspection.components.log.console.current": [
+    {
+      "type": 0,
+      "value": "Current ·"
+    }
+  ],
+  "inspection.components.log.console.current.session": [
+    {
+      "type": 0,
+      "value": "Current + session"
+    }
+  ],
+  "inspection.components.log.console.debug.and.above": [
+    {
+      "type": 0,
+      "value": "Debug and above"
+    }
+  ],
+  "inspection.components.log.console.detailed": [
+    {
+      "type": 0,
+      "value": "Detailed"
+    }
+  ],
+  "inspection.components.log.console.diagnostic.capture.profile": [
+    {
+      "type": 0,
+      "value": "Diagnostic capture profile"
+    }
+  ],
+  "inspection.components.log.console.diagnostic.capture.scope": [
+    {
+      "type": 0,
+      "value": "Diagnostic capture scope"
+    }
+  ],
+  "inspection.components.log.console.diagnostic.console": [
+    {
+      "type": 0,
+      "value": "Diagnostic console"
+    }
+  ],
+  "inspection.components.log.console.diagnostics.are.not.requested": [
+    {
+      "type": 0,
+      "value": "Diagnostics are not requested."
+    }
+  ],
+  "inspection.components.log.console.display": [
+    {
+      "type": 0,
+      "value": "Display"
+    }
+  ],
+  "inspection.components.log.console.displayed.torrent.scope": [
+    {
+      "type": 0,
+      "value": "Displayed torrent scope"
+    }
+  ],
+  "inspection.components.log.console.errors.only": [
+    {
+      "type": 0,
+      "value": "Errors only"
+    }
+  ],
+  "inspection.components.log.console.event": [
+    {
+      "type": 0,
+      "value": "event"
+    }
+  ],
+  "inspection.components.log.console.events": [
+    {
+      "type": 0,
+      "value": "events"
+    }
+  ],
+  "inspection.components.log.console.expand": [
+    {
+      "type": 0,
+      "value": "Expand"
+    }
+  ],
+  "inspection.components.log.console.high.volume.producer.capture": [
+    {
+      "type": 0,
+      "value": "High-volume producer capture"
+    }
+  ],
+  "inspection.components.log.console.history.boundary": [
+    {
+      "type": 0,
+      "value": "History boundary"
+    }
+  ],
+  "inspection.components.log.console.info.and.above": [
+    {
+      "type": 0,
+      "value": "Info and above"
+    }
+  ],
+  "inspection.components.log.console.loading.diagnostic.history": [
+    {
+      "type": 0,
+      "value": "Loading diagnostic history…"
+    }
+  ],
+  "inspection.components.log.console.minimum.displayed.severity": [
+    {
+      "type": 0,
+      "value": "Minimum displayed severity"
+    }
+  ],
+  "inspection.components.log.console.minimum.severity": [
+    {
+      "type": 0,
+      "value": "Minimum severity"
+    }
+  ],
+  "inspection.components.log.console.new": [
+    {
+      "type": 0,
+      "value": "new"
+    }
+  ],
+  "inspection.components.log.console.normal": [
+    {
+      "type": 0,
+      "value": "Normal"
+    }
+  ],
+  "inspection.components.log.console.profile": [
+    {
+      "type": 0,
+      "value": "Profile"
+    }
+  ],
+  "inspection.components.log.console.retained": [
+    {
+      "type": 0,
+      "value": "retained"
+    }
+  ],
+  "inspection.components.log.console.scope": [
+    {
+      "type": 0,
+      "value": "Scope"
+    }
+  ],
+  "inspection.components.log.console.search.diagnostics": [
+    {
+      "type": 0,
+      "value": "Search diagnostics"
+    }
+  ],
+  "inspection.components.log.console.search.message.code.or.context": [
+    {
+      "type": 0,
+      "value": "Search message, code, or context"
+    }
+  ],
+  "inspection.components.log.console.sequence": [
+    {
+      "type": 0,
+      "value": "Sequence"
+    }
+  ],
+  "inspection.components.log.console.session": [
+    {
+      "type": 0,
+      "value": "Session"
+    }
+  ],
+  "inspection.components.log.console.shown": [
+    {
+      "type": 0,
+      "value": "shown"
+    }
+  ],
+  "inspection.components.log.console.torrent.display.scope": [
+    {
+      "type": 0,
+      "value": "Torrent display scope"
+    }
+  ],
+  "inspection.components.log.console.trace.and.above": [
+    {
+      "type": 0,
+      "value": "Trace and above"
+    }
+  ],
+  "inspection.components.log.console.trace.high.volume": [
+    {
+      "type": 0,
+      "value": "Trace · high volume"
+    }
+  ],
+  "inspection.components.log.console.warnings.and.errors": [
+    {
+      "type": 0,
+      "value": "Warnings and errors"
+    }
+  ],
+  "inspection.components.more.actions.menu.add.test.torrent": [
+    {
+      "type": 0,
+      "value": "Add test torrent"
+    }
+  ],
+  "inspection.components.more.actions.menu.more": [
+    {
+      "type": 0,
+      "value": "More"
+    }
+  ],
+  "inspection.components.notifications.settings.section.download.complete": [
+    {
+      "type": 0,
+      "value": "Download complete"
+    }
+  ],
+  "inspection.components.notifications.settings.section.download.needs.attention": [
+    {
+      "type": 0,
+      "value": "Download needs attention"
+    }
+  ],
+  "inspection.components.notifications.settings.section.keep.showing.notifications.while.the.main.window": [
+    {
+      "type": 0,
+      "value": "Keep showing notifications while the main window is the active window."
+    }
+  ],
+  "inspection.components.notifications.settings.section.native.desktop.notifications.are.edge.triggered.and": [
+    {
+      "type": 0,
+      "value": "Native desktop notifications are edge-triggered and are not replayed after startup or a settings change."
+    }
+  ],
+  "inspection.components.notifications.settings.section.notification.settings.saved": [
+    {
+      "type": 0,
+      "value": "Notification settings saved."
+    }
+  ],
+  "inspection.components.notifications.settings.section.notifications": [
+    {
+      "type": 0,
+      "value": "Notifications"
+    }
+  ],
+  "inspection.components.notifications.settings.section.notify.when.a.torrent.enters.a.fatal": [
+    {
+      "type": 0,
+      "value": "Notify when a torrent enters a fatal or repair-required state."
+    }
+  ],
+  "inspection.components.notifications.settings.section.notify.when.a.torrent.finishes.downloading": [
+    {
+      "type": 0,
+      "value": "Notify when a torrent finishes downloading."
+    }
+  ],
+  "inspection.components.notifications.settings.section.notify.while.rstorrent.is.focused": [
+    {
+      "type": 0,
+      "value": "Notify while RSTorrent is focused"
+    }
+  ],
+  "inspection.components.peer.table.active.peer.connections": [
+    {
+      "type": 0,
+      "value": "Active peer connections"
+    }
+  ],
+  "inspection.components.peer.table.address": [
+    {
+      "type": 0,
+      "value": "Address"
+    }
+  ],
+  "inspection.components.peer.table.client": [
+    {
+      "type": 0,
+      "value": "Client"
+    }
+  ],
+  "inspection.components.peer.table.connected": [
+    {
+      "type": 0,
+      "value": "Connected"
+    }
+  ],
+  "inspection.components.peer.table.down": [
+    {
+      "type": 0,
+      "value": "Down"
+    }
+  ],
+  "inspection.components.peer.table.downloaded": [
+    {
+      "type": 0,
+      "value": "Downloaded"
+    }
+  ],
+  "inspection.components.peer.table.flags": [
+    {
+      "type": 0,
+      "value": "Flags"
+    }
+  ],
+  "inspection.components.peer.table.last.payload": [
+    {
+      "type": 0,
+      "value": "Last payload"
+    }
+  ],
+  "inspection.components.peer.table.loading.active.peer.connections": [
+    {
+      "type": 0,
+      "value": "Loading active peer connections…"
+    }
+  ],
+  "inspection.components.peer.table.no.peer.connections.are.currently.active": [
+    {
+      "type": 0,
+      "value": "No peer connections are currently active."
+    }
+  ],
+  "inspection.components.peer.table.oldest": [
+    {
+      "type": 0,
+      "value": "Oldest"
+    }
+  ],
+  "inspection.components.peer.table.peer.inspection.is.not.requested": [
+    {
+      "type": 0,
+      "value": "Peer inspection is not requested."
+    }
+  ],
+  "inspection.components.peer.table.reqs": [
+    {
+      "type": 0,
+      "value": "Reqs"
+    }
+  ],
+  "inspection.components.peer.table.source": [
+    {
+      "type": 0,
+      "value": "Source"
+    }
+  ],
+  "inspection.components.peer.table.state": [
+    {
+      "type": 0,
+      "value": "State"
+    }
+  ],
+  "inspection.components.peer.table.up": [
+    {
+      "type": 0,
+      "value": "Up"
+    }
+  ],
+  "inspection.components.peer.table.uploaded": [
+    {
+      "type": 0,
+      "value": "Uploaded"
+    }
+  ],
+  "inspection.components.pending.file.selection.dialog.add": [
+    {
+      "type": 0,
+      "value": "Add"
+    }
+  ],
+  "inspection.components.pending.file.selection.dialog.all": [
+    {
+      "type": 0,
+      "value": "All"
+    }
+  ],
+  "inspection.components.pending.file.selection.dialog.cancel": [
+    {
+      "type": 0,
+      "value": "Cancel"
+    }
+  ],
+  "inspection.components.pending.file.selection.dialog.cancelling": [
+    {
+      "type": 0,
+      "value": "Cancelling…"
+    }
+  ],
+  "inspection.components.pending.file.selection.dialog.checked.files.use.normal.priority.unchecked.files": [
+    {
+      "type": 0,
+      "value": "Checked files use Normal priority. Unchecked files are skipped. High priority remains available later in the Files tab."
+    }
+  ],
+  "inspection.components.pending.file.selection.dialog.choose.files": [
+    {
+      "type": 0,
+      "value": "Choose files"
+    }
+  ],
+  "inspection.components.pending.file.selection.dialog.don.t.show.file.selection.again": [
+    {
+      "type": 0,
+      "value": "Don’t show file selection again"
+    }
+  ],
+  "inspection.components.pending.file.selection.dialog.download": [
+    {
+      "type": 0,
+      "value": "Download"
+    }
+  ],
+  "inspection.components.pending.file.selection.dialog.download.folder": [
+    {
+      "type": 0,
+      "value": "Download folder:"
+    }
+  ],
+  "inspection.components.pending.file.selection.dialog.fetching.file.information": [
+    {
+      "type": 0,
+      "value": "Fetching file information…"
+    }
+  ],
+  "inspection.components.pending.file.selection.dialog.no.content.files.will.download.before.you": [
+    {
+      "type": 0,
+      "value": "No content files will download before you confirm."
+    }
+  ],
+  "inspection.components.pending.file.selection.dialog.none": [
+    {
+      "type": 0,
+      "value": "None"
+    }
+  ],
+  "inspection.components.pending.file.selection.dialog.saving": [
+    {
+      "type": 0,
+      "value": "Saving…"
+    }
+  ],
+  "inspection.components.pending.file.selection.dialog.torrent.files": [
+    {
+      "type": 0,
+      "value": "Torrent files"
+    }
+  ],
+  "inspection.components.piece.map.panel.active": [
+    {
+      "type": 0,
+      "value": "active"
+    }
+  ],
+  "inspection.components.piece.map.panel.piece.availability": [
+    {
+      "type": 0,
+      "value": "Piece availability"
+    }
+  ],
+  "inspection.components.piece.map.panel.piece.map.summary": [
+    {
+      "type": 0,
+      "value": "Piece map summary"
+    }
+  ],
+  "inspection.components.piece.map.panel.piece.map.unavailable": [
+    {
+      "type": 0,
+      "value": "Piece map unavailable"
+    }
+  ],
+  "inspection.components.piece.map.panel.piece.map.visualization": [
+    {
+      "type": 0,
+      "value": "Piece map visualization"
+    }
+  ],
+  "inspection.components.piece.map.panel.piece.state.legend": [
+    {
+      "type": 0,
+      "value": "Piece state legend"
+    }
+  ],
+  "inspection.components.piece.map.panel.pieces": [
+    {
+      "type": 0,
+      "value": "pieces"
+    }
+  ],
+  "inspection.components.piece.map.panel.verified": [
+    {
+      "type": 0,
+      "value": "verified"
+    }
+  ],
+  "inspection.components.power.settings.section.power": [
+    {
+      "type": 0,
+      "value": "Power"
+    }
+  ],
+  "inspection.components.power.settings.section.power.setting.saved": [
+    {
+      "type": 0,
+      "value": "Power setting saved."
+    }
+  ],
+  "inspection.components.power.settings.section.prevent.sleep.during.active.downloads.and.checks": [
+    {
+      "type": 0,
+      "value": "Prevent sleep during active downloads and checks"
+    }
+  ],
+  "inspection.components.power.settings.section.releases.automatically.for.queued.paused.completed.seeding": [
+    {
+      "type": 0,
+      "value": "Releases automatically for queued, paused, completed, seeding, or failed torrents."
+    }
+  ],
+  "inspection.components.power.settings.section.rstorrent.can.prevent.automatic.system.sleep.during": [
+    {
+      "type": 0,
+      "value": "RSTorrent can prevent automatic system sleep during active download and verification work. Your display may still turn off normally."
+    }
+  ],
+  "inspection.components.preparation.progress.16.kib.per.block": [
+    {
+      "type": 0,
+      "value": "16 KiB per block"
+    }
+  ],
+  "inspection.components.preparation.progress.active": [
+    {
+      "type": 0,
+      "value": "Active"
+    }
+  ],
+  "inspection.components.preparation.progress.active.requests": [
+    {
+      "type": 0,
+      "value": "Active requests"
+    }
+  ],
+  "inspection.components.preparation.progress.content.preparation": [
+    {
+      "type": 0,
+      "value": "Content preparation"
+    }
+  ],
+  "inspection.components.preparation.progress.downloading.merkle.proof.data.needed.to.verify": [
+    {
+      "type": 0,
+      "value": "Downloading Merkle proof data needed to verify the selected files."
+    }
+  ],
+  "inspection.components.preparation.progress.downloading.metadata": [
+    {
+      "type": 0,
+      "value": "Downloading metadata"
+    }
+  ],
+  "inspection.components.preparation.progress.fetching.piece.hashes": [
+    {
+      "type": 0,
+      "value": "Fetching piece hashes"
+    }
+  ],
+  "inspection.components.preparation.progress.finding.metadata": [
+    {
+      "type": 0,
+      "value": "Finding metadata"
+    }
+  ],
+  "inspection.components.preparation.progress.hash.ranges.needed": [
+    {
+      "type": 0,
+      "value": "Hash ranges needed"
+    }
+  ],
+  "inspection.components.preparation.progress.hash.retries": [
+    {
+      "type": 0,
+      "value": "Hash retries"
+    }
+  ],
+  "inspection.components.preparation.progress.metadata.block.state.legend": [
+    {
+      "type": 0,
+      "value": "Metadata block state legend"
+    }
+  ],
+  "inspection.components.preparation.progress.metadata.bytes.received": [
+    {
+      "type": 0,
+      "value": "Metadata bytes received"
+    }
+  ],
+  "inspection.components.preparation.progress.metadata.download.progress": [
+    {
+      "type": 0,
+      "value": "Metadata download progress"
+    }
+  ],
+  "inspection.components.preparation.progress.metadata.peers": [
+    {
+      "type": 0,
+      "value": "Metadata peers"
+    }
+  ],
+  "inspection.components.preparation.progress.metadata.preparation": [
+    {
+      "type": 0,
+      "value": "Metadata preparation"
+    }
+  ],
+  "inspection.components.preparation.progress.missing": [
+    {
+      "type": 0,
+      "value": "Missing"
+    }
+  ],
+  "inspection.components.preparation.progress.piece.hash.preparation": [
+    {
+      "type": 0,
+      "value": "Piece hash preparation"
+    }
+  ],
+  "inspection.components.preparation.progress.received": [
+    {
+      "type": 0,
+      "value": "Received"
+    }
+  ],
+  "inspection.components.preparation.progress.receiving.the.verified.info.dictionary.before.file": [
+    {
+      "type": 0,
+      "value": "Receiving the verified info dictionary before file selection and piece transfer."
+    }
+  ],
+  "inspection.components.preparation.progress.requested": [
+    {
+      "type": 0,
+      "value": "Requested"
+    }
+  ],
+  "inspection.components.preparation.progress.requests.in.flight": [
+    {
+      "type": 0,
+      "value": "Requests in flight"
+    }
+  ],
+  "inspection.components.preparation.progress.the.selected.files.need.merkle.proof.data": [
+    {
+      "type": 0,
+      "value": "The selected files need Merkle proof data before payload requests can start."
+    }
+  ],
+  "inspection.components.preparation.progress.torrent.preparation.activity": [
+    {
+      "type": 0,
+      "value": "Torrent preparation activity"
+    }
+  ],
+  "inspection.components.preparation.progress.waiting": [
+    {
+      "type": 0,
+      "value": "Waiting"
+    }
+  ],
+  "inspection.components.preparation.progress.waiting.for.a.hash.capable.peer": [
+    {
+      "type": 0,
+      "value": "Waiting for a hash-capable peer"
+    }
+  ],
+  "inspection.components.preparation.progress.waiting.for.a.metadata.capable.peer.to": [
+    {
+      "type": 0,
+      "value": "Waiting for a metadata-capable peer to advertise the info dictionary."
+    }
+  ],
+  "inspection.components.remote.access.settings.section.absolute.expiry": [
+    {
+      "type": 0,
+      "value": "· absolute expiry"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.active": [
+    {
+      "type": 0,
+      "value": "active"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.active.506018d": [
+    {
+      "type": 0,
+      "value": "· active"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.active.circuit": [
+    {
+      "type": 0,
+      "value": "Active circuit"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.active.direct.file.transfers.stopped": [
+    {
+      "type": 0,
+      "value": "Active direct file transfers stopped."
+    }
+  ],
+  "inspection.components.remote.access.settings.section.added": [
+    {
+      "type": 0,
+      "value": "· added"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.added.6b02e0d": [
+    {
+      "type": 0,
+      "value": "Added"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.attempts": [
+    {
+      "type": 0,
+      "value": "attempts"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.authentication.and.recovery": [
+    {
+      "type": 0,
+      "value": "Authentication and recovery"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.authorization.generation": [
+    {
+      "type": 0,
+      "value": "; authorization generation"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.authorized.browsers": [
+    {
+      "type": 0,
+      "value": "Authorized browsers"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.browser.authorization.renamed": [
+    {
+      "type": 0,
+      "value": "Browser authorization renamed."
+    }
+  ],
+  "inspection.components.remote.access.settings.section.browser.observation": [
+    {
+      "type": 0,
+      "value": "· browser observation"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.buckets": [
+    {
+      "type": 0,
+      "value": "buckets)"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.build": [
+    {
+      "type": 0,
+      "value": "· build"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.bytes": [
+    {
+      "type": 0,
+      "value": "bytes"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.bytes.candidate": [
+    {
+      "type": 0,
+      "value": "bytes · candidate"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.candidate.class": [
+    {
+      "type": 0,
+      "value": "Candidate class"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.change.password": [
+    {
+      "type": 0,
+      "value": "Change password"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.changing.it.revokes.every.private.browser.and": [
+    {
+      "type": 0,
+      "value": "Changing it revokes every private browser and closes every remote circuit."
+    }
+  ],
+  "inspection.components.remote.access.settings.section.choose.the.relay.route.username.and.a": [
+    {
+      "type": 0,
+      "value": "Choose the relay route username and a password of at least 12 characters. The password is not stored."
+    }
+  ],
+  "inspection.components.remote.access.settings.section.circuit": [
+    {
+      "type": 0,
+      "value": "· circuit"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.clear.history": [
+    {
+      "type": 0,
+      "value": "Clear history"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.client": [
+    {
+      "type": 0,
+      "value": "client"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.close": [
+    {
+      "type": 0,
+      "value": "Close"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.confirm.new.password": [
+    {
+      "type": 0,
+      "value": "Confirm new password"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.confirm.password": [
+    {
+      "type": 0,
+      "value": "Confirm password"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.current.security.ledger": [
+    {
+      "type": 0,
+      "value": "Current security ledger"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.direct.file.transfers": [
+    {
+      "type": 0,
+      "value": "Direct file transfers"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.disable.direct.file.transfers": [
+    {
+      "type": 0,
+      "value": "Disable direct file transfers"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.disable.remote.access": [
+    {
+      "type": 0,
+      "value": "Disable remote access"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.disabled": [
+    {
+      "type": 0,
+      "value": "Disabled"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.disabled.by.the.operator": [
+    {
+      "type": 0,
+      "value": "Disabled by the operator"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.enable.direct.file.transfers": [
+    {
+      "type": 0,
+      "value": "Enable direct file transfers"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.enable.remote.access": [
+    {
+      "type": 0,
+      "value": "Enable remote access"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.enabled": [
+    {
+      "type": 0,
+      "value": "Enabled"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.enabled.file.bytes.use.a.direct.encrypted": [
+    {
+      "type": 0,
+      "value": "Enabled · file bytes use a direct encrypted WebRTC connection"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.ended": [
+    {
+      "type": 0,
+      "value": "· ended"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.ended.authorizations": [
+    {
+      "type": 0,
+      "value": "ended authorizations ·"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.ended.browser.authorizations": [
+    {
+      "type": 0,
+      "value": "Ended browser authorizations ("
+    }
+  ],
+  "inspection.components.remote.access.settings.section.entries.below.are.complete.and.unfiltered": [
+    {
+      "type": 0,
+      "value": ". Entries below are complete and unfiltered."
+    }
+  ],
+  "inspection.components.remote.access.settings.section.failed.attempt.buckets": [
+    {
+      "type": 0,
+      "value": "failed-attempt buckets"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.failed.authentication.pressure": [
+    {
+      "type": 0,
+      "value": "Failed authentication pressure ("
+    }
+  ],
+  "inspection.components.remote.access.settings.section.file.index": [
+    {
+      "type": 0,
+      "value": "· file index"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.generation": [
+    {
+      "type": 0,
+      "value": "· generation"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.generation.40536dd": [
+    {
+      "type": 0,
+      "value": "Generation"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.host.identity": [
+    {
+      "type": 0,
+      "value": "Host identity"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.idle.expiry": [
+    {
+      "type": 0,
+      "value": "Idle expiry"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.keep.only.this": [
+    {
+      "type": 0,
+      "value": "Keep only this"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.live": [
+    {
+      "type": 0,
+      "value": "live"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.live.circuits": [
+    {
+      "type": 0,
+      "value": "Live circuits"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.loading.remote.access": [
+    {
+      "type": 0,
+      "value": "Loading remote access…"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.new.password": [
+    {
+      "type": 0,
+      "value": "New password"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.no.browser.can.resume.without.the.password": [
+    {
+      "type": 0,
+      "value": "No browser can resume without the password."
+    }
+  ],
+  "inspection.components.remote.access.settings.section.no.browser.is.connected": [
+    {
+      "type": 0,
+      "value": "No browser is connected."
+    }
+  ],
+  "inspection.components.remote.access.settings.section.none": [
+    {
+      "type": 0,
+      "value": "none"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.not.included.in.this.host.build": [
+    {
+      "type": 0,
+      "value": "Not included in this host build"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.not.reported": [
+    {
+      "type": 0,
+      "value": "not reported"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.of.32.current.authorizations": [
+    {
+      "type": 0,
+      "value": "of 32 current authorizations"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.owner.action": [
+    {
+      "type": 0,
+      "value": "owner action"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.owner.events": [
+    {
+      "type": 0,
+      "value": "owner events ·"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.password": [
+    {
+      "type": 0,
+      "value": "Password"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.password.029c017": [
+    {
+      "type": 0,
+      "value": "· password"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.payload.sent": [
+    {
+      "type": 0,
+      "value": "Payload sent"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.queued.bytes": [
+    {
+      "type": 0,
+      "value": "queued bytes"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.range.requests": [
+    {
+      "type": 0,
+      "value": "range requests ·"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.reason": [
+    {
+      "type": 0,
+      "value": "· reason"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.refresh.audit": [
+    {
+      "type": 0,
+      "value": "Refresh audit"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.relay.deployment": [
+    {
+      "type": 0,
+      "value": "Relay deployment"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.remote.access": [
+    {
+      "type": 0,
+      "value": "Remote access"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.remote.access.is.enabled": [
+    {
+      "type": 0,
+      "value": "Remote access is enabled."
+    }
+  ],
+  "inspection.components.remote.access.settings.section.remote.security.state.is.unavailable": [
+    {
+      "type": 0,
+      "value": "Remote security state is unavailable."
+    }
+  ],
+  "inspection.components.remote.access.settings.section.rename": [
+    {
+      "type": 0,
+      "value": "Rename"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.require.password.everywhere": [
+    {
+      "type": 0,
+      "value": "Require password everywhere"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.resources": [
+    {
+      "type": 0,
+      "value": "Resources"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.resume": [
+    {
+      "type": 0,
+      "value": "· resume"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.retained.security.history": [
+    {
+      "type": 0,
+      "value": "Retained security history"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.revoke": [
+    {
+      "type": 0,
+      "value": "Revoke"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.route": [
+    {
+      "type": 0,
+      "value": "Route"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.route.class": [
+    {
+      "type": 0,
+      "value": "· route class"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.route.f7f55fb": [
+    {
+      "type": 0,
+      "value": "· route"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.route.observation": [
+    {
+      "type": 0,
+      "value": "Route observation"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.route.username": [
+    {
+      "type": 0,
+      "value": "Route username"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.seen": [
+    {
+      "type": 0,
+      "value": "· seen"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.shared.browser": [
+    {
+      "type": 0,
+      "value": "Shared browser"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.sign.out.this.browser": [
+    {
+      "type": 0,
+      "value": "Sign out this browser"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.sockets": [
+    {
+      "type": 0,
+      "value": "sockets ·"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.started": [
+    {
+      "type": 0,
+      "value": "· started"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.stop.active.transfers": [
+    {
+      "type": 0,
+      "value": "Stop active transfers"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.tasks": [
+    {
+      "type": 0,
+      "value": "tasks ·"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.the.circuit.was.closed": [
+    {
+      "type": 0,
+      "value": "The circuit was closed."
+    }
+  ],
+  "inspection.components.remote.access.settings.section.the.host.authority.is.absent.retained.entries": [
+    {
+      "type": 0,
+      "value": "The host authority is absent. Retained entries below are audit evidence only and cannot authorize a connection."
+    }
+  ],
+  "inspection.components.remote.access.settings.section.the.new.password.confirmation.does.not.match": [
+    {
+      "type": 0,
+      "value": "The new password confirmation does not match."
+    }
+  ],
+  "inspection.components.remote.access.settings.section.the.password.confirmation.does.not.match": [
+    {
+      "type": 0,
+      "value": "The password confirmation does not match."
+    }
+  ],
+  "inspection.components.remote.access.settings.section.the.relay.carries.encrypted.connection.setup.only": [
+    {
+      "type": 0,
+      "value": "The relay carries encrypted connection setup only. File contents never pass through the relay, and completed verified files are the only eligible source. During an explicit attempt, the public STUN service learns this device's public address and request timing, but receives no account, torrent, file, or content data."
+    }
+  ],
+  "inspection.components.remote.access.settings.section.this.application.could.not.establish.protected.remote": [
+    {
+      "type": 0,
+      "value": "This application could not establish protected remote-access storage or its relay connection owner. Remote access remains off."
+    }
+  ],
+  "inspection.components.remote.access.settings.section.this.browser": [
+    {
+      "type": 0,
+      "value": "This browser"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.torrent": [
+    {
+      "type": 0,
+      "value": "torrent"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.unavailable": [
+    {
+      "type": 0,
+      "value": "Unavailable"
+    }
+  ],
+  "inspection.components.remote.access.settings.section.username": [
+    {
+      "type": 0,
+      "value": "Username"
+    }
+  ],
+  "inspection.components.remove.torrent.dialog.also.delete.downloaded.data": [
+    {
+      "type": 0,
+      "value": "Also delete downloaded data"
+    }
+  ],
+  "inspection.components.remove.torrent.dialog.and": [
+    {
+      "type": 0,
+      "value": "and"
+    }
+  ],
+  "inspection.components.remove.torrent.dialog.cancel": [
+    {
+      "type": 0,
+      "value": "Cancel"
+    }
+  ],
+  "inspection.components.remove.torrent.dialog.downloaded.data.is.kept.by.default": [
+    {
+      "type": 0,
+      "value": "Downloaded data is kept by default."
+    }
+  ],
+  "inspection.components.remove.torrent.dialog.from.rstorrent": [
+    {
+      "type": 0,
+      "value": "from RSTorrent."
+    }
+  ],
+  "inspection.components.remove.torrent.dialog.more": [
+    {
+      "type": 0,
+      "value": "more"
+    }
+  ],
+  "inspection.components.remove.torrent.dialog.not.support.downloaded.data.deletion.keep.downloaded": [
+    {
+      "type": 0,
+      "value": "not support downloaded-data deletion. Keep downloaded data to remove the complete selection."
+    }
+  ],
+  "inspection.components.remove.torrent.dialog.remove": [
+    {
+      "type": 0,
+      "value": "Remove"
+    }
+  ],
+  "inspection.components.remove.torrent.dialog.remove.and.delete.data": [
+    {
+      "type": 0,
+      "value": "Remove and delete data"
+    }
+  ],
+  "inspection.components.remove.torrent.dialog.remove.the.selected.torrents.from.rstorrent": [
+    {
+      "type": 0,
+      "value": "Remove the selected torrents from RSTorrent."
+    }
+  ],
+  "inspection.components.remove.torrent.dialog.remove.torrent": [
+    {
+      "type": 0,
+      "value": "Remove torrent?"
+    }
+  ],
+  "inspection.components.remove.torrent.dialog.retry.failed": [
+    {
+      "type": 0,
+      "value": "Retry failed"
+    }
+  ],
+  "inspection.components.remove.torrent.dialog.selected": [
+    {
+      "type": 0,
+      "value": "selected"
+    }
+  ],
+  "inspection.components.remove.torrent.dialog.this.permanently.deletes.this.torrent.s.downloaded": [
+    {
+      "type": 0,
+      "value": "This permanently deletes this torrent's downloaded files and part data. It cannot be undone."
+    }
+  ],
+  "inspection.components.remove.torrent.dialog.torrent.does": [
+    {
+      "type": 0,
+      "value": "torrent does"
+    }
+  ],
+  "inspection.components.remove.torrent.dialog.torrents.do": [
+    {
+      "type": 0,
+      "value": "torrents do"
+    }
+  ],
+  "inspection.components.remove.torrent.dialog.torrents.to.remove": [
+    {
+      "type": 0,
+      "value": "Torrents to remove"
+    }
+  ],
+  "inspection.components.scenario.bar.10s": [
+    {
+      "type": 0,
+      "value": "+10s"
+    }
+  ],
+  "inspection.components.scenario.bar.demo.data": [
+    {
+      "type": 0,
+      "value": "Demo data"
+    }
+  ],
+  "inspection.components.scenario.bar.demo.scenario": [
+    {
+      "type": 0,
+      "value": "Demo scenario"
+    }
+  ],
+  "inspection.components.scenario.bar.demo.scenario.controls": [
+    {
+      "type": 0,
+      "value": "Demo scenario controls"
+    }
+  ],
+  "inspection.components.scenario.bar.pause": [
+    {
+      "type": 0,
+      "value": "Pause"
+    }
+  ],
+  "inspection.components.scenario.bar.play": [
+    {
+      "type": 0,
+      "value": "Play"
+    }
+  ],
+  "inspection.components.scenario.bar.reset": [
+    {
+      "type": 0,
+      "value": "Reset"
+    }
+  ],
+  "inspection.components.scenario.bar.scenario": [
+    {
+      "type": 0,
+      "value": "Scenario"
+    }
+  ],
+  "inspection.components.settings.dialog.about.updates": [
+    {
+      "type": 0,
+      "value": "About & updates"
+    }
+  ],
+  "inspection.components.settings.dialog.appearance": [
+    {
+      "type": 0,
+      "value": "Appearance"
+    }
+  ],
+  "inspection.components.settings.dialog.application": [
+    {
+      "type": 0,
+      "value": "Application"
+    }
+  ],
+  "inspection.components.settings.dialog.close.settings": [
+    {
+      "type": 0,
+      "value": "Close settings"
+    }
+  ],
+  "inspection.components.settings.dialog.connection.seeding": [
+    {
+      "type": 0,
+      "value": "Connection & seeding"
+    }
+  ],
+  "inspection.components.settings.dialog.downloads": [
+    {
+      "type": 0,
+      "value": "Downloads"
+    }
+  ],
+  "inspection.components.settings.dialog.notifications": [
+    {
+      "type": 0,
+      "value": "Notifications"
+    }
+  ],
+  "inspection.components.settings.dialog.power": [
+    {
+      "type": 0,
+      "value": "Power"
+    }
+  ],
+  "inspection.components.settings.dialog.remote.access": [
+    {
+      "type": 0,
+      "value": "Remote access"
+    }
+  ],
+  "inspection.components.settings.dialog.settings": [
+    {
+      "type": 0,
+      "value": "Settings"
+    }
+  ],
+  "inspection.components.settings.dialog.settings.categories": [
+    {
+      "type": 0,
+      "value": "Settings categories"
+    }
+  ],
+  "inspection.components.settings.dialog.web.access": [
+    {
+      "type": 0,
+      "value": "Web access"
+    }
+  ],
+  "inspection.components.sidebar.active": [
+    {
+      "type": 0,
+      "value": "Active"
+    }
+  ],
+  "inspection.components.sidebar.all.content": [
+    {
+      "type": 0,
+      "value": "All content"
+    }
+  ],
+  "inspection.components.sidebar.all.torrents": [
+    {
+      "type": 0,
+      "value": "All torrents"
+    }
+  ],
+  "inspection.components.sidebar.archived": [
+    {
+      "type": 0,
+      "value": "Archived"
+    }
+  ],
+  "inspection.components.sidebar.available.offline": [
+    {
+      "type": 0,
+      "value": "Available offline"
+    }
+  ],
+  "inspection.components.sidebar.completed": [
+    {
+      "type": 0,
+      "value": "Completed"
+    }
+  ],
+  "inspection.components.sidebar.downloading": [
+    {
+      "type": 0,
+      "value": "Downloading"
+    }
+  ],
+  "inspection.components.sidebar.library": [
+    {
+      "type": 0,
+      "value": "Library"
+    }
+  ],
+  "inspection.components.sidebar.library.filters": [
+    {
+      "type": 0,
+      "value": "Library filters"
+    }
+  ],
+  "inspection.components.sidebar.needs.attention": [
+    {
+      "type": 0,
+      "value": "Needs attention"
+    }
+  ],
+  "inspection.components.sidebar.paused": [
+    {
+      "type": 0,
+      "value": "Paused"
+    }
+  ],
+  "inspection.components.sidebar.playback.and.library.wide.media.grouping.are": [
+    {
+      "type": 0,
+      "value": "Playback and Library-wide media grouping are not connected yet."
+    }
+  ],
+  "inspection.components.sidebar.recently.added": [
+    {
+      "type": 0,
+      "value": "Recently added"
+    }
+  ],
+  "inspection.components.sidebar.torrents": [
+    {
+      "type": 0,
+      "value": "Torrents"
+    }
+  ],
+  "inspection.components.sidebar.transfer.filters": [
+    {
+      "type": 0,
+      "value": "Transfer filters"
+    }
+  ],
+  "inspection.components.sidebar.transfers": [
+    {
+      "type": 0,
+      "value": "Transfers"
+    }
+  ],
+  "inspection.components.sidebar.workbench.torrent.filters": [
+    {
+      "type": 0,
+      "value": "Workbench torrent filters"
+    }
+  ],
+  "inspection.components.speed.panel.1.hour": [
+    {
+      "type": 0,
+      "value": "1 hour"
+    }
+  ],
+  "inspection.components.speed.panel.10.min": [
+    {
+      "type": 0,
+      "value": "10 min"
+    }
+  ],
+  "inspection.components.speed.panel.2.min": [
+    {
+      "type": 0,
+      "value": "2 min"
+    }
+  ],
+  "inspection.components.speed.panel.2.years": [
+    {
+      "type": 0,
+      "value": "2 years"
+    }
+  ],
+  "inspection.components.speed.panel.24.hours": [
+    {
+      "type": 0,
+      "value": "24 hours"
+    }
+  ],
+  "inspection.components.speed.panel.30.days": [
+    {
+      "type": 0,
+      "value": "30 days"
+    }
+  ],
+  "inspection.components.speed.panel.30.sec": [
+    {
+      "type": 0,
+      "value": "30 sec"
+    }
+  ],
+  "inspection.components.speed.panel.average": [
+    {
+      "type": 0,
+      "value": "Average"
+    }
+  ],
+  "inspection.components.speed.panel.chart.series": [
+    {
+      "type": 0,
+      "value": "Chart series"
+    }
+  ],
+  "inspection.components.speed.panel.covered": [
+    {
+      "type": 0,
+      "value": "covered"
+    }
+  ],
+  "inspection.components.speed.panel.current": [
+    {
+      "type": 0,
+      "value": "Current"
+    }
+  ],
+  "inspection.components.speed.panel.current.traffic.breakdown": [
+    {
+      "type": 0,
+      "value": "Current traffic breakdown"
+    }
+  ],
+  "inspection.components.speed.panel.current.transfer.rates": [
+    {
+      "type": 0,
+      "value": "Current transfer rates"
+    }
+  ],
+  "inspection.components.speed.panel.frozen.stale": [
+    {
+      "type": 0,
+      "value": "Frozen · stale"
+    }
+  ],
+  "inspection.components.speed.panel.gap": [
+    {
+      "type": 0,
+      "value": "gap"
+    }
+  ],
+  "inspection.components.speed.panel.hash.read": [
+    {
+      "type": 0,
+      "value": "Hash read"
+    }
+  ],
+  "inspection.components.speed.panel.history": [
+    {
+      "type": 0,
+      "value": "History"
+    }
+  ],
+  "inspection.components.speed.panel.history.persistence.interrupted": [
+    {
+      "type": 0,
+      "value": "History persistence interrupted"
+    }
+  ],
+  "inspection.components.speed.panel.in": [
+    {
+      "type": 0,
+      "value": "In"
+    }
+  ],
+  "inspection.components.speed.panel.of.8": [
+    {
+      "type": 0,
+      "value": "of 8"
+    }
+  ],
+  "inspection.components.speed.panel.out": [
+    {
+      "type": 0,
+      "value": "Out"
+    }
+  ],
+  "inspection.components.speed.panel.payload.upload.is.unavailable.until.upload.and": [
+    {
+      "type": 0,
+      "value": "Payload upload is unavailable until upload and seeding exist."
+    }
+  ],
+  "inspection.components.speed.panel.peak": [
+    {
+      "type": 0,
+      "value": "Peak"
+    }
+  ],
+  "inspection.components.speed.panel.preparing.speed.history": [
+    {
+      "type": 0,
+      "value": "Preparing speed history…"
+    }
+  ],
+  "inspection.components.speed.panel.received.staged.and.verified.bytes.stay.visually": [
+    {
+      "type": 0,
+      "value": "Received, staged, and verified bytes stay visually distinct—including retries."
+    }
+  ],
+  "inspection.components.speed.panel.redundant.failed": [
+    {
+      "type": 0,
+      "value": "Redundant / failed"
+    }
+  ],
+  "inspection.components.speed.panel.selected.speed.window.summaries": [
+    {
+      "type": 0,
+      "value": "Selected speed window summaries"
+    }
+  ],
+  "inspection.components.speed.panel.series": [
+    {
+      "type": 0,
+      "value": "Series"
+    }
+  ],
+  "inspection.components.speed.panel.session.all.torrents": [
+    {
+      "type": 0,
+      "value": "Session · All torrents"
+    }
+  ],
+  "inspection.components.speed.panel.session.speed.history": [
+    {
+      "type": 0,
+      "value": "Session speed history"
+    }
+  ],
+  "inspection.components.speed.panel.source": [
+    {
+      "type": 0,
+      "value": "Source"
+    }
+  ],
+  "inspection.components.speed.panel.speed.history.chart.use.left.and.right": [
+    {
+      "type": 0,
+      "value": "Speed history chart. Use left and right arrow keys to inspect exact samples."
+    }
+  ],
+  "inspection.components.speed.panel.total": [
+    {
+      "type": 0,
+      "value": "Total"
+    }
+  ],
+  "inspection.components.speed.panel.traffic.breakdown": [
+    {
+      "type": 0,
+      "value": "Traffic breakdown"
+    }
+  ],
+  "inspection.components.speed.panel.transfer.velocity": [
+    {
+      "type": 0,
+      "value": "Transfer velocity"
+    }
+  ],
+  "inspection.components.swarm.table.address": [
+    {
+      "type": 0,
+      "value": "Address"
+    }
+  ],
+  "inspection.components.swarm.table.backed.off": [
+    {
+      "type": 0,
+      "value": "backed off"
+    }
+  ],
+  "inspection.components.swarm.table.banned": [
+    {
+      "type": 0,
+      "value": "banned"
+    }
+  ],
+  "inspection.components.swarm.table.connected": [
+    {
+      "type": 0,
+      "value": "connected"
+    }
+  ],
+  "inspection.components.swarm.table.dialing": [
+    {
+      "type": 0,
+      "value": "dialing"
+    }
+  ],
+  "inspection.components.swarm.table.dials": [
+    {
+      "type": 0,
+      "value": "Dials"
+    }
+  ],
+  "inspection.components.swarm.table.downloaded": [
+    {
+      "type": 0,
+      "value": "Downloaded"
+    }
+  ],
+  "inspection.components.swarm.table.eligible": [
+    {
+      "type": 0,
+      "value": "eligible"
+    }
+  ],
+  "inspection.components.swarm.table.fails": [
+    {
+      "type": 0,
+      "value": "Fails"
+    }
+  ],
+  "inspection.components.swarm.table.failure.limited": [
+    {
+      "type": 0,
+      "value": "failure limited"
+    }
+  ],
+  "inspection.components.swarm.table.integrity": [
+    {
+      "type": 0,
+      "value": "Integrity"
+    }
+  ],
+  "inspection.components.swarm.table.known": [
+    {
+      "type": 0,
+      "value": "known"
+    }
+  ],
+  "inspection.components.swarm.table.known.for": [
+    {
+      "type": 0,
+      "value": "Known for"
+    }
+  ],
+  "inspection.components.swarm.table.known.swarm.peers": [
+    {
+      "type": 0,
+      "value": "Known swarm peers"
+    }
+  ],
+  "inspection.components.swarm.table.last.dial": [
+    {
+      "type": 0,
+      "value": "Last dial"
+    }
+  ],
+  "inspection.components.swarm.table.last.failure": [
+    {
+      "type": 0,
+      "value": "Last failure"
+    }
+  ],
+  "inspection.components.swarm.table.last.seen": [
+    {
+      "type": 0,
+      "value": "Last seen"
+    }
+  ],
+  "inspection.components.swarm.table.loading.known.swarm.peers": [
+    {
+      "type": 0,
+      "value": "Loading known swarm peers…"
+    }
+  ],
+  "inspection.components.swarm.table.lsd": [
+    {
+      "type": 0,
+      "value": "LSD"
+    }
+  ],
+  "inspection.components.swarm.table.magnet": [
+    {
+      "type": 0,
+      "value": "Magnet"
+    }
+  ],
+  "inspection.components.swarm.table.not.connectable": [
+    {
+      "type": 0,
+      "value": "not connectable"
+    }
+  ],
+  "inspection.components.swarm.table.parole": [
+    {
+      "type": 0,
+      "value": "Parole"
+    }
+  ],
+  "inspection.components.swarm.table.payload.sent.to.this.peer.across.every": [
+    {
+      "type": 0,
+      "value": "Payload sent to this peer across every connection retained by this Swarm record. It excludes protocol traffic and resets with the engine or record."
+    }
+  ],
+  "inspection.components.swarm.table.pex": [
+    {
+      "type": 0,
+      "value": "PEX"
+    }
+  ],
+  "inspection.components.swarm.table.retry": [
+    {
+      "type": 0,
+      "value": "Retry"
+    }
+  ],
+  "inspection.components.swarm.table.sources": [
+    {
+      "type": 0,
+      "value": "Sources"
+    }
+  ],
+  "inspection.components.swarm.table.state": [
+    {
+      "type": 0,
+      "value": "State"
+    }
+  ],
+  "inspection.components.swarm.table.swarm.inspection.is.not.requested": [
+    {
+      "type": 0,
+      "value": "Swarm inspection is not requested."
+    }
+  ],
+  "inspection.components.swarm.table.swarm.registry.summary": [
+    {
+      "type": 0,
+      "value": "Swarm registry summary"
+    }
+  ],
+  "inspection.components.swarm.table.trust": [
+    {
+      "type": 0,
+      "value": "Trust"
+    }
+  ],
+  "inspection.components.swarm.table.uploaded": [
+    {
+      "type": 0,
+      "value": "Uploaded"
+    }
+  ],
+  "inspection.components.swarm.table.useful.payload.received.from.this.peer.across": [
+    {
+      "type": 0,
+      "value": "Useful payload received from this peer across every connection retained by this Swarm record. It resets when the engine restarts or the record is evicted."
+    }
+  ],
+  "inspection.components.torrent.action.context.a.selected.torrent.is.no.longer.available": [
+    {
+      "type": 0,
+      "value": "A selected torrent is no longer available."
+    }
+  ],
+  "inspection.components.torrent.action.context.another.torrent.action.is.still.in.progress": [
+    {
+      "type": 0,
+      "value": "Another torrent action is still in progress."
+    }
+  ],
+  "inspection.components.torrent.action.context.archived": [
+    {
+      "type": 0,
+      "value": "Archived"
+    }
+  ],
+  "inspection.components.torrent.action.context.moved.to.the.bottom.of.the.download": [
+    {
+      "type": 0,
+      "value": "Moved to the bottom of the download queue"
+    }
+  ],
+  "inspection.components.torrent.action.context.moved.to.the.top.of.the.download": [
+    {
+      "type": 0,
+      "value": "Moved to the top of the download queue"
+    }
+  ],
+  "inspection.components.torrent.action.context.paused": [
+    {
+      "type": 0,
+      "value": "Paused"
+    }
+  ],
+  "inspection.components.torrent.action.context.restored": [
+    {
+      "type": 0,
+      "value": "Restored"
+    }
+  ],
+  "inspection.components.torrent.action.context.started": [
+    {
+      "type": 0,
+      "value": "Started"
+    }
+  ],
+  "inspection.components.torrent.action.context.started.recheck.for": [
+    {
+      "type": 0,
+      "value": "Started recheck for"
+    }
+  ],
+  "inspection.components.torrent.actions.add": [
+    {
+      "type": 0,
+      "value": "Add"
+    }
+  ],
+  "inspection.components.torrent.actions.add.demo": [
+    {
+      "type": 0,
+      "value": "Add demo"
+    }
+  ],
+  "inspection.components.torrent.actions.add.torrent": [
+    {
+      "type": 0,
+      "value": "Add torrent"
+    }
+  ],
+  "inspection.components.torrent.actions.adding": [
+    {
+      "type": 0,
+      "value": "Adding…"
+    }
+  ],
+  "inspection.components.torrent.actions.magnet.link.or.torrent.url": [
+    {
+      "type": 0,
+      "value": "Magnet link or torrent URL"
+    }
+  ],
+  "inspection.components.torrent.actions.magnet.link.or.url": [
+    {
+      "type": 0,
+      "value": "Magnet link or URL"
+    }
+  ],
+  "inspection.components.torrent.context.menu.torrent.actions": [
+    {
+      "type": 0,
+      "value": "Torrent actions"
+    }
+  ],
+  "inspection.components.torrent.table.done": [
+    {
+      "type": 0,
+      "value": "Done"
+    }
+  ],
+  "inspection.components.torrent.table.down": [
+    {
+      "type": 0,
+      "value": "Down"
+    }
+  ],
+  "inspection.components.torrent.table.eta": [
+    {
+      "type": 0,
+      "value": "ETA"
+    }
+  ],
+  "inspection.components.torrent.table.loading.torrent.library": [
+    {
+      "type": 0,
+      "value": "Loading torrent library…"
+    }
+  ],
+  "inspection.components.torrent.table.name": [
+    {
+      "type": 0,
+      "value": "Name"
+    }
+  ],
+  "inspection.components.torrent.table.no.torrents.are.present": [
+    {
+      "type": 0,
+      "value": "No torrents are present."
+    }
+  ],
+  "inspection.components.torrent.table.no.torrents.are.present.in.the.live": [
+    {
+      "type": 0,
+      "value": "No torrents are present in the live engine."
+    }
+  ],
+  "inspection.components.torrent.table.no.torrents.yet.add.a.generated.demo": [
+    {
+      "type": 0,
+      "value": "No torrents yet. Add a generated demo transfer or choose another scenario."
+    }
+  ],
+  "inspection.components.torrent.table.peers": [
+    {
+      "type": 0,
+      "value": "Peers"
+    }
+  ],
+  "inspection.components.torrent.table.size": [
+    {
+      "type": 0,
+      "value": "Size"
+    }
+  ],
+  "inspection.components.torrent.table.status": [
+    {
+      "type": 0,
+      "value": "Status"
+    }
+  ],
+  "inspection.components.torrent.table.torrent.actions": [
+    {
+      "type": 0,
+      "value": "Torrent actions"
+    }
+  ],
+  "inspection.components.torrent.table.torrent.library": [
+    {
+      "type": 0,
+      "value": "Torrent library"
+    }
+  ],
+  "inspection.components.torrent.table.torrent.library.is.not.requested.in.this": [
+    {
+      "type": 0,
+      "value": "Torrent library is not requested in this layout."
+    }
+  ],
+  "inspection.components.torrent.table.up": [
+    {
+      "type": 0,
+      "value": "Up"
+    }
+  ],
+  "inspection.components.tracker.table.announcing": [
+    {
+      "type": 0,
+      "value": "announcing"
+    }
+  ],
+  "inspection.components.tracker.table.attempts": [
+    {
+      "type": 0,
+      "value": "Attempts"
+    }
+  ],
+  "inspection.components.tracker.table.encrypted.certificate.and.hostname.not.validated": [
+    {
+      "type": 0,
+      "value": "Encrypted, certificate and hostname not validated"
+    }
+  ],
+  "inspection.components.tracker.table.error": [
+    {
+      "type": 0,
+      "value": "Error"
+    }
+  ],
+  "inspection.components.tracker.table.event": [
+    {
+      "type": 0,
+      "value": "Event"
+    }
+  ],
+  "inspection.components.tracker.table.failures": [
+    {
+      "type": 0,
+      "value": "Failures"
+    }
+  ],
+  "inspection.components.tracker.table.family": [
+    {
+      "type": 0,
+      "value": "Family"
+    }
+  ],
+  "inspection.components.tracker.table.interval": [
+    {
+      "type": 0,
+      "value": "Interval"
+    }
+  ],
+  "inspection.components.tracker.table.last.failure": [
+    {
+      "type": 0,
+      "value": "Last failure"
+    }
+  ],
+  "inspection.components.tracker.table.last.success": [
+    {
+      "type": 0,
+      "value": "Last success"
+    }
+  ],
+  "inspection.components.tracker.table.leeches": [
+    {
+      "type": 0,
+      "value": "Leeches"
+    }
+  ],
+  "inspection.components.tracker.table.loading.configured.trackers": [
+    {
+      "type": 0,
+      "value": "Loading configured trackers…"
+    }
+  ],
+  "inspection.components.tracker.table.next.announce": [
+    {
+      "type": 0,
+      "value": "Next announce"
+    }
+  ],
+  "inspection.components.tracker.table.now": [
+    {
+      "type": 0,
+      "value": "Now"
+    }
+  ],
+  "inspection.components.tracker.table.peers": [
+    {
+      "type": 0,
+      "value": "Peers"
+    }
+  ],
+  "inspection.components.tracker.table.scheduled": [
+    {
+      "type": 0,
+      "value": "scheduled"
+    }
+  ],
+  "inspection.components.tracker.table.seeds": [
+    {
+      "type": 0,
+      "value": "Seeds"
+    }
+  ],
+  "inspection.components.tracker.table.source": [
+    {
+      "type": 0,
+      "value": "Source"
+    }
+  ],
+  "inspection.components.tracker.table.status": [
+    {
+      "type": 0,
+      "value": "Status"
+    }
+  ],
+  "inspection.components.tracker.table.tier": [
+    {
+      "type": 0,
+      "value": "Tier"
+    }
+  ],
+  "inspection.components.tracker.table.torrent.trackers": [
+    {
+      "type": 0,
+      "value": "Torrent trackers"
+    }
+  ],
+  "inspection.components.tracker.table.tracker.inspection.is.not.requested": [
+    {
+      "type": 0,
+      "value": "Tracker inspection is not requested."
+    }
+  ],
+  "inspection.components.tracker.table.trackers": [
+    {
+      "type": 0,
+      "value": "trackers"
+    }
+  ],
+  "inspection.components.tracker.table.type": [
+    {
+      "type": 0,
+      "value": "Type"
+    }
+  ],
+  "inspection.components.tracker.table.unencrypted.tracker.transport": [
+    {
+      "type": 0,
+      "value": "Unencrypted tracker transport"
+    }
+  ],
+  "inspection.components.tracker.table.url": [
+    {
+      "type": 0,
+      "value": "URL"
+    }
+  ],
+  "inspection.components.transfer.table.eta": [
+    {
+      "type": 0,
+      "value": "ETA"
+    }
+  ],
+  "inspection.components.transfer.table.loading.transfers": [
+    {
+      "type": 0,
+      "value": "Loading transfers…"
+    }
+  ],
+  "inspection.components.transfer.table.name": [
+    {
+      "type": 0,
+      "value": "Name"
+    }
+  ],
+  "inspection.components.transfer.table.no.transfers.are.present": [
+    {
+      "type": 0,
+      "value": "No transfers are present."
+    }
+  ],
+  "inspection.components.transfer.table.no.transfers.are.present.in.the.live": [
+    {
+      "type": 0,
+      "value": "No transfers are present in the live engine."
+    }
+  ],
+  "inspection.components.transfer.table.no.transfers.yet.add.a.generated.demo": [
+    {
+      "type": 0,
+      "value": "No transfers yet. Add a generated demo transfer or choose another scenario."
+    }
+  ],
+  "inspection.components.transfer.table.progress": [
+    {
+      "type": 0,
+      "value": "Progress"
+    }
+  ],
+  "inspection.components.transfer.table.rate": [
+    {
+      "type": 0,
+      "value": "Rate"
+    }
+  ],
+  "inspection.components.transfer.table.size": [
+    {
+      "type": 0,
+      "value": "Size"
+    }
+  ],
+  "inspection.components.transfer.table.status": [
+    {
+      "type": 0,
+      "value": "Status"
+    }
+  ],
+  "inspection.components.transfer.table.torrent.actions": [
+    {
+      "type": 0,
+      "value": "Torrent actions"
+    }
+  ],
+  "inspection.components.transfer.table.transfer.collection.is.not.requested.in.this": [
+    {
+      "type": 0,
+      "value": "Transfer collection is not requested in this layout."
+    }
+  ],
+  "inspection.components.transfer.table.transfer.queue": [
+    {
+      "type": 0,
+      "value": "Transfer queue"
+    }
+  ],
+  "inspection.components.transfers.view.active": [
+    {
+      "type": 0,
+      "value": "active"
+    }
+  ],
+  "inspection.components.transfers.view.active.9234069": [
+    {
+      "type": 0,
+      "value": "Active"
+    }
+  ],
+  "inspection.components.transfers.view.all.torrents": [
+    {
+      "type": 0,
+      "value": "All torrents"
+    }
+  ],
+  "inspection.components.transfers.view.archived": [
+    {
+      "type": 0,
+      "value": "Archived"
+    }
+  ],
+  "inspection.components.transfers.view.completed": [
+    {
+      "type": 0,
+      "value": "Completed"
+    }
+  ],
+  "inspection.components.transfers.view.downloading": [
+    {
+      "type": 0,
+      "value": "Downloading"
+    }
+  ],
+  "inspection.components.transfers.view.needs.attention": [
+    {
+      "type": 0,
+      "value": "Needs attention"
+    }
+  ],
+  "inspection.components.transfers.view.paused": [
+    {
+      "type": 0,
+      "value": "Paused"
+    }
+  ],
+  "inspection.components.transfers.view.shown": [
+    {
+      "type": 0,
+      "value": "shown"
+    }
+  ],
+  "inspection.components.transfers.view.transfers": [
+    {
+      "type": 0,
+      "value": "Transfers"
+    }
+  ],
+  "inspection.components.virtual.table.columns": [
+    {
+      "type": 0,
+      "value": "Columns"
+    }
+  ],
+  "inspection.components.virtual.table.deselect": [
+    {
+      "type": 0,
+      "value": "Deselect"
+    }
+  ],
+  "inspection.components.virtual.table.deselect.all.rows": [
+    {
+      "type": 0,
+      "value": "Deselect all rows"
+    }
+  ],
+  "inspection.components.virtual.table.done": [
+    {
+      "type": 0,
+      "value": "Done"
+    }
+  ],
+  "inspection.components.virtual.table.re.sort.live.updates": [
+    {
+      "type": 0,
+      "value": "Re-sort live updates"
+    }
+  ],
+  "inspection.components.virtual.table.reset.table": [
+    {
+      "type": 0,
+      "value": "Reset table"
+    }
+  ],
+  "inspection.components.virtual.table.select": [
+    {
+      "type": 0,
+      "value": "Select"
+    }
+  ],
+  "inspection.components.virtual.table.select.all.rows": [
+    {
+      "type": 0,
+      "value": "Select all rows"
+    }
+  ],
+  "inspection.components.virtual.table.selection": [
+    {
+      "type": 0,
+      "value": "Selection"
+    }
+  ],
+  "inspection.components.virtual.table.table.column.settings": [
+    {
+      "type": 0,
+      "value": "Table column settings"
+    }
+  ],
+  "inspection.components.virtual.table.visible.columns": [
+    {
+      "type": 0,
+      "value": "Visible columns"
+    }
+  ],
+  "inspection.components.web.access.settings.section.a.new.pairing.code.is.ready": [
+    {
+      "type": 0,
+      "value": "A new pairing code is ready."
+    }
+  ],
+  "inspection.components.web.access.settings.section.added": [
+    {
+      "type": 0,
+      "value": "Added"
+    }
+  ],
+  "inspection.components.web.access.settings.section.any.browser.on.this.computer.can.use": [
+    {
+      "type": 0,
+      "value": "Any browser on this computer can use this loopback RSTorrent service."
+    }
+  ],
+  "inspection.components.web.access.settings.section.approve.another.browser": [
+    {
+      "type": 0,
+      "value": "Approve another browser"
+    }
+  ],
+  "inspection.components.web.access.settings.section.approved.browsers": [
+    {
+      "type": 0,
+      "value": "Approved browsers"
+    }
+  ],
+  "inspection.components.web.access.settings.section.authorized.browsers": [
+    {
+      "type": 0,
+      "value": "Authorized browsers"
+    }
+  ],
+  "inspection.components.web.access.settings.section.current.policy": [
+    {
+      "type": 0,
+      "value": "Current policy"
+    }
+  ],
+  "inspection.components.web.access.settings.section.expired.generate.a.new.code": [
+    {
+      "type": 0,
+      "value": "Expired — generate a new code"
+    }
+  ],
+  "inspection.components.web.access.settings.section.generate.code": [
+    {
+      "type": 0,
+      "value": "Generate code"
+    }
+  ],
+  "inspection.components.web.access.settings.section.if.every.authorized.cookie.or.browser.profile": [
+    {
+      "type": 0,
+      "value": "If every authorized cookie or browser profile is gone, stop the server and restart the same command with"
+    }
+  ],
+  "inspection.components.web.access.settings.section.keep.localhost.open": [
+    {
+      "type": 0,
+      "value": "Keep localhost open"
+    }
+  ],
+  "inspection.components.web.access.settings.section.last.used": [
+    {
+      "type": 0,
+      "value": "· Last used"
+    }
+  ],
+  "inspection.components.web.access.settings.section.loading.web.access": [
+    {
+      "type": 0,
+      "value": "Loading web access…"
+    }
+  ],
+  "inspection.components.web.access.settings.section.localhost.access.is.now.open": [
+    {
+      "type": 0,
+      "value": "Localhost access is now open."
+    }
+  ],
+  "inspection.components.web.access.settings.section.localhost.open": [
+    {
+      "type": 0,
+      "value": "Localhost open"
+    }
+  ],
+  "inspection.components.web.access.settings.section.of.32.remembered.sessions": [
+    {
+      "type": 0,
+      "value": "of 32 remembered sessions"
+    }
+  ],
+  "inspection.components.web.access.settings.section.pairing.window": [
+    {
+      "type": 0,
+      "value": "--pairing-window"
+    }
+  ],
+  "inspection.components.web.access.settings.section.recovery.and.sign.out": [
+    {
+      "type": 0,
+      "value": "Recovery and sign out"
+    }
+  ],
+  "inspection.components.web.access.settings.section.require.browser.approval": [
+    {
+      "type": 0,
+      "value": "Require browser approval"
+    }
+  ],
+  "inspection.components.web.access.settings.section.revoke": [
+    {
+      "type": 0,
+      "value": "Revoke"
+    }
+  ],
+  "inspection.components.web.access.settings.section.revoke.all.others": [
+    {
+      "type": 0,
+      "value": "Revoke all others"
+    }
+  ],
+  "inspection.components.web.access.settings.section.sign.out.this.browser": [
+    {
+      "type": 0,
+      "value": "Sign out this browser"
+    }
+  ],
+  "inspection.components.web.access.settings.section.the.code.works.once.for.10.minutes": [
+    {
+      "type": 0,
+      "value": "The code works once, for 10 minutes, with five attempts."
+    }
+  ],
+  "inspection.components.web.access.settings.section.the.first.explicit.browser.approval.consumes.that": [
+    {
+      "type": 0,
+      "value": ". The first explicit browser approval consumes that 10-minute window."
+    }
+  ],
+  "inspection.components.web.access.settings.section.this.browser": [
+    {
+      "type": 0,
+      "value": "This browser"
+    }
+  ],
+  "inspection.components.web.access.settings.section.this.browser.is.approved.new.browser.profiles": [
+    {
+      "type": 0,
+      "value": "This browser is approved. New browser profiles need a four-digit code or an explicit restart pairing window."
+    }
+  ],
+  "inspection.components.web.access.settings.section.this.browser.is.now.remembered": [
+    {
+      "type": 0,
+      "value": "This browser is now remembered."
+    }
+  ],
+  "inspection.components.web.auth.gate.and.the.first.approval.consumes.it": [
+    {
+      "type": 0,
+      "value": "and the first approval consumes it."
+    }
+  ],
+  "inspection.components.web.auth.gate.any.browser.on.this.computer.can.open": [
+    {
+      "type": 0,
+      "value": "Any browser on this computer can open RSTorrent."
+    }
+  ],
+  "inspection.components.web.auth.gate.approve.this.browser": [
+    {
+      "type": 0,
+      "value": "Approve this browser"
+    }
+  ],
+  "inspection.components.web.auth.gate.authorize.browser": [
+    {
+      "type": 0,
+      "value": "Authorize browser"
+    }
+  ],
+  "inspection.components.web.auth.gate.browser.approval": [
+    {
+      "type": 0,
+      "value": "Browser approval"
+    }
+  ],
+  "inspection.components.web.auth.gate.choose.how.future.browser.profiles.should.connect": [
+    {
+      "type": 0,
+      "value": ". Choose how future browser profiles should connect."
+    }
+  ],
+  "inspection.components.web.auth.gate.choose.web.access": [
+    {
+      "type": 0,
+      "value": "Choose web access"
+    }
+  ],
+  "inspection.components.web.auth.gate.enter.the.four.digit.code.shown.by": [
+    {
+      "type": 0,
+      "value": "Enter the four-digit code shown by an approved browser."
+    }
+  ],
+  "inspection.components.web.auth.gate.first.launch": [
+    {
+      "type": 0,
+      "value": "First launch"
+    }
+  ],
+  "inspection.components.web.auth.gate.four.digit.code": [
+    {
+      "type": 0,
+      "value": "Four-digit code"
+    }
+  ],
+  "inspection.components.web.auth.gate.if.every.approved.browser.profile.or.cookie": [
+    {
+      "type": 0,
+      "value": "If every approved browser profile or cookie is gone, stop the server and restart the same command with"
+    }
+  ],
+  "inspection.components.web.auth.gate.in.an.approved.browser.open.settings.web": [
+    {
+      "type": 0,
+      "value": "In an approved browser, open Settings → Web access → Approve another browser. Enter the displayed four-digit code here."
+    }
+  ],
+  "inspection.components.web.auth.gate.initial.setup.is.open.on.this.computer": [
+    {
+      "type": 0,
+      "value": "Initial setup is open on this computer for"
+    }
+  ],
+  "inspection.components.web.auth.gate.initial.setup.was.available.for.10.minutes": [
+    {
+      "type": 0,
+      "value": "Initial setup was available for 10 minutes and has now closed. Restart RSTorrent with the same profile to open a new 10-minute setup window."
+    }
+  ],
+  "inspection.components.web.auth.gate.keep.localhost.open": [
+    {
+      "type": 0,
+      "value": "Keep localhost open"
+    }
+  ],
+  "inspection.components.web.auth.gate.new.browser.profiles.will.need.your.approval": [
+    {
+      "type": 0,
+      "value": "New browser profiles will need your approval."
+    }
+  ],
+  "inspection.components.web.auth.gate.pairing.window": [
+    {
+      "type": 0,
+      "value": "--pairing-window"
+    }
+  ],
+  "inspection.components.web.auth.gate.recovery.window": [
+    {
+      "type": 0,
+      "value": "Recovery window"
+    }
+  ],
+  "inspection.components.web.auth.gate.remember.this.browser": [
+    {
+      "type": 0,
+      "value": "Remember this browser"
+    }
+  ],
+  "inspection.components.web.auth.gate.restart.to.finish.setup": [
+    {
+      "type": 0,
+      "value": "Restart to finish setup"
+    }
+  ],
+  "inspection.components.web.auth.gate.rs": [
+    {
+      "type": 0,
+      "value": "RS"
+    }
+  ],
+  "inspection.components.web.auth.gate.rstorrent.was.restarted.with.browser.pairing.enabled": [
+    {
+      "type": 0,
+      "value": "RSTorrent was restarted with browser pairing enabled. This window closes in"
+    }
+  ],
+  "inspection.components.web.auth.gate.setup.closed": [
+    {
+      "type": 0,
+      "value": "Setup closed"
+    }
+  ],
+  "inspection.components.web.auth.gate.this.browser.is.not.approved": [
+    {
+      "type": 0,
+      "value": "This browser is not approved"
+    }
+  ],
+  "inspection.demo.catalog.2.000.torrents.10.000.connections.and": [
+    {
+      "type": 0,
+      "value": "2,000 torrents, 10,000 connections, and 1,000 registry records."
+    }
+  ],
+  "inspection.demo.catalog.a.4.096.row.file.tree.with": [
+    {
+      "type": 0,
+      "value": "A 4,096-row file tree with stored and verified progress boundaries."
+    }
+  ],
+  "inspection.demo.catalog.a.clean.first.run.library.with.no": [
+    {
+      "type": 0,
+      "value": "A clean first-run library with no active torrents."
+    }
+  ],
+  "inspection.demo.catalog.a.corrupt.attempt.fails.clears.and.retries": [
+    {
+      "type": 0,
+      "value": "A corrupt attempt fails, clears, and retries from clean state."
+    }
+  ],
+  "inspection.demo.catalog.a.new.history.epoch.replaces.the.previous": [
+    {
+      "type": 0,
+      "value": "A new history epoch replaces the previous plot across a gap."
+    }
+  ],
+  "inspection.demo.catalog.a.storage.write.fails.and.leaves.an": [
+    {
+      "type": 0,
+      "value": "A storage write fails and leaves an actionable stopped state."
+    }
+  ],
+  "inspection.demo.catalog.a.sustained.transfer.with.a.narrow.stable": [
+    {
+      "type": 0,
+      "value": "A sustained transfer with a narrow, stable rate envelope."
+    }
+  ],
+  "inspection.demo.catalog.a.udp.timeout.backs.off.retries.and": [
+    {
+      "type": 0,
+      "value": "A UDP timeout backs off, retries, and discovers peers."
+    }
+  ],
+  "inspection.demo.catalog.candidates.available.no.metadata.request.is.active": [
+    {
+      "type": 0,
+      "value": "Candidates available; no metadata request is active"
+    }
+  ],
+  "inspection.demo.catalog.candidates.exist.but.no.metadata.request.is": [
+    {
+      "type": 0,
+      "value": "Candidates exist, but no metadata request is making progress."
+    }
+  ],
+  "inspection.demo.catalog.checking.progress": [
+    {
+      "type": 0,
+      "value": "Checking progress"
+    }
+  ],
+  "inspection.demo.catalog.complete.zero.buckets.remain.distinct.from.stale": [
+    {
+      "type": 0,
+      "value": "Complete zero buckets remain distinct from stale or missing data."
+    }
+  ],
+  "inspection.demo.catalog.conservative.full.verification.is.active": [
+    {
+      "type": 0,
+      "value": "Conservative full verification is active"
+    }
+  ],
+  "inspection.demo.catalog.demo.delivery.paused": [
+    {
+      "type": 0,
+      "value": "Demo delivery paused"
+    }
+  ],
+  "inspection.demo.catalog.demo.observation.delivery.paused": [
+    {
+      "type": 0,
+      "value": "Demo observation delivery paused"
+    }
+  ],
+  "inspection.demo.catalog.dht.observatory": [
+    {
+      "type": 0,
+      "value": "DHT observatory"
+    }
+  ],
+  "inspection.demo.catalog.diagnostic.console": [
+    {
+      "type": 0,
+      "value": "Diagnostic console"
+    }
+  ],
+  "inspection.demo.catalog.disk.error": [
+    {
+      "type": 0,
+      "value": "Disk error"
+    }
+  ],
+  "inspection.demo.catalog.downloading.selected.episodes": [
+    {
+      "type": 0,
+      "value": "Downloading selected episodes"
+    }
+  ],
+  "inspection.demo.catalog.empty.library": [
+    {
+      "type": 0,
+      "value": "Empty library"
+    }
+  ],
+  "inspection.demo.catalog.endgame": [
+    {
+      "type": 0,
+      "value": "Endgame"
+    }
+  ],
+  "inspection.demo.catalog.failed.work.remains.counted.before.a.clean": [
+    {
+      "type": 0,
+      "value": "Failed work remains counted before a clean retry verifies."
+    }
+  ],
+  "inspection.demo.catalog.file.progress": [
+    {
+      "type": 0,
+      "value": "File progress"
+    }
+  ],
+  "inspection.demo.catalog.healthy.download": [
+    {
+      "type": 0,
+      "value": "Healthy download"
+    }
+  ],
+  "inspection.demo.catalog.inspecting.peer.discovery.and.dial.eligibility": [
+    {
+      "type": 0,
+      "value": "Inspecting peer discovery and dial eligibility"
+    }
+  ],
+  "inspection.demo.catalog.large.swarm": [
+    {
+      "type": 0,
+      "value": "Large swarm"
+    }
+  ],
+  "inspection.demo.catalog.metadata.useful.peers.sustained.transfer.and.completion": [
+    {
+      "type": 0,
+      "value": "Metadata, useful peers, sustained transfer, and completion."
+    }
+  ],
+  "inspection.demo.catalog.misordered.episodes.sidecars.and.exact.file.progress": [
+    {
+      "type": 0,
+      "value": "Misordered episodes, sidecars, and exact file progress."
+    }
+  ],
+  "inspection.demo.catalog.mixed.structured.records.scopes.severities.and.a": [
+    {
+      "type": 0,
+      "value": "Mixed structured records, scopes, severities, and a busy ordered feed."
+    }
+  ],
+  "inspection.demo.catalog.paused.by.user": [
+    {
+      "type": 0,
+      "value": "Paused by user"
+    }
+  ],
+  "inspection.demo.catalog.payload.upload.is.unavailable.rather.than.reported": [
+    {
+      "type": 0,
+      "value": "Payload upload is unavailable rather than reported as zero."
+    }
+  ],
+  "inspection.demo.catalog.peer.candidates.merge.dial.connect.back.off": [
+    {
+      "type": 0,
+      "value": "Peer candidates merge, dial, connect, back off, and retire."
+    }
+  ],
+  "inspection.demo.catalog.peer.metadata.dht.tracker.and.hash.traffic": [
+    {
+      "type": 0,
+      "value": "Peer, metadata, DHT, tracker, and hash traffic are all active."
+    }
+  ],
+  "inspection.demo.catalog.piece.hash.retry": [
+    {
+      "type": 0,
+      "value": "Piece hash retry"
+    }
+  ],
+  "inspection.demo.catalog.queued.hashing.fencing.paused.and.finalizing.checker": [
+    {
+      "type": 0,
+      "value": "Queued, hashing, fencing, paused, and finalizing checker phases."
+    }
+  ],
+  "inspection.demo.catalog.receive.buffers.fill.intake.pauses.drains.and": [
+    {
+      "type": 0,
+      "value": "Receive buffers fill, intake pauses, drains, and resumes."
+    }
+  ],
+  "inspection.demo.catalog.retained.history.contains.explicit.process.offline.gaps": [
+    {
+      "type": 0,
+      "value": "Retained history contains explicit process-offline gaps."
+    }
+  ],
+  "inspection.demo.catalog.routing.depth.freshness.replacements.and.lookup.convergence": [
+    {
+      "type": 0,
+      "value": "Routing depth, freshness, replacements, and lookup convergence."
+    }
+  ],
+  "inspection.demo.catalog.seeding.to.6.peers": [
+    {
+      "type": 0,
+      "value": "Seeding to 6 peers"
+    }
+  ],
+  "inspection.demo.catalog.short.payload.bursts.separate.receive.storage.and": [
+    {
+      "type": 0,
+      "value": "Short payload bursts separate receive, storage, and verification."
+    }
+  ],
+  "inspection.demo.catalog.slow.disk.pressure": [
+    {
+      "type": 0,
+      "value": "Slow disk pressure"
+    }
+  ],
+  "inspection.demo.catalog.speed.bursty": [
+    {
+      "type": 0,
+      "value": "Speed · bursty"
+    }
+  ],
+  "inspection.demo.catalog.speed.epoch.reset": [
+    {
+      "type": 0,
+      "value": "Speed · epoch reset"
+    }
+  ],
+  "inspection.demo.catalog.speed.hash.retry": [
+    {
+      "type": 0,
+      "value": "Speed · hash retry"
+    }
+  ],
+  "inspection.demo.catalog.speed.history.gaps": [
+    {
+      "type": 0,
+      "value": "Speed · history gaps"
+    }
+  ],
+  "inspection.demo.catalog.speed.idle": [
+    {
+      "type": 0,
+      "value": "Speed · idle"
+    }
+  ],
+  "inspection.demo.catalog.speed.stale": [
+    {
+      "type": 0,
+      "value": "Speed · stale"
+    }
+  ],
+  "inspection.demo.catalog.speed.steady": [
+    {
+      "type": 0,
+      "value": "Speed · steady"
+    }
+  ],
+  "inspection.demo.catalog.speed.traffic": [
+    {
+      "type": 0,
+      "value": "Speed · traffic"
+    }
+  ],
+  "inspection.demo.catalog.speed.unavailable.upload": [
+    {
+      "type": 0,
+      "value": "Speed · unavailable upload"
+    }
+  ],
+  "inspection.demo.catalog.stalled.metadata": [
+    {
+      "type": 0,
+      "value": "Stalled metadata"
+    }
+  ],
+  "inspection.demo.catalog.stored.blocks.lead.verified.pieces.in.the": [
+    {
+      "type": 0,
+      "value": "Stored blocks lead verified pieces in the active file"
+    }
+  ],
+  "inspection.demo.catalog.swarm.lifecycle": [
+    {
+      "type": 0,
+      "value": "Swarm lifecycle"
+    }
+  ],
+  "inspection.demo.catalog.synthetic.scale.row": [
+    {
+      "type": 0,
+      "value": "Synthetic scale row"
+    }
+  ],
+  "inspection.demo.catalog.the.final.blocks.duplicate.safely.and.converge": [
+    {
+      "type": 0,
+      "value": "The final blocks duplicate safely and converge on completion."
+    }
+  ],
+  "inspection.demo.catalog.the.last.authoritative.plot.freezes.when.delivery": [
+    {
+      "type": 0,
+      "value": "The last authoritative plot freezes when delivery stops."
+    }
+  ],
+  "inspection.demo.catalog.tracker.recovery": [
+    {
+      "type": 0,
+      "value": "Tracker recovery"
+    }
+  ],
+  "inspection.demo.catalog.tv.media.library": [
+    {
+      "type": 0,
+      "value": "TV media Library"
+    }
+  ],
+  "inspection.demo.catalog.upload.and.seeding.are.not.implemented": [
+    {
+      "type": 0,
+      "value": "Upload and seeding are not implemented"
+    }
+  ],
+  "inspection.demo.demo.application.magnet.link.ready": [
+    {
+      "type": 0,
+      "value": "Magnet link ready"
+    }
+  ],
+  "inspection.demo.demo.application.torrent.is.no.longer.present": [
+    {
+      "type": 0,
+      "value": "Torrent is no longer present"
+    }
+  ],
+  "inspection.file.actions.download.now": [
+    {
+      "type": 0,
+      "value": "Download now"
+    }
+  ],
+  "inspection.file.actions.high": [
+    {
+      "type": 0,
+      "value": "High"
+    }
+  ],
+  "inspection.file.actions.normal": [
+    {
+      "type": 0,
+      "value": "Normal"
+    }
+  ],
+  "inspection.file.actions.open": [
+    {
+      "type": 0,
+      "value": "Open"
+    }
+  ],
+  "inspection.file.actions.skip": [
+    {
+      "type": 0,
+      "value": "Skip"
+    }
+  ],
+  "inspection.format.calculating.eta": [
+    {
+      "type": 0,
+      "value": "Calculating ETA"
+    }
+  ],
+  "inspection.format.checking.paused": [
+    {
+      "type": 0,
+      "value": "Checking paused"
+    }
+  ],
+  "inspection.format.eta.unavailable": [
+    {
+      "type": 0,
+      "value": "ETA unavailable"
+    }
+  ],
+  "inspection.format.finalizing.check": [
+    {
+      "type": 0,
+      "value": "Finalizing check"
+    }
+  ],
+  "inspection.format.metadata": [
+    {
+      "type": 0,
+      "value": "Metadata"
+    }
+  ],
+  "inspection.format.preparing.check": [
+    {
+      "type": 0,
+      "value": "Preparing check"
+    }
+  ],
+  "inspection.format.queued.for.checking": [
+    {
+      "type": 0,
+      "value": "Queued for checking"
+    }
+  ],
+  "inspection.format.transfer.stalled": [
+    {
+      "type": 0,
+      "value": "Transfer stalled"
+    }
+  ],
+  "inspection.format.updating.file.selection": [
+    {
+      "type": 0,
+      "value": "Updating file selection"
+    }
+  ],
+  "inspection.live.live.application.added": [
+    {
+      "type": 0,
+      "value": "Added"
+    }
+  ],
+  "inspection.live.live.application.already.in.your.session": [
+    {
+      "type": 0,
+      "value": "Already in your session"
+    }
+  ],
+  "inspection.live.live.application.external.torrent.intake.is.unavailable.on.this": [
+    {
+      "type": 0,
+      "value": "External torrent intake is unavailable on this connection"
+    }
+  ],
+  "inspection.live.live.application.file.metadata.is.unavailable": [
+    {
+      "type": 0,
+      "value": "File metadata is unavailable"
+    }
+  ],
+  "inspection.live.live.application.folder.selection.canceled": [
+    {
+      "type": 0,
+      "value": "Folder selection canceled"
+    }
+  ],
+  "inspection.live.live.application.http.file.serving.is.unavailable": [
+    {
+      "type": 0,
+      "value": "HTTP file serving is unavailable"
+    }
+  ],
+  "inspection.live.live.application.live.controller.is.unavailable": [
+    {
+      "type": 0,
+      "value": "Live controller is unavailable"
+    }
+  ],
+  "inspection.live.live.application.magnet.export.response.did.not.contain.a": [
+    {
+      "type": 0,
+      "value": "Magnet export response did not contain a magnet link"
+    }
+  ],
+  "inspection.live.live.application.magnet.link.ready": [
+    {
+      "type": 0,
+      "value": "Magnet link ready"
+    }
+  ],
+  "inspection.live.live.application.opening.file": [
+    {
+      "type": 0,
+      "value": "Opening file"
+    }
+  ],
+  "inspection.live.live.application.opening.files.is.unavailable.on.this.connection": [
+    {
+      "type": 0,
+      "value": "Opening files is unavailable on this connection"
+    }
+  ],
+  "inspection.live.live.application.padding.files.cannot.be.opened": [
+    {
+      "type": 0,
+      "value": "Padding files cannot be opened"
+    }
+  ],
+  "inspection.live.live.application.the.file.cannot.be.opened.while.its": [
+    {
+      "type": 0,
+      "value": "The file cannot be opened while its torrent is checking"
+    }
+  ],
+  "inspection.live.live.application.the.file.has.not.finished.downloading": [
+    {
+      "type": 0,
+      "value": "The file has not finished downloading"
+    }
+  ],
+  "inspection.live.live.application.the.file.is.available": [
+    {
+      "type": 0,
+      "value": "The file is available"
+    }
+  ],
+  "inspection.live.live.application.the.file.is.not.fully.verified.yet": [
+    {
+      "type": 0,
+      "value": "The file is not fully verified yet"
+    }
+  ],
+  "inspection.live.live.application.the.file.is.ready.to.stream": [
+    {
+      "type": 0,
+      "value": "The file is ready to stream"
+    }
+  ],
+  "inspection.live.live.application.the.file.is.temporarily.unavailable": [
+    {
+      "type": 0,
+      "value": "The file is temporarily unavailable"
+    }
+  ],
+  "inspection.live.live.application.the.file.s.storage.is.unavailable": [
+    {
+      "type": 0,
+      "value": "The file's storage is unavailable"
+    }
+  ],
+  "inspection.live.live.application.the.selected.file.no.longer.exists": [
+    {
+      "type": 0,
+      "value": "The selected file no longer exists"
+    }
+  ],
+  "inspection.live.live.application.the.torrent.is.being.removed": [
+    {
+      "type": 0,
+      "value": "The torrent is being removed"
+    }
+  ],
+  "inspection.live.live.application.this.command.is.available.only.in.named": [
+    {
+      "type": 0,
+      "value": "This command is available only in named demo scenarios"
+    }
+  ],
+  "inspection.live.live.application.too.many.files.are.already.open.try": [
+    {
+      "type": 0,
+      "value": "Too many files are already open; try again shortly"
+    }
+  ],
+  "inspection.live.live.application.torrent.file.upload.is.unavailable.on.this": [
+    {
+      "type": 0,
+      "value": "Torrent file upload is unavailable on this connection"
+    }
+  ],
+  "inspection.live.live.application.view.is.unsupported": [
+    {
+      "type": 0,
+      "value": "View is unsupported"
+    }
+  ],
+  "inspection.peer.flags.download.allowed": [
+    {
+      "type": 0,
+      "value": "Download allowed"
+    }
+  ],
+  "inspection.peer.flags.download.choked": [
+    {
+      "type": 0,
+      "value": "Download choked"
+    }
+  ],
+  "inspection.peer.flags.encrypted.or.obfuscated": [
+    {
+      "type": 0,
+      "value": "Encrypted or obfuscated"
+    }
+  ],
+  "inspection.peer.flags.endgame": [
+    {
+      "type": 0,
+      "value": "Endgame"
+    }
+  ],
+  "inspection.peer.flags.extension.protocol": [
+    {
+      "type": 0,
+      "value": "Extension protocol"
+    }
+  ],
+  "inspection.peer.flags.hole.punched": [
+    {
+      "type": 0,
+      "value": "Hole punched"
+    }
+  ],
+  "inspection.peer.flags.incoming": [
+    {
+      "type": 0,
+      "value": "Incoming"
+    }
+  ],
+  "inspection.peer.flags.metadata.extension": [
+    {
+      "type": 0,
+      "value": "Metadata extension"
+    }
+  ],
+  "inspection.peer.flags.on.parole": [
+    {
+      "type": 0,
+      "value": "On parole"
+    }
+  ],
+  "inspection.peer.flags.optimistic.unchoke": [
+    {
+      "type": 0,
+      "value": "Optimistic unchoke"
+    }
+  ],
+  "inspection.peer.flags.seed": [
+    {
+      "type": 0,
+      "value": "Seed"
+    }
+  ],
+  "inspection.peer.flags.snubbed": [
+    {
+      "type": 0,
+      "value": "Snubbed"
+    }
+  ],
+  "inspection.peer.flags.upload.allowed": [
+    {
+      "type": 0,
+      "value": "Upload allowed"
+    }
+  ],
+  "inspection.peer.flags.upload.choked": [
+    {
+      "type": 0,
+      "value": "Upload choked"
+    }
+  ],
+  "inspection.peer.flags.upload.only": [
+    {
+      "type": 0,
+      "value": "Upload only"
+    }
+  ],
+  "inspection.peer.flags.utp": [
+    {
+      "type": 0,
+      "value": "uTP"
+    }
+  ],
+  "inspection.tabs.dht": [
+    {
+      "type": 0,
+      "value": "DHT"
+    }
+  ],
+  "inspection.tabs.disk": [
+    {
+      "type": 0,
+      "value": "Disk"
+    }
+  ],
+  "inspection.tabs.files": [
+    {
+      "type": 0,
+      "value": "Files"
+    }
+  ],
+  "inspection.tabs.general": [
+    {
+      "type": 0,
+      "value": "General"
+    }
+  ],
+  "inspection.tabs.logs": [
+    {
+      "type": 0,
+      "value": "Logs"
+    }
+  ],
+  "inspection.tabs.peers": [
+    {
+      "type": 0,
+      "value": "Peers"
+    }
+  ],
+  "inspection.tabs.pieces": [
+    {
+      "type": 0,
+      "value": "Pieces"
+    }
+  ],
+  "inspection.tabs.speed": [
+    {
+      "type": 0,
+      "value": "Speed"
+    }
+  ],
+  "inspection.tabs.swarm": [
+    {
+      "type": 0,
+      "value": "Swarm"
+    }
+  ],
+  "inspection.tabs.trackers": [
+    {
+      "type": 0,
+      "value": "Trackers"
+    }
+  ],
+  "inspection.torrent.actions.a.selected.torrent.has.a.failed.removal": [
+    {
+      "type": 0,
+      "value": "A selected torrent has a failed removal that must be retried or completed."
+    }
+  ],
+  "inspection.torrent.actions.archive.state.is.unavailable.for.a.selected": [
+    {
+      "type": 0,
+      "value": "Archive state is unavailable for a selected torrent."
+    }
+  ],
+  "inspection.torrent.actions.select.a.torrent.to.use.this.action": [
+    {
+      "type": 0,
+      "value": "Select a torrent to use this action."
+    }
+  ],
+  "inspection.torrent.file.torrent.files.are.limited.to.64.mib": [
+    {
+      "type": 0,
+      "value": "Torrent files are limited to 64 MiB."
+    }
+  ],
+  "inspection.torrent.file.torrent.files.must.contain.at.least.one": [
+    {
+      "type": 0,
+      "value": "Torrent files must contain at least one byte."
+    }
+  ],
+  "inspection.torrent.input.enter.a.magnet.link.beginning.with.magnet": [
+    {
+      "type": 0,
+      "value": "Enter a magnet link beginning with magnet:?"
+    }
+  ],
+  "inspection.torrent.input.magnet.links.are.limited.to.16.384": [
+    {
+      "type": 0,
+      "value": "Magnet links are limited to 16,384 bytes."
+    }
+  ],
+  "inspection.torrent.input.paste.a.magnet.link.to.add.a": [
+    {
+      "type": 0,
+      "value": "Paste a magnet link to add a torrent. .torrent file selection is not available yet."
+    }
+  ],
+  "inspection.torrent.input.remote.torrent.urls.are.not.supported.yet": [
+    {
+      "type": 0,
+      "value": "Remote .torrent URLs are not supported yet. Paste a magnet link instead."
+    }
+  ],
+  "inspection.torrent.input.torrent.file.selection.is.not.available.yet": [
+    {
+      "type": 0,
+      "value": ".torrent file selection is not available yet. Paste a magnet link instead."
+    }
+  ],
+  "remote.remote.access.gate.a.compromised.client.page.could.observe.entered": [
+    {
+      "type": 0,
+      "value": "A compromised client page could observe entered passwords and decrypted application state. This local validation build uses no third-party scripts."
+    }
+  ],
+  "remote.remote.access.gate.authenticating.the.host.and.opening.rstorrent": [
+    {
+      "type": 0,
+      "value": "Authenticating the host and opening RSTorrent…"
+    }
+  ],
+  "remote.remote.access.gate.browser.name.shown.to.the.operator": [
+    {
+      "type": 0,
+      "value": "Browser name shown to the operator"
+    }
+  ],
+  "remote.remote.access.gate.checking.this.browser.for.an.authorization": [
+    {
+      "type": 0,
+      "value": "Checking this browser for an authorization…"
+    }
+  ],
+  "remote.remote.access.gate.clear.old.host.trust": [
+    {
+      "type": 0,
+      "value": "Clear old host trust"
+    }
+  ],
+  "remote.remote.access.gate.local.trust.was.cleared.confirm.the.host": [
+    {
+      "type": 0,
+      "value": "Local trust was cleared. Confirm the host was intentionally reset before signing in again."
+    }
+  ],
+  "remote.remote.access.gate.only.continue.if.the.rstorrent.operator.intentionally": [
+    {
+      "type": 0,
+      "value": "Only continue if the RSTorrent operator intentionally disabled, reset, or restored this host."
+    }
+  ],
+  "remote.remote.access.gate.password": [
+    {
+      "type": 0,
+      "value": "Password"
+    }
+  ],
+  "remote.remote.access.gate.private": [
+    {
+      "type": 0,
+      "value": "Private"
+    }
+  ],
+  "remote.remote.access.gate.require.the.password.after.this.page.closes": [
+    {
+      "type": 0,
+      "value": "— require the password after this page closes"
+    }
+  ],
+  "remote.remote.access.gate.resume.automatically.on.this.browser": [
+    {
+      "type": 0,
+      "value": "— resume automatically on this browser"
+    }
+  ],
+  "remote.remote.access.gate.route.username": [
+    {
+      "type": 0,
+      "value": "Route username"
+    }
+  ],
+  "remote.remote.access.gate.rstorrent.remote.access": [
+    {
+      "type": 0,
+      "value": "RSTorrent remote access"
+    }
+  ],
+  "remote.remote.access.gate.shared": [
+    {
+      "type": 0,
+      "value": "Shared"
+    }
+  ],
+  "remote.remote.access.gate.sign.in": [
+    {
+      "type": 0,
+      "value": "Sign in"
+    }
+  ],
+  "remote.remote.access.gate.the.relay.can.route.encrypted.bytes.but": [
+    {
+      "type": 0,
+      "value": "The relay can route encrypted bytes, but it cannot read your password, torrent state, or commands."
+    }
+  ],
+  "remote.remote.access.gate.this.browser": [
+    {
+      "type": 0,
+      "value": "This browser"
+    }
+  ],
+  "remote.remote.access.gate.this.browser.authorization.is.no.longer.valid": [
+    {
+      "type": 0,
+      "value": "This browser authorization is no longer valid. Sign in with the password."
+    }
+  ],
+  "remote.remote.access.gate.your.torrents.from.this.browser": [
+    {
+      "type": 0,
+      "value": "Your torrents, from this browser"
+    }
+  ],
+  "shell.app.load-failed": [
+    {
+      "type": 0,
+      "value": "RSTorrent could not start. Reload this page to fetch the current application files."
+    }
+  ],
+  "shell.app.loading": [
+    {
+      "type": 0,
+      "value": "Loading RSTorrent…"
+    }
+  ],
+  "shell.app.requires-javascript": [
+    {
+      "type": 0,
+      "value": "RSTorrent requires JavaScript in this browser."
+    }
+  ],
+  "shell.app.start-failed": [
+    {
+      "type": 0,
+      "value": "Unable to start RSTorrent"
+    }
+  ],
+  "shell.app.title": [
+    {
+      "type": 0,
+      "value": "RSTorrent"
+    }
+  ],
+  "shell.companion.cancel": [
+    {
+      "type": 0,
+      "value": "Cancel"
+    }
+  ],
+  "shell.companion.connection-canceled": [
+    {
+      "type": 0,
+      "value": "Connection canceled. Use the extension menu to try again."
+    }
+  ],
+  "shell.companion.disconnected": [
+    {
+      "type": 0,
+      "value": "Android disconnected. Select Retry to reconnect."
+    }
+  ],
+  "shell.companion.loading": [
+    {
+      "type": 0,
+      "value": "Starting the Android connection…"
+    }
+  ],
+  "shell.companion.title": [
+    {
+      "type": 0,
+      "value": "RSTorrent Android"
+    }
+  ],
+  "shell.remote.loading": [
+    {
+      "type": 0,
+      "value": "Loading secure remote access…"
+    }
+  ],
+  "shell.remote.start-failed": [
+    {
+      "type": 0,
+      "value": "Unable to start secure remote access"
+    }
+  ],
+  "shell.remote.title": [
+    {
+      "type": 0,
+      "value": "RSTorrent remote access"
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import {
   useEffect,
   useMemo,
@@ -629,33 +630,29 @@ export function VirtualTable<Row>({
     >
       <div className={styles.toolbar}>
         <span>
-          {sortedRows.length.toLocaleString()} rows
-        </span>
+          {localizedMessage("common.rows.total", { count: sortedRows.length })}</span>
         {!showSelectionSummary || selection === undefined ? null : (
           <>
             <strong className={styles.selectionStatus} aria-live="polite">
-              {selection.selectedIds.size.toLocaleString()} selected
-              {" for actions"}
-              {hiddenSelectedCount === 0
-                ? null
-                : ` (${hiddenSelectedCount.toLocaleString()} outside this view)`}
+              {localizedMessage("common.rows.selected", {
+                count: selection.selectedIds.size,
+                hidden: hiddenSelectedCount,
+              })}
             </strong>
             <button
               type="button"
               aria-label={`Done selecting rows in ${label}`}
               onClick={collapseSelectionToCurrent}
-            >
-              Done
-            </button>
+            >{localizedMessage("inspection.components.virtual.table.done")}</button>
           </>
         )}
         <AnchoredDialogTrigger key={`columns-${tableId}`}>
-          <OverlayButton>Columns</OverlayButton>
+          <OverlayButton>{localizedMessage("inspection.components.virtual.table.columns")}</OverlayButton>
           <AnchoredDialog
             className={styles.columnMenu!}
-            aria-label="Table column settings"
+            aria-label={localizedMessage("inspection.components.virtual.table.table.column.settings")}
           >
-            <strong>Visible columns</strong>
+            <strong>{localizedMessage("inspection.components.virtual.table.visible.columns")}</strong>
             {columns.map((column) => {
               const checked = !hiddenColumns.has(column.id);
               return (
@@ -691,9 +688,7 @@ export function VirtualTable<Row>({
                   }
                   setLiveSort(enabled);
                 }}
-              />
-              Re-sort live updates
-            </label>
+              />{localizedMessage("inspection.components.virtual.table.re.sort.live.updates")}</label>
             <button
               type="button"
               onClick={() => {
@@ -709,9 +704,7 @@ export function VirtualTable<Row>({
                 setLiveSort(false);
                 setFrozenOrder(null);
               }}
-            >
-              Reset table
-            </button>
+            >{localizedMessage("inspection.components.virtual.table.reset.table")}</button>
           </AnchoredDialog>
         </AnchoredDialogTrigger>
       </div>
@@ -800,7 +793,7 @@ export function VirtualTable<Row>({
           <div
             className={styles.selectionHeaderCell}
             role="columnheader"
-            aria-label="Selection"
+            aria-label={localizedMessage("inspection.components.virtual.table.selection")}
             onClick={(event) => {
               event.stopPropagation();
               if (event.target === event.currentTarget) {
@@ -817,8 +810,8 @@ export function VirtualTable<Row>({
               }
               label={
                 allVisibleSelected
-                  ? "Deselect all rows"
-                  : "Select all rows"
+                  ? localizedMessage("inspection.components.virtual.table.deselect.all.rows")
+                  : localizedMessage("inspection.components.virtual.table.select.all.rows")
               }
               onChange={() => {
                 selectionAnchorIdRef.current =
@@ -1005,7 +998,7 @@ export function VirtualTable<Row>({
                     <SelectionCheckbox
                       checked={checked}
                       indeterminate={false}
-                      label={`${checked ? "Deselect" : "Select"} ${selection.getRowLabel(row)}`}
+                      label={`${checked ? localizedMessage("inspection.components.virtual.table.deselect") : localizedMessage("inspection.components.virtual.table.select")} ${selection.getRowLabel(row)}`}
                       onChange={() => toggleRowSelection(row, rowId)}
                       onShiftChange={() =>
                         replaceSelectionRange(row, rowId, true)

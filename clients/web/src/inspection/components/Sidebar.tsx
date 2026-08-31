@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import { useMemo } from "react";
 
 import { useInspectionStore } from "../context";
@@ -18,11 +19,11 @@ const LIBRARY_CATEGORIES: readonly {
   readonly label: string;
   readonly symbol: string;
 }[] = [
-  { id: "all", label: "All content", symbol: "▦" },
-  { id: "recent", label: "Recently added", symbol: "◷" },
-  { id: "available", label: "Available offline", symbol: "✓" },
-  { id: "downloading", label: "Downloading", symbol: "↓" },
-  { id: "archived", label: "Archived", symbol: "▣" },
+  { id: "all", label: localizedMessage("inspection.components.sidebar.all.content"), symbol: "▦" },
+  { id: "recent", label: localizedMessage("inspection.components.sidebar.recently.added"), symbol: "◷" },
+  { id: "available", label: localizedMessage("inspection.components.sidebar.available.offline"), symbol: "✓" },
+  { id: "downloading", label: localizedMessage("inspection.components.sidebar.downloading"), symbol: "↓" },
+  { id: "archived", label: localizedMessage("inspection.components.sidebar.archived"), symbol: "▣" },
 ];
 
 const TORRENT_CATEGORIES: readonly {
@@ -30,13 +31,13 @@ const TORRENT_CATEGORIES: readonly {
   readonly label: string;
   readonly symbol: string;
 }[] = [
-  { id: "all", label: "All torrents", symbol: "≡" },
-  { id: "active", label: "Active", symbol: "↯" },
-  { id: "downloading", label: "Downloading", symbol: "↓" },
-  { id: "completed", label: "Completed", symbol: "✓" },
-  { id: "paused", label: "Paused", symbol: "Ⅱ" },
-  { id: "errors", label: "Needs attention", symbol: "!" },
-  { id: "archived", label: "Archived", symbol: "□" },
+  { id: "all", label: localizedMessage("inspection.components.sidebar.all.torrents"), symbol: "≡" },
+  { id: "active", label: localizedMessage("inspection.components.sidebar.active"), symbol: "↯" },
+  { id: "downloading", label: localizedMessage("inspection.components.sidebar.downloading"), symbol: "↓" },
+  { id: "completed", label: localizedMessage("inspection.components.sidebar.completed"), symbol: "✓" },
+  { id: "paused", label: localizedMessage("inspection.components.sidebar.paused"), symbol: "Ⅱ" },
+  { id: "errors", label: localizedMessage("inspection.components.sidebar.needs.attention"), symbol: "!" },
+  { id: "archived", label: localizedMessage("inspection.components.sidebar.archived"), symbol: "□" },
 ];
 
 export function Sidebar() {
@@ -81,8 +82,8 @@ export function Sidebar() {
 
   if (destination === "library") {
     return (
-      <nav className={styles.sidebar} aria-label="Library filters">
-        <p className={styles.heading}>Library</p>
+      <nav className={styles.sidebar} aria-label={localizedMessage("inspection.components.sidebar.library.filters")}>
+        <p className={styles.heading}>{localizedMessage("inspection.components.sidebar.library")}</p>
         <ul>
           {LIBRARY_CATEGORIES.map((category) => (
             <CategoryButton
@@ -103,9 +104,7 @@ export function Sidebar() {
             />
           ))}
         </ul>
-        <p className={styles.note}>
-          Playback and Library-wide media grouping are not connected yet.
-        </p>
+        <p className={styles.note}>{localizedMessage("inspection.components.sidebar.playback.and.library.wide.media.grouping.are")}</p>
       </nav>
     );
   }
@@ -117,8 +116,8 @@ export function Sidebar() {
       className={styles.sidebar}
       aria-label={
         destination === "transfers"
-          ? "Transfer filters"
-          : "Workbench torrent filters"
+          ? localizedMessage("inspection.components.sidebar.transfer.filters")
+          : localizedMessage("inspection.components.sidebar.workbench.torrent.filters")
       }
     >
       <p className={styles.heading}>
@@ -176,10 +175,10 @@ function CategoryButton({
 function destinationLabel(destination: ApplicationDestination): string {
   switch (destination) {
     case "library":
-      return "Library";
+      return localizedMessage("inspection.components.sidebar.library");
     case "transfers":
-      return "Transfers";
+      return localizedMessage("inspection.components.sidebar.transfers");
     case "workbench":
-      return "Torrents";
+      return localizedMessage("inspection.components.sidebar.torrents");
   }
 }

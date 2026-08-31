@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import { useMemo } from "react";
 
 import { useInspectionStore } from "../context";
@@ -25,7 +26,7 @@ const columns = (
 ): readonly VirtualColumn<TorrentRow>[] => [
   {
     id: "name",
-    label: "Name",
+    label: localizedMessage("inspection.components.torrent.table.name"),
     width: 330,
     sortable: true,
     sortValue: (row) => row.name,
@@ -42,7 +43,7 @@ const columns = (
   },
   {
     id: "size",
-    label: "Size",
+    label: localizedMessage("inspection.components.torrent.table.size"),
     width: 92,
     align: "right",
     sortable: true,
@@ -51,7 +52,7 @@ const columns = (
   },
   {
     id: "progress",
-    label: "Done",
+    label: localizedMessage("inspection.components.torrent.table.done"),
     width: 190,
     align: "right",
     sortable: true,
@@ -60,7 +61,7 @@ const columns = (
   },
   {
     id: "status",
-    label: "Status",
+    label: localizedMessage("inspection.components.torrent.table.status"),
     width: 112,
     sortable: true,
     sortValue: (row) => row.status,
@@ -68,7 +69,7 @@ const columns = (
   },
   {
     id: "down",
-    label: "Down",
+    label: localizedMessage("inspection.components.torrent.table.down"),
     width: 100,
     align: "right",
     sortable: true,
@@ -77,7 +78,7 @@ const columns = (
   },
   {
     id: "up",
-    label: "Up",
+    label: localizedMessage("inspection.components.torrent.table.up"),
     width: 92,
     align: "right",
     sortable: true,
@@ -86,7 +87,7 @@ const columns = (
   },
   {
     id: "peers",
-    label: "Peers",
+    label: localizedMessage("inspection.components.torrent.table.peers"),
     width: 72,
     align: "right",
     sortable: true,
@@ -98,7 +99,7 @@ const columns = (
   },
   {
     id: "eta",
-    label: "ETA",
+    label: localizedMessage("inspection.components.torrent.table.eta"),
     width: 84,
     align: "right",
     sortable: true,
@@ -158,7 +159,7 @@ export function TorrentTable() {
   return (
     <VirtualTable
       tableId="torrents"
-      label="Torrent library"
+      label={localizedMessage("inspection.components.torrent.table.torrent.library")}
       rows={rows}
       getRowId={(row) => row.id}
       columns={displayColumns}
@@ -170,7 +171,7 @@ export function TorrentTable() {
         onChange: setTorrentSelection,
       }}
       contextMenu={{
-        label: "Torrent actions",
+        label: localizedMessage("inspection.components.torrent.table.torrent.actions"),
         render: (row, targetIds) => (
           <TorrentContextMenu
             row={row}
@@ -184,9 +185,9 @@ export function TorrentTable() {
         materialization.status !== "ready"
           ? materializationMessage(materialization)
           : category === "all" && demo === null
-            ? "No torrents are present in the live engine."
+            ? localizedMessage("inspection.components.torrent.table.no.torrents.are.present.in.the.live")
             : category === "all"
-              ? "No torrents yet. Add a generated demo transfer or choose another scenario."
+              ? localizedMessage("inspection.components.torrent.table.no.torrents.yet.add.a.generated.demo")
               : `No torrents in ${category}.`
       }
       initialSort={{ columnId: "name", direction: "asc" }}
@@ -197,14 +198,14 @@ export function TorrentTable() {
 function materializationMessage(materialization: ViewMaterialization): string {
   switch (materialization.status) {
     case "not_requested":
-      return "Torrent library is not requested in this layout.";
+      return localizedMessage("inspection.components.torrent.table.torrent.library.is.not.requested.in.this");
     case "loading":
-      return "Loading torrent library…";
+      return localizedMessage("inspection.components.torrent.table.loading.torrent.library");
     case "unavailable":
     case "unsupported":
     case "stale":
       return materialization.reason;
     case "ready":
-      return "No torrents are present.";
+      return localizedMessage("inspection.components.torrent.table.no.torrents.are.present");
   }
 }

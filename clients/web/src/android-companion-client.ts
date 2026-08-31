@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "./localization/runtime";
 import type {
   AddTorrentBytesRequest,
   ApiBackendIdentity,
@@ -115,7 +116,7 @@ export async function connectAndroidCompanion(
     );
   } catch (error) {
     if (signal?.aborted) throw error;
-    status("The saved pairing is no longer accepted. Approve a replacement in Android.");
+    status(localizedMessage("android.companion.client.the.saved.pairing.is.no.longer.accepted"));
     credential = await pair(endpoint, installationId, status, signal);
     connected = await openApplication(endpoint, installationId, credential, signal);
   }
@@ -141,7 +142,7 @@ async function probeUntilAvailable(
   signal?: AbortSignal,
 ): Promise<string> {
   while (!signal?.aborted) {
-    status("Looking for the RSTorrent Android service…");
+    status(localizedMessage("android.companion.client.looking.for.the.rstorrent.android.service"));
     for (const endpoint of ENDPOINTS) {
       try {
         await hello(endpoint, installationId, signal);
@@ -175,7 +176,7 @@ async function pair(
       ...(signal === undefined ? {} : { signal }),
     })) as PairingPending;
   boundedIdentifier(pending.request_id, "pairing request ID");
-  status("Approve the JSTorrent Beta pairing request in the Android app.");
+  status(localizedMessage("android.companion.client.approve.the.jstorrent.beta.pairing.request.in"));
   while (!signal?.aborted) {
     await delay(500, signal);
     const poll =

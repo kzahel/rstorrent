@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import { useEffect, useMemo, useState } from "react";
 
 import { useInspectionStore } from "../context";
@@ -43,13 +44,13 @@ export function TrackerTable({ torrentId }: { readonly torrentId: string }) {
   return (
     <div className={styles.trackerPanel}>
       <div className={styles.summary}>
-        <span>{rows.length.toLocaleString()} trackers</span>
-        <span>{announcing.toLocaleString()} announcing</span>
-        <span>{waiting.toLocaleString()} scheduled</span>
+        <span>{rows.length.toLocaleString()}{" "}{localizedMessage("inspection.components.tracker.table.trackers")}</span>
+        <span>{announcing.toLocaleString()}{" "}{localizedMessage("inspection.components.tracker.table.announcing")}</span>
+        <span>{waiting.toLocaleString()}{" "}{localizedMessage("inspection.components.tracker.table.scheduled")}</span>
       </div>
       <VirtualTable
         tableId="trackers"
-        label="Torrent trackers"
+        label={localizedMessage("inspection.components.tracker.table.torrent.trackers")}
         rows={rows}
         getRowId={(row) => row.id}
         columns={columns}
@@ -65,7 +66,7 @@ function trackerColumns(nowMs: number): readonly VirtualColumn<TrackerRow>[] {
   return [
     {
       id: "url",
-      label: "URL",
+      label: localizedMessage("inspection.components.tracker.table.url"),
       width: 220,
       minimumWidth: 170,
       maximumWidth: 760,
@@ -78,7 +79,7 @@ function trackerColumns(nowMs: number): readonly VirtualColumn<TrackerRow>[] {
     },
     {
       id: "status",
-      label: "Status",
+      label: localizedMessage("inspection.components.tracker.table.status"),
       width: 170,
       sortValue: (row) => row.status,
       sortOrder: [
@@ -97,7 +98,7 @@ function trackerColumns(nowMs: number): readonly VirtualColumn<TrackerRow>[] {
     },
     {
       id: "tier",
-      label: "Tier",
+      label: localizedMessage("inspection.components.tracker.table.tier"),
       width: 58,
       align: "right",
       sortKind: "number",
@@ -106,7 +107,7 @@ function trackerColumns(nowMs: number): readonly VirtualColumn<TrackerRow>[] {
     },
     {
       id: "peers",
-      label: "Peers",
+      label: localizedMessage("inspection.components.tracker.table.peers"),
       width: 70,
       align: "right",
       sortKind: "number",
@@ -115,7 +116,7 @@ function trackerColumns(nowMs: number): readonly VirtualColumn<TrackerRow>[] {
     },
     {
       id: "seeds",
-      label: "Seeds",
+      label: localizedMessage("inspection.components.tracker.table.seeds"),
       width: 70,
       align: "right",
       sortKind: "number",
@@ -124,7 +125,7 @@ function trackerColumns(nowMs: number): readonly VirtualColumn<TrackerRow>[] {
     },
     {
       id: "leeches",
-      label: "Leeches",
+      label: localizedMessage("inspection.components.tracker.table.leeches"),
       width: 76,
       align: "right",
       sortKind: "number",
@@ -133,7 +134,7 @@ function trackerColumns(nowMs: number): readonly VirtualColumn<TrackerRow>[] {
     },
     {
       id: "next",
-      label: "Next announce",
+      label: localizedMessage("inspection.components.tracker.table.next.announce"),
       width: 132,
       sortKind: "number",
       sortValue: (row) => nextDeadline(row),
@@ -141,7 +142,7 @@ function trackerColumns(nowMs: number): readonly VirtualColumn<TrackerRow>[] {
     },
     {
       id: "error",
-      label: "Error",
+      label: localizedMessage("inspection.components.tracker.table.error"),
       width: 300,
       minimumWidth: 140,
       maximumWidth: 700,
@@ -154,7 +155,7 @@ function trackerColumns(nowMs: number): readonly VirtualColumn<TrackerRow>[] {
     },
     {
       id: "transport",
-      label: "Type",
+      label: localizedMessage("inspection.components.tracker.table.type"),
       width: 68,
       defaultVisible: false,
       sortValue: (row) => row.transport,
@@ -162,8 +163,8 @@ function trackerColumns(nowMs: number): readonly VirtualColumn<TrackerRow>[] {
         <span
           title={
             row.security === "encrypted_unauthenticated"
-              ? "Encrypted, certificate and hostname not validated"
-              : "Unencrypted tracker transport"
+              ? localizedMessage("inspection.components.tracker.table.encrypted.certificate.and.hostname.not.validated")
+              : localizedMessage("inspection.components.tracker.table.unencrypted.tracker.transport")
           }
         >
           {row.transport.toUpperCase()}
@@ -172,7 +173,7 @@ function trackerColumns(nowMs: number): readonly VirtualColumn<TrackerRow>[] {
     },
     {
       id: "family",
-      label: "Family",
+      label: localizedMessage("inspection.components.tracker.table.family"),
       width: 74,
       defaultVisible: false,
       sortValue: (row) => row.lastConnectionFamily,
@@ -185,7 +186,7 @@ function trackerColumns(nowMs: number): readonly VirtualColumn<TrackerRow>[] {
     },
     {
       id: "source",
-      label: "Source",
+      label: localizedMessage("inspection.components.tracker.table.source"),
       width: 82,
       defaultVisible: false,
       sortValue: (row) => row.source,
@@ -193,7 +194,7 @@ function trackerColumns(nowMs: number): readonly VirtualColumn<TrackerRow>[] {
     },
     {
       id: "event",
-      label: "Event",
+      label: localizedMessage("inspection.components.tracker.table.event"),
       width: 84,
       defaultVisible: false,
       sortValue: (row) => row.announceEvent,
@@ -201,7 +202,7 @@ function trackerColumns(nowMs: number): readonly VirtualColumn<TrackerRow>[] {
     },
     {
       id: "attempts",
-      label: "Attempts",
+      label: localizedMessage("inspection.components.tracker.table.attempts"),
       width: 84,
       align: "right",
       defaultVisible: false,
@@ -211,7 +212,7 @@ function trackerColumns(nowMs: number): readonly VirtualColumn<TrackerRow>[] {
     },
     {
       id: "failures",
-      label: "Failures",
+      label: localizedMessage("inspection.components.tracker.table.failures"),
       width: 80,
       align: "right",
       defaultVisible: false,
@@ -221,7 +222,7 @@ function trackerColumns(nowMs: number): readonly VirtualColumn<TrackerRow>[] {
     },
     {
       id: "interval",
-      label: "Interval",
+      label: localizedMessage("inspection.components.tracker.table.interval"),
       width: 90,
       align: "right",
       defaultVisible: false,
@@ -231,7 +232,7 @@ function trackerColumns(nowMs: number): readonly VirtualColumn<TrackerRow>[] {
     },
     {
       id: "lastSuccess",
-      label: "Last success",
+      label: localizedMessage("inspection.components.tracker.table.last.success"),
       width: 106,
       align: "right",
       defaultVisible: false,
@@ -241,7 +242,7 @@ function trackerColumns(nowMs: number): readonly VirtualColumn<TrackerRow>[] {
     },
     {
       id: "lastFailure",
-      label: "Last failure",
+      label: localizedMessage("inspection.components.tracker.table.last.failure"),
       width: 106,
       align: "right",
       defaultVisible: false,
@@ -259,7 +260,7 @@ function nextDeadline(row: TrackerRow): number | null {
 }
 
 function formatNextAction(row: TrackerRow, nowMs: number): string {
-  if (row.status === "announcing") return "Now";
+  if (row.status === "announcing") return localizedMessage("inspection.components.tracker.table.now");
   const deadline = nextDeadline(row);
   if (deadline === null || row.nextAction === null) return "—";
   const action = row.nextAction === "retry" ? "Retry" : "Announce";
@@ -301,9 +302,9 @@ function trackerEmptyMessage(
 ): string {
   switch (materialization.status) {
     case "not_requested":
-      return "Tracker inspection is not requested.";
+      return localizedMessage("inspection.components.tracker.table.tracker.inspection.is.not.requested");
     case "loading":
-      return "Loading configured trackers…";
+      return localizedMessage("inspection.components.tracker.table.loading.configured.trackers");
     case "unavailable":
     case "unsupported":
     case "stale":

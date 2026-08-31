@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import {
   useEffect,
   useMemo,
@@ -196,11 +197,11 @@ export function LibraryView() {
     <section className={styles.library} aria-labelledby="library-heading">
       <div className={styles.heading}>
         <div>
-          <p className={styles.eyebrow}>Library</p>
+          <p className={styles.eyebrow}>{localizedMessage("inspection.components.library.view.library")}</p>
           <h1 id="library-heading">{categoryLabel(category)}</h1>
           <p>
-            {rows.length.toLocaleString()} torrent-backed content{" "}
-            {rows.length === 1 ? "source" : "sources"}
+            {rows.length.toLocaleString()}{" "}{localizedMessage("inspection.components.library.view.torrent.backed.content")}{" "}
+            {rows.length === 1 ? localizedMessage("inspection.components.library.view.source") : localizedMessage("inspection.components.library.view.sources")}
           </p>
         </div>
       </div>
@@ -307,7 +308,7 @@ function VirtualLibraryGrid({
       className={styles.viewport}
       data-layout={layout}
       role="list"
-      aria-label="Torrent-backed content"
+      aria-label={localizedMessage("inspection.components.library.view.torrent.backed.content.b57b1e1")}
       onScroll={onScroll}
     >
       <div
@@ -445,10 +446,7 @@ function LibraryEmpty({ message }: { readonly message: string }) {
     <div className={styles.empty}>
       <span aria-hidden="true">◇</span>
       <strong>{message}</strong>
-      <p>
-        Artwork, playback, and Library-wide media grouping remain separate
-        capabilities.
-      </p>
+      <p>{localizedMessage("inspection.components.library.view.artwork.playback.and.library.wide.media.grouping")}</p>
     </div>
   );
 }
@@ -456,62 +454,62 @@ function LibraryEmpty({ message }: { readonly message: string }) {
 function categoryLabel(category: LibraryCategory): string {
   switch (category) {
     case "all":
-      return "All content";
+      return localizedMessage("inspection.components.library.view.all.content");
     case "recent":
-      return "Recently added";
+      return localizedMessage("inspection.components.library.view.recently.added");
     case "available":
-      return "Available offline";
+      return localizedMessage("inspection.components.library.view.available.offline");
     case "downloading":
-      return "Downloading";
+      return localizedMessage("inspection.components.library.view.downloading");
     case "archived":
-      return "Archived";
+      return localizedMessage("inspection.components.library.view.archived");
   }
 }
 
 function availabilityLabel(row: TorrentRow): string {
   switch (row.status) {
     case "metadata":
-      return "Finding content details";
+      return localizedMessage("inspection.components.library.view.finding.content.details");
     case "downloading":
       return `${formatProgress(row.progress)} downloaded`;
     case "complete":
-      return "Available offline";
+      return localizedMessage("inspection.components.library.view.available.offline");
     case "paused":
       return `${formatProgress(row.progress)} downloaded · Paused`;
     case "checking":
       return checkingStatusLabel(row);
     case "error":
-      return "Content needs attention";
+      return localizedMessage("inspection.components.library.view.content.needs.attention");
   }
 }
 
 function emptyMessage(category: LibraryCategory): string {
   switch (category) {
     case "all":
-      return "No content sources yet";
+      return localizedMessage("inspection.components.library.view.no.content.sources.yet");
     case "recent":
-      return "No recently added content";
+      return localizedMessage("inspection.components.library.view.no.recently.added.content");
     case "available":
-      return "No content is available offline";
+      return localizedMessage("inspection.components.library.view.no.content.is.available.offline");
     case "downloading":
-      return "No content is downloading";
+      return localizedMessage("inspection.components.library.view.no.content.is.downloading");
     case "archived":
-      return "No archived content";
+      return localizedMessage("inspection.components.library.view.no.archived.content");
   }
 }
 
 function materializationMessage(materialization: ViewMaterialization): string {
   switch (materialization.status) {
     case "not_requested":
-      return "Library collection is not requested in this layout";
+      return localizedMessage("inspection.components.library.view.library.collection.is.not.requested.in.this");
     case "loading":
-      return "Loading Library content…";
+      return localizedMessage("inspection.components.library.view.loading.library.content");
     case "unavailable":
     case "unsupported":
     case "stale":
       return materialization.reason;
     case "ready":
-      return "No content sources yet";
+      return localizedMessage("inspection.components.library.view.no.content.sources.yet");
   }
 }
 

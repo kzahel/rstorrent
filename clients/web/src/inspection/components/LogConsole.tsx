@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { DiagnosticSubject, DiagnosticValue } from "../../api";
@@ -134,13 +135,13 @@ export function LogConsole() {
       : (torrents[captureTorrentId]?.name ?? `Missing ${captureTorrentId.slice(0, 8)}`);
 
   return (
-    <section className={styles.console} aria-label="Diagnostic console">
+    <section className={styles.console} aria-label={localizedMessage("inspection.components.log.console.diagnostic.console")}>
       <div className={styles.captureBar}>
-        <span className={styles.toolbarLabel}>Capture</span>
+        <span className={styles.toolbarLabel}>{localizedMessage("inspection.components.log.console.capture")}</span>
         <label>
-          <span>Profile</span>
+          <span>{localizedMessage("inspection.components.log.console.profile")}</span>
           <select
-            aria-label="Diagnostic capture profile"
+            aria-label={localizedMessage("inspection.components.log.console.diagnostic.capture.profile")}
             value={presentation.logCaptureProfile}
             onChange={(event) =>
               setCaptureProfile(
@@ -148,53 +149,51 @@ export function LogConsole() {
               )
             }
           >
-            <option value="normal">Normal</option>
-            <option value="detailed">Detailed</option>
-            <option value="trace">Trace · high volume</option>
+            <option value="normal">{localizedMessage("inspection.components.log.console.normal")}</option>
+            <option value="detailed">{localizedMessage("inspection.components.log.console.detailed")}</option>
+            <option value="trace">{localizedMessage("inspection.components.log.console.trace.high.volume")}</option>
           </select>
         </label>
         <label>
-          <span>Scope</span>
+          <span>{localizedMessage("inspection.components.log.console.scope")}</span>
           <select
-            aria-label="Diagnostic capture scope"
+            aria-label={localizedMessage("inspection.components.log.console.diagnostic.capture.scope")}
             value={captureTorrentId ?? ""}
             onChange={(event) =>
               setCaptureTorrent(event.currentTarget.value || null)
             }
           >
-            <option value="">All torrents</option>
+            <option value="">{localizedMessage("inspection.components.log.console.all.torrents")}</option>
             {captureTorrentId === null ? null : (
               <option value={captureTorrentId}>{pinnedCaptureName}</option>
             )}
             {currentTorrentId === null || currentTorrentId === captureTorrentId ? null : (
-              <option value={currentTorrentId}>
-                Current · {torrents[currentTorrentId]?.name ?? currentTorrentId.slice(0, 8)}
+              <option value={currentTorrentId}>{localizedMessage("inspection.components.log.console.current")}{" "}{torrents[currentTorrentId]?.name ?? currentTorrentId.slice(0, 8)}
               </option>
             )}
           </select>
         </label>
         {presentation.logCaptureProfile === "trace" ? (
-          <span className={styles.traceNotice}>High-volume producer capture</span>
+          <span className={styles.traceNotice}>{localizedMessage("inspection.components.log.console.high.volume.producer.capture")}</span>
         ) : null}
         <span className={styles.captureCount}>
-          {logs.length.toLocaleString()} retained
-        </span>
+          {logs.length.toLocaleString()}{" "}{localizedMessage("inspection.components.log.console.retained")}</span>
       </div>
       <div className={styles.filterBar}>
-        <span className={styles.toolbarLabel}>Display</span>
+        <span className={styles.toolbarLabel}>{localizedMessage("inspection.components.log.console.display")}</span>
         <label className={styles.searchLabel}>
-          <span className={styles.srOnly}>Search diagnostics</span>
+          <span className={styles.srOnly}>{localizedMessage("inspection.components.log.console.search.diagnostics")}</span>
           <input
             type="search"
             value={presentation.logSearch}
-            placeholder="Search message, code, or context"
+            placeholder={localizedMessage("inspection.components.log.console.search.message.code.or.context")}
             onChange={(event) => setSearch(event.currentTarget.value)}
           />
         </label>
         <label>
-          <span className={styles.srOnly}>Minimum severity</span>
+          <span className={styles.srOnly}>{localizedMessage("inspection.components.log.console.minimum.severity")}</span>
           <select
-            aria-label="Minimum displayed severity"
+            aria-label={localizedMessage("inspection.components.log.console.minimum.displayed.severity")}
             value={presentation.logMinimumSeverity}
             onChange={(event) =>
               setMinimumSeverity(
@@ -202,46 +201,42 @@ export function LogConsole() {
               )
             }
           >
-            <option value="trace">Trace and above</option>
-            <option value="debug">Debug and above</option>
-            <option value="info">Info and above</option>
-            <option value="warning">Warnings and errors</option>
-            <option value="error">Errors only</option>
+            <option value="trace">{localizedMessage("inspection.components.log.console.trace.and.above")}</option>
+            <option value="debug">{localizedMessage("inspection.components.log.console.debug.and.above")}</option>
+            <option value="info">{localizedMessage("inspection.components.log.console.info.and.above")}</option>
+            <option value="warning">{localizedMessage("inspection.components.log.console.warnings.and.errors")}</option>
+            <option value="error">{localizedMessage("inspection.components.log.console.errors.only")}</option>
           </select>
         </label>
         <label className={styles.categoryLabel}>
-          <span className={styles.srOnly}>Category prefix</span>
+          <span className={styles.srOnly}>{localizedMessage("inspection.components.log.console.category.prefix")}</span>
           <input
             value={presentation.logCategoryPrefix}
-            placeholder="Category prefix"
+            placeholder={localizedMessage("inspection.components.log.console.category.prefix")}
             onChange={(event) => setCategoryPrefix(event.currentTarget.value)}
           />
         </label>
         <label>
-          <span className={styles.srOnly}>Torrent display scope</span>
+          <span className={styles.srOnly}>{localizedMessage("inspection.components.log.console.torrent.display.scope")}</span>
           <select
-            aria-label="Displayed torrent scope"
+            aria-label={localizedMessage("inspection.components.log.console.displayed.torrent.scope")}
             value={presentation.logDisplayScope}
             onChange={(event) =>
               setDisplayScope(event.currentTarget.value as "all" | "current")
             }
           >
-            <option value="all">All torrents</option>
-            <option value="current" disabled={currentTorrentId === null}>
-              Current + session
-            </option>
+            <option value="all">{localizedMessage("inspection.components.log.console.all.torrents")}</option>
+            <option value="current" disabled={currentTorrentId === null}>{localizedMessage("inspection.components.log.console.current.session")}</option>
           </select>
         </label>
-        <button type="button" onClick={clearVisible} disabled={logs.length === 0}>
-          Clear
-        </button>
-        <span className={styles.shownCount}>{filtered.length.toLocaleString()} shown</span>
+        <button type="button" onClick={clearVisible} disabled={logs.length === 0}>{localizedMessage("inspection.components.log.console.clear")}</button>
+        <span className={styles.shownCount}>{filtered.length.toLocaleString()}{" "}{localizedMessage("inspection.components.log.console.shown")}</span>
       </div>
       <div
         ref={viewportRef}
         className={styles.viewport}
         role="log"
-        aria-label="Chronological diagnostic events"
+        aria-label={localizedMessage("inspection.components.log.console.chronological.diagnostic.events")}
         tabIndex={0}
         onScroll={(event) => {
           const element = event.currentTarget;
@@ -281,7 +276,7 @@ export function LogConsole() {
             scrollToBottom(viewportRef.current);
           }}
         >
-          {newCount.toLocaleString()} new {newCount === 1 ? "event" : "events"} ↓
+          {newCount.toLocaleString()}{" "}{localizedMessage("inspection.components.log.console.new")}{" "}{newCount === 1 ? localizedMessage("inspection.components.log.console.event") : localizedMessage("inspection.components.log.console.events")} ↓
         </button>
       ) : null}
     </section>
@@ -315,7 +310,7 @@ function LogEntry({
         <button
           type="button"
           className={styles.disclosure}
-          aria-label={`${expanded ? "Collapse" : "Expand"} ${row.code}`}
+          aria-label={`${expanded ? localizedMessage("inspection.components.log.console.collapse") : localizedMessage("inspection.components.log.console.expand")} ${row.code}`}
           aria-expanded={expanded}
           onClick={onToggle}
           disabled={!hasDetails}
@@ -330,7 +325,7 @@ function LogEntry({
         </span>
         <code className={styles.category}>{row.category}</code>
         {row.torrentId === null ? (
-          <span className={styles.subjectChip}>Session</span>
+          <span className={styles.subjectChip}>{localizedMessage("inspection.components.log.console.session")}</span>
         ) : (
           <span className={styles.subjectChip} title={row.torrentId}>
             {torrentName ?? row.torrentId.slice(0, 8)}
@@ -341,8 +336,8 @@ function LogEntry({
       {expanded ? (
         <div className={styles.details}>
           <dl>
-            <div><dt>Code</dt><dd><code>{row.code}</code></dd></div>
-            <div><dt>Sequence</dt><dd>{row.id}</dd></div>
+            <div><dt>{localizedMessage("inspection.components.log.console.code")}</dt><dd><code>{row.code}</code></dd></div>
+            <div><dt>{localizedMessage("inspection.components.log.console.sequence")}</dt><dd>{row.id}</dd></div>
             {row.subjects.map((subject, index) => (
               <div key={`subject-${index}`}>
                 <dt>{subject.type.replaceAll("_", " ")}</dt>
@@ -357,10 +352,8 @@ function LogEntry({
             ))}
           </dl>
           <div className={styles.entryActions}>
-            <button type="button" onClick={() => void copyText(row.message)}>Copy message</button>
-            <button type="button" onClick={() => void copyText(JSON.stringify(row, null, 2))}>
-              Copy structured record
-            </button>
+            <button type="button" onClick={() => void copyText(row.message)}>{localizedMessage("inspection.components.log.console.copy.message")}</button>
+            <button type="button" onClick={() => void copyText(JSON.stringify(row, null, 2))}>{localizedMessage("inspection.components.log.console.copy.structured.record")}</button>
           </div>
         </div>
       ) : null}
@@ -383,7 +376,7 @@ function LogLossMarker() {
   ].filter((part): part is string => part !== null);
   return (
     <div className={styles.lossMarker} role="status">
-      <strong>History boundary</strong>
+      <strong>{localizedMessage("inspection.components.log.console.history.boundary")}</strong>
       <span>{parts.join(" · ")}</span>
     </div>
   );
@@ -550,8 +543,8 @@ function emptyMessage(
   profile: "normal" | "detailed" | "trace",
 ): string {
   switch (materialization.status) {
-    case "not_requested": return "Diagnostics are not requested.";
-    case "loading": return "Loading diagnostic history…";
+    case "not_requested": return localizedMessage("inspection.components.log.console.diagnostics.are.not.requested");
+    case "loading": return localizedMessage("inspection.components.log.console.loading.diagnostic.history");
     case "unavailable":
     case "unsupported":
     case "stale": return materialization.reason;

@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../localization/runtime";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import type { ApplicationViewClient } from "../api/client";
@@ -69,7 +70,7 @@ export function RemoteAccessGate({
     }
     if (terminal === "resume_rejected") {
       setMessage(
-        "This browser authorization is no longer valid. Sign in with the password.",
+        localizedMessage("remote.remote.access.gate.this.browser.authorization.is.no.longer.valid"),
       );
     }
     void attemptRememberedResume(remembered);
@@ -241,7 +242,7 @@ export function RemoteAccessGate({
       await store.clearAuthorization(selectedUsername);
       if (!mounted.current) return;
       setMessage(
-        "This browser authorization is no longer valid. Sign in with the password.",
+        localizedMessage("remote.remote.access.gate.this.browser.authorization.is.no.longer.valid"),
       );
       setPhase("sign_in");
       return;
@@ -285,7 +286,7 @@ export function RemoteAccessGate({
     if (username !== "") await store.clearHost(username);
     localStorage.removeItem(LAST_USERNAME_KEY);
     setMessage(
-      "Local trust was cleared. Confirm the host was intentionally reset before signing in again.",
+      localizedMessage("remote.remote.access.gate.local.trust.was.cleared.confirm.the.host"),
     );
     setPhase("sign_in");
   }
@@ -296,19 +297,16 @@ export function RemoteAccessGate({
         <div className={styles.brand} aria-hidden="true">
           R
         </div>
-        <p className={styles.eyebrow}>RSTorrent remote access</p>
-        <h1 id="remote-title">Your torrents, from this browser</h1>
-        <p className={styles.intro}>
-          The relay can route encrypted bytes, but it cannot read your password,
-          torrent state, or commands.
-        </p>
+        <p className={styles.eyebrow}>{localizedMessage("remote.remote.access.gate.rstorrent.remote.access")}</p>
+        <h1 id="remote-title">{localizedMessage("remote.remote.access.gate.your.torrents.from.this.browser")}</h1>
+        <p className={styles.intro}>{localizedMessage("remote.remote.access.gate.the.relay.can.route.encrypted.bytes.but")}</p>
 
         {phase === "loading" || phase === "connecting" ? (
           <div className={styles.progress} role="status">
             <span className={styles.spinner} aria-hidden="true" />
             {phase === "loading"
-              ? "Checking this browser for an authorization…"
-              : "Authenticating the host and opening RSTorrent…"}
+              ? localizedMessage("remote.remote.access.gate.checking.this.browser.for.an.authorization")
+              : localizedMessage("remote.remote.access.gate.authenticating.the.host.and.opening.rstorrent")}
           </div>
         ) : null}
 
@@ -320,25 +318,18 @@ export function RemoteAccessGate({
 
         {phase === "identity_changed" ? (
           <div className={styles.recovery}>
-            <p>
-              Only continue if the RSTorrent operator intentionally disabled,
-              reset, or restored this host.
-            </p>
+            <p>{localizedMessage("remote.remote.access.gate.only.continue.if.the.rstorrent.operator.intentionally")}</p>
             <button
               type="button"
               className={styles.secondary}
               onClick={() => void clearChangedIdentity()}
-            >
-              Clear old host trust
-            </button>
+            >{localizedMessage("remote.remote.access.gate.clear.old.host.trust")}</button>
           </div>
         ) : null}
 
         {phase === "sign_in" ? (
           <form className={styles.form} onSubmit={(event) => void submit(event)}>
-            <label>
-              Route username
-              <input
+            <label>{localizedMessage("remote.remote.access.gate.route.username")}<input
                 required
                 autoComplete="username"
                 minLength={3}
@@ -348,9 +339,7 @@ export function RemoteAccessGate({
                 onChange={(event) => setUsername(event.currentTarget.value)}
               />
             </label>
-            <label>
-              Password
-              <input
+            <label>{localizedMessage("remote.remote.access.gate.password")}<input
                 required
                 type="password"
                 autoComplete="current-password"
@@ -359,7 +348,7 @@ export function RemoteAccessGate({
               />
             </label>
             <fieldset>
-              <legend>This browser</legend>
+              <legend>{localizedMessage("remote.remote.access.gate.this.browser")}</legend>
               <label className={styles.choice}>
                 <input
                   type="radio"
@@ -368,8 +357,7 @@ export function RemoteAccessGate({
                   onChange={() => setPrivateBrowser(true)}
                 />
                 <span>
-                  <strong>Private</strong> — resume automatically on this browser
-                </span>
+                  <strong>{localizedMessage("remote.remote.access.gate.private")}</strong>{" "}{localizedMessage("remote.remote.access.gate.resume.automatically.on.this.browser")}</span>
               </label>
               <label className={styles.choice}>
                 <input
@@ -379,14 +367,11 @@ export function RemoteAccessGate({
                   onChange={() => setPrivateBrowser(false)}
                 />
                 <span>
-                  <strong>Shared</strong> — require the password after this page closes
-                </span>
+                  <strong>{localizedMessage("remote.remote.access.gate.shared")}</strong>{" "}{localizedMessage("remote.remote.access.gate.require.the.password.after.this.page.closes")}</span>
               </label>
             </fieldset>
             {privateBrowser ? (
-              <label>
-                Browser name shown to the operator
-                <input
+              <label>{localizedMessage("remote.remote.access.gate.browser.name.shown.to.the.operator")}<input
                   required
                   maxLength={80}
                   value={browserLabel}
@@ -394,16 +379,11 @@ export function RemoteAccessGate({
                 />
               </label>
             ) : null}
-            <button type="submit" className={styles.primary}>
-              Sign in
-            </button>
+            <button type="submit" className={styles.primary}>{localizedMessage("remote.remote.access.gate.sign.in")}</button>
           </form>
         ) : null}
 
-        <p className={styles.disclosure}>
-          A compromised client page could observe entered passwords and decrypted
-          application state. This local validation build uses no third-party scripts.
-        </p>
+        <p className={styles.disclosure}>{localizedMessage("remote.remote.access.gate.a.compromised.client.page.could.observe.entered")}</p>
       </section>
     </main>
   );

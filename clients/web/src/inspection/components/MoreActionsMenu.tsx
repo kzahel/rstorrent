@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import { useEffect, useState } from "react";
 
 import {
@@ -47,8 +48,7 @@ export function MoreActionsMenu({
       isOpen={open}
       onOpenChange={setOpen}
     >
-      <OverlayButton className={styles.trigger!} isDisabled={disabled}>
-        More <Icon name="chevronDown" />
+      <OverlayButton className={styles.trigger!} isDisabled={disabled}>{localizedMessage("inspection.components.more.actions.menu.more")}{" "}<Icon name="chevronDown" />
       </OverlayButton>
       <ActionMenuPopover>
         <TorrentActionMenuItems actions={actions} onAction={onAction} />
@@ -60,7 +60,7 @@ export function MoreActionsMenu({
               trigger={
                 <>
                   <Icon name="plus" />
-                  <span>Add test torrent</span>
+                  <span>{localizedMessage("inspection.components.more.actions.menu.add.test.torrent")}</span>
                 </>
               }
             >

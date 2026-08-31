@@ -4,6 +4,13 @@ import { startRemoteInspection } from "./inspection/bootstrap";
 import type { RemoteCryptoWasmModule } from "./remote-application-websocket";
 import { IndexedDbRemoteClientStore } from "./remote-client-store";
 import { RemoteAccessGate } from "./remote/RemoteAccessGate";
+import {
+  LocalizationProvider,
+  localizeDocumentShell,
+  message,
+} from "./localization/runtime";
+
+localizeDocumentShell();
 
 const relayUrl = import.meta.env.VITE_RSTORRENT_REMOTE_RELAY_URL;
 const clientBuild = import.meta.env.VITE_RSTORRENT_REMOTE_BUILD_ID;
@@ -24,19 +31,21 @@ const root = createRoot(rootElement);
 void loadCrypto()
   .then((crypto) => {
     root.render(
-      <RemoteAccessGate
-        relayUrl={relayUrl}
-        clientBuild={clientBuild}
-        crypto={crypto}
-        store={new IndexedDbRemoteClientStore()}
-        onConnected={(client, remoteAccess) =>
-          startRemoteInspection(client, root, remoteAccess)
-        }
-      />,
+      <LocalizationProvider>
+        <RemoteAccessGate
+          relayUrl={relayUrl}
+          clientBuild={clientBuild}
+          crypto={crypto}
+          store={new IndexedDbRemoteClientStore()}
+          onConnected={(client, remoteAccess) =>
+            startRemoteInspection(client, root, remoteAccess)
+          }
+        />
+      </LocalizationProvider>,
     );
   })
   .catch((error: unknown) => {
-    rootElement.textContent = `Unable to start secure remote access: ${errorMessage(error)}`;
+    rootElement.textContent = `${message("shell.remote.start-failed")}: ${errorMessage(error)}`;
   });
 
 async function loadCrypto(): Promise<RemoteCryptoWasmModule> {

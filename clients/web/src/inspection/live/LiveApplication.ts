@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import {
   DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW,
   type AddTorrentBytesRequest,
@@ -175,7 +176,7 @@ export class LiveApplication implements InspectionApplication {
       if (createMediaUrl === undefined || prepareMediaOpen === undefined) {
         return {
           accepted: false,
-          message: "Opening files is unavailable on this connection",
+          message: localizedMessage("inspection.live.live.application.opening.files.is.unavailable.on.this.connection"),
         };
       }
       let target;
@@ -200,7 +201,7 @@ export class LiveApplication implements InspectionApplication {
           };
         }
         await target.open(response.outcome.url);
-        return { accepted: true, message: "Opening file" };
+        return { accepted: true, message: localizedMessage("inspection.live.live.application.opening.file") };
       } catch (error) {
         target.cancel();
         return { accepted: false, message: asError(error).message };
@@ -216,7 +217,7 @@ export class LiveApplication implements InspectionApplication {
         if (root === null) {
           return {
             accepted: true,
-            message: "Folder selection canceled",
+            message: localizedMessage("inspection.live.live.application.folder.selection.canceled"),
             storageRoot: null,
           };
         }
@@ -249,7 +250,7 @@ export class LiveApplication implements InspectionApplication {
       if (this.client.addTorrentBytes === undefined) {
         return {
           accepted: false,
-          message: "Torrent file upload is unavailable on this connection",
+          message: localizedMessage("inspection.live.live.application.torrent.file.upload.is.unavailable.on.this"),
         };
       }
       const request: AddTorrentBytesRequest = {
@@ -281,7 +282,7 @@ export class LiveApplication implements InspectionApplication {
       if (this.client.addExternalTorrent === undefined) {
         return {
           accepted: false,
-          message: "External torrent intake is unavailable on this connection",
+          message: localizedMessage("inspection.live.live.application.external.torrent.intake.is.unavailable.on.this"),
         };
       }
       const response = await this.client.addExternalTorrent(
@@ -329,7 +330,7 @@ export class LiveApplication implements InspectionApplication {
     ) {
       return {
         accepted: false,
-        message: "This command is available only in named demo scenarios",
+        message: localizedMessage("inspection.live.live.application.this.command.is.available.only.in.named"),
       };
     }
     const request: RequestEnvelope = {
@@ -435,7 +436,7 @@ export class LiveApplication implements InspectionApplication {
     };
     const response = await this.controller?.dispatch(request);
     if (response === undefined) {
-      return { accepted: false, message: "Live controller is unavailable" };
+      return { accepted: false, message: localizedMessage("inspection.live.live.application.live.controller.is.unavailable") };
     }
     if (response.status === "error") {
       return { accepted: false, message: response.error.message };
@@ -850,13 +851,13 @@ export class LiveApplication implements InspectionApplication {
 function addCommandResult(response: ResponseEnvelope): CommandResult {
   const result = response.result;
   if (result?.type !== "add_torrent") {
-    return { accepted: true, message: "Added" };
+    return { accepted: true, message: localizedMessage("inspection.live.live.application.added") };
   }
   const disposition = result.result.disposition;
   if (disposition.type === "already_present") {
     return {
       accepted: true,
-      message: "Already in your session",
+      message: localizedMessage("inspection.live.live.application.already.in.your.session"),
       torrentId: result.result.torrent_id,
       addDisposition: { type: "already_present" },
     };
@@ -878,7 +879,7 @@ function addCommandResult(response: ResponseEnvelope): CommandResult {
   }
   return {
     accepted: true,
-    message: "Added",
+    message: localizedMessage("inspection.live.live.application.added"),
     torrentId: result.result.torrent_id,
     addDisposition: { type: "added" },
   };
@@ -889,12 +890,12 @@ function magnetCommandResult(response: ResponseEnvelope): CommandResult {
   if (result?.type !== "export_magnet") {
     return {
       accepted: false,
-      message: "Magnet export response did not contain a magnet link",
+      message: localizedMessage("inspection.live.live.application.magnet.export.response.did.not.contain.a"),
     };
   }
   return {
     accepted: true,
-    message: "Magnet link ready",
+    message: localizedMessage("inspection.live.live.application.magnet.link.ready"),
     magnetExport: {
       magnet: result.result.magnet,
       source: result.result.source,
@@ -1269,7 +1270,7 @@ function transitionStatus(
   retained?: ViewMaterialization,
 ): ViewMaterialization {
   if (!requested) return { status: "not_requested" };
-  if (!supported) return { status: "unsupported", reason: "View is unsupported" };
+  if (!supported) return { status: "unsupported", reason: localizedMessage("inspection.live.live.application.view.is.unsupported") };
   if (retained?.status === "ready" || retained?.status === "stale") return retained;
   return { status: "loading" };
 }
@@ -1742,32 +1743,32 @@ function mapMediaItem(torrentId: string, item: MediaItemView): MediaRow {
 function mediaUnavailableMessage(reason: import("../../api").MediaFileAvailability): string {
   switch (reason) {
     case "available":
-      return "The file is available";
+      return localizedMessage("inspection.live.live.application.the.file.is.available");
     case "streamable":
-      return "The file is ready to stream";
+      return localizedMessage("inspection.live.live.application.the.file.is.ready.to.stream");
     case "metadata_unavailable":
-      return "File metadata is unavailable";
+      return localizedMessage("inspection.live.live.application.file.metadata.is.unavailable");
     case "invalid_file":
-      return "The selected file no longer exists";
+      return localizedMessage("inspection.live.live.application.the.selected.file.no.longer.exists");
     case "padding":
-      return "Padding files cannot be opened";
+      return localizedMessage("inspection.live.live.application.padding.files.cannot.be.opened");
     case "incomplete":
-      return "The file has not finished downloading";
+      return localizedMessage("inspection.live.live.application.the.file.has.not.finished.downloading");
     case "checking":
-      return "The file cannot be opened while its torrent is checking";
+      return localizedMessage("inspection.live.live.application.the.file.cannot.be.opened.while.its");
     case "unverified":
-      return "The file is not fully verified yet";
+      return localizedMessage("inspection.live.live.application.the.file.is.not.fully.verified.yet");
     case "storage_unavailable":
-      return "The file's storage is unavailable";
+      return localizedMessage("inspection.live.live.application.the.file.s.storage.is.unavailable");
     case "removing":
-      return "The torrent is being removed";
+      return localizedMessage("inspection.live.live.application.the.torrent.is.being.removed");
     case "server_unavailable":
-      return "HTTP file serving is unavailable";
+      return localizedMessage("inspection.live.live.application.http.file.serving.is.unavailable");
     case "resource_limit":
-      return "Too many files are already open; try again shortly";
+      return localizedMessage("inspection.live.live.application.too.many.files.are.already.open.try");
     case "available":
     case "streamable":
-      return "The file is temporarily unavailable";
+      return localizedMessage("inspection.live.live.application.the.file.is.temporarily.unavailable");
   }
 }
 

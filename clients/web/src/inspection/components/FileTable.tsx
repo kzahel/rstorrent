@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import { useEffect, useMemo, useState } from "react";
 
 import { useInspectionCommand, useInspectionStore } from "../context";
@@ -15,7 +16,7 @@ import styles from "./FileTable.module.css";
 const columns = (dataUnits: DataUnits): readonly VirtualColumn<FileRow>[] => [
   {
     id: "name",
-    label: "Name",
+    label: localizedMessage("inspection.components.file.table.name"),
     width: 270,
     minimumWidth: 130,
     maximumWidth: 620,
@@ -28,7 +29,7 @@ const columns = (dataUnits: DataUnits): readonly VirtualColumn<FileRow>[] => [
   },
   {
     id: "folder",
-    label: "Folder",
+    label: localizedMessage("inspection.components.file.table.folder"),
     width: 210,
     minimumWidth: 100,
     maximumWidth: 520,
@@ -37,23 +38,23 @@ const columns = (dataUnits: DataUnits): readonly VirtualColumn<FileRow>[] => [
   },
   {
     id: "priority",
-    label: "Priority",
+    label: localizedMessage("inspection.components.file.table.priority"),
     width: 76,
     sortValue: (row) => row.selection,
     sortOrder: ["high", "normal", "skipped"],
     render: (row) => (
       <span className={styles.priority} data-selection={row.selection}>
         {row.selection === "skipped"
-          ? "Skip"
+          ? localizedMessage("inspection.components.file.table.skip")
           : row.selection === "high"
-            ? "High"
-            : "Normal"}
+            ? localizedMessage("inspection.components.file.table.high")
+            : localizedMessage("inspection.components.file.table.normal")}
       </span>
     ),
   },
   {
     id: "size",
-    label: "Size",
+    label: localizedMessage("inspection.components.file.table.size"),
     width: 92,
     align: "right",
     sortValue: (row) => row.lengthBytes,
@@ -62,7 +63,7 @@ const columns = (dataUnits: DataUnits): readonly VirtualColumn<FileRow>[] => [
   },
   {
     id: "progress",
-    label: "Progress",
+    label: localizedMessage("inspection.components.file.table.progress"),
     width: 108,
     minimumWidth: 88,
     align: "right",
@@ -83,7 +84,7 @@ const columns = (dataUnits: DataUnits): readonly VirtualColumn<FileRow>[] => [
   },
   {
     id: "done",
-    label: "Done",
+    label: localizedMessage("inspection.components.file.table.done"),
     width: 96,
     align: "right",
     sortValue: (row) => row.doneBytes,
@@ -92,7 +93,7 @@ const columns = (dataUnits: DataUnits): readonly VirtualColumn<FileRow>[] => [
   },
   {
     id: "verified",
-    label: "Verified",
+    label: localizedMessage("inspection.components.file.table.verified"),
     width: 96,
     align: "right",
     sortValue: (row) => row.verifiedBytes,
@@ -101,7 +102,7 @@ const columns = (dataUnits: DataUnits): readonly VirtualColumn<FileRow>[] => [
   },
   {
     id: "extension",
-    label: "Type",
+    label: localizedMessage("inspection.components.file.table.type"),
     width: 72,
     defaultVisible: false,
     sortValue: (row) => row.extension,
@@ -109,7 +110,7 @@ const columns = (dataUnits: DataUnits): readonly VirtualColumn<FileRow>[] => [
   },
   {
     id: "index",
-    label: "Index",
+    label: localizedMessage("inspection.components.file.table.index"),
     width: 68,
     align: "right",
     defaultVisible: false,
@@ -119,7 +120,7 @@ const columns = (dataUnits: DataUnits): readonly VirtualColumn<FileRow>[] => [
   },
   {
     id: "offset",
-    label: "Torrent offset",
+    label: localizedMessage("inspection.components.file.table.torrent.offset"),
     width: 118,
     align: "right",
     defaultVisible: false,
@@ -129,7 +130,7 @@ const columns = (dataUnits: DataUnits): readonly VirtualColumn<FileRow>[] => [
   },
   {
     id: "pieces",
-    label: "Pieces",
+    label: localizedMessage("inspection.components.file.table.pieces"),
     width: 108,
     align: "right",
     defaultVisible: false,
@@ -144,7 +145,7 @@ const columns = (dataUnits: DataUnits): readonly VirtualColumn<FileRow>[] => [
   },
   {
     id: "storagePath",
-    label: "Storage Path",
+    label: localizedMessage("inspection.components.file.table.storage.path"),
     width: 520,
     minimumWidth: 180,
     maximumWidth: 900,
@@ -300,7 +301,7 @@ export function FileTable({
       .filter((row) => requested.has(row.id))
       .sort((left, right) => left.index - right.index);
     if (targetRows.length !== requested.size) {
-      setFileActionStatus("A selected file is no longer available.");
+      setFileActionStatus(localizedMessage("inspection.components.file.table.a.selected.file.is.no.longer.available"));
       return;
     }
     const action = resolveFileActions(
@@ -372,7 +373,7 @@ export function FileTable({
     const cancellation = new AbortController();
     setDirectSaveAbort(cancellation);
     setFileActionPending(true);
-    setFileActionStatus("Choose where to save this remote file.");
+    setFileActionStatus(localizedMessage("inspection.components.file.table.choose.where.to.save.this.remote.file"));
     try {
       await save({
         torrentId,
@@ -382,13 +383,13 @@ export function FileTable({
         signal: cancellation.signal,
         onProgress: (progress) => {
           if (progress.state === "connecting") {
-            setFileActionStatus("Connecting directly to the remote device…");
+            setFileActionStatus(localizedMessage("inspection.components.file.table.connecting.directly.to.the.remote.device"));
           } else if (progress.state === "transferring") {
             setFileActionStatus(
               `Saving directly… ${directProgress(progress.bytesWritten, progress.fileLength)}`,
             );
           } else if (progress.state === "complete") {
-            setFileActionStatus("Remote file saved.");
+            setFileActionStatus(localizedMessage("inspection.components.file.table.remote.file.saved"));
           }
         },
       });
@@ -409,15 +410,15 @@ export function FileTable({
   return (
     <div className={styles.filePanel}>
       <div className={styles.summary}>
-        <span>{rows.length.toLocaleString()} files</span>
+        <span>{rows.length.toLocaleString()}{" "}{localizedMessage("inspection.components.file.table.files")}</span>
         {paddingCount > 0 ? (
-          <span>{paddingCount.toLocaleString()} padding hidden</span>
+          <span>{paddingCount.toLocaleString()}{" "}{localizedMessage("inspection.components.file.table.padding.hidden")}</span>
         ) : null}
         <span
           className={styles.storagePath}
           title={fileSet?.filesystemContentBase ?? undefined}
         >
-          {fileSet?.filesystemContentBase ?? "Platform-managed storage"}
+          {fileSet?.filesystemContentBase ?? localizedMessage("inspection.components.file.table.platform.managed.storage")}
         </span>
         <output className={styles.commandStatus} aria-live="polite">
           {fileActionStatus}
@@ -427,9 +428,7 @@ export function FileTable({
             type="button"
             className={styles.cancelSave}
             onClick={() => directSaveAbort.abort()}
-          >
-            Cancel save
-          </button>
+          >{localizedMessage("inspection.components.file.table.cancel.save")}</button>
         )}
         <FileActionsMenu
           pending={fileActionPending}
@@ -441,7 +440,7 @@ export function FileTable({
       </div>
       <VirtualTable
         tableId="files"
-        label="Torrent files"
+        label={localizedMessage("inspection.components.file.table.torrent.files")}
         rows={rows}
         getRowId={(row) => row.id}
         columns={displayColumns}
@@ -453,7 +452,7 @@ export function FileTable({
           onChange: changeSelection,
         }}
         contextMenu={{
-          label: "File actions",
+          label: localizedMessage("inspection.components.file.table.file.actions"),
           render: (_row, targetIds) => {
             const targetIdSet = new Set(targetIds);
             const actions = resolveFileActions(
@@ -476,7 +475,7 @@ export function FileTable({
               unavailableReason,
             );
             return (
-              <ActionMenuPopover label="File actions">
+              <ActionMenuPopover label={localizedMessage("inspection.components.file.table.file.actions")}>
                 <FileActionMenuItems
                   actions={actions}
                   onAction={(actionId) =>
@@ -506,21 +505,21 @@ function resolveDirectSave(
   if (remoteAccess?.scope !== "remote") return undefined;
   if (unavailableReason !== undefined) return { disabled: true, disabledReason: unavailableReason };
   if (rows.length !== 1) {
-    return { disabled: true, disabledReason: "Select one completed file to save." };
+    return { disabled: true, disabledReason: localizedMessage("inspection.components.file.table.select.one.completed.file.to.save") };
   }
   if (rows[0]?.mediaAvailability !== "available") {
-    return { disabled: true, disabledReason: "Only completed, verified files can be saved remotely." };
+    return { disabled: true, disabledReason: localizedMessage("inspection.components.file.table.only.completed.verified.files.can.be.saved") };
   }
   if (remoteAccess.directFileSupported?.() !== true || remoteAccess.saveCompletedFile === undefined) {
-    return { disabled: true, disabledReason: "This remote host does not support direct file saves." };
+    return { disabled: true, disabledReason: localizedMessage("inspection.components.file.table.this.remote.host.does.not.support.direct") };
   }
   if (enabled === null) {
-    return { disabled: true, disabledReason: "Checking direct file transfer settings…" };
+    return { disabled: true, disabledReason: localizedMessage("inspection.components.file.table.checking.direct.file.transfer.settings") };
   }
   if (!enabled) {
-    return { disabled: true, disabledReason: "Direct file transfers are disabled on the host." };
+    return { disabled: true, disabledReason: localizedMessage("inspection.components.file.table.direct.file.transfers.are.disabled.on.the") };
   }
-  if (pending) return { disabled: true, disabledReason: "Another file action is in progress." };
+  if (pending) return { disabled: true, disabledReason: localizedMessage("inspection.components.file.table.another.file.action.is.in.progress") };
   return { disabled: false };
 }
 
@@ -555,18 +554,18 @@ function fileEmptyMessage(
 ): string {
   switch (materialization.status) {
     case "not_requested":
-      return "File inspection is not requested.";
+      return localizedMessage("inspection.components.file.table.file.inspection.is.not.requested");
     case "loading":
-      return "Loading file catalog…";
+      return localizedMessage("inspection.components.file.table.loading.file.catalog");
     case "unavailable":
     case "unsupported":
     case "stale":
       return materialization.reason;
     case "ready":
       if (catalogState === "metadata_pending")
-        return "Files are available after metadata is verified.";
+        return localizedMessage("inspection.components.file.table.files.are.available.after.metadata.is.verified");
       if (catalogState === "torrent_missing")
-        return "The torrent is no longer present.";
-      return "This torrent has no ordinary files to display.";
+        return localizedMessage("inspection.components.file.table.the.torrent.is.no.longer.present");
+      return localizedMessage("inspection.components.file.table.this.torrent.has.no.ordinary.files.to");
   }
 }

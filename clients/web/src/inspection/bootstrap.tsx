@@ -1,4 +1,5 @@
 import { createRoot, type Root } from "react-dom/client";
+import { LocalizationProvider } from "../localization/runtime";
 
 import { App } from "./components/App";
 import { WebAuthGate } from "./components/WebAuthGate";
@@ -64,20 +65,22 @@ export async function startLiveInspection(
     authStatus.state !== "session_valid"
   ) {
     root.render(
-      <WebAuthGate
-        client={webAuth}
-        initialStatus={authStatus}
-        onAuthorized={() =>
-          openLiveInspection(
-            root,
-            baseUrl,
-            token,
-            transport,
-            waitMillis,
-            webAuth,
-          )
-        }
-      />,
+      <LocalizationProvider>
+        <WebAuthGate
+          client={webAuth}
+          initialStatus={authStatus}
+          onAuthorized={() =>
+            openLiveInspection(
+              root,
+              baseUrl,
+              token,
+              transport,
+              waitMillis,
+              webAuth,
+            )
+          }
+        />
+      </LocalizationProvider>,
     );
     return;
   }
@@ -214,18 +217,20 @@ function renderInspection(
 ): void {
   controller.start();
   root.render(
-    <InspectionProvider controller={controller}>
-      <App
-        webAuth={webAuth}
-        updater={updater}
-        externalIntake={externalIntake}
-        notifications={notifications}
-        power={power}
-        remoteAccess={remoteAccess}
-        accessMode={accessMode}
-        hostedProduct={hostedProduct}
-      />
-    </InspectionProvider>,
+    <LocalizationProvider>
+      <InspectionProvider controller={controller}>
+        <App
+          webAuth={webAuth}
+          updater={updater}
+          externalIntake={externalIntake}
+          notifications={notifications}
+          power={power}
+          remoteAccess={remoteAccess}
+          accessMode={accessMode}
+          hostedProduct={hostedProduct}
+        />
+      </InspectionProvider>
+    </LocalizationProvider>,
   );
 }
 

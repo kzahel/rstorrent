@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import {
   useEffect,
   useRef,
@@ -106,22 +107,22 @@ export function SettingsDialog({
     readonly id: SettingsCategory;
     readonly label: string;
   }[] = [
-    { id: "appearance", label: "Appearance" },
-    { id: "downloads", label: "Downloads" },
-    { id: "connection", label: "Connection & seeding" },
+    { id: "appearance", label: localizedMessage("inspection.components.settings.dialog.appearance") },
+    { id: "downloads", label: localizedMessage("inspection.components.settings.dialog.downloads") },
+    { id: "connection", label: localizedMessage("inspection.components.settings.dialog.connection.seeding") },
     ...(notifications === undefined
       ? []
-      : [{ id: "notifications" as const, label: "Notifications" }]),
-    ...(power === undefined ? [] : [{ id: "power" as const, label: "Power" }]),
+      : [{ id: "notifications" as const, label: localizedMessage("inspection.components.settings.dialog.notifications") }]),
+    ...(power === undefined ? [] : [{ id: "power" as const, label: localizedMessage("inspection.components.settings.dialog.power") }]),
     ...(remoteAccess === undefined
       ? []
-      : [{ id: "remote-access" as const, label: "Remote access" }]),
+      : [{ id: "remote-access" as const, label: localizedMessage("inspection.components.settings.dialog.remote.access") }]),
     ...(webAuth === undefined
       ? []
-      : [{ id: "web-access" as const, label: "Web access" }]),
+      : [{ id: "web-access" as const, label: localizedMessage("inspection.components.settings.dialog.web.access") }]),
     ...(updater === undefined || updaterSnapshot === undefined
       ? []
-      : [{ id: "updates" as const, label: "About & updates" }]),
+      : [{ id: "updates" as const, label: localizedMessage("inspection.components.settings.dialog.about.updates") }]),
   ];
 
   useEffect(() => {
@@ -195,14 +196,14 @@ export function SettingsDialog({
       >
         <header className={styles.header}>
           <div>
-            <p>Application</p>
-            <h2 id="settings-title">Settings</h2>
+            <p>{localizedMessage("inspection.components.settings.dialog.application")}</p>
+            <h2 id="settings-title">{localizedMessage("inspection.components.settings.dialog.settings")}</h2>
           </div>
           <button
             ref={closeRef}
             className={styles.close}
             type="button"
-            aria-label="Close settings"
+            aria-label={localizedMessage("inspection.components.settings.dialog.close.settings")}
             onClick={onClose}
           >
             <Icon name="close" />
@@ -212,7 +213,7 @@ export function SettingsDialog({
           <div
             className={styles.categories}
             role="tablist"
-            aria-label="Settings categories"
+            aria-label={localizedMessage("inspection.components.settings.dialog.settings.categories")}
             aria-orientation="vertical"
           >
             {categories.map((item) => (

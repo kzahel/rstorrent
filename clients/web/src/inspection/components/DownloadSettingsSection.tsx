@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import { useState } from "react";
 
 import type { DownloadRoot, DownloadStorageSettings } from "../model";
@@ -50,27 +51,23 @@ export function DownloadSettingsSection({
 
   return (
     <fieldset className={styles.section}>
-      <legend>Downloads</legend>
+      <legend>{localizedMessage("inspection.components.download.settings.section.downloads")}</legend>
       {!manageable ? (
-        <p className={styles.storageNote}>
-          Download folders are managed by the live application.
-        </p>
+        <p className={styles.storageNote}>{localizedMessage("inspection.components.download.settings.section.download.folders.are.managed.by.the.live")}</p>
       ) : (
         <>
           <div className={styles.settingHeading}>
-            <strong>Download folders</strong>
+            <strong>{localizedMessage("inspection.components.download.settings.section.download.folders")}</strong>
             <span>
               {oneCurrentRoot
-                ? "The current folder applies to future torrents only. Existing torrents stay attached to their earlier folder."
-                : "The default applies to future torrents only. Existing torrents stay attached to their selected folder."}
+                ? localizedMessage("inspection.components.download.settings.section.the.current.folder.applies.to.future.torrents")
+                : localizedMessage("inspection.components.download.settings.section.the.default.applies.to.future.torrents.only")}
             </span>
           </div>
           {showCrostiniStorageHelp ? <CrostiniStorageHelp /> : null}
           <div className={styles.rootList}>
             {storage.roots.length === 0 ? (
-              <p className={styles.storageNote}>
-                No download folder has been chosen yet.
-              </p>
+              <p className={styles.storageNote}>{localizedMessage("inspection.components.download.settings.section.no.download.folder.has.been.chosen.yet")}</p>
             ) : (
               storage.roots.map((root) => {
                 const performance = showCrostiniStorageHelp
@@ -87,17 +84,17 @@ export function DownloadSettingsSection({
                       <span>
                         {root.path ??
                           (oneCurrentRoot && root.availability === "available"
-                            ? "Managed by Android"
-                            : "Location is unavailable")}
+                            ? localizedMessage("inspection.components.download.settings.section.managed.by.android")
+                            : localizedMessage("inspection.components.download.settings.section.location.is.unavailable"))}
                       </span>
                       <small>
                         {root.availability === "available"
                           ? root.id === storage.defaultRoot
                             ? oneCurrentRoot
-                              ? "Current download folder"
-                              : "Default download folder"
-                            : "Available"
-                          : "Unavailable — repair required"}
+                              ? localizedMessage("inspection.components.download.settings.section.current.download.folder")
+                              : localizedMessage("inspection.components.download.settings.section.default.download.folder")
+                            : localizedMessage("inspection.components.download.settings.section.available")
+                          : localizedMessage("inspection.components.download.settings.section.unavailable.repair.required")}
                       </small>
                       {performance === null ? null : (
                         <small className={styles.rootPerformance}>
@@ -123,8 +120,8 @@ export function DownloadSettingsSection({
                           }
                         >
                           {pendingAction === `repair-${root.id}`
-                            ? "Repairing…"
-                            : "Repair…"}
+                            ? localizedMessage("inspection.components.download.settings.section.repairing")
+                            : localizedMessage("inspection.components.download.settings.section.repair")}
                         </button>
                       ) : root.id !== storage.defaultRoot ? (
                         <button
@@ -140,7 +137,7 @@ export function DownloadSettingsSection({
                             )
                           }
                         >
-                          {oneCurrentRoot ? "Make current" : "Make default"}
+                          {oneCurrentRoot ? localizedMessage("inspection.components.download.settings.section.make.current") : localizedMessage("inspection.components.download.settings.section.make.default")}
                         </button>
                       ) : null}
                       {root.id === storage.defaultRoot && oneCurrentRoot ? null : (
@@ -158,8 +155,8 @@ export function DownloadSettingsSection({
                           }
                         >
                           {pendingAction === `remove-${root.id}`
-                            ? "Removing…"
-                            : "Remove"}
+                            ? localizedMessage("inspection.components.download.settings.section.removing")
+                            : localizedMessage("inspection.components.download.settings.section.remove")}
                         </button>
                       )}
                     </div>
@@ -181,7 +178,7 @@ export function DownloadSettingsSection({
               })
             }
           >
-            {pendingAction === "add" ? "Choosing…" : "Add folder…"}
+            {pendingAction === "add" ? localizedMessage("inspection.components.download.settings.section.choosing") : localizedMessage("inspection.components.download.settings.section.add.folder")}
           </button>
           {oneCurrentRoot ? null : (
             <label className={styles.preference}>
@@ -200,10 +197,8 @@ export function DownloadSettingsSection({
                 }}
               />
               <span>
-                <strong>Show options when adding torrents</strong>
-                <small>
-                  Options are always shown when no usable default exists.
-                </small>
+                <strong>{localizedMessage("inspection.components.download.settings.section.show.options.when.adding.torrents")}</strong>
+                <small>{localizedMessage("inspection.components.download.settings.section.options.are.always.shown.when.no.usable")}</small>
               </span>
             </label>
           )}
@@ -223,8 +218,8 @@ export function DownloadSettingsSection({
               }}
             />
             <span>
-              <strong>Show file selection when adding torrents</strong>
-              <small>Checked means Normal; unchecked means Skip.</small>
+              <strong>{localizedMessage("inspection.components.download.settings.section.show.file.selection.when.adding.torrents")}</strong>
+              <small>{localizedMessage("inspection.components.download.settings.section.checked.means.normal.unchecked.means.skip")}</small>
             </span>
           </label>
           {storageStatus === "" ? null : (

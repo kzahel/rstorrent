@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { DataUnits } from "../appearance";
@@ -34,7 +35,7 @@ export function PreparationProgress({
   readonly dataUnits: DataUnits;
 }) {
   return (
-    <div className={styles.stack} aria-label="Torrent preparation activity">
+    <div className={styles.stack} aria-label={localizedMessage("inspection.components.preparation.progress.torrent.preparation.activity")}>
       {preparation.metadata === null ? null : (
         <MetadataCard
           metadata={preparation.metadata}
@@ -42,34 +43,34 @@ export function PreparationProgress({
         />
       )}
       {preparation.integrity === null ? null : (
-        <section className={styles.card} aria-label="Piece hash preparation">
+        <section className={styles.card} aria-label={localizedMessage("inspection.components.preparation.progress.piece.hash.preparation")}>
           <header className={styles.header}>
             <div>
-              <p className={styles.eyebrow}>Content preparation</p>
+              <p className={styles.eyebrow}>{localizedMessage("inspection.components.preparation.progress.content.preparation")}</p>
               <h3>
                 {preparation.integrity.phase === "waiting_for_peer"
-                  ? "Waiting for a hash-capable peer"
-                  : "Fetching piece hashes"}
+                  ? localizedMessage("inspection.components.preparation.progress.waiting.for.a.hash.capable.peer")
+                  : localizedMessage("inspection.components.preparation.progress.fetching.piece.hashes")}
               </h3>
               <p>
                 {preparation.integrity.phase === "waiting_for_peer"
-                  ? "The selected files need Merkle proof data before payload requests can start."
-                  : "Downloading Merkle proof data needed to verify the selected files."}
+                  ? localizedMessage("inspection.components.preparation.progress.the.selected.files.need.merkle.proof.data")
+                  : localizedMessage("inspection.components.preparation.progress.downloading.merkle.proof.data.needed.to.verify")}
               </p>
             </div>
             <span className={styles.phase}>
               {preparation.integrity.phase === "waiting_for_peer"
-                ? "Waiting"
-                : "Active"}
+                ? localizedMessage("inspection.components.preparation.progress.waiting")
+                : localizedMessage("inspection.components.preparation.progress.active")}
             </span>
           </header>
           <dl className={styles.metrics}>
             <Metric
-              label="Hash ranges needed"
+              label={localizedMessage("inspection.components.preparation.progress.hash.ranges.needed")}
               value={preparation.integrity.neededHashRanges.toLocaleString()}
             />
             <Metric
-              label="Active requests"
+              label={localizedMessage("inspection.components.preparation.progress.active.requests")}
               value={preparation.integrity.activeRequests.toLocaleString()}
             />
           </dl>
@@ -95,28 +96,28 @@ function MetadataCard({
       : `${formatBytes(metadata.receivedBytes, dataUnits)} of ${formatBytes(total, dataUnits)}`;
 
   return (
-    <section className={styles.card} aria-label="Metadata download progress">
+    <section className={styles.card} aria-label={localizedMessage("inspection.components.preparation.progress.metadata.download.progress")}>
       <header className={styles.header}>
         <div>
-          <p className={styles.eyebrow}>Metadata preparation</p>
+          <p className={styles.eyebrow}>{localizedMessage("inspection.components.preparation.progress.metadata.preparation")}</p>
           <h3>
             {metadata.phase === "discovering"
-              ? "Finding metadata"
-              : "Downloading metadata"}
+              ? localizedMessage("inspection.components.preparation.progress.finding.metadata")
+              : localizedMessage("inspection.components.preparation.progress.downloading.metadata")}
           </h3>
           <p>
             {metadata.phase === "discovering"
-              ? "Waiting for a metadata-capable peer to advertise the info dictionary."
-              : "Receiving the verified info dictionary before file selection and piece transfer."}
+              ? localizedMessage("inspection.components.preparation.progress.waiting.for.a.metadata.capable.peer.to")
+              : localizedMessage("inspection.components.preparation.progress.receiving.the.verified.info.dictionary.before.file")}
           </p>
         </div>
         <strong className={styles.progressText}>
-          {progress === null ? "Waiting" : `${Math.floor(progress * 100)}%`}
+          {progress === null ? localizedMessage("inspection.components.preparation.progress.waiting") : `${Math.floor(progress * 100)}%`}
         </strong>
       </header>
       <div className={styles.progressRow}>
         <progress
-          aria-label="Metadata bytes received"
+          aria-label={localizedMessage("inspection.components.preparation.progress.metadata.bytes.received")}
           max={total ?? undefined}
           value={total === null ? undefined : metadata.receivedBytes}
         />
@@ -125,14 +126,14 @@ function MetadataCard({
       {metadata.blockCount === 0 ? null : <MetadataBlockMap metadata={metadata} />}
       <dl className={styles.metrics}>
         <Metric
-          label="Metadata peers"
+          label={localizedMessage("inspection.components.preparation.progress.metadata.peers")}
           value={metadata.activePeers.toLocaleString()}
         />
         <Metric
-          label="Requests in flight"
+          label={localizedMessage("inspection.components.preparation.progress.requests.in.flight")}
           value={metadata.requestsInFlight.toLocaleString()}
         />
-        <Metric label="Hash retries" value={metadata.hashRetries.toLocaleString()} />
+        <Metric label={localizedMessage("inspection.components.preparation.progress.hash.retries")} value={metadata.hashRetries.toLocaleString()} />
       </dl>
     </section>
   );
@@ -186,11 +187,11 @@ function MetadataBlockMap({
           aria-label={label}
         />
       </div>
-      <div className={styles.legend} aria-label="Metadata block state legend">
-        <Legend label="Missing" state="missing" />
-        <Legend label="Requested" state="requested" />
-        <Legend label="Received" state="received" />
-        <span>16 KiB per block</span>
+      <div className={styles.legend} aria-label={localizedMessage("inspection.components.preparation.progress.metadata.block.state.legend")}>
+        <Legend label={localizedMessage("inspection.components.preparation.progress.missing")} state="missing" />
+        <Legend label={localizedMessage("inspection.components.preparation.progress.requested")} state="requested" />
+        <Legend label={localizedMessage("inspection.components.preparation.progress.received")} state="received" />
+        <span>{localizedMessage("inspection.components.preparation.progress.16.kib.per.block")}</span>
       </div>
     </div>
   );

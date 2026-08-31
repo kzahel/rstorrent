@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type UIEvent } from "react";
 
 import { formatExactBytes } from "../format";
@@ -258,38 +259,37 @@ export function PendingFileSelectionDialog({
         onKeyDown={handleKeyDown}
       >
         <header>
-          <p>Choose files</p>
+          <p>{localizedMessage("inspection.components.pending.file.selection.dialog.choose.files")}</p>
           <h2 id="pending-selection-title">{torrent.name}</h2>
         </header>
-        <p id="pending-selection-description" className={styles.description}>
-          Checked files use Normal priority. Unchecked files are skipped. High
-          priority remains available later in the Files tab.
-        </p>
+        <p id="pending-selection-description" className={styles.description}>{localizedMessage("inspection.components.pending.file.selection.dialog.checked.files.use.normal.priority.unchecked.files")}</p>
         <div className={styles.selectionMeta}>
-          <span>Download folder: <strong>{rootLabel}</strong></span>
+          <span>{localizedMessage("inspection.components.pending.file.selection.dialog.download.folder")}{" "}<strong>{rootLabel}</strong></span>
           {queuedCount === 0 ? null : (
-            <span>{queuedCount.toLocaleString()} more pending</span>
+            <span>{localizedMessage("common.files.pending", { count: queuedCount })}</span>
           )}
         </div>
         {!metadataReady ? (
           <div className={styles.metadataWait} role="status">
-            <strong>Fetching file information…</strong>
-            <span>No content files will download before you confirm.</span>
+            <strong>{localizedMessage("inspection.components.pending.file.selection.dialog.fetching.file.information")}</strong>
+            <span>{localizedMessage("inspection.components.pending.file.selection.dialog.no.content.files.will.download.before.you")}</span>
           </div>
         ) : (
           <>
             <div className={styles.selectionToolbar}>
-              <button type="button" disabled={busy} onClick={() => chooseBase("all")}>All</button>
-              <button type="button" disabled={busy} onClick={() => chooseBase("none")}>None</button>
+              <button type="button" disabled={busy} onClick={() => chooseBase("all")}>{localizedMessage("inspection.components.pending.file.selection.dialog.all")}</button>
+              <button type="button" disabled={busy} onClick={() => chooseBase("none")}>{localizedMessage("inspection.components.pending.file.selection.dialog.none")}</button>
               <span>
-                {summary.count.toLocaleString()} of {(torrent.selectableFileCount ?? 0).toLocaleString()} selected
-                {" · "}{formatExactBytes(summary.bytes.toString(), dataUnits)}
+                {localizedMessage("common.files.selected", {
+                  selected: summary.count,
+                  total: torrent.selectableFileCount ?? 0,
+                })}{" · "}{formatExactBytes(summary.bytes.toString(), dataUnits)}
               </span>
             </div>
             <div
               className={styles.selectionList}
               role="list"
-              aria-label="Torrent files"
+              aria-label={localizedMessage("inspection.components.pending.file.selection.dialog.torrent.files")}
               data-cached-page-count={pages.size}
               onScroll={loadVisiblePage}
             >
@@ -326,13 +326,11 @@ export function PendingFileSelectionDialog({
             checked={disableFuture}
             disabled={busy}
             onChange={(event) => setDisableFuture(event.currentTarget.checked)}
-          />
-          Don’t show file selection again
-        </label>
+          />{localizedMessage("inspection.components.pending.file.selection.dialog.don.t.show.file.selection.again")}</label>
         {error === "" ? null : <p className={styles.error} role="alert">{error}</p>}
         <div className={styles.actions}>
           <button ref={cancelRef} type="button" disabled={busy} onClick={() => void cancel()}>
-            {pending === "cancel" ? "Cancelling…" : "Cancel"}
+            {pending === "cancel" ? localizedMessage("inspection.components.pending.file.selection.dialog.cancelling") : localizedMessage("inspection.components.pending.file.selection.dialog.cancel")}
           </button>
           <button
             className={styles.confirm}
@@ -341,10 +339,10 @@ export function PendingFileSelectionDialog({
             onClick={() => void confirm()}
           >
             {pending === "confirm"
-              ? "Saving…"
+              ? localizedMessage("inspection.components.pending.file.selection.dialog.saving")
               : summary.count === 0
-                ? "Add"
-                : "Download"}
+                ? localizedMessage("inspection.components.pending.file.selection.dialog.add")
+                : localizedMessage("inspection.components.pending.file.selection.dialog.download")}
           </button>
         </div>
       </div>

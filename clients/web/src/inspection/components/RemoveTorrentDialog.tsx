@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import {
   useEffect,
   useRef,
@@ -102,26 +103,22 @@ export function RemoveTorrentDialog({
       >
         <h2 id="remove-torrent-title">
           {targets.length === 1
-            ? "Remove torrent?"
+            ? localizedMessage("inspection.components.remove.torrent.dialog.remove.torrent")
             : `Remove ${targets.length.toLocaleString()} torrents?`}
         </h2>
         <p id="remove-torrent-description">
           {targets.length === 1 ? (
-            <>
-              Remove <strong>{targets[0]?.name}</strong> from RSTorrent.
-            </>
+            <>{localizedMessage("inspection.components.remove.torrent.dialog.remove")}{" "}<strong>{targets[0]?.name}</strong>{" "}{localizedMessage("inspection.components.remove.torrent.dialog.from.rstorrent")}</>
           ) : (
-            <>Remove the selected torrents from RSTorrent.</>
-          )}{" "}
-          Downloaded data is kept by default.
-        </p>
+            <>{localizedMessage("inspection.components.remove.torrent.dialog.remove.the.selected.torrents.from.rstorrent")}</>
+          )}{" "}{localizedMessage("inspection.components.remove.torrent.dialog.downloaded.data.is.kept.by.default")}</p>
         {targets.length <= 1 ? null : (
-          <ul className={styles.targetList} aria-label="Torrents to remove">
+          <ul className={styles.targetList} aria-label={localizedMessage("inspection.components.remove.torrent.dialog.torrents.to.remove")}>
             {targets.slice(0, 5).map((target) => (
               <li key={target.id}>{target.name}</li>
             ))}
             {targets.length <= 5 ? null : (
-              <li>and {(targets.length - 5).toLocaleString()} more</li>
+              <li>{localizedMessage("inspection.components.remove.torrent.dialog.and")}{" "}{(targets.length - 5).toLocaleString()}{" "}{localizedMessage("inspection.components.remove.torrent.dialog.more")}</li>
             )}
           </ul>
         )}
@@ -132,29 +129,21 @@ export function RemoveTorrentDialog({
             checked={deleteData}
             disabled={!deleteDataSupported || pending}
             onChange={(event) => setDeleteData(event.currentTarget.checked)}
-          />
-          Also delete downloaded data
-        </label>
+          />{localizedMessage("inspection.components.remove.torrent.dialog.also.delete.downloaded.data")}</label>
         {!deleteDataSupported ? (
           <p className={styles.note}>
-            {unsupportedDeleteCount.toLocaleString()} selected{" "}
-            {unsupportedDeleteCount === 1 ? "torrent does" : "torrents do"}
-            {" "}not support downloaded-data deletion. Keep downloaded data to
-            remove the complete selection.
-          </p>
+            {unsupportedDeleteCount.toLocaleString()}{" "}{localizedMessage("inspection.components.remove.torrent.dialog.selected")}{" "}
+            {unsupportedDeleteCount === 1 ? localizedMessage("inspection.components.remove.torrent.dialog.torrent.does") : localizedMessage("inspection.components.remove.torrent.dialog.torrents.do")}
+            {" "}{localizedMessage("inspection.components.remove.torrent.dialog.not.support.downloaded.data.deletion.keep.downloaded")}</p>
         ) : null}
         {deleteData ? (
-          <p className={styles.warning} role="alert">
-            This permanently deletes this torrent's downloaded files and part data. It cannot be undone.
-          </p>
+          <p className={styles.warning} role="alert">{localizedMessage("inspection.components.remove.torrent.dialog.this.permanently.deletes.this.torrent.s.downloaded")}</p>
         ) : null}
         {error === "" ? null : (
           <p className={styles.error} role="alert">{error}</p>
         )}
         <div className={styles.actions}>
-          <button ref={cancelRef} type="button" disabled={pending} onClick={onCancel}>
-            Cancel
-          </button>
+          <button ref={cancelRef} type="button" disabled={pending} onClick={onCancel}>{localizedMessage("inspection.components.remove.torrent.dialog.cancel")}</button>
           <button
             ref={confirmRef}
             className={styles.remove}
@@ -165,9 +154,9 @@ export function RemoveTorrentDialog({
             ? `Removing ${targets.length.toLocaleString()}…`
             : error === ""
               ? deleteData
-                ? "Remove and delete data"
-                : "Remove"
-              : "Retry failed"}
+                ? localizedMessage("inspection.components.remove.torrent.dialog.remove.and.delete.data")
+                : localizedMessage("inspection.components.remove.torrent.dialog.remove")
+              : localizedMessage("inspection.components.remove.torrent.dialog.retry.failed")}
           </button>
         </div>
       </form>

@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import type { ColorTheme, DataUnits, InterfaceSize } from "../appearance";
 import styles from "./SettingsDialog.module.css";
 
@@ -8,18 +9,18 @@ const COLOR_THEME_OPTIONS: readonly {
 }[] = [
   {
     value: "auto",
-    label: "Auto",
-    description: "Follow your system appearance.",
+    label: localizedMessage("inspection.components.appearance.settings.section.auto"),
+    description: localizedMessage("inspection.components.appearance.settings.section.follow.your.system.appearance"),
   },
   {
     value: "light",
-    label: "Light",
-    description: "Always use the light appearance.",
+    label: localizedMessage("inspection.components.appearance.settings.section.light"),
+    description: localizedMessage("inspection.components.appearance.settings.section.always.use.the.light.appearance"),
   },
   {
     value: "dark",
-    label: "Dark",
-    description: "Always use the dark appearance.",
+    label: localizedMessage("inspection.components.appearance.settings.section.dark"),
+    description: localizedMessage("inspection.components.appearance.settings.section.always.use.the.dark.appearance"),
   },
 ];
 
@@ -30,18 +31,18 @@ const INTERFACE_SIZE_OPTIONS: readonly {
 }[] = [
   {
     value: "compact",
-    label: "Compact",
-    description: "Fit more information on screen.",
+    label: localizedMessage("inspection.components.appearance.settings.section.compact"),
+    description: localizedMessage("inspection.components.appearance.settings.section.fit.more.information.on.screen"),
   },
   {
     value: "standard",
-    label: "Standard",
-    description: "Balanced text, controls, and table spacing.",
+    label: localizedMessage("inspection.components.appearance.settings.section.standard"),
+    description: localizedMessage("inspection.components.appearance.settings.section.balanced.text.controls.and.table.spacing"),
   },
   {
     value: "spacious",
-    label: "Spacious",
-    description: "Use larger text and more generous targets.",
+    label: localizedMessage("inspection.components.appearance.settings.section.spacious"),
+    description: localizedMessage("inspection.components.appearance.settings.section.use.larger.text.and.more.generous.targets"),
   },
 ];
 
@@ -52,13 +53,13 @@ const DATA_UNITS_OPTIONS: readonly {
 }[] = [
   {
     value: "decimal",
-    label: "Decimal",
-    description: "Use kB, MB, and GB in powers of 1000.",
+    label: localizedMessage("inspection.components.appearance.settings.section.decimal"),
+    description: localizedMessage("inspection.components.appearance.settings.section.use.kb.mb.and.gb.in.powers"),
   },
   {
     value: "binary",
-    label: "Binary",
-    description: "Use KiB, MiB, and GiB in powers of 1024.",
+    label: localizedMessage("inspection.components.appearance.settings.section.binary"),
+    description: localizedMessage("inspection.components.appearance.settings.section.use.kib.mib.and.gib.in.powers"),
   },
 ];
 
@@ -81,15 +82,15 @@ export function AppearanceSettingsSection({
 }: AppearanceSettingsSectionProps) {
   return (
     <fieldset className={styles.section}>
-      <legend>Appearance</legend>
+      <legend>{localizedMessage("inspection.components.appearance.settings.section.appearance")}</legend>
       <div
         className={styles.settingGroup}
         role="group"
         aria-labelledby="color-theme-heading"
       >
         <div className={styles.settingHeading}>
-          <strong id="color-theme-heading">Color theme</strong>
-          <span>Choose a palette or follow your system.</span>
+          <strong id="color-theme-heading">{localizedMessage("inspection.components.appearance.settings.section.color.theme")}</strong>
+          <span>{localizedMessage("inspection.components.appearance.settings.section.choose.a.palette.or.follow.your.system")}</span>
         </div>
         <div className={styles.options}>
           {COLOR_THEME_OPTIONS.map((option) => (
@@ -115,8 +116,8 @@ export function AppearanceSettingsSection({
         aria-labelledby="interface-size-heading"
       >
         <div className={styles.settingHeading}>
-          <strong id="interface-size-heading">Interface size</strong>
-          <span>Changes apply immediately.</span>
+          <strong id="interface-size-heading">{localizedMessage("inspection.components.appearance.settings.section.interface.size")}</strong>
+          <span>{localizedMessage("inspection.components.appearance.settings.section.changes.apply.immediately")}</span>
         </div>
         <div className={styles.options}>
           {INTERFACE_SIZE_OPTIONS.map((option) => (
@@ -142,8 +143,8 @@ export function AppearanceSettingsSection({
         aria-labelledby="data-units-heading"
       >
         <div className={styles.settingHeading}>
-          <strong id="data-units-heading">Data units</strong>
-          <span>Changes apply immediately.</span>
+          <strong id="data-units-heading">{localizedMessage("inspection.components.appearance.settings.section.data.units")}</strong>
+          <span>{localizedMessage("inspection.components.appearance.settings.section.changes.apply.immediately")}</span>
         </div>
         <div className={styles.options}>
           {DATA_UNITS_OPTIONS.map((option) => (

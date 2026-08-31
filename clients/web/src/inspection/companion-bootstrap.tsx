@@ -1,4 +1,5 @@
 import { createRoot } from "react-dom/client";
+import { LocalizationProvider } from "../localization/runtime";
 
 import type { ApplicationViewClient } from "../api/client";
 import { App } from "./components/App";
@@ -19,9 +20,11 @@ export async function startCompanionInspection(
   const rootElement = document.querySelector<HTMLElement>("#app");
   if (rootElement === null) throw new Error("missing application root");
   createRoot(rootElement).render(
-    <InspectionProvider controller={controller}>
-      <App oneCurrentRoot />
-    </InspectionProvider>,
+    <LocalizationProvider>
+      <InspectionProvider controller={controller}>
+        <App oneCurrentRoot />
+      </InspectionProvider>
+    </LocalizationProvider>,
   );
   return () => controller.close();
 }

@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import {
   useEffect,
   useLayoutEffect,
@@ -51,9 +52,9 @@ const DESTINATIONS: readonly {
   readonly label: string;
   readonly icon: IconName;
 }[] = [
-  { id: "library", label: "Library", icon: "library" },
-  { id: "transfers", label: "Transfers", icon: "transfers" },
-  { id: "workbench", label: "Workbench", icon: "workbench" },
+  { id: "library", label: localizedMessage("inspection.components.app.library"), icon: "library" },
+  { id: "transfers", label: localizedMessage("inspection.components.app.transfers"), icon: "transfers" },
+  { id: "workbench", label: localizedMessage("inspection.components.app.workbench"), icon: "workbench" },
 ];
 
 export interface AppProps {
@@ -297,10 +298,10 @@ function AppContent({
           <Icon name="menu" />
         </button>
         <div className={styles.brand}>
-          <span aria-hidden="true">RS</span>
-          <strong>RSTorrent</strong>
+          <span aria-hidden="true">{localizedMessage("inspection.components.app.rs")}</span>
+          <strong>{localizedMessage("inspection.components.app.rstorrent")}</strong>
         </div>
-        <nav className={styles.primaryNavigation} aria-label="Primary">
+        <nav className={styles.primaryNavigation} aria-label={localizedMessage("inspection.components.app.primary")}>
           {DESTINATIONS.map((item) => (
             <button
               key={item.id}
@@ -315,7 +316,7 @@ function AppContent({
         </nav>
         <div
           className={styles.sessionStats}
-          aria-label="Session transfer rates"
+          aria-label={localizedMessage("inspection.components.app.session.transfer.rates")}
         >
           <span>
             <b aria-hidden="true">↓</b>{" "}
@@ -328,25 +329,23 @@ function AppContent({
         </div>
         <div className={styles.connection} data-state={session.connection}>
           <span aria-hidden="true" />
-          {session.connection === "demo" ? "Demo adapter" : session.connection}
+          {session.connection === "demo" ? localizedMessage("inspection.components.app.demo.adapter") : session.connection}
         </div>
         {credentialFreeAccessMode !== null ? (
           <span
             className={styles.lanAccessStatus}
-            aria-label="Network access has no authentication"
-            title="Authentication is off; every device that can reach this service has full owner control."
-          >
-            No auth
-          </span>
+            aria-label={localizedMessage("inspection.components.app.network.access.has.no.authentication")}
+            title={localizedMessage("inspection.components.app.authentication.is.off.every.device.that.can")}
+          >{localizedMessage("inspection.components.app.no.auth")}</span>
         ) : null}
         <button
           ref={settingsButtonRef}
           className={styles.settingsButton}
           type="button"
-          aria-label="Settings"
+          aria-label={localizedMessage("inspection.components.app.settings")}
           aria-haspopup="dialog"
           aria-expanded={settingsOpen}
-          title="Settings"
+          title={localizedMessage("inspection.components.app.settings")}
           onClick={() => {
             setSettingsCategory("appearance");
             setSettingsOpen(true);
@@ -363,24 +362,24 @@ function AppContent({
             <aside
               className={styles.networkWaiting}
               role="status"
-              aria-label="Network prerequisite status"
+              aria-label={localizedMessage("inspection.components.app.network.prerequisite.status")}
             >
-              <strong>Waiting for an unmetered network.</strong>
-              <span>Transfers will resume automatically when one is usable.</span>
+              <strong>{localizedMessage("inspection.components.app.waiting.for.an.unmetered.network")}</strong>
+              <span>{localizedMessage("inspection.components.app.transfers.will.resume.automatically.when.one.is")}</span>
             </aside>
           ) : null}
           {credentialFreeAccessMode !== null &&
           !credentialFreeNoticeDismissed ? (
             <aside
               className={styles.lanWarning}
-              aria-label="Network security notice"
+              aria-label={localizedMessage("inspection.components.app.network.security.notice")}
             >
               <span className={styles.lanWarningMessage}>
-                <strong>Authentication is off.</strong>
+                <strong>{localizedMessage("inspection.components.app.authentication.is.off")}</strong>
                 <span>
                   {credentialFreeAccessMode === "network_none"
-                    ? "Every device that can reach this service has full owner control."
-                    : "Every device on this LAN has full owner control."}
+                    ? localizedMessage("inspection.components.app.every.device.that.can.reach.this.service")
+                    : localizedMessage("inspection.components.app.every.device.on.this.lan.has.full")}
                 </span>
               </span>
               <button
@@ -389,9 +388,7 @@ function AppContent({
                   setCredentialFreeNoticeDismissed(true);
                   saveCredentialFreeNoticeDismissed(credentialFreeAccessMode);
                 }}
-              >
-                Got it
-              </button>
+              >{localizedMessage("inspection.components.app.got.it")}</button>
             </aside>
           ) : null}
           <ScenarioBar />
@@ -427,7 +424,7 @@ function AppContent({
             <>
               <section
                 className={styles.collection}
-                aria-label="Workbench torrent collection"
+                aria-label={localizedMessage("inspection.components.app.workbench.torrent.collection")}
               >
                 <TorrentActions
                   showCrostiniStorageHelp={hostedProduct === "crostini"}
@@ -441,7 +438,7 @@ function AppContent({
                 ref={splitterRef}
                 className={styles.splitter}
                 role="separator"
-                aria-label="Resize torrent details"
+                aria-label={localizedMessage("inspection.components.app.resize.torrent.details")}
                 aria-orientation="horizontal"
                 aria-valuemin={MIN_DETAIL_PANE_PERCENT}
                 aria-valuemax={MAX_DETAIL_PANE_PERCENT}
@@ -449,7 +446,7 @@ function AppContent({
                 aria-valuetext={`${detailPanePercent}% height for torrent details`}
                 data-resizing={resizingDetail}
                 tabIndex={0}
-                title="Drag to resize; use Up and Down arrow keys for precise control"
+                title={localizedMessage("inspection.components.app.drag.to.resize.use.up.and.down")}
                 onPointerDown={startDetailResize}
                 onPointerMove={continueDetailResize}
                 onPointerUp={stopDetailResize}
@@ -472,10 +469,8 @@ function AppContent({
       {updater !== undefined && updaterSnapshot?.state.phase === "available" ? (
         <aside className={styles.updateNotice} role="status">
           <div>
-            <strong>
-              RSTorrent {updaterSnapshot.state.version} is available
-            </strong>
-            <span>Review the update when you are ready.</span>
+            <strong>{localizedMessage("inspection.components.app.rstorrent")}{" "}{updaterSnapshot.state.version}{" "}{localizedMessage("inspection.components.app.is.available")}</strong>
+            <span>{localizedMessage("inspection.components.app.review.the.update.when.you.are.ready")}</span>
           </div>
           <button
             type="button"
@@ -483,16 +478,12 @@ function AppContent({
               setSettingsCategory("updates");
               setSettingsOpen(true);
             }}
-          >
-            Review update
-          </button>
+          >{localizedMessage("inspection.components.app.review.update")}</button>
           <button
             type="button"
-            aria-label="Dismiss available update"
+            aria-label={localizedMessage("inspection.components.app.dismiss.available.update")}
             onClick={() => updater.dismiss()}
-          >
-            Later
-          </button>
+          >{localizedMessage("inspection.components.app.later")}</button>
         </aside>
       ) : null}
       {settingsOpen ? (

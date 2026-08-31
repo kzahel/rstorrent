@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import {
   useEffect,
   useMemo,
@@ -126,29 +127,29 @@ export function LibraryDetailView({
         <button
           type="button"
           className={styles.back}
-          aria-label="Back to Library"
+          aria-label={localizedMessage("inspection.components.library.detail.view.back.to.library")}
           autoFocus
           onClick={onBack}
         >
           <span aria-hidden="true">←</span>
-          <span>Library</span>
+          <span>{localizedMessage("inspection.components.library.detail.view.library")}</span>
         </button>
         <div>
-          <p>Content details</p>
+          <p>{localizedMessage("inspection.components.library.detail.view.content.details")}</p>
           <h1 id="library-detail-heading">{torrent.name}</h1>
         </div>
         <button
           type="button"
           className={styles.workbench}
-          aria-label="Open in Workbench"
+          aria-label={localizedMessage("inspection.components.library.detail.view.open.in.workbench")}
           onClick={() => openInWorkbench(torrent.id)}
         >
           <Icon name="workbench" />
-          <span>Open in Workbench</span>
+          <span>{localizedMessage("inspection.components.library.detail.view.open.in.workbench")}</span>
         </button>
       </header>
       <div className={styles.body}>
-        <aside className={styles.summary} aria-label="Torrent content summary">
+        <aside className={styles.summary} aria-label={localizedMessage("inspection.components.library.detail.view.torrent.content.summary")}>
           <div className={styles.placeholder} aria-hidden="true">
             <span>{initials(torrent.name)}</span>
           </div>
@@ -157,35 +158,30 @@ export function LibraryDetailView({
             <span>{torrentSummary(torrent)}</span>
             <span>
               {torrent.sizeBytes === null
-                ? "Size pending"
+                ? localizedMessage("inspection.components.library.detail.view.size.pending")
                 : formatExactBytes(String(torrent.sizeBytes), dataUnits)}
             </span>
             {mediaCount === undefined ? null : (
               <span>
-                {mediaCount.toLocaleString()} recognized video
-                {mediaCount === 1 ? "" : "s"}
+                {mediaCount.toLocaleString()}{" "}{localizedMessage("inspection.components.library.detail.view.recognized.video")}{mediaCount === 1 ? "" : "s"}
               </span>
             )}
           </div>
         </aside>
         <div className={styles.catalog}>
-          <div className={styles.tabs} role="tablist" aria-label="Content view">
+          <div className={styles.tabs} role="tablist" aria-label={localizedMessage("inspection.components.library.detail.view.content.view")}>
             <button
               type="button"
               role="tab"
               aria-selected={mode === "media"}
               onClick={() => chooseMode("media")}
-            >
-              Media
-            </button>
+            >{localizedMessage("inspection.components.library.detail.view.media")}</button>
             <button
               type="button"
               role="tab"
               aria-selected={mode === "files"}
               onClick={() => chooseMode("files")}
-            >
-              All files
-            </button>
+            >{localizedMessage("inspection.components.library.detail.view.all.files")}</button>
           </div>
           {playbackStatus === "" ? null : (
             <output className={styles.commandStatus} aria-live="polite">
@@ -264,7 +260,7 @@ function MediaCatalog({
       rows={sorted.map((row) => ({ kind: "media" as const, row }))}
       layout={layout}
       dataUnits={dataUnits}
-      label="Recognized video files"
+      label={localizedMessage("inspection.components.library.detail.view.recognized.video.files")}
       playbackPendingFile={playbackPendingFile}
       playbackUnavailableReason={playbackUnavailableReason}
       onPlay={onPlay}
@@ -301,15 +297,13 @@ function FileCatalog({
   return (
     <>
       {total > sorted.length ? (
-        <p className={styles.pageNotice}>
-          Showing the first {sorted.length.toLocaleString()} of {total.toLocaleString()} files
-        </p>
+        <p className={styles.pageNotice}>{localizedMessage("inspection.components.library.detail.view.showing.the.first")}{" "}{sorted.length.toLocaleString()}{" "}{localizedMessage("inspection.components.library.detail.view.of")}{" "}{total.toLocaleString()}{" "}{localizedMessage("inspection.components.library.detail.view.files")}</p>
       ) : null}
       <VirtualCatalog
         rows={sorted.map((row) => ({ kind: "file" as const, row }))}
         layout={layout}
         dataUnits={dataUnits}
-        label="All torrent files"
+        label={localizedMessage("inspection.components.library.detail.view.all.torrent.files")}
       />
     </>
   );
@@ -458,8 +452,7 @@ function CatalogRowView({
           <span aria-hidden="true">
             <span style={{ width: formatDecimalProgress(row.doneBytes, row.lengthBytes) }} />
           </span>
-          {formatDecimalProgress(row.doneBytes, row.lengthBytes)} done · {formatDecimalProgress(row.verifiedBytes, row.lengthBytes)} verified
-        </span>
+          {formatDecimalProgress(row.doneBytes, row.lengthBytes)}{" "}{localizedMessage("inspection.components.library.detail.view.done")}{" "}{formatDecimalProgress(row.verifiedBytes, row.lengthBytes)}{" "}{localizedMessage("inspection.components.library.detail.view.verified")}</span>
       </span>
       <span className={styles.facts}>
         <strong data-downloaded={downloaded || undefined}>
@@ -480,8 +473,8 @@ function playbackDisabledReason(
   unavailableReason?: string,
 ): string | undefined {
   if (unavailableReason !== undefined) return unavailableReason;
-  if (pendingFile === row.fileIndex) return "Opening this file for playback.";
-  if (pendingFile !== null) return "Another media file is opening.";
+  if (pendingFile === row.fileIndex) return localizedMessage("inspection.components.library.detail.view.opening.this.file.for.playback");
+  if (pendingFile !== null) return localizedMessage("inspection.components.library.detail.view.another.media.file.is.opening");
   if (isPlaybackEligible(row.mediaAvailability)) return undefined;
   return `Playback is unavailable: ${availabilityLabel(row.mediaAvailability).toLocaleLowerCase()}.`;
 }
@@ -504,51 +497,51 @@ function CatalogMessage({ message }: { readonly message: string }) {
 function materializationMessage(materialization: ViewMaterialization): string {
   switch (materialization.status) {
     case "not_requested":
-      return "Content details are not requested";
+      return localizedMessage("inspection.components.library.detail.view.content.details.are.not.requested");
     case "loading":
-      return "Loading content details…";
+      return localizedMessage("inspection.components.library.detail.view.loading.content.details");
     case "unavailable":
     case "unsupported":
     case "stale":
       return materialization.reason;
     case "ready":
-      return "No content";
+      return localizedMessage("inspection.components.library.detail.view.no.content");
   }
 }
 
 function torrentSummary(torrent: TorrentRow): string {
   switch (torrent.status) {
-    case "metadata": return "Finding content details";
-    case "downloading": return "Downloading";
-    case "complete": return "Available offline";
-    case "paused": return "Paused";
-    case "checking": return "Checking downloaded data";
-    case "error": return "Needs attention";
+    case "metadata": return localizedMessage("inspection.components.library.detail.view.finding.content.details");
+    case "downloading": return localizedMessage("inspection.components.library.detail.view.downloading");
+    case "complete": return localizedMessage("inspection.components.library.detail.view.available.offline");
+    case "paused": return localizedMessage("inspection.components.library.detail.view.paused");
+    case "checking": return localizedMessage("inspection.components.library.detail.view.checking.downloaded.data");
+    case "error": return localizedMessage("inspection.components.library.detail.view.needs.attention");
   }
 }
 
 function selectionLabel(selection: "normal" | "high" | "skipped" | null): string {
-  if (selection === "high") return "High priority";
-  if (selection === "skipped") return "Skipped";
-  return "Normal priority";
+  if (selection === "high") return localizedMessage("inspection.components.library.detail.view.high.priority");
+  if (selection === "skipped") return localizedMessage("inspection.components.library.detail.view.skipped");
+  return localizedMessage("inspection.components.library.detail.view.normal.priority");
 }
 
 function availabilityLabel(
   availability: MediaRow["mediaAvailability"],
 ): string {
   switch (availability) {
-    case "available": return "Available";
-    case "streamable": return "Streamable";
-    case "metadata_unavailable": return "Metadata pending";
-    case "invalid_file": return "Invalid file";
-    case "padding": return "Padding";
-    case "incomplete": return "Incomplete";
-    case "checking": return "Checking";
-    case "unverified": return "Not verified";
-    case "storage_unavailable": return "Storage unavailable";
-    case "removing": return "Removing";
-    case "server_unavailable": return "Server unavailable";
-    case "resource_limit": return "Temporarily unavailable";
+    case "available": return localizedMessage("inspection.components.library.detail.view.available");
+    case "streamable": return localizedMessage("inspection.components.library.detail.view.streamable");
+    case "metadata_unavailable": return localizedMessage("inspection.components.library.detail.view.metadata.pending");
+    case "invalid_file": return localizedMessage("inspection.components.library.detail.view.invalid.file");
+    case "padding": return localizedMessage("inspection.components.library.detail.view.padding");
+    case "incomplete": return localizedMessage("inspection.components.library.detail.view.incomplete");
+    case "checking": return localizedMessage("inspection.components.library.detail.view.checking");
+    case "unverified": return localizedMessage("inspection.components.library.detail.view.not.verified");
+    case "storage_unavailable": return localizedMessage("inspection.components.library.detail.view.storage.unavailable");
+    case "removing": return localizedMessage("inspection.components.library.detail.view.removing");
+    case "server_unavailable": return localizedMessage("inspection.components.library.detail.view.server.unavailable");
+    case "resource_limit": return localizedMessage("inspection.components.library.detail.view.temporarily.unavailable");
   }
 }
 

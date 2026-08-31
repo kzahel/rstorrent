@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import { useMemo, type CSSProperties } from "react";
 
 import { useInspectionStore } from "../context";
@@ -12,7 +13,7 @@ const diskColumns = (
 ): readonly VirtualColumn<DiskPieceRow>[] => [
   {
     id: "torrent",
-    label: "Torrent",
+    label: localizedMessage("inspection.components.disk.panel.torrent"),
     width: 210,
     minimumWidth: 130,
     maximumWidth: 520,
@@ -21,7 +22,7 @@ const diskColumns = (
   },
   {
     id: "piece",
-    label: "Piece",
+    label: localizedMessage("inspection.components.disk.panel.piece"),
     width: 76,
     align: "right",
     sortKind: "number",
@@ -30,7 +31,7 @@ const diskColumns = (
   },
   {
     id: "stage",
-    label: "State",
+    label: localizedMessage("inspection.components.disk.panel.state"),
     width: 112,
     sortValue: (row) => row.stage,
     sortOrder: [
@@ -53,7 +54,7 @@ const diskColumns = (
   },
   {
     id: "requested",
-    label: "Requested",
+    label: localizedMessage("inspection.components.disk.panel.requested"),
     width: 96,
     align: "right",
     sortKind: "number",
@@ -62,7 +63,7 @@ const diskColumns = (
   },
   {
     id: "received",
-    label: "Received",
+    label: localizedMessage("inspection.components.disk.panel.received"),
     width: 92,
     align: "right",
     sortKind: "number",
@@ -71,7 +72,7 @@ const diskColumns = (
   },
   {
     id: "stored",
-    label: "Stored",
+    label: localizedMessage("inspection.components.disk.panel.stored"),
     width: 88,
     align: "right",
     sortKind: "number",
@@ -80,7 +81,7 @@ const diskColumns = (
   },
   {
     id: "queueAge",
-    label: "State age",
+    label: localizedMessage("inspection.components.disk.panel.state.age"),
     width: 90,
     align: "right",
     sortKind: "number",
@@ -89,7 +90,7 @@ const diskColumns = (
   },
   {
     id: "age",
-    label: "Age",
+    label: localizedMessage("inspection.components.disk.panel.age"),
     width: 86,
     align: "right",
     defaultVisible: false,
@@ -99,7 +100,7 @@ const diskColumns = (
   },
   {
     id: "attempt",
-    label: "Attempt",
+    label: localizedMessage("inspection.components.disk.panel.attempt"),
     width: 82,
     align: "right",
     defaultVisible: false,
@@ -109,7 +110,7 @@ const diskColumns = (
   },
   {
     id: "error",
-    label: "Error",
+    label: localizedMessage("inspection.components.disk.panel.error"),
     width: 300,
     minimumWidth: 140,
     maximumWidth: 680,
@@ -148,16 +149,14 @@ export function DiskPanel() {
       >
         <div className={styles.tableHeading}>
           <div>
-            <h2 id="active-disk-pieces">Active storage pieces</h2>
-            <p>
-              Piece-level work only; 16 KiB block jobs stay inside the engine.
-            </p>
+            <h2 id="active-disk-pieces">{localizedMessage("inspection.components.disk.panel.active.storage.pieces")}</h2>
+            <p>{localizedMessage("inspection.components.disk.panel.piece.level.work.only.16.kib.block")}</p>
           </div>
-          <span>{rows.length.toLocaleString()} active</span>
+          <span>{rows.length.toLocaleString()}{" "}{localizedMessage("inspection.components.disk.panel.active")}</span>
         </div>
         <VirtualTable
           tableId="session-disk-pieces"
-          label="Active storage pieces"
+          label={localizedMessage("inspection.components.disk.panel.active.storage.pieces")}
           rows={rows}
           getRowId={(row) => row.id}
           columns={displayColumns}
@@ -198,10 +197,8 @@ function DiskSummary({
     <section className={styles.summary} aria-labelledby="disk-pipeline-title">
       <div className={styles.summaryHeading}>
         <div>
-          <p className={styles.eyebrow}>Session storage</p>
-          <h2 id="disk-pipeline-title">
-            Receive → write → verify → checkpoint
-          </h2>
+          <p className={styles.eyebrow}>{localizedMessage("inspection.components.disk.panel.session.storage")}</p>
+          <h2 id="disk-pipeline-title">{localizedMessage("inspection.components.disk.panel.receive.write.verify.checkpoint")}</h2>
         </div>
         <span className={styles.pressure} data-pressure={pipeline.pressure}>
           <span aria-hidden="true" />
@@ -230,47 +227,47 @@ function DiskSummary({
       </div>
       <dl className={styles.metrics}>
         <Metric
-          label="Resident / limit"
+          label={localizedMessage("inspection.components.disk.panel.resident.limit")}
           value={`${formatBytes(pipeline.residentBytes, dataUnits)} / ${formatBytes(pipeline.residentLimitBytes, dataUnits)}`}
           detail={`high ${formatBytes(pipeline.residentHighWatermarkBytes, dataUnits)} · low ${formatBytes(pipeline.residentLowWatermarkBytes, dataUnits)}`}
         />
         <Metric
-          label="Receive / write"
+          label={localizedMessage("inspection.components.disk.panel.receive.write")}
           value={`${formatRate(pipeline.receiveRateBytes, dataUnits)} / ${formatRate(pipeline.writeRateBytes, dataUnits)}`}
           detail={`${formatDuration(pipeline.sampleMillis)} sample`}
         />
         <Metric
-          label="Stored / verified"
+          label={localizedMessage("inspection.components.disk.panel.stored.verified")}
           value={`${formatBytes(pipeline.storedBytesTotal, dataUnits)} / ${formatBytes(pipeline.verifiedBytesTotal, dataUnits)}`}
           detail={`${formatRate(pipeline.hashRateBytes, dataUnits)} verify rate`}
         />
         <Metric
-          label="Pending work"
+          label={localizedMessage("inspection.components.disk.panel.pending.work")}
           value={`${pipeline.storageJobsPending.toLocaleString()} jobs · ${activePieces.toLocaleString()} pieces`}
           detail={`${pipeline.pressureTransitionCount.toLocaleString()} pressure transitions`}
         />
         <Metric
-          label="Write queue wait"
+          label={localizedMessage("inspection.components.disk.panel.write.queue.wait")}
           value={formatMicros(pipeline.writeQueueWaitMaxMicros)}
           detail={`${formatMicros(pipeline.writeQueueWaitMicros)} cumulative`}
         />
         <Metric
-          label="Write service"
+          label={localizedMessage("inspection.components.disk.panel.write.service")}
           value={formatMicros(pipeline.writeServiceMaxMicros)}
           detail={`${pipeline.writeOperationsCompleted.toLocaleString()} / ${pipeline.writeOperationsStarted.toLocaleString()} operations`}
         />
         <Metric
-          label="Hash service"
+          label={localizedMessage("inspection.components.disk.panel.hash.service")}
           value={formatMicros(pipeline.hashServiceMaxMicros)}
           detail={`${pipeline.hashOperationsCompleted.toLocaleString()} / ${pipeline.hashOperationsStarted.toLocaleString()} operations`}
         />
         <Metric
-          label="Checkpoint backlog"
+          label={localizedMessage("inspection.components.disk.panel.checkpoint.backlog")}
           value={`${pipeline.checkpointDirtyPieces.toLocaleString()} pieces · ${formatBytes(pipeline.checkpointDirtyBytes, dataUnits)}`}
           detail={`oldest ${formatDuration(pipeline.checkpointOldestDirtyMillis)} · high ${pipeline.checkpointDirtyPieceHighWater.toLocaleString()} pieces / ${formatBytes(pipeline.checkpointDirtyByteHighWater, dataUnits)}`}
         />
         <Metric
-          label="Checkpoint stage"
+          label={localizedMessage("inspection.components.disk.panel.checkpoint.stage")}
           value={titleCase(pipeline.checkpointStage)}
           detail={
             pipeline.checkpointActiveMicros === null
@@ -279,17 +276,17 @@ function DiskSummary({
           }
         />
         <Metric
-          label="Payload sync"
+          label={localizedMessage("inspection.components.disk.panel.payload.sync")}
           value={formatMicros(pipeline.checkpointSyncServiceMaxMicros)}
           detail={`${formatMicros(pipeline.checkpointSyncServiceMicros)} cumulative · ${pipeline.checkpointSyncOperationsCompleted.toLocaleString()} targets`}
         />
         <Metric
-          label="Checkpoint commit"
+          label={localizedMessage("inspection.components.disk.panel.checkpoint.commit")}
           value={formatMicros(pipeline.checkpointCommitServiceMaxMicros)}
           detail={`${formatMicros(pipeline.checkpointCommitServiceMicros)} cumulative · ${pipeline.checkpointPiecesCompleted.toLocaleString()} pieces`}
         />
         <Metric
-          label="Backpressured"
+          label={localizedMessage("inspection.components.disk.panel.backpressured")}
           value={formatDuration(pipeline.backpressuredMillisTotal)}
           detail={
             pipeline.intakeBackpressured
@@ -300,7 +297,7 @@ function DiskSummary({
       </dl>
       {pipeline.lastError === null ? null : (
         <div className={styles.error} role="alert">
-          <strong>Storage error</strong>
+          <strong>{localizedMessage("inspection.components.disk.panel.storage.error")}</strong>
           <span>{pipeline.lastError}</span>
         </div>
       )}
@@ -331,15 +328,15 @@ function Metric({
 function diskEmptyMessage(materialization: ViewMaterialization): string {
   switch (materialization.status) {
     case "not_requested":
-      return "Disk state is not requested.";
+      return localizedMessage("inspection.components.disk.panel.disk.state.is.not.requested");
     case "loading":
-      return "Loading disk state…";
+      return localizedMessage("inspection.components.disk.panel.loading.disk.state");
     case "unavailable":
     case "unsupported":
     case "stale":
       return materialization.reason;
     case "ready":
-      return "No pieces are waiting on storage.";
+      return localizedMessage("inspection.components.disk.panel.no.pieces.are.waiting.on.storage");
   }
 }
 
@@ -348,7 +345,7 @@ function formatMicros(micros: number): string {
 }
 
 function formatDuration(milliseconds: number): string {
-  if (!Number.isFinite(milliseconds) || milliseconds <= 0) return "0 ms";
+  if (!Number.isFinite(milliseconds) || milliseconds <= 0) return localizedMessage("inspection.components.disk.panel.0.ms");
   if (milliseconds < 1_000) return `${Math.round(milliseconds)} ms`;
   if (milliseconds < 60_000)
     return `${(milliseconds / 1_000).toFixed(milliseconds < 10_000 ? 1 : 0)} s`;

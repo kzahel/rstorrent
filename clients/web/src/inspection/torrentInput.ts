@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../localization/runtime";
 export const MAX_TORRENT_INPUT_BYTES = 16_384;
 
 export type ValidatedTorrentInput =
@@ -10,33 +11,33 @@ export function validateTorrentInput(source: string): ValidatedTorrentInput {
     return {
       accepted: false,
       message:
-        "Paste a magnet link to add a torrent. .torrent file selection is not available yet.",
+        localizedMessage("inspection.torrent.input.paste.a.magnet.link.to.add.a"),
     };
   }
   if (/^https?:\/\//i.test(input)) {
     return {
       accepted: false,
       message:
-        "Remote .torrent URLs are not supported yet. Paste a magnet link instead.",
+        localizedMessage("inspection.torrent.input.remote.torrent.urls.are.not.supported.yet"),
     };
   }
   if (/^file:\/\//i.test(input)) {
     return {
       accepted: false,
       message:
-        ".torrent file selection is not available yet. Paste a magnet link instead.",
+        localizedMessage("inspection.torrent.input.torrent.file.selection.is.not.available.yet"),
     };
   }
   if (!input.startsWith("magnet:?")) {
     return {
       accepted: false,
-      message: "Enter a magnet link beginning with magnet:?",
+      message: localizedMessage("inspection.torrent.input.enter.a.magnet.link.beginning.with.magnet"),
     };
   }
   if (new TextEncoder().encode(input).byteLength > MAX_TORRENT_INPUT_BYTES) {
     return {
       accepted: false,
-      message: "Magnet links are limited to 16,384 bytes.",
+      message: localizedMessage("inspection.torrent.input.magnet.links.are.limited.to.16.384"),
     };
   }
   return { accepted: true, magnet: input };

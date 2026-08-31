@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import {
   createContext,
   useCallback,
@@ -109,7 +110,7 @@ export function TorrentActionProvider({ children }: { readonly children: ReactNo
           resolvedLabel: action.label(targets.length),
           disabled: busy || availability.disabled,
           ...(busy
-            ? { disabledReason: "Another torrent action is still in progress." }
+            ? { disabledReason: localizedMessage("inspection.components.torrent.action.context.another.torrent.action.is.still.in.progress") }
             : availability.reason === undefined
               ? {}
               : { disabledReason: availability.reason }),
@@ -232,12 +233,12 @@ export function TorrentActionProvider({ children }: { readonly children: ReactNo
       const uniqueTargetIds = new Set(requestedIds);
       const targets = targetRows(requestedIds);
       if (targets.length !== uniqueTargetIds.size) {
-        setStatus("A selected torrent is no longer available.");
+        setStatus(localizedMessage("inspection.components.torrent.action.context.a.selected.torrent.is.no.longer.available"));
         return;
       }
       const availability = torrentActionAvailability(actionId, targets);
       if (pendingAction !== null) {
-        setStatus("Another torrent action is still in progress.");
+        setStatus(localizedMessage("inspection.components.torrent.action.context.another.torrent.action.is.still.in.progress"));
         return;
       }
       if (availability.disabled) {
@@ -400,19 +401,19 @@ function resultVerb(
 ): string {
   switch (actionId) {
     case "start":
-      return "Started";
+      return localizedMessage("inspection.components.torrent.action.context.started");
     case "pause":
-      return "Paused";
+      return localizedMessage("inspection.components.torrent.action.context.paused");
     case "force_recheck":
-      return "Started recheck for";
+      return localizedMessage("inspection.components.torrent.action.context.started.recheck.for");
     case "move_to_top":
-      return "Moved to the top of the download queue";
+      return localizedMessage("inspection.components.torrent.action.context.moved.to.the.top.of.the.download");
     case "move_to_bottom":
-      return "Moved to the bottom of the download queue";
+      return localizedMessage("inspection.components.torrent.action.context.moved.to.the.bottom.of.the.download");
     case "archive":
-      return "Archived";
+      return localizedMessage("inspection.components.torrent.action.context.archived");
     case "restore":
-      return "Restored";
+      return localizedMessage("inspection.components.torrent.action.context.restored");
   }
 }
 

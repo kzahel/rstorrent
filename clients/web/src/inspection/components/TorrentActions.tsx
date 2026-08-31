@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import {
   useEffect,
   useId,
@@ -421,7 +422,7 @@ export function TorrentActions({
         {demo === null ? (
           <form
             className={styles.addForm}
-            aria-label="Add torrent"
+            aria-label={localizedMessage("inspection.components.torrent.actions.add.torrent")}
             onSubmit={(event) => void addTorrent(event)}
           >
             <input
@@ -429,12 +430,12 @@ export function TorrentActions({
               className={styles.addInput}
               type="text"
               value={torrentInput}
-              aria-label="Magnet link or torrent URL"
+              aria-label={localizedMessage("inspection.components.torrent.actions.magnet.link.or.torrent.url")}
               aria-describedby={statusId}
               aria-invalid={inputInvalid}
               autoComplete="off"
               spellCheck={false}
-              placeholder="Magnet link or URL"
+              placeholder={localizedMessage("inspection.components.torrent.actions.magnet.link.or.url")}
               onChange={(event) => {
                 setTorrentInput(event.currentTarget.value);
                 setInputInvalid(false);
@@ -456,7 +457,7 @@ export function TorrentActions({
               type="submit"
               disabled={adding}
             >
-              {adding ? "Adding…" : "Add"}
+              {adding ? localizedMessage("inspection.components.torrent.actions.adding") : localizedMessage("inspection.components.torrent.actions.add")}
             </button>
           </form>
         ) : (
@@ -472,8 +473,7 @@ export function TorrentActions({
                   )
               }
             >
-              <Icon name="plus" /> Add demo
-            </button>
+              <Icon name="plus" />{" "}{localizedMessage("inspection.components.torrent.actions.add.demo")}</button>
             <span className={styles.divider} aria-hidden="true" />
           </>
         )}
