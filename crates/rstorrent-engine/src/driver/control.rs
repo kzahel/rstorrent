@@ -517,6 +517,7 @@ struct DownloadControlInner {
     activity_sink: Mutex<Option<Arc<dyn DownloadActivitySink>>>,
     mse_handshake_sink: Mutex<Option<Arc<dyn MseHandshakeSink>>>,
     byte_metric_sink: Mutex<Option<SharedByteMetricSink>>,
+    incoming_payload_metric_sink: Mutex<Option<SharedByteMetricSink>>,
     last_swarm_activity: Mutex<Option<SwarmActivitySnapshot>>,
     last_content_peers: Mutex<(Option<Duration>, Vec<ContentPeerActivitySnapshot>)>,
     content_last_error: Mutex<Option<String>>,
@@ -893,6 +894,7 @@ impl DownloadControl {
                 activity_sink: Mutex::new(None),
                 mse_handshake_sink: Mutex::new(None),
                 byte_metric_sink: Mutex::new(None),
+                incoming_payload_metric_sink: Mutex::new(None),
                 last_swarm_activity: Mutex::new(None),
                 last_content_peers: Mutex::new((None, Vec::new())),
                 content_last_error: Mutex::new(None),
@@ -1822,6 +1824,14 @@ impl DownloadControl {
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(sink);
     }
 
+    pub fn set_incoming_payload_metric_sink(&self, sink: Arc<dyn ByteMetricSink>) {
+        *self
+            .inner
+            .incoming_payload_metric_sink
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(sink);
+    }
+
     pub fn set_mse_handshake_sink(&self, sink: Arc<dyn MseHandshakeSink>) {
         *self
             .inner
@@ -1841,6 +1851,14 @@ impl DownloadControl {
     pub(super) fn byte_metric_sink(&self) -> Option<SharedByteMetricSink> {
         self.inner
             .byte_metric_sink
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    pub(super) fn incoming_payload_metric_sink(&self) -> Option<SharedByteMetricSink> {
+        self.inner
+            .incoming_payload_metric_sink
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()

@@ -855,9 +855,11 @@ exactly.
   fallback, overflow, applicable-rate, and delayed inactivity tests. Fresh
   schema 23 now round-trips the four typed settings and bounded monotonic
   accounting, rejects malformed/regressing values, and resets schema 22 while
-  preserving external payload. Runtime accounting, combined admission,
-  generated clients, React/Compose, platform builds, and controlled
-  interoperability remain open.
+  preserving external payload. One joined session accumulator now durably
+  checkpoints exact generation-fenced peer-I/O payload, nested activity
+  timers, and latest-known tracker counts with bounded clean shutdown.
+  Combined admission, generated clients, React/Compose, platform builds, and
+  controlled interoperability remain open.
 - Finish qualification evidence for **Tactical `196`**. The implementation
   now supplies the default-compiled lazy desktop/headless endpoint,
   authenticated direct-only signaling, completed-file **Save file...**,

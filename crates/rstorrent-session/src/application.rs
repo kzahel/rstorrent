@@ -39,6 +39,7 @@ use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
+use crate::accounting::{AccountingActivity, TorrentAccountingOwner};
 use crate::auto_manager::{AdmissionAction, TorrentAdmissionState, TorrentAutoManager};
 use crate::control::{
     AddTorrentBytesRequest, AddTorrentDisposition, Command, CommandResult, ErrorCode, FilePriority,
@@ -543,10 +544,19 @@ pub struct ApplicationService {
     views: ViewHub,
     view_set_reaper: Option<ViewSetLeaseReaper>,
     admission_wake: Arc<Notify>,
+    accounting_wake: Arc<Notify>,
+    accounting: TorrentAccountingOwner,
     discovery_wake: Arc<Notify>,
     maintenance_cancellation: CancellationToken,
     maintenance_started: bool,
     maintenance_task: Option<JoinHandle<()>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MaintenanceAction {
+    Admission,
+    Discovery,
+    Accounting,
 }
 
 impl ApplicationService {
@@ -669,6 +679,8 @@ impl ApplicationService {
         };
         let speed_recorder = speed.recorder.clone();
         let admission_wake = Arc::new(Notify::new());
+        let accounting_wake = Arc::new(Notify::new());
+        let accounting = TorrentAccountingOwner::new(accounting_wake.clone());
         let discovery_wake = Arc::new(Notify::new());
         let storage_file_pool =
             StorageFilePool::new(config.storage_file_limit, config.platform_storage_client)
@@ -749,6 +761,10 @@ impl ApplicationService {
                         )
                     })?;
                 let (torrent_id, info_hashes) = store.load_identities(&torrent.torrent_id)?;
+                let durable_accounting = store.load_accounting(&torrent_id)?;
+                accounting
+                    .register(torrent_id, generation, durable_accounting)
+                    .map_err(|error| ApplicationError::Persistence(error.to_string()))?;
                 let runtime = TorrentRuntime::new(
                     runtime_identity(torrent_id, info_hashes)?,
                     generation,
@@ -757,6 +773,7 @@ impl ApplicationService {
                     session_network
                         .register_torrent_bandwidth(torrent.transfer_limits.into_engine())
                         .map_err(|error| ApplicationError::Configuration(error.to_string()))?,
+                    accounting.clone(),
                 )
                 .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
                 torrent_runtimes.insert(torrent.torrent_id.clone(), runtime);
@@ -792,6 +809,8 @@ impl ApplicationService {
             views,
             view_set_reaper: Some(view_set_reaper),
             admission_wake,
+            accounting_wake,
+            accounting,
             discovery_wake,
             maintenance_cancellation: CancellationToken::new(),
             maintenance_started: false,
@@ -1424,6 +1443,10 @@ impl ApplicationService {
                     )
                 })?;
             let (owner, info_hashes) = self.store_mut()?.load_identities(torrent_id)?;
+            let durable_accounting = self.store_mut()?.load_accounting(&owner)?;
+            self.accounting
+                .register(owner, generation, durable_accounting)
+                .map_err(|error| ApplicationError::Persistence(error.to_string()))?;
             let runtime = TorrentRuntime::new(
                 runtime_identity(owner, info_hashes)?,
                 generation,
@@ -1432,6 +1455,7 @@ impl ApplicationService {
                 self.session_network()
                     .register_torrent_bandwidth(TorrentTransferLimits::default().into_engine())
                     .map_err(|error| ApplicationError::Configuration(error.to_string()))?,
+                self.accounting.clone(),
             )
             .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
             self.torrent_runtimes.insert(torrent_id.to_owned(), runtime);
@@ -2302,8 +2326,55 @@ impl ApplicationService {
             .unwrap_or_default()
     }
 
+    fn accounting_activities(&self) -> Vec<AccountingActivity> {
+        self.torrent_runtimes
+            .values()
+            .map(|runtime| {
+                let full_seed = runtime.handle().has_seed_registration();
+                AccountingActivity {
+                    torrent_id: runtime.handle().identity().torrent_id(),
+                    generation: runtime.generation(),
+                    active: runtime.active_download().is_some() || full_seed,
+                    finished: full_seed,
+                    seeding: full_seed,
+                }
+            })
+            .collect()
+    }
+
+    fn maintain_accounting(&mut self, force: bool) -> Result<(), ApplicationError> {
+        self.accounting
+            .observe_activities(&self.accounting_activities())
+            .map_err(|error| ApplicationError::Persistence(error.to_string()))?;
+        self.flush_accounting(force)
+    }
+
+    fn flush_accounting(&mut self, force: bool) -> Result<(), ApplicationError> {
+        let updates = self
+            .accounting
+            .prepare_flush(force)
+            .map_err(|error| ApplicationError::Persistence(error.to_string()))?;
+        if updates.is_empty() {
+            return Ok(());
+        }
+        self.store_mut()?.replace_accounting_batch(&updates)?;
+        self.accounting
+            .acknowledge(&updates)
+            .map_err(|error| ApplicationError::Persistence(error.to_string()))?;
+        Ok(())
+    }
+
+    #[cfg(test)]
+    fn accounting_high_water(
+        &self,
+    ) -> Result<crate::accounting::AccountingHighWater, ApplicationError> {
+        self.accounting
+            .high_water()
+            .map_err(|error| ApplicationError::Persistence(error.to_string()))
+    }
+
     pub async fn ensure_maintenance_owner(service: &Arc<tokio::sync::Mutex<Self>>) {
-        let (admission_wake, discovery_wake, cancellation) = {
+        let (admission_wake, discovery_wake, accounting_wake, cancellation) = {
             let mut service = service.lock().await;
             if service.maintenance_started {
                 return;
@@ -2312,18 +2383,25 @@ impl ApplicationService {
             (
                 service.admission_wake.clone(),
                 service.discovery_wake.clone(),
+                service.accounting_wake.clone(),
                 service.maintenance_cancellation.clone(),
             )
         };
         let weak_service = Arc::downgrade(service);
         let task = tokio::spawn(async move {
+            let mut accounting_tick = tokio::time::interval(Duration::from_secs(1));
+            accounting_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            let mut admission_tick = tokio::time::interval(Duration::from_secs(30));
+            admission_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
-                let admission = tokio::select! {
+                let action = tokio::select! {
                     biased;
                     _ = cancellation.cancelled() => break,
-                    _ = admission_wake.notified() => true,
-                    _ = discovery_wake.notified() => false,
-                    _ = tokio::time::sleep(Duration::from_secs(30)) => true,
+                    _ = admission_wake.notified() => MaintenanceAction::Admission,
+                    _ = discovery_wake.notified() => MaintenanceAction::Discovery,
+                    _ = accounting_wake.notified() => MaintenanceAction::Accounting,
+                    _ = admission_tick.tick() => MaintenanceAction::Admission,
+                    _ = accounting_tick.tick() => MaintenanceAction::Accounting,
                 };
                 let Some(service) = weak_service.upgrade() else {
                     break;
@@ -2333,26 +2411,32 @@ impl ApplicationService {
                     _ = cancellation.cancelled() => break,
                     service = service.lock() => service,
                 };
-                if service.session_network.is_none() {
-                    continue;
-                }
-                let result = if admission {
-                    service.reconcile_admission().await
+                let result = service.maintain_accounting(false);
+                let result = if result.is_err() || service.session_network.is_none() {
+                    result
                 } else {
-                    service.reconcile_discovery_catalog().await
+                    match action {
+                        MaintenanceAction::Admission => service.reconcile_admission().await,
+                        MaintenanceAction::Discovery => service.reconcile_discovery_catalog().await,
+                        MaintenanceAction::Accounting => Ok(()),
+                    }
                 };
+                let result = result.and_then(|()| service.maintain_accounting(false));
                 if let Err(error) = result {
                     let detail = error.to_string();
-                    let (code, message) = if admission {
-                        (
+                    let (code, message) = match action {
+                        MaintenanceAction::Admission => (
                             "download_admission_reconcile_failed",
                             "Automatic download admission could not converge",
-                        )
-                    } else {
-                        (
+                        ),
+                        MaintenanceAction::Discovery => (
                             "discovery_advertisement_reconcile_failed",
                             "Active-route advertisement could not converge",
-                        )
+                        ),
+                        MaintenanceAction::Accounting => (
+                            "torrent_accounting_checkpoint_failed",
+                            "Durable torrent accounting could not checkpoint",
+                        ),
                     };
                     let _ = service.views.record_diagnostic(
                         DiagnosticSeverity::Error,
@@ -2372,7 +2456,7 @@ impl ApplicationService {
     pub async fn ensure_optional_maintenance_owner(
         service: &Arc<tokio::sync::Mutex<Option<Self>>>,
     ) {
-        let (admission_wake, discovery_wake, cancellation) = {
+        let (admission_wake, discovery_wake, accounting_wake, cancellation) = {
             let mut service = service.lock().await;
             let Some(service) = service.as_mut() else {
                 return;
@@ -2384,18 +2468,25 @@ impl ApplicationService {
             (
                 service.admission_wake.clone(),
                 service.discovery_wake.clone(),
+                service.accounting_wake.clone(),
                 service.maintenance_cancellation.clone(),
             )
         };
         let weak_service = Arc::downgrade(service);
         let task = tokio::spawn(async move {
+            let mut accounting_tick = tokio::time::interval(Duration::from_secs(1));
+            accounting_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            let mut admission_tick = tokio::time::interval(Duration::from_secs(30));
+            admission_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
-                let admission = tokio::select! {
+                let action = tokio::select! {
                     biased;
                     _ = cancellation.cancelled() => break,
-                    _ = admission_wake.notified() => true,
-                    _ = discovery_wake.notified() => false,
-                    _ = tokio::time::sleep(Duration::from_secs(30)) => true,
+                    _ = admission_wake.notified() => MaintenanceAction::Admission,
+                    _ = discovery_wake.notified() => MaintenanceAction::Discovery,
+                    _ = accounting_wake.notified() => MaintenanceAction::Accounting,
+                    _ = admission_tick.tick() => MaintenanceAction::Admission,
+                    _ = accounting_tick.tick() => MaintenanceAction::Accounting,
                 };
                 let Some(service) = weak_service.upgrade() else {
                     break;
@@ -2408,26 +2499,32 @@ impl ApplicationService {
                 let Some(service) = service.as_mut() else {
                     break;
                 };
-                if service.session_network.is_none() {
-                    continue;
-                }
-                let result = if admission {
-                    service.reconcile_admission().await
+                let result = service.maintain_accounting(false);
+                let result = if result.is_err() || service.session_network.is_none() {
+                    result
                 } else {
-                    service.reconcile_discovery_catalog().await
+                    match action {
+                        MaintenanceAction::Admission => service.reconcile_admission().await,
+                        MaintenanceAction::Discovery => service.reconcile_discovery_catalog().await,
+                        MaintenanceAction::Accounting => Ok(()),
+                    }
                 };
+                let result = result.and_then(|()| service.maintain_accounting(false));
                 if let Err(error) = result {
                     let detail = error.to_string();
-                    let (code, message) = if admission {
-                        (
+                    let (code, message) = match action {
+                        MaintenanceAction::Admission => (
                             "download_admission_reconcile_failed",
                             "Automatic download admission could not converge",
-                        )
-                    } else {
-                        (
+                        ),
+                        MaintenanceAction::Discovery => (
                             "discovery_advertisement_reconcile_failed",
                             "Active-route advertisement could not converge",
-                        )
+                        ),
+                        MaintenanceAction::Accounting => (
+                            "torrent_accounting_checkpoint_failed",
+                            "Durable torrent accounting could not checkpoint",
+                        ),
                     };
                     let _ = service.views.record_diagnostic(
                         DiagnosticSeverity::Error,
@@ -3018,7 +3115,7 @@ impl ApplicationService {
         self.prepare_torrent_runtime_removal(&torrent_id)?;
         self.store_mut()?
             .finalize_removal(&torrent_id, operation_id)?;
-        self.torrent_runtimes.remove(&torrent_id);
+        self.remove_torrent_runtime(&torrent_id, true)?;
         self.refresh_views()?;
         self.views.record_diagnostic(
             DiagnosticSeverity::Info,
@@ -3070,10 +3167,20 @@ impl ApplicationService {
         self.media.drain_reads().await;
         self.maintenance_cancellation.cancel();
         self.admission_wake.notify_waiters();
+        self.accounting_wake.notify_waiters();
         if let Some(task) = self.maintenance_task.take()
             && let Err(error) = task.await
         {
             active_join_error = Some(format!("download admission owner: {error}"));
+        }
+        let mut stopped_activities = self.accounting_activities();
+        for activity in &mut stopped_activities {
+            activity.active = false;
+            activity.finished = false;
+            activity.seeding = false;
+        }
+        if let Err(error) = self.accounting.observe_activities(&stopped_activities) {
+            shutdown_error = Some(ApplicationError::Persistence(error.to_string()));
         }
         if let Some(session_network) = self.session_network.as_mut() {
             session_network.begin_shutdown();
@@ -3124,6 +3231,9 @@ impl ApplicationService {
             {
                 active_join_error = Some(error);
             }
+        }
+        if let Err(error) = self.flush_accounting(true) {
+            shutdown_error = Some(error);
         }
         for runtime in self.torrent_runtimes.values_mut() {
             if let Err(error) = runtime.handle().forget_seed_registration()
@@ -3289,7 +3399,7 @@ impl ApplicationService {
         self.prepare_torrent_runtime_removal(&removal.torrent_id)?;
         self.store_mut()?
             .finalize_removal(&removal.torrent_id, &removal.operation_id)?;
-        self.torrent_runtimes.remove(&removal.torrent_id);
+        self.remove_torrent_runtime(&removal.torrent_id, true)?;
         self.refresh_views()?;
         self.views.record_diagnostic(
             DiagnosticSeverity::Info,
@@ -3321,6 +3431,22 @@ impl ApplicationService {
             .publish_inactive()
             .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
         runtime.deactivate_peer_events();
+        Ok(())
+    }
+
+    fn remove_torrent_runtime(
+        &mut self,
+        torrent_id: &str,
+        discard_accounting: bool,
+    ) -> Result<(), ApplicationError> {
+        let Some(runtime) = self.torrent_runtimes.remove(torrent_id) else {
+            return Ok(());
+        };
+        if discard_accounting {
+            self.accounting
+                .discard(runtime.handle().identity().torrent_id())
+                .map_err(|error| ApplicationError::Persistence(error.to_string()))?;
+        }
         Ok(())
     }
 
@@ -3816,11 +3942,12 @@ impl ApplicationService {
             self.network_prerequisite
                 .cancellation_token(self.effective_network_prerequisite),
         );
-        let runtime_generation = self
+        let runtime = self
             .torrent_runtimes
             .get(torrent_id)
             .ok_or_else(|| ApplicationError::Configuration("torrent runtime is absent".into()))?
-            .generation();
+            .handle();
+        let runtime_generation = runtime.generation();
         let storage_root = self.load_resume_conservative(torrent_id)?.storage_root;
         control.set_session_resources(self.session_download_resources.register(
             torrent_id,
@@ -3849,7 +3976,10 @@ impl ApplicationService {
         let activity = self.view_activity_sink(torrent_id, Some(eta_generation));
         control.set_activity_sink(activity.clone());
         control.set_mse_handshake_sink(activity);
-        control.set_byte_metric_sink(self.speed_recorder.clone());
+        control.set_byte_metric_sink(
+            runtime.accounting_metric_sink(Some(self.speed_recorder.clone())),
+        );
+        control.set_incoming_payload_metric_sink(runtime.accounting_metric_sink(None));
         Ok((control, eta_generation))
     }
 
@@ -4003,11 +4133,11 @@ impl ApplicationService {
             self.stop_discovery_torrent(&reconciliation.loser).await?;
             self.unregister_incoming(&reconciliation.loser).await?;
             let _joined = self.join_active_content(&reconciliation.loser).await;
-            self.torrent_runtimes.remove(&reconciliation.loser);
+            self.remove_torrent_runtime(&reconciliation.loser, true)?;
             self.stop_discovery_torrent(&reconciliation.winner).await?;
             self.unregister_incoming(&reconciliation.winner).await?;
             let _joined = self.join_active_content(&reconciliation.winner).await;
-            self.torrent_runtimes.remove(&reconciliation.winner);
+            self.remove_torrent_runtime(&reconciliation.winner, false)?;
             self.views.record_diagnostic(
                 DiagnosticSeverity::Info,
                 category::METADATA_EXCHANGE,
@@ -4290,8 +4420,16 @@ impl ApplicationService {
         torrent_id: &str,
         eta_generation: Option<u64>,
     ) -> Arc<ViewActivitySink> {
+        let runtime = self
+            .torrent_runtimes
+            .get(torrent_id)
+            .expect("torrent runtime exists before its activity sink")
+            .handle();
         Arc::new(ViewActivitySink {
             torrent_id: torrent_id.to_owned(),
+            durable_torrent_id: runtime.identity().torrent_id(),
+            torrent_generation: runtime.generation(),
+            accounting: runtime.accounting(),
             eta_generation,
             views: self.views.clone(),
             trace_checkpoint_stages: self.checkpoint_stage_trace_for_testing,
@@ -4800,7 +4938,7 @@ async fn reconcile_completed_advertisement(
             privacy,
             counters,
             peers: runtime.peers(),
-            activity_sink: tracker_activity_sink(torrent_id, views),
+            activity_sink: tracker_activity_sink(torrent_id, views, runtime),
         })
         .await
         .or_else(|error| match error {
@@ -4810,9 +4948,16 @@ async fn reconcile_completed_advertisement(
         .map_err(|error| error.to_string())
 }
 
-fn tracker_activity_sink(torrent_id: &str, views: &ViewHub) -> Arc<dyn DownloadActivitySink> {
+fn tracker_activity_sink(
+    torrent_id: &str,
+    views: &ViewHub,
+    runtime: &TorrentRuntimeHandle,
+) -> Arc<dyn DownloadActivitySink> {
     Arc::new(ViewActivitySink {
         torrent_id: torrent_id.to_owned(),
+        durable_torrent_id: runtime.identity().torrent_id(),
+        torrent_generation: runtime.generation(),
+        accounting: runtime.accounting(),
         eta_generation: None,
         views: views.clone(),
         trace_checkpoint_stages: false,
@@ -5451,6 +5596,9 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
 #[derive(Debug)]
 struct ViewActivitySink {
     torrent_id: String,
+    durable_torrent_id: TorrentId,
+    torrent_generation: u64,
+    accounting: TorrentAccountingOwner,
     eta_generation: Option<u64>,
     views: ViewHub,
     trace_checkpoint_stages: bool,
@@ -5545,6 +5693,22 @@ impl DownloadActivitySink for ViewActivitySink {
             return;
         }
         if let DownloadActivityEvent::TrackerState(snapshot) = &event {
+            let complete = snapshot
+                .records
+                .iter()
+                .filter_map(|record| record.seeders)
+                .max();
+            let incomplete = snapshot
+                .records
+                .iter()
+                .filter_map(|record| record.leechers)
+                .max();
+            let _ = self.accounting.observe_tracker_counts(
+                self.durable_torrent_id,
+                self.torrent_generation,
+                complete,
+                incomplete,
+            );
             let _ = self.views.record_tracker_state(&self.torrent_id, snapshot);
             return;
         }
@@ -9732,6 +9896,7 @@ mod tests {
             .expect("reopen pure-v2 row");
         assert_eq!(resumed.state, TorrentState::Complete);
         assert_eq!(resumed.metainfo_source, Some(source));
+        assert_eq!(resumed.accounting.total_downloaded, 1);
         assert!(!paths.part.exists());
         reopened
             .configure_media_origin("http://127.0.0.1:43121")
@@ -9789,6 +9954,19 @@ mod tests {
             }
         );
         drop(seed_peer);
+        reopened
+            .maintain_accounting(true)
+            .expect("checkpoint v2 lifetime upload");
+        assert_eq!(
+            reopened
+                .store_mut()
+                .unwrap()
+                .load_resume(&torrent_id)
+                .unwrap()
+                .accounting
+                .total_uploaded,
+            1
+        );
         reopened.shutdown().await.expect("shutdown reopened");
         drop(reopened);
         fs::remove_dir_all(root).expect("remove pure-v2 application root");
@@ -10552,6 +10730,17 @@ mod tests {
             .expect("completed pure-v2 incoming snapshot");
         assert_eq!(terminal.established, 0);
         assert_eq!(terminal.payload_bytes_sent, u64::from(piece_length));
+        service
+            .maintain_accounting(true)
+            .expect("checkpoint active pure-v2 accounting");
+        let accounting = service
+            .store_mut()
+            .unwrap()
+            .load_resume(&torrent_id)
+            .unwrap()
+            .accounting;
+        assert_eq!(accounting.total_downloaded, payload.len() as u64);
+        assert_eq!(accounting.total_uploaded, u64::from(piece_length));
         service
             .shutdown()
             .await
@@ -16116,6 +16305,34 @@ mod tests {
         assert!(!closed_swarm_peer.connectable);
         assert_eq!(closed_swarm_peer.payload_downloaded_bytes, "0");
         assert_eq!(closed_swarm_peer.payload_uploaded_bytes, "7");
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                first
+                    .maintain_accounting(true)
+                    .expect("force exact accounting checkpoint");
+                if first
+                    .store_mut()
+                    .unwrap()
+                    .load_resume(&torrent_id)
+                    .unwrap()
+                    .accounting
+                    .total_uploaded
+                    == 7
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("final incoming payload reaches durable accounting");
+        assert!(
+            first
+                .accounting_high_water()
+                .unwrap()
+                .uncommitted_payload_bytes
+                >= 7
+        );
 
         let zero_slots = ClientSettings {
             upload_slots: 0,

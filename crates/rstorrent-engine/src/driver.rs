@@ -7053,6 +7053,12 @@ impl<'a> ContentSwarmDownload<'a> {
                         .then(|| self.v2_hashes.clone())
                         .flatten(),
                 )
+                .map(|registration| {
+                    match self.control.incoming_payload_metric_sink() {
+                        Some(sink) => registration.with_byte_metric_sink(sink),
+                        None => registration,
+                    }
+                })
             })
             .collect::<Result<Vec<_>, _>>()
             .map_err(|error| DownloadError::PeerTask(error.to_string()))?;

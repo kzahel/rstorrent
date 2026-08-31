@@ -5,6 +5,7 @@
 #[cfg(feature = "uniffi")]
 uniffi::setup_scaffolding!();
 
+mod accounting;
 mod advertised_endpoint;
 mod application;
 mod application_connection;

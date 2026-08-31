@@ -173,6 +173,7 @@ pub struct SeedRegistration {
     torrent_peers: TorrentPeerHandle,
     private: bool,
     v2_hashes: Option<Arc<V2SeedHashService>>,
+    byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
 }
 
 #[derive(Debug)]
@@ -506,6 +507,7 @@ impl SeedRegistration {
             torrent_peers,
             private,
             v2_hashes,
+            byte_metric_sink: None,
         })
     }
 
@@ -613,7 +615,13 @@ impl SeedRegistration {
             torrent_peers,
             private,
             v2_hashes,
+            byte_metric_sink: None,
         })
+    }
+
+    pub fn with_byte_metric_sink(mut self, sink: Arc<dyn ByteMetricSink>) -> Self {
+        self.byte_metric_sink = Some(sink);
+        self
     }
 
     pub fn info_hash(&self) -> [u8; 20] {
@@ -845,6 +853,7 @@ impl UploadRateWindow {
 #[derive(Debug)]
 struct IncomingUploadMetricSink {
     upstream: Option<Arc<dyn ByteMetricSink>>,
+    torrent_accounting: Option<Arc<dyn ByteMetricSink>>,
     peer: Arc<UploadCounter>,
     torrent: Arc<UploadCounter>,
     session: Arc<UploadCounter>,
@@ -854,6 +863,9 @@ impl ByteMetricSink for IncomingUploadMetricSink {
     fn record(&self, metric: ByteMetric, bytes: u64) {
         if let Some(upstream) = &self.upstream {
             upstream.record(metric, bytes);
+        }
+        if let Some(torrent_accounting) = &self.torrent_accounting {
+            torrent_accounting.record(metric, bytes);
         }
         if metric == ByteMetric::PayloadUploaded {
             self.peer.record(bytes);
@@ -3217,6 +3229,7 @@ async fn run_incoming_peer(
     } = membership;
     let byte_metric_sink: Arc<dyn ByteMetricSink> = Arc::new(IncomingUploadMetricSink {
         upstream: shared.byte_metric_sink.clone(),
+        torrent_accounting: registration.byte_metric_sink.clone(),
         peer: peer_upload.clone(),
         torrent: torrent_upload,
         session: shared.session_upload.clone(),

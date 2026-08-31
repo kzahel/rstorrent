@@ -712,13 +712,15 @@ Decision-complete Tactical
 the leading unrelated policy candidate and is Active by explicit user
 direction. Its first task-free gate implements the exact pinned defaults,
 seed-goal predicate, rank, applicable-rate classification, and delayed
-inactive/active transitions with 14 passing focused tests. Accounting,
-combined admission, clients, and controlled interoperability are the next
-executable gates. Fresh schema 23 now completes the persistence
+inactive/active transitions with 14 passing focused tests. Fresh schema 23
+completes the persistence
 portion with typed seed settings, bounded monotonic scalar rows, hostile-state
-validation, and recognized schema-22 reset. The runtime accounting owner is
-next. Goal completion lowers automatic priority rather than stopping torrent
-intent. Embedded playback, Android streaming
+validation, and recognized schema-22 reset. The runtime accounting owner now
+consumes exact generation-fenced peer-I/O payload, monotonic nested timers, and
+tracker-count snapshots through one bounded checkpoint path with clean-shutdown
+flush. Combined admission, clients, and controlled interoperability are the
+next executable gates. Goal completion lowers automatic priority rather than
+stopping torrent intent. Embedded playback, Android streaming
 presentation, and stable sharing retain distinct ownership and security
 boundaries. The post-discovery Ubuntu stall remains one non-reproducible
 changing-swarm observation and is not authority for an unplanned change.

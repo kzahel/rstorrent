@@ -159,13 +159,9 @@ pub struct TorrentAccounting {
     pub tracker_incomplete: Option<u32>,
 }
 
-// The schema gate proves this write boundary before the runtime accumulator
-// consumes it in the immediately following Tactical 201 gate.
-#[allow(dead_code)]
 pub(crate) const MAX_ACCOUNTING_BATCH: usize = 500;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[allow(dead_code)]
 pub(crate) struct TorrentAccountingUpdate {
     pub(crate) torrent_id: TorrentId,
     pub(crate) accounting: TorrentAccounting,
@@ -214,7 +210,6 @@ fn decode_torrent_accounting(
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[allow(dead_code)]
 struct EncodedTorrentAccounting {
     total_uploaded: i64,
     total_downloaded: i64,
@@ -225,7 +220,6 @@ struct EncodedTorrentAccounting {
     tracker_incomplete: Option<i64>,
 }
 
-#[allow(dead_code)]
 fn encode_torrent_accounting(
     accounting: TorrentAccounting,
 ) -> Result<EncodedTorrentAccounting, StoreError> {
@@ -661,7 +655,35 @@ impl SessionStore {
         read_client_settings(&self.connection).map_err(StoreError::from)
     }
 
-    #[allow(dead_code)]
+    pub(crate) fn load_accounting(
+        &self,
+        torrent_id: &TorrentId,
+    ) -> Result<TorrentAccounting, StoreError> {
+        let row = self
+            .connection
+            .query_row(
+                "SELECT total_uploaded, total_downloaded, active_seconds,
+                        finished_seconds, seeding_seconds, tracker_complete,
+                        tracker_incomplete
+                 FROM torrents WHERE torrent_id = ?1",
+                [torrent_id.as_bytes()],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, i64>(4)?,
+                        row.get::<_, Option<i64>>(5)?,
+                        row.get::<_, Option<i64>>(6)?,
+                    ))
+                },
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_string()))?;
+        decode_torrent_accounting(row.0, row.1, row.2, row.3, row.4, row.5, row.6)
+    }
+
     pub(crate) fn replace_accounting_batch(
         &mut self,
         updates: &[TorrentAccountingUpdate],

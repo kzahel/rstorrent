@@ -12,6 +12,7 @@ use rstorrent_engine::{
 };
 use tokio::task::JoinHandle;
 
+use crate::accounting::TorrentAccountingOwner;
 use crate::advertised_endpoint::AdvertisedPeerEndpointSelector;
 use crate::incoming_seeding::{
     IncomingSeeding, IncomingSeedingError, SeedReconcileInput, SeedReconcileOutcome,
@@ -53,11 +54,12 @@ impl TorrentPeerActivitySink for TorrentPeerViewSink {
                 });
                 let uploaded = peer.upload.map_or(0, |upload| upload.payload_bytes);
                 let previous = traffic.entry(connection_id).or_default();
-                self.tracker_counters
-                    .add_downloaded(downloaded.saturating_sub(previous.0));
-                self.tracker_counters
-                    .add_uploaded(uploaded.saturating_sub(previous.1));
-                *previous = (downloaded, uploaded);
+                let peer_downloaded_delta = downloaded.saturating_sub(previous.0);
+                let peer_uploaded_delta = uploaded.saturating_sub(previous.1);
+                self.tracker_counters.add_downloaded(peer_downloaded_delta);
+                self.tracker_counters.add_uploaded(peer_uploaded_delta);
+                previous.0 = previous.0.max(downloaded);
+                previous.1 = previous.1.max(uploaded);
             }
             traffic.retain(|connection_id, _| active.contains(connection_id));
             drop(traffic);
@@ -101,6 +103,7 @@ pub(crate) struct TorrentRuntimeHandle {
     peers: TorrentPeerHandle,
     seed_registration: Arc<Mutex<SeedRegistrationState>>,
     tracker_counters: TrackerCounters,
+    accounting: TorrentAccountingOwner,
 }
 
 impl TorrentRuntimeHandle {
@@ -134,6 +137,7 @@ impl TorrentRuntimeHandle {
                 active_download,
                 current: current.clone(),
                 torrent_peers: self.peers.clone(),
+                byte_metric_sink: self.accounting_metric_sink(None),
                 storage_file_pool,
             })
             .await;
@@ -172,6 +176,18 @@ impl TorrentRuntimeHandle {
 
     pub(crate) fn tracker_counters(&self) -> TrackerCounters {
         self.tracker_counters.clone()
+    }
+
+    pub(crate) fn accounting(&self) -> TorrentAccountingOwner {
+        self.accounting.clone()
+    }
+
+    pub(crate) fn accounting_metric_sink(
+        &self,
+        upstream: Option<Arc<dyn rstorrent_engine::ByteMetricSink>>,
+    ) -> Arc<dyn rstorrent_engine::ByteMetricSink> {
+        self.accounting
+            .metric_sink(self.identity.torrent_id(), self.generation, upstream)
     }
 
     pub(crate) fn forget_seed_registration(&self) -> Result<(), TorrentRuntimeError> {
@@ -309,6 +325,7 @@ impl TorrentRuntime {
         views: ViewHub,
         advertised_endpoint: AdvertisedPeerEndpointSelector,
         bandwidth: TorrentBandwidth,
+        accounting: TorrentAccountingOwner,
     ) -> Result<Self, TorrentPeerError> {
         let accepting_peer_events = Arc::new(AtomicBool::new(true));
         let torrent_id = identity.torrent_id().to_string();
@@ -329,6 +346,7 @@ impl TorrentRuntime {
             peers: peers.clone(),
             seed_registration: Arc::new(Mutex::new(SeedRegistrationState::default())),
             tracker_counters,
+            accounting,
         };
         Ok(Self {
             generation,

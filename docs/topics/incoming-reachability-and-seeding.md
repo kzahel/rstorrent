@@ -42,7 +42,10 @@ are now decision-complete and Ready in Tactical
 pinned libtorrent global thresholds, durable totals/timers, active-seed rank,
 inactivity, and defaults. Reaching any one threshold lowers automatic seed
 priority; it does not unregister a seed when capacity remains or rewrite
-durable run intent.
+durable run intent. Its landed accounting gate attaches the durable generation
+sink at the exact initiated and accepted peer-I/O boundary, including active
+pre-completion upload routes, and coalesces those physical payload bytes with
+monotonic activity timers under one session owner.
 
 Completed very-high-priority Tactical
 [`124`](../tactical/124-duplex-verified-piece-upload.md) replaces the

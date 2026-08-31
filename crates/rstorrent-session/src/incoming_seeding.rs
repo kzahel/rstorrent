@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use rstorrent_engine::{
-    ContentShape, FastResumeValidation, IncomingPeerError, IncomingPeerHandle,
+    ByteMetricSink, ContentShape, FastResumeValidation, IncomingPeerError, IncomingPeerHandle,
     PlatformStorageFailureKind, PlatformStorageSpec, ResumeAdmissionOutcome,
     ResumeValidationIntent, ResumeValidationRejectReason, SeedContent, SeedContentError,
     SeedRegistration, SeedRegistrationToken, SelectiveStorageError, StorageFilePool,
@@ -53,6 +53,7 @@ pub(crate) struct SeedReconcileInput<'a> {
     pub(crate) active_download: bool,
     pub(crate) current: Vec<SeedRegistrationToken>,
     pub(crate) torrent_peers: TorrentPeerHandle,
+    pub(crate) byte_metric_sink: Arc<dyn ByteMetricSink>,
     pub(crate) storage_file_pool: &'a StorageFilePool,
 }
 
@@ -81,6 +82,7 @@ impl IncomingSeeding {
             active_download,
             current,
             torrent_peers,
+            byte_metric_sink,
             storage_file_pool,
         } = input;
         if !self.enabled.load(Ordering::Acquire) {
@@ -261,6 +263,7 @@ impl IncomingSeeding {
                     seed_content.clone(),
                     torrent_peers.clone(),
                 )
+                .map(|registration| registration.with_byte_metric_sink(byte_metric_sink.clone()))
             })
             .collect::<Result<Vec<_>, _>>();
         let registrations = match registrations {

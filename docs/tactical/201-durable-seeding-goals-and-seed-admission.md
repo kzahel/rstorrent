@@ -3,9 +3,9 @@
 Status: **Active.** User direction on 2026-08-31 selected the exact pinned
 libtorrent implementation semantics for the seed queue, durable counters,
 timers, and goal ranking. End-to-end implementation was authorized on the same
-date. The task-free policy and fresh schema-23 gates are implemented; runtime
-accounting/admission, generated clients, presentation, and end-to-end evidence
-remain open.
+date. The task-free policy, fresh schema-23, and runtime-accounting gates are
+implemented; combined admission, generated clients, presentation, and
+end-to-end evidence remain open.
 
 Topics: `incoming-reachability-and-seeding`, `client-persistence`,
 `application-control`, `client-surfaces`, `android-jstorrent-replacement`,
@@ -52,6 +52,21 @@ admission gates consume them. `cargo test -p rstorrent-session` passes 311
 tests with two opt-in cases ignored; the settings-bearing test subscription
 budget was raised from 4 KiB to 8 KiB without changing the production 256 KiB
 default or queue-count limits.
+
+The accounting gate now installs one task-free session accumulator beneath the
+existing joined application-maintenance owner. Exact peer-I/O metric sinks
+observe successfully received or written payload for initiated downloads and
+active or completed incoming uploads; protocol bytes and failed writes remain
+excluded. Generation fencing covers late observations and download-to-seed
+handover. One monotonic tick accrues the nested active/finished/full-seeding
+timers, retains latest-known tracker counts, saturates every durable scalar at
+SQLite's signed maximum with an observable event count, wakes at 1 MiB, flushes
+timer-only dirtiness after five seconds, writes at most 500 rows, and forces a
+synchronized checkpoint after joined network shutdown. Removed owners discard
+their accumulator only after durable row finalization. Focused pure-v2 evidence
+proves exact pre-completion download and upload accounting across the active to
+complete handover; completed-seed evidence proves a seven-byte checkpoint and
+restart upload continuity.
 
 ## Decision And Desired Outcome
 

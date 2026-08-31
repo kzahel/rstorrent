@@ -8,9 +8,11 @@ the disposable catalog to fresh schema 23. It adds bounded monotonic lifetime
 peer-payload totals, active/finished/seeding timers, explicit-unknown tracker
 counts, and the four typed global seed settings. Recognized schemas `1..=22`
 reset only application-private database files and preserve external final
-files and unrelated root content. The runtime accounting owner is the next
-open gate; schema 23 stores no derived rank, goal, admission, rate, or task
-state. Earlier schema history below remains historical.
+files and unrelated root content. One session accumulator now checkpoints
+generation-fenced exact peer payload and nested monotonic activity timers in
+bounded 500-row transactions, including a synchronized clean-shutdown flush;
+schema 23 stores no derived rank, goal, admission, rate, or task state. Earlier
+schema history below remains historical.
 
 Completed Tactical
 [`188`](../tactical/188-existing-payload-adoption-and-recheck.md) changes no
