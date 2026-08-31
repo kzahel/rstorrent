@@ -1,5 +1,6 @@
 package org.rstorrent.bootstrap
 
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -14,7 +15,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.runtime.getValue
@@ -91,13 +92,17 @@ class ProductNavigationTest {
             )
         }
 
-        compose.onNodeWithContentDescription("Add torrent").performClick()
+        compose
+            .onNodeWithContentDescription("Add torrent")
+            .performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("Browse .torrent file").assertIsDisplayed()
-        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithText("Cancel").performSemanticsAction(SemanticsActions.OnClick)
 
-        compose.onNodeWithContentDescription("More options").performClick()
-        compose.onNodeWithText("Settings").performClick()
-        compose.onNodeWithText("Storage").performClick()
+        compose
+            .onNodeWithContentDescription("More options")
+            .performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Settings").performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Storage").performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("Download folder").assertIsDisplayed()
     }
 
@@ -125,19 +130,29 @@ class ProductNavigationTest {
             )
         }
 
-        compose.onNodeWithText("Fixture torrent").performClick()
-        compose.onNodeWithText("Info hash (v1)").assertIsDisplayed()
-        compose.onNodeWithText("Info hash (v2)").assertIsDisplayed()
+        compose.onNodeWithText("Fixture torrent").performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Info hash (v1)").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Info hash (v2)").performScrollTo().assertIsDisplayed()
         listOf("Details", "Status", "Files", "Trackers", "Peers", "Pieces").forEach {
-            compose.onNodeWithText(it).performScrollTo().assertIsDisplayed().performClick()
+            compose
+                .onNodeWithText(it)
+                .performScrollTo()
+                .assertIsDisplayed()
+                .performSemanticsAction(SemanticsActions.OnClick)
         }
-        compose.onNodeWithContentDescription("Back").performClick()
+        compose
+            .onNodeWithContentDescription("Back")
+            .performSemanticsAction(SemanticsActions.OnClick)
 
         listOf("Speed", "DHT Info", "Logs").forEach { route ->
-            compose.onNodeWithContentDescription("More options").performClick()
-            compose.onNodeWithText(route).performClick()
+            compose
+                .onNodeWithContentDescription("More options")
+                .performSemanticsAction(SemanticsActions.OnClick)
+            compose.onNodeWithText(route).performSemanticsAction(SemanticsActions.OnClick)
             compose.onNodeWithText(route).assertIsDisplayed()
-            compose.onNodeWithContentDescription("Back").performClick()
+            compose
+                .onNodeWithContentDescription("Back")
+                .performSemanticsAction(SemanticsActions.OnClick)
         }
     }
 
@@ -159,7 +174,10 @@ class ProductNavigationTest {
             }
         }
 
-        compose.onNodeWithTag("play-media-file").assertIsEnabled().performClick()
+        compose
+            .onNodeWithTag("play-media-file")
+            .assertIsEnabled()
+            .performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithTag("open-media-file").assertIsNotEnabled()
         assertEquals(listOf(file), played)
     }
@@ -183,7 +201,10 @@ class ProductNavigationTest {
         }
 
         compose.onNodeWithTag("play-media-file").assertIsNotEnabled()
-        compose.onNodeWithTag("open-media-file").assertIsEnabled().performClick()
+        compose
+            .onNodeWithTag("open-media-file")
+            .assertIsEnabled()
+            .performSemanticsAction(SemanticsActions.OnClick)
         assertEquals(listOf(file), opened)
     }
 
@@ -223,10 +244,15 @@ class ProductNavigationTest {
             )
         }
 
-        compose.onNodeWithText("Fixture torrent").performClick()
+        compose.onNodeWithText("Fixture torrent").performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithTag("torrent-details").performScrollToIndex(13)
-        compose.onNodeWithText("Torrent download limit").performClick()
-        compose.onNode(isToggleable()).performClick().assertIsOn()
+        compose
+            .onNodeWithText("Torrent download limit")
+            .performSemanticsAction(SemanticsActions.OnClick)
+        compose
+            .onNode(isToggleable())
+            .performSemanticsAction(SemanticsActions.OnClick)
+            .assertIsOn()
         repeat(24) { index ->
             compose.runOnIdle {
                 val fresh =
@@ -242,7 +268,7 @@ class ProductNavigationTest {
             }
         }
         compose.onNode(isToggleable()).assertIsOn()
-        compose.onNodeWithText("Apply").performClick()
+        compose.onNodeWithText("Apply").performSemanticsAction(SemanticsActions.OnClick)
 
         assertEquals(1, patches.size)
         assertNull(patches.single().uploadRateLimit)
@@ -274,12 +300,21 @@ class ProductNavigationTest {
             )
         }
 
-        compose.onNodeWithContentDescription("More options").performClick()
-        compose.onNodeWithText("Settings").performClick()
-        compose.onNodeWithText("Speed & Connection Limits").performClick()
-        compose.onNodeWithText("All torrents download limit").performClick()
-        compose.onNode(isToggleable()).performClick().assertIsOn()
-        compose.onNodeWithText("Apply").performClick()
+        compose
+            .onNodeWithContentDescription("More options")
+            .performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Settings").performSemanticsAction(SemanticsActions.OnClick)
+        compose
+            .onNodeWithText("Speed & Connection Limits")
+            .performSemanticsAction(SemanticsActions.OnClick)
+        compose
+            .onNodeWithText("All torrents download limit")
+            .performSemanticsAction(SemanticsActions.OnClick)
+        compose
+            .onNode(isToggleable())
+            .performSemanticsAction(SemanticsActions.OnClick)
+            .assertIsOn()
+        compose.onNodeWithText("Apply").performSemanticsAction(SemanticsActions.OnClick)
 
         assertEquals(1, patches.size)
         assertEquals(TransferRateLimit.Unlimited, patches.single().downloadRateLimit)
@@ -312,15 +347,25 @@ class ProductNavigationTest {
             )
         }
 
-        compose.onNodeWithContentDescription("More options").performClick()
-        compose.onNodeWithText("Settings").performClick()
-        compose.onNodeWithText("Speed & Connection Limits").performClick()
-        compose.onNodeWithText("Active seeds").performScrollTo().performClick()
+        compose
+            .onNodeWithContentDescription("More options")
+            .performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Settings").performSemanticsAction(SemanticsActions.OnClick)
+        compose
+            .onNodeWithText("Speed & Connection Limits")
+            .performSemanticsAction(SemanticsActions.OnClick)
+        compose
+            .onNodeWithText("Active seeds")
+            .performScrollTo()
+            .performSemanticsAction(SemanticsActions.OnClick)
         compose
             .onNodeWithText("The fixed shared 500-torrent ceiling remains")
             .assertIsDisplayed()
-        compose.onNode(isToggleable()).performClick().assertIsOn()
-        compose.onNodeWithText("Apply").performClick()
+        compose
+            .onNode(isToggleable())
+            .performSemanticsAction(SemanticsActions.OnClick)
+            .assertIsOn()
+        compose.onNodeWithText("Apply").performSemanticsAction(SemanticsActions.OnClick)
         compose
             .onNodeWithText("Share-ratio priority goal (%)")
             .performScrollTo()
@@ -371,8 +416,10 @@ class ProductNavigationTest {
         }
 
         compose.onNodeWithText("Magnet link from another app").assertIsDisplayed()
-        compose.onNodeWithText("Start downloading immediately").performClick()
-        compose.onNodeWithText("Add").performClick()
+        compose
+            .onNodeWithText("Start downloading immediately")
+            .performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Add").performSemanticsAction(SemanticsActions.OnClick)
         compose.onAllNodesWithText("secret.invalid", substring = true).assertCountEquals(0)
         assertEquals(listOf(41L to false), startChoices)
         assertEquals(listOf(41L), confirmations)
@@ -415,8 +462,8 @@ class ProductNavigationTest {
         compose.onNodeWithText("Add").assertIsNotEnabled()
         compose.onNode(
             hasText("Select folder") and hasAnyAncestor(isDialog()),
-        ).performClick()
-        compose.onNodeWithText("Cancel").performClick()
+        ).performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Cancel").performSemanticsAction(SemanticsActions.OnClick)
         assertEquals(1, selections.size)
         assertEquals(listOf(42L), cancellations)
     }
@@ -455,7 +502,7 @@ class ProductNavigationTest {
 
         compose.onNodeWithText("The source could not be read. You can retry once.")
             .assertIsDisplayed()
-        compose.onNodeWithText("Retry").performClick()
+        compose.onNodeWithText("Retry").performSemanticsAction(SemanticsActions.OnClick)
         assertEquals(listOf(43L), retries)
     }
 
@@ -489,13 +536,19 @@ class ProductNavigationTest {
             )
         }
 
-        compose.onNodeWithContentDescription("More options").performClick()
-        compose.onNodeWithText("Settings").performClick()
-        compose.onNodeWithText("Notifications").performClick()
+        compose
+            .onNodeWithContentDescription("More options")
+            .performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Settings").performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Notifications").performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("Notifications enabled").assertIsDisplayed()
         compose.onNodeWithText("Blocked in Android system settings.").assertIsDisplayed()
-        compose.onNodeWithText("Download completed").performClick()
-        compose.onNodeWithText("Needs attention").performClick()
+        compose
+            .onNodeWithText("Download completed")
+            .performSemanticsAction(SemanticsActions.OnClick)
+        compose
+            .onNodeWithText("Needs attention")
+            .performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("Manage system notification settings").assertIsDisplayed()
         assertEquals(
             listOf(
@@ -532,9 +585,11 @@ class ProductNavigationTest {
             )
         }
 
-        compose.onNodeWithContentDescription("More options").performClick()
-        compose.onNodeWithText("Settings").performClick()
-        compose.onNodeWithText("Notifications").performClick()
+        compose
+            .onNodeWithContentDescription("More options")
+            .performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Settings").performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Notifications").performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("Background activity blocked").assertIsDisplayed()
         compose.onNodeWithText(
             "RSTorrent works while Android is visible. Leaving Android stops background work.",
@@ -571,14 +626,23 @@ class ProductNavigationTest {
             )
         }
 
-        compose.onNodeWithContentDescription("More options").performClick()
-        compose.onNodeWithText("Settings").performClick()
-        compose.onNodeWithText("Power Management").performScrollTo().performClick()
+        compose
+            .onNodeWithContentDescription("More options")
+            .performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Settings").performSemanticsAction(SemanticsActions.OnClick)
+        compose
+            .onNodeWithText("Power Management")
+            .performScrollTo()
+            .performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("Android background limits").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithContentDescription("Continue downloads in background").performClick()
-        compose.onNodeWithContentDescription("Keep seeding in background").performClick()
+        compose
+            .onNodeWithContentDescription("Continue downloads in background")
+            .performSemanticsAction(SemanticsActions.OnClick)
+        compose
+            .onNodeWithContentDescription("Keep seeding in background")
+            .performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("Keep seeding in background?").assertIsDisplayed()
-        compose.onNodeWithText("Keep seeding").performClick()
+        compose.onNodeWithText("Keep seeding").performSemanticsAction(SemanticsActions.OnClick)
 
         assertEquals(listOf(false), backgroundChanges)
         assertEquals(listOf(true), seedingChanges)
