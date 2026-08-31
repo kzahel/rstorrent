@@ -3720,7 +3720,14 @@ impl ApplicationService {
                 TorrentAdmissionKind::Seed { rank }
             } else {
                 TorrentAdmissionKind::Download {
-                    queue_position: resume.download_queue_position,
+                    // A magnet without verified metadata still needs one bounded
+                    // download admission slot even when its durable content intent
+                    // is paused or awaiting add-time file selection. Once metadata
+                    // lands, the missing queue position makes it ineligible again
+                    // until an explicit content-start transition appends it.
+                    queue_position: resume
+                        .download_queue_position
+                        .or_else(|| resume.raw_info.is_none().then_some(i64::MAX)),
                 }
             };
             states.push(TorrentAdmissionState {
@@ -11383,9 +11390,12 @@ mod tests {
         fs::remove_dir_all(root).expect("remove active pure-v2 application root");
     }
 
-    #[tokio::test]
-    async fn metadata_only_add_verifies_metadata_without_content_artifacts() {
-        let root = test_root("metadata-only-add");
+    async fn assert_metadata_only_add(await_file_selection: bool) {
+        let root = test_root(if await_file_selection {
+            "pending-selection-metadata-add"
+        } else {
+            "metadata-only-add"
+        });
         let raw_info = multi_file_info();
         let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
         let torrent_id = super::encode_info_hash(info_hash);
@@ -11465,13 +11475,13 @@ mod tests {
         service
             .dispatch(RequestEnvelope {
                 version: CONTROL_VERSION,
-                request_id: "metadata-only-add".to_owned(),
+                request_id: format!("metadata-only-add-{await_file_selection}"),
                 expected_revision: None,
                 command: Command::AddMagnet {
                     magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe={address}"),
                     storage_root: "downloads".to_owned(),
-                    start_content: false,
-                    await_file_selection: false,
+                    start_content: await_file_selection,
+                    await_file_selection,
                     skip_files: Vec::new(),
                 },
             })
@@ -11504,6 +11514,10 @@ mod tests {
         .expect("metadata-only add timed out");
         assert_eq!(snapshot.torrents[0].state, TorrentState::Paused);
         assert_eq!(snapshot.torrents[0].storage_state, StorageState::Available);
+        assert_eq!(
+            snapshot.torrents[0].awaiting_file_selection,
+            await_file_selection
+        );
         let owner = snapshot.torrents[0]
             .torrent_id
             .parse::<TorrentId>()
@@ -11519,6 +11533,16 @@ mod tests {
         service.shutdown().await.expect("shutdown");
         drop(service);
         fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn metadata_only_add_verifies_metadata_without_content_artifacts() {
+        assert_metadata_only_add(false).await;
+    }
+
+    #[tokio::test]
+    async fn pending_selection_add_verifies_metadata_without_content_artifacts() {
+        assert_metadata_only_add(true).await;
     }
 
     #[tokio::test]
