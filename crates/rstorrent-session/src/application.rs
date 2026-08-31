@@ -9853,7 +9853,24 @@ mod tests {
         };
         assert_eq!(snapshot.torrents[0].verified_piece_count, 1);
         assert!(!active_control.incoming_content_routable());
-        assert!(service.active_download().is_none());
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                service
+                    .reap_finished()
+                    .await
+                    .expect("reap completed tracker transfer");
+                if service.active_download().is_none() {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("completed tracker transfer did not join");
+        service
+            .reconcile_admission()
+            .await
+            .expect("admit completed tracker seed");
         wait_for_active_route(&service, 1).await;
         let (mut completed_peer, mut completed_decoder, mut completed_pending) =
             connect_application_seed_with_expected_availability(
