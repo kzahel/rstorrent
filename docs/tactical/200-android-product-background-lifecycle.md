@@ -4,13 +4,16 @@ Status: **Complete as of 2026-08-31.**
 Maintainer direction selected JSTorrent-like standalone lifetime semantics
 for the Android replacement and explicitly authorized end-to-end repository
 implementation. VPN, proxy, low-battery thresholds, and configurable
-companion-idle policy remain deferred. After a fresh Machine Control doctor
-found the approved Chromebook unreachable and its profile locked, maintainer
-direction accepted the completed API 28/API 35 AVD campaigns together with
-Tactical `194`'s existing physical ChromeOS transport/security evidence and
-this tactical's deterministic companion-lifetime evidence as the bounded
-fallback. `JAR-009` is closed. No new physical target was used, and this
-closure does not claim that an AVD reproduces ChromeOS or OEM power behavior.
+companion-idle policy remain deferred. The initial close used a maintainer-
+accepted composition of the completed API 28/API 35 AVD campaigns, Tactical
+`194`'s physical ChromeOS transport/security evidence, and this tactical's
+deterministic companion-lifetime evidence after the approved Chromebook was
+unreachable and locked. A later explicitly authorized physical ChromeOS 150 /
+Android API 33 campaign strengthened that close with the real Home, recovery,
+completion, seeding, notification-eligibility, companion grace/reconnect,
+explicit-Stop, relaunch, listener-refusal, and cleanup matrix. `JAR-009` is
+closed without claiming indefinite Android background duration or OEM-wide
+behavior.
 
 Topics: `android-jstorrent-replacement`, `beta-release-readiness`,
 `application-control`, `client-surfaces`, `capability-readiness`
@@ -28,9 +31,10 @@ unmetered-network Tactical
 [`199`](199-android-live-unmetered-network-enforcement.md). Their native
 notification eligibility/timeout and fail-closed initial/live network seams
 are implemented with deterministic, generated-boundary, dual-ABI, and owned-
-AVD evidence. Their remaining physical qualification gates do not block this
-tactical's repository or owned-AVD implementation, but keep integrated
-physical closure authorization-gated.
+AVD evidence. Tactical `198`'s exact physical completion/repair notification-
+tap gate and Tactical `199`'s physical-phone network-handoff gate remain
+independent open work; neither blocks this tactical's completed lifetime
+contract.
 
 ## Decision And Desired Outcome
 
@@ -849,6 +853,12 @@ deterministic authenticated-count/reconnect-grace transitions and installed
 API 28/API 35 Android lifecycle campaigns. It does not relabel emulator
 evidence as physical evidence or add a fresh ChromeOS/OEM duration claim.
 
+After that close, maintainer direction explicitly retried the now-available
+Chromebook and authorized the physical strengthening campaign recorded below.
+The accepted fallback remains the historical basis on which the tactical was
+first closed; the later campaign adds direct device evidence rather than
+rewriting that history.
+
 ### Build and repository baseline
 
 Run from the repository root after sourcing the configured profile:
@@ -951,9 +961,20 @@ The repository slice landed as these reviewable commits:
 - `19a8b6e` added the installed controlled-transfer campaign, connected
   visibility/terminal test, and terminal foreground-ordering repair;
 - `7112331` added the persistent Android-15 exhausted-quota fence and the real
-  shortened-timeout/restart-refusal campaign; and
+  shortened-timeout/restart-refusal campaign;
 - `ed8282a` added exact API-35 recent-task removal while admitted background
-  work remains owned.
+  work remains owned;
+- `3a69230` enabled the bounded physical ChromeOS strengthening campaign;
+- `1f8cabd` selected Machine Control's ready ARCVM ADB route;
+- `1e72aa2` made repeated foreground starts acknowledge the current start ID
+  without an Android ANR;
+- `62b757b` preserved quoted ADB shell arguments through the ChromeOS route;
+- `c2b14e7` bridged the Chromebook-host upload forward to the controlling
+  machine for the controlled seeding proof;
+- `4414e7a` made an already-created Activity start a new service generation
+  before binding after a joined shutdown; and
+- `d1fdc17` made the source companion UI discard stale inspection state and
+  expose an explicit retry after socket disconnect.
 
 `ProductLifetimePolicy` is the closed deterministic reducer.
 `ProductLifecycleCoordinator` is the only deadline/revision serializer.
@@ -1047,16 +1068,74 @@ Tactical `200`'s installed API 28/API 35 lifecycle, transfer, recovery,
 seeding, timeout, and cleanup evidence. This is compositional qualification,
 not a claim that the locked Chromebook reran the Tactical `200` matrix.
 
+### Later Physical ChromeOS Strengthening
+
+The same day, after physical VT2 SSH recovery and profile unlock, the common
+Machine Control doctor reported the testbed ready. The authorized target was
+the physical x86_64 ChromeOS 150 ARCVM fingerprint
+`google/nami/nami_cheets:13/R150-16700.62.0/16031715:user/release-keys`, Android
+API 33. The installed final debug APK was 111,125,527 bytes with SHA-256
+`4ea0245a4a00982502b839bfffeb97022a78b8489640ac32585d62173480f3c6`.
+It retained package `org.rstorrent.bootstrap`, target SDK 35, and both packaged
+x86_64 and arm64-v8a native libraries. API-35 quota callbacks are inapplicable
+to the API-33 ARCVM and remain covered by the installed API-35 AVD campaign.
+
+The physical product harness passed default-off Home shutdown and exact
+foreground reopen, explicitly admitted background ownership, sticky process
+recovery, completion shutdown, one 133,304-byte controlled background upload,
+continued-seeding disable shutdown, exact payload hashes, and terminal
+cleanup. SAF ownership peaked at 6/40 handles and 1/16 pending requests;
+descriptor baseline/high/final was 130/130/142 before uninstall. The focused
+two-generation instrumentation regression
+`ProductBackgroundLifecycleTest#visibleStartCreatesANewGenerationAfterJoinedShutdown`
+passed on ARCVM in 0.342 seconds.
+
+The retained JSTorrent Beta extension stayed at version 0.4.0 and exact ID
+`gcgoepclopkgijmclmlheafaglmbjlcc`; it was not redeployed, reloaded, granted a
+new host permission, or published. A fresh extension launch reused the saved
+pairing without another Android approval and showed Android/profile-default/
+protocol-1 identity. With background downloads off, one isolated authenticated
+WebSocket from that retained extension origin and credential produced
+`retain_chromeos_companion`; closing it produced the fixed 60-second
+`retain_chromeos_reconnect_grace`, reconnecting after two seconds canceled the
+deadline, and a later idle disconnect expired into joined shutdown. This
+narrow socket hold avoided duplicate retained companion tabs and the installed
+pre-fix page's stale disconnected presentation while exercising the real
+extension identity, persisted pairing, ARC endpoint, authentication, and
+service count owner. The source-only `d1fdc17` fix passed web/extension gates
+but was deliberately not deployed to the retained physical extension.
+
+The denied-notification branch allowed only visible use and then selected
+`stop_notification_ineligible`; the foreground service, process, notification,
+and ARC listener terminated. The permission was then revoked and granted
+through the real Compose explanation plus Android **Allow** dialog. With an
+authenticated client in the background, ChromeOS displayed the ongoing
+**RSTorrent — ChromeOS client connected** notification. Its real **Stop**
+action selected `stop_explicit_stop`, completed the joined application-client
+shutdown, removed the service and notification, and left the ARC endpoint
+refusing connections. A subsequent extension launch created a new service
+generation, reused the pairing without approval, and restored the same
+identity, proving relaunch after service stop.
+
+Campaign cleanup removed the extension credential created for the test and
+its companion tab, uninstalled the app and test packages with their data,
+removed notifications, tasks, services, listeners, device-side XML, controlled
+payload, and local captures, and restored default ChromeOS idle/lid suspend
+policy. The retained extension installation and unrelated ChromeOS state were
+left unchanged. No phone, public swarm, extension/store identity, permission,
+or publication state was touched.
+
 ## Restart Checkpoint And Next Action
 
-This tactical and `JAR-009` are complete through the explicitly accepted
-compositional evidence above. Do not reopen policy, defaults, the work
-classifier, persistence shape, foreground owner, quota fence, or the
-generated application boundary absent new contrary evidence. A future
-available-device rerun may strengthen OEM/ChromeOS confidence, but it is not
-a remaining stopping condition and must not be represented as evidence this
-campaign collected.
+This tactical and `JAR-009` are complete through the original compositional
+close plus the later physical ChromeOS strengthening campaign above. Do not
+reopen policy, defaults, the work classifier, persistence shape, foreground
+owner, quota fence, or the generated application boundary absent new contrary
+evidence. This remains a bounded ChromeOS/API-33 observation, not an
+indefinite-duration or general OEM guarantee.
 
-Next prioritize production handoff/reset-support work or the separately
-bounded Android playback presentation. VPN and proxy remain explicit
-post-release candidates rather than an implied continuation.
+Next keep Tactical `198`'s exact physical completion/repair notification-tap
+gate and Tactical `199`'s physical-phone handoff under their own owners, then
+prioritize production handoff/reset-support work or the separately bounded
+Android playback presentation. VPN and proxy remain explicit post-release
+candidates rather than an implied continuation.

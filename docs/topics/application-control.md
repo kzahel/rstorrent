@@ -253,8 +253,13 @@ fence cleared by that visible launch; an invisible recreation never becomes
 a second source of torrent intent or foreground authority. The lifecycle gate
 is complete through installed API 28/35 behavior, deterministic companion
 count/grace transitions, and Tactical `194`'s physical ChromeOS transport and
-shutdown evidence; the accepted compositional close makes no new OEM-duration
-or unavailable-device claim.
+shutdown evidence. A later physical ChromeOS 150/API-33 strengthening campaign
+also proves default-off and admitted background transitions, sticky recovery,
+completion and seed shutdown, an authenticated companion retaining the owner,
+60-second disconnect/reconnect cancellation and idle expiry, notification
+ineligibility, explicit notification Stop, service relaunch, terminal listener
+refusal, and exact cleanup. These platform closures still do not mutate torrent
+intent or claim indefinite/OEM-wide background duration.
 
 Decision-complete Tactical
 [`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md) is Ready

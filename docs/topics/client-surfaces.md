@@ -667,10 +667,13 @@ own correctness.
   only subscription. Android-15 timeout persists an exhausted edge and blocks
   invisible recreation until a visible launch. Connected API 28/35 and owned-
   AVD transfer/recovery/seeding/task-removal/timeout evidence passes. The gate
-  closes by maintainer-approved composition with deterministic companion
-  lifetime coverage and Tactical `194`'s physical ChromeOS transport/security
-  evidence after the authorized Chromebook remained locked; this adds no new
-  OEM-duration or ChromeOS rerun claim.
+  initially closed by maintainer-approved composition with deterministic
+  companion lifetime coverage and Tactical `194`'s physical ChromeOS
+  transport/security evidence. A later physical ChromeOS 150/API-33 run now
+  adds direct Home/reopen, sticky recovery, completion, controlled background
+  upload, seeding disable, authenticated companion retain/grace/reconnect/
+  expiry, notification denial/grant and Stop, relaunch, listener refusal, and
+  exact cleanup evidence. It adds no indefinite or OEM-wide duration claim.
   No reboot launch, second daemon, indefinite `dataSync` claim, or low-battery
   policy is added.
 - The Linux headless process owns one application service, profile, one or
@@ -996,24 +999,27 @@ streaming demand, expiry, and revocation remain unchanged.
   target-35 `dataSync` timeout uses the same joined non-sticky stop. Tactical
   [`198`](../tactical/198-android-completion-and-attention-notifications.md)
   has passing deterministic, dual-ABI, API 34/35 connected and genuine
-  transfer/repair evidence, but its physical Chromebook companion matrix is
-  still blocked by an unreachable, locked testbed. Tactical
+  transfer/repair evidence. Its later physical Chromebook evidence covers
+  denied-visible-only behavior, permission grant, companion disconnect/
+  reconnect, ongoing-notification Stop, and cleanup; exact completion/repair
+  notification taps remain open. Tactical
   [`200`](../tactical/200-android-product-background-lifecycle.md) implements
   the granted-background activity/active-work/completion/seeding/task-removal
   contract and accepts Android 15+ `dataSync` operation as finite. Its
-  connected API 28/35 and owned-AVD campaigns pass. Its completed evidence
-  composes those campaigns and deterministic lifetime coverage with Tactical
-  `194`'s physical ChromeOS connection/security proof; the unavailable
-  Chromebook did not rerun this matrix. VPN policy remains separate from
-  Tactical `194`'s connection transport.
+  connected API 28/35 and owned-AVD campaigns pass. Its completed evidence now
+  includes the later physical ChromeOS 150/API-33 lifecycle, companion,
+  notification-Stop, relaunch, listener-refusal, and cleanup strengthening in
+  addition to the original compositional close. VPN policy remains separate
+  from Tactical `194`'s connection transport.
 - Android now has Compose connection/seeding settings for backed peer, upload-
   slot, active-download, listener, port-mapping, IPv6, and encryption values,
   including configured/effective/application truth, plus backed session and
   per-torrent upload/download limits. The default-off metered-network cost
   policy is implemented by Tactical `199` and AVD-qualified, with only its
   authorized physical-phone gate open. Background lifetime is implemented and
-  qualified by completed Tactical `200` through its accepted AVD,
-  deterministic-companion, and prior physical ChromeOS evidence composition.
+  qualified by completed Tactical `200` through its accepted AVD and
+  deterministic evidence, prior Tactical `194` security proof, and later
+  physical ChromeOS 150/API-33 lifecycle strengthening.
   Decision-complete Tactical
   [`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md) is Ready
   to add the exact pinned libtorrent global active-seed and ratio/time priority

@@ -174,9 +174,11 @@ daemon architecture.
   All and Resume All are deferred. The implementation, deterministic suite,
   dual-ABI build, API 34/35 connected tests, genuine completion/repair
   campaigns, timeout shutdown, and cleanup pass. The gate remains open only
-  because the required physical Chromebook was unreachable and locked at the
-  authoritative doctor, leaving its companion permission/reconnect matrix
-  unexecuted.
+  for the exact physical completion and repair notification-tap cases. A later
+  authorized ChromeOS 150/API-33 campaign now passes denied-visible-only and
+  Compose-explained permission grant, authenticated companion disconnect/
+  reconnect, the real ongoing-notification **Stop** action, terminal listener
+  refusal, and exact package/credential/power cleanup.
 - [ ] **JAR-008 — Enforce unmetered-network policy live.** This is the required
   part of beta gate `AND-010`. Tactical
   [`199`](../tactical/199-android-live-unmetered-network-enforcement.md) now
@@ -203,13 +205,15 @@ daemon architecture.
   fence. Authenticated ChromeOS companion work receives one fixed reconnect
   grace rather than the legacy daemon's configurable idle timer. Pure policy,
   connected API 28/35, controlled transfer/recovery/task-removal/seeding,
-  shortened-timeout, dual-ABI, and repository gates pass. When the explicitly
-  authorized Chromebook remained SSH-unreachable and profile-locked, the
-  maintainer accepted compositional closure from Tactical `194`'s existing
-  physical ChromeOS transport/security campaign, Tactical `200`'s
-  deterministic companion-lifetime coverage, and its installed API 28/35
-  lifecycle campaigns. No new physical target was used, and this is not an
-  AVD claim about ChromeOS or OEM background duration.
+  shortened-timeout, dual-ABI, and repository gates pass. The initial
+  maintainer-accepted compositional close remains recorded. A later authorized
+  physical ChromeOS 150/API-33 campaign directly proves default-off Home/
+  reopen, admitted background and sticky recovery, completion, controlled
+  background upload, seeding disable, notification denial/grant, authenticated
+  companion retention, grace/reconnect cancellation and idle expiry, real
+  notification Stop, extension relaunch, listener refusal, and exact cleanup.
+  This remains bounded physical evidence, not an indefinite/OEM-wide duration
+  claim.
 - [ ] **JAR-010 — Qualify the signed Play replacement.** Produce and inspect
   the protected-key release AAB, remove or deliberately retain diagnostic
   components, close current Android API deprecations, complete store/privacy/
@@ -286,6 +290,9 @@ prerequisite: denial or blocking permits interactive use but ends the owner
 when visible interaction ends. Target-35 `dataSync` timeout commits a durable
 exhausted edge, enters prompt joined shutdown, and refuses invisible
 recreation until a later visible launch resets the platform allowance.
+The later physical ChromeOS campaign additionally verifies that these lifetime
+decisions compose with the retained extension identity and real ChromeOS
+notification surface without becoming torrent commands.
 
 The replacement policy must identify one owner for:
 
@@ -450,10 +457,11 @@ live run.
    claim. The implementation and owned-AVD evidence are already complete.
 5. Preserve completed Tactical
    [`200`](../tactical/200-android-product-background-lifecycle.md) as the
-   `JAR-009` lifecycle regression gate. Its accepted evidence composes the
-   installed API 28/35 campaign, deterministic companion lifetime, and
-   Tactical `194`'s physical ChromeOS transport/security proof; a later
-   available-device rerun may strengthen confidence but is not a release-gate
+   `JAR-009` lifecycle regression gate. Its accepted evidence includes the
+   installed API 28/35 campaign, deterministic companion lifetime, Tactical
+   `194`'s physical ChromeOS transport/security proof, and the later physical
+   ChromeOS 150/API-33 lifecycle/companion/notification strengthening. This is
+   still a bounded observation rather than an indefinite or OEM-wide duration
    claim. Low-battery shutdown remains a separately bounded decision.
 6. Implement decision-complete Tactical
    [`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md) when

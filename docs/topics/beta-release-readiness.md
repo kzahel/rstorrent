@@ -628,10 +628,12 @@ disposition of current JSTorrent Android features.
   API 34/35 connected, genuine controlled transfer/repair, resource, and
   cleanup gates pass. Active Tactical
   [`198`](../tactical/198-android-completion-and-attention-notifications.md)
-  remains open only for the physical Chromebook companion permission,
-  disconnect/reconnect, notification-tap, and terminal cleanup matrix; its
-  authoritative doctor found SSH unreachable and the profile locked. This
-  slice does not by itself claim a complete granted-background lifecycle.
+  remains open only for exact physical completion and repair notification-tap
+  cases. A later authorized ChromeOS 150/API-33 run passes denied-visible-only
+  behavior, Compose-explained permission grant, companion disconnect/
+  reconnect, the real ongoing-notification **Stop** action, listener refusal,
+  and exact package/credential/power cleanup. This slice does not by itself
+  claim a complete granted-background lifecycle.
   Tactical
   [`200`](../tactical/200-android-product-background-lifecycle.md) now
   implements that contract: explicit default-off continuation, qualifying
@@ -640,12 +642,14 @@ disposition of current JSTorrent Android features.
   Android-15 exhausted-quota fencing, and a bounded authenticated-companion
   reconnect grace. Connected API 28/35, controlled Home/reopen, task removal,
   process recovery, completion, seeding upload, shortened timeout, dual-ABI,
-  and repository gates pass. Tactical `200` and `JAR-009` close through the
-  maintainer-approved composition of that evidence, deterministic companion
-  lifetime coverage, and Tactical `194`'s existing physical ChromeOS
-  transport/security campaign after the approved Chromebook remained locked.
-  That closure does not close this notification item's independent physical
-  Chromebook matrix. Reboot autostart,
+  and repository gates pass. Tactical `200` and `JAR-009` initially closed
+  through maintainer-approved evidence composition; a later physical ChromeOS
+  150/API-33 campaign directly adds Home/reopen, sticky recovery, completion,
+  controlled background upload, seeding disable, authenticated companion
+  retain/grace/reconnect/expiry, notification eligibility and Stop, relaunch,
+  listener refusal, and exact cleanup. That strengthening does not close
+  Tactical `198`'s independent completion/repair notification-tap cases.
+  Reboot autostart,
   low-battery shutdown, VPN, and proxy remain outside both slices.
 - [ ] **AND-010 — Add metered-network safety and bound VPN policy.** JSTorrent
   Android enforces unmetered/Wi-Fi-only and VPN-only prerequisites. Tactical
