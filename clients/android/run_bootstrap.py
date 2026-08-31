@@ -2032,8 +2032,10 @@ def run_product_background_lifecycle_profile(
     ordinal: int,
     storage: str,
 ) -> dict[str, Any]:
-    if target_kind != "avd":
-        raise BootstrapFailure("product-background-lifecycle is an owned-AVD profile")
+    if target_kind not in ("avd", "chromeos"):
+        raise BootstrapFailure(
+            "product-background-lifecycle requires an owned AVD or ChromeOS target"
+        )
     if not storage.startswith("saf-"):
         raise BootstrapFailure("product-background-lifecycle requires a SAF storage mode")
     grant_storage = "sdcard" if storage == "saf-sdcard" else "internal"

@@ -299,7 +299,25 @@ def chromeos_controller() -> list[str]:
 
 def prepare_chromeos() -> AdbTarget:
     chromeos = chromeos_controller()
-    run_host([*chromeos, "target", "doctor"], timeout=60)
+    common_doctor = run_host(
+        [*chromeos, "target", "doctor"],
+        timeout=60,
+        check=False,
+    )
+    if common_doctor.returncode != 0:
+        platform_doctor = run_host(
+            [*chromeos, "testbed", "--", "doctor"],
+            timeout=60,
+            check=False,
+        )
+        if platform_doctor.returncode != 0:
+            raise ProbeFailure(
+                "ChromeOS target is not ready\n"
+                f"common doctor stdout:\n{common_doctor.stdout}\n"
+                f"common doctor stderr:\n{common_doctor.stderr}\n"
+                f"platform doctor stdout:\n{platform_doctor.stdout}\n"
+                f"platform doctor stderr:\n{platform_doctor.stderr}"
+            )
     run_host([*chromeos, "testbed", "--", "adb-connect"], timeout=30)
     target = AdbTarget(
         ["ssh", "chromeroot", "adb", "-s", CHROMEOS_SERIAL],
