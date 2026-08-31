@@ -24,9 +24,10 @@ use sha2::{Digest as Sha256Digest, Sha256};
 
 use crate::control::{
     AddTorrentBytesRequest, AddTorrentDisposition, AddTorrentResult, Command, CommandResult,
-    ErrorCode, FilePriority, FileSelectionIntent, MAX_FILE_SELECTION_ENTRIES, MagnetExportResult,
-    MagnetExportSource, RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseEnvelope,
-    ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState, encode_info_hash, parse_revision,
+    ErrorCode, FilePriority, FileSelectionIntent, FileSelectionOverride,
+    MAX_FILE_SELECTION_ENTRIES, MagnetExportResult, MagnetExportSource, PendingFileSelectionBase,
+    RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseEnvelope, ServiceSnapshot,
+    StorageState, TorrentSnapshot, TorrentState, encode_info_hash, parse_revision,
     validate_add_torrent_bytes_request, validate_identifier, validate_request,
 };
 use crate::download_queue::{self, QueueEdge};
@@ -526,7 +527,7 @@ impl SessionStore {
 
         if let Some(maximum_bytes) = ephemeral_maximum_bytes {
             configure_ephemeral_connection(&connection, maximum_bytes)?;
-            create_or_validate_schema_23(
+            create_or_validate_schema_24(
                 &mut connection,
                 profile_id,
                 initial_client_settings,
@@ -539,7 +540,7 @@ impl SessionStore {
             match preparation {
                 CatalogPreparation::Current => {
                     configure_durable_connection(&connection)?;
-                    create_or_validate_schema_23(
+                    create_or_validate_schema_24(
                         &mut connection,
                         profile_id,
                         initial_client_settings,
@@ -548,7 +549,7 @@ impl SessionStore {
                 }
                 CatalogPreparation::Create { reset_report } => {
                     connection.pragma_update(None, "synchronous", "FULL")?;
-                    create_or_validate_schema_23(
+                    create_or_validate_schema_24(
                         &mut connection,
                         profile_id,
                         initial_client_settings,
@@ -2725,7 +2726,7 @@ fn pragma_u64(connection: &Connection, pragma: &str) -> Result<u64, StoreError> 
     u64::try_from(value).map_err(|_| StoreError::DurableState(format!("negative SQLite {pragma}")))
 }
 
-fn create_or_validate_schema_23(
+fn create_or_validate_schema_24(
     connection: &mut Connection,
     profile_id: &str,
     initial_client_settings: &ClientSettings,
@@ -2733,7 +2734,7 @@ fn create_or_validate_schema_23(
 ) -> Result<(), StoreError> {
     let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version != 0 {
-        return validate_schema_23(connection, profile_id);
+        return validate_schema_24(connection, profile_id);
     }
     let transaction = connection.transaction()?;
     transaction.execute_batch(
@@ -2745,7 +2746,7 @@ fn create_or_validate_schema_23(
          CREATE TABLE profile_reset_report (
             singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
             previous_schema_version INTEGER NOT NULL CHECK (
-                previous_schema_version BETWEEN 1 AND 22
+                previous_schema_version BETWEEN 1 AND 23
             ),
             discarded_categories_json TEXT NOT NULL CHECK (
                 length(discarded_categories_json) BETWEEN 2 AND 1024
@@ -2772,7 +2773,9 @@ fn create_or_validate_schema_23(
                 REFERENCES storage_roots(root_id)
                 ON UPDATE CASCADE ON DELETE SET NULL,
             show_add_options INTEGER NOT NULL DEFAULT 1
-                CHECK (show_add_options IN (0, 1))
+                CHECK (show_add_options IN (0, 1)),
+            show_file_selection INTEGER NOT NULL DEFAULT 1
+                CHECK (show_file_selection IN (0, 1))
          );
          CREATE TABLE torrents (
             torrent_id BLOB PRIMARY KEY CHECK (
@@ -2783,6 +2786,8 @@ fn create_or_validate_schema_23(
                 REFERENCES storage_roots(root_id) ON UPDATE CASCADE,
             desired_state TEXT NOT NULL
                 CHECK (desired_state IN ('running', 'paused')),
+            awaiting_file_selection INTEGER NOT NULL DEFAULT 0
+                CHECK (awaiting_file_selection IN (0, 1)),
             raw_info BLOB CHECK (
                 raw_info IS NULL OR length(raw_info) <= 67108864
             ),
@@ -2898,8 +2903,9 @@ fn create_or_validate_schema_23(
         [profile_id],
     )?;
     transaction.execute(
-        "INSERT INTO storage_settings(singleton, default_root, show_add_options)
-         VALUES (1, NULL, 1)",
+        "INSERT INTO storage_settings(
+            singleton, default_root, show_add_options, show_file_selection
+         ) VALUES (1, NULL, 1, 1)",
         [],
     )?;
     if let Some(report) = reset_report {
@@ -2923,10 +2929,10 @@ fn create_or_validate_schema_23(
     transaction.execute_batch(FILE_PRIORITIES_TABLE_SQL)?;
     transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     transaction.commit()?;
-    validate_schema_23(connection, profile_id)
+    validate_schema_24(connection, profile_id)
 }
 
-fn validate_schema_23(connection: &Connection, profile_id: &str) -> Result<(), StoreError> {
+fn validate_schema_24(connection: &Connection, profile_id: &str) -> Result<(), StoreError> {
     let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version != SCHEMA_VERSION {
         return Err(StoreError::UnsupportedSchema {
@@ -3051,11 +3057,17 @@ fn read_storage_roots(connection: &Connection) -> Result<Vec<StoredStorageRoot>,
 }
 
 fn read_storage_settings(connection: &Connection) -> Result<StorageSettingsSnapshot, StoreError> {
-    let (default_root, show_add_options) = connection.query_row(
-        "SELECT default_root, show_add_options
+    let (default_root, show_add_options, show_file_selection) = connection.query_row(
+        "SELECT default_root, show_add_options, show_file_selection
          FROM storage_settings WHERE singleton = 1",
         [],
-        |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, bool>(1)?)),
+        |row| {
+            Ok((
+                row.get::<_, Option<String>>(0)?,
+                row.get::<_, bool>(1)?,
+                row.get::<_, bool>(2)?,
+            ))
+        },
     )?;
     let roots = read_storage_roots(connection)?
         .into_iter()
@@ -3085,6 +3097,7 @@ fn read_storage_settings(connection: &Connection) -> Result<StorageSettingsSnaps
         roots,
         default_root,
         show_add_options,
+        show_file_selection,
     })
 }
 
@@ -3178,6 +3191,7 @@ fn apply_mutation(
         magnet,
         storage_root,
         start_content,
+        await_file_selection,
         skip_files,
     } = &request.command
     {
@@ -3186,6 +3200,7 @@ fn apply_mutation(
             magnet,
             storage_root,
             *start_content,
+            *await_file_selection,
             skip_files,
             current_revision,
         ) {
@@ -3245,6 +3260,27 @@ fn apply_mutation(
         }
         Command::SetShowAddOptions { show } => {
             set_show_add_options(transaction, *show, current_revision)
+        }
+        Command::SetShowFileSelection { show } => {
+            set_show_file_selection(transaction, *show, current_revision)
+        }
+        Command::ConfirmPendingFileSelection {
+            torrent_id,
+            catalog_id,
+            base,
+            overrides,
+            disable_future,
+        } => confirm_pending_file_selection(
+            transaction,
+            torrent_id,
+            catalog_id,
+            *base,
+            overrides,
+            *disable_future,
+            current_revision,
+        ),
+        Command::CancelPendingAdd { torrent_id } => {
+            cancel_pending_add(transaction, torrent_id, current_revision)
         }
         Command::UpdateClientSettings { .. } => {
             unreachable!("settings are handled atomically above")
@@ -3369,20 +3405,21 @@ fn add_torrent_bytes(
     transaction
         .execute(
             "INSERT INTO torrents(
-                torrent_id, magnet, storage_root, desired_state,
+                torrent_id, magnet, storage_root, desired_state, awaiting_file_selection,
                 raw_info, content_fingerprint, piece_count, have_state,
                 created_revision, updated_revision, selection_default
              ) VALUES (
-                ?1, NULL, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?9
+                ?1, NULL, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10
              )",
             params![
                 torrent_id.as_bytes().as_slice(),
                 request.storage_root,
-                if request.start_content {
+                if request.start_content && !request.await_file_selection {
                     "running"
                 } else {
                     "paused"
                 },
+                request.await_file_selection,
                 raw_info,
                 fingerprint.as_bytes().as_slice(),
                 i64::try_from(content.piece_count()).map_err(|_| {
@@ -3414,7 +3451,7 @@ fn add_torrent_bytes(
             )
             .map_err(|error| AddTorrentBytesError::Store(StoreError::Sqlite(error)))?;
     }
-    if request.start_content {
+    if request.start_content && !request.await_file_selection {
         download_queue::append(transaction, &torrent_id).map_err(AddTorrentBytesError::Store)?;
     }
     transaction
@@ -3666,6 +3703,31 @@ fn set_show_add_options(
     Ok(revision)
 }
 
+fn set_show_file_selection(
+    transaction: &Transaction<'_>,
+    show: bool,
+    current_revision: u64,
+) -> Result<u64, (ErrorCode, String)> {
+    let current = transaction
+        .query_row(
+            "SELECT show_file_selection FROM storage_settings WHERE singleton = 1",
+            [],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(internal_error)?;
+    if current == show {
+        return Ok(current_revision);
+    }
+    let revision = next_revision(transaction, current_revision)?;
+    transaction
+        .execute(
+            "UPDATE storage_settings SET show_file_selection = ?1 WHERE singleton = 1",
+            [show],
+        )
+        .map_err(internal_error)?;
+    Ok(revision)
+}
+
 fn remove_storage_root(
     transaction: &Transaction<'_>,
     storage_root: &str,
@@ -3728,6 +3790,7 @@ fn add_magnet(
     source: &str,
     storage_root: &str,
     start_content: bool,
+    await_file_selection: bool,
     skip_files: &[u32],
     current_revision: u64,
 ) -> Result<(u64, AddTorrentResult), (ErrorCode, String)> {
@@ -3911,14 +3974,19 @@ fn add_magnet(
     transaction
         .execute(
             "INSERT INTO torrents(
-                torrent_id, magnet, storage_root, desired_state,
+                torrent_id, magnet, storage_root, desired_state, awaiting_file_selection,
                 created_revision, updated_revision, selection_default
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6)",
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7)",
             params![
                 torrent_id.as_bytes().as_slice(),
                 canonical_magnet(&magnet),
                 storage_root,
-                if start_content { "running" } else { "paused" },
+                if start_content && !await_file_selection {
+                    "running"
+                } else {
+                    "paused"
+                },
+                await_file_selection,
                 revision_sql,
                 if magnet.select_only.is_some() {
                     "skipped"
@@ -3948,8 +4016,10 @@ fn add_magnet(
     if let Some(error) = identity_error {
         return Err(internal_error(error));
     }
-    download_queue::append(transaction, &torrent_id)
-        .map_err(|error| internal_message(&error.to_string()))?;
+    if start_content && !await_file_selection {
+        download_queue::append(transaction, &torrent_id)
+            .map_err(|error| internal_message(&error.to_string()))?;
+    }
     let source_digest = Sha256::digest(source.as_bytes());
     transaction
         .execute(
@@ -4201,7 +4271,7 @@ where
         .query_row(
             "SELECT t.raw_info, t.quarantine_reason, r.torrent_id IS NOT NULL,
                     t.selection_default, t.desired_state, t.archived,
-                    t.download_queue_position
+                    t.download_queue_position, t.awaiting_file_selection
              FROM torrents t
              LEFT JOIN removal_jobs r ON r.torrent_id = t.torrent_id
              WHERE t.torrent_id = ?1",
@@ -4215,6 +4285,7 @@ where
                     row.get::<_, String>(4)?,
                     row.get::<_, bool>(5)?,
                     row.get::<_, Option<i64>>(6)?,
+                    row.get::<_, bool>(7)?,
                 ))
             },
         )
@@ -4230,6 +4301,12 @@ where
         return Err((
             ErrorCode::InvalidTorrentState,
             "torrent removal is already in progress".to_owned(),
+        ));
+    }
+    if row.7 {
+        return Err((
+            ErrorCode::InvalidTorrentState,
+            "use the pending file-selection confirmation to change this torrent".to_owned(),
         ));
     }
     let raw_info = row.0.ok_or_else(|| {
@@ -4429,7 +4506,7 @@ fn set_desired_state(
     let row = transaction
         .query_row(
             "SELECT t.desired_state, t.quarantine_reason,
-                    r.torrent_id IS NOT NULL
+                    r.torrent_id IS NOT NULL, t.awaiting_file_selection
              FROM torrents t
              LEFT JOIN removal_jobs r ON r.torrent_id = t.torrent_id
              WHERE t.torrent_id = ?1",
@@ -4439,6 +4516,7 @@ fn set_desired_state(
                     row.get::<_, String>(0)?,
                     row.get::<_, Option<String>>(1)?,
                     row.get::<_, bool>(2)?,
+                    row.get::<_, bool>(3)?,
                 ))
             },
         )
@@ -4454,6 +4532,12 @@ fn set_desired_state(
         return Err((
             ErrorCode::InvalidTorrentState,
             "torrent removal is already in progress".to_owned(),
+        ));
+    }
+    if running && row.3 {
+        return Err((
+            ErrorCode::InvalidTorrentState,
+            "torrent must confirm its pending file selection before resuming".to_owned(),
         ));
     }
     let desired = if running { "running" } else { "paused" };
@@ -4540,6 +4624,243 @@ fn set_archived(
         )
         .map_err(internal_error)?;
     Ok(revision)
+}
+
+fn confirm_pending_file_selection(
+    transaction: &Transaction<'_>,
+    torrent_id: &str,
+    catalog_id: &str,
+    base: PendingFileSelectionBase,
+    overrides: &[FileSelectionOverride],
+    disable_future: bool,
+    current_revision: u64,
+) -> Result<u64, (ErrorCode, String)> {
+    let torrent_id = decode_torrent_id(torrent_id).ok_or_else(|| {
+        (
+            ErrorCode::InvalidRequest,
+            "invalid torrent identity".to_owned(),
+        )
+    })?;
+    let row = transaction
+        .query_row(
+            "SELECT t.raw_info, t.content_fingerprint, t.awaiting_file_selection,
+                    t.selection_default, t.quarantine_reason,
+                    r.torrent_id IS NOT NULL
+             FROM torrents t
+             LEFT JOIN removal_jobs r ON r.torrent_id = t.torrent_id
+             WHERE t.torrent_id = ?1",
+            [torrent_id.as_bytes()],
+            |row| {
+                Ok((
+                    row.get::<_, Option<Vec<u8>>>(0)?,
+                    row.get::<_, Option<Vec<u8>>>(1)?,
+                    row.get::<_, bool>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, bool>(5)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(internal_error)?
+        .ok_or_else(|| {
+            (
+                ErrorCode::UnknownTorrent,
+                format!("torrent {torrent_id} is not in the profile"),
+            )
+        })?;
+    if !row.2 || row.5 {
+        return Err((
+            ErrorCode::InvalidTorrentState,
+            "torrent is no longer awaiting file selection".to_owned(),
+        ));
+    }
+    if row.4.is_some() {
+        return Err((
+            ErrorCode::StorageNeedsRepair,
+            "torrent storage needs repair before file selection can be confirmed".to_owned(),
+        ));
+    }
+    let raw_info = row.0.ok_or_else(|| {
+        (
+            ErrorCode::InvalidTorrentState,
+            "file selection is waiting for verified metadata".to_owned(),
+        )
+    })?;
+    let fingerprint = row.1.ok_or_else(|| {
+        (
+            ErrorCode::InvalidDurableState,
+            "verified metadata has no catalog identity".to_owned(),
+        )
+    })?;
+    if !encode_hex(&fingerprint).eq_ignore_ascii_case(catalog_id) {
+        return Err((
+            ErrorCode::StaleRevision,
+            "file catalog changed while the selection was open".to_owned(),
+        ));
+    }
+    let metainfo_source = read_verbatim_metainfo_source(transaction, &torrent_id)
+        .map_err(|error| (ErrorCode::InvalidDurableState, error.to_string()))?;
+    let content = parse_durable_content_descriptor(&raw_info, metainfo_source.as_deref())
+        .map_err(|error| (ErrorCode::InvalidDurableState, error.to_string()))?;
+    let files = content.layout.files();
+    if overrides.last().is_some_and(|entry| {
+        usize::try_from(entry.range.end_exclusive).map_or(true, |end| end > files.len())
+    }) {
+        return Err((
+            ErrorCode::InvalidRequest,
+            "file selection override exceeds verified metadata".to_owned(),
+        ));
+    }
+    for entry in overrides {
+        for index in entry.range.start..entry.range.end_exclusive {
+            if files[index as usize].padding {
+                return Err((
+                    ErrorCode::InvalidRequest,
+                    format!("padding file {index} cannot be selected"),
+                ));
+            }
+        }
+    }
+
+    let (current_default, current_exceptions) = read_selection_state(transaction, &torrent_id)
+        .map_err(|error| internal_message(&error.to_string()))?;
+    let selection_default = match base {
+        PendingFileSelectionBase::Current => current_default,
+        PendingFileSelectionBase::All => FilePriority::Normal,
+        PendingFileSelectionBase::None => FilePriority::Skip,
+    };
+    let default_selected = selection_default == FilePriority::Normal;
+    let mut exceptions = Vec::new();
+    let mut override_index = 0;
+    for (index, file) in files.iter().enumerate() {
+        if file.padding {
+            continue;
+        }
+        let index_u32 =
+            u32::try_from(index).map_err(|_| internal_message("file index overflows u32"))?;
+        while override_index < overrides.len()
+            && overrides[override_index].range.end_exclusive <= index_u32
+        {
+            override_index += 1;
+        }
+        let selected = overrides
+            .get(override_index)
+            .filter(|entry| entry.range.start <= index_u32 && index_u32 < entry.range.end_exclusive)
+            .map_or_else(
+                || match base {
+                    PendingFileSelectionBase::Current => {
+                        current_exceptions.binary_search(&index_u32).is_err()
+                            == (current_default == FilePriority::Normal)
+                    }
+                    PendingFileSelectionBase::All => true,
+                    PendingFileSelectionBase::None => false,
+                },
+                |entry| entry.selected,
+            );
+        if selected != default_selected {
+            exceptions.push(index_u32);
+            if exceptions.len() > MAX_FILE_SELECTION_ENTRIES {
+                return Err((
+                    ErrorCode::ResourceLimit,
+                    format!("file selection exceeds {MAX_FILE_SELECTION_ENTRIES} exceptions"),
+                ));
+            }
+        }
+    }
+
+    let revision = next_revision(transaction, current_revision)?;
+    transaction
+        .execute(
+            "DELETE FROM file_selection WHERE torrent_id = ?1",
+            [torrent_id.as_bytes()],
+        )
+        .map_err(internal_error)?;
+    transaction
+        .execute(
+            "DELETE FROM file_priorities WHERE torrent_id = ?1",
+            [torrent_id.as_bytes()],
+        )
+        .map_err(internal_error)?;
+    let exception_wanted = selection_default == FilePriority::Skip;
+    for index in exceptions {
+        transaction
+            .execute(
+                "INSERT INTO file_selection(torrent_id, file_index, wanted)
+                 VALUES (?1, ?2, ?3)",
+                params![torrent_id.as_bytes(), i64::from(index), exception_wanted],
+            )
+            .map_err(internal_error)?;
+    }
+    let revision_sql =
+        i64::try_from(revision).map_err(|_| internal_message("profile revision overflow"))?;
+    transaction
+        .execute(
+            "UPDATE torrents
+             SET selection_default = ?2, awaiting_file_selection = 0,
+                 desired_state = 'running', error = NULL, updated_revision = ?3
+             WHERE torrent_id = ?1",
+            params![
+                torrent_id.as_bytes(),
+                if selection_default == FilePriority::Normal {
+                    "wanted"
+                } else {
+                    "skipped"
+                },
+                revision_sql
+            ],
+        )
+        .map_err(internal_error)?;
+    download_queue::append(transaction, &torrent_id)
+        .map_err(|error| internal_message(&error.to_string()))?;
+    if disable_future {
+        transaction
+            .execute(
+                "UPDATE storage_settings SET show_file_selection = 0 WHERE singleton = 1",
+                [],
+            )
+            .map_err(internal_error)?;
+    }
+    Ok(revision)
+}
+
+fn cancel_pending_add(
+    transaction: &Transaction<'_>,
+    torrent_id: &str,
+    current_revision: u64,
+) -> Result<u64, (ErrorCode, String)> {
+    let decoded = decode_torrent_id(torrent_id).ok_or_else(|| {
+        (
+            ErrorCode::InvalidRequest,
+            "invalid torrent identity".to_owned(),
+        )
+    })?;
+    let pending = transaction
+        .query_row(
+            "SELECT awaiting_file_selection FROM torrents WHERE torrent_id = ?1",
+            [decoded.as_bytes()],
+            |row| row.get::<_, bool>(0),
+        )
+        .optional()
+        .map_err(internal_error)?
+        .ok_or_else(|| {
+            (
+                ErrorCode::UnknownTorrent,
+                format!("torrent {decoded} is not in the profile"),
+            )
+        })?;
+    if !pending {
+        return Err((
+            ErrorCode::InvalidTorrentState,
+            "torrent is no longer awaiting file selection".to_owned(),
+        ));
+    }
+    begin_removal(
+        transaction,
+        torrent_id,
+        RemovalDataPolicy::Keep,
+        current_revision,
+    )
 }
 
 fn begin_removal(
@@ -4719,13 +5040,15 @@ fn next_revision_strict(
 fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSnapshot, StoreError> {
     let revision = read_revision(connection)?;
     let queue_ordinals = read_download_queue_ordinals(connection)?;
+    let pending_ordinals = read_pending_file_selection_ordinals(connection)?;
     let mut statement = connection.prepare(
         "SELECT t.torrent_id, t.storage_root, t.raw_info, t.piece_count,
                 t.have_state, t.content_fingerprint, t.error, t.archived,
                 r.state, r.error,
                 t.desired_state, t.verification_requested,
                 t.verification_completed, t.quarantine_reason,
-                t.upload_rate_limit, t.download_rate_limit
+                t.upload_rate_limit, t.download_rate_limit,
+                t.awaiting_file_selection
          FROM torrents t
          LEFT JOIN removal_jobs r ON r.torrent_id = t.torrent_id
          ORDER BY t.torrent_id",
@@ -4748,6 +5071,7 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
             row.get::<_, Option<String>>(13)?,
             row.get::<_, i64>(14)?,
             row.get::<_, i64>(15)?,
+            row.get::<_, bool>(16)?,
         ))
     })?;
     let mut torrents = Vec::new();
@@ -4833,6 +5157,60 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
         } else {
             have.as_ref().map_or(0, HaveState::verified_count)
         };
+        let (
+            file_catalog_id,
+            selectable_file_count,
+            selected_file_count,
+            selectable_file_bytes,
+            selected_file_bytes,
+        ) = if row.16 {
+            match (&row.2, &row.5) {
+                (Some(raw_info), Some(fingerprint)) => {
+                    let content =
+                        parse_durable_content_descriptor(raw_info, metainfo_source.as_deref())?;
+                    let mut selectable_count = 0_u32;
+                    let mut selected_count = 0_u32;
+                    let mut selectable_bytes = 0_u64;
+                    let mut selected_bytes = 0_u64;
+                    for (index, file) in content.layout.files().iter().enumerate() {
+                        if file.padding {
+                            continue;
+                        }
+                        selectable_count = selectable_count.checked_add(1).ok_or_else(|| {
+                            StoreError::DurableState("file count overflow".to_owned())
+                        })?;
+                        selectable_bytes =
+                            selectable_bytes.checked_add(file.length).ok_or_else(|| {
+                                StoreError::DurableState("file byte total overflow".to_owned())
+                            })?;
+                        let index = u32::try_from(index).map_err(|_| {
+                            StoreError::DurableState("file index overflow".to_owned())
+                        })?;
+                        let selected = selection_exceptions.binary_search(&index).is_err()
+                            == (selection_default == FilePriority::Normal);
+                        if selected {
+                            selected_count += 1;
+                            selected_bytes =
+                                selected_bytes.checked_add(file.length).ok_or_else(|| {
+                                    StoreError::DurableState(
+                                        "selected byte total overflow".to_owned(),
+                                    )
+                                })?;
+                        }
+                    }
+                    (
+                        Some(encode_hex(fingerprint)),
+                        selectable_count,
+                        selected_count,
+                        selectable_bytes.to_string(),
+                        selected_bytes.to_string(),
+                    )
+                }
+                _ => (None, 0, 0, "0".to_owned(), "0".to_owned()),
+            }
+        } else {
+            (None, 0, 0, "0".to_owned(), "0".to_owned())
+        };
         torrents.push(TorrentSnapshot {
             torrent_id: torrent_id.to_string(),
             protocol_identities,
@@ -4840,6 +5218,13 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
             state,
             storage_state,
             metadata_available: row.2.is_some(),
+            awaiting_file_selection: row.16,
+            pending_file_selection_position: pending_ordinals.get(&torrent_id).copied(),
+            file_catalog_id,
+            selectable_file_count,
+            selected_file_count,
+            selectable_file_bytes,
+            selected_file_bytes,
             piece_count: u32::try_from(piece_count)
                 .map_err(|_| StoreError::DurableState("piece count overflow".to_owned()))?,
             verified_piece_count: u32::try_from(verified_piece_count)
@@ -4883,6 +5268,25 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
         client_settings: read_client_settings(connection)?,
         torrents,
     })
+}
+
+fn read_pending_file_selection_ordinals(
+    connection: &Connection,
+) -> Result<std::collections::BTreeMap<TorrentId, u32>, StoreError> {
+    let mut statement = connection.prepare(
+        "SELECT torrent_id FROM torrents
+         WHERE awaiting_file_selection = 1
+         ORDER BY created_revision, torrent_id",
+    )?;
+    let rows = statement.query_map([], |row| row.get::<_, Vec<u8>>(0))?;
+    let mut ordinals = std::collections::BTreeMap::new();
+    for (index, row) in rows.enumerate() {
+        let torrent_id = decode_stored_torrent_id(row?)?;
+        let ordinal = u32::try_from(index + 1)
+            .map_err(|_| StoreError::DurableState("pending add queue is too large".to_owned()))?;
+        ordinals.insert(torrent_id, ordinal);
+    }
+    Ok(ordinals)
 }
 
 fn read_download_queue_ordinals(
@@ -5911,6 +6315,7 @@ mod tests {
                     magnet: source.clone(),
                     storage_root: "downloads".to_owned(),
                     start_content: false,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })
@@ -5942,6 +6347,7 @@ mod tests {
                         magnet,
                         storage_root: "downloads".to_owned(),
                         start_content: true,
+                        await_file_selection: false,
                         skip_files: Vec::new(),
                     },
                 })
@@ -6026,6 +6432,7 @@ mod tests {
                         magnet,
                         storage_root: "downloads".to_owned(),
                         start_content: true,
+                        await_file_selection: false,
                         skip_files: Vec::new(),
                     },
                 })
@@ -6064,6 +6471,7 @@ mod tests {
                     magnet: format!("magnet:?xt=urn:btmh:1220{v2}&so=0"),
                     storage_root: "downloads".to_owned(),
                     start_content: true,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })
@@ -6096,6 +6504,7 @@ mod tests {
                     magnet: source.to_owned(),
                     storage_root: "downloads".to_owned(),
                     start_content: true,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })
@@ -6141,6 +6550,7 @@ mod tests {
                     magnet: source.to_owned(),
                     storage_root: "downloads".to_owned(),
                     start_content: false,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })
@@ -6386,6 +6796,7 @@ mod tests {
                 "request_id": request.request_id,
                 "storage_root": request.storage_root,
                 "start_content": request.start_content,
+                "await_file_selection": request.await_file_selection,
                 "selection": request.selection,
                 "source_length": request.source_length,
                 "source_sha256": super::encode_digest(&Sha256::digest(&source)),
@@ -6585,6 +6996,7 @@ mod tests {
                         .to_owned(),
                 storage_root: "downloads".to_owned(),
                 start_content: true,
+                await_file_selection: false,
                 skip_files: vec![1, 3],
             },
         }
@@ -6602,6 +7014,7 @@ mod tests {
                 ),
                 storage_root: "downloads".to_owned(),
                 start_content: true,
+                await_file_selection: false,
                 skip_files: Vec::new(),
             },
         }
@@ -6785,6 +7198,7 @@ mod tests {
                 magnet,
                 storage_root: "downloads".to_owned(),
                 start_content: false,
+                await_file_selection: false,
                 skip_files: Vec::new(),
             },
         };
@@ -6999,6 +7413,7 @@ mod tests {
             expected_revision: None,
             storage_root: "downloads".to_owned(),
             start_content: false,
+            await_file_selection: false,
             selection: crate::FileSelectionIntent::All,
             source_length: source.len() as u32,
         }
@@ -7201,6 +7616,7 @@ mod tests {
                 magnet: format!("magnet:?xt=urn:btih:{torrent_id}"),
                 storage_root: "downloads".to_owned(),
                 start_content: false,
+                await_file_selection: false,
                 skip_files: Vec::new(),
             },
         };
@@ -7342,6 +7758,7 @@ mod tests {
                     magnet: format!("magnet:?xt=urn:btih:{torrent_id}"),
                     storage_root: "downloads".to_owned(),
                     start_content: false,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })
@@ -7474,6 +7891,7 @@ mod tests {
                 magnet: format!("magnet:?xt=urn:btih:{torrent_id}&so={so}"),
                 storage_root: "ignored-on-duplicate".to_owned(),
                 start_content: true,
+                await_file_selection: false,
                 skip_files: Vec::new(),
             },
         };
@@ -7537,6 +7955,90 @@ mod tests {
     }
 
     #[test]
+    fn pending_add_selection_confirms_atomically_and_survives_reopen() {
+        let root = test_root("pending-add-selection");
+        let configured = configured_root(&root);
+        let mut store =
+            SessionStore::open(&root, "default", &[configured.clone()]).expect("open store");
+        let source = multi_file_torrent_source(3);
+        let mut request = torrent_bytes_request("pending-add", &source);
+        request.start_content = true;
+        request.await_file_selection = true;
+        let added = store
+            .handle_torrent_bytes(&request, source)
+            .expect("add pending torrent");
+        let torrent_id = added_torrent_id(&added);
+        let pending = store.snapshot().expect("pending snapshot");
+        let torrent = &pending.torrents[0];
+        assert!(torrent.awaiting_file_selection);
+        assert!(!torrent.desired_running);
+        assert_eq!(torrent.pending_file_selection_position, Some(1));
+        assert_eq!(torrent.selectable_file_count, 3);
+        assert_eq!(torrent.selected_file_count, 3);
+        let catalog_id = torrent.file_catalog_id.clone().expect("catalog identity");
+
+        let bypass = store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "pending-resume".to_owned(),
+                expected_revision: None,
+                command: Command::Resume {
+                    torrent_id: torrent_id.clone(),
+                },
+            })
+            .expect("typed resume response");
+        assert!(matches!(
+            bypass.outcome,
+            crate::ResponseOutcome::Error {
+                error: crate::ErrorResponse {
+                    code: ErrorCode::InvalidTorrentState,
+                    ..
+                }
+            }
+        ));
+
+        let confirmation = RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: "confirm-pending".to_owned(),
+            expected_revision: None,
+            command: Command::ConfirmPendingFileSelection {
+                torrent_id: torrent_id.clone(),
+                catalog_id,
+                base: crate::PendingFileSelectionBase::All,
+                overrides: vec![crate::FileSelectionOverride {
+                    range: crate::FileIndexRange {
+                        start: 1,
+                        end_exclusive: 3,
+                    },
+                    selected: false,
+                }],
+                disable_future: true,
+            },
+        };
+        let confirmed = store
+            .handle_durable(&confirmation)
+            .expect("confirm selection");
+        assert!(matches!(
+            confirmed.outcome,
+            crate::ResponseOutcome::Success { .. }
+        ));
+        let snapshot = store.snapshot().expect("confirmed snapshot");
+        assert!(!snapshot.torrents[0].awaiting_file_selection);
+        assert!(snapshot.torrents[0].desired_running);
+        assert_eq!(snapshot.torrents[0].skip_files, [1, 2]);
+        assert!(!snapshot.storage.show_file_selection);
+
+        drop(store);
+        let reopened = SessionStore::open(&root, "default", &[configured]).expect("reopen store");
+        let snapshot = reopened.snapshot().expect("reopened snapshot");
+        assert!(!snapshot.torrents[0].awaiting_file_selection);
+        assert_eq!(snapshot.torrents[0].skip_files, [1, 2]);
+        assert!(!snapshot.storage.show_file_selection);
+        drop(reopened);
+        fs::remove_dir_all(root).expect("remove profile");
+    }
+
+    #[test]
     fn select_only_exception_budget_rejects_metadata_atomically() {
         let root = test_root("select-only-budget");
         let configured = configured_root(&root);
@@ -7560,6 +8062,7 @@ mod tests {
                     ),
                     storage_root: "downloads".to_owned(),
                     start_content: true,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })
@@ -7595,6 +8098,7 @@ mod tests {
                     magnet: format!("magnet:?xt=urn:btih:{torrent_id}"),
                     storage_root: "downloads".to_owned(),
                     start_content: true,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })
@@ -7663,6 +8167,7 @@ mod tests {
                     magnet: format!("magnet:?xt=urn:btih:{torrent_id}"),
                     storage_root: "downloads".to_owned(),
                     start_content: false,
+                    await_file_selection: false,
                     skip_files: vec![0, 1],
                 },
             })
@@ -8338,6 +8843,7 @@ mod tests {
                     magnet: format!("magnet:?xt=urn:btih:{torrent_id}"),
                     storage_root: "downloads".to_owned(),
                     start_content: false,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })
@@ -8655,6 +9161,7 @@ mod tests {
                 magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe=127.0.0.1:1"),
                 storage_root: "downloads".to_owned(),
                 start_content: true,
+                await_file_selection: false,
                 skip_files: Vec::new(),
             },
         };
@@ -8700,6 +9207,7 @@ mod tests {
                     magnet: format!("magnet:?xt=urn:btih:{reserved_id}"),
                     storage_root: "downloads".to_owned(),
                     start_content: true,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })
@@ -8735,6 +9243,7 @@ mod tests {
                     magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe=127.0.0.1:1"),
                     storage_root: "downloads".to_owned(),
                     start_content: true,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })
@@ -8836,6 +9345,7 @@ mod tests {
                     magnet: format!("magnet:?xt=urn:btih:{torrent_id}"),
                     storage_root: "downloads".to_owned(),
                     start_content: true,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })
@@ -8887,6 +9397,7 @@ mod tests {
                     magnet: format!("magnet:?xt=urn:btih:{info_hash}"),
                     storage_root: "downloads".to_owned(),
                     start_content: true,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })
@@ -8977,6 +9488,7 @@ mod tests {
                     magnet: format!("magnet:?xt=urn:btih:{torrent_id}"),
                     storage_root: "downloads".to_owned(),
                     start_content: true,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })
@@ -9043,6 +9555,7 @@ mod tests {
                     magnet: format!("magnet:?xt=urn:btih:{torrent_id}"),
                     storage_root: "downloads".to_owned(),
                     start_content: true,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })

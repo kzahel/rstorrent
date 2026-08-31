@@ -1223,6 +1223,12 @@ pub struct StorageSettingsSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_root: Option<String>,
     pub show_add_options: bool,
+    #[serde(default = "default_true")]
+    pub show_file_selection: bool,
+}
+
+const fn default_true() -> bool {
+    true
 }
 
 impl Default for StorageSettingsSnapshot {
@@ -1231,6 +1237,7 @@ impl Default for StorageSettingsSnapshot {
             roots: Vec::new(),
             default_root: None,
             show_add_options: true,
+            show_file_selection: true,
         }
     }
 }

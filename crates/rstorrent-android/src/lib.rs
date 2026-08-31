@@ -2353,6 +2353,7 @@ mod tests {
                     expected_revision: None,
                     storage_root: "downloads".to_owned(),
                     start_content: false,
+                    await_file_selection: false,
                     selection: rstorrent_session::FileSelectionIntent::All,
                     source_length: u32::try_from(source.len()).expect("fixture fits u32"),
                 },

@@ -80,6 +80,8 @@ pub struct AddTorrentBytesRequest {
     #[serde(default = "default_true")]
     pub start_content: bool,
     #[serde(default)]
+    pub await_file_selection: bool,
+    #[serde(default)]
     pub selection: FileSelectionIntent,
     pub source_length: u32,
 }
@@ -93,6 +95,8 @@ pub enum Command {
         storage_root: String,
         #[serde(default = "default_true")]
         start_content: bool,
+        #[serde(default)]
+        await_file_selection: bool,
         #[serde(default)]
         skip_files: Vec<u32>,
     },
@@ -126,6 +130,22 @@ pub enum Command {
     },
     SetShowAddOptions {
         show: bool,
+    },
+    SetShowFileSelection {
+        show: bool,
+    },
+    ConfirmPendingFileSelection {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
+        torrent_id: String,
+        catalog_id: String,
+        base: PendingFileSelectionBase,
+        overrides: Vec<FileSelectionOverride>,
+        #[serde(default)]
+        disable_future: bool,
+    },
+    CancelPendingAdd {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
+        torrent_id: String,
     },
     UpdateClientSettings {
         patch: ClientSettingsPatch,
@@ -178,6 +198,9 @@ impl Command {
             Self::AddMagnet { .. }
                 | Self::SetDefaultStorageRoot { .. }
                 | Self::SetShowAddOptions { .. }
+                | Self::SetShowFileSelection { .. }
+                | Self::ConfirmPendingFileSelection { .. }
+                | Self::CancelPendingAdd { .. }
                 | Self::UpdateClientSettings { .. }
                 | Self::UpdateTorrentSettings { .. }
                 | Self::RemoveStorageRoot { .. }
@@ -194,6 +217,23 @@ impl Command {
                 | Self::RemoveTorrent { .. }
         )
     }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum PendingFileSelectionBase {
+    #[default]
+    Current,
+    All,
+    None,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct FileSelectionOverride {
+    pub range: FileIndexRange,
+    pub selected: bool,
 }
 
 const fn default_true() -> bool {
@@ -419,6 +459,20 @@ pub struct TorrentSnapshot {
     pub state: TorrentState,
     pub storage_state: StorageState,
     pub metadata_available: bool,
+    #[serde(default)]
+    pub awaiting_file_selection: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_file_selection_position: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_catalog_id: Option<String>,
+    #[serde(default)]
+    pub selectable_file_count: u32,
+    #[serde(default)]
+    pub selected_file_count: u32,
+    #[serde(default)]
+    pub selectable_file_bytes: String,
+    #[serde(default)]
+    pub selected_file_bytes: String,
     pub piece_count: u32,
     pub verified_piece_count: u32,
     #[serde(default)]
@@ -488,6 +542,7 @@ pub(crate) fn validate_request(request: &RequestEnvelope) -> Result<(), (ErrorCo
             magnet,
             storage_root,
             start_content: _,
+            await_file_selection: _,
             skip_files,
         } => {
             if magnet.len() > MAX_MAGNET_LENGTH {
@@ -575,8 +630,35 @@ pub(crate) fn validate_request(request: &RequestEnvelope) -> Result<(), (ErrorCo
         | Command::Archive { torrent_id }
         | Command::RestoreArchive { torrent_id }
         | Command::RemoveTorrent { torrent_id, .. }
+        | Command::CancelPendingAdd { torrent_id }
         | Command::ExportMagnet { torrent_id } => {
             validate_torrent_id(torrent_id)?;
+        }
+        Command::ConfirmPendingFileSelection {
+            torrent_id,
+            catalog_id,
+            base: _,
+            overrides,
+            disable_future: _,
+        } => {
+            validate_torrent_id(torrent_id)?;
+            if catalog_id.len() != 64 || !catalog_id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                return Err((
+                    ErrorCode::InvalidRequest,
+                    "file catalog identity must be 64 hexadecimal characters".to_owned(),
+                ));
+            }
+            if overrides.len() > MAX_FILE_SELECTION_ENTRIES {
+                return Err((
+                    ErrorCode::InvalidRequest,
+                    format!("file selection overrides exceed {MAX_FILE_SELECTION_ENTRIES} entries"),
+                ));
+            }
+            let ranges = overrides
+                .iter()
+                .map(|entry| entry.range)
+                .collect::<Vec<_>>();
+            validate_file_ranges(&ranges, true)?;
         }
         Command::UpdateTorrentSettings { torrent_id, patch } => {
             validate_torrent_id(torrent_id)?;
@@ -605,7 +687,7 @@ pub(crate) fn validate_request(request: &RequestEnvelope) -> Result<(), (ErrorCo
                 .validate()
                 .map_err(|error| (ErrorCode::InvalidRequest, error.to_string()))?;
         }
-        Command::SetShowAddOptions { .. } => {}
+        Command::SetShowAddOptions { .. } | Command::SetShowFileSelection { .. } => {}
         Command::Snapshot | Command::Shutdown => {}
     }
     Ok(())
@@ -792,6 +874,7 @@ mod tests {
                         .to_owned(),
                 storage_root: "downloads".to_owned(),
                 start_content: true,
+                await_file_selection: false,
                 skip_files: vec![1, 3],
             },
         };

@@ -209,6 +209,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
                 magnet: arguments.magnet.clone(),
                 storage_root: "downloads".to_owned(),
                 start_content: false,
+                await_file_selection: false,
                 skip_files: Vec::new(),
             },
         })

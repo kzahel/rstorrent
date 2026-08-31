@@ -539,6 +539,7 @@ mod tests {
                     magnet: format!("magnet:?xt=urn:btih:{info_hash}"),
                     storage_root: "downloads".to_owned(),
                     start_content: false,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })

@@ -1544,6 +1544,7 @@ async fn api_torrent_upload(
         expected_revision: query.expected_revision,
         storage_root: query.storage_root,
         start_content: query.start_content,
+        await_file_selection: false,
         selection,
         source_length: body.len() as u32,
     };
@@ -2084,6 +2085,7 @@ mod tests {
                     magnet: format!("magnet:?xt=urn:btih:{torrent_id}"),
                     storage_root: "downloads".to_owned(),
                     start_content: false,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })
@@ -2482,6 +2484,7 @@ mod tests {
             expected_revision: None,
             storage_root: "downloads".to_owned(),
             start_content: false,
+            await_file_selection: false,
             selection: FileSelectionIntent::All,
             source_length: source.len() as u32,
         }
@@ -3338,6 +3341,7 @@ mod tests {
                         magnet,
                         storage_root: "downloads".to_owned(),
                         start_content: true,
+                        await_file_selection: false,
                         skip_files: Vec::new(),
                     },
                 })

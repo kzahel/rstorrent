@@ -481,6 +481,7 @@ fn initialize_catalog(
                 magnet,
                 storage_root: "downloads".to_owned(),
                 start_content: true,
+                await_file_selection: false,
                 skip_files: arguments
                     .skip_files
                     .iter()
@@ -507,6 +508,7 @@ fn initialize_catalog(
                 expected_revision: None,
                 storage_root: "downloads".to_owned(),
                 start_content: true,
+                await_file_selection: false,
                 selection: selection_intent(content.files().len(), &arguments.skip_files)?,
                 source_length,
             },

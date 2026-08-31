@@ -46,10 +46,10 @@ pub use application_connection::{
 pub use control::{
     AddTorrentBytesRequest, AddTorrentDisposition, AddTorrentResult, CONTROL_VERSION, Command,
     CommandResult, ErrorCode, ErrorResponse, FileIndexRange, FilePriority, FileSelectionIntent,
-    MAX_ROOT_ID_LENGTH, MAX_ROOT_LABEL_LENGTH, MagnetExportResult, MagnetExportSource,
-    RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseEnvelope, ResponseOutcome,
-    ServiceSnapshot, StorageState, TorrentProtocolIdentities, TorrentSnapshot, TorrentState,
-    validate_add_torrent_bytes_request,
+    FileSelectionOverride, MAX_ROOT_ID_LENGTH, MAX_ROOT_LABEL_LENGTH, MagnetExportResult,
+    MagnetExportSource, PendingFileSelectionBase, RemovalDataPolicy, RemovalState, RequestEnvelope,
+    ResponseEnvelope, ResponseOutcome, ServiceSnapshot, StorageState, TorrentProtocolIdentities,
+    TorrentSnapshot, TorrentState, validate_add_torrent_bytes_request,
 };
 pub use diagnostics::{
     DiagnosticCategory, DiagnosticEvent, DiagnosticField, DiagnosticFilter, DiagnosticProfile,

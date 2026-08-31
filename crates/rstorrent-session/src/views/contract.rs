@@ -1247,6 +1247,20 @@ pub struct TorrentView {
     pub storage_state: StorageState,
     pub storage_root: String,
     pub metadata_available: bool,
+    #[serde(default)]
+    pub awaiting_file_selection: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_file_selection_position: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_catalog_id: Option<String>,
+    #[serde(default)]
+    pub selectable_file_count: u32,
+    #[serde(default)]
+    pub selected_file_count: u32,
+    #[serde(default)]
+    pub selectable_file_bytes: String,
+    #[serde(default)]
+    pub selected_file_bytes: String,
     pub piece_count: u32,
     #[schemars(required, schema_with = "required_nullable_string_schema")]
     pub total_size_bytes: Option<String>,

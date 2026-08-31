@@ -539,6 +539,7 @@ async fn application_add_external_torrent(
                         magnet,
                         storage_root,
                         start_content,
+                        await_file_selection: false,
                         skip_files: Vec::new(),
                     },
                 },
@@ -566,6 +567,7 @@ async fn application_add_external_torrent(
                 expected_revision: None,
                 storage_root,
                 start_content,
+                await_file_selection: false,
                 selection: FileSelectionIntent::All,
                 source_length: source.len() as u32,
             };
@@ -671,6 +673,7 @@ fn decode_torrent_ipc(
         expected_revision,
         storage_root,
         start_content,
+        await_file_selection: false,
         selection,
         source_length: source.len() as u32,
     };

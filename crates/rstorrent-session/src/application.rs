@@ -1579,12 +1579,17 @@ impl ApplicationService {
         let add_magnet_duplicate = add_magnet_owner.is_some();
         let selected_root = match &command {
             Command::AddMagnet { storage_root, .. } if !add_magnet_duplicate => {
-                Some(storage_root.as_str())
+                Some(storage_root.clone())
             }
-            Command::SetDefaultStorageRoot { storage_root } => Some(storage_root.as_str()),
+            Command::SetDefaultStorageRoot { storage_root } => Some(storage_root.clone()),
+            Command::ConfirmPendingFileSelection { torrent_id, .. } => self
+                .store_mut()?
+                .load_resume(&torrent_id.to_ascii_lowercase())
+                .ok()
+                .map(|resume| resume.storage_root),
             _ => None,
         };
-        if let Some(storage_root) = selected_root
+        if let Some(storage_root) = selected_root.as_deref()
             && !self.storage_roots.contains_key(storage_root)
         {
             let snapshot = self.store_mut()?.snapshot()?;
@@ -1612,7 +1617,8 @@ impl ApplicationService {
             Command::Pause { torrent_id }
             | Command::ForceRecheck { torrent_id }
             | Command::Archive { torrent_id }
-            | Command::RemoveTorrent { torrent_id, .. } => Some(torrent_id.to_ascii_lowercase()),
+            | Command::RemoveTorrent { torrent_id, .. }
+            | Command::CancelPendingAdd { torrent_id } => Some(torrent_id.to_ascii_lowercase()),
             Command::AddMagnet { magnet, .. }
                 if rstorrent_protocol::magnet::Magnet::parse(magnet)
                     .is_ok_and(|magnet| magnet.select_only.is_some()) =>
@@ -1627,7 +1633,8 @@ impl ApplicationService {
             Command::Pause { torrent_id }
             | Command::ForceRecheck { torrent_id }
             | Command::Archive { torrent_id }
-            | Command::RemoveTorrent { torrent_id, .. } => Some(torrent_id.to_ascii_lowercase()),
+            | Command::RemoveTorrent { torrent_id, .. }
+            | Command::CancelPendingAdd { torrent_id } => Some(torrent_id.to_ascii_lowercase()),
             _ => None,
         };
         if let Some(torrent_id) = media_fence.as_deref() {
@@ -1917,6 +1924,19 @@ impl ApplicationService {
                     self.start_if_possible(&torrent_id).await?;
                 }
             }
+            Command::ConfirmPendingFileSelection { torrent_id, .. } => {
+                let torrent_id = torrent_id.to_ascii_lowercase();
+                self.views.record_diagnostic(
+                    DiagnosticSeverity::Info,
+                    category::LIFECYCLE_TORRENT,
+                    "pending_file_selection_confirmed",
+                    Some(&torrent_id),
+                    "Add-time file selection confirmed",
+                    &[],
+                )?;
+                self.start_if_possible(&torrent_id).await?;
+                self.reconcile_incoming_torrent(&torrent_id).await?;
+            }
             Command::Archive { torrent_id } => {
                 let torrent_id = torrent_id.to_ascii_lowercase();
                 self.views.record_diagnostic(
@@ -1953,12 +1973,26 @@ impl ApplicationService {
                 )?;
                 self.drive_removal(&torrent_id).await?;
             }
+            Command::CancelPendingAdd { torrent_id } => {
+                let torrent_id = torrent_id.to_ascii_lowercase();
+                self.views.record_diagnostic(
+                    DiagnosticSeverity::Info,
+                    category::LIFECYCLE_TORRENT,
+                    "pending_add_cancelled",
+                    Some(&torrent_id),
+                    "Pending torrent add cancelled",
+                    &[],
+                )?;
+                self.drive_removal(&torrent_id).await?;
+            }
             Command::RemoveStorageRoot { storage_root } => {
                 self.media.revoke_all();
                 self.healthy_platform_roots.remove(&storage_root);
                 self.reload_storage_roots()?;
             }
-            Command::SetDefaultStorageRoot { .. } | Command::SetShowAddOptions { .. } => {}
+            Command::SetDefaultStorageRoot { .. }
+            | Command::SetShowAddOptions { .. }
+            | Command::SetShowFileSelection { .. } => {}
             Command::MoveDownloadToTop { .. } | Command::MoveDownloadToBottom { .. } => {}
             Command::UpdateClientSettings { .. } => {
                 let settings = self.store_mut()?.snapshot()?.client_settings;
@@ -7365,6 +7399,7 @@ mod tests {
                 magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe=127.0.0.1:1"),
                 storage_root: "downloads".to_owned(),
                 start_content: true,
+                await_file_selection: false,
                 skip_files: Vec::new(),
             },
         }
@@ -7501,6 +7536,7 @@ mod tests {
             expected_revision: None,
             storage_root: "downloads".to_owned(),
             start_content,
+            await_file_selection: false,
             selection: crate::FileSelectionIntent::All,
             source_length: source.len() as u32,
         }
@@ -8043,6 +8079,7 @@ mod tests {
                         ),
                         storage_root: "downloads".to_owned(),
                         start_content: false,
+                        await_file_selection: false,
                         skip_files: Vec::new(),
                     },
                 })
@@ -8211,6 +8248,7 @@ mod tests {
                         magnet: format!("magnet:?xt=urn:btih:{info_hash}&x.pe={peer}"),
                         storage_root: "downloads".to_owned(),
                         start_content: false,
+                        await_file_selection: false,
                         skip_files: Vec::new(),
                     },
                 })
@@ -8356,6 +8394,7 @@ mod tests {
                         magnet,
                         storage_root: "downloads".to_owned(),
                         start_content: false,
+                        await_file_selection: false,
                         skip_files: Vec::new(),
                     },
                 })
@@ -8498,6 +8537,7 @@ mod tests {
                         ),
                         storage_root: "downloads".to_owned(),
                         start_content: false,
+                        await_file_selection: false,
                         skip_files: Vec::new(),
                     },
                 })
@@ -9128,6 +9168,7 @@ mod tests {
                     magnet: format!("magnet:?xt=urn:btih:{info_hash_hex}&x.pe={peer}"),
                     storage_root: "downloads".to_owned(),
                     start_content: true,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })
@@ -9333,6 +9374,7 @@ mod tests {
                         magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe={peer}"),
                         storage_root: "downloads".to_owned(),
                         start_content: true,
+                        await_file_selection: false,
                         skip_files: Vec::new(),
                     },
                 })
@@ -9705,6 +9747,7 @@ mod tests {
                     ),
                     storage_root: "downloads".to_owned(),
                     start_content: true,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })
@@ -10046,6 +10089,7 @@ mod tests {
                     ),
                     storage_root: "downloads".to_owned(),
                     start_content: true,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })
@@ -10141,6 +10185,7 @@ mod tests {
                     ),
                     storage_root: "downloads".to_owned(),
                     start_content: false,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })
@@ -10249,8 +10294,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn torrent_bytes_metadata_only_add_restarts_without_payload_artifacts() {
-        let root = test_root("torrent-bytes-metadata-only");
+    async fn pending_torrent_bytes_restarts_without_payload_artifacts() {
+        let root = test_root("pending-torrent-bytes");
         let raw_info = multi_file_info();
         let mut source = b"d4:info".to_vec();
         source.extend_from_slice(&raw_info);
@@ -10259,11 +10304,10 @@ mod tests {
             .await
             .expect("open application");
 
+        let mut request = torrent_bytes_request("pending-torrent-bytes", &source, true);
+        request.await_file_selection = true;
         let response = service
-            .add_torrent_bytes(
-                torrent_bytes_request("bytes-metadata-only", &source, false),
-                source,
-            )
+            .add_torrent_bytes(request, source)
             .await
             .expect("add torrent bytes");
         assert!(matches!(response.outcome, ResponseOutcome::Success { .. }));
@@ -10279,6 +10323,12 @@ mod tests {
         assert_eq!(resume.raw_info.as_deref(), Some(raw_info.as_slice()));
         assert_eq!(resume.state, TorrentState::Paused);
         assert!(!resume.desired_running);
+        let snapshot = service
+            .store_mut()
+            .expect("store")
+            .snapshot()
+            .expect("snapshot");
+        assert!(snapshot.torrents[0].awaiting_file_selection);
         let paths = torrent_storage_paths(
             &root.join("payload"),
             "multi",
@@ -10300,6 +10350,12 @@ mod tests {
             .expect("restart imported torrent");
         assert_eq!(resume.raw_info.as_deref(), Some(raw_info.as_slice()));
         assert_eq!(resume.state, TorrentState::Paused);
+        let snapshot = reopened
+            .store_mut()
+            .expect("store")
+            .snapshot()
+            .expect("restart snapshot");
+        assert!(snapshot.torrents[0].awaiting_file_selection);
         assert!(!paths.content.exists());
         assert!(!paths.part.exists());
         reopened.shutdown().await.expect("shutdown reopened");
@@ -10733,6 +10789,7 @@ mod tests {
                 magnet,
                 storage_root: "downloads".to_owned(),
                 start_content: true,
+                await_file_selection: false,
                 skip_files: Vec::new(),
             },
         };
@@ -10991,6 +11048,7 @@ mod tests {
                     magnet: magnet.clone(),
                     storage_root: "downloads".to_owned(),
                     start_content: true,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })
@@ -11413,6 +11471,7 @@ mod tests {
                     magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe={address}"),
                     storage_root: "downloads".to_owned(),
                     start_content: false,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })
@@ -11527,6 +11586,7 @@ mod tests {
                     magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe={address}"),
                     storage_root: "downloads".to_owned(),
                     start_content: false,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })
@@ -13089,6 +13149,7 @@ mod tests {
                     magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe={address}"),
                     storage_root: "downloads".to_owned(),
                     start_content: true,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })
@@ -13281,6 +13342,7 @@ mod tests {
                     magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe={address}"),
                     storage_root: "downloads".to_owned(),
                     start_content: true,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })
@@ -13650,6 +13712,7 @@ mod tests {
                     magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe={address}"),
                     storage_root: "downloads".to_owned(),
                     start_content: true,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })
@@ -14254,6 +14317,7 @@ mod tests {
                     magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe={address}"),
                     storage_root: "downloads".to_owned(),
                     start_content: true,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })
@@ -14679,6 +14743,7 @@ mod tests {
                     magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe={address}"),
                     storage_root: "downloads".to_owned(),
                     start_content: true,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })
@@ -14702,6 +14767,7 @@ mod tests {
                     magnet: format!("magnet:?xt=urn:btih:{blocked_torrent_id}"),
                     storage_root: "downloads".to_owned(),
                     start_content: false,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })
@@ -14901,6 +14967,7 @@ mod tests {
                     magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe={address}"),
                     storage_root: "downloads".to_owned(),
                     start_content: true,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })
@@ -15678,6 +15745,7 @@ mod tests {
                     ),
                     storage_root: "downloads".to_owned(),
                     start_content: true,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })
@@ -15853,6 +15921,7 @@ mod tests {
                     magnet: "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213&dn=Waiting+for+metadata".to_owned(),
                     storage_root: "downloads".to_owned(),
                     start_content: false,
+                    await_file_selection: false,
                     skip_files: Vec::new(),
                 },
             })

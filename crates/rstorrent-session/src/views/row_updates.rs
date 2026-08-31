@@ -106,6 +106,13 @@ semantic_fields!(
         TransferLimits => transfer_limits: TorrentTransferLimits,
         StorageState => storage_state: StorageState,
         MetadataAvailable => metadata_available: bool,
+        AwaitingFileSelection => awaiting_file_selection: bool,
+        PendingFileSelectionPosition => pending_file_selection_position: Option<u32>,
+        FileCatalogId => file_catalog_id: Option<String>,
+        SelectableFileCount => selectable_file_count: u32,
+        SelectedFileCount => selected_file_count: u32,
+        SelectableFileBytes => selectable_file_bytes: String,
+        SelectedFileBytes => selected_file_bytes: String,
         PieceCount => piece_count: u32,
         TotalSizeBytes => total_size_bytes: Option<String>,
         VerifiedPieceCount => verified_piece_count: u32,
@@ -162,6 +169,16 @@ impl TorrentRowUpdate {
         changed!(TransferLimits, transfer_limits);
         changed!(StorageState, storage_state);
         changed!(MetadataAvailable, metadata_available);
+        changed!(AwaitingFileSelection, awaiting_file_selection);
+        changed!(
+            PendingFileSelectionPosition,
+            pending_file_selection_position
+        );
+        changed!(FileCatalogId, file_catalog_id);
+        changed!(SelectableFileCount, selectable_file_count);
+        changed!(SelectedFileCount, selected_file_count);
+        changed!(SelectableFileBytes, selectable_file_bytes);
+        changed!(SelectedFileBytes, selected_file_bytes);
         changed!(PieceCount, piece_count);
         changed!(TotalSizeBytes, total_size_bytes);
         changed!(VerifiedPieceCount, verified_piece_count);
@@ -531,6 +548,13 @@ mod tests {
             storage_state: StorageState::Available,
             storage_root: "downloads".to_owned(),
             metadata_available: false,
+            awaiting_file_selection: false,
+            pending_file_selection_position: None,
+            file_catalog_id: None,
+            selectable_file_count: 0,
+            selected_file_count: 0,
+            selectable_file_bytes: "0".to_owned(),
+            selected_file_bytes: "0".to_owned(),
             piece_count: 1,
             total_size_bytes: None,
             verified_piece_count: 0,

@@ -268,6 +268,7 @@ async fn download(
                         magnet,
                         storage_root: OUTPUT_ROOT_ID.to_owned(),
                         start_content: true,
+                        await_file_selection: false,
                         skip_files: Vec::new(),
                     },
                 })
@@ -286,6 +287,7 @@ async fn download(
                         expected_revision: None,
                         storage_root: OUTPUT_ROOT_ID.to_owned(),
                         start_content: true,
+                        await_file_selection: false,
                         selection: FileSelectionIntent::All,
                         source_length,
                     },
