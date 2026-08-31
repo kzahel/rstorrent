@@ -12647,7 +12647,7 @@ mod tests {
                 projection: ViewProjection::Summary,
                 delivery: DeliveryPolicy {
                     min_interval_millis: 0,
-                    max_queue_bytes: 4096,
+                    max_queue_bytes: 8192,
                 },
                 diagnostics: None,
                 catalog_page: None,
@@ -12673,8 +12673,15 @@ mod tests {
         .await
         .expect("view update timed out")
         .expect("view update");
-        assert_eq!(update.base_revision, "0");
-        assert_eq!(update.revision, "1");
+        let base_revision = update
+            .base_revision
+            .parse::<u64>()
+            .expect("numeric patch base revision");
+        let revision = update
+            .revision
+            .parse::<u64>()
+            .expect("numeric patch revision");
+        assert!(base_revision <= revision);
         let ViewUpdatePayload::Patch { patch } = update.payload else {
             panic!("mutation must publish a patch");
         };

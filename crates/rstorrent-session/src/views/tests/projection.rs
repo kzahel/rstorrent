@@ -225,6 +225,18 @@ fn operational_state_and_queue_position_are_authoritative() {
         .expect("complete snapshot");
     assert_eq!(
         current_torrent(&hub).operational_state,
+        crate::TorrentOperationalState::Queued
+    );
+    hub.set_progress_inputs(
+        TORRENT_ID,
+        ProgressInputs {
+            seed_admission: crate::SeedAdmissionView::Active,
+            ..ProgressInputs::default()
+        },
+    )
+    .expect("admit complete seed");
+    assert_eq!(
+        current_torrent(&hub).operational_state,
         crate::TorrentOperationalState::Seeding
     );
 
