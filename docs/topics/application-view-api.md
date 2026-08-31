@@ -10,6 +10,17 @@ compatibility alias. Existing checking, root health, verified-range,
 wanted-completion, seeding, and repair facts are the sole authority. Earlier
 generated-contract history below remains as an implementation record.
 
+Completed Tactical
+[`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md) adds
+schema-23 seeding truth without changing view ownership. The generated
+settings snapshot and sparse patch carry active seeds plus three priority
+thresholds; runtime settings carry effective active seeds and active/inactive
+counts. Torrent rows carry exact decimal-string lifetime payload/timer values,
+derived goal facts, and active/queued seed state. Rust, TypeScript, and Kotlin
+reducers plus the generated Swift binding round-trip full snapshots and sparse
+updates; clients do not derive rank or infer that goal completion stops a
+torrent.
+
 Tactical
 [`199`](../tactical/199-android-live-unmetered-network-enforcement.md) adds one
 typed `WaitingForUnmeteredNetwork` progress reason plus truthful requested and

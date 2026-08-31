@@ -1,15 +1,18 @@
 # Tactical 201: Durable Seeding Goals And Seed Admission
 
-Status: **Active.** User direction on 2026-08-31 selected the exact pinned
-libtorrent implementation semantics for the seed queue, durable counters,
-timers, and goal ranking. End-to-end implementation was authorized on the same
-date. The task-free policy, fresh schema-23, runtime-accounting, and combined
-admission gates are implemented; generated clients, presentation, platform
-validation, and final end-to-end evidence remain open.
+Status: **Complete as of 2026-08-31.** User direction selected the exact
+pinned libtorrent implementation semantics for the seed queue, durable
+counters, timers, and goal ranking. Schema 23, exact accounting, combined
+admission, generated clients, React/Compose presentation, controlled
+interoperability, Android/Apple qualification, and bounded-resource evidence
+all pass. Meeting a goal changes automatic priority; it does not stop a
+torrent or rewrite durable intent.
 
 Topics: `incoming-reachability-and-seeding`, `client-persistence`,
-`application-control`, `client-surfaces`, `android-jstorrent-replacement`,
-`runtime-configurations-and-headless-deployment`, `capability-readiness`,
+`application-control`, `application-view-api`, `client-surfaces`,
+`web-ui-design`, `android-jstorrent-replacement`,
+`runtime-configurations-and-headless-deployment`,
+`performance-and-live-evidence`, `capability-readiness`, and
 `oracle-driven-engine-campaign`
 
 Dependencies: completed long-lived peer-runtime Tactical
@@ -92,6 +95,14 @@ Validation at this checkpoint:
   plus all package binary tests); and
 - `cargo clippy -p rstorrent-engine -p rstorrent-session --lib --bins -- -D
   warnings`.
+
+The remaining end-to-end gates subsequently landed. The generated schema and
+TypeScript, Kotlin, and Swift bindings carry sparse seed-setting patches,
+configured/effective admission counts, exact lifetime counters/timers, goal
+state, and active/queued seed truth. React and Compose use the same backed
+settings and explicitly explain that goals affect priority rather than stop
+behavior. The Swift boundary round-trips the additive values without adding a
+second presentation policy.
 
 ## Decision And Desired Outcome
 
@@ -647,6 +658,66 @@ deployment, or external mutation is required. Headless and automated AVD/
 simulator evidence is proportional because the slice changes shared engine,
 persistence, generated contracts, and Android lifetime semantics but adds no
 new OS integration primitive.
+
+## Execution Record
+
+The implementation landed incrementally in commits `ec0dcd0`, `3e120c8`,
+`9705118`, `80ccb02`, `30f71e5`, `503a092`, `7a067ad`, `cfbbb41`, `f5754f7`,
+`d1cfbc7`, and `aef94f0`. Those gates respectively add the exact policy,
+schema, accounting, admission, generated/product clients, Swift boundary,
+controlled oracle, Android qualification, resource evidence, and final
+regression repairs.
+
+Controlled interoperability uses pinned libtorrent commit
+`7d7fc38fac61177fa5e02148f791b2f65250b09d` through binding version
+`2.0.13.0`. Six independently generated 4,096-byte v1 torrents and six
+controlled UDP trackers prove active-seed limits one and two, exact tracker
+events and counts, threshold-induced rank reordering, goal-met continuation,
+exact payload hashes, restart-equivalent winners, and residue-free cleanup.
+Python discovery passes 106 interoperability harness tests.
+
+The installed API-35 product profile downloads three controlled torrents,
+then applies active seeds `1` and observes exactly `1 active / 2 queued` with
+defaults `200`%, `700`%, and `86,400` seconds. That truth survives ordinary
+Home shutdown/reopen, and the background-enabled case retains the existing
+foreground-service/notification owner until seeding is disabled and joined.
+The final connected suite passes 24 of 24 tests; both x86_64 and arm64-v8a
+Rust/UniFFI builds, JVM tests, lint, and APK assembly pass. The temporary API
+35 AVD was deleted after the run. The maintained iOS suite passes 29 unit and
+two UI tests, and the unsigned archive succeeds.
+
+Resource evidence records one accounting row with an exact 1 MiB wake tail,
+four seconds of timer tail, and one dirty row before checkpoint. A real goal
+crossing leaves exactly seven uploaded bytes for the final forced flush. The
+500-complete-seed plus three-download scale case tracks 503 accounting rows;
+497 seeds and three downloads fill the hard 500-torrent limit without
+exceeding the existing 200-peer, 40-handle, storage, active-piece, request, or
+bandwidth owners. Android observes 145 baseline, 168 high-water, and 143 final
+process file descriptors; SAF ownership peaks at 11 of 40 handles and two
+pending requests. Every controlled generation joins to zero owners.
+
+Final repository evidence:
+
+- `cargo fmt --all -- --check` passes;
+- `cargo clippy --workspace -- -D warnings` passes;
+- `cargo test --workspace --quiet` passes, including 597 engine tests with 11
+  opt-in cases ignored and 322 session tests with two ignored;
+- `npm run generate --prefix clients/web`, `npm run typecheck --prefix
+  clients/web`, and `npm run test --prefix clients/web` pass; Vitest reports
+  367 passed and two skipped tests;
+- `npm run test:e2e --prefix clients/web` reports 37 passed and 14 opt-in live
+  cases skipped, including wide and phone seed-priority/accessibility gates;
+- `uv run --project tests/interop --locked python
+  tests/interop/seed_admission.py` passes the six-torrent controlled oracle;
+- `clients/android/build.sh` passes both native ABIs and the Android product
+  build, and the final API-35 connected suite passes 24 of 24 tests; and
+- `clients/ios/scripts/test.sh` and `clients/ios/scripts/archive.sh` pass the
+  maintained simulator and unsigned-archive gates.
+
+No public swarm, physical device, signed artifact, deployment, firewall,
+gateway, relay, or unrelated external state was used or changed. Hard stop
+policy, per-torrent overrides, partial-finished upload continuity, and broader
+seeding protocol breadth remain the deliberate next-slice boundaries below.
 
 ## Non-Goals And Intentional Deferrals
 

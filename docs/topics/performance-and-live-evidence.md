@@ -19,6 +19,15 @@ observations rather than public-swarm or product performance claims.
 Completed Tactical `132` records one 2.862-second metadata-only ordinary-swarm
 uTP readiness observation with both transports, bounded resources, and exact
 cleanup. It is not a throughput baseline.
+Completed Tactical
+[`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md) adds a
+policy/resource qualification rather than a throughput claim. A 503-torrent
+accounting model and the 497-seed/three-download hard-cap case retain the
+existing 200-peer and 40-handle ceilings with no task, timer, or handle per
+queued seed. The installed API-35 case observes 145 baseline, 168 high-water,
+and 143 final process file descriptors, with SAF ownership at 11 of 40 handles
+and two pending requests. The exact accounting wake tail is 1 MiB, the timer
+tail is four seconds, and the real goal-crossing final flush is seven bytes.
 Completed Tactical `137` records a controlled product-MTU comparison: five
 alternating exact 2,097,883-byte pairs reduce median RSTorrent DATA datagrams
 from 3,978 at fixed 548 to 1,473 at dynamic 1,457 bytes, a 62.97% reduction.

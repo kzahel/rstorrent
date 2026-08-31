@@ -302,6 +302,20 @@ handover, recovers a real fixed-port bind conflict in the same application
 generation through the normal command path, and asserts bounded high-water and
 zero-owner shutdown observations.
 
+Run the exact seed-admission and durable-goal oracle with:
+
+```bash
+source ~/.profile
+uv run --project tests/interop --locked \
+  python tests/interop/seed_admission.py
+```
+
+The loopback-only harness creates six deterministic 4,096-byte torrents and
+six controlled UDP trackers, then drives pinned libtorrent 2.0.13.0 leechers.
+It proves active-seed limits one and two, exact tracker events and counts,
+threshold-induced reorder, goal-met continuation, payload hashes, restart-
+equivalent admission, bounded resources, joined shutdown, and cleanup.
+
 Add `--disk-pressure` to run the isolated Tactical `044` storage proof. It
 uses only loopback traffic, injects a bounded slow-write profile into the
 unauthenticated development gateway, verifies high/low pressure recovery and
@@ -1113,8 +1127,10 @@ The Android product concurrency profile uses the same generated application
 contract and Android session limits. It applies a 24 KiB/s peer download
 limit before adding torrents and requires an explicit target, two active
 downloads plus one queued promotion, cap accounting, terminal bandwidth
-drain, exact payload hashes, bounded resource/file-descriptor high-waters,
-and cleanup:
+drain, and exact payload hashes. It then sets active seeds to one and verifies
+exact `1 active / 2 queued` truth, pinned goal defaults, foreground reopen,
+optional background ownership, disablement, bounded resource/file-descriptor
+high-waters, and cleanup:
 
 ```bash
 clients/android/build.sh

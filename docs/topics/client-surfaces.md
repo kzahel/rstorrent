@@ -1020,12 +1020,13 @@ streaming demand, expiry, and revocation remain unchanged.
   qualified by completed Tactical `200` through its accepted AVD and
   deterministic evidence, prior Tactical `194` security proof, and later
   physical ChromeOS 150/API-33 lifecycle strengthening.
-  Decision-complete Tactical
-  [`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md) is Ready
-  to add the exact pinned libtorrent global active-seed and ratio/time priority
-  settings plus truthful active/queued/goal status to React and Compose; it
-  does not promise hard stop-on-goal. VPN, proxy, and low-battery remain
-  separate product/engine slices.
+  Completed Tactical
+  [`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md) adds the
+  exact pinned libtorrent global active-seed and ratio/time priority settings
+  plus truthful active/queued/goal status to React and Compose. Wide and phone
+  browser gates and an installed API-35 Compose profile prove the backed
+  values, Unlimited, exact `1 active / 2 queued` truth, and priority-not-stop
+  copy. VPN, proxy, and low-battery remain separate product/engine slices.
 - Tracker HTTPS authentication is intentionally absent from ordinary React
   and Compose settings. The advanced typed `disabled` override exists for
   compatibility/debug use and remains visibly unauthenticated in tracker

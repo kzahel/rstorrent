@@ -36,16 +36,16 @@ metadata/hash/payload service, and terminal cleanup evidence pass.
 Completed Tactical
 [`134`](../tactical/134-hierarchical-transfer-rate-enforcement.md) adds live
 session/torrent upload and download limits at the common established-peer
-boundary for initiated and accepted TCP/uTP streams. Ratio/time seeding goals
-are now decision-complete and Ready in Tactical
-[`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md): exact
+boundary for initiated and accepted TCP/uTP streams. Completed Tactical
+[`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md) implements
 pinned libtorrent global thresholds, durable totals/timers, active-seed rank,
 inactivity, and defaults. Reaching any one threshold lowers automatic seed
 priority; it does not unregister a seed when capacity remains or rewrite
-durable run intent. Its landed accounting gate attaches the durable generation
-sink at the exact initiated and accepted peer-I/O boundary, including active
-pre-completion upload routes, and coalesces those physical payload bytes with
-monotonic activity timers under one session owner.
+durable run intent. One combined owner admits downloads first and then ranked
+completed seeds under the fixed 500-torrent ceiling. Its durable generation
+sink attaches at the exact initiated and accepted peer-I/O boundary, including
+active pre-completion upload routes, and coalesces those physical payload bytes
+with monotonic activity timers under one session owner.
 
 Completed very-high-priority Tactical
 [`124`](../tactical/124-duplex-verified-piece-upload.md) replaces the
@@ -629,10 +629,12 @@ behavior. Tactical `097` now applies that persisted group live with explicit
 configured/effective convergence and no schema change.
 Pending-handshake and incoming-slack tuning remain internal safety policy.
 Tactical `134` subsequently supplies finite session/torrent peer-transfer
-limits. Decision-complete Tactical `201` now owns durable payload accounting,
-fresh reset/schema policy, global ratio/time goals, and seed admission under
-the exact pinned libtorrent semantics. It is Ready, not implemented by the
-present incoming-runtime evidence.
+limits. Completed Tactical `201` adds durable payload accounting, fresh
+reset/schema policy, global ratio/time priority goals, and combined seed
+admission under the exact pinned libtorrent semantics. Its controlled
+six-torrent oracle proves limits one and two, threshold reordering, goal-met
+continuation, restart-equivalent winners, exact tracker events and payload,
+and terminal cleanup.
 
 Controlled product evidence persists automatic/37/one through the production
 web gateway, reopens onto an observed nonzero listener, and seeds an exact

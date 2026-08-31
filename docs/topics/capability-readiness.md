@@ -591,6 +591,15 @@ Tauri controls pass headlessly, and a physical Pixel 7a proves Android's
 configured-three/effective-two clamp, promotion, exact payload, and terminal
 resource cleanup.
 
+Completed Tactical
+[`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md) extends
+that one admission owner with the exact pinned libtorrent seed policy. Fresh
+schema 23 retains bounded monotonic payload/timer/count facts and four global
+settings, while derived rank and admission remain runtime-only. Six-torrent
+controlled oracle, 500-torrent resource, React/Compose, installed API-35,
+iOS, and full repository gates pass. Any one ratio/time goal lowers automatic
+priority but never stops the torrent or rewrites durable intent.
+
 Tactical
 [`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md) is
 complete. Path and supported Android SAF storage now share logical artifact
@@ -725,10 +734,10 @@ TCP/uTP duplex I/O, including TCP MSE. Controlled unequal-peer fairness,
 session/torrent caps, full duplex, exact hashes, terminal ownership, schema-18
 restart/convergence, generated React/Compose controls, both Android builds,
 headless Chrome, API 34 AVD, and complete repository gates pass. The policy
-counts established peer-stream bytes; automatic network policy, total-device
-accounting, and ratio/time seeding goals remain separate. Decision-complete
-Tactical `201` now owns the latter without changing Tactical `134`'s landed
-rate-enforcement claim.
+counts established peer-stream bytes; automatic network policy and
+total-device accounting remain separate. Completed Tactical `201` adds
+ratio/time seed priority above this owner without changing Tactical `134`'s
+landed rate-enforcement claim.
 
 Tactical
 [`135`](../tactical/135-controlled-tcp-storage-near-parity.md) is complete.
@@ -850,16 +859,6 @@ exactly.
 
 ### Active
 
-- Implement **Tactical `201`** end to end. Its first task-free gate now passes
-  exact pinned-default, any-one-threshold goal, seed-rank, tracker/live
-  fallback, overflow, applicable-rate, and delayed inactivity tests. Fresh
-  schema 23 now round-trips the four typed settings and bounded monotonic
-  accounting, rejects malformed/regressing values, and resets schema 22 while
-  preserving external payload. One joined session accumulator now durably
-  checkpoints exact generation-fenced peer-I/O payload, nested activity
-  timers, and latest-known tracker counts with bounded clean shutdown.
-  Combined admission, generated clients, React/Compose, platform builds, and
-  controlled interoperability remain open.
 - Finish qualification evidence for **Tactical `196`**. The implementation
   now supplies the default-compiled lazy desktop/headless endpoint,
   authenticated direct-only signaling, completed-file **Save file...**,
@@ -1055,8 +1054,9 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Endgame | Implemented | deterministic, runtime, live | Strict duplicates, core cancels, late-loss safety, exact accounting, and public verified publication pass; throughput parity remains open. | [`download-correctness`](download-correctness.md) |
 | Hash-failure recovery | Implemented subset | deterministic, runtime, interop, live | A failed v1 generation resets the whole piece with bounded contributors. A pure-v2 or hybrid generation obtains authenticated leaf proofs, retains exact good blocks/contributors, and refetches only bad blocks; reject or stall falls back to whole-piece reset. Hybrid have requires both schemes, and a one-scheme pass is a typed terminal inconsistency. Full parole selection remains absent. | [`download-correctness`](download-correctness.md) |
 | Reliable completion on ordinary swarms | Partial | deterministic, runtime, interop, live | Multi-peer liveness, endgame, corrupt-generation retry, and bounded storage completion pass, but completion latency is not yet comparable and public corruption was not induced. | [`download-correctness`](download-correctness.md) |
-| Payload upload and seeding | Implemented | deterministic, runtime, interop, web, AVD, physical | Published and active incomplete torrents serve exact verified/readable availability and bounded 16-KiB requests through initiated or accepted TCP/uTP peers under the shared live 0--50 slot, ten-read, 40-handle, writer, and hierarchical rate bounds. Complementary RSTorrent/libtorrent ordinary, Fast, forced-MSE, cross-file, part-backed, rate-limited full-duplex, and API 34 SAF transfers capture Piece frames in both directions before completion and independently verify every final hash. Active routed torrents advertise the real tracker/DHT port with nonzero `left`; failure and lifecycle changes retract or replace authority before stale reads. Exact completed-seed local, mapped off-LAN, AVD, and physical evidence remains. Ratio/time goals and discovery-driven public incomplete-swarm reliability remain absent. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`protocol-support`](protocol-support.md) |
-| Hierarchical peer-transfer rate limits | Implemented | deterministic, persistence, runtime, interop, web, AVD | Semantic Unlimited or bounded upload/download limits compose at session and torrent levels across initiated and accepted TCP/uTP plaintext and TCP MSE streams. One torrent-first fair owner bounds grants, bursts, registrations, and waits; excludes deliberate throttling from network-stall clocks; applies live without replacing peer generations; and terminates empty. Schema-18 restart, unequal three-peer/one-peer fairness, session/torrent cap, full-duplex pinned-libtorrent, responsive React/Axe, both Android builds, and API 34 limited concurrent-transfer gates pass. Tactical `180` replaces the old forced pair/whole-client commands with independent typed patches and makes web/Compose drafts converge by receipt revision under complete cloned updates and resets; controlled 8 MiB listener handover and bind recovery pass. The scope is established peer-stream bytes, not total-device traffic; network automation, generic weights/classes, and seeding goals remain separate. | [`application-control`](application-control.md), [`settings-mutation-and-draft-consistency`](settings-mutation-and-draft-consistency.md), [`performance-and-live-evidence`](performance-and-live-evidence.md) |
+| Payload upload and seeding | Implemented | deterministic, runtime, interop, web, AVD, physical | Published and active incomplete torrents serve exact verified/readable availability and bounded 16-KiB requests through initiated or accepted TCP/uTP peers under the shared live 0--50 slot, ten-read, 40-handle, writer, and hierarchical rate bounds. Complementary RSTorrent/libtorrent ordinary, Fast, forced-MSE, cross-file, part-backed, rate-limited full-duplex, and API 34 SAF transfers capture Piece frames in both directions before completion and independently verify every final hash. Active routed torrents advertise the real tracker/DHT port with nonzero `left`; failure and lifecycle changes retract or replace authority before stale reads. Exact completed-seed local, mapped off-LAN, AVD, and physical evidence remains. Discovery-driven public incomplete-swarm reliability remains absent. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`protocol-support`](protocol-support.md) |
+| Durable seeding goals and seed admission | Implemented | deterministic, persistence, runtime, interop, web, Android build, AVD, iOS build | Schema 23 stores exact monotonic peer-payload totals, nested active/finished/seeding timers, explicit-unknown tracker counts, and global defaults of five active seeds, 200% share, 700% finished/download time, and 86,400 finished seconds. One combined owner gives downloads fixed priority, ranks completed seeds under the 500-torrent hard ceiling, exempts pinned-inactive seeds from only the type limit, and joins demoted network/read owners. Six controlled torrents prove limits one/two, goal reorder, goal-met continuation, restart, and exact tracker/payload cleanup. React and Compose expose truthful active/queued/goal state and priority-not-stop copy. Hard stop-on-goal, per-torrent overrides, and partial-finished upload continuity remain absent. | [`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md), [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`client-persistence`](client-persistence.md) |
+| Hierarchical peer-transfer rate limits | Implemented | deterministic, persistence, runtime, interop, web, AVD | Semantic Unlimited or bounded upload/download limits compose at session and torrent levels across initiated and accepted TCP/uTP plaintext and TCP MSE streams. One torrent-first fair owner bounds grants, bursts, registrations, and waits; excludes deliberate throttling from network-stall clocks; applies live without replacing peer generations; and terminates empty. Schema-18 restart, unequal three-peer/one-peer fairness, session/torrent cap, full-duplex pinned-libtorrent, responsive React/Axe, both Android builds, and API 34 limited concurrent-transfer gates pass. Tactical `180` replaces the old forced pair/whole-client commands with independent typed patches and makes web/Compose drafts converge by receipt revision under complete cloned updates and resets; controlled 8 MiB listener handover and bind recovery pass. The scope is established peer-stream bytes, not total-device traffic; network automation and generic weights/classes remain separate, while Tactical `201` implements seed goals above this owner. | [`application-control`](application-control.md), [`settings-mutation-and-draft-consistency`](settings-mutation-and-draft-consistency.md), [`performance-and-live-evidence`](performance-and-live-evidence.md) |
 
 ### Integrity, Storage, And Resume
 
@@ -1097,7 +1097,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Offline, loopback-only, and online egress policy | Implemented | deterministic, runtime, web, AVD | Fixed `NetworkPolicy` remains the service-lifetime address/DNS boundary. Tactical `199` adds an independent atomic live application prerequisite and Android default-off unmetered cost policy. It closes and joins peer, tracker, DNS, DHT, incoming, UDP/uTP, advertisement, listener, reachability, and mapping generations without rewriting torrent intent; deterministic and installed API 28/35 AVD evidence passes, while physical-phone handoff remains authorization-gated. VPN and proxy controls remain absent and separate. | [`application-control`](application-control.md), [`199`](../tactical/199-android-live-unmetered-network-enforcement.md) |
 | Headless product validation | Implemented | web, AVD, Linux VM | Temporary browser/AVD harnesses and the installed configured-Linux service prove real presentation detachment without launching Tauri; physical devices and visible desktop automation still require explicit authorization. | [`client-surfaces`](client-surfaces.md) |
 | Comparative live performance harness | Implemented | deterministic, interop, web, live | Named hardware profiles retain row-specific 1/10 GiB engine gates, per-view/adversarial application ratios, environment applicability, and artifact-producing CI. The schema-v2 public comparator adds isolated RSTorrent/libtorrent workers, matched plaintext/RC4 profiles, exact metainfo, independent verification, process resources, atomic owner checkpoints, bounded cleanup, and discovery-versus-active-transfer timing. Its first quick run found Big Buck Bunny's libtorrent active phase about 19% faster and exposed the focused HTTP(S) gap. The post-fix Ubuntu rerun received two tracker batches and verified six pieces before a later 120-second stall, closing dispatch without yielding a throughput ratio. Public speed remains a distribution rather than a CI threshold. | [`performance-and-live-evidence`](performance-and-live-evidence.md) |
-| Multi-torrent queue and resource budgets | Implemented | deterministic, persistence, runtime, interop, web, physical | Schema 17 stores automatic queue order and configured limit; desktop defaults to three and Android clamps effectively to two. One application owner admits exact generations under shared memory, storage/hash, tracker, outbound, peer, file-handle, and hierarchical transfer-rate ceilings. Controlled performance gates, 100-runnable/500-complete scale, headless queue/settings actions, and physical Pixel promotion/cleanup pass; seed ranking and adaptive platform pressure remain later. | [`application-control`](application-control.md), [`performance-and-live-evidence`](performance-and-live-evidence.md) |
+| Multi-torrent queue and resource budgets | Implemented | deterministic, persistence, runtime, interop, web, physical | Schema 17 stores automatic download order and configured limit; desktop defaults to three and Android clamps effectively to two. Tactical `201` extends the same owner with exact active-seed ranking and live zero/finite/Unlimited limits beneath the fixed 500-torrent hard ceiling. Shared memory, storage/hash, tracker, outbound, peer, file-handle, and hierarchical transfer-rate ceilings remain session-wide. Controlled performance gates, 100-runnable/500-complete scale, headless/browser settings, installed API-35 seed promotion, and physical Pixel download promotion/cleanup pass; adaptive platform pressure remains later. | [`application-control`](application-control.md), [`performance-and-live-evidence`](performance-and-live-evidence.md), [`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md) |
 
 ## Maintenance Contract
 

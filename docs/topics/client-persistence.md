@@ -2,7 +2,7 @@
 
 Topic: `client-persistence`
 
-Status: Active Tactical
+Status: Completed Tactical
 [`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md) advances
 the disposable catalog to fresh schema 23. It adds bounded monotonic lifetime
 peer-payload totals, active/finished/seeding timers, explicit-unknown tracker
@@ -723,7 +723,7 @@ open without paying these policy costs now.
 
 The implemented successor is a fresh direct-storage schema, not a migration of
 publication-era ownership. Tactical `191` advanced schema 21 to disposable
-schema 22 and removed publication-specific state. Active Tactical `201` now
+schema 22 and removed publication-specific state. Completed Tactical `201`
 advances that shape to schema 23 with seeding settings and durable scalar
 accounting. Its fixed-size write transaction accepts at most 500 unique rows,
 rejects counter/timer regression and malformed timer ordering, and keeps
@@ -883,12 +883,12 @@ successful mutation unreadable after upgrade.
   and exact replay saves resubmit authoritative intent after persistence
   resolution so degraded runtime state can retry.
   Completed Tactical `134` adds finite session and per-torrent peer-transfer
-  limits without adding durable transfer totals. Decision-complete Tactical
-  [`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md) is Ready
-  to add exact pinned-libtorrent payload totals, unpaused active/finished/
-  seeding timers, cached swarm counts, and global seed-goal settings in fresh
-  schema 23. Recognized schemas 1 through 22 retain the disposable reset
-  contract, and no derived rank or active/queued result becomes durable.
+  limits without adding durable transfer totals. Completed Tactical
+  [`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md) adds
+  exact pinned-libtorrent payload totals, unpaused active/finished/seeding
+  timers, cached swarm counts, and global seed-goal settings in fresh schema
+  23. Recognized schemas 1 through 22 retain the disposable reset contract,
+  and no derived rank or active/queued result becomes durable.
 - JSTorrent migration is accepted as an explicit user-initiated semantic
   import into one selected backend, not in-place reuse of the legacy database
   or live synchronization between backends. The exact supported source

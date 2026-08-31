@@ -233,7 +233,7 @@ blocker for an independent RSTorrent beta.
 | VPN-only mode | JSTorrent suspends when the active default network is not reported as VPN. RSTorrent has no control. The legacy check does not prove socket binding or leak prevention. | Implement only with Android `Network` binding, fail-closed startup/handover, closure or rebinding of existing TCP/UDP sockets, and peer/tracker/DHT/DNS leakage evidence; otherwise retire and disclose it. |
 | SOCKS5 proxy | JSTorrent exposes host, port, optional credentials, and peer/HTTP-tracker/UDP-tracker routing choices. RSTorrent shows a disabled placeholder and has no engine proxy owner. | Use a source-first engine tactical covering DNS, authentication-secret storage, UDP ASSOCIATE or a truthful unsupported state, reconnect, bypass prevention, resource limits, and interoperability. |
 | DHT and PEX controls | Both RSTorrent engine capabilities exist, but Compose has no enable/disable controls. | Add backed settings or explicitly retain always-on public-torrent policy. Preserve private-torrent gating regardless. |
-| Seeding and queue policy | JSTorrent has an active-seed limit and stop/close versus keep-seeding choice. RSTorrent exposes active-download admission but not equivalent seed goals/policy. | Tactical `200` selects default background closure and a separate keep-seeding-in-background opt-in. Decision-complete Tactical `201` is Ready to add exact pinned-libtorrent global active-seed and ratio/time priority semantics. Reaching a goal will not hard-stop or rewrite torrent intent. |
+| Seeding and queue policy | JSTorrent has an active-seed limit and stop/close versus keep-seeding choice. RSTorrent now has exact pinned-libtorrent global active-seed and ratio/time priority semantics, but deliberately does not reproduce stop/close-on-goal. | Tactical `200` selects default background closure and a separate keep-seeding-in-background opt-in. Completed Tactical `201` adds backed Compose settings and exact active/queued/goal truth. Its installed API-35 profile proves one active and two queued seeds across foreground reopening and opt-in background ownership. Reaching a goal does not hard-stop or rewrite torrent intent; whether that deliberate difference needs additional disclosure remains release work. |
 | Low-battery shutdown | JSTorrent offers an opt-in 5–50% threshold. RSTorrent has only the active-work sleep setting and a disabled Battery policy row. | Decide whether Android replacement retains this safety valve. If implemented, define charging, threshold hysteresis, notification, intent preservation, and restart behavior. |
 | Companion idle/auto-close | JSTorrent can stop its separate legacy daemon after a configured disconnected interval. Tactical `194` instead owns one semantic service/application owner. | Tactical `200` selects a fixed 60-second authenticated-disconnect grace and no user-facing timer. A configurable idle policy remains deferred unless product evidence justifies it. |
 | Search and plugins | JSTorrent has search UI plus installed/recommended URL-fetched JavaScript plugins in an Android WebView sandbox. RSTorrent has no search/plugin product capability. | Treat as a separate security and product campaign. Implement only with explicit network-code trust, sandbox, update, disclosure, and Play-review policy; otherwise retire/defer visibly. |
@@ -463,11 +463,11 @@ live run.
    ChromeOS 150/API-33 lifecycle/companion/notification strengthening. This is
    still a bounded observation rather than an indefinite or OEM-wide duration
    claim. Low-battery shutdown remains a separately bounded decision.
-6. Implement decision-complete Tactical
-   [`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md) when
-   seed-policy work is selected. Preserve its exact pinned-libtorrent
-   goal-met-not-stop contract and compose Compose settings/status with
-   Tactical `200`'s independent background-lifetime decision.
+6. Preserve completed Tactical
+   [`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md) as the
+   seed-policy regression gate. Its exact pinned-libtorrent goal-met-not-stop
+   contract and Compose settings/status remain composed with Tactical `200`'s
+   independent background-lifetime decision.
 7. Design `JAR-005` with the production extension before either store update
    is scheduled.
 8. Decide VPN, proxy, DHT/PEX controls, search/plugins, playback,

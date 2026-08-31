@@ -94,11 +94,12 @@ that scope and its cleanup or compatibility rules explicitly.
 ## Current Tacticals
 
 - [`201-durable-seeding-goals-and-seed-admission.md`](201-durable-seeding-goals-and-seed-admission.md):
-  active; the task-free exact-default, seed-goal, rank, and delayed-inactivity
-  policy gate passes. Reaching any one ratio/time threshold lowers automatic
-  priority but does not stop a torrent or rewrite durable run intent. Durable
-  accounting, admission ownership, fresh persistence, React/Compose truth,
-  and proportional Android/Apple evidence remain open.
+  complete; exact pinned-default seed goals, rank, delayed inactivity, schema
+  23 accounting, combined download/seed admission, generated clients, and
+  React/Compose truth pass. The six-torrent oracle, 500-torrent resources,
+  installed API-35, iOS, and full repository gates close the slice. Reaching
+  any one ratio/time threshold lowers automatic priority but does not stop a
+  torrent or rewrite durable run intent.
 - [`200-android-product-background-lifecycle.md`](200-android-product-background-lifecycle.md):
   complete; replaces the always-sticky Android owner with one JSTorrent-shaped
   activity/background lifetime policy. Background downloads remain explicit

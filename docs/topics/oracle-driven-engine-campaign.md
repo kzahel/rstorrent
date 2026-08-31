@@ -707,23 +707,26 @@ exact action is the bounded current-API physical-phone handoff after explicit
 maintainer authorization; no further engine implementation is implied by the
 present evidence.
 
-Decision-complete Tactical
-[`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md) now owns
-the leading unrelated policy candidate and is Active by explicit user
-direction. Its first task-free gate implements the exact pinned defaults,
-seed-goal predicate, rank, applicable-rate classification, and delayed
-inactive/active transitions with 14 passing focused tests. Fresh schema 23
-completes the persistence
-portion with typed seed settings, bounded monotonic scalar rows, hostile-state
-validation, and recognized schema-22 reset. The runtime accounting owner now
-consumes exact generation-fenced peer-I/O payload, monotonic nested timers, and
-tracker-count snapshots through one bounded checkpoint path with clean-shutdown
-flush. Combined admission, clients, and controlled interoperability are the
-next executable gates. Goal completion lowers automatic priority rather than
-stopping torrent intent. Embedded playback, Android streaming
-presentation, and stable sharing retain distinct ownership and security
-boundaries. The post-discovery Ubuntu stall remains one non-reproducible
-changing-swarm observation and is not authority for an unplanned change.
+Tactical
+[`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md) is
+complete. It implements the exact pinned defaults, any-one seed-goal
+predicate, seed rank, applicable-rate classification, and delayed inactive/
+active transitions. Fresh schema 23 stores only typed seed settings and
+bounded monotonic scalar facts; one joined accumulator consumes exact
+generation-fenced peer-I/O payload, nested timers, and tracker counts. The
+combined owner now reconciles downloads and ranked seeds, and generated
+React/Compose/Swift clients expose truthful configured/effective state. Six
+controlled pinned-libtorrent torrents prove active limits one/two,
+threshold-induced reorder, goal-met continuation, restart equivalence, exact
+tracker events and payload, and cleanup. The 500-torrent and API-35 gates
+remain within shared limits and join to zero. No Tactical `201` executable
+gate remains; resume independently selected Active/Ready work from
+`capability-readiness` rather than inferring a successor from this completion.
+Goal completion lowers automatic priority rather than stopping torrent intent.
+Embedded playback, Android streaming presentation, and stable sharing retain
+distinct ownership and security boundaries. The post-discovery Ubuntu stall
+remains one non-reproducible changing-swarm observation and is not authority
+for an unplanned change.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the

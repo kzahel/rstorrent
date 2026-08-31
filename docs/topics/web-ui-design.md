@@ -12,7 +12,19 @@ history below remains as an implementation record. Tactical `033` implements
 the generated contract, polling client,
 lifecycle controller, and pure reducer. Tactical `034` implements the fresh
 React/Zustand/CSS Modules application, adaptive inspection hierarchy, virtual
-tables, and permanent named demo adapter. Tactical `035` connects stable Rust
+tables, and permanent named demo adapter.
+
+Completed Tactical
+[`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md) extends
+**Connection & seeding** with backed active-seed, share-ratio,
+finished/download-time, and finished-time priority values. Semantic Unlimited
+disables only the count input; explanatory copy states that meeting any goal
+lowers priority and does not stop the torrent. Summary and detail surfaces use
+authoritative active/queued/goal state. Wide and 390-pixel Playwright cases
+prove defaults, Unlimited, exact active counts, no horizontal overflow, and no
+serious or critical Axe violations.
+
+Tactical `035` connects stable Rust
 torrent and active-peer projections through semantic responsive view
 selection while retaining the demo adapter and recovering cleanly after
 browser suspension. Tactical `036` adds the production-built manual live

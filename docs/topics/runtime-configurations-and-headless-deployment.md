@@ -177,11 +177,11 @@ torrents are paused, and a completed torrent may remain eligible to seed while
 no UI exists. Eventually each torrent or the profile may express such goals as
 indefinite seeding, a share ratio, elapsed seeding time, or explicit stop.
 
-RSTorrent currently supports durable completed-torrent seeding and manual
-pause/removal, but not ratio/time seeding goals. A Linux service baseline must
-not hide that gap behind an automatic process-exit rule. Tactical `201` is
-Ready with exact pinned-libtorrent goal-met-not-stop semantics; it is not yet
-an implemented headless capability.
+RSTorrent supports durable completed-torrent seeding, manual pause/removal,
+and completed Tactical `201`'s global ratio/time priority goals. The same
+in-process application owner and generated settings used by desktop and mobile
+apply in headless configurations: meeting any one goal lowers automatic seed
+priority but does not stop a torrent or create a process-exit rule.
 
 ### Remote exposure
 
@@ -478,8 +478,6 @@ The important remaining gaps are:
   beyond the implemented Tailscale trusted-network operator mode;
 - owner remote authentication, host identity, authorized-browser resume,
   complete authorization/circuit audit, and direct versus relay delivery;
-- implementation of Tactical `201`'s decision-complete ratio/time seeding
-  goals and seed admission/ranking policy; and
 - release, update, compatibility, and recovery evidence for an unattended
   headless installation.
 
