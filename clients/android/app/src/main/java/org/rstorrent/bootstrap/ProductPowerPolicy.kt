@@ -25,9 +25,26 @@ internal object ProductPowerPreference {
 }
 
 internal fun requiresSleepInhibition(torrents: Collection<TorrentView>): Boolean =
-    torrents.any { requiresSleepInhibition(it.operationalState) }
+    torrents.any {
+        requiresSleepInhibition(
+            it.operationalState,
+            it.awaitingFileSelection,
+            it.metadataAvailable,
+        )
+    }
 
-internal fun requiresSleepInhibition(state: TorrentOperationalState): Boolean =
+internal fun requiresSleepInhibition(
+    state: TorrentOperationalState,
+    awaitingFileSelection: Boolean = false,
+    metadataAvailable: Boolean = true,
+): Boolean =
+    if (awaitingFileSelection && metadataAvailable) {
+        false
+    } else {
+        requiresSleepInhibitionForState(state)
+    }
+
+private fun requiresSleepInhibitionForState(state: TorrentOperationalState): Boolean =
     when (state) {
         TorrentOperationalState.STARTING,
         TorrentOperationalState.DOWNLOADING,

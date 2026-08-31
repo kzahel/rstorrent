@@ -83,7 +83,9 @@ import org.rstorrent.session.uniffi.DiagnosticSeverity
 import org.rstorrent.session.uniffi.DiagnosticValue
 import org.rstorrent.session.uniffi.EncryptionPolicy
 import org.rstorrent.session.uniffi.FileSelectionIntent
+import org.rstorrent.session.uniffi.FileSelectionOverride
 import org.rstorrent.session.uniffi.FilePriority
+import org.rstorrent.session.uniffi.PendingFileSelectionBase
 import org.rstorrent.session.uniffi.FileView
 import org.rstorrent.session.uniffi.HttpsServerAuthenticationPolicy
 import org.rstorrent.session.uniffi.ListenerPolicy
@@ -910,15 +912,19 @@ class ProductEngineService : Service() {
                         )
                         return@launch
                     }
+                    val awaitFileSelection =
+                        work.startContent &&
+                            (mutableState.value.storage?.showFileSelection ?: true)
                     val result =
                         when (work.source.kind) {
                             ExternalIntakeKind.MAGNET ->
                                 dispatchAddResult(
                                     Command.AddMagnet(
-                                        work.source.reveal().trim(),
-                                        storageRoot,
-                                        work.startContent,
-                                        emptyList(),
+                                        magnet = work.source.reveal().trim(),
+                                        storageRoot = storageRoot,
+                                        startContent = work.startContent,
+                                        awaitFileSelection = awaitFileSelection,
+                                        skipFiles = emptyList(),
                                     ),
                                 )
                             ExternalIntakeKind.TORRENT_FILE -> {
@@ -937,6 +943,7 @@ class ProductEngineService : Service() {
                                         work.startContent,
                                         FileSelectionIntent.All,
                                         storageRoot,
+                                        awaitFileSelection,
                                     )
                                 }
                             }
@@ -1110,6 +1117,7 @@ class ProductEngineService : Service() {
         magnet: String,
         skipFiles: List<UInt> = emptyList(),
         startContent: Boolean = true,
+        awaitFileSelection: Boolean = false,
     ) {
         val storageRoot = currentSafRootForAdd()
         if (storageRoot == null) {
@@ -1120,7 +1128,13 @@ class ProductEngineService : Service() {
             try {
                 clientReady.await()
                 dispatchAddAwait(
-                    Command.AddMagnet(magnet.trim(), storageRoot, startContent, skipFiles),
+                    Command.AddMagnet(
+                        magnet = magnet.trim(),
+                        storageRoot = storageRoot,
+                        startContent = startContent,
+                        awaitFileSelection = awaitFileSelection,
+                        skipFiles = skipFiles,
+                    ),
                     magnetV1(magnet),
                     magnetV2(magnet),
                 )
@@ -1133,6 +1147,7 @@ class ProductEngineService : Service() {
     fun addTorrentFile(
         uri: Uri,
         startContent: Boolean = true,
+        awaitFileSelection: Boolean = false,
     ) {
         val storageRoot = currentSafRootForAdd()
         if (storageRoot == null) {
@@ -1143,7 +1158,12 @@ class ProductEngineService : Service() {
             try {
                 clientReady.await()
                 val source = readTorrentSource(uri)
-                dispatchTorrentSource(source, startContent, storageRoot = storageRoot)
+                dispatchTorrentSource(
+                    source,
+                    startContent,
+                    storageRoot = storageRoot,
+                    awaitFileSelection = awaitFileSelection,
+                )
             } catch (error: Throwable) {
                 reportError(error)
             }
@@ -1154,6 +1174,7 @@ class ProductEngineService : Service() {
         source: ByteArray,
         startContent: Boolean = true,
         selection: FileSelectionIntent = FileSelectionIntent.All,
+        awaitFileSelection: Boolean = false,
     ) {
         val storageRoot = currentSafRootForAdd()
         if (storageRoot == null) {
@@ -1167,7 +1188,13 @@ class ProductEngineService : Service() {
                 require(source.size <= MAX_TORRENT_SOURCE_BYTES) {
                     "Torrent file exceeds the ${MAX_TORRENT_SOURCE_BYTES / (1024 * 1024)} MiB limit"
                 }
-                dispatchTorrentSource(source, startContent, selection, storageRoot)
+                dispatchTorrentSource(
+                    source,
+                    startContent,
+                    selection,
+                    storageRoot,
+                    awaitFileSelection,
+                )
             } catch (error: Throwable) {
                 reportError(error)
             }
@@ -1181,8 +1208,16 @@ class ProductEngineService : Service() {
         storageRoot: String = requireNotNull(currentSafRootForAdd()) {
             "Select a download folder first"
         },
+        awaitFileSelection: Boolean = false,
     ) {
-        val add = dispatchTorrentSourceResult(source, startContent, selection, storageRoot)
+        val add =
+            dispatchTorrentSourceResult(
+                source,
+                startContent,
+                selection,
+                storageRoot,
+                awaitFileSelection,
+            )
         logAddResult(add, null)
     }
 
@@ -1191,6 +1226,7 @@ class ProductEngineService : Service() {
         startContent: Boolean,
         selection: FileSelectionIntent,
         storageRoot: String,
+        awaitFileSelection: Boolean = false,
     ): AddTorrentResult {
         val request =
             AddTorrentBytesRequest(
@@ -1199,6 +1235,7 @@ class ProductEngineService : Service() {
                 expectedRevision = null,
                 storageRoot = storageRoot,
                 startContent = startContent,
+                awaitFileSelection = awaitFileSelection,
                 selection = selection,
                 sourceLength = source.size.toUInt(),
             )
@@ -1261,7 +1298,13 @@ class ProductEngineService : Service() {
                 )
                 awaitTrackerPolicy(policy)
                 val torrentId = dispatchAddAwait(
-                    Command.AddMagnet(magnet.trim(), storageRoot, startContent, emptyList()),
+                    Command.AddMagnet(
+                        magnet.trim(),
+                        storageRoot,
+                        startContent,
+                        false,
+                        emptyList(),
+                    ),
                     v1InfoHash,
                 )
                 subscribeTrackerEvidenceForTest(torrentId)
@@ -1319,7 +1362,7 @@ class ProductEngineService : Service() {
                 )
                 awaitEncryptionPolicy(policy)
                 dispatchAddAwait(
-                    Command.AddMagnet(magnet.trim(), storageRoot, true, skipFiles),
+                    Command.AddMagnet(magnet.trim(), storageRoot, true, false, skipFiles),
                     magnetV1(magnet),
                 )
             } catch (error: Throwable) {
@@ -2549,6 +2592,32 @@ class ProductEngineService : Service() {
         dispatch(Command.RemoveTorrent(torrentId, policy))
     }
 
+    fun setShowFileSelection(show: Boolean) {
+        dispatch(Command.SetShowFileSelection(show))
+    }
+
+    fun confirmPendingFileSelection(
+        torrentId: String,
+        catalogId: String,
+        base: PendingFileSelectionBase,
+        overrides: List<FileSelectionOverride>,
+        disableFuture: Boolean,
+    ) {
+        dispatch(
+            Command.ConfirmPendingFileSelection(
+                torrentId,
+                catalogId,
+                base,
+                overrides,
+                disableFuture,
+            ),
+        )
+    }
+
+    fun cancelPendingAdd(torrentId: String) {
+        dispatch(Command.CancelPendingAdd(torrentId))
+    }
+
     fun setFilePriority(
         torrentId: String,
         fileIndex: UInt,
@@ -2997,6 +3066,17 @@ class ProductEngineService : Service() {
         offset: UInt,
     ) {
         withPresentation { it.presentCatalogPage(torrentId, presentation, offset) }
+    }
+
+    fun presentPendingFileSelection(
+        torrentId: String,
+        offset: UInt,
+    ) {
+        withPresentation { it.presentPendingFileSelection(torrentId, offset) }
+    }
+
+    fun clearPendingFileSelection() {
+        withPresentation(AndroidPresentationRepository::clearPendingFileSelection)
     }
 
     fun presentGlobal(presentation: GlobalPresentation) {

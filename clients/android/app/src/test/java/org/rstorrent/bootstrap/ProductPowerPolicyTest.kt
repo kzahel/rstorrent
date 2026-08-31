@@ -22,4 +22,24 @@ class ProductPowerPolicyTest {
             assertEquals(state.name, required, requiresSleepInhibition(state))
         }
     }
+
+    @Test
+    fun metadataCompletePendingSelectionDoesNotPreventSleep() {
+        assertEquals(
+            false,
+            requiresSleepInhibition(
+                TorrentOperationalState.DOWNLOADING,
+                awaitingFileSelection = true,
+                metadataAvailable = true,
+            ),
+        )
+        assertEquals(
+            true,
+            requiresSleepInhibition(
+                TorrentOperationalState.DOWNLOADING,
+                awaitingFileSelection = true,
+                metadataAvailable = false,
+            ),
+        )
+    }
 }

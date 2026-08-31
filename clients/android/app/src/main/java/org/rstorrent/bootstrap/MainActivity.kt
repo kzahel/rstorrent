@@ -37,6 +37,7 @@ class MainActivity : ComponentActivity() {
     private var pendingProductTorrentBase64: String? = null
     private var pendingProductTorrentSelection: FileSelectionIntent = FileSelectionIntent.All
     private var pendingProductTorrentStartContent = true
+    private var pendingProductTorrentAwaitFileSelection = false
     private var pendingProductRepairRootId: String? = null
     private var pendingProductCompanionRootRequestId: String? = null
     private var pendingProductCompanionCancelledRequestId: String? = null
@@ -106,8 +107,13 @@ class MainActivity : ComponentActivity() {
             if (service == null) {
                 pendingProductTorrentUri = torrentUri.toString()
             } else {
-                service.addTorrentFile(torrentUri, pendingProductTorrentStartContent)
+                service.addTorrentFile(
+                    torrentUri,
+                    startContent = true,
+                    awaitFileSelection = pendingProductTorrentAwaitFileSelection,
+                )
                 pendingProductTorrentStartContent = true
+                pendingProductTorrentAwaitFileSelection = false
             }
         }
     private val notificationPermissionRequest =
@@ -180,9 +186,11 @@ class MainActivity : ComponentActivity() {
                     pendingProductTorrentUri = null
                     service.addTorrentFile(
                         android.net.Uri.parse(encoded),
-                        pendingProductTorrentStartContent,
+                        startContent = true,
+                        awaitFileSelection = pendingProductTorrentAwaitFileSelection,
                     )
                     pendingProductTorrentStartContent = true
+                    pendingProductTorrentAwaitFileSelection = false
                 }
                 pendingProductTorrentBase64?.let { encoded ->
                     pendingProductTorrentBase64 = null
@@ -264,6 +272,8 @@ class MainActivity : ComponentActivity() {
             savedInstanceState?.getString(STATE_PENDING_COMPANION_ROOT_CANCELLED)
         pendingProductTorrentStartContent =
             savedInstanceState?.getBoolean(STATE_PENDING_TORRENT_START, true) ?: true
+        pendingProductTorrentAwaitFileSelection =
+            savedInstanceState?.getBoolean(STATE_PENDING_TORRENT_FILE_SELECTION, false) ?: false
         pendingBackgroundEnable =
             savedInstanceState?.getBoolean(STATE_PENDING_BACKGROUND_ENABLE, false) ?: false
         notificationNavigationSequence =
@@ -285,6 +295,10 @@ class MainActivity : ComponentActivity() {
             outState.putString(STATE_PENDING_COMPANION_ROOT_CANCELLED, it)
         }
         outState.putBoolean(STATE_PENDING_TORRENT_START, pendingProductTorrentStartContent)
+        outState.putBoolean(
+            STATE_PENDING_TORRENT_FILE_SELECTION,
+            pendingProductTorrentAwaitFileSelection,
+        )
         outState.putBoolean(STATE_PENDING_BACKGROUND_ENABLE, pendingBackgroundEnable)
         notificationNavigation.value?.let { target ->
             outState.putLong(STATE_NOTIFICATION_SEQUENCE, target.sequence)
@@ -865,8 +879,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun launchProductTorrentPicker(startContent: Boolean) {
-        pendingProductTorrentStartContent = startContent
+    private fun launchProductTorrentPicker(awaitFileSelection: Boolean) {
+        pendingProductTorrentAwaitFileSelection = awaitFileSelection
         ProductInteractionRegistry.setLease(
             ProductEngineService.INTERACTION_TORRENT_PICKER,
             true,
@@ -1031,6 +1045,8 @@ class MainActivity : ComponentActivity() {
         private const val PREFERENCE_DYNAMIC_COLOR = "dynamic_color"
         private const val STATE_PENDING_TORRENT_URI = "pending_torrent_uri"
         private const val STATE_PENDING_TORRENT_START = "pending_torrent_start"
+        private const val STATE_PENDING_TORRENT_FILE_SELECTION =
+            "pending_torrent_file_selection"
         private const val STATE_PENDING_BACKGROUND_ENABLE = "pending_background_enable"
         private const val STATE_PENDING_COMPANION_ROOT_REQUEST =
             "pending_companion_root_request"

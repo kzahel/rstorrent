@@ -130,7 +130,6 @@ fun ProductApp(
     onUpdateClientSettings: ((ClientSettingsPatch) -> Unit)? = null,
     onUpdateTorrentSettings: ((String, TorrentSettingsPatch) -> Unit)? = null,
     onRepairStorage: (String) -> Unit = {},
-    onExternalStartContent: ((Long, Boolean) -> Unit)? = null,
     onConfirmExternalIntake: ((Long) -> Unit)? = null,
     onRetryExternalIntake: ((Long) -> Unit)? = null,
     onCancelExternalIntake: ((Long) -> Unit)? = null,
@@ -151,6 +150,19 @@ fun ProductApp(
             service != null ||
                 onBackgroundDownloads != null ||
                 onKeepSeedingInBackground != null
+        val pendingSelections =
+            state.torrents.values
+                .filter(TorrentView::awaitingFileSelection)
+                .sortedBy { it.pendingFileSelectionPosition ?: UInt.MAX_VALUE }
+        val pendingSelection = pendingSelections.firstOrNull()
+        DisposableEffect(service, pendingSelection?.torrentId) {
+            if (pendingSelection == null) {
+                service?.clearPendingFileSelection()
+            } else {
+                service?.presentPendingFileSelection(pendingSelection.torrentId, 0U)
+            }
+            onDispose { service?.clearPendingFileSelection() }
+        }
         LaunchedEffect(state.externalIntakeNotice?.sequence) {
             state.externalIntakeNotice?.let { notice ->
                 snackbar.showSnackbar(externalIntakeNoticeText(notice.kind))
@@ -214,18 +226,13 @@ fun ProductApp(
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
-        state.externalIntake?.let { intake ->
+        state.externalIntake?.takeIf { pendingSelection == null }?.let { intake ->
             ExternalTorrentIntakeDialog(
                 intake = intake,
                 storageRootReady = state.storageRootReady,
                 repairRootId = state.storage?.defaultRoot,
                 onSelectStorage = onSelectStorage,
                 onRepairStorage = onRepairStorage,
-                onStartContent =
-                    onExternalStartContent ?: { id, start ->
-                        service?.setExternalIntakeStartContent(id, start)
-                        Unit
-                    },
                 onConfirm =
                     onConfirmExternalIntake ?: {
                         service?.confirmExternalIntake(it)
@@ -241,6 +248,36 @@ fun ProductApp(
                         service?.cancelExternalIntake(it)
                         Unit
                     },
+            )
+        }
+        pendingSelection?.let { torrent ->
+            val root = state.storage?.roots?.singleOrNull { it.rootId == torrent.storageRoot }
+            val rootReady =
+                root?.availability == StorageRootAvailability.AVAILABLE &&
+                    (root.rootId != state.storage?.defaultRoot || state.storageRootReady)
+            PendingFileSelectionDialog(
+                torrent = torrent,
+                files = state.files[torrent.torrentId],
+                rootLabel = root?.label ?: state.storageRootLabel ?: "Download folder",
+                rootReady = rootReady,
+                queuedCount = (pendingSelections.size - 1).coerceAtLeast(0),
+                error = state.error,
+                onPage = { service?.presentPendingFileSelection(torrent.torrentId, it) },
+                onRepairRoot = {
+                    if (root == null) onSelectStorage() else onRepairStorage(root.rootId)
+                },
+                onConfirm = { draft, disableFuture ->
+                    torrent.fileCatalogId?.let { catalogId ->
+                        service?.confirmPendingFileSelection(
+                            torrent.torrentId,
+                            catalogId,
+                            draft.base,
+                            draft.compactOverrides(),
+                            disableFuture,
+                        )
+                    }
+                },
+                onCancel = { service?.cancelPendingAdd(torrent.torrentId) },
             )
         }
         state.companionPairing?.let { pairing ->
@@ -284,7 +321,6 @@ private fun ExternalTorrentIntakeDialog(
     repairRootId: String?,
     onSelectStorage: () -> Unit,
     onRepairStorage: (String) -> Unit,
-    onStartContent: (Long, Boolean) -> Unit,
     onConfirm: (Long) -> Unit,
     onRetry: (Long) -> Unit,
     onCancel: (Long) -> Unit,
@@ -300,24 +336,11 @@ private fun ExternalTorrentIntakeDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 intake.displayLabel?.let { Text(it) }
-                Row(
-                    modifier =
-                        Modifier.fillMaxWidth().clickable(
-                            enabled = intake.phase != ExternalIntakePhase.SUBMITTING,
-                        ) {
-                            onStartContent(intake.intakeId, !intake.startContent)
-                        },
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Checkbox(
-                        checked = intake.startContent,
-                        onCheckedChange = {
-                            onStartContent(intake.intakeId, it)
-                        },
-                        enabled = intake.phase != ExternalIntakePhase.SUBMITTING,
-                    )
-                    Text("Start downloading immediately")
-                }
+                Text(
+                    "After adding, RSTorrent will ask which files to download when file " +
+                        "selection is enabled.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
                 if (!storageRootReady) {
                     Text("Choose or repair a download folder before adding this item.")
                     TextButton(
@@ -465,10 +488,16 @@ private fun ProductNavHost(
                 notificationActionLabel = if (notificationsGranted) "Manage" else "Enable",
                 onSelectStorage = onSelectStorage,
                 onOpenTorrent = { navController.navigate(ProductRoutes.detail(it)) },
-                onAddMagnet = { magnet, start ->
-                    service?.addMagnet(magnet, startContent = start)
+                onAddMagnet = { magnet ->
+                    service?.addMagnet(
+                        magnet,
+                        startContent = true,
+                        awaitFileSelection = state.storage?.showFileSelection ?: true,
+                    )
                 },
-                onBrowseTorrent = onBrowseTorrent,
+                onBrowseTorrent = {
+                    onBrowseTorrent(state.storage?.showFileSelection ?: true)
+                },
                 onPause = { service?.pause(it) },
                 onResume = { service?.resume(it) },
                 onMoveTop = { service?.moveDownloadToTop(it) },
@@ -564,6 +593,12 @@ private fun ProductNavHost(
                     detail = if (state.storageRootReady) "Available" else "Unavailable or not selected",
                     onClick = onSelectStorage,
                     action = if (state.storageRootReady) "Change" else "Select",
+                )
+                NotificationToggleSetting(
+                    title = "Show file selection when adding torrents",
+                    detail = "Choose Normal or Skip for each file before content downloads.",
+                    checked = state.storage?.showFileSelection ?: true,
+                    onChecked = { service?.setShowFileSelection(it) },
                 )
                 state.storage?.roots.orEmpty().forEach { root ->
                     val isCurrent = root.rootId == state.storage?.defaultRoot

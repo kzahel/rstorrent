@@ -39,6 +39,8 @@ internal class AndroidPresentationRepository(
     private lateinit var client: AndroidApplicationClient
     private var list: OwnedSubscription? = null
     private val detail = mutableListOf<OwnedSubscription>()
+    private var pendingSelection: OwnedSubscription? = null
+    private var pendingSelectionTorrent: String? = null
     private val global = mutableListOf<OwnedSubscription>()
     private var diagnostics: OwnedSubscription? = null
     private var selectedTorrent: String? = null
@@ -47,6 +49,7 @@ internal class AndroidPresentationRepository(
     private var diagnosticCategories: List<DiagnosticCategory> = emptyList()
     private var diagnosticTorrentOnly = false
     private val detailRequest = AtomicLong()
+    private val pendingSelectionRequest = AtomicLong()
     private val globalRequest = AtomicLong()
     private val diagnosticRequest = AtomicLong()
 
@@ -141,6 +144,42 @@ internal class AndroidPresentationRepository(
         }
     }
 
+    fun presentPendingFileSelection(
+        torrentId: String,
+        offset: UInt,
+    ) {
+        val request = pendingSelectionRequest.incrementAndGet()
+        scope.launch {
+            ownership.withLock {
+                if (request != pendingSelectionRequest.get()) return@withLock
+                pendingSelection?.close()
+                val previousTorrent = pendingSelectionTorrent
+                pendingSelectionTorrent = torrentId
+                state.update {
+                    it.copy(
+                        files =
+                            it.files - torrentId - listOfNotNull(previousTorrent).toSet(),
+                    )
+                }
+                pendingSelection =
+                    subscribe(catalogSpec(torrentId, ViewProjection.FILES, offset), false)
+            }
+        }
+    }
+
+    fun clearPendingFileSelection() {
+        pendingSelectionRequest.incrementAndGet()
+        scope.launch {
+            ownership.withLock {
+                pendingSelection?.close()
+                pendingSelection = null
+                val torrentId = pendingSelectionTorrent
+                pendingSelectionTorrent = null
+                if (torrentId != null) state.update { it.copy(files = it.files - torrentId) }
+            }
+        }
+    }
+
     fun presentGlobal(presentation: GlobalPresentation) {
         val request = globalRequest.incrementAndGet()
         scope.launch {
@@ -181,12 +220,16 @@ internal class AndroidPresentationRepository(
 
     suspend fun close() {
         detailRequest.incrementAndGet()
+        pendingSelectionRequest.incrementAndGet()
         globalRequest.incrementAndGet()
         diagnosticRequest.incrementAndGet()
         ownership.withLock {
             list?.close()
             list = null
             closeAll(detail)
+            pendingSelection?.close()
+            pendingSelection = null
+            pendingSelectionTorrent = null
             closeAll(global)
             diagnostics?.close()
             diagnostics = null

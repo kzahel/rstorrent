@@ -360,6 +360,13 @@ class AndroidNotificationInstrumentationTest {
             storageState = StorageState.AVAILABLE,
             storageRoot = "downloads",
             metadataAvailable = true,
+            awaitingFileSelection = false,
+            pendingFileSelectionPosition = null,
+            fileCatalogId = null,
+            selectableFileCount = 0U,
+            selectedFileCount = 0U,
+            selectableFileBytes = "0",
+            selectedFileBytes = "0",
             pieceCount = 1U,
             totalSizeBytes = "1",
             verifiedPieceCount = 0U,
@@ -393,7 +400,7 @@ class AndroidNotificationInstrumentationTest {
     private fun torrentId(index: Int): String = "t1-${index.toString(16).padStart(32, '0')}"
 
     private fun storage(): StorageSettingsSnapshot =
-        StorageSettingsSnapshot(emptyList(), null, false)
+        StorageSettingsSnapshot(emptyList(), null, false, true)
 
     private fun clientSettings(): ClientSettingsRuntimeView {
         val configured =

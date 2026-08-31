@@ -1,7 +1,10 @@
 package org.rstorrent.bootstrap
 
+import java.math.BigInteger
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.rstorrent.bootstrap.uniffi.SafStorageObjectKind
 import org.rstorrent.session.uniffi.ActivePiece
@@ -42,6 +45,7 @@ import org.rstorrent.session.uniffi.MediaItemView
 import org.rstorrent.session.uniffi.MediaRoleView
 import org.rstorrent.session.uniffi.PortMappingPolicy
 import org.rstorrent.session.uniffi.PortMappingStatus
+import org.rstorrent.session.uniffi.PendingFileSelectionBase
 import org.rstorrent.session.uniffi.ProgressAssessment
 import org.rstorrent.session.uniffi.ProgressDisposition
 import org.rstorrent.session.uniffi.ProgressPhase
@@ -791,6 +795,13 @@ class ProductStateReducerTest {
                                         listOf(
                                             TorrentFieldUpdate.DisplayName(null),
                                             TorrentFieldUpdate.TotalSizeBytes(null),
+                                            TorrentFieldUpdate.AwaitingFileSelection(true),
+                                            TorrentFieldUpdate.PendingFileSelectionPosition(2U),
+                                            TorrentFieldUpdate.FileCatalogId("a".repeat(64)),
+                                            TorrentFieldUpdate.SelectableFileCount(3U),
+                                            TorrentFieldUpdate.SelectedFileCount(2U),
+                                            TorrentFieldUpdate.SelectableFileBytes("1500"),
+                                            TorrentFieldUpdate.SelectedFileBytes("1200"),
                                             TorrentFieldUpdate.PayloadDownloadRateBytes("4096"),
                                             TorrentFieldUpdate.Lifetime(
                                                 TorrentLifetimeView(
@@ -826,6 +837,13 @@ class ProductStateReducerTest {
 
         assertEquals(null, patched.torrents.getValue("first").displayName)
         assertEquals(null, patched.torrents.getValue("first").totalSizeBytes)
+        assertTrue(patched.torrents.getValue("first").awaitingFileSelection)
+        assertEquals(2U, patched.torrents.getValue("first").pendingFileSelectionPosition)
+        assertEquals("a".repeat(64), patched.torrents.getValue("first").fileCatalogId)
+        assertEquals(3U, patched.torrents.getValue("first").selectableFileCount)
+        assertEquals(2U, patched.torrents.getValue("first").selectedFileCount)
+        assertEquals("1500", patched.torrents.getValue("first").selectableFileBytes)
+        assertEquals("1200", patched.torrents.getValue("first").selectedFileBytes)
         assertEquals("4096", patched.torrents.getValue("first").payloadDownloadRateBytes)
         assertEquals("14", patched.torrents.getValue("first").lifetime.uploadedPayloadBytes)
         assertEquals(SeedAdmissionView.QUEUED, patched.torrents.getValue("first").seeding.admission)
@@ -899,6 +917,55 @@ class ProductStateReducerTest {
 
         assertEquals(listOf(second.fileId), patched.files.getValue(TORRENT_ID).files.keys.toList())
         assertEquals(2U, patched.files.getValue(TORRENT_ID).page.total)
+    }
+
+    @Test
+    fun pendingFileSelectionDraftUsesNormalSkipAndCompactRanges() {
+        val pending =
+            torrent("pending", TorrentState.PAUSED).apply {
+                awaitingFileSelection = true
+                selectableFileCount = 3U
+                selectedFileCount = 2U
+                selectableFileBytes = "1500"
+                selectedFileBytes = "1200"
+            }
+        val first = file("first", 0U).copy(lengthBytes = "1000")
+        val second =
+            file("second", 1U).copy(
+                lengthBytes = "200",
+                selection = FileSelectionView.HIGH,
+            )
+        val skipped =
+            file("third", 2U).copy(
+                lengthBytes = "300",
+                selection = FileSelectionView.SKIPPED,
+            )
+
+        var draft = PendingFileSelectionDraft()
+        assertEquals(PendingFileSelectionSummary(2, BigInteger("1200")), draft.summary(pending))
+        draft = requireNotNull(draft.toggle(first))
+        draft = requireNotNull(draft.toggle(second))
+        assertEquals(PendingFileSelectionSummary(0, BigInteger.ZERO), draft.summary(pending))
+        assertEquals(1, draft.compactOverrides().size)
+        assertEquals(FileIndexRange(0U, 2U), draft.compactOverrides().single().range)
+        assertEquals(false, draft.compactOverrides().single().selected)
+
+        draft = draft.selectNone()
+        draft = requireNotNull(draft.toggle(skipped))
+        assertEquals(PendingFileSelectionBase.NONE, draft.base)
+        assertEquals(PendingFileSelectionSummary(1, BigInteger("300")), draft.summary(pending))
+        assertEquals(true, draft.compactOverrides().single().selected)
+    }
+
+    @Test
+    fun pendingFileSelectionDraftRejectsAnExtraSparseOverride() {
+        val full =
+            (0 until MAX_PENDING_FILE_SELECTION_OVERRIDES).associate { index ->
+                index.toUInt() to PendingFileOverride(false, true, BigInteger.ONE)
+            }
+        val draft = PendingFileSelectionDraft(overrides = full)
+
+        assertNull(draft.toggle(file("overflow", MAX_PENDING_FILE_SELECTION_OVERRIDES.toUInt())))
     }
 
     @Test
@@ -1006,7 +1073,7 @@ class ProductStateReducerTest {
     }
 
     private fun storage(): StorageSettingsSnapshot =
-        StorageSettingsSnapshot(emptyList(), null, false)
+        StorageSettingsSnapshot(emptyList(), null, false, true)
 
     private fun file(
         id: String,
@@ -1205,6 +1272,13 @@ class ProductStateReducerTest {
             storageState = StorageState.AVAILABLE,
             storageRoot = "downloads",
             metadataAvailable = true,
+            awaitingFileSelection = false,
+            pendingFileSelectionPosition = null,
+            fileCatalogId = null,
+            selectableFileCount = 0U,
+            selectedFileCount = 0U,
+            selectableFileBytes = "0",
+            selectedFileBytes = "0",
             pieceCount = 100_000U,
             totalSizeBytes = "1638400000",
             verifiedPieceCount = 65_536U,

@@ -311,12 +311,22 @@ class ProductLifetimePolicyTest {
                 ),
                 torrent(TorrentOperationalState.DOWNLOADING, archived = true),
                 torrent(TorrentOperationalState.SEEDING, removalPending = true),
+                torrent(
+                    TorrentOperationalState.DOWNLOADING,
+                    awaitingFileSelection = true,
+                    metadataAvailable = true,
+                ),
+                torrent(
+                    TorrentOperationalState.DOWNLOADING,
+                    awaitingFileSelection = true,
+                    metadataAvailable = false,
+                ),
             )
 
         assertEquals(
             ProductLifetimeWork(
                 starting = 1,
-                downloading = 1,
+                downloading = 2,
                 checking = 1,
                 waitingForUnmeteredNetwork = 1,
                 seeding = 1,
@@ -341,7 +351,17 @@ class ProductLifetimePolicyTest {
         reason: ProgressReason = ProgressReason.DISCOVERING_PEERS,
         archived: Boolean = false,
         removalPending: Boolean = false,
-    ) = ProductLifetimeTorrentFacts(state, reason, archived, removalPending)
+        awaitingFileSelection: Boolean = false,
+        metadataAvailable: Boolean = true,
+    ) =
+        ProductLifetimeTorrentFacts(
+            state,
+            reason,
+            archived,
+            removalPending,
+            awaitingFileSelection,
+            metadataAvailable,
+        )
 
     private fun reduce(
         revision: Long = 1,

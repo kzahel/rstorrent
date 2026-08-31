@@ -29,7 +29,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -79,8 +78,8 @@ internal fun LibraryScreen(
     notificationActionLabel: String,
     onSelectStorage: () -> Unit,
     onOpenTorrent: (String) -> Unit,
-    onAddMagnet: (String, Boolean) -> Unit,
-    onBrowseTorrent: (Boolean) -> Unit,
+    onAddMagnet: (String) -> Unit,
+    onBrowseTorrent: () -> Unit,
     onPause: (String) -> Unit,
     onResume: (String) -> Unit,
     onMoveTop: (String) -> Unit,
@@ -323,12 +322,12 @@ internal fun LibraryScreen(
             enabled = state.ready && state.storageRootReady,
             onDismiss = { addOpen = false },
             onAddMagnet = {
-                onAddMagnet(it.first, it.second)
+                onAddMagnet(it)
                 addOpen = false
             },
-            onBrowse = { start ->
+            onBrowse = {
                 addOpen = false
-                onBrowseTorrent(start)
+                onBrowseTorrent()
             },
         )
     }
@@ -522,11 +521,10 @@ private fun SelectionActions(
 private fun AddTorrentDialog(
     enabled: Boolean,
     onDismiss: () -> Unit,
-    onAddMagnet: (Pair<String, Boolean>) -> Unit,
-    onBrowse: (Boolean) -> Unit,
+    onAddMagnet: (String) -> Unit,
+    onBrowse: () -> Unit,
 ) {
     var magnet by rememberSaveable { mutableStateOf("") }
-    var startContent by rememberSaveable { mutableStateOf(true) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add torrent") },
@@ -539,12 +537,8 @@ private fun AddTorrentDialog(
                     label = { Text("Magnet link") },
                     minLines = 3,
                 )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = startContent, onCheckedChange = { startContent = it })
-                    Text("Start downloading immediately")
-                }
                 OutlinedButton(
-                    onClick = { onBrowse(startContent) },
+                    onClick = onBrowse,
                     enabled = enabled,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -561,7 +555,7 @@ private fun AddTorrentDialog(
         },
         confirmButton = {
             Button(
-                onClick = { onAddMagnet(magnet.trim() to startContent) },
+                onClick = { onAddMagnet(magnet.trim()) },
                 enabled = enabled && magnet.isNotBlank(),
             ) { Text("Add") }
         },

@@ -661,6 +661,15 @@ internal object ProductStateReducer {
                 is TorrentFieldUpdate.TransferLimits -> next.transferLimits = field.value
                 is TorrentFieldUpdate.StorageState -> next.storageState = field.value
                 is TorrentFieldUpdate.MetadataAvailable -> next.metadataAvailable = field.value
+                is TorrentFieldUpdate.AwaitingFileSelection ->
+                    next.awaitingFileSelection = field.value
+                is TorrentFieldUpdate.PendingFileSelectionPosition ->
+                    next.pendingFileSelectionPosition = field.value
+                is TorrentFieldUpdate.FileCatalogId -> next.fileCatalogId = field.value
+                is TorrentFieldUpdate.SelectableFileCount -> next.selectableFileCount = field.value
+                is TorrentFieldUpdate.SelectedFileCount -> next.selectedFileCount = field.value
+                is TorrentFieldUpdate.SelectableFileBytes -> next.selectableFileBytes = field.value
+                is TorrentFieldUpdate.SelectedFileBytes -> next.selectedFileBytes = field.value
                 is TorrentFieldUpdate.PieceCount -> next.pieceCount = field.value
                 is TorrentFieldUpdate.TotalSizeBytes -> next.totalSizeBytes = field.value
                 is TorrentFieldUpdate.VerifiedPieceCount -> next.verifiedPieceCount = field.value

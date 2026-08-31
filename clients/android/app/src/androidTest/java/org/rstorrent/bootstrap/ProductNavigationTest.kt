@@ -27,6 +27,7 @@ import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import org.rstorrent.bootstrap.ui.ProductApp
+import org.rstorrent.bootstrap.ui.PendingFileSelectionDialog
 import org.rstorrent.bootstrap.ui.ProductThemeMode
 import org.rstorrent.bootstrap.ui.FilesScreen
 import org.rstorrent.bootstrap.ui.RstorrentTheme
@@ -60,6 +61,7 @@ import org.rstorrent.session.uniffi.ListenerStatus
 import org.rstorrent.session.uniffi.MediaFileAvailability
 import org.rstorrent.session.uniffi.PortMappingPolicy
 import org.rstorrent.session.uniffi.PortMappingStatus
+import org.rstorrent.session.uniffi.PendingFileSelectionBase
 import org.rstorrent.session.uniffi.SessionUdpStatus
 import org.rstorrent.session.uniffi.StorageState
 import org.rstorrent.session.uniffi.TorrentTransferLimits
@@ -385,8 +387,7 @@ class ProductNavigationTest {
     }
 
     @Test
-    fun externalMagnetUsesGenericConfirmationAndTypedCallbacks() {
-        val startChoices = mutableListOf<Pair<Long, Boolean>>()
+    fun externalMagnetUsesGenericConfirmationBeforeFileSelection() {
         val confirmations = mutableListOf<Long>()
         compose.setContent {
             ProductApp(
@@ -413,19 +414,70 @@ class ProductNavigationTest {
                                 true,
                             ),
                     ),
-                onExternalStartContent = { id, start -> startChoices += id to start },
                 onConfirmExternalIntake = { confirmations += it },
             )
         }
 
         compose.onNodeWithText("Magnet link from another app").assertIsDisplayed()
         compose
-            .onNodeWithText("Start downloading immediately")
-            .performSemanticsAction(SemanticsActions.OnClick)
+            .onNodeWithText("ask which files to download", substring = true)
+            .assertIsDisplayed()
         compose.onNodeWithText("Add").performSemanticsAction(SemanticsActions.OnClick)
         compose.onAllNodesWithText("secret.invalid", substring = true).assertCountEquals(0)
-        assertEquals(listOf(41L to false), startChoices)
         assertEquals(listOf(41L), confirmations)
+    }
+
+    @Test
+    fun pendingFileSelectionUsesNormalSkipAndExplicitConfirmation() {
+        val file = mediaFile(MediaFileAvailability.UNVERIFIED, "0")
+        val pending =
+            torrent().copy(
+                awaitingFileSelection = true,
+                pendingFileSelectionPosition = 0U,
+                fileCatalogId = "a".repeat(64),
+                selectableFileCount = 1U,
+                selectedFileCount = 1U,
+                selectableFileBytes = file.lengthBytes,
+                selectedFileBytes = file.lengthBytes,
+            )
+        var confirmed: PendingFileSelectionDraft? = null
+        var disableFuture = false
+        compose.setContent {
+            RstorrentTheme(ProductThemeMode.LIGHT, false) {
+                PendingFileSelectionDialog(
+                    torrent = pending,
+                    files = fileCatalog(file),
+                    rootLabel = "Downloads",
+                    rootReady = true,
+                    queuedCount = 2,
+                    error = null,
+                    onPage = {},
+                    onRepairRoot = {},
+                    onConfirm = { draft, disable ->
+                        confirmed = draft
+                        disableFuture = disable
+                    },
+                    onCancel = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("2 more pending", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("None").performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("0 of 1 selected", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Add").assertIsEnabled()
+        compose
+            .onNodeWithText("Fixture/clip.mp4")
+            .performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("1 of 1 selected", substring = true).assertIsDisplayed()
+        compose
+            .onNodeWithText("Don’t show file selection again")
+            .performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Download").performSemanticsAction(SemanticsActions.OnClick)
+
+        assertEquals(PendingFileSelectionBase.NONE, confirmed?.base)
+        assertEquals(true, confirmed?.compactOverrides()?.single()?.selected)
+        assertEquals(true, disableFuture)
     }
 
     @Test
@@ -732,6 +784,13 @@ class ProductNavigationTest {
             storageState = StorageState.AVAILABLE,
             storageRoot = "downloads",
             metadataAvailable = true,
+            awaitingFileSelection = false,
+            pendingFileSelectionPosition = null,
+            fileCatalogId = null,
+            selectableFileCount = 0U,
+            selectedFileCount = 0U,
+            selectableFileBytes = "0",
+            selectedFileBytes = "0",
             pieceCount = 4U,
             totalSizeBytes = "65536",
             verifiedPieceCount = 1U,

@@ -75,6 +75,8 @@ internal data class ProductLifetimeTorrentFacts(
     val progressReason: ProgressReason,
     val archived: Boolean = false,
     val removalPending: Boolean = false,
+    val awaitingFileSelection: Boolean = false,
+    val metadataAvailable: Boolean = true,
 )
 
 internal fun classifyProductLifetimeTorrentViews(
@@ -87,6 +89,8 @@ internal fun classifyProductLifetimeTorrentViews(
                 progressReason = it.progress.reason,
                 archived = it.archived,
                 removalPending = it.removalState != null,
+                awaitingFileSelection = it.awaitingFileSelection,
+                metadataAvailable = it.metadataAvailable,
             )
         },
     )
@@ -100,7 +104,13 @@ internal fun classifyProductLifetimeWork(
     var waitingForUnmeteredNetwork = 0
     var seeding = 0
     torrents.forEach { torrent ->
-        if (torrent.archived || torrent.removalPending) return@forEach
+        if (
+            torrent.archived ||
+            torrent.removalPending ||
+            (torrent.awaitingFileSelection && torrent.metadataAvailable)
+        ) {
+            return@forEach
+        }
         when (torrent.operationalState) {
             TorrentOperationalState.STARTING -> starting += 1
             TorrentOperationalState.DOWNLOADING -> downloading += 1
