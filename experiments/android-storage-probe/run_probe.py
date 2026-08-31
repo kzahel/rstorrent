@@ -24,7 +24,7 @@ EXPECTED_AVD_API = "34"
 EXPECTED_CHROMEOS_API = "33"
 EXPECTED_CHROMEOS_MODEL = "nami"
 EXPECTED_CHROMEOS_DEVICE = "nami_cheets"
-CHROMEOS_SERIAL = "emulator-5554"
+CHROMEOS_SERIALS = ("127.0.0.1:5555", "emulator-5554")
 PIXEL_SERIAL = "33031JEHN17672"
 EXPECTED_PIXEL_API = "37"
 EXPECTED_PIXEL_MODEL = "Pixel 7a"
@@ -319,13 +319,14 @@ def prepare_chromeos() -> AdbTarget:
                 f"platform doctor stderr:\n{platform_doctor.stderr}"
             )
     run_host([*chromeos, "testbed", "--", "adb-connect"], timeout=30)
-    target = AdbTarget(
-        ["ssh", "chromeroot", "adb", "-s", CHROMEOS_SERIAL],
-        "Chromebook ARCVM",
-    )
-    if target.run(["get-state"]).stdout.strip() != "device":
-        raise ProbeFailure("Chromebook ARCVM ADB target is not ready")
-    return target
+    for serial in CHROMEOS_SERIALS:
+        target = AdbTarget(
+            ["ssh", "chromeroot", "adb", "-s", serial],
+            f"Chromebook ARCVM {serial}",
+        )
+        if target.run(["get-state"], check=False).stdout.strip() == "device":
+            return target
+    raise ProbeFailure("Chromebook ARCVM ADB target is not ready")
 
 
 def prepare_pixel() -> AdbTarget:
