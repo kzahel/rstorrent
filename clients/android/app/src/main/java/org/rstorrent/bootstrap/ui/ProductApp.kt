@@ -68,6 +68,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -83,6 +85,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.launch
 import org.rstorrent.bootstrap.ProductEngineService
+import org.rstorrent.bootstrap.R
 import org.rstorrent.bootstrap.ProductNotificationNavigation
 import org.rstorrent.bootstrap.ProductNotificationPreference
 import org.rstorrent.bootstrap.ProductState
@@ -155,6 +158,8 @@ fun ProductApp(
                 .filter(TorrentView::awaitingFileSelection)
                 .sortedBy { it.pendingFileSelectionPosition ?: UInt.MAX_VALUE }
         val pendingSelection = pendingSelections.firstOrNull()
+        val externalIntakeNotice =
+            state.externalIntakeNotice?.let { externalIntakeNoticeText(it.kind) }
         DisposableEffect(service, pendingSelection?.torrentId) {
             if (pendingSelection == null) {
                 service?.clearPendingFileSelection()
@@ -163,10 +168,8 @@ fun ProductApp(
             }
             onDispose { service?.clearPendingFileSelection() }
         }
-        LaunchedEffect(state.externalIntakeNotice?.sequence) {
-            state.externalIntakeNotice?.let { notice ->
-                snackbar.showSnackbar(externalIntakeNoticeText(notice.kind))
-            }
+        LaunchedEffect(state.externalIntakeNotice?.sequence, externalIntakeNotice) {
+            externalIntakeNotice?.let { snackbar.showSnackbar(it) }
         }
         Box(modifier = Modifier.fillMaxSize()) {
             Surface(modifier = Modifier.fillMaxSize()) {
@@ -258,10 +261,10 @@ fun ProductApp(
             PendingFileSelectionDialog(
                 torrent = torrent,
                 files = state.files[torrent.torrentId],
-                rootLabel = root?.label ?: state.storageRootLabel ?: "Download folder",
+                rootLabel = root?.label ?: state.storageRootLabel ?: stringResource(R.string.download_folder),
                 rootReady = rootReady,
                 queuedCount = (pendingSelections.size - 1).coerceAtLeast(0),
-                error = state.error,
+                error = state.error?.let { productErrorText(it) },
                 onPage = { service?.presentPendingFileSelection(torrent.torrentId, it) },
                 onRepairRoot = {
                     if (root == null) onSelectStorage() else onRepairStorage(root.rootId)
@@ -283,13 +286,16 @@ fun ProductApp(
         state.companionPairing?.let { pairing ->
             AlertDialog(
                 onDismissRequest = {},
-                title = { Text("Connect Chrome extension?") },
+                title = { Text(stringResource(R.string.pairing_title)) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(pairing.extensionName)
                         Text(
-                            "Extension ${pairing.extensionId}\n" +
-                                "Installation ${pairing.installationId}",
+                            stringResource(
+                                R.string.pairing_identifiers,
+                                pairing.extensionId,
+                                pairing.installationId,
+                            ),
                             style = MaterialTheme.typography.bodySmall,
                             fontFamily = FontFamily.Monospace,
                         )
@@ -299,14 +305,14 @@ fun ProductApp(
                     TextButton(
                         onClick = { service?.approveCompanionPairing(pairing.requestId) },
                     ) {
-                        Text("Approve")
+                        Text(stringResource(R.string.action_approve))
                     }
                 },
                 dismissButton = {
                     TextButton(
                         onClick = { service?.rejectCompanionPairing(pairing.requestId) },
                     ) {
-                        Text("Reject")
+                        Text(stringResource(R.string.action_reject))
                     }
                 },
             )
@@ -327,8 +333,8 @@ private fun ExternalTorrentIntakeDialog(
 ) {
     val title =
         when (intake.kind) {
-            ExternalIntakeKind.MAGNET -> "Magnet link from another app"
-            ExternalIntakeKind.TORRENT_FILE -> "Torrent file from another app"
+            ExternalIntakeKind.MAGNET -> stringResource(R.string.intake_magnet_title)
+            ExternalIntakeKind.TORRENT_FILE -> stringResource(R.string.intake_torrent_title)
         }
     AlertDialog(
         onDismissRequest = { onCancel(intake.intakeId) },
@@ -337,26 +343,33 @@ private fun ExternalTorrentIntakeDialog(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 intake.displayLabel?.let { Text(it) }
                 Text(
-                    "After adding, RSTorrent will ask which files to download when file " +
-                        "selection is enabled.",
+                    stringResource(R.string.intake_selection_notice),
                     style = MaterialTheme.typography.bodySmall,
                 )
                 if (!storageRootReady) {
-                    Text("Choose or repair a download folder before adding this item.")
+                    Text(stringResource(R.string.intake_folder_required))
                     TextButton(
                         onClick = {
                             if (repairRootId == null) onSelectStorage()
                             else onRepairStorage(repairRootId)
                         },
                     ) {
-                        Text(if (repairRootId == null) "Select folder" else "Repair folder")
+                        Text(
+                            stringResource(
+                                if (repairRootId == null) {
+                                    R.string.action_select_folder
+                                } else {
+                                    R.string.action_repair_folder
+                                },
+                            ),
+                        )
                     }
                 }
                 when (intake.phase) {
                     ExternalIntakePhase.AWAITING_ROOT -> Unit
-                    ExternalIntakePhase.SUBMITTING -> Text("Adding…")
+                    ExternalIntakePhase.SUBMITTING -> Text(stringResource(R.string.intake_adding))
                     ExternalIntakePhase.RETRYABLE_FAILURE ->
-                        Text("The source could not be read. You can retry once.")
+                        Text(stringResource(R.string.intake_retryable_failure))
                     else -> Unit
                 }
             }
@@ -380,29 +393,30 @@ private fun ExternalTorrentIntakeDialog(
             ) {
                 Text(
                     if (intake.phase == ExternalIntakePhase.RETRYABLE_FAILURE) {
-                        "Retry"
+                        stringResource(R.string.action_retry)
                     } else {
-                        "Add"
+                        stringResource(R.string.action_add)
                     },
                 )
             }
         },
         dismissButton = {
             TextButton(onClick = { onCancel(intake.intakeId) }) {
-                Text("Cancel")
+                Text(stringResource(R.string.action_cancel))
             }
         },
     )
 }
 
+@Composable
 private fun externalIntakeNoticeText(kind: ExternalIntakeNoticeKind): String =
     when (kind) {
-        ExternalIntakeNoticeKind.REJECTED -> "That item can’t be added."
-        ExternalIntakeNoticeKind.QUEUE_FULL -> "Too many items are waiting to be added."
-        ExternalIntakeNoticeKind.ADDED -> "Torrent added."
-        ExternalIntakeNoticeKind.ALREADY_PRESENT -> "Torrent already present."
-        ExternalIntakeNoticeKind.SELECTION_EXPANDED -> "Torrent selection updated."
-        ExternalIntakeNoticeKind.TERMINAL_FAILURE -> "The torrent could not be added."
+        ExternalIntakeNoticeKind.REJECTED -> stringResource(R.string.intake_rejected)
+        ExternalIntakeNoticeKind.QUEUE_FULL -> stringResource(R.string.intake_queue_full)
+        ExternalIntakeNoticeKind.ADDED -> stringResource(R.string.intake_added)
+        ExternalIntakeNoticeKind.ALREADY_PRESENT -> stringResource(R.string.intake_already_present)
+        ExternalIntakeNoticeKind.SELECTION_EXPANDED -> stringResource(R.string.intake_selection_updated)
+        ExternalIntakeNoticeKind.TERMINAL_FAILURE -> stringResource(R.string.intake_terminal_failure)
     }
 
 @Composable
@@ -434,7 +448,17 @@ private fun ProductNavHost(
     var removeTargets by remember { mutableStateOf(emptySet<String>()) }
     var removeStorageRoot by remember { mutableStateOf<String?>(null) }
     var confirmKeepSeeding by remember { mutableStateOf(false) }
-    LaunchedEffect(notificationNavigation?.sequence, state.ready) {
+    val torrentMissingMessage = stringResource(R.string.notification_torrent_missing)
+    val folderMissingMessage = stringResource(R.string.notification_folder_missing)
+    val backgroundDownloadsDescription =
+        stringResource(R.string.a11y_continue_background_downloads)
+    val keepSeedingDescription = stringResource(R.string.a11y_keep_seeding_background)
+    LaunchedEffect(
+        notificationNavigation?.sequence,
+        state.ready,
+        torrentMissingMessage,
+        folderMissingMessage,
+    ) {
         val target = notificationNavigation ?: return@LaunchedEffect
         if (!state.ready) return@LaunchedEffect
         when (target) {
@@ -447,7 +471,7 @@ private fun ProductNavHost(
                     if (!navController.popBackStack(ProductRoutes.LIBRARY, inclusive = false)) {
                         navController.navigate(ProductRoutes.LIBRARY) { launchSingleTop = true }
                     }
-                    onNotificationNavigationFallback("That torrent is no longer available.")
+                    onNotificationNavigationFallback(torrentMissingMessage)
                 }
             }
             is ProductNotificationNavigation.StorageRepair -> {
@@ -456,9 +480,7 @@ private fun ProductNavHost(
                     target.rootId != null &&
                     state.storage?.roots?.none { it.rootId == target.rootId } == true
                 ) {
-                    onNotificationNavigationFallback(
-                        "That download folder is no longer registered.",
-                    )
+                    onNotificationNavigationFallback(folderMissingMessage)
                 }
             }
         }
@@ -485,7 +507,10 @@ private fun ProductNavHost(
                     } else {
                         onRequestNotifications
                     },
-                notificationActionLabel = if (notificationsGranted) "Manage" else "Enable",
+                notificationActionLabel =
+                    stringResource(
+                        if (notificationsGranted) R.string.action_manage else R.string.action_enable,
+                    ),
                 onSelectStorage = onSelectStorage,
                 onOpenTorrent = { navController.navigate(ProductRoutes.detail(it)) },
                 onAddMagnet = { magnet ->
@@ -587,16 +612,26 @@ private fun ProductNavHost(
             SettingsHub(navController)
         }
         composable(ProductRoutes.SETTINGS_STORAGE) {
-            SettingsPage("Storage", navController::popBackStack) {
+            SettingsPage(stringResource(R.string.settings_storage), navController::popBackStack) {
                 SettingAction(
-                    title = state.storageRootLabel ?: "Download folder",
-                    detail = if (state.storageRootReady) "Available" else "Unavailable or not selected",
+                    title = state.storageRootLabel ?: stringResource(R.string.download_folder),
+                    detail =
+                        stringResource(
+                            if (state.storageRootReady) {
+                                R.string.storage_available
+                            } else {
+                                R.string.storage_unavailable
+                            },
+                        ),
                     onClick = onSelectStorage,
-                    action = if (state.storageRootReady) "Change" else "Select",
+                    action =
+                        stringResource(
+                            if (state.storageRootReady) R.string.action_change else R.string.action_select,
+                        ),
                 )
                 NotificationToggleSetting(
-                    title = "Show file selection when adding torrents",
-                    detail = "Choose Normal or Skip for each file before content downloads.",
+                    title = stringResource(R.string.storage_show_file_selection),
+                    detail = stringResource(R.string.storage_show_file_selection_detail),
                     checked = state.storage?.showFileSelection ?: true,
                     onChecked = { service?.setShowFileSelection(it) },
                 )
@@ -604,44 +639,55 @@ private fun ProductNavHost(
                     val isCurrent = root.rootId == state.storage?.defaultRoot
                     val isReferenced = state.torrents.values.any { it.storageRoot == root.rootId }
                     val title =
-                        root.label +
-                            if (isCurrent) " (current)" else ""
+                        if (isCurrent) {
+                            stringResource(R.string.storage_current_suffix, root.label)
+                        } else {
+                            root.label
+                        }
                     val detail =
-                        root.availability.name.lowercase() +
-                            (root.displayPath?.let { " · $it" } ?: " · Android document provider")
+                        root.displayPath?.let {
+                            stringResource(
+                                R.string.storage_path_detail,
+                                root.availability.name.lowercase(),
+                                it,
+                            )
+                        } ?: stringResource(
+                            R.string.storage_provider_detail,
+                            root.availability.name.lowercase(),
+                        )
                     if (root.availability == StorageRootAvailability.UNAVAILABLE) {
                         SettingAction(
                             title = title,
                             detail = detail,
                             onClick = { onRepairStorage(root.rootId) },
-                            action = "Repair",
+                            action = stringResource(R.string.action_repair),
                         )
                     } else if (!isCurrent) {
                         SettingAction(
                             title = title,
                             detail = detail,
                             onClick = { service?.makeSafRootCurrent(root.rootId) },
-                            action = "Use",
+                            action = stringResource(R.string.action_use),
                         )
                     } else {
                         ReadOnlySettingsRow(title, detail)
                     }
                     if (!isCurrent && !isReferenced) {
                         SettingAction(
-                            title = "Forget ${root.label}",
-                            detail = "Release Android access without deleting downloaded files.",
+                            title = stringResource(R.string.forget_folder_action, root.label),
+                            detail = stringResource(R.string.forget_folder_detail),
                             onClick = { removeStorageRoot = root.rootId },
-                            action = "Remove",
+                            action = stringResource(R.string.action_remove),
                         )
                     }
                 }
             }
         }
         composable(ProductRoutes.SETTINGS_SPEED) {
-            SettingsPage("Speed & Connection Limits", navController::popBackStack) {
+            SettingsPage(stringResource(R.string.settings_speed_limits), navController::popBackStack) {
                 val settings = state.presentedClientSettings()
                 if (settings == null) {
-                    Text("Settings are loading…", modifier = Modifier.padding(16.dp))
+                    Text(stringResource(R.string.settings_loading), modifier = Modifier.padding(16.dp))
                 } else {
                     ConnectionLimitsSettings(
                         settings,
@@ -695,7 +741,7 @@ private fun ProductNavHost(
             }
         }
         composable(ProductRoutes.SETTINGS_NOTIFICATIONS) {
-            SettingsPage("Notifications", navController::popBackStack) {
+            SettingsPage(stringResource(R.string.settings_notifications), navController::popBackStack) {
                 val notificationState = state.notifications
                 val backgroundVisible =
                     notificationsGranted &&
@@ -704,28 +750,31 @@ private fun ProductNavHost(
                 SettingAction(
                     title =
                         when {
-                            !notificationsGranted -> "Notifications disabled"
-                            !notificationState.appNotificationsEnabled -> "Notifications blocked"
+                            !notificationsGranted -> stringResource(R.string.notifications_disabled)
+                            !notificationState.appNotificationsEnabled -> stringResource(R.string.notifications_blocked)
                             !notificationState.backgroundChannelEnabled ->
-                                "Background activity blocked"
-                            else -> "Notifications enabled"
+                                stringResource(R.string.notifications_background_blocked)
+                            else -> stringResource(R.string.notifications_enabled)
                         },
                     detail =
                         if (backgroundVisible) {
-                            "Android can show foreground status. Background lifetime is still provisional."
+                            stringResource(R.string.notifications_foreground_status)
                         } else {
-                            "RSTorrent works while Android is visible. Leaving Android stops background work."
+                            stringResource(R.string.library_background_unavailable)
                         },
                     onClick = if (notificationsGranted) onOpenNotificationSettings else onRequestNotifications,
-                    action = if (notificationsGranted) "Manage" else "Enable",
+                    action =
+                        stringResource(
+                            if (notificationsGranted) R.string.action_manage else R.string.action_enable,
+                        ),
                 )
                 NotificationToggleSetting(
-                    title = "Download completed",
+                    title = stringResource(R.string.notifications_download_completed),
                     detail =
                         if (notificationState.completionChannelEnabled) {
-                            "Notify when a download genuinely finishes."
+                            stringResource(R.string.notifications_download_completed_detail)
                         } else {
-                            "Blocked in Android system settings."
+                            stringResource(R.string.notifications_system_blocked)
                         },
                     checked = notificationState.preferences.downloadComplete,
                     onChecked = {
@@ -736,12 +785,12 @@ private fun ProductNavHost(
                     },
                 )
                 NotificationToggleSetting(
-                    title = "Needs attention",
+                    title = stringResource(R.string.notifications_needs_attention),
                     detail =
                         if (notificationState.attentionChannelEnabled) {
-                            "Notify when a torrent or download folder needs repair."
+                            stringResource(R.string.notifications_needs_attention_detail)
                         } else {
-                            "Blocked in Android system settings."
+                            stringResource(R.string.notifications_system_blocked)
                         },
                     checked = notificationState.preferences.needsAttention,
                     onChecked = {
@@ -752,18 +801,18 @@ private fun ProductNavHost(
                     },
                 )
                 notificationState.preferenceError?.let {
-                    ReadOnlySetting("Setting not saved", it)
+                    ReadOnlySetting(stringResource(R.string.setting_not_saved), productErrorText(it))
                 }
                 SettingAction(
-                    title = "Manage system notification settings",
-                    detail = "Review Android app and channel controls.",
+                    title = stringResource(R.string.notifications_manage_system),
+                    detail = stringResource(R.string.notifications_manage_system_detail),
                     onClick = onOpenNotificationSettings,
-                    action = "Open",
+                    action = stringResource(R.string.action_open),
                 )
             }
         }
         composable(ProductRoutes.SETTINGS_NETWORK) {
-            SettingsPage("Network & Privacy", navController::popBackStack) {
+            SettingsPage(stringResource(R.string.settings_network_privacy), navController::popBackStack) {
                 state.presentedClientSettings()?.let { settings ->
                     NetworkSettings(
                         settings,
@@ -800,23 +849,23 @@ private fun ProductNavHost(
                             onUpdateClientSettings(clientSettingsPatch(encryption = policy))
                         },
                     )
-                } ?: Text("Settings are loading…", modifier = Modifier.padding(16.dp))
+                } ?: Text(stringResource(R.string.settings_loading), modifier = Modifier.padding(16.dp))
             }
         }
         composable(ProductRoutes.SETTINGS_POWER) {
-            SettingsPage("Power Management", navController::popBackStack) {
+            SettingsPage(stringResource(R.string.settings_power_management), navController::popBackStack) {
                 val lifecycle = state.lifecycle
                 ListItem(
-                    headlineContent = { Text("Continue downloads in background") },
+                    headlineContent = { Text(stringResource(R.string.power_continue_background)) },
                     supportingContent = {
                         Text(
                             when {
                                 lifecycle.effectiveBackgroundDownloads ->
-                                    "Uses a visible notification and stops when selected work completes."
+                                    stringResource(R.string.power_continue_effective)
                                 lifecycle.backgroundDownloadsEnabled ->
-                                    "Configured, but Android notification settings currently block it."
+                                    stringResource(R.string.power_continue_blocked)
                                 else ->
-                                    "Allow selected downloads and checks to continue after leaving RSTorrent."
+                                    stringResource(R.string.power_continue_detail)
                             },
                         )
                     },
@@ -827,19 +876,19 @@ private fun ProductNavHost(
                             enabled = lifecycleControlsEnabled,
                             modifier =
                                 Modifier.semantics {
-                                    contentDescription = "Continue downloads in background"
+                                    contentDescription = backgroundDownloadsDescription
                                 },
                         )
                     },
                 )
                 ListItem(
-                    headlineContent = { Text("Keep seeding in background") },
+                    headlineContent = { Text(stringResource(R.string.power_keep_seeding_background)) },
                     supportingContent = {
                         Text(
                             if (lifecycle.backgroundDownloadsEnabled) {
-                                "Keep completed, desired-running torrents active after downloads finish."
+                                stringResource(R.string.power_keep_seeding_detail_enabled)
                             } else {
-                                "Enable background downloads first."
+                                stringResource(R.string.power_keep_seeding_requires_background)
                             },
                         )
                     },
@@ -855,19 +904,18 @@ private fun ProductNavHost(
                                     lifecycle.backgroundDownloadsEnabled,
                             modifier =
                                 Modifier.semantics {
-                                    contentDescription = "Keep seeding in background"
+                                    contentDescription = keepSeedingDescription
                                 },
                         )
                     },
                 )
                 ListItem(
                     headlineContent = {
-                        Text("Prevent sleep during active downloads and checks")
+                        Text(stringResource(R.string.power_prevent_sleep))
                     },
                     supportingContent = {
                         Text(
-                            "Keeps the CPU active while starting, downloading, or checking. " +
-                                "The display may turn off normally.",
+                            stringResource(R.string.power_prevent_sleep_detail),
                         )
                     },
                     trailingContent = {
@@ -881,22 +929,21 @@ private fun ProductNavHost(
                     },
                 )
                 ReadOnlySetting(
-                    "Android background limits",
-                    "Android may limit a long background session. Open RSTorrent again to continue; force-stop and reboot do not restart it.",
+                    stringResource(R.string.power_background_limits),
+                    stringResource(R.string.power_background_limits_detail),
                 )
                 lifecycle.preferenceError?.let {
-                    ReadOnlySetting("Setting not saved", it)
+                    ReadOnlySetting(stringResource(R.string.setting_not_saved), productErrorText(it))
                 }
-                UnavailableSetting("Low-battery shutdown")
+                UnavailableSetting(stringResource(R.string.power_low_battery_shutdown))
             }
             if (confirmKeepSeeding) {
                 AlertDialog(
                     onDismissRequest = { confirmKeepSeeding = false },
-                    title = { Text("Keep seeding in background?") },
+                    title = { Text(stringResource(R.string.power_keep_seeding_title)) },
                     text = {
                         Text(
-                            "Seeding can use battery and data after downloads finish. " +
-                                "Android may still stop a long session.",
+                            stringResource(R.string.power_keep_seeding_detail),
                         )
                     },
                     confirmButton = {
@@ -906,23 +953,23 @@ private fun ProductNavHost(
                                 onKeepSeedingInBackground(true)
                             },
                         ) {
-                            Text("Keep seeding")
+                            Text(stringResource(R.string.action_keep_seeding))
                         }
                     },
                     dismissButton = {
                         TextButton(onClick = { confirmKeepSeeding = false }) {
-                            Text("Cancel")
+                            Text(stringResource(R.string.action_cancel))
                         }
                     },
                 )
             }
         }
         composable(ProductRoutes.SETTINGS_ADVANCED) {
-            SettingsPage("Advanced", navController::popBackStack) {
-                Text("Theme", modifier = Modifier.padding(16.dp), fontWeight = FontWeight.SemiBold)
+            SettingsPage(stringResource(R.string.settings_advanced), navController::popBackStack) {
+                Text(stringResource(R.string.settings_theme), modifier = Modifier.padding(16.dp), fontWeight = FontWeight.SemiBold)
                 ProductThemeMode.entries.forEach { mode ->
                     ListItem(
-                        headlineContent = { Text(mode.name.lowercase().replaceFirstChar(Char::titlecase)) },
+                        headlineContent = { Text(productThemeModeLabel(mode)) },
                         leadingContent = {
                             RadioButton(selected = themeMode == mode, onClick = { onThemeMode(mode) })
                         },
@@ -930,15 +977,15 @@ private fun ProductNavHost(
                     )
                 }
                 ListItem(
-                    headlineContent = { Text("Use system colors") },
-                    supportingContent = { Text("Available on Android 12 and later") },
+                    headlineContent = { Text(stringResource(R.string.theme_use_system_colors)) },
+                    supportingContent = { Text(stringResource(R.string.theme_system_colors_requirement)) },
                     trailingContent = {
                         Switch(checked = dynamicColor, onCheckedChange = onDynamicColor)
                     },
                 )
                 HorizontalDivider()
-                UnavailableSetting("Search plugins")
-                UnavailableSetting("Reset engine settings")
+                UnavailableSetting(stringResource(R.string.settings_search_plugins))
+                UnavailableSetting(stringResource(R.string.settings_reset_engine))
             }
         }
     }
@@ -960,10 +1007,10 @@ private fun ProductNavHost(
         val label = state.storage?.roots?.singleOrNull { it.rootId == rootId }?.label ?: rootId
         AlertDialog(
             onDismissRequest = { removeStorageRoot = null },
-            title = { Text("Forget $label?") },
+            title = { Text(stringResource(R.string.remove_folder_title, label)) },
             text = {
                 Text(
-                    "RSTorrent will release access to this folder. Existing files are not deleted.",
+                    stringResource(R.string.remove_folder_detail),
                 )
             },
             confirmButton = {
@@ -973,12 +1020,12 @@ private fun ProductNavHost(
                         removeStorageRoot = null
                     },
                 ) {
-                    Text("Remove")
+                    Text(stringResource(R.string.action_remove))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { removeStorageRoot = null }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             },
         )
@@ -1034,12 +1081,16 @@ private fun TorrentDetailScreen(
             TopAppBar(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                        Icon(
+                            Icons.AutoMirrored.Outlined.ArrowBack,
+                            contentDescription = stringResource(R.string.action_back),
+                        )
                     }
                 },
                 title = {
                     Text(
-                        torrent?.let(::torrentPresentationName) ?: "Torrent",
+                        torrent?.let(::torrentPresentationName)
+                            ?: stringResource(R.string.torrent_fallback_name),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -1049,32 +1100,48 @@ private fun TorrentDetailScreen(
                     IconButton(onClick = if (paused) onResume else onPause, enabled = torrent != null) {
                         Icon(
                             if (paused) Icons.Default.PlayArrow else Icons.Default.Pause,
-                            contentDescription = if (paused) "Resume" else "Pause",
+                            contentDescription =
+                                stringResource(
+                                    if (paused) R.string.action_resume else R.string.action_pause,
+                                ),
                         )
                     }
                     Box {
                         IconButton(onClick = { overflow = true }) {
-                            Icon(Icons.Outlined.MoreVert, contentDescription = "More options")
+                            Icon(
+                                Icons.Outlined.MoreVert,
+                                contentDescription = stringResource(R.string.a11y_more_options),
+                            )
                         }
                         DropdownMenu(expanded = overflow, onDismissRequest = { overflow = false }) {
                             DropdownMenuItem(
-                                text = { Text("Force recheck") },
+                                text = { Text(stringResource(R.string.action_force_recheck)) },
                                 enabled = torrent?.forceRecheckAvailable == true,
                                 onClick = { overflow = false; onForceRecheck() },
                             )
-                            DropdownMenuItem(text = { Text("Move to top") }, onClick = { overflow = false; onMoveTop() })
-                            DropdownMenuItem(text = { Text("Move to bottom") }, onClick = { overflow = false; onMoveBottom() })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.action_move_top)) }, onClick = { overflow = false; onMoveTop() })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.action_move_bottom)) }, onClick = { overflow = false; onMoveBottom() })
                             DropdownMenuItem(
-                                text = { Text(if (torrent?.archived == true) "Restore archive" else "Archive") },
+                                text = {
+                                    Text(
+                                        stringResource(
+                                            if (torrent?.archived == true) {
+                                                R.string.action_restore_archive
+                                            } else {
+                                                R.string.action_archive
+                                            },
+                                        ),
+                                    )
+                                },
                                 onClick = { overflow = false; if (torrent?.archived == true) onRestore() else onArchive() },
                             )
-                            DropdownMenuItem(text = { Text("Remove torrent") }, onClick = { overflow = false; onRemove() })
-                            DropdownMenuItem(text = { Text("Copy magnet link") }, onClick = { overflow = false; onCopyMagnet() })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.action_remove_torrent)) }, onClick = { overflow = false; onRemove() })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.action_copy_magnet)) }, onClick = { overflow = false; onCopyMagnet() })
                             HorizontalDivider()
-                            DropdownMenuItem(text = { Text("Speed") }, onClick = { overflow = false; onSpeed() })
-                            DropdownMenuItem(text = { Text("DHT Info") }, onClick = { overflow = false; onDht() })
-                            DropdownMenuItem(text = { Text("Logs") }, onClick = { overflow = false; onLogs() })
-                            DropdownMenuItem(text = { Text("Settings") }, onClick = { overflow = false; onSettings() })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.library_menu_speed)) }, onClick = { overflow = false; onSpeed() })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.library_menu_dht)) }, onClick = { overflow = false; onDht() })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.logs_title)) }, onClick = { overflow = false; onLogs() })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.settings_title)) }, onClick = { overflow = false; onSettings() })
                         }
                     }
                 },
@@ -1087,7 +1154,7 @@ private fun TorrentDetailScreen(
                     Tab(
                         selected = pager.currentPage == index,
                         onClick = { scope.launch { pager.animateScrollToPage(index) } },
-                        text = { Text(tab.label) },
+                        text = { Text(stringResource(tab.labelRes)) },
                     )
                 }
             }
@@ -1123,7 +1190,7 @@ private fun DetailTabContent(
     onTransferLimits: (TorrentSettingsPatch) -> Unit,
 ) {
     if (torrent == null) {
-        CenterMessage("Torrent is no longer available")
+        CenterMessage(stringResource(R.string.torrent_unavailable))
         return
     }
     when (tab) {
@@ -1135,48 +1202,54 @@ private fun DetailTabContent(
                     val v1 = torrent.protocolIdentities.v1
                     val v2 = torrent.protocolIdentities.v2
                     if (v1 != null && v2 != null) {
-                        add("Info hash (v1)" to v1)
-                        add("Info hash (v2)" to v2)
+                        add(stringResource(R.string.detail_info_hash_v1) to v1)
+                        add(stringResource(R.string.detail_info_hash_v2) to v2)
                     } else {
-                        add("Info hash" to (v1 ?: v2 ?: "—"))
+                        add(stringResource(R.string.detail_info_hash) to (v1 ?: v2 ?: "—"))
                     }
-                    add("State" to operationalLabel(torrent.operationalState))
-                    add("Required" to formatBytes(torrent.requiredPayloadBytes))
-                    add("Remaining" to formatBytes(torrent.remainingPayloadBytes))
-                    add("Pieces" to "${torrent.verifiedPieceCount} / ${torrent.pieceCount}")
-                    add("Trackers" to (torrent.configuredTrackerCount?.toString() ?: "—"))
-                    add("Lifetime downloaded" to formatBytes(torrent.lifetime.downloadedPayloadBytes))
-                    add("Lifetime uploaded" to formatBytes(torrent.lifetime.uploadedPayloadBytes))
-                    add("Share ratio" to formatShareRatio(torrent.lifetime.shareRatioHundredths))
-                    add("Active time" to formatDuration(torrent.lifetime.activeSeconds))
-                    add("Finished time" to formatDuration(torrent.lifetime.finishedSeconds))
-                    add("Seeding time" to formatDuration(torrent.lifetime.seedingSeconds))
+                    add(stringResource(R.string.detail_state) to operationalLabel(torrent.operationalState))
+                    add(stringResource(R.string.detail_required) to formatBytes(torrent.requiredPayloadBytes))
+                    add(stringResource(R.string.detail_remaining) to formatBytes(torrent.remainingPayloadBytes))
+                    add(stringResource(R.string.detail_pieces) to "${torrent.verifiedPieceCount} / ${torrent.pieceCount}")
+                    add(stringResource(R.string.detail_trackers) to (torrent.configuredTrackerCount?.toString() ?: "—"))
+                    add(stringResource(R.string.detail_lifetime_downloaded) to formatBytes(torrent.lifetime.downloadedPayloadBytes))
+                    add(stringResource(R.string.detail_lifetime_uploaded) to formatBytes(torrent.lifetime.uploadedPayloadBytes))
+                    add(stringResource(R.string.detail_share_ratio) to formatShareRatio(torrent.lifetime.shareRatioHundredths))
+                    add(stringResource(R.string.detail_active_time) to formatDuration(torrent.lifetime.activeSeconds))
+                    add(stringResource(R.string.detail_finished_time) to formatDuration(torrent.lifetime.finishedSeconds))
+                    add(stringResource(R.string.detail_seeding_time) to formatDuration(torrent.lifetime.seedingSeconds))
                     if (torrent.seeding.goal != null) {
-                        add("Seed admission" to seedAdmissionLabel(torrent.seeding.admission))
-                        add("Seeding priority goal" to seedGoalLabel(torrent.seeding.goal))
+                        add(stringResource(R.string.detail_seed_admission) to seedAdmissionLabel(torrent.seeding.admission))
+                        add(stringResource(R.string.detail_seeding_priority_goal) to seedGoalLabel(torrent.seeding.goal))
                         add(
-                            "Goal behavior" to
-                                "Goals affect priority; a goal-met torrent may continue seeding",
+                            stringResource(R.string.detail_goal_behavior) to
+                                stringResource(R.string.detail_goal_behavior_value),
                         )
                     }
                 }.toTypedArray(),
             )
         TorrentDetailTab.STATUS ->
             DetailList(
-                "Download" to formatRate(torrent.payloadDownloadRateBytes),
-                "Peers" to torrent.activePeerConnections.toString(),
-                "ETA" to torrentEta(torrent),
-                "Storage" to torrent.storageState.name.lowercase(),
-                "Progress" to torrent.progress.reason.name.lowercase(),
-                "Error" to (torrent.error ?: "None"),
+                stringResource(R.string.detail_download) to formatRate(torrent.payloadDownloadRateBytes),
+                stringResource(R.string.detail_peers) to torrent.activePeerConnections.toString(),
+                stringResource(R.string.detail_eta) to torrentEta(torrent),
+                stringResource(R.string.detail_storage) to torrent.storageState.name.lowercase(),
+                stringResource(R.string.detail_progress) to torrent.progress.reason.name.lowercase(),
+                stringResource(R.string.detail_error) to (torrent.error ?: stringResource(R.string.detail_none)),
             )
         TorrentDetailTab.PIECES -> {
             val pieces = state.pieces[torrent.torrentId]
             if (pieces == null) {
-                CenterMessage("Piece activity is loading…")
+                CenterMessage(stringResource(R.string.piece_activity_loading))
             } else {
                 Column(Modifier.padding(16.dp)) {
-                    Text("${pieces.verified.sumOf { (it.endExclusive - it.start).toInt() }} of ${pieces.pieceCount} verified")
+                    Text(
+                        stringResource(
+                            R.string.pieces_verified,
+                            pieces.verified.sumOf { (it.endExclusive - it.start).toInt() },
+                            pieces.pieceCount.toLong(),
+                        ),
+                    )
                     Spacer(Modifier.height(12.dp))
                     PieceMap(pieces.pieceCount, pieces.verified, pieces.active)
                     DiskSummary(state.disk, torrent.torrentId)
@@ -1216,7 +1289,7 @@ private fun TorrentDetails(
         items(rows.toList()) { (label, value) -> ReadOnlySetting(label, value) }
         item("download-rate-limit") {
             RateLimitSetting(
-                title = "Torrent download limit",
+                title = stringResource(R.string.torrent_download_limit),
                 configured = torrent.transferLimits.download,
                 onValue = { limit ->
                     onTransferLimits(torrentSettingsPatch(downloadRateLimit = limit))
@@ -1225,7 +1298,7 @@ private fun TorrentDetails(
         }
         item("upload-rate-limit") {
             RateLimitSetting(
-                title = "Torrent upload limit",
+                title = stringResource(R.string.torrent_upload_limit),
                 configured = torrent.transferLimits.upload,
                 onValue = { limit ->
                     onTransferLimits(torrentSettingsPatch(uploadRateLimit = limit))
@@ -1267,14 +1340,14 @@ private fun LogsShell(
             torrentOnly && selectedTorrent != null,
         )
     }
-    SettingsPage("Logs", onBack) {
+    SettingsPage(stringResource(R.string.logs_title), onBack) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Box {
                 TextButton(onClick = { profileMenu = true }) {
-                    Text("Profile: ${profileName.lowercase()}")
+                    Text(stringResource(R.string.logs_profile, profileName.lowercase()))
                 }
                 DropdownMenu(profileMenu, onDismissRequest = { profileMenu = false }) {
                     DiagnosticProfile.entries.forEach { profile ->
@@ -1287,7 +1360,7 @@ private fun LogsShell(
             }
             Box {
                 TextButton(onClick = { severityMenu = true }) {
-                    Text("Minimum: ${severityName.lowercase()}")
+                    Text(stringResource(R.string.logs_minimum, severityName.lowercase()))
                 }
                 DropdownMenu(severityMenu, onDismissRequest = { severityMenu = false }) {
                     DiagnosticSeverity.entries.forEach { severity ->
@@ -1305,18 +1378,25 @@ private fun LogsShell(
         ) {
             Box(Modifier.weight(1f)) {
                 TextButton(onClick = { categoryMenu = true }) {
-                    Text("Category: ${category.ifEmpty { "all" }}")
+                    Text(
+                        stringResource(
+                            R.string.logs_category,
+                            category.ifEmpty { stringResource(R.string.logs_all) },
+                        ),
+                    )
                 }
                 DropdownMenu(categoryMenu, onDismissRequest = { categoryMenu = false }) {
                     LOG_CATEGORIES.forEach { option ->
                         DropdownMenuItem(
-                            text = { Text(option.ifEmpty { "all" }) },
+                            text = {
+                                Text(option.ifEmpty { stringResource(R.string.logs_all) })
+                            },
                             onClick = { category = option; categoryMenu = false },
                         )
                     }
                 }
             }
-            Text("Current torrent")
+            Text(stringResource(R.string.logs_current_torrent))
             Switch(
                 checked = torrentOnly && selectedTorrent != null,
                 onCheckedChange = { torrentOnly = it },
@@ -1325,18 +1405,22 @@ private fun LogsShell(
         }
         HorizontalDivider()
         ListItem(
-            headlineContent = { Text("Delivery health") },
+            headlineContent = { Text(stringResource(R.string.logs_delivery_health)) },
             supportingContent = {
                 Text(
-                    "source evicted $sourceEvicted · local evicted $localEvicted · " +
-                        "subscription resets $resets",
+                    stringResource(
+                        R.string.logs_delivery_summary,
+                        sourceEvicted,
+                        localEvicted.toLong(),
+                        resets.toLong(),
+                    ),
                 )
             },
         )
         HorizontalDivider()
         if (events.isEmpty()) {
             Text(
-                "No diagnostic records match the current filter",
+                stringResource(R.string.logs_empty),
                 modifier = Modifier.padding(24.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1362,23 +1446,23 @@ private fun LogsShell(
 
 @Composable
 private fun SettingsHub(navController: NavHostController) {
-    SettingsPage("Settings", navController::popBackStack) {
-        SettingsDestination("Storage", "Download folder and root health", Icons.Outlined.Folder) {
+    SettingsPage(stringResource(R.string.settings_title), navController::popBackStack) {
+        SettingsDestination(stringResource(R.string.settings_storage), stringResource(R.string.settings_storage_detail), Icons.Outlined.Folder) {
             navController.navigate(ProductRoutes.SETTINGS_STORAGE)
         }
-        SettingsDestination("Speed & Connection Limits", "Peers, uploads, and active downloads", Icons.Outlined.Speed) {
+        SettingsDestination(stringResource(R.string.settings_speed_limits), stringResource(R.string.settings_speed_limits_detail), Icons.Outlined.Speed) {
             navController.navigate(ProductRoutes.SETTINGS_SPEED)
         }
-        SettingsDestination("Notifications", "Android permission and channel", Icons.Outlined.Notifications) {
+        SettingsDestination(stringResource(R.string.settings_notifications), stringResource(R.string.settings_notifications_detail), Icons.Outlined.Notifications) {
             navController.navigate(ProductRoutes.SETTINGS_NOTIFICATIONS)
         }
-        SettingsDestination("Network & Privacy", "Listening, mapping, encryption, and IPv6", Icons.Outlined.NetworkCheck) {
+        SettingsDestination(stringResource(R.string.settings_network_privacy), stringResource(R.string.settings_network_privacy_detail), Icons.Outlined.NetworkCheck) {
             navController.navigate(ProductRoutes.SETTINGS_NETWORK)
         }
-        SettingsDestination("Power Management", "Foreground operation and battery behavior", Icons.Outlined.BatterySaver) {
+        SettingsDestination(stringResource(R.string.settings_power_management), stringResource(R.string.settings_power_management_detail), Icons.Outlined.BatterySaver) {
             navController.navigate(ProductRoutes.SETTINGS_POWER)
         }
-        SettingsDestination("Advanced", "Appearance and unavailable expert features", Icons.Outlined.Settings) {
+        SettingsDestination(stringResource(R.string.settings_advanced), stringResource(R.string.settings_advanced_detail), Icons.Outlined.Settings) {
             navController.navigate(ProductRoutes.SETTINGS_ADVANCED)
         }
     }
@@ -1395,7 +1479,7 @@ private fun SettingsDestination(
         headlineContent = { Text(title) },
         supportingContent = { Text(detail) },
         leadingContent = { Icon(icon, contentDescription = null) },
-        trailingContent = { Text("›") },
+        trailingContent = { Text(stringResource(R.string.navigation_disclosure)) },
         modifier =
             Modifier.clickable(onClick = onClick)
                 .semantics(mergeDescendants = true) { role = Role.Button },
@@ -1433,7 +1517,10 @@ private fun SettingsPage(
                 title = { Text(title) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                        Icon(
+                            Icons.AutoMirrored.Outlined.ArrowBack,
+                            contentDescription = stringResource(R.string.action_back),
+                        )
                     }
                 },
             )
@@ -1460,6 +1547,16 @@ private val LOG_CATEGORIES =
         "integrity",
         "platform",
         "performance",
+    )
+
+@Composable
+private fun productThemeModeLabel(mode: ProductThemeMode): String =
+    stringResource(
+        when (mode) {
+            ProductThemeMode.SYSTEM -> R.string.theme_system
+            ProductThemeMode.LIGHT -> R.string.theme_light
+            ProductThemeMode.DARK -> R.string.theme_dark
+        },
     )
 
 @Composable
@@ -1493,7 +1590,7 @@ private fun NotificationToggleSetting(
 private fun UnavailableSetting(title: String) {
     ListItem(
         headlineContent = { Text(title) },
-        supportingContent = { Text("Not available yet") },
+        supportingContent = { Text(stringResource(R.string.setting_not_available)) },
         colors = androidx.compose.material3.ListItemDefaults.colors(
             headlineColor = MaterialTheme.colorScheme.onSurfaceVariant,
             supportingColor = MaterialTheme.colorScheme.outline,
@@ -1533,13 +1630,13 @@ private fun RemoveDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (count == 1) "Remove torrent?" else "Remove $count torrents?") },
-        text = { Text("Choose whether RSTorrent should keep or delete its managed downloaded data.") },
-        confirmButton = { TextButton(onClick = onDelete) { Text("Delete data") } },
+        title = { Text(pluralStringResource(R.plurals.remove_torrent_title, count, count)) },
+        text = { Text(stringResource(R.string.remove_torrent_detail)) },
+        confirmButton = { TextButton(onClick = onDelete) { Text(stringResource(R.string.action_delete_data)) } },
         dismissButton = {
             Row {
-                TextButton(onClick = onDismiss) { Text("Cancel") }
-                TextButton(onClick = onKeep) { Text("Keep data") }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+                TextButton(onClick = onKeep) { Text(stringResource(R.string.action_keep_data)) }
             }
         },
     )

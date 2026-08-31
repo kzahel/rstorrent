@@ -26,6 +26,7 @@ android {
     buildTypes {
         debug {
             isDebuggable = true
+            isPseudoLocalesEnabled = true
         }
         release {
             isMinifyEnabled = false

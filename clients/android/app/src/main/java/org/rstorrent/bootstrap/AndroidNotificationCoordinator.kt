@@ -169,7 +169,8 @@ internal class AndroidNotificationCoordinator(
                     it.copy(
                         notifications =
                             it.notifications.copy(
-                                preferenceError = "Notification setting could not be saved.",
+                                preferenceError =
+                                    ProductError.Code.NOTIFICATION_PREFERENCE_SAVE_FAILED,
                             ),
                     )
                 }
@@ -203,7 +204,7 @@ internal class AndroidNotificationCoordinator(
         return NotificationCompat
             .Builder(context, AndroidNotificationContract.BACKGROUND_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_rstorrent_notification)
-            .setContentTitle("RSTorrent")
+            .setContentTitle(context.getString(R.string.app_name))
             .setContentText(detail)
             .setContentIntent(open)
             .setOngoing(true)
@@ -211,7 +212,7 @@ internal class AndroidNotificationCoordinator(
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .addAction(
                 android.R.drawable.ic_menu_close_clear_cancel,
-                "Stop",
+                context.getString(R.string.action_stop),
                 stop,
             ).build()
     }
@@ -245,8 +246,8 @@ internal class AndroidNotificationCoordinator(
             NotificationCompat
                 .Builder(context, AndroidNotificationContract.ATTENTION_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_rstorrent_notification)
-                .setContentTitle("Choose an RSTorrent download folder")
-                .setContentText("Chrome needs Android folder access to continue")
+                .setContentTitle(context.getString(R.string.notification_choose_folder_title))
+                .setContentText(context.getString(R.string.notification_choose_folder_body))
                 .setContentIntent(pendingIntent)
                 .setAutoCancel(true)
                 .setCategory(NotificationCompat.CATEGORY_ERROR)
@@ -271,10 +272,11 @@ internal class AndroidNotificationCoordinator(
         val background =
             NotificationChannel(
                 AndroidNotificationContract.BACKGROUND_CHANNEL_ID,
-                "Background activity",
+                context.getString(R.string.notification_channel_background),
                 NotificationManager.IMPORTANCE_LOW,
             ).apply {
-                description = "Shows when RSTorrent is running in the background"
+                description =
+                    context.getString(R.string.notification_channel_background_description)
                 setShowBadge(false)
                 setSound(null, null)
                 enableVibration(false)
@@ -282,18 +284,20 @@ internal class AndroidNotificationCoordinator(
         val completion =
             NotificationChannel(
                 AndroidNotificationContract.COMPLETION_CHANNEL_ID,
-                "Downloads completed",
+                context.getString(R.string.notification_channel_completed),
                 NotificationManager.IMPORTANCE_DEFAULT,
             ).apply {
-                description = "Alerts when a download genuinely finishes"
+                description =
+                    context.getString(R.string.notification_channel_completed_description)
             }
         val attention =
             NotificationChannel(
                 AndroidNotificationContract.ATTENTION_CHANNEL_ID,
-                "Action required",
+                context.getString(R.string.notification_channel_attention),
                 NotificationManager.IMPORTANCE_HIGH,
             ).apply {
-                description = "Alerts when a torrent or download folder needs attention"
+                description =
+                    context.getString(R.string.notification_channel_attention_description)
             }
         manager.createNotificationChannels(listOf(background, completion, attention))
     }
@@ -347,13 +351,15 @@ internal class AndroidNotificationCoordinator(
                 ProductNotificationCategory.NEEDS_ATTENTION ->
                     AndroidNotificationContract.ATTENTION_CHANNEL_ID
             }
+        val displayName = edge.displayName ?: context.getString(R.string.torrent_fallback_name)
         val (title, body) =
             when (edge.category) {
                 ProductNotificationCategory.DOWNLOAD_COMPLETE ->
-                    "Download complete" to "${edge.displayName} finished downloading"
+                    context.getString(R.string.notification_download_complete_title) to
+                        context.getString(R.string.notification_download_complete_body, displayName)
                 ProductNotificationCategory.NEEDS_ATTENTION ->
-                    "Download needs attention" to
-                        "${edge.displayName} · Open RSTorrent for details"
+                    context.getString(R.string.notification_attention_title) to
+                        context.getString(R.string.notification_attention_body, displayName)
             }
         val notification =
             NotificationCompat
@@ -475,13 +481,37 @@ internal fun eventNotificationId(category: ProductNotificationCategory): Int =
 internal fun productNotificationTagPrefix(category: ProductNotificationCategory): String =
     "rstorrent-${category.name.lowercase()}-"
 
-internal fun productOngoingNotificationText(product: ProductState): String {
-    if (!product.ready && product.error == null) return "Opening profile"
-    if (product.error != null) return "RSTorrent needs attention"
+internal data class ProductOngoingNotificationMessage(
+    val kind: Kind,
+    val count: Int = 0,
+) {
+    enum class Kind {
+        OPENING_PROFILE,
+        NEEDS_ATTENTION,
+        SEEDING_BACKGROUND,
+        CHROME_CONNECTED,
+        CHROME_RECONNECT,
+        WAITING_UNMETERED,
+        DOWNLOADING,
+        READY_CHROME,
+        READY,
+    }
+}
+
+internal fun productOngoingNotificationMessage(product: ProductState): ProductOngoingNotificationMessage {
+    if (!product.ready && product.error == null) {
+        return ProductOngoingNotificationMessage(ProductOngoingNotificationMessage.Kind.OPENING_PROFILE)
+    }
+    if (product.error != null) {
+        return ProductOngoingNotificationMessage(ProductOngoingNotificationMessage.Kind.NEEDS_ATTENTION)
+    }
     when (product.lifecycle.reason) {
-        "retain_background_seeding" -> return "Seeding in background"
-        "retain_chromeos_companion" -> return "ChromeOS client connected"
-        "retain_chromeos_reconnect_grace" -> return "Waiting for ChromeOS to reconnect"
+        "retain_background_seeding" ->
+            return ProductOngoingNotificationMessage(ProductOngoingNotificationMessage.Kind.SEEDING_BACKGROUND)
+        "retain_chromeos_companion" ->
+            return ProductOngoingNotificationMessage(ProductOngoingNotificationMessage.Kind.CHROME_CONNECTED)
+        "retain_chromeos_reconnect_grace" ->
+            return ProductOngoingNotificationMessage(ProductOngoingNotificationMessage.Kind.CHROME_RECONNECT)
     }
     val networkRuntime = product.clientSettings?.applicationNetwork
     if (
@@ -491,11 +521,44 @@ internal fun productOngoingNotificationText(product: ProductState): String {
         networkRuntime.state !=
             org.rstorrent.session.uniffi.ApplicationNetworkRuntimeState.ALLOWED
     ) {
-        return "Waiting for an unmetered network"
+        return ProductOngoingNotificationMessage(ProductOngoingNotificationMessage.Kind.WAITING_UNMETERED)
     }
     val downloading = product.torrents.values.count { it.state == TorrentState.DOWNLOADING }
-    if (downloading == 1) return "Downloading 1 torrent"
-    if (downloading > 1) return "Downloading $downloading torrents"
-    if (product.companionPort != null) return "Ready for Chrome"
-    return "Ready"
+    if (downloading > 0) {
+        return ProductOngoingNotificationMessage(
+            ProductOngoingNotificationMessage.Kind.DOWNLOADING,
+            downloading,
+        )
+    }
+    if (product.companionPort != null) {
+        return ProductOngoingNotificationMessage(ProductOngoingNotificationMessage.Kind.READY_CHROME)
+    }
+    return ProductOngoingNotificationMessage(ProductOngoingNotificationMessage.Kind.READY)
+}
+
+internal fun Context.productOngoingNotificationText(product: ProductState): String {
+    val message = productOngoingNotificationMessage(product)
+    return when (message.kind) {
+        ProductOngoingNotificationMessage.Kind.OPENING_PROFILE ->
+            getString(R.string.notification_opening_profile)
+        ProductOngoingNotificationMessage.Kind.NEEDS_ATTENTION ->
+            getString(R.string.notification_needs_attention)
+        ProductOngoingNotificationMessage.Kind.SEEDING_BACKGROUND ->
+            getString(R.string.notification_seeding_background)
+        ProductOngoingNotificationMessage.Kind.CHROME_CONNECTED ->
+            getString(R.string.notification_chrome_connected)
+        ProductOngoingNotificationMessage.Kind.CHROME_RECONNECT ->
+            getString(R.string.notification_chrome_reconnect)
+        ProductOngoingNotificationMessage.Kind.WAITING_UNMETERED ->
+            getString(R.string.notification_waiting_unmetered)
+        ProductOngoingNotificationMessage.Kind.DOWNLOADING ->
+            resources.getQuantityString(
+                R.plurals.notification_downloading_torrents,
+                message.count,
+                message.count,
+            )
+        ProductOngoingNotificationMessage.Kind.READY_CHROME ->
+            getString(R.string.notification_ready_chrome)
+        ProductOngoingNotificationMessage.Kind.READY -> getString(R.string.notification_ready)
+    }
 }

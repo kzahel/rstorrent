@@ -1,8 +1,14 @@
 package org.rstorrent.bootstrap.ui
 
-import java.math.BigInteger
+import android.icu.text.ListFormatter
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
+import java.math.BigDecimal
+import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.max
+import org.rstorrent.bootstrap.R
 import org.rstorrent.session.uniffi.ClientSettingsApplicationState
 import org.rstorrent.session.uniffi.SeedAdmissionView
 import org.rstorrent.session.uniffi.SeedGoalView
@@ -29,45 +35,65 @@ internal fun formatRate(decimal: String?): String =
 internal fun torrentPresentationName(torrent: TorrentView): String =
     torrent.displayName ?: torrent.sourceDisplayName ?: torrent.torrentId
 
+@Composable
 internal fun formatDuration(seconds: ULong): String {
     val days = seconds / 86_400UL
     val hours = seconds % 86_400UL / 3_600UL
     val minutes = seconds % 3_600UL / 60UL
     val remaining = seconds % 60UL
     return when {
-        days > 0UL -> "${days}d ${hours}h"
-        hours > 0UL -> "${hours}h ${minutes}m"
-        minutes > 0UL -> "${minutes}m ${remaining}s"
-        else -> "${remaining}s"
+        days > 0UL -> stringResource(R.string.duration_days_hours, days.toLong(), hours.toLong())
+        hours > 0UL -> stringResource(R.string.duration_hours_minutes, hours.toLong(), minutes.toLong())
+        minutes > 0UL -> stringResource(R.string.duration_minutes_seconds, minutes.toLong(), remaining.toLong())
+        else -> stringResource(R.string.duration_seconds, remaining.toLong())
     }
 }
 
-internal fun formatDuration(decimal: String): String =
-    decimal.toULongOrNull()?.let(::formatDuration) ?: "—"
+@Composable
+internal fun formatDuration(decimal: String): String {
+    val seconds = decimal.toULongOrNull() ?: return "—"
+    return formatDuration(seconds)
+}
 
 internal fun formatShareRatio(hundredths: String?): String {
     val value = hundredths?.toBigIntegerOrNull()?.takeIf { it.signum() >= 0 } ?: return "—"
-    val parts = value.divideAndRemainder(BigInteger.valueOf(100))
-    return "${parts[0]}.${parts[1].toString().padStart(2, '0')}"
+    return NumberFormat.getNumberInstance().apply {
+        minimumFractionDigits = 2
+        maximumFractionDigits = 2
+        isGroupingUsed = false
+    }.format(BigDecimal(value).movePointLeft(2))
 }
 
+@Composable
 internal fun seedAdmissionLabel(admission: SeedAdmissionView): String =
     when (admission) {
-        SeedAdmissionView.ACTIVE -> "Active seed"
-        SeedAdmissionView.QUEUED -> "Queued seed"
-        SeedAdmissionView.INACTIVE_EXEMPT -> "Active, inactive-exempt seed"
-        SeedAdmissionView.INELIGIBLE -> "Not eligible to seed"
+        SeedAdmissionView.ACTIVE -> stringResource(R.string.seed_active)
+        SeedAdmissionView.QUEUED -> stringResource(R.string.seed_queued)
+        SeedAdmissionView.INACTIVE_EXEMPT -> stringResource(R.string.seed_inactive_exempt)
+        SeedAdmissionView.INELIGIBLE -> stringResource(R.string.seed_ineligible)
     }
 
+@Composable
 internal fun seedGoalLabel(goal: SeedGoalView?): String {
     goal ?: return "—"
+    val configuration = LocalConfiguration.current
     val thresholds =
         buildList {
-            if (goal.shareRatioMet) add("share ratio")
-            if (goal.finishedDownloadRatioMet) add("finished/download time ratio")
-            if (goal.finishedTimeMet) add("finished time")
-        }.ifEmpty { listOf("none yet") }
-    return "${goal.status.name.lowercase()} · met: ${thresholds.joinToString()}"
+            if (goal.shareRatioMet) add(stringResource(R.string.seed_goal_share_ratio))
+            if (goal.finishedDownloadRatioMet) {
+                add(stringResource(R.string.seed_goal_finished_download_ratio))
+            }
+            if (goal.finishedTimeMet) add(stringResource(R.string.seed_goal_finished_time))
+        }.ifEmpty { listOf(stringResource(R.string.seed_goal_none)) }
+    val status =
+        stringResource(
+            if (goal.status.name == "MET") R.string.seed_goal_met else R.string.seed_goal_unmet,
+        )
+    return stringResource(
+        R.string.seed_goal_summary,
+        status,
+        ListFormatter.getInstance(configuration.locales[0]).format(thresholds),
+    )
 }
 
 internal fun torrentProgress(torrent: TorrentView): Float {
@@ -83,21 +109,35 @@ internal fun torrentProgress(torrent: TorrentView): Float {
     return 0f
 }
 
+@Composable
 internal fun torrentEta(torrent: TorrentView): String =
     when (val eta = torrent.eta) {
-        is TorrentEtaView.Estimate -> eta.seconds.toULongOrNull()?.let(::formatDuration) ?: "—"
-        TorrentEtaView.WarmingUp -> "Calculating…"
-        TorrentEtaView.Stalled -> "Stalled"
+        is TorrentEtaView.Estimate -> formatDuration(eta.seconds)
+        TorrentEtaView.WarmingUp -> stringResource(R.string.state_calculating)
+        TorrentEtaView.Stalled -> stringResource(R.string.state_stalled)
         TorrentEtaView.Unavailable -> "—"
     }
 
+@Composable
 internal fun operationalLabel(state: TorrentOperationalState): String =
-    state.name.lowercase().replaceFirstChar(Char::titlecase)
+    stringResource(
+        when (state) {
+            TorrentOperationalState.QUEUED -> R.string.state_queued
+            TorrentOperationalState.STARTING -> R.string.state_starting
+            TorrentOperationalState.DOWNLOADING -> R.string.state_downloading
+            TorrentOperationalState.CHECKING -> R.string.state_checking
+            TorrentOperationalState.STOPPING -> R.string.state_stopping
+            TorrentOperationalState.SEEDING -> R.string.state_seeding
+            TorrentOperationalState.PAUSED -> R.string.state_paused
+            TorrentOperationalState.ERROR -> R.string.state_error
+        },
+    )
 
+@Composable
 internal fun settingsApplicationLabel(state: ClientSettingsApplicationState): String =
     when (state) {
-        ClientSettingsApplicationState.Applied -> "Applied"
-        ClientSettingsApplicationState.Applying -> "Applying…"
+        ClientSettingsApplicationState.Applied -> stringResource(R.string.state_applied)
+        ClientSettingsApplicationState.Applying -> stringResource(R.string.state_applying)
         is ClientSettingsApplicationState.Degraded -> state.detail
     }
 

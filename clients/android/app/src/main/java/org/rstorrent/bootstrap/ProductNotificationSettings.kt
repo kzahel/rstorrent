@@ -120,7 +120,7 @@ data class ProductNotificationState(
     val completionChannelEnabled: Boolean = true,
     val attentionChannelEnabled: Boolean = true,
     val interactionLeaseCount: Int = 0,
-    val preferenceError: String? = null,
+    val preferenceError: ProductError? = null,
 ) {
     internal val eligibility: NotificationEligibility
         get() =

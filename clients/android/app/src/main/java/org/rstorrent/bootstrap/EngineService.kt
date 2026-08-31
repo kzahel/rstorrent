@@ -730,7 +730,7 @@ class EngineService : Service() {
         manager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID,
-                "RSTorrent bootstrap",
+                getString(R.string.engine_bootstrap_name),
                 NotificationManager.IMPORTANCE_LOW,
             ),
         )
@@ -739,7 +739,7 @@ class EngineService : Service() {
     private fun notification(text: String): Notification =
         Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setContentTitle("RSTorrent engine")
+            .setContentTitle(getString(R.string.engine_notification_title))
             .setContentText(text)
             .setOngoing(true)
             .build()

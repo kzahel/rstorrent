@@ -30,6 +30,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -37,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import org.rstorrent.bootstrap.DiskViewState
 import org.rstorrent.bootstrap.FileCatalogViewState
 import org.rstorrent.bootstrap.AndroidMediaPlaybackPolicy
+import org.rstorrent.bootstrap.R
 import org.rstorrent.bootstrap.SwarmViewState
 import org.rstorrent.bootstrap.TrackerCatalogViewState
 import org.rstorrent.session.uniffi.FilePriority
@@ -55,18 +58,24 @@ internal fun FilesScreen(
     onPage: (UInt) -> Unit,
 ) {
     if (catalog == null) {
-        ProductLoading("File catalog")
+        ProductLoading(stringResource(R.string.file_catalog_title))
         return
     }
     val files = catalog.files.values.filterNot(FileView::padding).sortedBy(FileView::fileIndex)
     LazyColumn(Modifier.fillMaxSize()) {
         item("summary") {
             ListItem(
-                headlineContent = { Text("${files.size} files") },
+                headlineContent = {
+                    Text(pluralStringResource(R.plurals.file_count, files.size, files.size))
+                },
                 supportingContent = {
                     Text(
-                        "${catalog.state.name.lowercase()} · " +
-                            "showing ${catalog.page.offset + files.size.toUInt()} of ${catalog.page.total}",
+                        stringResource(
+                            R.string.catalog_showing,
+                            catalog.state.name.lowercase(),
+                            (catalog.page.offset + files.size.toUInt()).toLong(),
+                            catalog.page.total.toLong(),
+                        ),
                     )
                 },
             )
@@ -87,11 +96,13 @@ internal fun FilesScreen(
                             enabled = file.selection != null,
                         ) {
                             Text(
-                                when (file.selection) {
-                                    FileSelectionView.HIGH -> "High"
-                                    FileSelectionView.SKIPPED -> "Skip"
-                                    else -> "Normal"
-                                },
+                                stringResource(
+                                    when (file.selection) {
+                                        FileSelectionView.HIGH -> R.string.priority_high
+                                        FileSelectionView.SKIPPED -> R.string.priority_skip
+                                        else -> R.string.priority_normal
+                                    },
+                                ),
                             )
                         }
                         DropdownMenu(
@@ -99,12 +110,12 @@ internal fun FilesScreen(
                             onDismissRequest = { priorityMenuExpanded = false },
                         ) {
                             listOf(
-                                "High" to FilePriority.HIGH,
-                                "Normal" to FilePriority.NORMAL,
-                                "Skip" to FilePriority.SKIP,
+                                R.string.priority_high to FilePriority.HIGH,
+                                R.string.priority_normal to FilePriority.NORMAL,
+                                R.string.priority_skip to FilePriority.SKIP,
                             ).forEach { (label, priority) ->
                                 DropdownMenuItem(
-                                    text = { Text(label) },
+                                    text = { Text(stringResource(label)) },
                                     onClick = {
                                         priorityMenuExpanded = false
                                         onSetPriority(file, priority)
@@ -136,7 +147,7 @@ internal fun FilesScreen(
                     horizontalArrangement = Arrangement.End,
                 ) {
                     OutlinedButton(onClick = { onDownloadNow(file) }, enabled = wanted && !complete) {
-                        Text("Download now")
+                        Text(stringResource(R.string.action_download_now))
                     }
                     if (AndroidMediaPlaybackPolicy.isRecognizedVideo(file.path)) {
                         Spacer(Modifier.padding(4.dp))
@@ -149,7 +160,7 @@ internal fun FilesScreen(
                                 ),
                             modifier = Modifier.testTag("play-${file.fileId}"),
                         ) {
-                            Text("Play")
+                            Text(stringResource(R.string.action_play))
                         }
                     }
                     Spacer(Modifier.padding(4.dp))
@@ -158,7 +169,7 @@ internal fun FilesScreen(
                         enabled = complete,
                         modifier = Modifier.testTag("open-${file.fileId}"),
                     ) {
-                        Text("Open")
+                        Text(stringResource(R.string.action_open))
                     }
                 }
             }
@@ -173,14 +184,22 @@ internal fun TrackersScreen(
     onPage: (UInt) -> Unit,
 ) {
     if (catalog == null) {
-        ProductLoading("Tracker catalog")
+        ProductLoading(stringResource(R.string.tracker_catalog_title))
         return
     }
     val trackers = catalog.trackers.values.sortedWith(compareBy({ it.tier }, { it.url }))
     LazyColumn(Modifier.fillMaxSize()) {
         item("summary") {
             ListItem(
-                headlineContent = { Text("${trackers.size} trackers") },
+                headlineContent = {
+                    Text(
+                        pluralStringResource(
+                            R.plurals.tracker_count,
+                            trackers.size,
+                            trackers.size,
+                        ),
+                    )
+                },
                 supportingContent = { Text(catalog.state.name.lowercase()) },
             )
             HorizontalDivider()
@@ -194,12 +213,20 @@ internal fun TrackersScreen(
                 supportingContent = {
                     Column {
                         Text(
-                            "${tracker.status.name.lowercase()} · ${tracker.transport.name.lowercase()} · " +
-                                "tier ${tracker.tier}",
+                            stringResource(
+                                R.string.tracker_summary,
+                                tracker.status.name.lowercase(),
+                                tracker.transport.name.lowercase(),
+                                tracker.tier.toInt(),
+                            ),
                         )
                         Text(
                             tracker.lastError
-                                ?: "Peers ${tracker.lastPeerCount ?: 0U} · attempts ${tracker.totalAttempts}",
+                                ?: stringResource(
+                                    R.string.tracker_attempts,
+                                    (tracker.lastPeerCount ?: 0U).toLong(),
+                                    tracker.totalAttempts.toLong(),
+                                ),
                             color =
                                 if (tracker.lastError == null) {
                                     MaterialTheme.colorScheme.onSurfaceVariant
@@ -228,15 +255,19 @@ private fun CatalogPager(
         OutlinedButton(
             onClick = { onPage(page.offset - minOf(page.offset, page.limit)) },
             enabled = page.offset > 0U,
-        ) { Text("Previous") }
+        ) { Text(stringResource(R.string.action_previous)) }
         Text(
-            "${page.offset + 1U}–${minOf(page.offset + page.limit, page.total)}",
+            stringResource(
+                R.string.catalog_page_range,
+                (page.offset + 1U).toLong(),
+                minOf(page.offset + page.limit, page.total).toLong(),
+            ),
             modifier = Modifier.padding(top = 12.dp),
         )
         OutlinedButton(
             onClick = { page.nextOffset?.let(onPage) },
             enabled = page.nextOffset != null,
-        ) { Text("Next") }
+        ) { Text(stringResource(R.string.action_next)) }
     }
     HorizontalDivider()
 }
@@ -247,19 +278,32 @@ internal fun PeersScreen(
     swarm: SwarmViewState?,
 ) {
     if (peers == null && swarm == null) {
-        ProductLoading("Peer and swarm views")
+        ProductLoading(stringResource(R.string.peer_catalog_title))
         return
     }
     val rows = peers.orEmpty().sortedBy(PeerView::remoteEndpoint)
     LazyColumn(Modifier.fillMaxSize()) {
         item("summary") {
             ListItem(
-                headlineContent = { Text("${rows.size} connected peers") },
+                headlineContent = {
+                    Text(
+                        pluralStringResource(
+                            R.plurals.connected_peer_count,
+                            rows.size,
+                            rows.size,
+                        ),
+                    )
+                },
                 supportingContent = {
                     Text(
                         swarm?.let {
-                            "${it.peers.size} known · ${it.state.name.lowercase()} · cap ${it.maximumRecords}"
-                        } ?: "Swarm catalog is loading…",
+                            stringResource(
+                                R.string.swarm_summary,
+                                it.peers.size,
+                                it.state.name.lowercase(),
+                                it.maximumRecords.toLong(),
+                            )
+                        } ?: stringResource(R.string.swarm_loading),
                     )
                 },
             )
@@ -267,7 +311,7 @@ internal fun PeersScreen(
         }
         items(rows, key = PeerView::connectionId) { peer -> PeerRow(peer) }
         if (rows.isEmpty()) {
-            item("empty") { ProductLoading("No peers connected") }
+            item("empty") { ProductLoading(stringResource(R.string.no_peers_connected)) }
         }
     }
 }
@@ -281,14 +325,21 @@ private fun PeerRow(peer: PeerView) {
         supportingContent = {
             Column {
                 Text(
-                    "${peer.remoteEndpoint} · ${peer.direction.name.lowercase()} · " +
+                    stringResource(
+                        R.string.peer_summary,
+                        peer.remoteEndpoint,
+                        peer.direction.name.lowercase(),
                         peer.lifecycle.name.lowercase(),
+                    ),
                     fontFamily = FontFamily.Monospace,
                 )
                 Text(
-                    "↓ ${formatRate(peer.payloadDownloadRateBytes)} · " +
-                        "↑ ${formatRate(peer.payloadUploadRateBytes)} · " +
-                        "requests ${peer.pendingRequests ?: 0U}",
+                    stringResource(
+                        R.string.peer_transfer_summary,
+                        formatRate(peer.payloadDownloadRateBytes),
+                        formatRate(peer.payloadUploadRateBytes),
+                        (peer.pendingRequests ?: 0U).toLong(),
+                    ),
                 )
             }
         },
@@ -301,18 +352,24 @@ internal fun DiskSummary(disk: DiskViewState?, torrentId: String) {
     val rows = disk?.pieces?.values?.filter { it.torrentId == torrentId }.orEmpty()
     Card(Modifier.fillMaxWidth().padding(top = 16.dp)) {
         Column(Modifier.padding(12.dp)) {
-            Text("Storage pipeline", fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.storage_pipeline), fontWeight = FontWeight.SemiBold)
             if (disk == null) {
-                Text("Loading…")
+                Text(stringResource(R.string.state_loading))
             } else {
                 Text(
-                    "${disk.pipeline.pressure.name.lowercase()} · " +
-                        "resident ${formatBytes(disk.pipeline.residentBytes)} · " +
-                        "${rows.size} active pieces",
+                    stringResource(
+                        R.string.storage_pipeline_summary,
+                        disk.pipeline.pressure.name.lowercase(),
+                        formatBytes(disk.pipeline.residentBytes),
+                        rows.size,
+                    ),
                 )
                 Text(
-                    "write ${formatRate(disk.pipeline.writeRateBytes)} · " +
-                        "hash ${formatRate(disk.pipeline.hashRateBytes)}",
+                    stringResource(
+                        R.string.storage_pipeline_rates,
+                        formatRate(disk.pipeline.writeRateBytes),
+                        formatRate(disk.pipeline.hashRateBytes),
+                    ),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -325,6 +382,6 @@ private fun ProductLoading(label: String) {
     Column(Modifier.fillMaxWidth().padding(24.dp)) {
         Text(label, style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(4.dp))
-        Text("Loading…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(stringResource(R.string.state_loading), color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

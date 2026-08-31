@@ -242,6 +242,78 @@ function checkDesktopCatalog() {
   console.log(`Desktop native localization catalog is valid (${ids.length} English messages)`);
 }
 
+function checkAndroidCatalog() {
+  const relativeCatalog = "clients/android/app/src/main/res/values/strings.xml";
+  const source = fs.readFileSync(path.join(repositoryRoot, relativeCatalog), "utf8");
+  const resources = new Map();
+  for (const match of source.matchAll(/<(string|plurals)\s+name="([a-z0-9_]+)"[^>]*>([\s\S]*?)<\/\1>/g)) {
+    const [, kind, name, body] = match;
+    if (resources.has(name)) fail(`duplicate Android resource ${name}`);
+    resources.set(name, { kind, body });
+    if (kind === "plurals") {
+      const quantities = [...body.matchAll(/<item\s+quantity="([a-z]+)"/g)].map((item) => item[1]);
+      for (const required of ["one", "other"]) {
+        if (!quantities.includes(required)) fail(`Android plurals ${name} is missing ${required}`);
+      }
+    }
+    for (const placeholder of body.matchAll(/%(?!%)(\d+)\$([a-z])/g)) {
+      if (!/[dfs]/.test(placeholder[2])) {
+        fail(`Android resource ${name} has unsupported placeholder ${placeholder[0]}`);
+      }
+    }
+  }
+  if (resources.size === 0) fail("Android English catalog is empty");
+
+  const referenced = new Set();
+  const sourceFiles = walkFiles("clients/android/app/src/main/java").filter((file) => file.endsWith(".kt"));
+  for (const file of sourceFiles) {
+    const kotlin = fs.readFileSync(file, "utf8");
+    for (const match of kotlin.matchAll(/R\.(?:string|plurals)\.([a-z0-9_]+)/g)) {
+      referenced.add(match[1]);
+    }
+    const relative = path.relative(repositoryRoot, file);
+    for (const [pattern, interpolationAware] of [
+      [/\bText\(\s*"([^"\n]*)"/, true],
+      [/contentDescription\s*=\s*"([^"\n]*)"/, false],
+      [/\.setContent(?:Title|Text)\(\s*"([^"\n]*)"/, false],
+      [/(?:error|preferenceError|runtimeError)\s*=\s*"([^"\n]*)"/, false],
+    ]) {
+      const inline = kotlin.match(pattern);
+      const candidate =
+        interpolationAware ? inline?.[1].replace(/\$\{[^}]+\}/g, "") : inline?.[1];
+      if (candidate && /[A-Za-z]/.test(candidate)) {
+        fail(`unclassified Android product copy in ${relative}: ${inline[1]}`);
+      }
+    }
+  }
+  const manifest = fs.readFileSync(
+    path.join(repositoryRoot, "clients/android/app/src/main/AndroidManifest.xml"),
+    "utf8",
+  );
+  if (!manifest.includes('android:label="@string/app_name"')) {
+    fail("Android application label must use @string/app_name");
+  }
+  referenced.add("app_name");
+  for (const name of referenced) {
+    if (!resources.has(name)) fail(`Android source references missing resource ${name}`);
+  }
+  const orphaned = [...resources.keys()].filter((name) => !referenced.has(name));
+  if (orphaned.length > 0) {
+    fail(`orphaned Android resources: ${orphaned.slice(0, 16).join(", ")}`);
+  }
+  const resourceRoot = path.join(repositoryRoot, "clients/android/app/src/main/res");
+  const pseudoDirectories = fs.readdirSync(resourceRoot).filter((name) => /-(?:en-rXA|ar-rXB)$/.test(name));
+  if (pseudoDirectories.length > 0) fail("Android pseudo-locales must be generated debug assets only");
+  const gradle = fs.readFileSync(
+    path.join(repositoryRoot, "clients/android/app/build.gradle.kts"),
+    "utf8",
+  );
+  if (!/debug\s*\{[\s\S]*?isPseudoLocalesEnabled\s*=\s*true/.test(gradle)) {
+    fail("Android debug builds must enable generated pseudo-locales");
+  }
+  console.log(`Android localization catalog is valid (${resources.size} English resources)`);
+}
+
 function findInlineWebCopy(source, parseTypescript) {
   const attributeNames = new Set([
     "alt", "aria-description", "aria-label", "data-label", "emptyMessage",
@@ -286,6 +358,7 @@ export async function main() {
   checkPolicy();
   await checkWebCatalog();
   checkDesktopCatalog();
+  checkAndroidCatalog();
   console.log("Localization policy is valid (shipping locales: en; test: en-XA, ar-XB)");
 }
 

@@ -92,8 +92,31 @@ data class ProductLifecycleState(
     val foreground: Boolean = true,
     val companionConnections: Int = 0,
     val reason: String? = null,
-    val preferenceError: String? = null,
+    val preferenceError: ProductError? = null,
 )
+
+sealed interface ProductError {
+    enum class Code : ProductError {
+        SELECT_DOWNLOAD_FOLDER,
+        STORAGE_UNAVAILABLE,
+        MEDIA_UNAVAILABLE,
+        SETTINGS_UPDATE_EMPTY,
+        SETTINGS_LOADING,
+        POWER_SETTING_SAVE_FAILED,
+        TORRENT_SETTINGS_UPDATE_EMPTY,
+        TORRENT_MISSING,
+        NETWORK_PREFERENCE_SAVE_FAILED,
+        NOTIFICATION_PREFERENCE_SAVE_FAILED,
+        BACKGROUND_NOTIFICATION_REQUIRED,
+        BACKGROUND_DOWNLOADS_REQUIRED,
+        BACKGROUND_SETTING_SAVE_FAILED,
+    }
+
+    data class MediaUnavailable(val reason: org.rstorrent.session.uniffi.MediaFileAvailability) :
+        ProductError
+
+    data class Technical(val detail: String) : ProductError
+}
 
 enum class ExternalIntakeNoticeKind {
     REJECTED,
@@ -111,7 +134,7 @@ data class ExternalIntakeNotice(
 
 data class ProductState(
     val ready: Boolean = false,
-    val error: String? = null,
+    val error: ProductError? = null,
     val storageRootReady: Boolean = false,
     val storageRootLabel: String? = null,
     val externalIntake: ExternalIntakePresentation? = null,

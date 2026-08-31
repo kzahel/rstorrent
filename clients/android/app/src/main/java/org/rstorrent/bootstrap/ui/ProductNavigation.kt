@@ -1,6 +1,8 @@
 package org.rstorrent.bootstrap.ui
 
+import androidx.annotation.StringRes
 import java.util.Locale
+import org.rstorrent.bootstrap.R
 import org.rstorrent.session.uniffi.TorrentOperationalState
 import org.rstorrent.session.uniffi.TorrentState
 import org.rstorrent.session.uniffi.TorrentView
@@ -23,12 +25,12 @@ internal object ProductRoutes {
 }
 
 enum class LibraryFilter(
-    val label: String,
+    @StringRes val labelRes: Int,
 ) {
-    ALL("All"),
-    ACTIVE("Active"),
-    QUEUED("Queued"),
-    FINISHED("Finished"),
+    ALL(R.string.library_filter_all),
+    ACTIVE(R.string.library_filter_active),
+    QUEUED(R.string.library_filter_queued),
+    FINISHED(R.string.library_filter_finished),
     ;
 
     fun matches(torrent: TorrentView): Boolean =
@@ -49,11 +51,11 @@ enum class LibraryFilter(
 }
 
 enum class LibrarySort(
-    val label: String,
+    @StringRes val labelRes: Int,
 ) {
-    STABLE("Queue / stable order"),
-    NAME("Name"),
-    DOWNLOAD_SPEED("Download speed"),
+    STABLE(R.string.library_sort_stable),
+    NAME(R.string.library_sort_name),
+    DOWNLOAD_SPEED(R.string.library_sort_download_speed),
 }
 
 internal fun filteredAndSortedTorrents(
@@ -79,12 +81,12 @@ internal fun filteredAndSortedTorrents(
 }
 
 enum class TorrentDetailTab(
-    val label: String,
+    @StringRes val labelRes: Int,
 ) {
-    DETAILS("Details"),
-    STATUS("Status"),
-    FILES("Files"),
-    TRACKERS("Trackers"),
-    PEERS("Peers"),
-    PIECES("Pieces"),
+    DETAILS(R.string.detail_tab_details),
+    STATUS(R.string.detail_tab_status),
+    FILES(R.string.detail_tab_files),
+    TRACKERS(R.string.detail_tab_trackers),
+    PEERS(R.string.detail_tab_peers),
+    PIECES(R.string.detail_tab_pieces),
 }

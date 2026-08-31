@@ -26,6 +26,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -36,6 +38,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import org.rstorrent.bootstrap.FileCatalogViewState
 import org.rstorrent.bootstrap.PendingFileSelectionDraft
+import org.rstorrent.bootstrap.R
 import org.rstorrent.session.uniffi.FileCatalogState
 import org.rstorrent.session.uniffi.FileView
 import org.rstorrent.session.uniffi.TorrentView
@@ -122,6 +125,7 @@ internal fun PendingFileSelectionDialog(
         torrent.fileCatalogId != null &&
             (files?.state == FileCatalogState.AVAILABLE || pages.isNotEmpty())
     val summary = draft.summary(torrent)
+    val overrideLimitError = stringResource(R.string.file_selection_override_limit)
     Dialog(
         onDismissRequest = {},
         properties =
@@ -148,13 +152,21 @@ internal fun PendingFileSelectionDialog(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    "Checked files use Normal priority. Unchecked files are skipped.",
+                    stringResource(R.string.file_selection_explanation),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    "Download folder: $rootLabel" +
-                        if (queuedCount > 0) " · $queuedCount more pending" else "",
+                    if (queuedCount > 0) {
+                        pluralStringResource(
+                            R.plurals.file_selection_folder_pending,
+                            queuedCount,
+                            rootLabel,
+                            queuedCount,
+                        )
+                    } else {
+                        stringResource(R.string.file_selection_folder, rootLabel)
+                    },
                     style = MaterialTheme.typography.labelMedium,
                 )
                 if (!metadataReady) {
@@ -164,9 +176,9 @@ internal fun PendingFileSelectionDialog(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         CircularProgressIndicator()
-                        Text("Fetching file information…")
+                        Text(stringResource(R.string.file_selection_fetching))
                         Text(
-                            "No content files will download before you confirm.",
+                            stringResource(R.string.file_selection_download_blocked),
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
@@ -176,14 +188,18 @@ internal fun PendingFileSelectionDialog(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         TextButton(onClick = { draft = draft.selectAll(); draftError = null }) {
-                            Text("All")
+                            Text(stringResource(R.string.action_all))
                         }
                         TextButton(onClick = { draft = draft.selectNone(); draftError = null }) {
-                            Text("None")
+                            Text(stringResource(R.string.action_none))
                         }
                         Text(
-                            "${summary.count} of ${torrent.selectableFileCount} selected · " +
+                            stringResource(
+                                R.string.file_selection_summary,
+                                summary.count,
+                                torrent.selectableFileCount.toLong(),
                                 formatBytes(summary.bytes.toString()),
+                            ),
                             modifier = Modifier.weight(1f),
                             style = MaterialTheme.typography.labelMedium,
                         )
@@ -200,11 +216,10 @@ internal fun PendingFileSelectionDialog(
                                     Modifier.fillMaxWidth().clickable {
                                         val next = draft.toggle(file)
                                         if (next == null) {
-                                            draftError =
-                                                "Use All or None, then change at most 4,096 files."
+                                            draftError = overrideLimitError
                                         } else {
                                             draft = next
-                                            draftError = null
+                                            draftError = overrideLimitError
                                         }
                                     }.padding(vertical = 7.dp),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -214,8 +229,7 @@ internal fun PendingFileSelectionDialog(
                                     onCheckedChange = {
                                         val next = draft.toggle(file)
                                         if (next == null) {
-                                            draftError =
-                                                "Use All or None, then change at most 4,096 files."
+                                            draftError = null
                                         } else {
                                             draft = next
                                             draftError = null
@@ -248,7 +262,7 @@ internal fun PendingFileSelectionDialog(
                         checked = disableFuture,
                         onCheckedChange = { disableFuture = it },
                     )
-                    Text("Don’t show file selection again")
+                    Text(stringResource(R.string.file_selection_disable_future))
                 }
                 (draftError ?: error)?.let {
                     Text(it, color = MaterialTheme.colorScheme.error)
@@ -259,23 +273,27 @@ internal fun PendingFileSelectionDialog(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            "Repair the download folder before confirming.",
+                            stringResource(R.string.file_selection_repair_before_confirm),
                             modifier = Modifier.weight(1f),
                             color = MaterialTheme.colorScheme.error,
                         )
-                        TextButton(onClick = onRepairRoot) { Text("Repair folder") }
+                        TextButton(onClick = onRepairRoot) { Text(stringResource(R.string.action_repair_folder)) }
                     }
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                 ) {
-                    OutlinedButton(onClick = onCancel) { Text("Cancel") }
+                    OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.action_cancel)) }
                     Button(
                         onClick = { onConfirm(draft, disableFuture) },
                         enabled = metadataReady && rootReady,
                     ) {
-                        Text(if (summary.count == 0L) "Add" else "Download")
+                        Text(
+                            stringResource(
+                                if (summary.count == 0L) R.string.action_add else R.string.action_download,
+                            ),
+                        )
                     }
                 }
             }

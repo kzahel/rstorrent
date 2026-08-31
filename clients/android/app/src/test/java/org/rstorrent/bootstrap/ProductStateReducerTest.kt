@@ -297,7 +297,7 @@ class ProductStateReducerTest {
         assertEquals(null, parseRateLimit("0.5"))
         assertEquals(TransferRateLimit.Limited(1_024U), parseRateLimit("1"))
         assertEquals(TransferRateLimit.Limited(UInt.MAX_VALUE), parseRateLimit("4194303.9990234375"))
-        assertEquals("Unlimited", rateLimitLabel(TransferRateLimit.Unlimited))
+        assertEquals("Unlimited", rateLimitLabel(TransferRateLimit.Unlimited, "Unlimited"))
 
         val limits =
             TorrentTransferLimits(

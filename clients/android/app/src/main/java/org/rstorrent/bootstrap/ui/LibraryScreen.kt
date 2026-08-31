@@ -58,12 +58,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.rstorrent.bootstrap.ProductState
+import org.rstorrent.bootstrap.R
 import org.rstorrent.session.uniffi.ApplicationNetworkPrerequisiteView
 import org.rstorrent.session.uniffi.ApplicationNetworkRuntimeState
 import org.rstorrent.session.uniffi.TorrentOperationalState
@@ -106,6 +109,10 @@ internal fun LibraryScreen(
         networkRuntime?.requestedPrerequisite ==
             ApplicationNetworkPrerequisiteView.WAITING_FOR_UNMETERED_NETWORK &&
             networkRuntime.state != ApplicationNetworkRuntimeState.ALLOWED
+    val stateError = state.error?.let { productErrorText(it) }
+    val sortDescription = stringResource(R.string.a11y_sort_torrents)
+    val moreDescription = stringResource(R.string.a11y_more_options)
+    val addDescription = stringResource(R.string.a11y_add_torrent)
 
     Scaffold(
         topBar = {
@@ -115,7 +122,7 @@ internal fun LibraryScreen(
                         RstorrentLogo(Modifier.size(40.dp))
                         Spacer(Modifier.size(10.dp))
                         Column {
-                            Text("RSTorrent", fontWeight = FontWeight.SemiBold)
+                            Text(stringResource(R.string.app_name), fontWeight = FontWeight.SemiBold)
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Surface(
                                     modifier = Modifier.size(8.dp),
@@ -129,7 +136,9 @@ internal fun LibraryScreen(
                                 ) {}
                                 Spacer(Modifier.size(6.dp))
                                 Text(
-                                    if (state.ready) "Live" else "Connecting",
+                                    stringResource(
+                                        if (state.ready) R.string.status_live else R.string.status_connecting,
+                                    ),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -141,20 +150,23 @@ internal fun LibraryScreen(
                     Box {
                         IconButton(
                             onClick = { sortOpen = true },
-                            modifier = Modifier.semantics { contentDescription = "Sort torrents" },
+                            modifier =
+                                Modifier.semantics { contentDescription = sortDescription },
                         ) {
                             Icon(Icons.AutoMirrored.Outlined.Sort, contentDescription = null)
                         }
                         DropdownMenu(expanded = sortOpen, onDismissRequest = { sortOpen = false }) {
                             LibrarySort.entries.forEach { candidate ->
                                 DropdownMenuItem(
-                                    text = { Text(candidate.label) },
+                                    text = { Text(stringResource(candidate.labelRes)) },
                                     onClick = {
                                         sortName = candidate.name
                                         sortOpen = false
                                     },
                                     leadingIcon = {
-                                        if (candidate == sort) Text("✓")
+                                        if (candidate == sort) {
+                                            Text(stringResource(R.string.selection_mark))
+                                        }
                                     },
                                 )
                             }
@@ -163,7 +175,8 @@ internal fun LibraryScreen(
                     Box {
                         IconButton(
                             onClick = { overflowOpen = true },
-                            modifier = Modifier.semantics { contentDescription = "More options" },
+                            modifier =
+                                Modifier.semantics { contentDescription = moreDescription },
                         ) {
                             Icon(Icons.Outlined.MoreVert, contentDescription = null)
                         }
@@ -192,8 +205,9 @@ internal fun LibraryScreen(
                 ExtendedFloatingActionButton(
                     onClick = { addOpen = true },
                     icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                    text = { Text("Add") },
-                    modifier = Modifier.semantics { contentDescription = "Add torrent" },
+                    text = { Text(stringResource(R.string.action_add)) },
+                    modifier =
+                        Modifier.semantics { contentDescription = addDescription },
                 )
             }
         },
@@ -218,7 +232,7 @@ internal fun LibraryScreen(
                     Tab(
                         selected = candidate == filter,
                         onClick = { filterName = candidate.name },
-                        text = { Text(candidate.label) },
+                        text = { Text(stringResource(candidate.labelRes)) },
                     )
                 }
             }
@@ -238,18 +252,16 @@ internal fun LibraryScreen(
                         ) {
                             Column(Modifier.padding(16.dp)) {
                                 Text(
-                                    "Waiting for an unmetered network",
+                                    stringResource(R.string.library_waiting_unmetered),
                                     fontWeight = FontWeight.SemiBold,
                                 )
                                 Text(
                                     if (networkRuntime?.state ==
                                         ApplicationNetworkRuntimeState.DEGRADED
                                     ) {
-                                        "Network owners could not stop cleanly. " +
-                                            "RSTorrent will retry when connectivity changes."
+                                        stringResource(R.string.library_waiting_unmetered_degraded)
                                     } else {
-                                        "Transfers will resume automatically when an " +
-                                            "unmetered network is usable."
+                                        stringResource(R.string.library_waiting_unmetered_detail)
                                     },
                                 )
                             }
@@ -259,9 +271,12 @@ internal fun LibraryScreen(
                 if (!notificationsGranted) {
                     item("notifications") {
                         SetupCard(
-                            title = "$notificationActionLabel notifications",
-                            detail =
-                                "RSTorrent works while Android is visible. Leaving Android stops background work.",
+                            title =
+                                stringResource(
+                                    R.string.library_notifications_title,
+                                    notificationActionLabel,
+                                ),
+                            detail = stringResource(R.string.library_background_unavailable),
                             action = notificationActionLabel,
                             onAction = onRequestNotifications,
                         )
@@ -270,16 +285,23 @@ internal fun LibraryScreen(
                 if (!state.storageRootReady) {
                     item("storage") {
                         SetupCard(
-                            title = "Choose a download folder",
+                            title = stringResource(R.string.storage_choose_folder),
                             detail =
-                                state.error
-                                    ?: "Select a folder before adding or resuming downloads.",
-                            action = if (state.storageRootLabel == null) "Select folder" else "Repair",
+                                stateError
+                                    ?: stringResource(R.string.storage_select_before_download),
+                            action =
+                                stringResource(
+                                    if (state.storageRootLabel == null) {
+                                        R.string.action_select_folder
+                                    } else {
+                                        R.string.action_repair
+                                    },
+                                ),
                             onAction = onSelectStorage,
                         )
                     }
                 }
-                state.error?.takeIf { state.storageRootReady }?.let { error ->
+                stateError?.takeIf { state.storageRootReady }?.let { error ->
                     item("error") {
                         Card(
                             modifier = Modifier.fillMaxWidth().widthIn(max = 720.dp),
@@ -347,19 +369,19 @@ private fun LibraryOverflowMenu(
     onShutdown: () -> Unit,
 ) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
-        DropdownMenuItem(text = { Text("Pause All") }, onClick = { onDismiss(); onPauseAll() })
-        DropdownMenuItem(text = { Text("Resume All") }, onClick = { onDismiss(); onResumeAll() })
+        DropdownMenuItem(text = { Text(stringResource(R.string.action_pause_all)) }, onClick = { onDismiss(); onPauseAll() })
+        DropdownMenuItem(text = { Text(stringResource(R.string.action_resume_all)) }, onClick = { onDismiss(); onResumeAll() })
         DropdownMenuItem(
-            text = { Text("Add Download Folder") },
+            text = { Text(stringResource(R.string.storage_choose_folder)) },
             leadingIcon = { Icon(Icons.Outlined.Folder, contentDescription = null) },
             onClick = { onDismiss(); onSelectStorage() },
         )
         HorizontalDivider()
-        DropdownMenuItem(text = { Text("Speed") }, onClick = { onDismiss(); onSpeed() })
-        DropdownMenuItem(text = { Text("DHT Info") }, onClick = { onDismiss(); onDht() })
-        DropdownMenuItem(text = { Text("Logs") }, onClick = { onDismiss(); onLogs() })
-        DropdownMenuItem(text = { Text("Settings") }, onClick = { onDismiss(); onSettings() })
-        DropdownMenuItem(text = { Text("Shutdown") }, onClick = { onDismiss(); onShutdown() })
+        DropdownMenuItem(text = { Text(stringResource(R.string.library_menu_speed)) }, onClick = { onDismiss(); onSpeed() })
+        DropdownMenuItem(text = { Text(stringResource(R.string.library_menu_dht)) }, onClick = { onDismiss(); onDht() })
+        DropdownMenuItem(text = { Text(stringResource(R.string.logs_title)) }, onClick = { onDismiss(); onLogs() })
+        DropdownMenuItem(text = { Text(stringResource(R.string.settings_title)) }, onClick = { onDismiss(); onSettings() })
+        DropdownMenuItem(text = { Text(stringResource(R.string.action_shutdown)) }, onClick = { onDismiss(); onShutdown() })
     }
 }
 
@@ -398,12 +420,24 @@ private fun EmptyLibrary(filter: LibraryFilter) {
         )
         Spacer(Modifier.height(12.dp))
         Text(
-            if (filter == LibraryFilter.ALL) "No torrents yet" else "No ${filter.label.lowercase()} torrents",
+            if (filter == LibraryFilter.ALL) {
+                stringResource(R.string.library_empty)
+            } else {
+                stringResource(
+                    R.string.library_empty_filtered,
+                    stringResource(filter.labelRes).lowercase(),
+                )
+            },
             style = MaterialTheme.typography.titleMedium,
         )
         Text(
-            if (filter == LibraryFilter.ALL) "Tap Add to paste a magnet or choose a .torrent file."
-            else "Try another library filter.",
+            stringResource(
+                if (filter == LibraryFilter.ALL) {
+                    R.string.library_empty_hint
+                } else {
+                    R.string.library_empty_filtered_hint
+                },
+            ),
             modifier = Modifier.padding(top = 4.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -423,6 +457,8 @@ private fun TorrentCard(
 ) {
     val progress = torrentProgress(torrent)
     val paused = torrent.operationalState == TorrentOperationalState.PAUSED
+    val pauseResumeDescription =
+        stringResource(if (paused) R.string.action_resume else R.string.action_pause)
     Card(
         modifier =
             Modifier.fillMaxWidth().widthIn(max = 720.dp)
@@ -443,7 +479,7 @@ private fun TorrentCard(
                 enabled = !selectionMode,
                 modifier =
                     Modifier.clip(CircleShape)
-                        .semantics { contentDescription = if (paused) "Resume" else "Pause" },
+                        .semantics { contentDescription = pauseResumeDescription },
             ) {
                 Icon(
                     if (paused) Icons.Default.PlayArrow else Icons.Default.Pause,
@@ -463,8 +499,13 @@ private fun TorrentCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
-                        operationalLabel(torrent.operationalState) +
-                            (torrent.downloadQueuePosition?.let { " · Queue $it" } ?: ""),
+                        torrent.downloadQueuePosition?.let {
+                            stringResource(
+                                R.string.library_queue_position,
+                                operationalLabel(torrent.operationalState),
+                                it.toInt(),
+                            )
+                        } ?: operationalLabel(torrent.operationalState),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -480,8 +521,8 @@ private fun TorrentCard(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Text("↓ ${formatRate(torrent.payloadDownloadRateBytes)}")
-                    Text("ETA ${torrentEta(torrent)}")
+                    Text(stringResource(R.string.library_download_rate, formatRate(torrent.payloadDownloadRateBytes)))
+                    Text(stringResource(R.string.library_eta, torrentEta(torrent)))
                 }
             }
         }
@@ -502,16 +543,16 @@ private fun SelectionActions(
     Surface(shadowElevation = 8.dp) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("$count selected", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                TextButton(onClick = onPause) { Text("Pause") }
-                TextButton(onClick = onResume) { Text("Resume") }
-                TextButton(onClick = onClear) { Text("Done") }
+                Text(pluralStringResource(R.plurals.library_selected_count, count, count), modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                TextButton(onClick = onPause) { Text(stringResource(R.string.action_pause)) }
+                TextButton(onClick = onResume) { Text(stringResource(R.string.action_resume)) }
+                TextButton(onClick = onClear) { Text(stringResource(R.string.action_done)) }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onMoveTop) { Text("Top") }
-                TextButton(onClick = onMoveBottom) { Text("Bottom") }
-                TextButton(onClick = onArchive) { Text("Archive/restore") }
-                TextButton(onClick = onRemove) { Text("Remove") }
+                TextButton(onClick = onMoveTop) { Text(stringResource(R.string.action_top)) }
+                TextButton(onClick = onMoveBottom) { Text(stringResource(R.string.action_bottom)) }
+                TextButton(onClick = onArchive) { Text(stringResource(R.string.action_archive_or_restore)) }
+                TextButton(onClick = onRemove) { Text(stringResource(R.string.action_remove)) }
             }
         }
     }
@@ -527,14 +568,14 @@ private fun AddTorrentDialog(
     var magnet by rememberSaveable { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add torrent") },
+        title = { Text(stringResource(R.string.add_torrent_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = magnet,
                     onValueChange = { magnet = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Magnet link") },
+                    label = { Text(stringResource(R.string.add_magnet_label)) },
                     minLines = 3,
                 )
                 OutlinedButton(
@@ -542,11 +583,11 @@ private fun AddTorrentDialog(
                     enabled = enabled,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Browse .torrent file")
+                    Text(stringResource(R.string.action_browse_torrent))
                 }
                 if (!enabled) {
                     Text(
-                        "Choose an available download folder first.",
+                        stringResource(R.string.add_folder_required),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )
@@ -557,9 +598,9 @@ private fun AddTorrentDialog(
             Button(
                 onClick = { onAddMagnet(magnet.trim()) },
                 enabled = enabled && magnet.isNotBlank(),
-            ) { Text("Add") }
+            ) { Text(stringResource(R.string.action_add)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )
 }
 

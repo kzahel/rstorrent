@@ -1,0 +1,430 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Product identity. Do not translate RSTorrent. -->
+    <string name="app_name" translatable="false">RSTorrent</string>
+    <string name="engine_bootstrap_name">RSTorrent engine bootstrap</string>
+    <string name="engine_notification_title">RSTorrent engine</string>
+    <string name="media_fallback_title">Media</string>
+    <string name="media_playback_failed">Playback failed</string>
+    <string name="media_invalid_request">Invalid playback request</string>
+
+    <!-- Reusable actions and navigation labels. -->
+    <string name="action_add">Add</string>
+    <string name="action_apply">Apply</string>
+    <string name="action_approve">Approve</string>
+    <string name="action_archive">Archive</string>
+    <string name="action_archive_or_restore">Archive/restore</string>
+    <string name="action_back">Back</string>
+    <string name="action_browse_torrent">Browse .torrent file</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_change">Change</string>
+    <string name="action_delete_data">Delete data</string>
+    <string name="action_done">Done</string>
+    <string name="action_download">Download</string>
+    <string name="action_download_now">Download now</string>
+    <string name="action_enable">Enable</string>
+    <string name="action_force_recheck">Force recheck</string>
+    <string name="action_keep_data">Keep data</string>
+    <string name="action_keep_seeding">Keep seeding</string>
+    <string name="action_manage">Manage</string>
+    <string name="action_move_bottom">Move to bottom</string>
+    <string name="action_move_top">Move to top</string>
+    <string name="action_next">Next</string>
+    <string name="action_open">Open</string>
+    <string name="action_pause">Pause</string>
+    <string name="action_pause_all">Pause All</string>
+    <string name="action_play">Play</string>
+    <string name="action_previous">Previous</string>
+    <string name="action_reject">Reject</string>
+    <string name="action_remove">Remove</string>
+    <string name="action_remove_torrent">Remove torrent</string>
+    <string name="action_repair">Repair</string>
+    <string name="action_repair_folder">Repair folder</string>
+    <string name="action_restore_archive">Restore archive</string>
+    <string name="action_resume">Resume</string>
+    <string name="action_resume_all">Resume All</string>
+    <string name="action_retry">Retry</string>
+    <string name="action_select">Select</string>
+    <string name="action_select_folder">Select folder</string>
+    <string name="action_shutdown">Shutdown</string>
+    <string name="action_stop">Stop</string>
+    <string name="action_use">Use</string>
+    <string name="action_copy_magnet">Copy magnet link</string>
+    <string name="action_all">All</string>
+    <string name="action_none">None</string>
+    <string name="action_top">Top</string>
+    <string name="action_bottom">Bottom</string>
+    <string name="library_menu_speed">Speed</string>
+    <string name="library_menu_dht">DHT Info</string>
+    <string name="speed_title">Speed</string>
+    <string name="speed_loading">Speed history is loading…</string>
+    <string name="speed_history_title">Rust-native transfer history</string>
+    <string name="speed_history_summary">%1$s · %2$d ms buckets · %3$s</string>
+    <string name="speed_history_live">live</string>
+    <string name="speed_history_snapshot">snapshot</string>
+    <string name="speed_history_scope">This screen follows engine payload, wire, write, and verification rates. JSTorrent’s QuickJS health counters are intentionally unnecessary.</string>
+    <string name="dht_loading">DHT state is loading…</string>
+    <string name="dht_state_summary">%1$s · %2$s</string>
+    <string name="dht_summary">%1$d transactions · %2$d lookups · %3$d peers discovered</string>
+    <string name="dht_family_summary">%1$s · %2$d nodes · %3$d buckets</string>
+    <string name="dht_traffic">Traffic</string>
+    <string name="dht_traffic_summary">sent %1$s · received %2$s · malformed %3$d · rate limited %4$d</string>
+
+    <!-- Accessibility descriptions. -->
+    <string name="a11y_add_torrent">Add torrent</string>
+    <string name="a11y_close_player">Close player</string>
+    <string name="a11y_continue_background_downloads">Continue downloads in background</string>
+    <string name="a11y_keep_seeding_background">Keep seeding in background</string>
+    <string name="a11y_more_options">More options</string>
+    <string name="a11y_sort_torrents">Sort torrents</string>
+
+    <!-- Library filters, sorts, status, and empty states. -->
+    <string name="library_filter_all">All</string>
+    <string name="library_filter_active">Active</string>
+    <string name="library_filter_queued">Queued</string>
+    <string name="library_filter_finished">Finished</string>
+    <string name="library_sort_stable">Queue / stable order</string>
+    <string name="library_sort_name">Name</string>
+    <string name="library_sort_download_speed">Download speed</string>
+    <string name="status_live">Live</string>
+    <string name="status_connecting">Connecting</string>
+    <string name="library_empty">No torrents yet</string>
+    <string name="library_empty_filtered">No %1$s torrents</string>
+    <string name="library_empty_hint">Tap Add to paste a magnet or choose a .torrent file.</string>
+    <string name="library_empty_filtered_hint">Try another library filter.</string>
+    <plurals name="library_selected_count">
+        <item quantity="one">%1$d selected</item>
+        <item quantity="other">%1$d selected</item>
+    </plurals>
+    <string name="library_queue_position">%1$s · Queue %2$d</string>
+    <string name="library_download_rate">↓ %1$s</string>
+    <string name="library_eta">ETA %1$s</string>
+    <string name="library_waiting_unmetered">Waiting for an unmetered network</string>
+    <string name="library_waiting_unmetered_degraded">Network owners could not stop cleanly. RSTorrent will retry when connectivity changes.</string>
+    <string name="library_waiting_unmetered_detail">Transfers will resume automatically when an unmetered network is usable.</string>
+    <string name="library_notifications_title">%1$s notifications</string>
+    <string name="library_background_unavailable">RSTorrent works while Android is visible. Leaving Android stops background work.</string>
+    <string name="storage_choose_folder">Choose a download folder</string>
+    <string name="storage_select_before_download">Select a folder before adding or resuming downloads.</string>
+
+    <!-- Add and add-time file selection. -->
+    <string name="add_torrent_title">Add torrent</string>
+    <string name="add_magnet_label">Magnet link</string>
+    <string name="add_folder_required">Choose an available download folder first.</string>
+    <string name="file_selection_explanation">Checked files use Normal priority. Unchecked files are skipped.</string>
+    <string name="file_selection_folder">Download folder: %1$s</string>
+    <plurals name="file_selection_folder_pending">
+        <item quantity="one">Download folder: %1$s · %2$d more pending</item>
+        <item quantity="other">Download folder: %1$s · %2$d more pending</item>
+    </plurals>
+    <string name="file_selection_fetching">Fetching file information…</string>
+    <string name="file_selection_download_blocked">No content files will download before you confirm.</string>
+    <string name="file_selection_summary">%1$d of %2$d selected · %3$s</string>
+    <string name="file_selection_override_limit">Use All or None, then change at most 4,096 files.</string>
+    <string name="file_selection_disable_future">Don’t show file selection again</string>
+    <string name="file_selection_repair_before_confirm">Repair the download folder before confirming.</string>
+
+    <!-- Torrent detail tabs and catalog presentation. -->
+    <string name="detail_tab_details">Details</string>
+    <string name="detail_tab_status">Status</string>
+    <string name="detail_tab_files">Files</string>
+    <string name="detail_tab_trackers">Trackers</string>
+    <string name="detail_tab_peers">Peers</string>
+    <string name="detail_tab_pieces">Pieces</string>
+    <string name="file_catalog_title">File catalog</string>
+    <string name="tracker_catalog_title">Tracker catalog</string>
+    <string name="peer_catalog_title">Peer and swarm views</string>
+    <plurals name="file_count">
+        <item quantity="one">%1$d file</item>
+        <item quantity="other">%1$d files</item>
+    </plurals>
+    <string name="catalog_showing">%1$s · showing %2$d of %3$d</string>
+    <string name="priority_high">High</string>
+    <string name="priority_normal">Normal</string>
+    <string name="priority_skip">Skip</string>
+    <plurals name="tracker_count">
+        <item quantity="one">%1$d tracker</item>
+        <item quantity="other">%1$d trackers</item>
+    </plurals>
+    <string name="tracker_summary">%1$s · %2$s · tier %3$d</string>
+    <string name="tracker_attempts">Peers %1$d · attempts %2$d</string>
+    <string name="catalog_page_range">%1$d–%2$d</string>
+    <plurals name="connected_peer_count">
+        <item quantity="one">%1$d connected peer</item>
+        <item quantity="other">%1$d connected peers</item>
+    </plurals>
+    <string name="swarm_summary">%1$d known · %2$s · cap %3$d</string>
+    <string name="swarm_loading">Swarm catalog is loading…</string>
+    <string name="no_peers_connected">No peers connected</string>
+    <string name="peer_summary">%1$s · %2$s · %3$s</string>
+    <string name="peer_transfer_summary">↓ %1$s · ↑ %2$s · requests %3$d</string>
+    <string name="storage_pipeline">Storage pipeline</string>
+    <string name="state_loading">Loading…</string>
+    <string name="storage_pipeline_summary">%1$s · resident %2$s · %3$d active pieces</string>
+    <string name="storage_pipeline_rates">write %1$s · hash %2$s</string>
+
+    <!-- Detail facts and state labels. -->
+    <string name="torrent_unavailable">Torrent is no longer available</string>
+    <string name="torrent_fallback_name">Torrent</string>
+    <string name="piece_activity_loading">Piece activity is loading…</string>
+    <string name="pieces_verified">%1$d of %2$d verified</string>
+    <string name="detail_info_hash_v1">Info hash (v1)</string>
+    <string name="detail_info_hash_v2">Info hash (v2)</string>
+    <string name="detail_info_hash">Info hash</string>
+    <string name="detail_state">State</string>
+    <string name="detail_required">Required</string>
+    <string name="detail_remaining">Remaining</string>
+    <string name="detail_pieces">Pieces</string>
+    <string name="detail_trackers">Trackers</string>
+    <string name="detail_lifetime_downloaded">Lifetime downloaded</string>
+    <string name="detail_lifetime_uploaded">Lifetime uploaded</string>
+    <string name="detail_share_ratio">Share ratio</string>
+    <string name="detail_active_time">Active time</string>
+    <string name="detail_finished_time">Finished time</string>
+    <string name="detail_seeding_time">Seeding time</string>
+    <string name="detail_seed_admission">Seed admission</string>
+    <string name="detail_seeding_priority_goal">Seeding priority goal</string>
+    <string name="detail_goal_behavior">Goal behavior</string>
+    <string name="detail_goal_behavior_value">Goals affect priority; a goal-met torrent may continue seeding</string>
+    <string name="detail_download">Download</string>
+    <string name="detail_peers">Peers</string>
+    <string name="detail_eta">ETA</string>
+    <string name="detail_storage">Storage</string>
+    <string name="detail_progress">Progress</string>
+    <string name="detail_error">Error</string>
+    <string name="detail_none">None</string>
+    <string name="torrent_download_limit">Torrent download limit</string>
+    <string name="torrent_upload_limit">Torrent upload limit</string>
+
+    <!-- External intake and companion pairing. -->
+    <string name="pairing_title">Connect Chrome extension?</string>
+    <string name="pairing_identifiers">Extension %1$s\nInstallation %2$s</string>
+    <string name="intake_magnet_title">Magnet link from another app</string>
+    <string name="intake_torrent_title">Torrent file from another app</string>
+    <string name="intake_selection_notice">After adding, RSTorrent will ask which files to download when file selection is enabled.</string>
+    <string name="intake_folder_required">Choose or repair a download folder before adding this item.</string>
+    <string name="intake_adding">Adding…</string>
+    <string name="intake_retryable_failure">The source could not be read. You can retry once.</string>
+    <string name="intake_rejected">That item can’t be added.</string>
+    <string name="intake_queue_full">Too many items are waiting to be added.</string>
+    <string name="intake_added">Torrent added.</string>
+    <string name="intake_already_present">Torrent already present.</string>
+    <string name="intake_selection_updated">Torrent selection updated.</string>
+    <string name="intake_terminal_failure">The torrent could not be added.</string>
+    <string name="notification_torrent_missing">That torrent is no longer available.</string>
+    <string name="notification_folder_missing">That download folder is no longer registered.</string>
+
+    <!-- Removal. -->
+    <plurals name="remove_torrent_title">
+        <item quantity="one">Remove torrent?</item>
+        <item quantity="other">Remove %1$d torrents?</item>
+    </plurals>
+    <string name="remove_torrent_detail">Choose whether RSTorrent should keep or delete its managed downloaded data.</string>
+    <string name="remove_folder_title">Forget %1$s?</string>
+    <string name="remove_folder_detail">RSTorrent will release access to this folder. Existing files are not deleted.</string>
+    <string name="forget_folder_action">Forget %1$s</string>
+    <string name="forget_folder_detail">Release Android access without deleting downloaded files.</string>
+
+    <!-- Notification channels and notification copy. -->
+    <string name="notification_setting_save_failed">Notification setting could not be saved.</string>
+    <string name="notification_channel_background">Background activity</string>
+    <string name="notification_channel_background_description">Shows when RSTorrent is running in the background</string>
+    <string name="notification_channel_completed">Downloads completed</string>
+    <string name="notification_channel_completed_description">Alerts when a download genuinely finishes</string>
+    <string name="notification_channel_attention">Action required</string>
+    <string name="notification_channel_attention_description">Alerts when a torrent or download folder needs attention</string>
+    <string name="notification_choose_folder_title">Choose an RSTorrent download folder</string>
+    <string name="notification_choose_folder_body">Chrome needs Android folder access to continue</string>
+    <string name="notification_download_complete_title">Download complete</string>
+    <string name="notification_download_complete_body">%1$s finished downloading</string>
+    <string name="notification_attention_title">Download needs attention</string>
+    <string name="notification_attention_body">%1$s · Open RSTorrent for details</string>
+    <string name="notification_opening_profile">Opening profile</string>
+    <string name="notification_needs_attention">RSTorrent needs attention</string>
+    <string name="notification_seeding_background">Seeding in background</string>
+    <string name="notification_chrome_connected">ChromeOS client connected</string>
+    <string name="notification_chrome_reconnect">Waiting for ChromeOS to reconnect</string>
+    <string name="notification_waiting_unmetered">Waiting for an unmetered network</string>
+    <plurals name="notification_downloading_torrents">
+        <item quantity="one">Downloading %1$d torrent</item>
+        <item quantity="other">Downloading %1$d torrents</item>
+    </plurals>
+    <string name="notification_checking_downloads">Checking downloads</string>
+    <string name="notification_starting_downloads">Starting downloads</string>
+    <string name="notification_finishing_shutdown">Finishing shutdown</string>
+    <string name="notification_ready_chrome">Ready for Chrome</string>
+    <string name="notification_ready">Ready</string>
+
+    <!-- Presentation for semantic Android adapter errors and network truth. -->
+    <string name="error_select_download_folder">Select a download folder first.</string>
+    <string name="error_storage_unavailable">Selected download folder is unavailable.</string>
+    <string name="error_media_unavailable">This file is not available for playback.</string>
+    <string name="error_media_incomplete">This file does not have a playable verified range yet.</string>
+    <string name="error_media_checking">This file is still being checked.</string>
+    <string name="error_media_unverified">This file has not been verified yet.</string>
+    <string name="error_media_storage_unavailable">The download folder is unavailable.</string>
+    <string name="error_media_removing">This torrent is being removed.</string>
+    <string name="error_media_resource_limit">Too many media streams are active.</string>
+    <string name="error_media_server_unavailable">The media server is unavailable.</string>
+    <string name="error_media_start_failed">Playback could not be started.</string>
+    <string name="error_settings_update_empty">Settings update is empty.</string>
+    <string name="error_settings_loading">Settings are still loading.</string>
+    <string name="error_power_save_failed">Power setting could not be saved.</string>
+    <string name="error_torrent_settings_update_empty">Torrent settings update is empty.</string>
+    <string name="error_torrent_missing">Torrent is no longer present.</string>
+    <string name="error_network_preference_save_failed">The network preference could not be saved.</string>
+    <string name="error_background_notification_required">Visible background notifications are required.</string>
+    <string name="error_background_downloads_required">Enable background downloads first.</string>
+    <string name="error_background_setting_save_failed">Background setting could not be saved.</string>
+    <string name="error_technical">RSTorrent encountered an error: %1$s</string>
+    <string name="network_truth_unrestricted">Unrestricted</string>
+    <string name="network_truth_unmetered">Unmetered network</string>
+    <string name="network_truth_metered">Metered network</string>
+    <string name="network_truth_no_validated_internet">No validated internet</string>
+    <string name="network_truth_temporarily_unavailable">Network temporarily unavailable</string>
+    <string name="network_truth_checking">Checking network</string>
+
+    <!-- Settings shell and common settings copy. -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_storage">Storage</string>
+    <string name="settings_storage_detail">Download folder and root health</string>
+    <string name="settings_speed_limits">Speed &amp; Connection Limits</string>
+    <string name="settings_speed_limits_detail">Peers, uploads, and active downloads</string>
+    <string name="settings_notifications">Notifications</string>
+    <string name="settings_notifications_detail">Android permission and channel</string>
+    <string name="settings_network_privacy">Network &amp; Privacy</string>
+    <string name="settings_network_privacy_detail">Listening, mapping, encryption, and IPv6</string>
+    <string name="settings_power_management">Power Management</string>
+    <string name="settings_power_management_detail">Foreground operation and battery behavior</string>
+    <string name="settings_advanced">Advanced</string>
+    <string name="settings_advanced_detail">Appearance and unavailable expert features</string>
+    <string name="settings_loading">Settings are loading…</string>
+    <string name="setting_not_available">Not available yet</string>
+    <string name="setting_not_saved">Setting not saved</string>
+    <string name="download_folder">Download folder</string>
+    <string name="storage_available">Available</string>
+    <string name="storage_unavailable">Unavailable or not selected</string>
+    <string name="storage_show_file_selection">Show file selection when adding torrents</string>
+    <string name="storage_show_file_selection_detail">Choose Normal or Skip for each file before content downloads.</string>
+    <string name="storage_current_suffix">%1$s (current)</string>
+    <string name="storage_provider_detail">%1$s · Android document provider</string>
+    <string name="storage_path_detail">%1$s · %2$s</string>
+    <string name="setting_peer_connections">Peer connections</string>
+    <string name="setting_upload_slots">Upload slots</string>
+    <string name="setting_active_downloads">Active downloads</string>
+    <string name="setting_effective">Effective %1$d · %2$s</string>
+    <string name="setting_effective_android">Effective on Android: %1$d</string>
+    <string name="setting_effective_android_clamped">Effective on Android: %1$d · %2$s</string>
+    <string name="setting_share_ratio_goal">Share-ratio priority goal (%%)</string>
+    <string name="setting_share_ratio_goal_detail">Seeding priority, not a stop rule · reaching any one goal is sufficient</string>
+    <string name="setting_finished_download_goal">Finished/download time priority goal (%%)</string>
+    <string name="setting_finished_download_goal_detail">Cumulative active finished time compared with active download time</string>
+    <string name="setting_finished_time_goal">Finished-time priority goal (seconds)</string>
+    <string name="setting_finished_time_goal_detail">A goal-met torrent may continue seeding while capacity is available</string>
+    <string name="setting_all_download_limit">All torrents download limit</string>
+    <string name="setting_all_upload_limit">All torrents upload limit</string>
+    <string name="setting_active_seeds">Active seeds</string>
+    <string name="setting_active_seeds_detail">Goals affect priority, not durable run intent · effective %1$s · %2$d counted · %3$d inactive-exempt</string>
+    <string name="setting_unlimited">Unlimited</string>
+    <string name="setting_active_seed_ceiling">The fixed shared 500-torrent ceiling remains</string>
+    <string name="setting_count">Count</string>
+    <string name="setting_active_seed_range">0–500; zero keeps eligible seeds queued</string>
+    <string name="setting_rate_summary">Established peer traffic · %1$s</string>
+    <string name="setting_rate_effective">effective %1$s</string>
+    <string name="setting_rate_unit" translatable="false">KiB/s</string>
+    <string name="setting_rate_precision">1 KiB/s minimum; one-byte precision</string>
+    <string name="setting_unmetered_only">Unmetered networks only</string>
+    <string name="setting_unmetered_detail">Pause network transfers on metered connections · %1$s · %2$s</string>
+    <string name="setting_network_attention">Network policy needs attention</string>
+    <string name="setting_incoming_connections">Incoming connections</string>
+    <string name="setting_upnp">UPnP port mapping</string>
+    <string name="setting_ipv6" translatable="false">IPv6</string>
+    <string name="setting_peer_encryption">Peer encryption</string>
+    <string name="setting_effective_value">Effective %1$s · %2$s</string>
+    <string name="setting_vpn_only">VPN-only mode</string>
+    <string name="setting_proxy">Proxy</string>
+    <string name="setting_allowed_range">Allowed %1$d–%2$d</string>
+    <string name="setting_range">%1$d–%2$d</string>
+    <string name="encryption_disabled">Disabled</string>
+    <string name="encryption_allow">Allow</string>
+    <string name="encryption_prefer">Prefer</string>
+    <string name="encryption_required">Required</string>
+    <string name="notifications_disabled">Notifications disabled</string>
+    <string name="notifications_blocked">Notifications blocked</string>
+    <string name="notifications_background_blocked">Background activity blocked</string>
+    <string name="notifications_enabled">Notifications enabled</string>
+    <string name="notifications_foreground_status">Android can show foreground status. Background lifetime is still provisional.</string>
+    <string name="notifications_download_completed">Download completed</string>
+    <string name="notifications_download_completed_detail">Notify when a download genuinely finishes.</string>
+    <string name="notifications_needs_attention">Needs attention</string>
+    <string name="notifications_needs_attention_detail">Notify when a torrent or download folder needs repair.</string>
+    <string name="notifications_system_blocked">Blocked in Android system settings.</string>
+    <string name="notifications_manage_system">Manage system notification settings</string>
+    <string name="notifications_manage_system_detail">Review Android app and channel controls.</string>
+
+    <!-- Appearance and lifecycle settings. -->
+    <string name="settings_theme">Theme</string>
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="navigation_disclosure" translatable="false">›</string>
+    <string name="selection_mark" translatable="false">✓</string>
+    <string name="theme_use_system_colors">Use system colors</string>
+    <string name="theme_system_colors_requirement">Available on Android 12 and later</string>
+    <string name="settings_search_plugins">Search plugins</string>
+    <string name="settings_reset_engine">Reset engine settings</string>
+    <string name="power_continue_background">Continue downloads in background</string>
+    <string name="power_continue_effective">Uses a visible notification and stops when selected work completes.</string>
+    <string name="power_continue_blocked">Configured, but Android notification settings currently block it.</string>
+    <string name="power_continue_detail">Allow selected downloads and checks to continue after leaving RSTorrent.</string>
+    <string name="power_keep_seeding_background">Keep seeding in background</string>
+    <string name="power_keep_seeding_detail_enabled">Keep completed, desired-running torrents active after downloads finish.</string>
+    <string name="power_keep_seeding_requires_background">Enable background downloads first.</string>
+    <string name="power_prevent_sleep">Prevent sleep during active downloads and checks</string>
+    <string name="power_prevent_sleep_detail">Keeps the CPU active while starting, downloading, or checking. The display may turn off normally.</string>
+    <string name="power_background_limits">Android background limits</string>
+    <string name="power_background_limits_detail">Android may limit a long background session. Open RSTorrent again to continue; force-stop and reboot do not restart it.</string>
+    <string name="power_low_battery_shutdown">Low-battery shutdown</string>
+    <string name="power_keep_seeding_title">Keep seeding in background?</string>
+    <string name="power_keep_seeding_detail">Seeding can use battery and data after downloads finish. Android may still stop a long session.</string>
+
+    <!-- Diagnostics presentation. Protocol diagnostic records remain verbatim. -->
+    <string name="logs_title">Logs</string>
+    <string name="logs_profile">Profile: %1$s</string>
+    <string name="logs_minimum">Minimum: %1$s</string>
+    <string name="logs_category">Category: %1$s</string>
+    <string name="logs_all">all</string>
+    <string name="logs_current_torrent">Current torrent</string>
+    <string name="logs_delivery_health">Delivery health</string>
+    <string name="logs_delivery_summary">source evicted %1$s · local evicted %2$d · subscription resets %3$d</string>
+    <string name="logs_empty">No diagnostic records match the current filter</string>
+
+    <!-- Generic state labels mapped from typed application state. -->
+    <string name="state_applied">Applied</string>
+    <string name="state_applying">Applying…</string>
+    <string name="state_calculating">Calculating…</string>
+    <string name="state_stalled">Stalled</string>
+    <string name="state_queued">Queued</string>
+    <string name="state_starting">Starting</string>
+    <string name="state_downloading">Downloading</string>
+    <string name="state_checking">Checking</string>
+    <string name="state_stopping">Stopping</string>
+    <string name="state_seeding">Seeding</string>
+    <string name="state_paused">Paused</string>
+    <string name="state_error">Error</string>
+    <string name="duration_days_hours">%1$d d %2$d h</string>
+    <string name="duration_hours_minutes">%1$d h %2$d min</string>
+    <string name="duration_minutes_seconds">%1$d min %2$d s</string>
+    <string name="duration_seconds">%1$d s</string>
+    <string name="seed_active">Active seed</string>
+    <string name="seed_queued">Queued seed</string>
+    <string name="seed_inactive_exempt">Active, inactive-exempt seed</string>
+    <string name="seed_ineligible">Not eligible to seed</string>
+    <string name="seed_goal_share_ratio">share ratio</string>
+    <string name="seed_goal_finished_download_ratio">finished/download time ratio</string>
+    <string name="seed_goal_finished_time">finished time</string>
+    <string name="seed_goal_none">none yet</string>
+    <string name="seed_goal_unmet">Unmet</string>
+    <string name="seed_goal_met">Met</string>
+    <string name="seed_goal_summary">%1$s · met: %2$s</string>
+</resources>

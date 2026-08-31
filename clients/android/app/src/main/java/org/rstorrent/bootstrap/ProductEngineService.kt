@@ -231,7 +231,9 @@ class ProductEngineService : Service() {
         notificationCoordinator.initialize(interactionLeases.size)
         startForeground(
             AndroidNotificationContract.ONGOING_NOTIFICATION_ID,
-            notificationCoordinator.ongoingNotification("Opening profile"),
+            notificationCoordinator.ongoingNotification(
+                getString(R.string.notification_opening_profile),
+            ),
         )
         lifecyclePreferenceStore = ProductLifecyclePreferenceStore(this)
         lifecyclePreferences = lifecyclePreferenceStore.read()
@@ -272,7 +274,10 @@ class ProductEngineService : Service() {
                             it.copy(
                                 network =
                                     it.network.copy(
-                                        runtimeError = error.message ?: error.toString(),
+                                        runtimeError =
+                                            ProductError.Technical(
+                                                error.message ?: error.toString(),
+                                            ),
                                     ),
                             )
                         }
@@ -364,7 +369,9 @@ class ProductEngineService : Service() {
                                         network =
                                             it.network.copy(
                                                 runtimeError =
-                                                    error.message ?: error.toString(),
+                                                    ProductError.Technical(
+                                                        error.message ?: error.toString(),
+                                                    ),
                                             ),
                                     )
                                 }
@@ -428,9 +435,14 @@ class ProductEngineService : Service() {
                 }
                 Log.e(TAG, "product service initialization failed", error)
                 mutableState.update {
-                    it.copy(ready = false, error = error.message ?: error.toString())
+                    it.copy(
+                        ready = false,
+                        error = ProductError.Technical(error.message ?: error.toString()),
+                    )
                 }
-                notificationCoordinator.updateOngoingNotification("RSTorrent needs attention")
+                notificationCoordinator.updateOngoingNotification(
+                    getString(R.string.notification_needs_attention),
+                )
                 lifecycleCoordinator.terminal(ProductLifetimeStopReason.INITIALIZATION_FAILED)
             }
         }
@@ -1121,7 +1133,7 @@ class ProductEngineService : Service() {
     ) {
         val storageRoot = currentSafRootForAdd()
         if (storageRoot == null) {
-            mutableState.update { it.copy(error = "Select a download folder first") }
+            mutableState.update { it.copy(error = ProductError.Code.SELECT_DOWNLOAD_FOLDER) }
             return
         }
         scope.launch {
@@ -1151,7 +1163,7 @@ class ProductEngineService : Service() {
     ) {
         val storageRoot = currentSafRootForAdd()
         if (storageRoot == null) {
-            mutableState.update { it.copy(error = "Select a download folder first") }
+            mutableState.update { it.copy(error = ProductError.Code.SELECT_DOWNLOAD_FOLDER) }
             return
         }
         scope.launch(Dispatchers.IO) {
@@ -1178,7 +1190,7 @@ class ProductEngineService : Service() {
     ) {
         val storageRoot = currentSafRootForAdd()
         if (storageRoot == null) {
-            mutableState.update { it.copy(error = "Select a download folder first") }
+            mutableState.update { it.copy(error = ProductError.Code.SELECT_DOWNLOAD_FOLDER) }
             return
         }
         scope.launch(Dispatchers.IO) {
@@ -1262,7 +1274,7 @@ class ProductEngineService : Service() {
         }
         val storageRoot = currentSafRootForAdd()
         if (storageRoot == null) {
-            mutableState.update { it.copy(error = "Select a download folder first") }
+            mutableState.update { it.copy(error = ProductError.Code.SELECT_DOWNLOAD_FOLDER) }
             return
         }
         val policy =
@@ -1324,7 +1336,7 @@ class ProductEngineService : Service() {
         }
         val storageRoot = currentSafRootForAdd()
         if (storageRoot == null) {
-            mutableState.update { it.copy(error = "Select a download folder first") }
+            mutableState.update { it.copy(error = ProductError.Code.SELECT_DOWNLOAD_FOLDER) }
             return
         }
         val policy =
@@ -2323,10 +2335,10 @@ class ProductEngineService : Service() {
                 error =
                     when {
                         current == null -> null
-                        ready -> it.error?.takeUnless { message ->
-                            message == "Selected download folder is unavailable"
+                        ready -> it.error?.takeUnless {
+                            it == ProductError.Code.STORAGE_UNAVAILABLE
                         }
-                        else -> "Selected download folder is unavailable"
+                        else -> ProductError.Code.STORAGE_UNAVAILABLE
                     },
             )
         }
@@ -2678,13 +2690,15 @@ class ProductEngineService : Service() {
         file: FileView,
     ) {
         if (!AndroidMediaPlaybackPolicy.isPlayActionEnabled(file, launchPending = false)) {
-            mutableState.update { it.copy(error = "This file is not available for playback") }
+            mutableState.update {
+                it.copy(error = ProductError.MediaUnavailable(file.mediaAvailability))
+            }
             return
         }
         startMediaPlayback(
             torrentId,
             file.fileIndex,
-            file.path.lastOrNull() ?: "Media",
+            file.path.lastOrNull() ?: getString(R.string.media_fallback_title),
         )
     }
 
@@ -2729,7 +2743,9 @@ class ProductEngineService : Service() {
                             "media_playback_capability torrent=$torrentId file=$fileIndex " +
                                 "outcome=unavailable reason=${outcome.reason}",
                         )
-                        error(AndroidMediaPlaybackPolicy.unavailableMessage(outcome.reason))
+                        mutableState.update {
+                            it.copy(error = ProductError.MediaUnavailable(outcome.reason))
+                        }
                     }
                 }
             } catch (error: CancellationException) {
@@ -2746,12 +2762,12 @@ class ProductEngineService : Service() {
     fun updateClientSettings(patch: ClientSettingsPatch) {
         val changes = patch.fieldValues()
         if (changes.isEmpty()) {
-            mutableState.update { it.copy(error = "Settings update is empty") }
+            mutableState.update { it.copy(error = ProductError.Code.SETTINGS_UPDATE_EMPTY) }
             return
         }
         mutableState.update { product ->
             val configured = product.clientSettings?.configured
-                ?: return@update product.copy(error = "Settings are still loading")
+                ?: return@update product.copy(error = ProductError.Code.SETTINGS_LOADING)
             val initialized =
                 if (product.clientSettingsDraft.resourceKey == null) {
                     product.clientSettingsDraft.authority(
@@ -2769,7 +2785,9 @@ class ProductEngineService : Service() {
 
     fun setPreventSleepDuringActiveDownloads(enabled: Boolean) {
         if (!ProductPowerPreference.persist(this, enabled)) {
-            mutableState.update { it.copy(error = "Power setting could not be saved") }
+            mutableState.update {
+                it.copy(error = ProductError.Code.POWER_SETTING_SAVE_FAILED)
+            }
             return
         }
         mutableState.update {
@@ -2787,12 +2805,14 @@ class ProductEngineService : Service() {
     ) {
         val changes = patch.fieldValues()
         if (changes.isEmpty()) {
-            mutableState.update { it.copy(error = "Torrent settings update is empty") }
+            mutableState.update {
+                it.copy(error = ProductError.Code.TORRENT_SETTINGS_UPDATE_EMPTY)
+            }
             return
         }
         mutableState.update { product ->
             val torrent = product.torrents[torrentId]
-                ?: return@update product.copy(error = "Torrent is no longer present")
+                ?: return@update product.copy(error = ProductError.Code.TORRENT_MISSING)
             val initialized =
                 if (product.torrentSettingsDraft.resourceKey != torrentId) {
                     product.torrentSettingsDraft.authority(
@@ -2926,7 +2946,12 @@ class ProductEngineService : Service() {
                 val result = response.result as? CommandResult.ExportMagnet
                     ?: error("Magnet export returned no value")
                 val clipboard = getSystemService(ClipboardManager::class.java)
-                clipboard.setPrimaryClip(ClipData.newPlainText("Magnet link", result.result.magnet))
+                clipboard.setPrimaryClip(
+                    ClipData.newPlainText(
+                        getString(R.string.add_magnet_label),
+                        result.result.magnet,
+                    ),
+                )
             } catch (error: Throwable) {
                 reportError(error)
             }
@@ -2971,7 +2996,8 @@ class ProductEngineService : Service() {
                         it.copy(
                             network =
                                 it.network.copy(
-                                    preferenceError = "The network preference could not be saved.",
+                                    preferenceError =
+                                        ProductError.Code.NETWORK_PREFERENCE_SAVE_FAILED,
                                 ),
                         )
                     }
@@ -3545,7 +3571,7 @@ class ProductEngineService : Service() {
                         lifecycle =
                             it.lifecycle.copy(
                                 preferenceError =
-                                    "Visible background notifications are required.",
+                                    ProductError.Code.BACKGROUND_NOTIFICATION_REQUIRED,
                             ),
                     )
                 }
@@ -3564,7 +3590,8 @@ class ProductEngineService : Service() {
                     it.copy(
                         lifecycle =
                             it.lifecycle.copy(
-                                preferenceError = "Enable background downloads first.",
+                                preferenceError =
+                                    ProductError.Code.BACKGROUND_DOWNLOADS_REQUIRED,
                             ),
                     )
                 }
@@ -3611,7 +3638,8 @@ class ProductEngineService : Service() {
                     it.copy(
                         lifecycle =
                             it.lifecycle.copy(
-                                preferenceError = "Background setting could not be saved.",
+                                preferenceError =
+                                    ProductError.Code.BACKGROUND_SETTING_SAVE_FAILED,
                             ),
                     )
                 }
@@ -3629,7 +3657,7 @@ class ProductEngineService : Service() {
 
     private fun publishLifecyclePreferences(
         notificationEligible: Boolean,
-        preferenceError: String? = mutableState.value.lifecycle.preferenceError,
+        preferenceError: ProductError? = mutableState.value.lifecycle.preferenceError,
     ) {
         mutableState.update {
             it.copy(
@@ -3781,18 +3809,23 @@ class ProductEngineService : Service() {
                 val work = snapshot.work ?: ProductLifetimeWork()
                 when {
                     work.downloading > 0 ->
-                        "Downloading ${work.downloading} " +
-                            if (work.downloading == 1) "torrent" else "torrents"
-                    work.checking > 0 -> "Checking downloads"
-                    else -> "Starting downloads"
+                        resources.getQuantityString(
+                            R.plurals.notification_downloading_torrents,
+                            work.downloading,
+                            work.downloading,
+                        )
+                    work.checking > 0 -> getString(R.string.notification_checking_downloads)
+                    else -> getString(R.string.notification_starting_downloads)
                 }
             }
             ProductLifetimeRetentionReason.WAITING_FOR_UNMETERED_NETWORK ->
-                "Waiting for an unmetered network"
-            ProductLifetimeRetentionReason.BACKGROUND_SEEDING -> "Seeding in background"
-            ProductLifetimeRetentionReason.CHROMEOS_COMPANION -> "ChromeOS client connected"
+                getString(R.string.notification_waiting_unmetered)
+            ProductLifetimeRetentionReason.BACKGROUND_SEEDING ->
+                getString(R.string.notification_seeding_background)
+            ProductLifetimeRetentionReason.CHROMEOS_COMPANION ->
+                getString(R.string.notification_chrome_connected)
             ProductLifetimeRetentionReason.CHROMEOS_RECONNECT_GRACE ->
-                "Waiting for ChromeOS to reconnect"
+                getString(R.string.notification_chrome_reconnect)
             else -> productOngoingNotificationText(mutableState.value)
         }
 
@@ -3890,7 +3923,9 @@ class ProductEngineService : Service() {
             companionRootJob?.cancel()
             companionRootRemovalJob?.cancel()
             if (foreground.get()) {
-                notificationCoordinator.updateOngoingNotification("Finishing shutdown")
+                notificationCoordinator.updateOngoingNotification(
+                    getString(R.string.notification_finishing_shutdown),
+                )
             }
             notificationCoordinator.close()
             if (::client.isInitialized) {
@@ -3919,7 +3954,9 @@ class ProductEngineService : Service() {
 
     private fun reportError(error: Throwable) {
         Log.e(TAG, "product control failed", error)
-        mutableState.update { it.copy(error = error.message ?: error.toString()) }
+        mutableState.update {
+            it.copy(error = ProductError.Technical(error.message ?: error.toString()))
+        }
     }
 
     private fun refreshNotificationEligibility(reason: String) {

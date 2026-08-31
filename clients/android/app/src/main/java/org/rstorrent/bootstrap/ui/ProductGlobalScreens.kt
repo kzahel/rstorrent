@@ -31,9 +31,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import org.rstorrent.bootstrap.R
 import org.rstorrent.session.uniffi.DhtInspectionView
 import org.rstorrent.session.uniffi.SessionCurrentRatesView
 import org.rstorrent.session.uniffi.SpeedHistoryView
@@ -45,16 +47,26 @@ internal fun SpeedScreen(
     currentRates: SessionCurrentRatesView?,
     onBack: () -> Unit,
 ) {
-    ProductRouteScaffold("Speed", onBack) {
+    ProductRouteScaffold(stringResource(R.string.speed_title), onBack) {
         if (history == null) {
-            item("loading") { RouteMessage("Speed history is loading…") }
+            item("loading") { RouteMessage(stringResource(R.string.speed_loading)) }
         } else {
             item("summary") {
                 Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                    Text("Rust-native transfer history", fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.speed_history_title), fontWeight = FontWeight.SemiBold)
                     Text(
-                        "${history.range.name.lowercase()} · ${history.bucketMillis} ms buckets · " +
-                            if (history.live) "live" else "snapshot",
+                        stringResource(
+                            R.string.speed_history_summary,
+                            history.range.name.lowercase(),
+                            history.bucketMillis.toLong(),
+                            stringResource(
+                                if (history.live) {
+                                    R.string.speed_history_live
+                                } else {
+                                    R.string.speed_history_snapshot
+                                },
+                            ),
+                        ),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -65,8 +77,7 @@ internal fun SpeedScreen(
             }
             item("scope") {
                 RouteMessage(
-                    "This screen follows engine payload, wire, write, and verification rates. " +
-                        "JSTorrent's QuickJS health counters are intentionally unnecessary.",
+                    stringResource(R.string.speed_history_scope),
                 )
             }
         }
@@ -121,21 +132,27 @@ internal fun DhtScreen(
     inspection: DhtInspectionView?,
     onBack: () -> Unit,
 ) {
-    ProductRouteScaffold("DHT Info", onBack) {
+    ProductRouteScaffold(stringResource(R.string.library_menu_dht), onBack) {
         if (inspection == null) {
-            item("loading") { RouteMessage("DHT state is loading…") }
+            item("loading") { RouteMessage(stringResource(R.string.dht_loading)) }
         } else {
             item("summary") {
                 Column(Modifier.fillMaxWidth().padding(16.dp)) {
                     Text(
-                        "${inspection.lifecycle.name.lowercase()} · " +
+                        stringResource(
+                            R.string.dht_state_summary,
+                            inspection.lifecycle.name.lowercase(),
                             inspection.networkPolicy.name.lowercase(),
+                        ),
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Text(
-                        "${inspection.activeTransactions} transactions · " +
-                            "${inspection.activeLookups} lookups · " +
-                            "${inspection.discoveredPeers} peers discovered",
+                        stringResource(
+                            R.string.dht_summary,
+                            inspection.activeTransactions.toLong(),
+                            inspection.activeLookups.toLong(),
+                            inspection.discoveredPeers.toLong(),
+                        ),
                     )
                 }
                 HorizontalDivider()
@@ -146,8 +163,12 @@ internal fun DhtScreen(
                     supportingContent = {
                         Column {
                             Text(
-                                "${family.lifecycle.name.lowercase()} · ${family.routingNodes} nodes · " +
-                                    "${family.occupiedBuckets} buckets",
+                                stringResource(
+                                    R.string.dht_family_summary,
+                                    family.lifecycle.name.lowercase(),
+                                    family.routingNodes.toLong(),
+                                    family.occupiedBuckets.toLong(),
+                                ),
                             )
                             Text(
                                 family.observedExternalAddress ?: family.localAddress,
@@ -160,13 +181,16 @@ internal fun DhtScreen(
             }
             item("traffic") {
                 ListItem(
-                    headlineContent = { Text("Traffic") },
+                    headlineContent = { Text(stringResource(R.string.dht_traffic)) },
                     supportingContent = {
                         Text(
-                            "sent ${formatBytes(inspection.datagramBytesSent)} · " +
-                                "received ${formatBytes(inspection.datagramBytesReceived)} · " +
-                                "malformed ${inspection.malformedReceived} · " +
-                                "rate limited ${inspection.rateLimited}",
+                            stringResource(
+                                R.string.dht_traffic_summary,
+                                formatBytes(inspection.datagramBytesSent),
+                                formatBytes(inspection.datagramBytesReceived),
+                                inspection.malformedReceived.toLong(),
+                                inspection.rateLimited.toLong(),
+                            ),
                         )
                     },
                 )
@@ -187,7 +211,10 @@ private fun ProductRouteScaffold(
                 title = { Text(title) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                        Icon(
+                            Icons.AutoMirrored.Outlined.ArrowBack,
+                            contentDescription = stringResource(R.string.action_back),
+                        )
                     }
                 },
             )

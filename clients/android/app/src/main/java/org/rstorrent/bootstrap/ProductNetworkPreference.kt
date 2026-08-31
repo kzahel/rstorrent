@@ -27,24 +27,33 @@ data class ProductNetworkState(
     val eligibility: AndroidNetworkEligibility = AndroidNetworkEligibility.UNRESTRICTED,
     val observationRevision: Long = 0,
     val callbackRegistered: Boolean = false,
-    val preferenceError: String? = null,
+    val preferenceError: ProductError? = null,
     val effectiveNetworkAllowed: Boolean? = null,
     val effectiveGeneration: String? = null,
-    val runtimeError: String? = null,
+    val runtimeError: ProductError? = null,
 ) {
-    val currentTruth: String
+    val currentTruth: ProductNetworkTruth
         get() =
             when {
-                !unmeteredNetworksOnly -> "Unrestricted"
-                eligibility == AndroidNetworkEligibility.UNRESTRICTED -> "Unmetered network"
+                !unmeteredNetworksOnly -> ProductNetworkTruth.UNRESTRICTED
+                eligibility == AndroidNetworkEligibility.UNRESTRICTED -> ProductNetworkTruth.UNMETERED
                 eligibility == AndroidNetworkEligibility.WAITING_FOR_UNMETERED_NETWORK ->
-                    "Metered network"
+                    ProductNetworkTruth.METERED
                 eligibility == AndroidNetworkEligibility.WAITING_FOR_VALIDATED_INTERNET ->
-                    "No validated internet"
+                    ProductNetworkTruth.NO_VALIDATED_INTERNET
                 eligibility == AndroidNetworkEligibility.WAITING_FOR_USABLE_NETWORK ->
-                    "Network temporarily unavailable"
+                    ProductNetworkTruth.TEMPORARILY_UNAVAILABLE
                 eligibility == AndroidNetworkEligibility.WAITING_FOR_DEFAULT_NETWORK ->
-                    "Network temporarily unavailable"
-                else -> "Checking network"
+                    ProductNetworkTruth.TEMPORARILY_UNAVAILABLE
+                else -> ProductNetworkTruth.CHECKING
             }
+}
+
+enum class ProductNetworkTruth {
+    UNRESTRICTED,
+    UNMETERED,
+    METERED,
+    NO_VALIDATED_INTERNET,
+    TEMPORARILY_UNAVAILABLE,
+    CHECKING,
 }

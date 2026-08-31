@@ -20,7 +20,7 @@ internal sealed interface ProductNotificationRoute {
 internal data class ProductNotificationEdge(
     val category: ProductNotificationCategory,
     val torrentId: String,
-    val displayName: String,
+    val displayName: String?,
     val route: ProductNotificationRoute,
 )
 
@@ -188,12 +188,12 @@ internal class AndroidNotificationPolicy(
     }
 }
 
-internal fun notificationDisplayName(torrent: TorrentView): String =
+internal fun notificationDisplayName(torrent: TorrentView): String? =
     boundedNotificationName(torrent.displayName ?: torrent.sourceDisplayName)
 
-internal fun boundedNotificationName(value: String?): String {
+internal fun boundedNotificationName(value: String?): String? {
     val normalized = value?.trim()?.replace(Regex("\\s+"), " ").orEmpty()
-    if (normalized.isEmpty()) return "Torrent"
+    if (normalized.isEmpty()) return null
     val scalarCount = normalized.codePointCount(0, normalized.length)
     if (scalarCount <= MAX_NOTIFICATION_NAME_SCALARS) return normalized
     val end = normalized.offsetByCodePoints(0, MAX_NOTIFICATION_NAME_SCALARS - 1)

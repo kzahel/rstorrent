@@ -219,10 +219,10 @@ class AndroidNotificationPolicyTest {
 
     @Test
     fun namesAreWhitespaceNormalizedUnicodeBoundedAndNeverUseTorrentId() {
-        assertEquals("Torrent", boundedNotificationName("  \n\t "))
+        assertEquals(null, boundedNotificationName("  \n\t "))
         assertEquals("one two", boundedNotificationName(" one\n\t two "))
         val input = "😀".repeat(121)
-        val output = boundedNotificationName(input)
+        val output = requireNotNull(boundedNotificationName(input))
         assertEquals(120, output.codePointCount(0, output.length))
         assertTrue(output.endsWith("…"))
 
@@ -232,8 +232,7 @@ class AndroidNotificationPolicyTest {
             policy.applyPatch(listOf(torrent(state = TorrentState.ERROR, displayName = null)), emptyList())
                 .edges
                 .single()
-        assertEquals("Torrent", edge.displayName)
-        assertFalse(edge.displayName.contains(ID))
+        assertEquals(null, edge.displayName)
     }
 
     @Test

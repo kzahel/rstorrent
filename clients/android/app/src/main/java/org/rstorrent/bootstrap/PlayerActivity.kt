@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -51,9 +52,9 @@ import org.rstorrent.bootstrap.ui.RstorrentTheme
 class PlayerActivity : ComponentActivity() {
     private var player: ExoPlayer? = null
     private var playerView: PlayerView? = null
-    private var playbackTitle by mutableStateOf("Media")
+    private var playbackTitle by mutableStateOf("")
     private var preparing by mutableStateOf(true)
-    private var playbackError by mutableStateOf<String?>(null)
+    private var playbackError by mutableStateOf<PlaybackError?>(null)
     private var inPictureInPicture by mutableStateOf(false)
     private var interactionLeaseHeld = false
     private var videoAspectRatio: Rational? = null
@@ -74,7 +75,7 @@ class PlayerActivity : ComponentActivity() {
 
             override fun onPlayerError(error: PlaybackException) {
                 preparing = false
-                playbackError = error.localizedMessage ?: "Playback failed"
+                playbackError = PlaybackError.FAILED
                 Log.e(TAG, "media_playback_error instance=$instanceId code=${error.errorCode}")
                 updatePictureInPictureParameters()
             }
@@ -135,7 +136,8 @@ class PlayerActivity : ComponentActivity() {
                                     IconButton(onClick = ::finish) {
                                         Icon(
                                             Icons.AutoMirrored.Outlined.ArrowBack,
-                                            contentDescription = "Close player",
+                                            contentDescription =
+                                                stringResource(R.string.a11y_close_player),
                                         )
                                     }
                                 },
@@ -153,9 +155,14 @@ class PlayerActivity : ComponentActivity() {
                             if (preparing && playbackError == null) {
                                 CircularProgressIndicator(Modifier.align(Alignment.Center))
                             }
-                            playbackError?.let { message ->
+                            playbackError?.let { playbackError ->
                                 Text(
-                                    message,
+                                    stringResource(
+                                        when (playbackError) {
+                                            PlaybackError.FAILED -> R.string.media_playback_failed
+                                            PlaybackError.INVALID_REQUEST -> R.string.media_invalid_request
+                                        },
+                                    ),
                                     color = MaterialTheme.colorScheme.error,
                                     modifier = Modifier.align(Alignment.Center),
                                 )
@@ -210,7 +217,7 @@ class PlayerActivity : ComponentActivity() {
         val request = consumeRequest(intent)
         if (request == null) {
             player?.stop()
-            playbackError = "Invalid playback request"
+            playbackError = PlaybackError.INVALID_REQUEST
             preparing = false
             updatePictureInPictureParameters()
             return
@@ -326,9 +333,14 @@ class PlayerActivity : ComponentActivity() {
         return runCatching {
             PlaybackRequest(
                 AndroidMediaPlaybackPolicy.requireCapabilityUrl(source),
-                title?.takeIf(String::isNotBlank) ?: "Media",
+                title?.takeIf(String::isNotBlank) ?: getString(R.string.media_fallback_title),
             )
         }.getOrNull()
+    }
+
+    private enum class PlaybackError {
+        FAILED,
+        INVALID_REQUEST,
     }
 
     private data class PlaybackRequest(

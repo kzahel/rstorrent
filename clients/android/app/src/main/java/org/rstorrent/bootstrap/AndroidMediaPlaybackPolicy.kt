@@ -68,23 +68,6 @@ internal object AndroidMediaPlaybackPolicy {
         return source
     }
 
-    fun unavailableMessage(reason: MediaFileAvailability): String =
-        when (reason) {
-            MediaFileAvailability.INCOMPLETE -> "This file does not have a playable verified range yet"
-            MediaFileAvailability.CHECKING -> "This file is still being checked"
-            MediaFileAvailability.UNVERIFIED -> "This file has not been verified yet"
-            MediaFileAvailability.STORAGE_UNAVAILABLE -> "The download folder is unavailable"
-            MediaFileAvailability.REMOVING -> "This torrent is being removed"
-            MediaFileAvailability.RESOURCE_LIMIT -> "Too many media streams are active"
-            MediaFileAvailability.PADDING,
-            MediaFileAvailability.INVALID_FILE,
-            MediaFileAvailability.METADATA_UNAVAILABLE,
-            -> "This file is not available for playback"
-            MediaFileAvailability.SERVER_UNAVAILABLE -> "The media server is unavailable"
-            MediaFileAvailability.AVAILABLE,
-            MediaFileAvailability.STREAMABLE,
-            -> "Playback could not be started"
-        }
 }
 
 internal class MediaLaunchGate {

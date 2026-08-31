@@ -19,9 +19,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import org.rstorrent.bootstrap.ProductNetworkState
+import org.rstorrent.bootstrap.R
 import org.rstorrent.session.uniffi.ActiveSeedLimit
 import org.rstorrent.session.uniffi.ClientSettingsRuntimeView
 import org.rstorrent.session.uniffi.EncryptionPolicy
@@ -43,28 +45,42 @@ internal fun ConnectionLimitsSettings(
     onDownloadRateLimit: (TransferRateLimit) -> Unit,
 ) {
     NumericSetting(
-        "Peer connections",
+        stringResource(R.string.setting_peer_connections),
         settings.configured.peerConnectionLimit.toInt(),
         1..2_000,
         supporting =
-            "Effective ${settings.effectivePeerConnectionLimit} · " +
+            stringResource(
+                R.string.setting_effective,
+                settings.effectivePeerConnectionLimit.toLong(),
                 settingsApplicationLabel(settings.peerConnectionsApplication),
+            ),
     ) { onPeerConnections(it.toUInt()) }
     NumericSetting(
-        "Upload slots",
+        stringResource(R.string.setting_upload_slots),
         settings.configured.uploadSlots.toInt(),
         0..50,
         supporting =
-            "Effective ${settings.effectiveUploadSlots} · " +
+            stringResource(
+                R.string.setting_effective,
+                settings.effectiveUploadSlots.toLong(),
                 settingsApplicationLabel(settings.uploadSlotsApplication),
+            ),
     ) { onUploadSlots(it.toUShort()) }
     NumericSetting(
-        "Active downloads",
+        stringResource(R.string.setting_active_downloads),
         settings.configured.activeDownloads.toInt(),
         1..20,
         supporting =
-            "Effective on Android: ${settings.effectiveActiveDownloads}" +
-                (settings.activeDownloadsClampReason?.let { " · ${it.name.lowercase()}" } ?: ""),
+            settings.activeDownloadsClampReason?.let {
+                stringResource(
+                    R.string.setting_effective_android_clamped,
+                    settings.effectiveActiveDownloads.toLong(),
+                    it.name.lowercase(),
+                )
+            } ?: stringResource(
+                R.string.setting_effective_android,
+                settings.effectiveActiveDownloads.toLong(),
+            ),
     ) { onActiveDownloads(it.toUShort()) }
     ActiveSeedSetting(
         configured = settings.configured.activeSeeds,
@@ -74,33 +90,33 @@ internal fun ConnectionLimitsSettings(
         onValue = onActiveSeeds,
     )
     NumericSetting(
-        "Share-ratio priority goal (%)",
+        stringResource(R.string.setting_share_ratio_goal),
         settings.configured.shareRatioLimitPercent.toInt(),
         0..Int.MAX_VALUE,
         supporting =
-            "Seeding priority, not a stop rule · reaching any one goal is sufficient",
+            stringResource(R.string.setting_share_ratio_goal_detail),
     ) { onShareRatioLimit(it.toUInt()) }
     NumericSetting(
-        "Finished/download time priority goal (%)",
+        stringResource(R.string.setting_finished_download_goal),
         settings.configured.finishedDownloadRatioLimitPercent.toInt(),
         0..Int.MAX_VALUE,
-        supporting = "Cumulative active finished time compared with active download time",
+        supporting = stringResource(R.string.setting_finished_download_goal_detail),
     ) { onFinishedDownloadRatioLimit(it.toUInt()) }
     NumericSetting(
-        "Finished-time priority goal (seconds)",
+        stringResource(R.string.setting_finished_time_goal),
         settings.configured.finishedTimeLimitSeconds.toInt(),
         0..Int.MAX_VALUE,
-        supporting = "A goal-met torrent may continue seeding while capacity is available",
+        supporting = stringResource(R.string.setting_finished_time_goal_detail),
     ) { onFinishedTimeLimit(it.toUInt()) }
     RateLimitSetting(
-        title = "All torrents download limit",
+        title = stringResource(R.string.setting_all_download_limit),
         configured = settings.configured.downloadRateLimit,
         effective = settings.effectiveDownloadRateLimit,
         application = settingsApplicationLabel(settings.bandwidthApplication),
         onValue = onDownloadRateLimit,
     )
     RateLimitSetting(
-        title = "All torrents upload limit",
+        title = stringResource(R.string.setting_all_upload_limit),
         configured = settings.configured.uploadRateLimit,
         effective = settings.effectiveUploadRateLimit,
         application = settingsApplicationLabel(settings.bandwidthApplication),
@@ -119,12 +135,15 @@ private fun ActiveSeedSetting(
     var dialog by remember { mutableStateOf(false) }
     val configuredLabel = activeSeedLimitLabel(configured)
     ListItem(
-        headlineContent = { Text("Active seeds") },
+        headlineContent = { Text(stringResource(R.string.setting_active_seeds)) },
         supportingContent = {
             Text(
-                "Goals affect priority, not durable run intent · effective " +
-                    "${activeSeedLimitLabel(effective)} · $activeCount counted · " +
-                    "$inactiveCount inactive-exempt",
+                stringResource(
+                    R.string.setting_active_seeds_detail,
+                    activeSeedLimitLabel(effective),
+                    activeCount.toLong(),
+                    inactiveCount.toLong(),
+                ),
             )
         },
         trailingContent = {
@@ -143,12 +162,12 @@ private fun ActiveSeedSetting(
         val parsed = if (unlimited) null else text.toIntOrNull()?.takeIf { it in 0..500 }
         AlertDialog(
             onDismissRequest = { dialog = false },
-            title = { Text("Active seeds") },
+            title = { Text(stringResource(R.string.setting_active_seeds)) },
             text = {
                 Column(Modifier.fillMaxWidth()) {
                     ListItem(
-                        headlineContent = { Text("Unlimited") },
-                        supportingContent = { Text("The fixed shared 500-torrent ceiling remains") },
+                        headlineContent = { Text(stringResource(R.string.setting_unlimited)) },
+                        supportingContent = { Text(stringResource(R.string.setting_active_seed_ceiling)) },
                         trailingContent = {
                             Switch(unlimited, onCheckedChange = { unlimited = it })
                         },
@@ -158,9 +177,9 @@ private fun ActiveSeedSetting(
                         onValueChange = { text = it.filter(Char::isDigit) },
                         enabled = !unlimited,
                         singleLine = true,
-                        label = { Text("Count") },
+                        label = { Text(stringResource(R.string.setting_count)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        supportingText = { Text("0–500; zero keeps eligible seeds queued") },
+                        supportingText = { Text(stringResource(R.string.setting_active_seed_range)) },
                         isError = !unlimited && parsed == null,
                     )
                 }
@@ -175,16 +194,17 @@ private fun ActiveSeedSetting(
                         dialog = false
                     },
                     enabled = unlimited || parsed != null,
-                ) { Text("Apply") }
+                ) { Text(stringResource(R.string.action_apply)) }
             },
-            dismissButton = { TextButton(onClick = { dialog = false }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { dialog = false }) { Text(stringResource(R.string.action_cancel)) } },
         )
     }
 }
 
+@Composable
 private fun activeSeedLimitLabel(limit: ActiveSeedLimit): String =
     when (limit) {
-        ActiveSeedLimit.Unlimited -> "Unlimited"
+        ActiveSeedLimit.Unlimited -> stringResource(R.string.setting_unlimited)
         is ActiveSeedLimit.Limited -> limit.torrents.toString()
     }
 
@@ -199,14 +219,26 @@ internal fun RateLimitSetting(
     var dialog by remember { mutableStateOf(false) }
     val supporting =
         buildList {
-            add("Established peer traffic · ${rateLimitLabel(configured)}")
-            effective?.let { add("effective ${rateLimitLabel(it)}") }
+            add(stringResource(R.string.setting_rate_summary, rateLimitLabel(configured, stringResource(R.string.setting_unlimited))))
+            effective?.let {
+                add(
+                    stringResource(
+                        R.string.setting_rate_effective,
+                        rateLimitLabel(it, stringResource(R.string.setting_unlimited)),
+                    ),
+                )
+            }
             application?.let(::add)
         }.joinToString(" · ")
     ListItem(
         headlineContent = { Text(title) },
         supportingContent = { Text(supporting) },
-        trailingContent = { Text(rateLimitLabel(configured), color = MaterialTheme.colorScheme.primary) },
+        trailingContent = {
+            Text(
+                rateLimitLabel(configured, stringResource(R.string.setting_unlimited)),
+                color = MaterialTheme.colorScheme.primary,
+            )
+        },
         modifier = Modifier.clickable { dialog = true },
     )
     HorizontalDivider()
@@ -226,7 +258,7 @@ internal fun RateLimitSetting(
             text = {
                 Column(Modifier.fillMaxWidth()) {
                     ListItem(
-                        headlineContent = { Text("Unlimited") },
+                        headlineContent = { Text(stringResource(R.string.setting_unlimited)) },
                         trailingContent = {
                             Switch(
                                 checked = unlimited,
@@ -239,9 +271,9 @@ internal fun RateLimitSetting(
                         onValueChange = { text = it.filter { character -> character.isDigit() || character == '.' } },
                         enabled = !unlimited,
                         singleLine = true,
-                        label = { Text("KiB/s") },
+                        label = { Text(stringResource(R.string.setting_rate_unit)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        supportingText = { Text("1 KiB/s minimum; one-byte precision") },
+                        supportingText = { Text(stringResource(R.string.setting_rate_precision)) },
                         isError = !unlimited && parsed == null,
                     )
                 }
@@ -250,9 +282,9 @@ internal fun RateLimitSetting(
                 TextButton(
                     onClick = { onValue(requireNotNull(parsed)); dialog = false },
                     enabled = parsed != null,
-                ) { Text("Apply") }
+                ) { Text(stringResource(R.string.action_apply)) }
             },
-            dismissButton = { TextButton(onClick = { dialog = false }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { dialog = false }) { Text(stringResource(R.string.action_cancel)) } },
         )
     }
 }
@@ -266,9 +298,12 @@ internal fun parseRateLimit(valueKiB: String): TransferRateLimit.Limited? {
     return TransferRateLimit.Limited(bytes.toLong().toUInt())
 }
 
-internal fun rateLimitLabel(limit: TransferRateLimit): String =
+internal fun rateLimitLabel(
+    limit: TransferRateLimit,
+    unlimitedLabel: String,
+): String =
     when (limit) {
-        TransferRateLimit.Unlimited -> "Unlimited"
+        TransferRateLimit.Unlimited -> unlimitedLabel
         is TransferRateLimit.Limited -> "${rateLimitKiBValue(limit.bytesPerSecond)} KiB/s"
     }
 
@@ -288,71 +323,93 @@ internal fun NetworkSettings(
     onEncryption: (EncryptionPolicy) -> Unit,
 ) {
     ToggleSetting(
-        title = "Unmetered networks only",
+        title = stringResource(R.string.setting_unmetered_only),
         detail =
-            "Pause network transfers on metered connections · ${network.currentTruth} · " +
+            stringResource(
+                R.string.setting_unmetered_detail,
+                productNetworkTruthText(network.currentTruth),
                 settings.applicationNetwork.state.name.lowercase(),
+            ),
         checked = network.unmeteredNetworksOnly,
         onChecked = onUnmeteredNetworksOnly,
     )
     network.preferenceError?.let {
         ListItem(
-            headlineContent = { Text("Setting not saved") },
-            supportingContent = { Text(it) },
+            headlineContent = { Text(stringResource(R.string.setting_not_saved)) },
+            supportingContent = { Text(productErrorText(it)) },
         )
         HorizontalDivider()
     }
     network.runtimeError?.let {
         ListItem(
-            headlineContent = { Text("Network policy needs attention") },
-            supportingContent = { Text(it) },
+            headlineContent = { Text(stringResource(R.string.setting_network_attention)) },
+            supportingContent = { Text(productErrorText(it)) },
         )
         HorizontalDivider()
     }
     ToggleSetting(
-        title = "Incoming connections",
+        title = stringResource(R.string.setting_incoming_connections),
         detail = settings.listenerStatus.toString(),
         checked = settings.configured.listener !is ListenerPolicy.Disabled,
         onChecked = onListener,
     )
     ToggleSetting(
-        title = "UPnP port mapping",
+        title = stringResource(R.string.setting_upnp),
         detail = settings.portMappingStatus.toString(),
         checked = settings.configured.portMapping == PortMappingPolicy.UPNP,
         onChecked = onPortMapping,
     )
     ToggleSetting(
-        title = "IPv6",
+        title = stringResource(R.string.setting_ipv6),
         detail = settingsApplicationLabel(settings.ipv6Application),
         checked = settings.configured.ipv6Enabled,
         onChecked = onIpv6,
     )
     ChoiceSetting(
-        title = "Peer encryption",
+        title = stringResource(R.string.setting_peer_encryption),
         selected = settings.configured.encryption,
         values = EncryptionPolicy.entries,
-        label = { it.name.lowercase().replaceFirstChar(Char::titlecase) },
+        label = { encryptionLabel(it) },
         detail =
-            "Effective ${settings.effectiveEncryption.name.lowercase()} · " +
+            stringResource(
+                R.string.setting_effective_value,
+                encryptionLabel(settings.effectiveEncryption),
                 settingsApplicationLabel(settings.encryptionApplication),
+            ),
         onSelected = onEncryption,
     )
-    DisabledSetting("VPN-only mode")
-    DisabledSetting("Proxy")
+    DisabledSetting(stringResource(R.string.setting_vpn_only))
+    DisabledSetting(stringResource(R.string.setting_proxy))
 }
+
+@Composable
+private fun encryptionLabel(policy: EncryptionPolicy): String =
+    stringResource(
+        when (policy) {
+            EncryptionPolicy.DISABLED -> R.string.encryption_disabled
+            EncryptionPolicy.ALLOW -> R.string.encryption_allow
+            EncryptionPolicy.PREFER -> R.string.encryption_prefer
+            EncryptionPolicy.REQUIRED -> R.string.encryption_required
+        },
+    )
 
 @Composable
 private fun NumericSetting(
     title: String,
     value: Int,
     range: IntRange,
-    supporting: String = "Allowed ${range.first}–${range.last}",
+    supporting: String? = null,
     onValue: (Int) -> Unit,
 ) {
     var dialog by remember { mutableStateOf(false) }
     ListItem(
         headlineContent = { Text(title) },
-        supportingContent = { Text(supporting) },
+        supportingContent = {
+            Text(
+                supporting
+                    ?: stringResource(R.string.setting_allowed_range, range.first, range.last),
+            )
+        },
         trailingContent = { Text(value.toString(), color = MaterialTheme.colorScheme.primary) },
         modifier = Modifier.clickable { dialog = true },
     )
@@ -369,16 +426,18 @@ private fun NumericSetting(
                     onValueChange = { text = it.filter(Char::isDigit) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    supportingText = { Text("${range.first}–${range.last}") },
+                    supportingText = {
+                        Text(stringResource(R.string.setting_range, range.first, range.last))
+                    },
                 )
             },
             confirmButton = {
                 TextButton(
                     onClick = { onValue(requireNotNull(parsed)); dialog = false },
                     enabled = parsed != null && parsed in range,
-                ) { Text("Apply") }
+                ) { Text(stringResource(R.string.action_apply)) }
             },
-            dismissButton = { TextButton(onClick = { dialog = false }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { dialog = false }) { Text(stringResource(R.string.action_cancel)) } },
         )
     }
 }
@@ -403,7 +462,7 @@ private fun <T> ChoiceSetting(
     title: String,
     selected: T,
     values: List<T>,
-    label: (T) -> String,
+    label: @Composable (T) -> String,
     detail: String? = null,
     onSelected: (T) -> Unit,
 ) {
@@ -435,7 +494,7 @@ private fun <T> ChoiceSetting(
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { dialog = false }) { Text("Cancel") } },
+            confirmButton = { TextButton(onClick = { dialog = false }) { Text(stringResource(R.string.action_cancel)) } },
         )
     }
 }
@@ -453,7 +512,7 @@ internal fun ReadOnlySettingsRow(
 internal fun DisabledSetting(title: String) {
     ListItem(
         headlineContent = { Text(title) },
-        supportingContent = { Text("Not available yet") },
+        supportingContent = { Text(stringResource(R.string.setting_not_available)) },
         colors =
             androidx.compose.material3.ListItemDefaults.colors(
                 headlineColor = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -21,22 +21,34 @@ import org.rstorrent.session.uniffi.TransferRateLimit
 class ProductOngoingNotificationTest {
     @Test
     fun ongoingTextIsGenericAndCountBased() {
-        assertEquals("Opening profile", productOngoingNotificationText(ProductState()))
         assertEquals(
-            "RSTorrent needs attention",
-            productOngoingNotificationText(
-                ProductState(ready = false, error = "/secret/path magnet:?xt=private"),
+            ProductOngoingNotificationMessage(ProductOngoingNotificationMessage.Kind.OPENING_PROFILE),
+            productOngoingNotificationMessage(ProductState()),
+        )
+        assertEquals(
+            ProductOngoingNotificationMessage(ProductOngoingNotificationMessage.Kind.NEEDS_ATTENTION),
+            productOngoingNotificationMessage(
+                ProductState(
+                    ready = false,
+                    error = ProductError.Technical("/secret/path magnet:?xt=private"),
+                ),
             ),
         )
         assertEquals(
-            "Downloading 1 torrent",
-            productOngoingNotificationText(
+            ProductOngoingNotificationMessage(
+                ProductOngoingNotificationMessage.Kind.DOWNLOADING,
+                1,
+            ),
+            productOngoingNotificationMessage(
                 ProductState(ready = true, torrents = mapOf("one" to torrent("one"))),
             ),
         )
         assertEquals(
-            "Downloading 2 torrents",
-            productOngoingNotificationText(
+            ProductOngoingNotificationMessage(
+                ProductOngoingNotificationMessage.Kind.DOWNLOADING,
+                2,
+            ),
+            productOngoingNotificationMessage(
                 ProductState(
                     ready = true,
                     torrents = mapOf("one" to torrent("one"), "two" to torrent("two")),
@@ -44,10 +56,13 @@ class ProductOngoingNotificationTest {
             ),
         )
         assertEquals(
-            "Ready for Chrome",
-            productOngoingNotificationText(ProductState(ready = true, companionPort = 9876U)),
+            ProductOngoingNotificationMessage(ProductOngoingNotificationMessage.Kind.READY_CHROME),
+            productOngoingNotificationMessage(ProductState(ready = true, companionPort = 9876U)),
         )
-        assertEquals("Ready", productOngoingNotificationText(ProductState(ready = true)))
+        assertEquals(
+            ProductOngoingNotificationMessage(ProductOngoingNotificationMessage.Kind.READY),
+            productOngoingNotificationMessage(ProductState(ready = true)),
+        )
     }
 
     private fun torrent(id: String) =

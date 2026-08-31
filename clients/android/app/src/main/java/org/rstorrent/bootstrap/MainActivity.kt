@@ -818,7 +818,7 @@ class MainActivity : ComponentActivity() {
         }
         setContentView(
             TextView(this).apply {
-                text = "RSTorrent engine bootstrap"
+                text = getString(R.string.engine_bootstrap_name)
                 textSize = 18f
                 setPadding(32, 32, 32, 32)
             },
