@@ -11,6 +11,22 @@ source ~/.profile
 clients/ios/scripts/generate-project.sh
 ```
 
+Product English copy lives in `App/Localization/Localizable.xcstrings` and
+Info.plist presentation copy in `App/Localization/InfoPlist.xcstrings`.
+English is the only packaged locale; Xcode's double-length and RTL launch
+flags provide pseudo-localization evidence. Validate native XLIFF
+export/import and the owned phone/tablet simulator matrix from the repository
+root with:
+
+```bash
+clients/ios/scripts/check-localization-roundtrip.sh
+clients/ios/scripts/run-localization-matrix.sh
+```
+
+The round-trip check rejects extraction-time source rewrites and imports into
+an isolated copy. The matrix creates and removes its own iPhone and iPad
+simulators.
+
 The project deliberately contains no development team, provisioning profile,
 device identifier, or Apple account. Pass signing settings to `xcodebuild` or
 select a local team in Xcode. The development bundle identifier is

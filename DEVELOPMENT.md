@@ -414,6 +414,49 @@ count, remote-only CSP, no-store entry points, immutable assets, Wasm content
 type and 404 service-worker paths. A local build does not activate remote
 access or authorize a Cloudflare deployment.
 
+## Localization
+
+English is the only supported production locale. Every maintained product
+surface has a checked source catalog; long-LTR and RTL pseudo locales are test
+fixtures and must not enter release packages. Run the cross-product static
+gate after presentation-copy changes:
+
+```bash
+node scripts/check-localization.mjs
+```
+
+Regenerate and validate the shared React catalog with:
+
+```bash
+npm run generate:localization --prefix clients/web
+npm run typecheck --prefix clients/web
+npm run test:e2e --prefix clients/web
+```
+
+Exercise Android's platform resources and configuration lifecycle with:
+
+```bash
+clients/android/build.sh
+clients/android/scripts/run-localization-matrix.py
+```
+
+The matrix creates task-owned Pixel 6 API 28 and Pixel Tablet API 35 AVDs and
+deletes them on exit. It never selects an arbitrary attached device.
+
+Exercise iOS String Catalog extraction, import, and presentation with:
+
+```bash
+clients/ios/scripts/generate-project.sh
+clients/ios/scripts/check-localization-roundtrip.sh
+clients/ios/scripts/run-localization-matrix.sh
+```
+
+The round-trip check uses Xcode's `.xcloc` path in an isolated project copy.
+The matrix creates task-owned iPhone and iPad simulators and deletes them on
+exit. Catalog policy, translation provenance, first-locale criteria, and exact
+platform workflows live in
+[`docs/topics/localization.md`](docs/topics/localization.md).
+
 ## Launching The Desktop App
 
 Install the locked web dependencies when necessary, build the static web

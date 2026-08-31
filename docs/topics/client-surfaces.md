@@ -870,15 +870,13 @@ with exact SAF cleanup.
 
 ## Current Gaps
 
-- Localization ownership is inconsistent across the maintained clients. React
-  has no message catalog, Android is predominantly inline English, and iOS has
-  one custom English JSON loader beside remaining direct literals. Active
-  Tactical
-  [`204`](../tactical/204-cross-product-localization-foundation.md) prepares
-  all three together with platform-native catalogs, system locale negotiation,
-  locale-aware formatting, strict provenance/placeholder checks, and LTR/RTL
-  pseudo evidence. Actual production translations remain a separate reviewed
-  cohort.
+- Completed Tactical
+  [`204`](../tactical/204-cross-product-localization-foundation.md) gives
+  shared React/Tauri, Android, and iOS complete checked English catalogs,
+  system locale negotiation, locale-aware formatting, strict
+  provenance/placeholder checks, and LTR/RTL pseudo evidence. The remaining
+  localization gap is a separately selected and native-reviewed first real
+  language cohort; no non-English production locale is currently advertised.
 
 - The React Library now has a rebuildable media-first torrent detail, but its
   top level remains torrent-backed. Library-wide item aggregation, durable

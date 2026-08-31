@@ -852,6 +852,17 @@ tests, notification opt-in, force-close and finite-background recovery, and
 unsigned/development archives pass. No indefinite background, cloud-provider,
 App Store, TestFlight, or public-release claim is made.
 
+Completed Tactical
+[`204`](../tactical/204-cross-product-localization-foundation.md) establishes
+one localization policy and checked English catalog on every maintained
+product surface: 1,225 React messages, 17 Tauri-native messages, 370 Android
+strings plus 7 quantities, 172 iOS product messages, and 6 iOS Info.plist
+messages. Browser/Tauri, API 28/35 Android, and phone/tablet iOS long-LTR/RTL
+pseudo matrices pass alongside native fallback, formatting, accessibility,
+archive, and catalog round-trip gates. English remains the only production
+locale. Selecting and qualifying the first native-reviewed real language is a
+separate product cohort, not an implied multilingual claim.
+
 Tactical `152` closes the selected-root multifile defect exposed after those
 three tacticals. Exact-target coordination passes deterministic sibling-lease
 and three-handle release tests. A controlled cross-file physical transfer
@@ -871,11 +882,6 @@ exactly.
 
 ### Active
 
-- Implement **Tactical `204`** across shared React/Tauri, Android, and iOS.
-  Extract complete English product catalogs, keep typed Rust values language-
-  neutral, use platform locale/fallback and formatting, validate placeholders
-  and provenance, and prove long-LTR/RTL pseudo layouts. Do not claim a real
-  non-English locale until a separate reviewed translation cohort passes.
 - Finish qualification evidence for **Tactical `196`**. The implementation
   now supplies the default-compiled lazy desktop/headless endpoint,
   authenticated direct-only signaling, completed-file **Save file...**,

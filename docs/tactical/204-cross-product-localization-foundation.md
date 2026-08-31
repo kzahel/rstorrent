@@ -1,13 +1,13 @@
 # Tactical 204: Cross-Product Localization Foundation
 
-Status: **Active as of 2026-08-31.** User direction requires the shared React
-product, Android Compose, and iOS SwiftUI to become localization-ready in one
-bounded slice. This tactical authorizes extraction, platform-native catalogs,
-locale-aware presentation, pseudo-localized evidence, and one pinned React
-localization dependency. It does not authorize unreviewed translations,
-publication, store metadata, production identity changes, or release.
+Status: **Complete as of 2026-09-01.** The shared React product, Android
+Compose/platform owners, and iOS SwiftUI/platform owners now have complete
+checked English catalogs, locale-aware presentation, native fallback, and
+long-LTR/RTL pseudo evidence. English remains the only supported production
+locale. No translation, publication, store metadata, production identity, or
+release operation occurred.
 
-Topics: `client-surfaces`, `web-ui-design`,
+Topics: `localization`, `client-surfaces`, `web-ui-design`,
 `android-jstorrent-replacement`, `capability-readiness`
 
 Dependencies: completed React product foundation Tactical
@@ -48,6 +48,109 @@ platforms expose their system per-app language controls once more than one
 reviewed locale ships; older Android follows the device locale. React follows
 the ordered browser locale list. This tactical adds no RSTorrent application-
 contract language preference and no cross-device language synchronization.
+
+## Completion Record
+
+The implementation landed as these reviewable checkpoints:
+
+- `105dddd` planned the bounded cross-product slice;
+- `22ccb98` established terminology, locale, classification, and provenance
+  policy;
+- `ce97c6d` localized the shared React and Tauri-native surfaces;
+- `a953e21` localized Compose, Android services, activities, notifications,
+  media, SAF, errors, and accessibility;
+- `59a6204` qualified Android pseudo-localization on owned API 28/35 AVDs;
+- `463172f` replaced the iOS JSON loader with native String Catalogs;
+- `b05a1a5` qualified English, double-length, and RTL iOS UI on owned phone
+  and tablet simulators;
+- `3d7b55e` added an isolated Xcode XLIFF export/import gate; and
+- `2300560` reconciled Xcode's native Info.plist extraction keys and made
+  extraction-time catalog rewrites fail that gate.
+
+The checked source inventory is 1,225 React messages, 17 Tauri-native
+messages, 370 Android strings plus 7 quantities, 172 iOS product messages
+including one plural, and 6 iOS Info.plist messages. The repository checker
+requires English, comments/context, valid placeholders and plural branches,
+zero referenced-key gaps, zero orphaned catalog entries, classified direct
+product copy, an English-only release manifest, and absence of packaged
+`en-XA`/`ar-XB` assets. Durable Android and iOS presentation state now stores
+semantic values and resolves localized prose from the active configuration at
+presentation time. No translation was imported; the provenance ledger records
+all three English catalogs as maintainer-owned MIT source copy.
+
+React pins `react-intl 10.1.25` (BSD-3-Clause),
+`@formatjs/icu-messageformat-parser 3.5.17` (MIT),
+`@formatjs/cli 6.16.22` (MIT), and `@babel/parser 8.0.4` (MIT). The lockfile
+adds 17 package paths, including seven platform-specific optional FormatJS CLI
+packages. The production dependency audit reports zero vulnerabilities. The
+full development audit reports one high transitive `nanoid <3.3.18` advisory
+(`GHSA-2v37-7h3g-55p8`) in tooling; it is not a production dependency or a
+localization runtime path.
+
+Artifact comparison uses pre-implementation commit `22ccb98` and the same
+host toolchains:
+
+| Artifact | Before | After | Change |
+| --- | ---: | ---: | ---: |
+| ordinary web `dist` | 1,932 KiB | 2,156 KiB | +224 KiB |
+| remote web `dist` | 2,252 KiB | 2,480 KiB | +228 KiB |
+| Android debug APK | 120,209,945 B | 120,503,329 B | +293,384 B |
+| Android release APK | 102,953,814 B | 103,145,234 B | +191,420 B |
+| iOS application bundle | 21,172 KiB | 21,180 KiB | +8 KiB |
+| iOS unsigned archive | 39,012 KiB | 39,064 KiB | +52 KiB |
+
+The ordinary web output splits a 195.66 kB/43.30 kB-gzip application chunk
+beside a 1,852.42 kB/314.82 kB-gzip bootstrap. The baseline bootstrap was
+1,811.80 kB/316.37 kB gzip. The remote main JavaScript grows from
+1,784.06 kB/307.27 kB gzip to 2,016.97 kB/347.43 kB gzip. The accepted
+roughly 40--42 kB gzip cost buys the offline ICU runtime and all 1,225 English
+messages across every React mode; no catalog is fetched at runtime. The
+Android release increase is 0.19%; debug additionally packages generated
+pseudo resources. The iOS app replaces a 28 KiB JSON resource with 20 KiB of
+native compiled English resources; the remaining binary/archive variation is
+link and debug metadata.
+
+### Qualification evidence
+
+- `node scripts/check-localization.mjs` reports all four catalogs valid and
+  only `en` shipping.
+- React generation, TypeScript, 377 unit tests (2 skipped), ordinary,
+  companion, and remote CSP-safe builds pass. Full Playwright reports 39
+  passed and 14 opt-in live tests skipped. Its two localization cases cover
+  `en-XA` and `ar-XB` at 1,440x900, 920x720, and 390x844, including a dialog,
+  no horizontal overflow or raw keys, direction, focus/dismissal, and zero
+  serious/critical Axe findings.
+- Tauri-native localization unit coverage is included in the 42 passing
+  desktop tests and the successful workspace clippy/test gates. The ordinary
+  packaged React bundle is shared by browser, Tauri, demo, authenticated, and
+  configured-headless runtime adapters rather than rebuilt per adapter.
+- Android `build.sh`, 100 JVM tests, lint, debug/test/release APK assembly,
+  and static catalog checks pass. A fresh Pixel 6 API 28 AVD passes all 31
+  applicable instrumentation cases; a fresh Pixel Tablet API 35 AVD passes
+  all 33. Both exercise English plus generated long/RTL pseudo resources,
+  Activity recreation, configuration replacement, notification/platform
+  owners, dialog/file-selection reachability, and cleanup. Release packaging
+  contains no pseudo locale.
+- iOS generation and unsigned archive pass. A fresh iPhone 17 Pro simulator
+  on iOS 26.5 passes 30 unit and 4 UI tests; a fresh 13-inch iPad Pro passes
+  both localization UI tests. Evidence covers English, double-length, RTL,
+  huge Dynamic Type, dark appearance, landscape, Add/file selection,
+  Settings, notification controls, stable accessibility names, and mirrored
+  top-bar order. The archive contains only `en.lproj`.
+- `clients/ios/scripts/check-localization-roundtrip.sh` exports `en.xcloc`,
+  rejects extraction-time source changes, imports into an isolated project
+  copy, and requires both catalogs to remain byte-identical.
+- `cargo fmt --all -- --check`, `cargo clippy --workspace -- -D warnings`, and
+  `cargo test --workspace` pass. The first workspace test attempt observed one
+  transient parallel loopback-port reuse; the focused test passed three times
+  and the complete default-parallel workspace rerun passed without a code
+  change. Clippy was rerun after restoring the measured web `dist` required by
+  Tauri's compile-time context.
+
+The Android and iOS matrix runners remove their task-owned AVDs/simulators and
+temporary results on every exit. Baseline checkouts, archives, web outputs,
+and XLIFF copies were removed after measurement. Physical-device evidence was
+optional and was not needed for this presentation-only foundation.
 
 ## Stopping Condition
 

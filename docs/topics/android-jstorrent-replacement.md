@@ -240,7 +240,7 @@ blocker for an independent RSTorrent beta.
 | Companion idle/auto-close | JSTorrent can stop its separate legacy daemon after a configured disconnected interval. Tactical `194` instead owns one semantic service/application owner. | Tactical `200` selects a fixed 60-second authenticated-disconnect grace and no user-facing timer. A configurable idle policy remains deferred unless product evidence justifies it. |
 | Search and plugins | JSTorrent has search UI plus installed/recommended URL-fetched JavaScript plugins in an Android WebView sandbox. RSTorrent has no search/plugin product capability. | Treat as a separate security and product campaign. Implement only with explicit network-code trust, sandbox, update, disclosure, and Play-review policy; otherwise retire/defer visibly. |
 | Native/progressive playback | Completed Tactical `202` gives RSTorrent Android native Media3 playback for typed completed and eligible incomplete video through the shared Rust HTTP capability, with audio focus, picture-in-picture, removal revocation, seek, publication handoff, and playback lifetime ownership proven on physical ChromeOS. | Treat native playback as implemented. Sidecar/external subtitles, codec breadth, resume/history, background-audio controls, and production-package qualification remain separate dispositions. |
-| Localization | JSTorrent currently ships system/app locale selection and 19 translated Android resource directories. RSTorrent Compose strings are predominantly inline English; shared React has no catalog runtime, while iOS has one ad hoc English JSON catalog. | Active Tactical [`204`](../tactical/204-cross-product-localization-foundation.md) makes React/Tauri, Android, and iOS localization-ready together: complete English platform catalogs, system locale negotiation, formatting/plurals, strict placeholder/provenance checks, and long-LTR/RTL pseudo evidence. It deliberately does not inherit or advertise a non-English locale until a separately reviewed translation cohort passes. |
+| Localization | JSTorrent currently ships system/app locale selection and 19 translated Android resource directories. Completed Tactical [`204`](../tactical/204-cross-product-localization-foundation.md) gives RSTorrent complete checked English catalogs, system locale negotiation, formatting/plurals, and long-LTR/RTL pseudo evidence across React/Tauri, Android, and iOS. | Select and qualify a native-reviewed first real language cohort separately. Do not inherit or advertise JSTorrent's translations without provenance, review, lifecycle, layout, accessibility, and release-disclosure evidence. |
 | Reset, clear data, and support | JSTorrent exposes reset settings, clear all data with optional payload deletion, and a prefilled report-bug path. RSTorrent shows Reset engine settings as unavailable. | Add safe, separately worded metadata reset and payload deletion operations plus support/diagnostic handoff, or explicitly narrow them. Never combine payload deletion with an implicit migration reset. |
 | Add-time file selection | JSTorrent can show a file-selection step during add. | Implemented by Tactical [`203`](../tactical/203-jstorrent-shaped-add-time-file-selection.md). Shared React and Compose default to one application-owned pending step: checked is Normal, unchecked is Skip, All/None are logical, magnets fetch metadata without content, and one atomic confirmation starts the durable selection. BEP 53 intent, cancellation/duplicate safety, restart, bounded paging, external intake, API-35, and physical ChromeOS evidence pass. High remains post-add. |
 | Download manifest integration | JSTorrent can write a sidecar manifest for external playback integration. RSTorrent does not. | Confirm whether any supported integration consumes it; implement a safe final-path equivalent or retire it. |
@@ -475,11 +475,12 @@ live run.
    is scheduled.
 8. Preserve completed Tactical
    [`203`](../tactical/203-jstorrent-shaped-add-time-file-selection.md) as the
-   Add-time file-selection regression gate. Complete active cross-product
-   localization-readiness Tactical
-   [`204`](../tactical/204-cross-product-localization-foundation.md), then
-   decide VPN, proxy, DHT/PEX controls, search/plugins, playback follow-ups,
-   reset/support, and the remaining table rows individually.
+   Add-time file-selection regression gate and completed Tactical
+   [`204`](../tactical/204-cross-product-localization-foundation.md) as the
+   cross-product localization-foundation gate. Select the first reviewed real
+   language cohort separately, and decide VPN, proxy, DHT/PEX controls,
+   search/plugins, playback follow-ups, reset/support, and the remaining table
+   rows individually.
    Proxy and any engine/network privacy work follow the source-first engine
    campaign; search/plugin and playback follow-ups remain separate security/
    lifecycle campaigns.

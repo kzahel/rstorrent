@@ -685,13 +685,13 @@ application pending state. It uses checked Normal/unchecked Skip, logical
 All/None, a compact range draft, and at most three cached 1,024-row pages.
 High and every post-add priority change remain in the Files tab.
 
-Active Tactical
+Completed Tactical
 [`204`](../tactical/204-cross-product-localization-foundation.md) makes
 presentation copy an explicit owner across shared React/Tauri, Android, and
-iOS. React will use one packaged ICU message provider and browser locale
-negotiation; Android and iOS retain platform-native catalogs and system locale
-selection. English is the only initial production locale, with long-LTR and
-RTL pseudo catalogs reserved for extraction, layout, and accessibility gates.
+iOS. React uses one packaged ICU message provider and browser locale
+negotiation; Android and iOS use platform-native catalogs and system locale
+selection. English is the only production locale. Generated long-LTR and RTL
+pseudo locales are confined to extraction, layout, and accessibility gates.
 Locale remains presentation state and does not enter the Rust application
 contract.
 

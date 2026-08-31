@@ -43,6 +43,11 @@ and [protocol support matrix](docs/topics/protocol-support.md).
   public-swarm, system-preview, and unsigned/development archive evidence, but
   no TestFlight or App Store distribution. See
   [client and platform readiness](docs/topics/client-surfaces.md).
+- **Localization-ready, English-only.** Shared React/Tauri, Android, and iOS
+  now use complete checked English catalogs with native locale fallback,
+  plural/number formatting, and long-LTR/RTL pseudo-layout gates. Shipping a
+  real non-English locale requires a separately reviewed translation cohort;
+  see the [localization policy and workflow](docs/topics/localization.md).
 
 ## What RSTorrent Is
 
@@ -160,6 +165,7 @@ for toolchain setup, build, test, and launch instructions.
 - [Beta release readiness and gap checklist](docs/topics/beta-release-readiness.md)
 - [Feature completeness and current queue](docs/topics/capability-readiness.md)
 - [Client and platform readiness](docs/topics/client-surfaces.md)
+- [Localization policy and catalog workflow](docs/topics/localization.md)
 - [Exact protocol support](docs/topics/protocol-support.md)
 - [Deployment and later JSTorrent graduation](docs/topics/product-surfaces-and-migration.md)
 - [Product vision](docs/vision.md)

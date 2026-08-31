@@ -44,6 +44,21 @@ ANDROID_SERIAL=emulator-5554 ./gradlew connectedDebugAndroidTest
 The instrumentation command requires an explicitly selected owned emulator;
 never substitute the first device returned by ADB.
 
+Product English copy lives in `app/src/main/res/values/strings.xml`. Counted
+copy uses Android quantities, and durable state stores semantic values rather
+than localized sentences. Debug builds generate long-LTR `en-XA` and RTL
+`ar-XB` pseudo resources; release builds package only English. From the
+repository root, check the catalog and run the owned API 28/35 localization
+matrix with:
+
+```bash
+node scripts/check-localization.mjs
+clients/android/scripts/run-localization-matrix.py
+```
+
+The matrix creates and removes its own AVDs and must not target an arbitrary
+attached device.
+
 Device execution is owned by `run_bootstrap.py`. Do not install or start this
 harness by selecting the first ADB device; the runner verifies an explicit
 listed target before mutation.
