@@ -624,7 +624,8 @@ returns.
    extension, Android package identity, or Play state.
 9. Reconcile this tactical and the owning topics with exact evidence. Close
    `JAR-007` and `AND-009` only after every stopping condition passes; leave
-   `JAR-009` and the indefinite-background claim open.
+   `JAR-009` to its downstream Tactical `200` owner and make no indefinite-
+   background claim.
 
 ## Validation Matrix
 
@@ -904,8 +905,9 @@ Before marking this tactical complete:
 - update Android notification, companion, and background truth in
   [`client-surfaces.md`](../topics/client-surfaces.md) and
   [`capability-readiness.md`](../topics/capability-readiness.md);
-- leave `JAR-009` open with the target-35 timeout and granted-background
-  alternatives as explicit inputs; and
+- do not change `JAR-009` from this tactical: completed downstream Tactical
+  `200` owns its background-lifecycle closure, while target-35 timeout remains
+  finite; and
 - leave production channel IDs, strings, package identity, signing, Play
   declarations, production extension rollout, and publication to `JAR-004`,
   `JAR-005`, and `JAR-010`.

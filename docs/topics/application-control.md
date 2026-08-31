@@ -250,7 +250,11 @@ Pause All, Stop Torrent, or a queue mutation. A later visible launch opens the
 same profile and applies its durable desired-running and paused state through
 ordinary admission. Android-15 quota exhaustion is a platform-owned durable
 fence cleared by that visible launch; an invisible recreation never becomes
-a second source of torrent intent or foreground authority.
+a second source of torrent intent or foreground authority. The lifecycle gate
+is complete through installed API 28/35 behavior, deterministic companion
+count/grace transitions, and Tactical `194`'s physical ChromeOS transport and
+shutdown evidence; the accepted compositional close makes no new OEM-duration
+or unavailable-device claim.
 
 Typed diagnostics use a separate bounded reactive projection. They may explain
 the facts behind a progress assessment, but clients do not parse diagnostic

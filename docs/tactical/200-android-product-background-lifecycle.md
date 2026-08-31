@@ -1,13 +1,16 @@
 # Tactical 200: Android Product Background Lifecycle
 
-Status: **Repository implementation and owned-AVD qualification complete as
-of 2026-08-31; physical qualification remains authorization-gated.**
+Status: **Complete as of 2026-08-31.**
 Maintainer direction selected JSTorrent-like standalone lifetime semantics
 for the Android replacement and explicitly authorized end-to-end repository
 implementation. VPN, proxy, low-battery thresholds, and configurable
-companion-idle policy remain deferred. `JAR-009` and this tactical stay open
-only for the exact-target phone and ChromeOS campaigns required by the
-stopping condition; no physical target was used.
+companion-idle policy remain deferred. After a fresh Machine Control doctor
+found the approved Chromebook unreachable and its profile locked, maintainer
+direction accepted the completed API 28/API 35 AVD campaigns together with
+Tactical `194`'s existing physical ChromeOS transport/security evidence and
+this tactical's deterministic companion-lifetime evidence as the bounded
+fallback. `JAR-009` is closed. No new physical target was used, and this
+closure does not claim that an AVD reproduces ChromeOS or OEM power behavior.
 
 Topics: `android-jstorrent-replacement`, `beta-release-readiness`,
 `application-control`, `client-surfaces`, `capability-readiness`
@@ -838,6 +841,14 @@ Both campaigns remove controlled payload, package state where required,
 notifications, tasks, processes, listeners, pairings created for the test,
 captures, policy mutations, and machine claims.
 
+The closing campaign used the explicitly accepted fallback because the
+approved Chromebook was not safely reachable. It composes Tactical `194`'s
+physical ARC-only bind, authenticated extension connection, same-LAN refusal,
+detached transfer, reconnect, stop, and cleanup evidence with this tactical's
+deterministic authenticated-count/reconnect-grace transitions and installed
+API 28/API 35 Android lifecycle campaigns. It does not relabel emulator
+evidence as physical evidence or add a fresh ChromeOS/OEM duration claim.
+
 ### Build and repository baseline
 
 Run from the repository root after sourcing the configured profile:
@@ -1022,24 +1033,30 @@ deprecated Activity-result/theme warnings and the existing Android-target
 `rstorrent-platform` dead-code warnings remain pre-existing output; lint,
 clippy, and every commanded gate passed.
 
+On 2026-08-31, after ChromeOS access was explicitly authorized, the required
+common read-only Machine Control doctor reported `ready=false`: SSH
+administration was unreachable, the profile session was locked, resident and
+semantic prerequisites were unavailable, and physical VT2 recovery was the
+only outer route. The doctor deliberately did not probe ARCVM ADB, and no
+device, profile, extension, package, power policy, or target state was
+mutated. Maintainer direction then accepted the already-passing AVD campaign
+as the Android fallback. Closure therefore uses three independently bounded
+layers: Tactical `194`'s physical ChromeOS same-device/security campaign,
+Tactical `200`'s deterministic companion count/grace/shutdown coverage, and
+Tactical `200`'s installed API 28/API 35 lifecycle, transfer, recovery,
+seeding, timeout, and cleanup evidence. This is compositional qualification,
+not a claim that the locked Chromebook reran the Tactical `200` matrix.
+
 ## Restart Checkpoint And Next Action
 
-Repository work and owned-AVD evidence are complete. Do not reopen policy,
-defaults, the work classifier, persistence shape, foreground owner, quota
-fence, or the generated application boundary absent new contrary evidence.
+This tactical and `JAR-009` are complete through the explicitly accepted
+compositional evidence above. Do not reopen policy, defaults, the work
+classifier, persistence shape, foreground owner, quota fence, or the
+generated application boundary absent new contrary evidence. A future
+available-device rerun may strengthen OEM/ChromeOS confidence, but it is not
+a remaining stopping condition and must not be represented as evidence this
+campaign collected.
 
-The only remaining stopping-condition work is physical and still requires
-explicit exact-target authorization:
-
-- on a current phone, run the bounded screen-off/Doze, task-removal,
-  controlled process-recovery, notification Stop, completion, optional seed,
-  and cleanup cohort; and
-- on the approved ChromeOS target, run authenticated count/grace,
-  disconnect/reconnect/expiry, transfer/seed composition, notification loss,
-  explicit Stop, relaunch, and terminal ARC-listener cleanup.
-
-Until both are authorized and pass, retain this tactical in the blocked
-physical-qualification set and leave `JAR-009` unchecked. After closure,
-prioritize production handoff/reset-support work or the separately bounded
-Android playback presentation. VPN and proxy remain explicit post-release
-candidates rather than an implied continuation.
+Next prioritize production handoff/reset-support work or the separately
+bounded Android playback presentation. VPN and proxy remain explicit
+post-release candidates rather than an implied continuation.

@@ -189,7 +189,7 @@ daemon architecture.
   gate remains open only for the explicitly authorized physical-phone handoff
   campaign; no physical device was used. VPN privacy and proxying remain
   excluded.
-- [ ] **JAR-009 — Implement the selected background lifecycle policy.**
+- [x] **JAR-009 — Implement the selected background lifecycle policy.**
   Tactical
   [`200`](../tactical/200-android-product-background-lifecycle.md) now replaces
   the always-sticky owner with JSTorrent-shaped standalone outcomes over
@@ -203,9 +203,13 @@ daemon architecture.
   fence. Authenticated ChromeOS companion work receives one fixed reconnect
   grace rather than the legacy daemon's configurable idle timer. Pure policy,
   connected API 28/35, controlled transfer/recovery/task-removal/seeding,
-  shortened-timeout, dual-ABI, and repository gates pass. Keep this item open
-  only for the exact-target phone and ChromeOS campaigns required by the
-  tactical; neither physical target was used.
+  shortened-timeout, dual-ABI, and repository gates pass. When the explicitly
+  authorized Chromebook remained SSH-unreachable and profile-locked, the
+  maintainer accepted compositional closure from Tactical `194`'s existing
+  physical ChromeOS transport/security campaign, Tactical `200`'s
+  deterministic companion-lifetime coverage, and its installed API 28/35
+  lifecycle campaigns. No new physical target was used, and this is not an
+  AVD claim about ChromeOS or OEM background duration.
 - [ ] **JAR-010 — Qualify the signed Play replacement.** Produce and inspect
   the protected-key release AAB, remove or deliberately retain diagnostic
   components, close current Android API deprecations, complete store/privacy/
@@ -444,12 +448,13 @@ live run.
    bounded physical-phone Wi-Fi/metered handoff and cleanup gate, then close
    the unmetered portion of `JAR-008` without coupling it to a VPN privacy
    claim. The implementation and owned-AVD evidence are already complete.
-5. After explicit exact-target authorization, finish Tactical
-   [`200`](../tactical/200-android-product-background-lifecycle.md)'s phone and
-   ChromeOS qualification and close `JAR-009`. Its background/seeding/idle
-   implementation, fixed companion reconnect grace, connected suites, owned-
-   AVD campaigns, and repository gates already pass. Low-battery shutdown
-   remains a separately bounded decision.
+5. Preserve completed Tactical
+   [`200`](../tactical/200-android-product-background-lifecycle.md) as the
+   `JAR-009` lifecycle regression gate. Its accepted evidence composes the
+   installed API 28/35 campaign, deterministic companion lifetime, and
+   Tactical `194`'s physical ChromeOS transport/security proof; a later
+   available-device rerun may strengthen confidence but is not a release-gate
+   claim. Low-battery shutdown remains a separately bounded decision.
 6. Design `JAR-005` with the production extension before either store update
    is scheduled.
 7. Decide VPN, proxy, DHT/PEX controls, search/plugins, playback,

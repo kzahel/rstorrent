@@ -640,9 +640,12 @@ disposition of current JSTorrent Android features.
   Android-15 exhausted-quota fencing, and a bounded authenticated-companion
   reconnect grace. Connected API 28/35, controlled Home/reopen, task removal,
   process recovery, completion, seeding upload, shortened timeout, dual-ABI,
-  and repository gates pass. Its physical phone and ChromeOS closure remains
-  exact-target authorization-gated, so it does not close this notification
-  item's independent physical Chromebook matrix. Reboot autostart,
+  and repository gates pass. Tactical `200` and `JAR-009` close through the
+  maintainer-approved composition of that evidence, deterministic companion
+  lifetime coverage, and Tactical `194`'s existing physical ChromeOS
+  transport/security campaign after the approved Chromebook remained locked.
+  That closure does not close this notification item's independent physical
+  Chromebook matrix. Reboot autostart,
   low-battery shutdown, VPN, and proxy remain outside both slices.
 - [ ] **AND-010 — Add metered-network safety and bound VPN policy.** JSTorrent
   Android enforces unmetered/Wi-Fi-only and VPN-only prerequisites. Tactical

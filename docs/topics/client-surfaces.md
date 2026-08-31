@@ -666,8 +666,11 @@ own correctness.
   ChromeOS companion work receives a fixed reconnect grace through a count-
   only subscription. Android-15 timeout persists an exhausted edge and blocks
   invisible recreation until a visible launch. Connected API 28/35 and owned-
-  AVD transfer/recovery/seeding/task-removal/timeout evidence passes; the
-  exact-target phone and ChromeOS qualification remains authorization-gated.
+  AVD transfer/recovery/seeding/task-removal/timeout evidence passes. The gate
+  closes by maintainer-approved composition with deterministic companion
+  lifetime coverage and Tactical `194`'s physical ChromeOS transport/security
+  evidence after the authorized Chromebook remained locked; this adds no new
+  OEM-duration or ChromeOS rerun claim.
   No reboot launch, second daemon, indefinite `dataSync` claim, or low-battery
   policy is added.
 - The Linux headless process owns one application service, profile, one or
@@ -998,17 +1001,20 @@ streaming demand, expiry, and revocation remain unchanged.
   [`200`](../tactical/200-android-product-background-lifecycle.md) implements
   the granted-background activity/active-work/completion/seeding/task-removal
   contract and accepts Android 15+ `dataSync` operation as finite. Its
-  connected API 28/35 and owned-AVD campaigns pass; physical phone and
-  ChromeOS qualification remains authorization-gated. VPN policy remains
-  separate from Tactical `194`'s connection transport.
+  connected API 28/35 and owned-AVD campaigns pass. Its completed evidence
+  composes those campaigns and deterministic lifetime coverage with Tactical
+  `194`'s physical ChromeOS connection/security proof; the unavailable
+  Chromebook did not rerun this matrix. VPN policy remains separate from
+  Tactical `194`'s connection transport.
 - Android now has Compose connection/seeding settings for backed peer, upload-
   slot, active-download, listener, port-mapping, IPv6, and encryption values,
   including configured/effective/application truth, plus backed session and
   per-torrent upload/download limits. The default-off metered-network cost
   policy is implemented by Tactical `199` and AVD-qualified, with only its
   authorized physical-phone gate open. Background lifetime is implemented and
-  AVD-qualified by Tactical `200`, with its exact-target physical gates still
-  open. VPN, proxy, low-battery, and broader seeding policy remain separate
+  qualified by completed Tactical `200` through its accepted AVD,
+  deterministic-companion, and prior physical ChromeOS evidence composition.
+  VPN, proxy, low-battery, and broader seeding policy remain separate
   product/engine slices.
 - Tracker HTTPS authentication is intentionally absent from ordinary React
   and Compose settings. The advanced typed `disabled` override exists for
