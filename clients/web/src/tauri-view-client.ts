@@ -101,6 +101,9 @@ export class TauriApplicationViewClient implements ApplicationViewClient {
       "x-rstorrent-request-id": request.request_id,
       "x-rstorrent-storage-root": request.storage_root,
       "x-rstorrent-start-content": String(request.start_content),
+      "x-rstorrent-await-file-selection": String(
+        request.await_file_selection,
+      ),
       "x-rstorrent-selection":
         request.selection.type === "wanted_ranges"
           ? "ranges"
@@ -135,6 +138,7 @@ export class TauriApplicationViewClient implements ApplicationViewClient {
         requestId: request.request_id,
         storageRoot: request.storage_root,
         startContent: request.start_content,
+        awaitFileSelection: request.await_file_selection,
       }),
       decodeResponseEnvelope,
       "Tauri external torrent intake response",

@@ -62,6 +62,7 @@ export interface SettingsDialogProps {
   ) => Promise<DownloadRoot | null>;
   readonly onDefaultRootChange: (rootId: string) => Promise<void>;
   readonly onShowAddOptionsChange: (show: boolean) => Promise<void>;
+  readonly onShowFileSelectionChange: (show: boolean) => Promise<void>;
   readonly onRemoveRoot: (rootId: string) => Promise<void>;
   readonly onClientSettingsSave: (patch: ClientSettingsPatch) => Promise<CommandResult>;
   readonly onWebAuthSignedOut: () => void;
@@ -92,6 +93,7 @@ export function SettingsDialog({
   onChooseFolder,
   onDefaultRootChange,
   onShowAddOptionsChange,
+  onShowFileSelectionChange,
   onRemoveRoot,
   onClientSettingsSave,
   onWebAuthSignedOut,
@@ -259,6 +261,7 @@ export function SettingsDialog({
                 onChooseFolder={onChooseFolder}
                 onDefaultRootChange={onDefaultRootChange}
                 onShowAddOptionsChange={onShowAddOptionsChange}
+                onShowFileSelectionChange={onShowFileSelectionChange}
                 onRemoveRoot={onRemoveRoot}
               />
             </div>

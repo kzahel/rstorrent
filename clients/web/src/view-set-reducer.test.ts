@@ -24,6 +24,11 @@ function torrent(verified: number): TorrentView {
     storage_state: "available",
     storage_root: "downloads",
     metadata_available: true,
+    awaiting_file_selection: false,
+    selectable_file_count: 1,
+    selected_file_count: 1,
+    selectable_file_bytes: "49152",
+    selected_file_bytes: "49152",
     piece_count: 3,
     total_size_bytes: "49152",
     verified_piece_count: verified,
@@ -159,7 +164,7 @@ describe("view-set reducer", () => {
           snapshot: {
             type: "torrent_list",
             torrents: [initialTorrent],
-            storage: { roots: [], show_add_options: true },
+            storage: { roots: [], show_add_options: true, show_file_selection: true },
             client_settings: clientSettingsRuntimeFixture(),
           },
         },
@@ -305,7 +310,7 @@ describe("view-set reducer", () => {
         snapshot: {
           type: "torrent_list",
           torrents: [],
-          storage: { roots: [], show_add_options: true },
+          storage: { roots: [], show_add_options: true, show_file_selection: true },
           client_settings: clientSettingsRuntimeFixture(),
         },
       }]),
@@ -332,7 +337,7 @@ describe("view-set reducer", () => {
         snapshot: {
           type: "torrent_list",
           torrents: [torrent(0)],
-          storage: { roots: [], show_add_options: true },
+          storage: { roots: [], show_add_options: true, show_file_selection: true },
           client_settings: clientSettingsRuntimeFixture(),
         },
       }]),
@@ -365,7 +370,7 @@ describe("view-set reducer", () => {
           snapshot: {
             type: "torrent_list",
             torrents: [],
-            storage: { roots: [], show_add_options: true },
+            storage: { roots: [], show_add_options: true, show_file_selection: true },
             client_settings: clientSettingsRuntimeFixture(),
           },
         },
@@ -393,6 +398,7 @@ describe("view-set reducer", () => {
               ],
               default_root: "root_a",
               show_add_options: false,
+              show_file_selection: false,
             },
           },
         },
@@ -404,6 +410,7 @@ describe("view-set reducer", () => {
       storage: {
         default_root: "root_a",
         show_add_options: false,
+        show_file_selection: false,
       },
     });
   });
@@ -418,7 +425,7 @@ describe("view-set reducer", () => {
           snapshot: {
             type: "torrent_list",
             torrents: [],
-            storage: { roots: [], show_add_options: true },
+            storage: { roots: [], show_add_options: true, show_file_selection: true },
             client_settings: clientSettingsRuntimeFixture(),
           },
         },
@@ -486,7 +493,7 @@ describe("view-set reducer", () => {
           snapshot: {
             type: "torrent_list",
             torrents: [torrent(0)],
-            storage: { roots: [], show_add_options: true },
+            storage: { roots: [], show_add_options: true, show_file_selection: true },
             client_settings: clientSettingsRuntimeFixture(),
           },
         },
@@ -857,7 +864,7 @@ describe("view-set reducer", () => {
           snapshot: {
             type: "torrent_list",
             torrents: [torrent(0)],
-            storage: { roots: [], show_add_options: true },
+            storage: { roots: [], show_add_options: true, show_file_selection: true },
             client_settings: clientSettingsRuntimeFixture(),
           },
         },
@@ -876,7 +883,7 @@ describe("view-set reducer", () => {
     expect(state.views.library).toEqual({
       type: "torrent_list",
       torrents: [],
-      storage: { roots: [], show_add_options: true },
+      storage: { roots: [], show_add_options: true, show_file_selection: true },
       client_settings: clientSettingsRuntimeFixture(),
     });
     state = reduceUpdateBatch(
@@ -892,7 +899,7 @@ describe("view-set reducer", () => {
     expect(state.views.library).toEqual({
       type: "torrent_list",
       torrents: [torrent(3)],
-      storage: { roots: [], show_add_options: true },
+      storage: { roots: [], show_add_options: true, show_file_selection: true },
       client_settings: clientSettingsRuntimeFixture(),
     });
     state = reduceUpdateBatch(
@@ -1038,7 +1045,7 @@ describe("view-set reducer", () => {
         snapshot: {
           type: "torrent_list",
           torrents: [],
-          storage: { roots: [], show_add_options: true },
+          storage: { roots: [], show_add_options: true, show_file_selection: true },
           client_settings: clientSettingsRuntimeFixture(),
         },
       },
@@ -1057,7 +1064,7 @@ describe("view-set reducer", () => {
           snapshot: {
             type: "torrent_list",
             torrents: [torrent(0)],
-            storage: { roots: [], show_add_options: true },
+            storage: { roots: [], show_add_options: true, show_file_selection: true },
             client_settings: clientSettingsRuntimeFixture(),
           },
         },

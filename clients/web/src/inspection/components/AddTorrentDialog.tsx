@@ -22,6 +22,7 @@ export interface AddTorrentDialogProps {
   readonly returnFocus: RefObject<HTMLInputElement | null>;
   readonly externalKind?: "magnet" | "torrent_file" | undefined;
   readonly showCrostiniStorageHelp: boolean;
+  readonly fileSelectionEnabled: boolean;
   readonly onChooseFolder: (repairRoot?: string) => Promise<DownloadRoot | null>;
   readonly onCancel: () => void;
   readonly onConfirm: (
@@ -38,6 +39,7 @@ export function AddTorrentDialog({
   returnFocus,
   externalKind,
   showCrostiniStorageHelp,
+  fileSelectionEnabled,
   onChooseFolder,
   onCancel,
   onConfirm,
@@ -222,6 +224,15 @@ export function AddTorrentDialog({
           </button>
         </fieldset>
 
+        {fileSelectionEnabled ? (
+          <section className={styles.files}>
+            <strong>Choose files next</strong>
+            <small>
+              RSTorrent will load metadata without downloading content, then
+              show a Normal/Skip checklist.
+            </small>
+          </section>
+        ) : (
         <section className={styles.files}>
           <label>
             <input
@@ -238,6 +249,7 @@ export function AddTorrentDialog({
             </span>
           </label>
         </section>
+        )}
 
         {oneCurrentRoot ? null : (
           <label className={styles.preference}>
@@ -272,7 +284,11 @@ export function AddTorrentDialog({
             type="submit"
             disabled={busy || selectedRoot === null}
           >
-            {pending ? "Adding…" : "Add torrent"}
+            {pending
+              ? "Adding…"
+              : fileSelectionEnabled
+                ? "Continue"
+                : "Add torrent"}
           </button>
         </div>
       </form>

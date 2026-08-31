@@ -123,7 +123,7 @@ describe("Tauri leased view-set adapter", () => {
         snapshot: {
           profile_id: "test",
           revision: "1",
-          storage: { roots: [], show_add_options: true },
+          storage: { roots: [], show_add_options: true, show_file_selection: true },
           client_settings: clientSettingsFixture(),
           torrents: [],
         },
@@ -139,6 +139,7 @@ describe("Tauri leased view-set adapter", () => {
           expected_revision: "0",
           storage_root: "root-a",
           start_content: false,
+          await_file_selection: false,
           selection: {
             type: "wanted_ranges",
             ranges: [
@@ -160,6 +161,7 @@ describe("Tauri leased view-set adapter", () => {
             "x-rstorrent-request-id": "upload-request",
             "x-rstorrent-storage-root": "root-a",
             "x-rstorrent-start-content": "false",
+            "x-rstorrent-await-file-selection": "false",
             "x-rstorrent-expected-revision": "0",
             "x-rstorrent-selection": "ranges",
             "x-rstorrent-wanted-ranges": "2-3,5-6",
@@ -184,7 +186,7 @@ describe("Tauri leased view-set adapter", () => {
         snapshot: {
           profile_id: "test",
           revision: "1",
-          storage: { roots: [], show_add_options: true },
+          storage: { roots: [], show_add_options: true, show_file_selection: true },
           client_settings: clientSettingsFixture(),
           torrents: [],
         },
@@ -198,6 +200,7 @@ describe("Tauri leased view-set adapter", () => {
         request_id: "desktop-request",
         storage_root: "root-a",
         start_content: false,
+        await_file_selection: false,
       }),
     ).resolves.toMatchObject({ request_id: "desktop-request" });
     expect(bridge.calls).toEqual([
@@ -208,6 +211,7 @@ describe("Tauri leased view-set adapter", () => {
           requestId: "desktop-request",
           storageRoot: "root-a",
           startContent: false,
+          awaitFileSelection: false,
         },
       },
     ]);
@@ -418,7 +422,7 @@ function opened(): OpenViewSetResponse {
           snapshot: {
             type: "torrent_list",
             torrents: [],
-            storage: { roots: [], show_add_options: true },
+            storage: { roots: [], show_add_options: true, show_file_selection: true },
             client_settings: clientSettingsRuntimeFixture(),
           },
         },

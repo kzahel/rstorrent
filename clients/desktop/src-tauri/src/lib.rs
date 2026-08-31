@@ -85,6 +85,7 @@ const HEADER_REQUEST_ID: &str = "x-rstorrent-request-id";
 const HEADER_EXPECTED_REVISION: &str = "x-rstorrent-expected-revision";
 const HEADER_STORAGE_ROOT: &str = "x-rstorrent-storage-root";
 const HEADER_START_CONTENT: &str = "x-rstorrent-start-content";
+const HEADER_AWAIT_FILE_SELECTION: &str = "x-rstorrent-await-file-selection";
 const HEADER_SELECTION: &str = "x-rstorrent-selection";
 const HEADER_WANTED_RANGES: &str = "x-rstorrent-wanted-ranges";
 
@@ -520,6 +521,7 @@ async fn application_add_external_torrent(
     request_id: String,
     storage_root: String,
     start_content: bool,
+    await_file_selection: bool,
 ) -> Result<ResponseEnvelope, String> {
     validate_activation_id(&activation_id)?;
     let source = state
@@ -539,7 +541,7 @@ async fn application_add_external_torrent(
                         magnet,
                         storage_root,
                         start_content,
-                        await_file_selection: false,
+                        await_file_selection,
                         skip_files: Vec::new(),
                     },
                 },
@@ -567,7 +569,7 @@ async fn application_add_external_torrent(
                 expected_revision: None,
                 storage_root,
                 start_content,
-                await_file_selection: false,
+                await_file_selection,
                 selection: FileSelectionIntent::All,
                 source_length: source.len() as u32,
             };
@@ -663,6 +665,14 @@ fn decode_torrent_ipc(
         Some("false") => false,
         Some(_) => return Err("x-rstorrent-start-content must be true or false".to_owned()),
     };
+    let await_file_selection =
+        match optional_ipc_header(headers, HEADER_AWAIT_FILE_SELECTION)?.as_deref() {
+            None | Some("false") => false,
+            Some("true") => true,
+            Some(_) => {
+                return Err("x-rstorrent-await-file-selection must be true or false".to_owned());
+            }
+        };
     let selection = parse_ipc_selection(
         optional_ipc_header(headers, HEADER_SELECTION)?.as_deref(),
         optional_ipc_header(headers, HEADER_WANTED_RANGES)?.as_deref(),
@@ -673,7 +683,7 @@ fn decode_torrent_ipc(
         expected_revision,
         storage_root,
         start_content,
-        await_file_selection: false,
+        await_file_selection,
         selection,
         source_length: source.len() as u32,
     };
@@ -2091,11 +2101,12 @@ mod tests {
     use tokio::sync::Mutex;
 
     use super::{
-        ApplicationConfig, DesktopNotificationKind, DesktopNotificationSettings, HEADER_REQUEST_ID,
-        HEADER_START_CONTENT, HEADER_STORAGE_ROOT, NetworkConfig, NetworkPolicy,
-        decode_torrent_ipc, desktop_application_config, notification_enabled,
-        open_configured_desktop_remote_runtime, register_download_root_selection,
-        resolve_download_directory_selection, validate_local_media_url,
+        ApplicationConfig, DesktopNotificationKind, DesktopNotificationSettings,
+        HEADER_AWAIT_FILE_SELECTION, HEADER_REQUEST_ID, HEADER_START_CONTENT, HEADER_STORAGE_ROOT,
+        NetworkConfig, NetworkPolicy, decode_torrent_ipc, desktop_application_config,
+        notification_enabled, open_configured_desktop_remote_runtime,
+        register_download_root_selection, resolve_download_directory_selection,
+        validate_local_media_url,
     };
 
     #[test]
@@ -2380,6 +2391,7 @@ mod tests {
         headers.insert(HEADER_REQUEST_ID, "desktop-upload".parse().expect("header"));
         headers.insert(HEADER_STORAGE_ROOT, "downloads".parse().expect("header"));
         headers.insert(HEADER_START_CONTENT, "false".parse().expect("header"));
+        headers.insert(HEADER_AWAIT_FILE_SELECTION, "true".parse().expect("header"));
 
         let (request, decoded) =
             decode_torrent_ipc(&InvokeBody::Raw(source.clone()), &headers).expect("decode raw IPC");
@@ -2387,11 +2399,22 @@ mod tests {
         assert_eq!(request.request_id, "desktop-upload");
         assert_eq!(request.storage_root, "downloads");
         assert!(!request.start_content);
+        assert!(request.await_file_selection);
         assert_eq!(request.source_length as usize, decoded.len());
         assert!(
             decode_torrent_ipc(&InvokeBody::Json(serde_json::json!([1, 2, 3])), &headers)
                 .expect_err("reject JSON IPC")
                 .contains("raw IPC body")
+        );
+
+        headers.insert(
+            HEADER_AWAIT_FILE_SELECTION,
+            "sometimes".parse().expect("header"),
+        );
+        assert!(
+            decode_torrent_ipc(&InvokeBody::Raw(source), &headers)
+                .expect_err("reject invalid pending selection header")
+                .contains("must be true or false")
         );
     }
 

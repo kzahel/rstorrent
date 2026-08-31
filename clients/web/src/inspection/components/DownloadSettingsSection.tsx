@@ -15,6 +15,7 @@ interface DownloadSettingsSectionProps {
   readonly onChooseFolder: (repairRoot?: string) => Promise<DownloadRoot | null>;
   readonly onDefaultRootChange: (rootId: string) => Promise<void>;
   readonly onShowAddOptionsChange: (show: boolean) => Promise<void>;
+  readonly onShowFileSelectionChange: (show: boolean) => Promise<void>;
   readonly onRemoveRoot: (rootId: string) => Promise<void>;
 }
 
@@ -26,6 +27,7 @@ export function DownloadSettingsSection({
   onChooseFolder,
   onDefaultRootChange,
   onShowAddOptionsChange,
+  onShowFileSelectionChange,
   onRemoveRoot,
 }: DownloadSettingsSectionProps) {
   const [pendingAction, setPendingAction] = useState<string | null>(null);
@@ -205,6 +207,26 @@ export function DownloadSettingsSection({
               </span>
             </label>
           )}
+          <label className={styles.preference}>
+            <input
+              type="checkbox"
+              checked={storage.showFileSelection ?? true}
+              disabled={pendingAction !== null}
+              onChange={(event) => {
+                const show = event.currentTarget.checked;
+                void runStorageAction("file-selection-preference", async () => {
+                  await onShowFileSelectionChange(show);
+                  return show
+                    ? "File selection will be shown for new torrents"
+                    : "New torrents will start with all files";
+                });
+              }}
+            />
+            <span>
+              <strong>Show file selection when adding torrents</strong>
+              <small>Checked means Normal; unchecked means Skip.</small>
+            </span>
+          </label>
           {storageStatus === "" ? null : (
             <output className={styles.storageStatus} aria-live="polite">
               {storageStatus}

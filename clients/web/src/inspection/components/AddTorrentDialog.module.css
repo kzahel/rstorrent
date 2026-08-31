@@ -158,6 +158,11 @@
   gap: 0.18rem;
 }
 
+.files > strong,
+.files > small {
+  display: block;
+}
+
 .files small {
   color: var(--text-muted);
   line-height: 1.4;
@@ -207,6 +212,91 @@
 .dialog button:focus-visible,
 .dialog input:focus-visible {
   outline: 2px solid var(--focus);
+}
+
+.selectionDialog {
+  display: flex;
+  width: min(43rem, 100%);
+  flex-direction: column;
+}
+
+.selectionMeta,
+.metadataWait {
+  display: grid;
+  gap: 0.25rem;
+  color: var(--text-secondary);
+  font-size: var(--ui-font-small);
+}
+
+.metadataWait {
+  min-height: 12rem;
+  place-content: center;
+  text-align: center;
+}
+
+.selectionToolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.8rem;
+}
+
+.selectionToolbar button {
+  min-height: var(--ui-control-height);
+  border: 1px solid var(--border-strong);
+  border-radius: 0.42rem;
+  padding: 0 0.7rem;
+  color: var(--text-primary);
+  background: var(--surface-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.selectionToolbar span {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-size: var(--ui-font-small);
+}
+
+.selectionList {
+  overflow-y: auto;
+  min-height: 10rem;
+  max-height: min(25rem, 48vh);
+  margin-top: 0.6rem;
+  border-block: 1px solid var(--border-soft);
+}
+
+.selectionRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 3.25rem;
+  border-bottom: 1px solid var(--border-soft);
+  padding: 0.5rem 0.35rem;
+  cursor: pointer;
+}
+
+.selectionRow > span {
+  display: grid;
+  min-width: 0;
+  gap: 0.1rem;
+}
+
+.selectionRow strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selectionRow small,
+.loadingMore {
+  color: var(--text-muted);
+  font-size: var(--ui-font-caption);
+}
+
+.loadingMore {
+  text-align: center;
 }
 
 @media (max-width: 520px) {

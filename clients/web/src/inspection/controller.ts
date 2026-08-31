@@ -31,6 +31,7 @@ export class InspectionController {
   private syncing: Promise<void> | null = null;
   private retryMillis = 100;
   private readonly closeSignal = new AbortController();
+  private pendingFileSelection: { torrentId: string; offset: number } | null = null;
 
   constructor(
     application: InspectionApplication,
@@ -63,6 +64,17 @@ export class InspectionController {
     return result;
   }
 
+  showPendingFileSelection(torrentId: string, offset = 0): void {
+    this.pendingFileSelection = { torrentId, offset };
+    this.queueViews(desiredViewsFor(this.store.getState()));
+  }
+
+  clearPendingFileSelection(): void {
+    if (this.pendingFileSelection === null) return;
+    this.pendingFileSelection = null;
+    this.queueViews(desiredViewsFor(this.store.getState()));
+  }
+
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
@@ -76,6 +88,14 @@ export class InspectionController {
   }
 
   private queueViews(views: DesiredInspectionViews): void {
+    if (this.pendingFileSelection !== null) {
+      views = {
+        ...views,
+        torrentId: this.pendingFileSelection.torrentId,
+        detail: "files",
+        filePageOffset: this.pendingFileSelection.offset,
+      };
+    }
     if (!sameViews(this.desiredViews, views)) {
       this.desiredViews = views;
       this.desiredVersion += 1;
@@ -183,6 +203,7 @@ function sameViews(
     left.library === right.library &&
     left.torrentId === right.torrentId &&
     left.detail === right.detail &&
+    (left.filePageOffset ?? 0) === (right.filePageOffset ?? 0) &&
     left.logCapture?.profile === right.logCapture?.profile &&
     left.logCapture?.torrentId === right.logCapture?.torrentId
     && left.speed?.range === right.speed?.range

@@ -51,7 +51,7 @@ class FakeClient implements ApplicationViewClient {
       snapshot: {
         profile_id: "test",
         revision: "0",
-        storage: { roots: [], show_add_options: true },
+        storage: { roots: [], show_add_options: true, show_file_selection: true },
         client_settings: clientSettingsFixture(),
         torrents: [],
       },
@@ -85,7 +85,7 @@ class FakeClient implements ApplicationViewClient {
         snapshot: {
           type: "torrent_list",
           torrents: [],
-          storage: { roots: [], show_add_options: true },
+          storage: { roots: [], show_add_options: true, show_file_selection: true },
           client_settings: clientSettingsRuntimeFixture(),
         },
       },

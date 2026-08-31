@@ -9,6 +9,7 @@ import {
 import type { DesktopExternalActivation } from "../../desktop-external-intake";
 import {
   useInspectionCommand,
+  useInspectionController,
   useInspectionDispatch,
   useInspectionStore,
 } from "../context";
@@ -22,6 +23,7 @@ import {
 import { validateTorrentInput } from "../torrentInput";
 import { Icon } from "./Icon";
 import { AddTorrentDialog } from "./AddTorrentDialog";
+import { PendingFileSelectionDialog } from "./PendingFileSelectionDialog";
 import { MoreActionsMenu } from "./MoreActionsMenu";
 import { useTorrentActions } from "./TorrentActionContext";
 import styles from "./TorrentActions.module.css";
@@ -57,7 +59,29 @@ export function TorrentActions({
   const storage = useInspectionStore((state) => state.storage);
   const dispatch = useInspectionDispatch();
   const execute = useInspectionCommand();
+  const controller = useInspectionController();
   const revealTorrent = useInspectionStore((state) => state.revealTorrent);
+  const dataUnits = useInspectionStore((state) => state.presentation.dataUnits);
+  const pendingSelectionTorrent = useInspectionStore((state) =>
+    Object.values(state.torrents)
+      .filter((torrent) => torrent.awaitingFileSelection === true)
+      .sort(
+        (left, right) =>
+          (left.pendingFileSelectionPosition ?? Number.MAX_SAFE_INTEGER) -
+          (right.pendingFileSelectionPosition ?? Number.MAX_SAFE_INTEGER),
+      )[0],
+  );
+  const pendingSelectionFiles = useInspectionStore((state) =>
+    pendingSelectionTorrent === undefined
+      ? undefined
+      : state.filesByTorrent[pendingSelectionTorrent.id],
+  );
+  const pendingSelectionCount = useInspectionStore(
+    (state) =>
+      Object.values(state.torrents).filter(
+        (torrent) => torrent.awaitingFileSelection === true,
+      ).length,
+  );
   const { intake: externalIntake, snapshot: externalSnapshot } =
     useDesktopExternalIntake();
   const {
@@ -116,6 +140,8 @@ export function TorrentActions({
         clearInputOnSuccess,
       },
       defaultRoot.id,
+      true,
+      storage.showFileSelection === true,
     );
   };
 
@@ -123,12 +149,18 @@ export function TorrentActions({
     source: PendingAdd,
     storageRoot: string,
     startContent = true,
+    awaitFileSelection = false,
   ) => {
     if (addingRef.current) return false;
     addingRef.current = true;
     setAdding(true);
     try {
-      const result = await executePendingAdd(source, storageRoot, startContent);
+      const result = await executePendingAdd(
+        source,
+        storageRoot,
+        startContent,
+        awaitFileSelection,
+      );
       if (result.torrentId !== undefined) revealTorrent(result.torrentId);
       setStatus(result.message);
       if (source.type === "magnet" && source.clearInputOnSuccess) {
@@ -148,6 +180,7 @@ export function TorrentActions({
     source: PendingAdd,
     storageRoot: string,
     startContent: boolean,
+    awaitFileSelection: boolean,
   ) => {
     if (source.type === "magnet") {
       return execute({
@@ -155,6 +188,7 @@ export function TorrentActions({
         magnet: source.magnet,
         storageRoot,
         startContent,
+        ...(awaitFileSelection ? { awaitFileSelection: true } : {}),
       });
     }
     if (source.type === "external") {
@@ -164,6 +198,7 @@ export function TorrentActions({
           activationId: source.activation.id,
           storageRoot,
           startContent,
+          ...(awaitFileSelection ? { awaitFileSelection: true } : {}),
         });
       } finally {
         await externalIntake?.synchronize();
@@ -175,6 +210,7 @@ export function TorrentActions({
       source: bytes,
       storageRoot,
       startContent,
+      ...(awaitFileSelection ? { awaitFileSelection: true } : {}),
     });
   };
 
@@ -208,7 +244,12 @@ export function TorrentActions({
       setPendingAdd(source);
       return;
     }
-    void addToRoot(source, defaultRoot.id);
+    void addToRoot(
+      source,
+      defaultRoot.id,
+      true,
+      storage.showFileSelection === true,
+    );
   };
 
   const addTestTorrent = async (torrent: TestTorrentShortcut) => {
@@ -235,7 +276,13 @@ export function TorrentActions({
     addingRef.current = true;
     setAdding(true);
     try {
-      const result = await executePendingAdd(pendingAdd, rootId, startContent);
+      const fileSelectionEnabled = storage.showFileSelection === true;
+      const result = await executePendingAdd(
+        pendingAdd,
+        rootId,
+        fileSelectionEnabled ? true : startContent,
+        fileSelectionEnabled,
+      );
       if (result.torrentId !== undefined) revealTorrent(result.torrentId);
       let message = result.message;
       if (dontShowAgain) {
@@ -332,7 +379,12 @@ export function TorrentActions({
       setPendingAdd(source);
       return;
     }
-    void addToRoot(source, defaultRoot.id).then((accepted) => {
+    void addToRoot(
+      source,
+      defaultRoot.id,
+      true,
+      storage.showFileSelection === true,
+    ).then((accepted) => {
       if (
         !accepted &&
         externalIntake
@@ -351,7 +403,17 @@ export function TorrentActions({
     storage.defaultRoot,
     storage.roots,
     storage.showAddOptions,
+    storage.showFileSelection,
   ]);
+
+  useEffect(() => {
+    if (pendingSelectionTorrent === undefined) {
+      controller.clearPendingFileSelection();
+      return;
+    }
+    controller.showPendingFileSelection(pendingSelectionTorrent.id, 0);
+    return () => controller.clearPendingFileSelection();
+  }, [controller, pendingSelectionTorrent?.id]);
 
   return (
     <>
@@ -473,9 +535,51 @@ export function TorrentActions({
               : undefined
           }
           showCrostiniStorageHelp={showCrostiniStorageHelp}
+          fileSelectionEnabled={storage.showFileSelection === true}
           onChooseFolder={chooseFolder}
           onCancel={cancelPendingAdd}
           onConfirm={confirmAdd}
+        />
+      )}
+      {pendingSelectionTorrent === undefined ? null : (
+        <PendingFileSelectionDialog
+          torrent={pendingSelectionTorrent}
+          files={pendingSelectionFiles}
+          rootLabel={
+            storage.roots.find(
+              (root) => root.id === pendingSelectionTorrent.storageRoot,
+            )?.label ?? pendingSelectionTorrent.storageRoot ?? "Current folder"
+          }
+          queuedCount={Math.max(0, pendingSelectionCount - 1)}
+          dataUnits={dataUnits}
+          onPage={(offset) =>
+            controller.showPendingFileSelection(
+              pendingSelectionTorrent.id,
+              offset,
+            )
+          }
+          onConfirm={async (base, overrides, disableFuture) => {
+            const catalogId = pendingSelectionTorrent.fileCatalogId;
+            if (catalogId === null || catalogId === undefined) {
+              throw new Error("File metadata is not ready yet");
+            }
+            const result = await execute({
+              type: "confirm_pending_file_selection",
+              torrentId: pendingSelectionTorrent.id,
+              catalogId,
+              base,
+              overrides,
+              disableFuture,
+            });
+            setStatus(result.message);
+          }}
+          onCancel={async () => {
+            const result = await execute({
+              type: "cancel_pending_add",
+              torrentId: pendingSelectionTorrent.id,
+            });
+            setStatus(result.message);
+          }}
         />
       )}
     </>

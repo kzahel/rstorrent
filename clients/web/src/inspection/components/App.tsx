@@ -530,6 +530,9 @@ function AppContent({
           onShowAddOptionsChange={async (show) => {
             await execute({ type: "set_show_add_options", show });
           }}
+          onShowFileSelectionChange={async (show) => {
+            await execute({ type: "set_show_file_selection", show });
+          }}
           onRemoveRoot={async (rootId) => {
             await execute({ type: "remove_download_root", rootId });
           }}

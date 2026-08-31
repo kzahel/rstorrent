@@ -257,6 +257,7 @@ export class LiveApplication implements InspectionApplication {
         request_id: `web-${this.requestInstanceId}-${this.requestSequence++}`,
         storage_root: command.storageRoot,
         start_content: command.startContent,
+        await_file_selection: command.awaitFileSelection ?? false,
         selection: { type: "all" },
         source_length: command.source.byteLength,
       };
@@ -289,6 +290,7 @@ export class LiveApplication implements InspectionApplication {
           request_id: `desktop-${this.requestInstanceId}-${this.requestSequence++}`,
           storage_root: command.storageRoot,
           start_content: command.startContent,
+          await_file_selection: command.awaitFileSelection ?? false,
         },
         this.lifetime.signal,
       );
@@ -309,6 +311,9 @@ export class LiveApplication implements InspectionApplication {
       command.type !== "download_files" &&
       command.type !== "set_default_download_root" &&
       command.type !== "set_show_add_options" &&
+      command.type !== "set_show_file_selection" &&
+      command.type !== "confirm_pending_file_selection" &&
+      command.type !== "cancel_pending_add" &&
       command.type !== "update_client_settings" &&
       command.type !== "update_torrent_settings" &&
       command.type !== "remove_download_root" &&
@@ -341,6 +346,7 @@ export class LiveApplication implements InspectionApplication {
               magnet: command.magnet,
               storage_root: command.storageRoot,
               start_content: command.startContent,
+              await_file_selection: command.awaitFileSelection ?? false,
               skip_files: [],
             }
           : command.type === "set_file_priority"
@@ -367,6 +373,28 @@ export class LiveApplication implements InspectionApplication {
                   }
             : command.type === "set_show_add_options"
               ? { type: "set_show_add_options", show: command.show }
+            : command.type === "set_show_file_selection"
+              ? { type: "set_show_file_selection", show: command.show }
+            : command.type === "confirm_pending_file_selection"
+              ? {
+                  type: "confirm_pending_file_selection",
+                  torrent_id: command.torrentId,
+                  catalog_id: command.catalogId,
+                  base: command.base,
+                  overrides: command.overrides.map((entry) => ({
+                    range: {
+                      start: entry.start,
+                      end_exclusive: entry.endExclusive,
+                    },
+                    selected: entry.selected,
+                  })),
+                  disable_future: command.disableFuture,
+                }
+            : command.type === "cancel_pending_add"
+              ? {
+                  type: "cancel_pending_add",
+                  torrent_id: command.torrentId,
+                }
               : command.type === "update_client_settings"
                 ? { type: "update_client_settings", patch: command.patch }
               : command.type === "update_torrent_settings"
@@ -453,6 +481,14 @@ export class LiveApplication implements InspectionApplication {
               ? command.show
                 ? "Add options will be shown"
                 : "Add options will be skipped when a default is available"
+              : command.type === "set_show_file_selection"
+                ? command.show
+                  ? "File selection will be shown for new torrents"
+                  : "New torrents will start with all files"
+                : command.type === "confirm_pending_file_selection"
+                  ? "File selection confirmed"
+                  : command.type === "cancel_pending_add"
+                    ? "Pending torrent cancelled"
               : command.type === "update_client_settings"
                 ? "Connection and seeding settings saved"
               : command.type === "update_torrent_settings"
@@ -693,6 +729,7 @@ export class LiveApplication implements InspectionApplication {
         type: "torrent_files",
         view_id: FILES_VIEW_ID,
         torrent_id: views.torrentId,
+        page: { offset: views.filePageOffset ?? 0, limit: 1_024 },
         delivery: { min_interval_millis: 250 },
       });
     }
@@ -1246,6 +1283,7 @@ function mapTorrent(torrent: TorrentView): TorrentRow {
   }
   return {
     id: torrent.torrent_id,
+    storageRoot: torrent.storage_root,
     name:
       torrent.display_name ??
       torrent.source_display_name ??
@@ -1288,6 +1326,14 @@ function mapTorrent(torrent: TorrentView): TorrentRow {
     removalState: torrent.removal_state ?? null,
     deleteDataSupported: torrent.delete_data_supported,
     forceRecheckAvailable: torrent.force_recheck_available,
+    awaitingFileSelection: torrent.awaiting_file_selection,
+    pendingFileSelectionPosition:
+      torrent.pending_file_selection_position ?? null,
+    fileCatalogId: torrent.file_catalog_id ?? null,
+    selectableFileCount: torrent.selectable_file_count,
+    selectedFileCount: torrent.selected_file_count,
+    selectableFileBytes: torrent.selectable_file_bytes,
+    selectedFileBytes: torrent.selected_file_bytes,
     infoHash,
     protocolIdentities: torrent.protocol_identities,
     error: torrent.error ?? null,
@@ -1367,6 +1413,7 @@ function mapStorage(settings: StorageSettingsSnapshot): DownloadStorageSettings 
     roots: settings.roots.map(mapStorageRoot),
     defaultRoot: settings.default_root ?? null,
     showAddOptions: settings.show_add_options,
+    showFileSelection: settings.show_file_selection,
   };
 }
 

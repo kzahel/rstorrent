@@ -532,6 +532,7 @@ describe("multiplexed application WebSocket adapter", () => {
         expected_revision: null,
         storage_root: "root-a",
         start_content: true,
+        await_file_selection: false,
         selection: { type: "all" },
         source_length: source.byteLength,
       },
@@ -607,7 +608,7 @@ function opened(id = viewSetId): OpenViewSetResponse {
           snapshot: {
             type: "torrent_list",
             torrents: [],
-            storage: { roots: [], show_add_options: true },
+            storage: { roots: [], show_add_options: true, show_file_selection: true },
             client_settings: clientSettingsRuntimeFixture(),
           },
         },
@@ -656,7 +657,7 @@ function commandResponse(requestId: string): ResponseEnvelope {
     snapshot: {
       profile_id: "test",
       revision: "0",
-      storage: { roots: [], show_add_options: true },
+      storage: { roots: [], show_add_options: true, show_file_selection: true },
       client_settings: clientSettingsFixture(),
       torrents: [],
     },

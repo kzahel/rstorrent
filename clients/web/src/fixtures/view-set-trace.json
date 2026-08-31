@@ -46,6 +46,11 @@
                 "storage_state": "available",
                 "storage_root": "downloads",
                 "metadata_available": true,
+                "awaiting_file_selection": false,
+                "selectable_file_count": 0,
+                "selected_file_count": 0,
+                "selectable_file_bytes": "0",
+                "selected_file_bytes": "0",
                 "piece_count": 3,
                 "total_size_bytes": "49152",
                 "verified_piece_count": 0,
@@ -86,7 +91,8 @@
             ],
             "storage": {
               "roots": [],
-              "show_add_options": true
+              "show_add_options": true,
+              "show_file_selection": true
             },
             "client_settings": {
               "configured": {
@@ -257,6 +263,11 @@
                 "storage_state": "available",
                 "storage_root": "downloads",
                 "metadata_available": true,
+                "awaiting_file_selection": false,
+                "selectable_file_count": 0,
+                "selected_file_count": 0,
+                "selectable_file_bytes": "0",
+                "selected_file_bytes": "0",
                 "piece_count": 3,
                 "total_size_bytes": "49152",
                 "verified_piece_count": 1,
@@ -338,6 +349,11 @@
                 "storage_state": "available",
                 "storage_root": "downloads",
                 "metadata_available": true,
+                "awaiting_file_selection": false,
+                "selectable_file_count": 0,
+                "selected_file_count": 0,
+                "selectable_file_bytes": "0",
+                "selected_file_bytes": "0",
                 "piece_count": 3,
                 "total_size_bytes": "49152",
                 "verified_piece_count": 3,
@@ -383,7 +399,8 @@
             ],
             "storage": {
               "roots": [],
-              "show_add_options": true
+              "show_add_options": true,
+              "show_file_selection": true
             },
             "client_settings": {
               "configured": {

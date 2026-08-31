@@ -105,7 +105,7 @@ describe("magnet export validation", () => {
       snapshot: {
         profile_id: "default",
         revision: "4",
-        storage: { roots: [], show_add_options: true },
+        storage: { roots: [], show_add_options: true, show_file_selection: true },
         torrents: [],
       },
     };
@@ -131,7 +131,7 @@ describe("client settings validation", () => {
         snapshot: {
           profile_id: "default",
           revision: "0",
-          storage: { roots: [], show_add_options: true },
+          storage: { roots: [], show_add_options: true, show_file_selection: true },
           torrents: [],
         },
       }),
@@ -1144,7 +1144,7 @@ function torrentBatch(displayName: string) {
         view_id: "library",
         snapshot: {
           type: "torrent_list" as const,
-          storage: { roots: [], show_add_options: true },
+          storage: { roots: [], show_add_options: true, show_file_selection: true },
           client_settings: clientSettingsRuntimeFixture(),
           torrents: [
             {
@@ -1160,6 +1160,11 @@ function torrentBatch(displayName: string) {
               storage_state: "available",
               storage_root: "downloads",
               metadata_available: true,
+              awaiting_file_selection: false,
+              selectable_file_count: 1,
+              selected_file_count: 1,
+              selectable_file_bytes: "65536",
+              selected_file_bytes: "65536",
               piece_count: 1,
               total_size_bytes: "65536",
               verified_piece_count: 0,

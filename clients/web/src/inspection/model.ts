@@ -92,6 +92,7 @@ export interface DownloadStorageSettings {
   readonly roots: readonly DownloadRoot[];
   readonly defaultRoot: string | null;
   readonly showAddOptions: boolean;
+  readonly showFileSelection?: boolean;
 }
 
 export type ViewMaterialization =
@@ -133,6 +134,7 @@ export interface DesiredInspectionViews {
     | "speed"
     | "logs"
     | null;
+  readonly filePageOffset?: number;
   readonly logCapture: {
     readonly profile: "normal" | "detailed" | "trace";
     readonly torrentId: string | null;
@@ -206,6 +208,7 @@ export interface TorrentPreparation {
 export interface TorrentRow {
   readonly id: string;
   readonly name: string;
+  readonly storageRoot?: string;
   readonly status: TorrentStatus;
   readonly operationalState: TorrentOperationalState;
   readonly queuePosition: number | null;
@@ -237,6 +240,13 @@ export interface TorrentRow {
   readonly removalState: "pending" | "awaiting_platform" | "failed" | null;
   readonly deleteDataSupported: boolean;
   readonly forceRecheckAvailable: boolean;
+  readonly awaitingFileSelection?: boolean;
+  readonly pendingFileSelectionPosition?: number | null;
+  readonly fileCatalogId?: string | null;
+  readonly selectableFileCount?: number;
+  readonly selectedFileCount?: number;
+  readonly selectableFileBytes?: string;
+  readonly selectedFileBytes?: string;
   readonly infoHash: string;
   readonly protocolIdentities?: {
     readonly v1?: string | null;
@@ -654,18 +664,21 @@ export type InspectionCommand =
       readonly magnet: string;
       readonly storageRoot: string;
       readonly startContent: boolean;
+      readonly awaitFileSelection?: boolean;
     }
   | {
       readonly type: "add_torrent_bytes";
       readonly source: ArrayBuffer;
       readonly storageRoot: string;
       readonly startContent: boolean;
+      readonly awaitFileSelection?: boolean;
     }
   | {
       readonly type: "add_external_torrent";
       readonly activationId: string;
       readonly storageRoot: string;
       readonly startContent: boolean;
+      readonly awaitFileSelection?: boolean;
     }
   | {
       readonly type: "set_file_priority";
@@ -686,6 +699,20 @@ export type InspectionCommand =
   | { readonly type: "choose_download_root"; readonly repairRoot?: string }
   | { readonly type: "set_default_download_root"; readonly rootId: string }
   | { readonly type: "set_show_add_options"; readonly show: boolean }
+  | { readonly type: "set_show_file_selection"; readonly show: boolean }
+  | {
+      readonly type: "confirm_pending_file_selection";
+      readonly torrentId: string;
+      readonly catalogId: string;
+      readonly base: "current" | "all" | "none";
+      readonly overrides: readonly {
+        readonly start: number;
+        readonly endExclusive: number;
+        readonly selected: boolean;
+      }[];
+      readonly disableFuture: boolean;
+    }
+  | { readonly type: "cancel_pending_add"; readonly torrentId: string }
   | { readonly type: "update_client_settings"; readonly patch: ClientSettingsPatch }
   | {
       readonly type: "update_torrent_settings";

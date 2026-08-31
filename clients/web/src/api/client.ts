@@ -78,6 +78,7 @@ export interface ExternalTorrentAddRequest {
   readonly request_id: string;
   readonly storage_root: string;
   readonly start_content: boolean;
+  readonly await_file_selection: boolean;
 }
 
 export interface MediaOpenTarget {

@@ -466,6 +466,17 @@ function validateServiceSnapshot(value: unknown): void {
     boundedString(torrent.state, "torrent state", 32);
     boundedString(torrent.storage_state, "storage state", 32);
     boolean(torrent.metadata_available, "metadata available");
+    boolean(torrent.awaiting_file_selection, "awaiting file selection");
+    optionalInteger(
+      torrent.pending_file_selection_position,
+      "pending file selection position",
+      500,
+    );
+    optionalString(torrent.file_catalog_id, "file catalog identity", 64);
+    boundedInteger(torrent.selectable_file_count, "selectable file count", 0, 374_998);
+    boundedInteger(torrent.selected_file_count, "selected file count", 0, 374_998);
+    decimal(torrent.selectable_file_bytes, "selectable file bytes");
+    decimal(torrent.selected_file_bytes, "selected file bytes");
     boundedInteger(torrent.piece_count, "piece count", 0, MAX_U32);
     boundedInteger(
       torrent.verified_piece_count,
@@ -1062,7 +1073,7 @@ function validateViewPatch(value: unknown): void {
   switch (string(patch.type, "view patch type")) {
     case "torrent_list":
       array(patch.upsert, "torrent upserts").forEach(validateTorrentView);
-      validateRowUpdates(patch.updates, "torrent", "torrent_id", torrentId, 28);
+      validateRowUpdates(patch.updates, "torrent", "torrent_id", torrentId, 35);
       array(patch.removed, "torrent removals").forEach(torrentId);
       validateDisjointRowOperations(
         patch.upsert,
@@ -1541,6 +1552,7 @@ function validateStorageSettings(value: unknown): void {
     }
   }
   boolean(settings.show_add_options, "show add options");
+  boolean(settings.show_file_selection, "show file selection");
 }
 
 function validateClientSettings(value: unknown): void {
@@ -2074,6 +2086,45 @@ export function validateTorrentView(value: unknown): asserts value is TorrentVie
   );
   validateTorrentTransferLimits(torrent.transfer_limits, "torrent transfer limits");
   boolean(torrent.metadata_available, "metadata available");
+  boolean(torrent.awaiting_file_selection, "awaiting file selection");
+  optionalInteger(
+    torrent.pending_file_selection_position,
+    "pending file selection position",
+    500,
+  );
+  optionalString(torrent.file_catalog_id, "file catalog identity", 64);
+  const selectableFileCount = boundedInteger(
+    torrent.selectable_file_count,
+    "selectable file count",
+    0,
+    374_998,
+  );
+  const selectedFileCount = boundedInteger(
+    torrent.selected_file_count,
+    "selected file count",
+    0,
+    374_998,
+  );
+  const selectableFileBytes = decimal(
+    torrent.selectable_file_bytes,
+    "selectable file bytes",
+  );
+  const selectedFileBytes = decimal(
+    torrent.selected_file_bytes,
+    "selected file bytes",
+  );
+  if (selectedFileCount > selectableFileCount) {
+    throw new ContractError("selected file count exceeds selectable files");
+  }
+  if (BigInt(selectedFileBytes) > BigInt(selectableFileBytes)) {
+    throw new ContractError("selected file bytes exceed selectable bytes");
+  }
+  if (
+    torrent.awaiting_file_selection === true &&
+    torrent.pending_file_selection_position === null
+  ) {
+    throw new ContractError("pending file selection has no queue position");
+  }
   boundedInteger(torrent.piece_count, "piece count", 0, MAX_U32);
   nullableDecimal(torrent.total_size_bytes, "torrent total size");
   boundedInteger(

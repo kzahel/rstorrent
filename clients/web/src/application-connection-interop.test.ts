@@ -101,6 +101,7 @@ liveDescribe("multiplexed application connection interop", () => {
           magnet,
           storage_root: "downloads",
           start_content: true,
+          await_file_selection: false,
           skip_files: [],
         },
       };

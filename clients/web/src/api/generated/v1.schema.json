@@ -251,6 +251,10 @@
     },
     "AddTorrentBytesRequest": {
       "properties": {
+        "await_file_selection": {
+          "default": false,
+          "type": "boolean"
+        },
         "expected_revision": {
           "type": [
             "string",
@@ -2102,6 +2106,10 @@
       "oneOf": [
         {
           "properties": {
+            "await_file_selection": {
+              "default": false,
+              "type": "boolean"
+            },
             "magnet": {
               "type": "string"
             },
@@ -2280,6 +2288,75 @@
           "required": [
             "type",
             "show"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "show": {
+              "type": "boolean"
+            },
+            "type": {
+              "const": "set_show_file_selection",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "show"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "base": {
+              "$ref": "#/$defs/PendingFileSelectionBase"
+            },
+            "catalog_id": {
+              "type": "string"
+            },
+            "disable_future": {
+              "default": false,
+              "type": "boolean"
+            },
+            "overrides": {
+              "items": {
+                "$ref": "#/$defs/FileSelectionOverride"
+              },
+              "type": "array"
+            },
+            "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
+              "type": "string"
+            },
+            "type": {
+              "const": "confirm_pending_file_selection",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id",
+            "catalog_id",
+            "base",
+            "overrides"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
+              "type": "string"
+            },
+            "type": {
+              "const": "cancel_pending_add",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id"
           ],
           "type": "object"
         },
@@ -3794,6 +3871,21 @@
           "type": "object"
         }
       ]
+    },
+    "FileSelectionOverride": {
+      "properties": {
+        "range": {
+          "$ref": "#/$defs/FileIndexRange"
+        },
+        "selected": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "range",
+        "selected"
+      ],
+      "type": "object"
     },
     "FileSelectionView": {
       "enum": [
@@ -5813,6 +5905,14 @@
       ],
       "type": "object"
     },
+    "PendingFileSelectionBase": {
+      "enum": [
+        "current",
+        "all",
+        "none"
+      ],
+      "type": "string"
+    },
     "PortMappingFailureStage": {
       "enum": [
         "discovery",
@@ -6316,7 +6416,8 @@
           "$ref": "#/$defs/StorageSettingsSnapshot",
           "default": {
             "roots": [],
-            "show_add_options": true
+            "show_add_options": true,
+            "show_file_selection": true
           }
         },
         "torrents": {
@@ -6664,6 +6765,10 @@
           "type": "array"
         },
         "show_add_options": {
+          "type": "boolean"
+        },
+        "show_file_selection": {
+          "default": true,
           "type": "boolean"
         }
       },
@@ -7085,6 +7190,128 @@
             },
             "value": {
               "type": "boolean"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "awaiting_file_selection",
+              "type": "string"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "pending_file_selection_position",
+              "type": "string"
+            },
+            "value": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "file_catalog_id",
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "selectable_file_count",
+              "type": "string"
+            },
+            "value": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "selected_file_count",
+              "type": "string"
+            },
+            "value": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "selectable_file_bytes",
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "selected_file_bytes",
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
             }
           },
           "required": [
@@ -7629,6 +7856,10 @@
           "default": false,
           "type": "boolean"
         },
+        "awaiting_file_selection": {
+          "default": false,
+          "type": "boolean"
+        },
         "delete_data_supported": {
           "default": false,
           "type": "boolean"
@@ -7651,6 +7882,12 @@
             "null"
           ]
         },
+        "file_catalog_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "force_recheck_available": {
           "default": false,
           "type": "boolean"
@@ -7666,6 +7903,14 @@
         },
         "metadata_available": {
           "type": "boolean"
+        },
+        "pending_file_selection_position": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "piece_count": {
           "format": "uint32",
@@ -7684,6 +7929,26 @@
               "type": "null"
             }
           ]
+        },
+        "selectable_file_bytes": {
+          "default": "",
+          "type": "string"
+        },
+        "selectable_file_count": {
+          "default": 0,
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "selected_file_bytes": {
+          "default": "",
+          "type": "string"
+        },
+        "selected_file_count": {
+          "default": 0,
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
         },
         "selection_default": {
           "$ref": "#/$defs/FilePriority",
@@ -7788,6 +8053,10 @@
         "archived": {
           "type": "boolean"
         },
+        "awaiting_file_selection": {
+          "default": false,
+          "type": "boolean"
+        },
         "checking": {
           "anyOf": [
             {
@@ -7835,6 +8104,12 @@
         "eta_payload_download_rate_bytes": {
           "type": "string"
         },
+        "file_catalog_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "force_recheck_available": {
           "type": "boolean"
         },
@@ -7857,6 +8132,14 @@
         },
         "payload_download_rate_bytes": {
           "type": "string"
+        },
+        "pending_file_selection_position": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "piece_count": {
           "format": "uint32",
@@ -7902,6 +8185,26 @@
           "default": {
             "admission": "ineligible"
           }
+        },
+        "selectable_file_bytes": {
+          "default": "",
+          "type": "string"
+        },
+        "selectable_file_count": {
+          "default": 0,
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "selected_file_bytes": {
+          "default": "",
+          "type": "string"
+        },
+        "selected_file_count": {
+          "default": 0,
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
         },
         "source_display_name": {
           "type": [

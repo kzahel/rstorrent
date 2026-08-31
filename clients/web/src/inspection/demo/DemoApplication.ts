@@ -221,6 +221,9 @@ export class DemoApplication implements InspectionApplication {
       case "choose_download_root":
       case "set_default_download_root":
       case "set_show_add_options":
+      case "set_show_file_selection":
+      case "confirm_pending_file_selection":
+      case "cancel_pending_add":
       case "remove_download_root":
         return rejected("Download folder management is unavailable in demo scenarios");
       case "update_client_settings":
