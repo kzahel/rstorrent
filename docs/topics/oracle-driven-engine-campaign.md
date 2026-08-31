@@ -709,14 +709,16 @@ present evidence.
 
 Decision-complete Tactical
 [`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md) now owns
-the leading unrelated policy candidate. It is Ready with the exact pinned
-libtorrent seed-goal predicate, rank, active-seed/inactivity admission,
-durable counter/timer semantics, and defaults; goal completion lowers
-automatic priority rather than stopping torrent intent. Embedded playback,
-Android streaming presentation, and stable sharing retain distinct ownership
-and security boundaries. The post-discovery Ubuntu stall remains one non-
-reproducible changing-swarm observation and is not authority for an unplanned
-change.
+the leading unrelated policy candidate and is Active by explicit user
+direction. Its first task-free gate implements the exact pinned defaults,
+seed-goal predicate, rank, applicable-rate classification, and delayed
+inactive/active transitions with 14 passing focused tests. Persistence,
+accounting, combined admission, clients, and controlled interoperability are
+the next executable gates. Goal completion lowers automatic priority rather
+than stopping torrent intent. Embedded playback, Android streaming
+presentation, and stable sharing retain distinct ownership and security
+boundaries. The post-discovery Ubuntu stall remains one non-reproducible
+changing-swarm observation and is not authority for an unplanned change.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the

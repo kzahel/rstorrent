@@ -850,6 +850,11 @@ exactly.
 
 ### Active
 
+- Implement **Tactical `201`** end to end. Its first task-free gate now passes
+  exact pinned-default, any-one-threshold goal, seed-rank, tracker/live
+  fallback, overflow, applicable-rate, and delayed inactivity tests.
+  Persistence, accounting, combined admission, generated clients, React/
+  Compose, platform builds, and controlled interoperability remain open.
 - Finish qualification evidence for **Tactical `196`**. The implementation
   now supplies the default-compiled lazy desktop/headless endpoint,
   authenticated direct-only signaling, completed-file **Save file...**,
@@ -881,17 +886,6 @@ exactly.
 
 ### Ready
 
-- Implement decision-complete Tactical
-  [`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md). It
-  adopts the exact pinned libtorrent global active-seed limit, durable payload
-  totals and unpaused active/finished/seeding timers, all-three seed-goal
-  predicate, bit-ranked demand order, inactive exemption, and defaults.
-  Reaching any one threshold makes the goal met and lowers automatic priority;
-  it does not stop the torrent or rewrite desired-running intent. The bounded
-  slice includes fresh schema 23, one combined admission/accounting owner,
-  generated React/Compose truth, Android lifetime composition, and controlled
-  pinned-libtorrent evidence; per-torrent goals and hard stop policy remain
-  excluded.
 - Declare the future first supported version and freeze its fresh application
   identities and persistence/API baseline only from that version forward.
   Complete changelog, privacy/support presentation, and the repeatable beta

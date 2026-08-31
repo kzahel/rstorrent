@@ -22,6 +22,7 @@ mod media;
 mod media_catalog_views;
 mod profile_reset;
 mod reachability;
+mod seed_policy;
 mod session_network;
 mod session_utp;
 mod settings;

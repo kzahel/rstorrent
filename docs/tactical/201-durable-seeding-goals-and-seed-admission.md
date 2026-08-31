@@ -1,9 +1,10 @@
 # Tactical 201: Durable Seeding Goals And Seed Admission
 
-Status: **Decision-complete; Ready for implementation.** User direction on
-2026-08-31 selected the exact pinned libtorrent implementation semantics for
-the seed queue, durable counters, timers, and goal ranking. This document is
-planning only; no implementation is authorized or claimed by its creation.
+Status: **Active.** User direction on 2026-08-31 selected the exact pinned
+libtorrent implementation semantics for the seed queue, durable counters,
+timers, and goal ranking. End-to-end implementation was authorized on the same
+date. The task-free policy gate is implemented; persistence, runtime admission,
+generated clients, presentation, and end-to-end evidence remain open.
 
 Topics: `incoming-reachability-and-seeding`, `client-persistence`,
 `application-control`, `client-surfaces`, `android-jstorrent-replacement`,
@@ -20,6 +21,22 @@ retained peer-transfer totals Tactical
 [`179`](179-disposable-incubation-state-epoch.md), direct-storage Tactical
 [`191`](191-direct-filesystem-storage.md), and Android lifetime Tactical
 [`200`](200-android-product-background-lifecycle.md).
+
+## Implementation Progress
+
+The first task-free gate now provides independently authored Rust values for
+the exact defaults, any-one-threshold goal predicate, rank flags and demand,
+tracker/live fallback, full/selected-finished scale, strict applicable-rate
+classification, and delayed inactive/active transitions. Fourteen focused
+tests pass. This gate creates no task, socket, database field, setting, client
+contract, or behavior claim; the module's temporary dead-code allowance is
+removed when the application owner consumes it in the next gates.
+
+Validation at this checkpoint:
+
+- `cargo fmt --all -- --check`;
+- `cargo test -p rstorrent-session seed_policy`; and
+- `cargo clippy -p rstorrent-session --lib -- -D warnings`.
 
 ## Decision And Desired Outcome
 
