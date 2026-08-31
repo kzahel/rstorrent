@@ -375,10 +375,14 @@ the shared Rust HTTP server, and Media3. On physical ChromeOS 150 / ARC API 33
   package cleanup.
 
 The two exact network/private-activity instrumentation tests and the two
-focused Compose Play/Open tests pass on the same Chromebook. An exploratory
-whole `ProductNavigationTest` run also encountered four unrelated existing
-form-factor-sensitive cases; rerunning the four Tactical 202 cases alone
-passed, so those cases are not claimed as a whole-class gate.
+focused Compose Play/Open tests pass on the same Chromebook. The exploratory
+whole `ProductNavigationTest` run initially exposed four host-timing-sensitive
+failures: ChromeOS freeform-window activation could consume an injected touch
+after Compose had already reported idle, and lazy detail rows needed explicit
+scrolling before visibility assertions. The semantics-focused suite now uses
+direct accessibility actions and waits for explicitly scrolled rows to become
+displayed; two consecutive complete installed-class runs pass 15/15 on the
+same physical Chromebook.
 
 Final repository evidence:
 
@@ -390,7 +394,8 @@ Final repository evidence:
   clients/web` pass; Vitest reports 367 passed and two skipped tests;
 - `clients/android/build.sh` passes both x86_64 and arm64-v8a Rust/UniFFI
   builds, 96 JVM tests, and debug APK assembly;
-- `:app:assembleDebugAndroidTest` passes, the four focused installed tests
+- `:app:assembleDebugAndroidTest` passes, the four focused installed tests and
+  two consecutive runs of the complete 15-test `ProductNavigationTest` class
   pass, and `python3 -m py_compile clients/android/run_bootstrap.py` passes;
   and
 - the physical `product-media-playback` profile returns `result=pass` and
