@@ -8529,6 +8529,12 @@ mod tests {
         let resources = service.session_download_resource_snapshot();
         assert_eq!(resources.registered_generations, 3);
         assert_eq!(resources.active_storage_hashes, 0);
+        let accounting = service
+            .accounting_high_water()
+            .expect("seed-scale accounting high water");
+        assert_eq!(accounting.tracked_rows, 503);
+        assert_eq!(accounting.uncommitted_payload_bytes, 0);
+        assert!(accounting.dirty_rows <= 500);
         {
             let store = service.store_mut().expect("store after seed admission");
             for torrent_id in &seed_ids {
@@ -16901,12 +16907,12 @@ mod tests {
         })
         .await
         .expect("final incoming payload reaches durable accounting");
-        assert!(
+        assert_eq!(
             first
                 .accounting_high_water()
                 .unwrap()
-                .uncommitted_payload_bytes
-                >= 7
+                .uncommitted_payload_bytes,
+            7
         );
 
         let zero_slots = ClientSettings {

@@ -142,6 +142,7 @@ fn bounded_add(current: u64, delta: u64) -> (u64, bool) {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct AccountingHighWater {
+    pub(crate) tracked_rows: usize,
     pub(crate) uncommitted_payload_bytes: u64,
     pub(crate) uncommitted_timer_seconds: u64,
     pub(crate) dirty_rows: usize,
@@ -197,6 +198,7 @@ impl AccountingModel {
             .high_water
             .saturation_events
             .saturating_add(saturation_events);
+        self.high_water.tracked_rows = self.high_water.tracked_rows.max(self.entries.len());
         Ok(())
     }
 
@@ -665,6 +667,9 @@ mod tests {
         assert_eq!(current.active_seconds, 4);
         assert_eq!(current.finished_seconds, 2);
         assert_eq!(current.seeding_seconds, 2);
+        assert_eq!(model.high_water.tracked_rows, 1);
+        assert_eq!(model.high_water.uncommitted_timer_seconds, 4);
+        assert_eq!(model.high_water.dirty_rows, 1);
     }
 
     #[test]
@@ -686,6 +691,13 @@ mod tests {
                 .observe_payload(id, 1, 1, 0, Duration::from_secs(5))
                 .unwrap()
         );
+        assert_eq!(model.high_water.tracked_rows, 1);
+        assert_eq!(
+            model.high_water.uncommitted_payload_bytes,
+            PAYLOAD_FLUSH_THRESHOLD
+        );
+        assert_eq!(model.high_water.uncommitted_timer_seconds, 0);
+        assert_eq!(model.high_water.dirty_rows, 1);
         let prepared = model.prepare_flush();
         assert_eq!(prepared.len(), 1);
         model.acknowledge(&prepared, Duration::from_secs(5));

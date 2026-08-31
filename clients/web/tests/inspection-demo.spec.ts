@@ -808,6 +808,83 @@ test("interface size settings persist and keep geometry coherent", async ({
   await capture(page, "rstorrent-settings-phone.png");
 });
 
+test("seeding priority settings stay truthful across responsive layouts", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1200, height: 800 });
+  await openScenario(page, "healthy-download", 42_000);
+
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Settings" });
+  await dialog.getByRole("tab", { name: "Connection & seeding" }).click();
+  const priority = dialog.getByRole("group", {
+    name: "Automatic seeding priority",
+  });
+  await expect(
+    priority.getByText(/Meeting a goal does not stop a torrent/i),
+  ).toBeVisible();
+  await expect(
+    priority.getByRole("spinbutton", { name: "Active seeds" }),
+  ).toHaveValue("5");
+  await expect(
+    priority.getByRole("spinbutton", {
+      name: "Share-ratio priority goal (%)",
+    }),
+  ).toHaveValue("200");
+  await expect(
+    priority.getByRole("spinbutton", {
+      name: "Finished/download time priority goal (%)",
+    }),
+  ).toHaveValue("700");
+  await expect(
+    priority.getByRole("spinbutton", {
+      name: "Finished-time priority goal (seconds)",
+    }),
+  ).toHaveValue("86400");
+  await expect(dialog.getByText("Active seeds: 0 counted of 5.")).toBeVisible();
+  const unlimited = priority.getByRole("checkbox", {
+    name: /Unlimited active seeds/,
+  });
+  await unlimited.check();
+  await expect(
+    priority.getByRole("spinbutton", { name: "Active seeds" }),
+  ).toBeDisabled();
+  expect(
+    (await new AxeBuilder({ page }).analyze()).violations.filter(
+      (violation) =>
+        violation.impact === "serious" || violation.impact === "critical",
+    ),
+  ).toEqual([]);
+  await capture(page, "rstorrent-seeding-settings-wide.png");
+
+  await page.keyboard.press("Escape");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const phoneDialog = page.getByRole("dialog", { name: "Settings" });
+  await phoneDialog.getByRole("tab", { name: "Connection & seeding" }).click();
+  const phonePriority = phoneDialog.getByRole("group", {
+    name: "Automatic seeding priority",
+  });
+  await phonePriority.scrollIntoViewIfNeeded();
+  await expect(
+    phonePriority.getByText(/fixed shared 500-torrent safety ceiling/i),
+  ).toBeVisible();
+  await expect
+    .poll(async () => Math.round((await phoneDialog.boundingBox())?.width ?? 0))
+    .toBe(390);
+  const horizontalOverflow = await phoneDialog.evaluate(
+    (element) => element.scrollWidth - element.clientWidth,
+  );
+  expect(horizontalOverflow).toBeLessThanOrEqual(0);
+  expect(
+    (await new AxeBuilder({ page }).analyze()).violations.filter(
+      (violation) =>
+        violation.impact === "serious" || violation.impact === "critical",
+    ),
+  ).toEqual([]);
+  await capture(page, "rstorrent-seeding-settings-phone.png");
+});
+
 test("peer transfer limits stay operable across responsive layouts", async ({
   page,
 }) => {
