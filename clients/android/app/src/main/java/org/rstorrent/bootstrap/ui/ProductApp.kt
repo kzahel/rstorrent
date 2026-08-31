@@ -515,6 +515,7 @@ private fun ProductNavHost(
                     service?.setFilePriority(torrentId, file.fileIndex, priority)
                 },
                 onDownloadFile = { service?.downloadFileNow(torrentId, it.fileIndex) },
+                onPlayFile = { file -> service?.playMedia(torrentId, file) },
                 onOpenFile = { file ->
                     torrent?.displayName?.let {
                         service?.openCompletedFile(torrent.storageRoot, it, file)
@@ -972,6 +973,7 @@ private fun TorrentDetailScreen(
     onPresent: (TorrentPresentation) -> Unit,
     onSetFilePriority: (org.rstorrent.session.uniffi.FileView, FilePriority) -> Unit,
     onDownloadFile: (org.rstorrent.session.uniffi.FileView) -> Unit,
+    onPlayFile: (org.rstorrent.session.uniffi.FileView) -> Unit,
     onOpenFile: (org.rstorrent.session.uniffi.FileView) -> Unit,
     onFilePage: (UInt) -> Unit,
     onTrackerPage: (UInt) -> Unit,
@@ -1061,6 +1063,7 @@ private fun TorrentDetailScreen(
                     state,
                     onSetFilePriority,
                     onDownloadFile,
+                    onPlayFile,
                     onOpenFile,
                     onFilePage,
                     onTrackerPage,
@@ -1078,6 +1081,7 @@ private fun DetailTabContent(
     state: ProductState,
     onSetFilePriority: (org.rstorrent.session.uniffi.FileView, FilePriority) -> Unit,
     onDownloadFile: (org.rstorrent.session.uniffi.FileView) -> Unit,
+    onPlayFile: (org.rstorrent.session.uniffi.FileView) -> Unit,
     onOpenFile: (org.rstorrent.session.uniffi.FileView) -> Unit,
     onFilePage: (UInt) -> Unit,
     onTrackerPage: (UInt) -> Unit,
@@ -1149,7 +1153,9 @@ private fun DetailTabContent(
                 state.files[torrent.torrentId],
                 onSetFilePriority,
                 onDownloadFile,
+                onPlayFile,
                 onOpenFile,
+                state.mediaLaunchPending,
                 onFilePage,
             )
         TorrentDetailTab.TRACKERS ->

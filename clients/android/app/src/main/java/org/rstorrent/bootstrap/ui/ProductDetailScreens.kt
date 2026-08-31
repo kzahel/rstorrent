@@ -29,12 +29,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.rstorrent.bootstrap.DiskViewState
 import org.rstorrent.bootstrap.FileCatalogViewState
+import org.rstorrent.bootstrap.AndroidMediaPlaybackPolicy
 import org.rstorrent.bootstrap.SwarmViewState
 import org.rstorrent.bootstrap.TrackerCatalogViewState
 import org.rstorrent.session.uniffi.FilePriority
@@ -47,7 +49,9 @@ internal fun FilesScreen(
     catalog: FileCatalogViewState?,
     onSetPriority: (FileView, FilePriority) -> Unit,
     onDownloadNow: (FileView) -> Unit,
+    onPlay: (FileView) -> Unit,
     onOpen: (FileView) -> Unit,
+    mediaLaunchPending: Boolean,
     onPage: (UInt) -> Unit,
 ) {
     if (catalog == null) {
@@ -134,8 +138,28 @@ internal fun FilesScreen(
                     OutlinedButton(onClick = { onDownloadNow(file) }, enabled = wanted && !complete) {
                         Text("Download now")
                     }
+                    if (AndroidMediaPlaybackPolicy.isRecognizedVideo(file.path)) {
+                        Spacer(Modifier.padding(4.dp))
+                        Button(
+                            onClick = { onPlay(file) },
+                            enabled =
+                                AndroidMediaPlaybackPolicy.isPlayActionEnabled(
+                                    file,
+                                    mediaLaunchPending,
+                                ),
+                            modifier = Modifier.testTag("play-${file.fileId}"),
+                        ) {
+                            Text("Play")
+                        }
+                    }
                     Spacer(Modifier.padding(4.dp))
-                    Button(onClick = { onOpen(file) }, enabled = complete) { Text("Open") }
+                    OutlinedButton(
+                        onClick = { onOpen(file) },
+                        enabled = complete,
+                        modifier = Modifier.testTag("open-${file.fileId}"),
+                    ) {
+                        Text("Open")
+                    }
                 }
             }
             HorizontalDivider()

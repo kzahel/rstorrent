@@ -1,6 +1,7 @@
 package org.rstorrent.bootstrap
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertCountEquals
@@ -25,6 +26,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.rstorrent.bootstrap.ui.ProductApp
 import org.rstorrent.bootstrap.ui.ProductThemeMode
+import org.rstorrent.bootstrap.ui.FilesScreen
+import org.rstorrent.bootstrap.ui.RstorrentTheme
 import org.rstorrent.session.uniffi.ApplicationNetworkPrerequisiteView
 import org.rstorrent.session.uniffi.ApplicationNetworkRuntimeState
 import org.rstorrent.session.uniffi.ApplicationNetworkRuntimeView
@@ -41,12 +44,18 @@ import org.rstorrent.session.uniffi.ClientSettings
 import org.rstorrent.session.uniffi.ClientSettingsApplicationState
 import org.rstorrent.session.uniffi.ClientSettingsPatch
 import org.rstorrent.session.uniffi.ClientSettingsRuntimeView
+import org.rstorrent.session.uniffi.CatalogPageView
 import org.rstorrent.session.uniffi.EffectiveListenerSettings
 import org.rstorrent.session.uniffi.EncryptionPolicy
+import org.rstorrent.session.uniffi.FileCatalogState
+import org.rstorrent.session.uniffi.FilePriority
+import org.rstorrent.session.uniffi.FileSelectionView
+import org.rstorrent.session.uniffi.FileView
 import org.rstorrent.session.uniffi.HttpsServerAuthenticationPolicy
 import org.rstorrent.session.uniffi.Ipv6PinholeStatus
 import org.rstorrent.session.uniffi.ListenerPolicy
 import org.rstorrent.session.uniffi.ListenerStatus
+import org.rstorrent.session.uniffi.MediaFileAvailability
 import org.rstorrent.session.uniffi.PortMappingPolicy
 import org.rstorrent.session.uniffi.PortMappingStatus
 import org.rstorrent.session.uniffi.SessionUdpStatus
@@ -130,6 +139,52 @@ class ProductNavigationTest {
             compose.onNodeWithText(route).assertIsDisplayed()
             compose.onNodeWithContentDescription("Back").performClick()
         }
+    }
+
+    @Test
+    fun streamableVideoExposesPlayButKeepsCompletedOpenDisabled() {
+        val file = mediaFile(MediaFileAvailability.STREAMABLE, verifiedBytes = "32768")
+        val played = mutableListOf<FileView>()
+        compose.setContent {
+            RstorrentTheme(ProductThemeMode.LIGHT, dynamicColor = false) {
+                FilesScreen(
+                    catalog = fileCatalog(file),
+                    onSetPriority = { _, _ -> },
+                    onDownloadNow = {},
+                    onPlay = { played += it },
+                    onOpen = {},
+                    mediaLaunchPending = false,
+                    onPage = {},
+                )
+            }
+        }
+
+        compose.onNodeWithTag("play-media-file").assertIsEnabled().performClick()
+        compose.onNodeWithTag("open-media-file").assertIsNotEnabled()
+        assertEquals(listOf(file), played)
+    }
+
+    @Test
+    fun completedVideoRetainsOpenAndPendingLaunchDisablesPlay() {
+        val file = mediaFile(MediaFileAvailability.AVAILABLE, verifiedBytes = "65536")
+        val opened = mutableListOf<FileView>()
+        compose.setContent {
+            RstorrentTheme(ProductThemeMode.LIGHT, dynamicColor = false) {
+                FilesScreen(
+                    catalog = fileCatalog(file),
+                    onSetPriority = { _, _ -> },
+                    onDownloadNow = {},
+                    onPlay = {},
+                    onOpen = { opened += it },
+                    mediaLaunchPending = true,
+                    onPage = {},
+                )
+            }
+        }
+
+        compose.onNodeWithTag("play-media-file").assertIsNotEnabled()
+        compose.onNodeWithTag("open-media-file").assertIsEnabled().performClick()
+        assertEquals(listOf(file), opened)
     }
 
     @Test
@@ -638,6 +693,33 @@ class ProductNavigationTest {
             deleteDataSupported = true,
             forceRecheckAvailable = true,
             error = null,
+        )
+
+    private fun mediaFile(
+        availability: MediaFileAvailability,
+        verifiedBytes: String,
+    ): FileView =
+        FileView(
+            fileId = "media-file",
+            fileIndex = 0U,
+            path = listOf("Fixture", "clip.mp4"),
+            lengthBytes = "65536",
+            torrentOffsetBytes = "0",
+            firstPiece = 0U,
+            lastPiece = 0U,
+            selection = FileSelectionView.NORMAL,
+            padding = false,
+            doneBytes = verifiedBytes,
+            verifiedBytes = verifiedBytes,
+            mediaAvailability = availability,
+        )
+
+    private fun fileCatalog(file: FileView): FileCatalogViewState =
+        FileCatalogViewState(
+            state = FileCatalogState.AVAILABLE,
+            filesystemContentBase = null,
+            page = CatalogPageView(0U, 1U, 1U, null),
+            files = mapOf(file.fileId to file),
         )
 
     private fun clientSettings(): ClientSettingsRuntimeView {

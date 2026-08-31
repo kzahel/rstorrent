@@ -119,6 +119,7 @@ data class ProductState(
     val externalIntakeNotice: ExternalIntakeNotice? = null,
     val companionPort: UShort? = null,
     val companionPairing: CompanionPairingState? = null,
+    val mediaLaunchPending: Boolean = false,
     val lifecycle: ProductLifecycleState = ProductLifecycleState(),
     val preventSleepDuringActiveDownloads: Boolean = true,
     val network: ProductNetworkState = ProductNetworkState(),

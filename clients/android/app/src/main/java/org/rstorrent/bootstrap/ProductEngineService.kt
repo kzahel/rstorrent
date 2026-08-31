@@ -53,6 +53,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withContext
 import org.rstorrent.bootstrap.uniffi.AndroidApplicationClient
 import org.rstorrent.bootstrap.uniffi.AndroidApplicationConfig
 import org.rstorrent.bootstrap.uniffi.AndroidApplicationNetworkPrerequisite
@@ -87,6 +88,7 @@ import org.rstorrent.session.uniffi.FileView
 import org.rstorrent.session.uniffi.HttpsServerAuthenticationPolicy
 import org.rstorrent.session.uniffi.ListenerPolicy
 import org.rstorrent.session.uniffi.ListenerStatus
+import org.rstorrent.session.uniffi.MediaUrlOutcome
 import org.rstorrent.session.uniffi.PortMappingPolicy
 import org.rstorrent.session.uniffi.RequestEnvelope
 import org.rstorrent.session.uniffi.RemovalState
@@ -174,6 +176,7 @@ class ProductEngineService : Service() {
     private val safDirectCompletions = ConcurrentHashMap.newKeySet<String>()
     private val clientSettingsRequestActive = AtomicBoolean(false)
     private val torrentSettingsRequestActive = AtomicBoolean(false)
+    private val mediaLaunchGate = MediaLaunchGate()
     private var powerLock: PowerManager.WakeLock? = null
     private lateinit var defaultNetworkObserver: AndroidDefaultNetworkObserver
     private val networkPreferenceMutation = Mutex()
@@ -2564,6 +2567,55 @@ class ProductEngineService : Service() {
         }
     }
 
+    fun playMedia(
+        torrentId: String,
+        file: FileView,
+    ) {
+        if (!AndroidMediaPlaybackPolicy.isPlayActionEnabled(file, launchPending = false)) {
+            mutableState.update { it.copy(error = "This file is not available for playback") }
+            return
+        }
+        if (!mediaLaunchGate.tryAcquire()) return
+        mutableState.update { it.copy(mediaLaunchPending = true, error = null) }
+        scope.launch {
+            try {
+                clientReady.await()
+                val response = client.createMediaUrl(torrentId, file.fileIndex)
+                check(response.torrentId == torrentId && response.fileIndex == file.fileIndex) {
+                    "Playback response did not match the requested file"
+                }
+                when (val outcome = response.outcome) {
+                    is MediaUrlOutcome.Created -> {
+                        val title = file.path.lastOrNull() ?: "Media"
+                        val launch =
+                            PlayerActivity.launchIntent(
+                                this@ProductEngineService,
+                                outcome.url,
+                                title,
+                            )
+                        withContext(Dispatchers.Main.immediate) {
+                            try {
+                                startActivity(launch)
+                            } catch (_: Throwable) {
+                                throw IllegalStateException("The player could not be opened")
+                            }
+                        }
+                    }
+                    is MediaUrlOutcome.Unavailable -> {
+                        error(AndroidMediaPlaybackPolicy.unavailableMessage(outcome.reason))
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                reportError(error)
+            } finally {
+                mediaLaunchGate.release()
+                mutableState.update { it.copy(mediaLaunchPending = false) }
+            }
+        }
+    }
+
     fun updateClientSettings(patch: ClientSettingsPatch) {
         val changes = patch.fieldValues()
         if (changes.isEmpty()) {
@@ -3797,6 +3849,7 @@ class ProductEngineService : Service() {
         const val INTERACTION_ACTIVITY = "activity"
         const val INTERACTION_NOTIFICATION_PERMISSION = "notification_permission"
         const val INTERACTION_NOTIFICATION_SETTINGS = "notification_settings"
+        const val INTERACTION_PLAYBACK = "playback"
         const val INTERACTION_SAF_PICKER = "saf_picker"
         const val INTERACTION_TORRENT_PICKER = "torrent_picker"
         private const val COMPANION_PAIRING_POLL_MILLIS = 250L

@@ -12,6 +12,7 @@
         android:allowBackup="false"
         android:icon="@drawable/ic_rstorrent_launcher"
         android:label="RSTorrent"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:roundIcon="@drawable/ic_rstorrent_launcher"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
@@ -55,6 +56,12 @@
                     android:pathPattern=".*\.torrent" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".PlayerActivity"
+            android:configChanges="orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:supportsPictureInPicture="true" />
         <service
             android:name=".EngineService"
             android:exported="false"
