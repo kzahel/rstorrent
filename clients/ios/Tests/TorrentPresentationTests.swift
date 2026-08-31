@@ -2,6 +2,11 @@ import XCTest
 @testable import RSTorrent
 
 final class TorrentPresentationTests: XCTestCase {
+    func testPeerCountUsesEnglishPluralBranches() {
+        XCTAssertEqual(localizedPeerCount(1), "1 peer")
+        XCTAssertEqual(localizedPeerCount(2), "2 peers")
+    }
+
     func testDownloadingWithAllReportedBytesNeverDisplaysComplete() {
         let progress = torrentDisplayProgress(
             state: .downloading,

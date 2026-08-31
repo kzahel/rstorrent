@@ -314,6 +314,135 @@ function checkAndroidCatalog() {
   console.log(`Android localization catalog is valid (${resources.size} English resources)`);
 }
 
+function checkIOSCatalog() {
+  const catalogPath = "clients/ios/App/Localization/Localizable.xcstrings";
+  const infoCatalogPath = "clients/ios/App/Localization/InfoPlist.xcstrings";
+  const catalog = readJson(catalogPath);
+  const infoCatalog = readJson(infoCatalogPath);
+  for (const [label, value] of [["iOS", catalog], ["iOS Info.plist", infoCatalog]]) {
+    if (value.sourceLanguage !== "en" || value.version !== "1.0") {
+      fail(`${label} String Catalog must use English source language and version 1.0`);
+    }
+    for (const pseudo of ["en-XA", "ar-XB"]) {
+      if (JSON.stringify(value).includes(`"${pseudo}"`)) {
+        fail(`${label} String Catalog must not package pseudo-locale ${pseudo}`);
+      }
+    }
+  }
+
+  const ids = Object.keys(catalog.strings).sort();
+  requireUnique(ids, "iOS String Catalog identifiers");
+  for (const id of ids) {
+    if (!/^[a-z0-9]+(?:_[a-z0-9]+)*$/.test(id)) fail(`invalid iOS message ID ${id}`);
+    const entry = catalog.strings[id];
+    if (typeof entry.comment !== "string" || entry.comment.trim() === "") {
+      fail(`iOS message ${id} is missing translator context`);
+    }
+    if (entry.extractionState !== "manual") {
+      fail(`iOS message ${id} must record manual catalog ownership`);
+    }
+    const english = entry.localizations?.en;
+    if (!english) fail(`iOS message ${id} is missing English`);
+    if (english.stringUnit) {
+      checkIOSStringUnit(id, english.stringUnit);
+    } else {
+      const plural = english.variations?.plural;
+      if (!plural || !plural.one || !plural.other) {
+        fail(`iOS message ${id} must contain one and other plural variants`);
+      }
+      checkIOSStringUnit(`${id}.one`, plural.one.stringUnit);
+      checkIOSStringUnit(`${id}.other`, plural.other.stringUnit);
+      const onePlaceholders = iosPlaceholders(plural.one.stringUnit.value);
+      const otherPlaceholders = iosPlaceholders(plural.other.stringUnit.value);
+      if (JSON.stringify(onePlaceholders) !== JSON.stringify(otherPlaceholders)) {
+        fail(`iOS plural ${id} has incompatible placeholders`);
+      }
+    }
+  }
+
+  const referenced = new Set();
+  for (const file of walkFiles("clients/ios/App").filter((candidate) => candidate.endsWith(".swift"))) {
+    const source = fs.readFileSync(file, "utf8");
+    for (const match of source.matchAll(
+      /(?:String\(localized:|LocalizedStringResource\()\s*"([^"]+)"/g,
+    )) {
+      referenced.add(match[1]);
+    }
+    const relative = path.relative(repositoryRoot, file);
+    for (const pattern of [
+      /\b(?:Text|Button|Section|Toggle|navigationTitle|accessibilityLabel)\(\s*"([^"\n]*[A-Za-z][^"\n]*)"/,
+      /\bLabel\(\s*"([^"\n]*[A-Za-z][^"\n]*)"\s*,\s*systemImage:/,
+      /\b(?:engineStatus|selectionStatus|backgroundStatus)\s*=\s*"([^"\n]*[A-Za-z][^"\n]*)"/,
+      /\breportStatus\(\s*"([^"\n]*[A-Za-z][^"\n]*)"/,
+      /content\.(?:title|body)\s*=\s*"([^"\n]*[A-Za-z][^"\n]*)"/,
+    ]) {
+      const inline = source.match(pattern);
+      if (inline) fail(`unclassified iOS product copy in ${relative}: ${inline[1]}`);
+    }
+    if (/\b(?:L10n|LocalizationStore)\b/.test(source)) {
+      fail(`legacy iOS localization wrapper remains in ${relative}`);
+    }
+  }
+  for (const id of referenced) {
+    if (!(id in catalog.strings)) fail(`iOS source references missing message ${id}`);
+  }
+  const orphaned = ids.filter((id) => !referenced.has(id));
+  if (orphaned.length > 0) fail(`orphaned iOS messages: ${orphaned.slice(0, 16).join(", ")}`);
+
+  const info = fs.readFileSync(path.join(repositoryRoot, "clients/ios/App/Info.plist"), "utf8");
+  const requiredInfo = {
+    CFBundleDisplayName: "RSTorrent",
+    CFBundleTypeName: "BitTorrent metainfo",
+    CFBundleURLName: "Magnet link",
+    NSLocalNetworkUsageDescription: "RSTorrent connects directly to peers on your local network.",
+    UTTypeDescription: "BitTorrent metainfo",
+  };
+  const infoIds = Object.keys(infoCatalog.strings).sort();
+  if (JSON.stringify(infoIds) !== JSON.stringify(Object.keys(requiredInfo).sort())) {
+    fail("iOS Info.plist String Catalog has missing or orphaned keys");
+  }
+  for (const [id, value] of Object.entries(requiredInfo)) {
+    const entry = infoCatalog.strings[id];
+    if (entry?.localizations?.en?.stringUnit?.value !== value || !entry.comment?.trim()) {
+      fail(`iOS Info.plist message ${id} is incomplete`);
+    }
+    const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (!new RegExp(`<key>${escaped}</key>[\\s\\S]*?<string>${value}</string>`).test(info)) {
+      fail(`iOS Info.plist source for ${id} differs from its String Catalog`);
+    }
+  }
+  if (fs.existsSync(path.join(repositoryRoot, "clients/ios/App/Localization/en.json"))) {
+    fail("legacy iOS JSON localization authority must be removed");
+  }
+  const project = fs.readFileSync(path.join(repositoryRoot, "clients/ios/project.yml"), "utf8");
+  if (!/SWIFT_EMIT_LOC_STRINGS:\s*YES/.test(project)) {
+    fail("iOS project must enable native localization extraction");
+  }
+  if (/CFBundleLocalizations/.test(info)) {
+    fail("English-only iOS must not advertise a per-app language list");
+  }
+  console.log(
+    `iOS localization catalogs are valid (${ids.length} product messages, ${infoIds.length} Info.plist messages)`,
+  );
+}
+
+function checkIOSStringUnit(id, unit) {
+  if (unit?.state !== "translated" || typeof unit.value !== "string" || unit.value.trim() === "") {
+    fail(`iOS message ${id} has an incomplete English string unit`);
+  }
+  iosPlaceholders(unit.value);
+}
+
+function iosPlaceholders(value) {
+  const scrubbed = value.replaceAll("%%", "");
+  const placeholders = [...scrubbed.matchAll(/%(?:(\d+)\$)?(lld|ld|d|u|@|f)/g)]
+    .map((match) => `${match[1] ?? ""}:${match[2]}`)
+    .sort();
+  const residue = scrubbed.replace(/%(?:(\d+)\$)?(lld|ld|d|u|@|f)/g, "");
+  if (/%/.test(residue)) fail(`iOS message contains unsupported format syntax: ${value}`);
+  return placeholders;
+}
+
 function findInlineWebCopy(source, parseTypescript) {
   const attributeNames = new Set([
     "alt", "aria-description", "aria-label", "data-label", "emptyMessage",
@@ -359,6 +488,7 @@ export async function main() {
   await checkWebCatalog();
   checkDesktopCatalog();
   checkAndroidCatalog();
+  checkIOSCatalog();
   console.log("Localization policy is valid (shipping locales: en; test: en-XA, ar-XB)");
 }
 

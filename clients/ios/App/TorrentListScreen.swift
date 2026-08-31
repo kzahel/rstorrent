@@ -7,25 +7,25 @@ private enum TorrentListFilter: CaseIterable, Identifiable {
     case finished
 
     var id: Self { self }
-    var titleKey: String {
+    var title: LocalizedStringResource {
         switch self {
-        case .all: return "filter_all"
-        case .active: return "filter_active"
-        case .finished: return "filter_finished"
+        case .all: return LocalizedStringResource("filter_all")
+        case .active: return LocalizedStringResource("filter_active")
+        case .finished: return LocalizedStringResource("filter_finished")
         }
     }
-    var emptyTitleKey: String {
+    var emptyTitle: LocalizedStringResource {
         switch self {
-        case .all: return "torrent_list_empty_all"
-        case .active: return "torrent_list_empty_active"
-        case .finished: return "torrent_list_empty_finished"
+        case .all: return LocalizedStringResource("torrent_list_empty_all")
+        case .active: return LocalizedStringResource("torrent_list_empty_active")
+        case .finished: return LocalizedStringResource("torrent_list_empty_finished")
         }
     }
-    var emptyHintKey: String {
+    var emptyHint: LocalizedStringResource {
         switch self {
-        case .all: return "torrent_list_hint_all"
-        case .active: return "torrent_list_hint_active"
-        case .finished: return "torrent_list_hint_finished"
+        case .all: return LocalizedStringResource("torrent_list_hint_all")
+        case .active: return LocalizedStringResource("torrent_list_hint_active")
+        case .finished: return LocalizedStringResource("torrent_list_hint_finished")
         }
     }
     func includes(_ torrent: TorrentListItem) -> Bool {
@@ -59,16 +59,16 @@ struct TorrentListScreen: View {
                 FilterBar(selectedFilter: $selectedFilter)
                     .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
                     .listRowBackground(Color.clear)
-                RuntimeSummaryCard(status: appModel.engineStatus, torrentCount: torrents.count)
+                RuntimeSummaryCard(status: appModel.engineStatus.text, torrentCount: torrents.count)
             }
 
             if let error = actionError ?? presentation.error {
-                Section(L10n.string("torrent_list_error")) {
+                Section(String(localized: "torrent_list_error")) {
                     Text(error).foregroundStyle(.red)
                 }
             }
 
-            Section(L10n.string("ios_runtime_torrents_label")) {
+            Section(String(localized: "ios_runtime_torrents_label")) {
                 if filteredTorrents.isEmpty {
                     EmptyTorrentState(filter: selectedFilter)
                 } else {
@@ -82,12 +82,12 @@ struct TorrentListScreen: View {
                         .swipeActions {
                             Button(
                                 torrent.isStopped
-                                    ? L10n.string("torrent_detail_resume_button")
-                                    : L10n.string("torrent_detail_pause_button")
+                                    ? String(localized: "torrent_detail_resume_button")
+                                    : String(localized: "torrent_detail_pause_button")
                             ) { toggle(torrent) }
                             .tint(.blue)
                             Button(
-                                L10n.string("dialog_remove_confirm_button"),
+                                String(localized: "dialog_remove_confirm_button"),
                                 role: .destructive
                             ) { pendingRemovalTorrent = torrent }
                         }
@@ -192,7 +192,7 @@ private struct AppTopBar: View {
                     .font(.system(size: 34))
                     .foregroundStyle(.tint)
                     .frame(width: 40, height: 40)
-                Text("RSTorrent")
+                Text(String(localized: "app_name"))
                     .font(.title3.weight(.semibold))
                     .lineLimit(1)
             }
@@ -200,9 +200,9 @@ private struct AppTopBar: View {
             Spacer(minLength: 12)
             HStack(spacing: 12) {
                 Button(action: onOpenSettings) { Image(systemName: "gearshape") }
-                    .accessibilityLabel(L10n.string("settings_title"))
+                    .accessibilityLabel(String(localized: "settings_title"))
                 Button(action: onAddTorrent) { Image(systemName: "plus") }
-                    .accessibilityLabel(L10n.string("torrent_list_add_torrent"))
+                    .accessibilityLabel(String(localized: "torrent_list_add_torrent"))
             }
             .font(.title2)
             .padding(.horizontal, 18)
@@ -219,7 +219,7 @@ private struct FilterBar: View {
             HStack(spacing: 8) {
                 ForEach(TorrentListFilter.allCases) { filter in
                     Button { selectedFilter = filter } label: {
-                        Text(L10n.string(filter.titleKey))
+                        Text(filter.title)
                             .font(.subheadline.weight(.semibold))
                             .padding(.horizontal, 14)
                             .padding(.vertical, 8)
@@ -244,15 +244,15 @@ private struct RuntimeSummaryCard: View {
     let torrentCount: Int
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(L10n.string("ios_runtime_section_title")).font(.headline)
+            Text(String(localized: "ios_runtime_section_title")).font(.headline)
             HStack(spacing: 12) {
                 RuntimeMetricPill(
-                    title: L10n.string("ios_runtime_status_label"),
+                    title: String(localized: "ios_runtime_status_label"),
                     value: status
                 )
                 RuntimeMetricPill(
-                    title: L10n.string("ios_runtime_torrents_label"),
-                    value: String(torrentCount)
+                    title: String(localized: "ios_runtime_torrents_label"),
+                    value: torrentCount.formatted()
                 )
             }
         }
@@ -285,8 +285,8 @@ private struct EmptyTorrentState: View {
     let filter: TorrentListFilter
     var body: some View {
         VStack(spacing: 6) {
-            Text(L10n.string(filter.emptyTitleKey)).font(.headline)
-            Text(L10n.string(filter.emptyHintKey))
+            Text(filter.emptyTitle).font(.headline)
+            Text(filter.emptyHint)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

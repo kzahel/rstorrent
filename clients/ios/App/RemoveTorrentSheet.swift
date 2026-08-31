@@ -17,19 +17,19 @@ struct RemoveTorrentSheet: View {
                 }
                 Section {
                     Toggle(isOn: $deleteFiles) {
-                        Text(L10n.string("dialog_remove_delete_files_label"))
+                        Text(String(localized: "dialog_remove_delete_files_label"))
                     }
                     .accessibilityIdentifier("remove-delete-files")
                 }
             }
-            .navigationTitle(L10n.string("dialog_remove_title"))
+            .navigationTitle(String(localized: "dialog_remove_title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(L10n.string("dialog_remove_cancel_button")) { onCancel() }
+                    Button(String(localized: "dialog_remove_cancel_button")) { onCancel() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(L10n.string("dialog_remove_confirm_button"), role: .destructive) {
+                    Button(String(localized: "dialog_remove_confirm_button"), role: .destructive) {
                         onConfirm(deleteFiles)
                     }
                 }

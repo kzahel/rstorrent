@@ -1,0 +1,66 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "CFBundleDisplayName" : {
+      "comment" : "The product name displayed below the app icon.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "RSTorrent"
+          }
+        }
+      }
+    },
+    "CFBundleTypeName" : {
+      "comment" : "The name of a BitTorrent metainfo document in system file-opening UI.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "BitTorrent metainfo"
+          }
+        }
+      }
+    },
+    "CFBundleURLName" : {
+      "comment" : "The name of the magnet URL handler in system UI.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Magnet link"
+          }
+        }
+      }
+    },
+    "NSLocalNetworkUsageDescription" : {
+      "comment" : "Explains why RSTorrent requests local-network access.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "RSTorrent connects directly to peers on your local network."
+          }
+        }
+      }
+    },
+    "UTTypeDescription" : {
+      "comment" : "The system-visible description of the imported .torrent file type.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "BitTorrent metainfo"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

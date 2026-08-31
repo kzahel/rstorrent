@@ -12,22 +12,34 @@ enum RootAccessError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .securityScopeDenied:
-            return "Security-scoped access to the selected folder was denied."
+            return String(localized: "ios_root_error_security_scope")
         case .coordinationFailed(let detail):
-            return "File coordination failed: \(detail)"
+            return String(
+                format: String(localized: "ios_root_error_coordination"),
+                locale: .current,
+                detail
+            )
         case .coordinationAccessorDidNotRun:
-            return "The file coordinator did not provide the selected folder."
+            return String(localized: "ios_root_error_coordinator_missing")
         case .ineligible(let reason):
             switch reason {
             case .ubiquitous:
-                return "iCloud folders are not supported. Choose a folder under On My iPhone."
+                return String(localized: "ios_root_error_icloud")
             case .providerIdentified:
-                return "File Provider folders are not supported. Choose a folder under On My iPhone."
+                return String(localized: "ios_root_error_file_provider")
             default:
-                return "This folder cannot be used (\(reason.rawValue))."
+                return String(
+                    format: String(localized: "ios_root_error_ineligible"),
+                    locale: .current,
+                    reason.rawValue
+                )
             }
         case .bookmarkTooLarge(let count):
-            return "The folder bookmark is too large (\(count) bytes)."
+            return String(
+                format: String(localized: "ios_root_error_bookmark_size"),
+                locale: .current,
+                count.formatted(.byteCount(style: .file))
+            )
         }
     }
 }

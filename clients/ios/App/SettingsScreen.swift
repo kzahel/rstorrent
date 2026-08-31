@@ -17,15 +17,15 @@ struct SettingsScreen: View {
     var body: some View {
         Form {
             Section(
-                header: Text(L10n.string("settings_storage_title")),
-                footer: Text(L10n.string("settings_download_folder_footer"))
+                header: Text(String(localized: "settings_storage_title")),
+                footer: Text(String(localized: "settings_download_folder_footer"))
             ) {
-                LabeledContent(L10n.string("settings_download_folder_label")) {
-                    Text(defaultRoot?.label ?? "RSTorrent Documents")
+                LabeledContent(String(localized: "settings_download_folder_label")) {
+                    Text(defaultRoot?.label ?? String(localized: "ios_app_documents"))
                         .multilineTextAlignment(.trailing)
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(defaultRoot?.detail ?? "On My iPhone")
+                    Text(defaultRoot?.detailText ?? String(localized: "ios_on_my_device"))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -33,14 +33,14 @@ struct SettingsScreen: View {
             }
 
             Section {
-                Button(L10n.string("settings_download_folder_choose_button")) {
+                Button(String(localized: "settings_download_folder_choose_button")) {
                     isPresentingFolderPicker = true
                 }
                 .disabled(appModel.isBusy)
 
                 if appModel.roots.count > 1 {
                     Button(
-                        L10n.string("settings_download_folder_reset_button"),
+                        String(localized: "settings_download_folder_reset_button"),
                         role: .destructive
                     ) {
                         Task { await appModel.resetExternalFolders() }
@@ -49,10 +49,10 @@ struct SettingsScreen: View {
                 }
             }
 
-            Section(L10n.string("ios_runtime_section_title")) {
+            Section(String(localized: "ios_runtime_section_title")) {
                 LabeledContent(
-                    L10n.string("ios_runtime_status_label"),
-                    value: appModel.engineStatus
+                    String(localized: "ios_runtime_status_label"),
+                    value: appModel.engineStatus.text
                 )
                 ForEach(appModel.roots) { root in
                     VStack(alignment: .leading, spacing: 4) {
@@ -61,13 +61,19 @@ struct SettingsScreen: View {
                             systemImage: root.available
                                 ? "folder.fill" : "exclamationmark.triangle.fill"
                         )
-                        Text(root.detail).font(.caption).foregroundStyle(.secondary)
+                        Text(root.detailText).font(.caption).foregroundStyle(.secondary)
                         if !root.available, root.id != "ios-documents" {
-                            Button(L10n.string("settings_download_folder_repair_button")) {
+                            Button(String(localized: "settings_download_folder_repair_button")) {
                                 repairingRootID = root.id
                                 isPresentingFolderPicker = true
                             }
-                            .accessibilityLabel("Repair \(root.label)")
+                            .accessibilityLabel(
+                                String(
+                                    format: String(localized: "ios_accessibility_repair_folder"),
+                                    locale: .current,
+                                    root.label
+                                )
+                            )
                             .disabled(appModel.isBusy)
                         }
                     }
@@ -75,11 +81,11 @@ struct SettingsScreen: View {
             }
 
             Section(
-                header: Text(L10n.string("ios_background_section_title")),
-                footer: Text(L10n.string("ios_background_footer"))
+                header: Text(String(localized: "ios_background_section_title")),
+                footer: Text(String(localized: "ios_background_footer"))
             ) {
                 Toggle(
-                    L10n.string("ios_background_notifications_label"),
+                    String(localized: "ios_background_notifications_label"),
                     isOn: Binding(
                         get: { lifecycle.notificationsEnabled },
                         set: { enabled in
@@ -88,22 +94,17 @@ struct SettingsScreen: View {
                     )
                 )
                 .accessibilityIdentifier("background-notifications")
-                Text(lifecycle.backgroundStatus)
+                Text(lifecycle.backgroundStatus.text)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            if !appModel.selectionStatus.isEmpty {
-                Section {
-                    Text(appModel.selectionStatus)
-                        .foregroundStyle(
-                            appModel.selectionStatus.localizedCaseInsensitiveContains("not supported")
-                                ? .red : .secondary
-                        )
-                }
+            Section {
+                Text(appModel.selectionStatus.text)
+                    .foregroundStyle(appModel.selectionStatus.isError ? .red : .secondary)
             }
         }
-        .navigationTitle(L10n.string("settings_title"))
+        .navigationTitle(String(localized: "settings_title"))
         .sheet(isPresented: $isPresentingFolderPicker) {
             DownloadFolderPicker(
                 isPresented: $isPresentingFolderPicker,

@@ -1,0 +1,2082 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "app_name": {
+      "comment": "iOS product copy for app name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "JSTorrent"
+          }
+        }
+      }
+    },
+    "component_torrent_card_unknown_name": {
+      "comment": "iOS product copy for component torrent card unknown name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unknown"
+          }
+        }
+      }
+    },
+    "dialog_add_torrent_add_button": {
+      "comment": "iOS product copy for dialog add torrent add button.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add"
+          }
+        }
+      }
+    },
+    "dialog_add_torrent_browse_button": {
+      "comment": "iOS product copy for dialog add torrent browse button.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Browse for .torrent file"
+          }
+        }
+      }
+    },
+    "dialog_add_torrent_cancel_button": {
+      "comment": "iOS product copy for dialog add torrent cancel button.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        }
+      }
+    },
+    "dialog_add_torrent_magnet_hint": {
+      "comment": "iOS product copy for dialog add torrent magnet hint.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "magnet:?xt=urn:btih:…"
+          }
+        }
+      }
+    },
+    "dialog_add_torrent_magnet_label": {
+      "comment": "iOS product copy for dialog add torrent magnet label.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Magnet link"
+          }
+        }
+      }
+    },
+    "dialog_add_torrent_paste_button": {
+      "comment": "iOS product copy for dialog add torrent paste button.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paste from clipboard"
+          }
+        }
+      }
+    },
+    "dialog_add_torrent_title": {
+      "comment": "iOS product copy for dialog add torrent title.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add Torrent"
+          }
+        }
+      }
+    },
+    "dialog_remove_cancel_button": {
+      "comment": "iOS product copy for dialog remove cancel button.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        }
+      }
+    },
+    "dialog_remove_confirm_button": {
+      "comment": "iOS product copy for dialog remove confirm button.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove"
+          }
+        }
+      }
+    },
+    "dialog_remove_delete_files_label": {
+      "comment": "iOS product copy for dialog remove delete files label.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Also delete downloaded files"
+          }
+        }
+      }
+    },
+    "dialog_remove_title": {
+      "comment": "iOS product copy for dialog remove title.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove torrent?"
+          }
+        }
+      }
+    },
+    "engine_status_starting": {
+      "comment": "iOS product copy for engine status starting.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starting"
+          }
+        }
+      }
+    },
+    "file_priority_high": {
+      "comment": "iOS product copy for file priority high.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "High"
+          }
+        }
+      }
+    },
+    "file_priority_normal": {
+      "comment": "iOS product copy for file priority normal.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Normal"
+          }
+        }
+      }
+    },
+    "file_priority_skip": {
+      "comment": "iOS product copy for file priority skip.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Don't Download"
+          }
+        }
+      }
+    },
+    "filter_active": {
+      "comment": "iOS product copy for filter active.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Active"
+          }
+        }
+      }
+    },
+    "filter_all": {
+      "comment": "iOS product copy for filter all.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All"
+          }
+        }
+      }
+    },
+    "filter_finished": {
+      "comment": "iOS product copy for filter finished.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finished"
+          }
+        }
+      }
+    },
+    "ios_accessibility_repair_folder": {
+      "comment": "iOS product copy for ios accessibility repair folder.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repair access to %1$@"
+          }
+        }
+      }
+    },
+    "ios_app_documents": {
+      "comment": "iOS product copy for ios app documents.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RSTorrent Documents"
+          }
+        }
+      }
+    },
+    "ios_background_continued_active": {
+      "comment": "iOS product copy for ios background continued active.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continued processing active"
+          }
+        }
+      }
+    },
+    "ios_background_continued_requested": {
+      "comment": "iOS product copy for ios background continued requested.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continued processing requested"
+          }
+        }
+      }
+    },
+    "ios_background_continued_unavailable": {
+      "comment": "iOS product copy for ios background continued unavailable.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continued processing unavailable; UIKit fallback will be used"
+          }
+        }
+      }
+    },
+    "ios_background_finite_time": {
+      "comment": "iOS product copy for ios background finite time.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finite UIKit background time"
+          }
+        }
+      }
+    },
+    "ios_background_footer": {
+      "comment": "iOS product copy for ios background footer.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS grants finite background time. RSTorrent saves durable progress and resumes safely; it does not promise indefinite background downloading or seeding."
+          }
+        }
+      }
+    },
+    "ios_background_foreground": {
+      "comment": "iOS product copy for ios background foreground.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Foreground service"
+          }
+        }
+      }
+    },
+    "ios_background_inactive": {
+      "comment": "iOS product copy for ios background inactive.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No active background work"
+          }
+        }
+      }
+    },
+    "ios_background_notifications_disabled": {
+      "comment": "iOS product copy for ios background notifications disabled.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Background completion notifications disabled"
+          }
+        }
+      }
+    },
+    "ios_background_notifications_enabled": {
+      "comment": "iOS product copy for ios background notifications enabled.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Background completion notifications enabled"
+          }
+        }
+      }
+    },
+    "ios_background_notifications_label": {
+      "comment": "iOS product copy for ios background notifications label.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notify when background work completes"
+          }
+        }
+      }
+    },
+    "ios_background_notifications_unauthorized": {
+      "comment": "iOS product copy for ios background notifications unauthorized.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notifications were not authorized"
+          }
+        }
+      }
+    },
+    "ios_background_saving": {
+      "comment": "iOS product copy for ios background saving.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Background time expired; saving state"
+          }
+        }
+      }
+    },
+    "ios_background_section_title": {
+      "comment": "iOS product copy for ios background section title.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Background"
+          }
+        }
+      }
+    },
+    "ios_background_task_progress": {
+      "comment": "iOS product copy for ios background task progress.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ of %2$@ pieces verified"
+          }
+        }
+      }
+    },
+    "ios_background_task_subtitle": {
+      "comment": "iOS product copy for ios background task subtitle.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloading and verifying selected content"
+          }
+        }
+      }
+    },
+    "ios_background_task_title": {
+      "comment": "iOS product copy for ios background task title.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RSTorrent download"
+          }
+        }
+      }
+    },
+    "ios_background_time_expired": {
+      "comment": "iOS product copy for ios background time expired.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Background time expired"
+          }
+        }
+      }
+    },
+    "ios_background_work_complete": {
+      "comment": "iOS product copy for ios background work complete.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Background work complete"
+          }
+        }
+      }
+    },
+    "ios_count_ratio": {
+      "comment": "iOS product copy for ios count ratio.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ / %2$@"
+          }
+        }
+      }
+    },
+    "ios_engine_ready": {
+      "comment": "iOS product copy for ios engine ready.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ready"
+          }
+        }
+      }
+    },
+    "ios_engine_starting": {
+      "comment": "iOS product copy for ios engine starting.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starting…"
+          }
+        }
+      }
+    },
+    "ios_engine_stopped": {
+      "comment": "iOS product copy for ios engine stopped.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stopped"
+          }
+        }
+      }
+    },
+    "ios_engine_unavailable": {
+      "comment": "iOS product copy for ios engine unavailable.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unavailable: %1$@"
+          }
+        }
+      }
+    },
+    "ios_error_invalid_torrent_length": {
+      "comment": "iOS product copy for ios error invalid torrent length.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The selected torrent file has an unsupported size (%1$@)."
+          }
+        }
+      }
+    },
+    "ios_error_missing_add_result": {
+      "comment": "iOS product copy for ios error missing add result.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The engine did not return an add result."
+          }
+        }
+      }
+    },
+    "ios_error_not_ready": {
+      "comment": "iOS product copy for ios error not ready.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RSTorrent is still starting."
+          }
+        }
+      }
+    },
+    "ios_error_unknown_storage_root": {
+      "comment": "iOS product copy for ios error unknown storage root.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The storage root is no longer registered."
+          }
+        }
+      }
+    },
+    "ios_file_download_now": {
+      "comment": "iOS product copy for ios file download now.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download now"
+          }
+        }
+      }
+    },
+    "ios_foundation_engine": {
+      "comment": "iOS product copy for ios foundation engine.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Engine"
+          }
+        }
+      }
+    },
+    "ios_foundation_storage_folders": {
+      "comment": "iOS product copy for ios foundation storage folders.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Storage folders"
+          }
+        }
+      }
+    },
+    "ios_input_accepted": {
+      "comment": "iOS product copy for ios input accepted.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Incoming torrent accepted."
+          }
+        }
+      }
+    },
+    "ios_input_already_handled": {
+      "comment": "iOS product copy for ios input already handled.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "That incoming torrent was already handled."
+          }
+        }
+      }
+    },
+    "ios_input_magnet_invalid": {
+      "comment": "iOS product copy for ios input magnet invalid.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The incoming magnet link is empty or too large."
+          }
+        }
+      }
+    },
+    "ios_input_occupied": {
+      "comment": "iOS product copy for ios input occupied.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finish the pending incoming torrent before opening another."
+          }
+        }
+      }
+    },
+    "ios_input_type_unsupported": {
+      "comment": "iOS product copy for ios input type unsupported.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RSTorrent can open magnet links and .torrent files."
+          }
+        }
+      }
+    },
+    "ios_media_available": {
+      "comment": "iOS product copy for ios media available.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available"
+          }
+        }
+      }
+    },
+    "ios_media_checking": {
+      "comment": "iOS product copy for ios media checking.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking"
+          }
+        }
+      }
+    },
+    "ios_media_incomplete": {
+      "comment": "iOS product copy for ios media incomplete.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Incomplete"
+          }
+        }
+      }
+    },
+    "ios_media_invalid_file": {
+      "comment": "iOS product copy for ios media invalid file.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid file"
+          }
+        }
+      }
+    },
+    "ios_media_metadata_unavailable": {
+      "comment": "iOS product copy for ios media metadata unavailable.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Metadata unavailable"
+          }
+        }
+      }
+    },
+    "ios_media_padding": {
+      "comment": "iOS product copy for ios media padding.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Padding"
+          }
+        }
+      }
+    },
+    "ios_media_removing": {
+      "comment": "iOS product copy for ios media removing.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Removing"
+          }
+        }
+      }
+    },
+    "ios_media_resource_limit": {
+      "comment": "iOS product copy for ios media resource limit.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resource limit"
+          }
+        }
+      }
+    },
+    "ios_media_server_unavailable": {
+      "comment": "iOS product copy for ios media server unavailable.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Streaming unavailable"
+          }
+        }
+      }
+    },
+    "ios_media_storage_unavailable": {
+      "comment": "iOS product copy for ios media storage unavailable.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Storage unavailable"
+          }
+        }
+      }
+    },
+    "ios_media_streamable": {
+      "comment": "iOS product copy for ios media streamable.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Streamable"
+          }
+        }
+      }
+    },
+    "ios_media_unverified": {
+      "comment": "iOS product copy for ios media unverified.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unverified"
+          }
+        }
+      }
+    },
+    "ios_notification_background_complete": {
+      "comment": "iOS product copy for ios notification background complete.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Background download work completed."
+          }
+        }
+      }
+    },
+    "ios_on_my_device": {
+      "comment": "iOS product copy for ios on my device.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On My iPhone or iPad"
+          }
+        }
+      }
+    },
+    "ios_peer_count": {
+      "comment": "Peer count shown in a torrent row.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld peer"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld peers"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "ios_peer_direction_incoming": {
+      "comment": "iOS product copy for ios peer direction incoming.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Incoming"
+          }
+        }
+      }
+    },
+    "ios_peer_direction_outgoing": {
+      "comment": "iOS product copy for ios peer direction outgoing.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Outgoing"
+          }
+        }
+      }
+    },
+    "ios_peer_role_content": {
+      "comment": "iOS product copy for ios peer role content.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Content"
+          }
+        }
+      }
+    },
+    "ios_peer_role_metadata": {
+      "comment": "iOS product copy for ios peer role metadata.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Metadata"
+          }
+        }
+      }
+    },
+    "ios_pieces_verified": {
+      "comment": "iOS product copy for ios pieces verified.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ of %2$@ pieces verified"
+          }
+        }
+      }
+    },
+    "ios_registry_error_bookmark": {
+      "comment": "iOS product copy for ios registry error bookmark.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The saved folder registry contains invalid bookmark data."
+          }
+        }
+      }
+    },
+    "ios_registry_error_duplicate_id": {
+      "comment": "iOS product copy for ios registry error duplicate id.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The saved folder registry contains a duplicate root ID."
+          }
+        }
+      }
+    },
+    "ios_registry_error_generation": {
+      "comment": "iOS product copy for ios registry error generation.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The saved folder registry contains an invalid generation."
+          }
+        }
+      }
+    },
+    "ios_registry_error_generation_overflow": {
+      "comment": "iOS product copy for ios registry error generation overflow.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The saved folder generation overflowed."
+          }
+        }
+      }
+    },
+    "ios_registry_error_invalid_id": {
+      "comment": "iOS product copy for ios registry error invalid id.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The saved folder registry contains an invalid root ID."
+          }
+        }
+      }
+    },
+    "ios_registry_error_label": {
+      "comment": "iOS product copy for ios registry error label.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The saved folder registry contains an invalid label."
+          }
+        }
+      }
+    },
+    "ios_registry_error_schema": {
+      "comment": "iOS product copy for ios registry error schema.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unsupported saved folder registry version %1$@."
+          }
+        }
+      }
+    },
+    "ios_registry_error_too_many_roots": {
+      "comment": "iOS product copy for ios registry error too many roots.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The saved folder registry contains %1$@ selected roots."
+          }
+        }
+      }
+    },
+    "ios_root_error_bookmark_size": {
+      "comment": "iOS product copy for ios root error bookmark size.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The folder bookmark is too large (%1$@)."
+          }
+        }
+      }
+    },
+    "ios_root_error_coordination": {
+      "comment": "iOS product copy for ios root error coordination.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File coordination failed: %1$@"
+          }
+        }
+      }
+    },
+    "ios_root_error_coordinator_missing": {
+      "comment": "iOS product copy for ios root error coordinator missing.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The file coordinator did not provide the selected folder."
+          }
+        }
+      }
+    },
+    "ios_root_error_file_provider": {
+      "comment": "iOS product copy for ios root error file provider.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File Provider folders are not supported. Choose a folder under On My iPhone or iPad."
+          }
+        }
+      }
+    },
+    "ios_root_error_icloud": {
+      "comment": "iOS product copy for ios root error icloud.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iCloud folders are not supported. Choose a folder under On My iPhone or iPad."
+          }
+        }
+      }
+    },
+    "ios_root_error_ineligible": {
+      "comment": "iOS product copy for ios root error ineligible.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This folder cannot be used (%1$@)."
+          }
+        }
+      }
+    },
+    "ios_root_error_security_scope": {
+      "comment": "iOS product copy for ios root error security scope.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Access to the selected folder was denied."
+          }
+        }
+      }
+    },
+    "ios_root_probe_failed": {
+      "comment": "iOS product copy for ios root probe failed.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Root access probe failed; repair folder access."
+          }
+        }
+      }
+    },
+    "ios_root_qualified": {
+      "comment": "iOS product copy for ios root qualified.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qualified on-device folder"
+          }
+        }
+      }
+    },
+    "ios_runtime_section_title": {
+      "comment": "iOS product copy for ios runtime section title.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Runtime"
+          }
+        }
+      }
+    },
+    "ios_runtime_status_label": {
+      "comment": "iOS product copy for ios runtime status label.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Status"
+          }
+        }
+      }
+    },
+    "ios_runtime_torrents_label": {
+      "comment": "iOS product copy for ios runtime torrents label.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Torrents"
+          }
+        }
+      }
+    },
+    "ios_selection_app_folder_default": {
+      "comment": "iOS product copy for ios selection app folder default.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RSTorrent Documents is the default folder"
+          }
+        }
+      }
+    },
+    "ios_selection_app_folder_no_repair": {
+      "comment": "iOS product copy for ios selection app folder no repair.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The app-owned folder does not require bookmark repair."
+          }
+        }
+      }
+    },
+    "ios_selection_checking": {
+      "comment": "iOS product copy for ios selection checking.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking selected folder…"
+          }
+        }
+      }
+    },
+    "ios_selection_checking_replacement": {
+      "comment": "iOS product copy for ios selection checking replacement.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking replacement folder…"
+          }
+        }
+      }
+    },
+    "ios_selection_external_ready": {
+      "comment": "iOS product copy for ios selection external ready.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "External folders ready"
+          }
+        }
+      }
+    },
+    "ios_selection_folder_ready": {
+      "comment": "iOS product copy for ios selection folder ready.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ is ready"
+          }
+        }
+      }
+    },
+    "ios_selection_folder_repaired": {
+      "comment": "iOS product copy for ios selection folder repaired.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ repaired"
+          }
+        }
+      }
+    },
+    "ios_selection_needs_repair": {
+      "comment": "iOS product copy for ios selection needs repair.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "An external folder needs repair"
+          }
+        }
+      }
+    },
+    "ios_selection_none": {
+      "comment": "iOS product copy for ios selection none.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No external folder selected"
+          }
+        }
+      }
+    },
+    "ios_speed_value": {
+      "comment": "iOS product copy for ios speed value.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@/s"
+          }
+        }
+      }
+    },
+    "ios_storage_state_available": {
+      "comment": "iOS product copy for ios storage state available.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available"
+          }
+        }
+      }
+    },
+    "ios_storage_state_needs_repair": {
+      "comment": "iOS product copy for ios storage state needs repair.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Needs repair"
+          }
+        }
+      }
+    },
+    "ios_storage_state_unavailable": {
+      "comment": "iOS product copy for ios storage state unavailable.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unavailable"
+          }
+        }
+      }
+    },
+    "ios_torrent_row_download_label": {
+      "comment": "iOS product copy for ios torrent row download label.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Down"
+          }
+        }
+      }
+    },
+    "ios_torrent_row_peers_label": {
+      "comment": "iOS product copy for ios torrent row peers label.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Peers"
+          }
+        }
+      }
+    },
+    "ios_torrent_row_upload_label": {
+      "comment": "iOS product copy for ios torrent row upload label.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Up"
+          }
+        }
+      }
+    },
+    "ios_tracker_status_announcing": {
+      "comment": "iOS product copy for ios tracker status announcing.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Announcing"
+          }
+        }
+      }
+    },
+    "ios_tracker_status_disabled": {
+      "comment": "iOS product copy for ios tracker status disabled.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disabled"
+          }
+        }
+      }
+    },
+    "ios_tracker_status_idle": {
+      "comment": "iOS product copy for ios tracker status idle.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Idle"
+          }
+        }
+      }
+    },
+    "ios_tracker_status_inactive": {
+      "comment": "iOS product copy for ios tracker status inactive.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inactive"
+          }
+        }
+      }
+    },
+    "ios_tracker_status_reannounce_wait": {
+      "comment": "iOS product copy for ios tracker status reannounce wait.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting to reannounce"
+          }
+        }
+      }
+    },
+    "ios_tracker_status_retry_wait": {
+      "comment": "iOS product copy for ios tracker status retry wait.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting to retry"
+          }
+        }
+      }
+    },
+    "ios_tracker_status_unsupported": {
+      "comment": "iOS product copy for ios tracker status unsupported.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unsupported"
+          }
+        }
+      }
+    },
+    "ios_tracker_tier": {
+      "comment": "iOS product copy for ios tracker tier.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tier %1$@"
+          }
+        }
+      }
+    },
+    "settings_download_folder_choose_button": {
+      "comment": "iOS product copy for settings download folder choose button.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose folder"
+          }
+        }
+      }
+    },
+    "settings_download_folder_footer": {
+      "comment": "iOS product copy for settings download folder footer.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Torrents download into the selected folder."
+          }
+        }
+      }
+    },
+    "settings_download_folder_label": {
+      "comment": "iOS product copy for settings download folder label.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download folder"
+          }
+        }
+      }
+    },
+    "settings_download_folder_repair_button": {
+      "comment": "iOS product copy for settings download folder repair button.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repair Folder Access"
+          }
+        }
+      }
+    },
+    "settings_download_folder_reset_button": {
+      "comment": "iOS product copy for settings download folder reset button.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use internal storage"
+          }
+        }
+      }
+    },
+    "settings_storage_title": {
+      "comment": "iOS product copy for settings storage title.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Storage"
+          }
+        }
+      }
+    },
+    "settings_title": {
+      "comment": "iOS product copy for settings title.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings"
+          }
+        }
+      }
+    },
+    "tab_details_info_hash": {
+      "comment": "iOS product copy for tab details info hash.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Info Hash"
+          }
+        }
+      }
+    },
+    "tab_details_info_hash_v1": {
+      "comment": "iOS product copy for tab details info hash v1.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Info Hash (v1)"
+          }
+        }
+      }
+    },
+    "tab_details_info_hash_v2": {
+      "comment": "iOS product copy for tab details info hash v2.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Info Hash (v2)"
+          }
+        }
+      }
+    },
+    "tab_details_piece_count": {
+      "comment": "iOS product copy for tab details piece count.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Piece Count"
+          }
+        }
+      }
+    },
+    "tab_details_save_location": {
+      "comment": "iOS product copy for tab details save location.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save Location"
+          }
+        }
+      }
+    },
+    "tab_details_unknown": {
+      "comment": "iOS product copy for tab details unknown.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unknown"
+          }
+        }
+      }
+    },
+    "tab_files": {
+      "comment": "iOS product copy for tab files.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Files"
+          }
+        }
+      }
+    },
+    "tab_files_empty_description": {
+      "comment": "iOS product copy for tab files empty description.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File information not yet available"
+          }
+        }
+      }
+    },
+    "tab_files_empty_title": {
+      "comment": "iOS product copy for tab files empty title.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No files"
+          }
+        }
+      }
+    },
+    "tab_peers": {
+      "comment": "iOS product copy for tab peers.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Peers"
+          }
+        }
+      }
+    },
+    "tab_peers_empty_description": {
+      "comment": "iOS product copy for tab peers empty description.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Peers will appear here when connected"
+          }
+        }
+      }
+    },
+    "tab_peers_empty_title": {
+      "comment": "iOS product copy for tab peers empty title.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No peers connected"
+          }
+        }
+      }
+    },
+    "tab_pieces": {
+      "comment": "iOS product copy for tab pieces.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pieces"
+          }
+        }
+      }
+    },
+    "tab_pieces_empty_description": {
+      "comment": "iOS product copy for tab pieces empty description.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Piece activity will appear when metadata is available"
+          }
+        }
+      }
+    },
+    "tab_pieces_empty_title": {
+      "comment": "iOS product copy for tab pieces empty title.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No piece activity"
+          }
+        }
+      }
+    },
+    "tab_pieces_progress": {
+      "comment": "iOS product copy for tab pieces progress.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Progress"
+          }
+        }
+      }
+    },
+    "tab_status": {
+      "comment": "iOS product copy for tab status.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Status"
+          }
+        }
+      }
+    },
+    "tab_status_connected_peers_label": {
+      "comment": "iOS product copy for tab status connected peers label.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connected Peers"
+          }
+        }
+      }
+    },
+    "tab_status_download_label": {
+      "comment": "iOS product copy for tab status download label.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DOWNLOAD"
+          }
+        }
+      }
+    },
+    "tab_trackers": {
+      "comment": "iOS product copy for tab trackers.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trackers"
+          }
+        }
+      }
+    },
+    "tab_trackers_empty_description": {
+      "comment": "iOS product copy for tab trackers empty description.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trackers will appear here when configured"
+          }
+        }
+      }
+    },
+    "tab_trackers_empty_title": {
+      "comment": "iOS product copy for tab trackers empty title.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No trackers"
+          }
+        }
+      }
+    },
+    "torrent_detail_error_title": {
+      "comment": "iOS product copy for torrent detail error title.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Error"
+          }
+        }
+      }
+    },
+    "torrent_detail_open_with": {
+      "comment": "iOS product copy for torrent detail open with.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open using"
+          }
+        }
+      }
+    },
+    "torrent_detail_pause_button": {
+      "comment": "iOS product copy for torrent detail pause button.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pause"
+          }
+        }
+      }
+    },
+    "torrent_detail_recheck_button": {
+      "comment": "iOS product copy for torrent detail recheck button.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Force recheck"
+          }
+        }
+      }
+    },
+    "torrent_detail_remove_button": {
+      "comment": "iOS product copy for torrent detail remove button.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove torrent"
+          }
+        }
+      }
+    },
+    "torrent_detail_resume_button": {
+      "comment": "iOS product copy for torrent detail resume button.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resume"
+          }
+        }
+      }
+    },
+    "torrent_list_add_torrent": {
+      "comment": "iOS product copy for torrent list add torrent.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add torrent"
+          }
+        }
+      }
+    },
+    "torrent_list_empty_active": {
+      "comment": "iOS product copy for torrent list empty active.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No active torrents"
+          }
+        }
+      }
+    },
+    "torrent_list_empty_all": {
+      "comment": "iOS product copy for torrent list empty all.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No torrents"
+          }
+        }
+      }
+    },
+    "torrent_list_empty_finished": {
+      "comment": "iOS product copy for torrent list empty finished.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No completed torrents"
+          }
+        }
+      }
+    },
+    "torrent_list_error": {
+      "comment": "iOS product copy for torrent list error.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Error"
+          }
+        }
+      }
+    },
+    "torrent_list_hint_active": {
+      "comment": "iOS product copy for torrent list hint active.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloading torrents will appear here"
+          }
+        }
+      }
+    },
+    "torrent_list_hint_all": {
+      "comment": "iOS product copy for torrent list hint all.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap + to add a magnet link"
+          }
+        }
+      }
+    },
+    "torrent_list_hint_finished": {
+      "comment": "iOS product copy for torrent list hint finished.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Completed torrents will appear here"
+          }
+        }
+      }
+    },
+    "torrent_status_checking": {
+      "comment": "iOS product copy for torrent status checking.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking"
+          }
+        }
+      }
+    },
+    "torrent_status_done": {
+      "comment": "iOS product copy for torrent status done.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Done"
+          }
+        }
+      }
+    },
+    "torrent_status_downloading": {
+      "comment": "iOS product copy for torrent status downloading.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloading"
+          }
+        }
+      }
+    },
+    "torrent_status_downloading_metadata": {
+      "comment": "iOS product copy for torrent status downloading metadata.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fetching Metadata"
+          }
+        }
+      }
+    },
+    "torrent_status_error": {
+      "comment": "iOS product copy for torrent status error.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Error"
+          }
+        }
+      }
+    },
+    "torrent_status_queued": {
+      "comment": "iOS product copy for torrent status queued.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Queued"
+          }
+        }
+      }
+    },
+    "torrent_status_seeding": {
+      "comment": "iOS product copy for torrent status seeding.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seeding"
+          }
+        }
+      }
+    },
+    "torrent_status_stopped": {
+      "comment": "iOS product copy for torrent status stopped.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stopped"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

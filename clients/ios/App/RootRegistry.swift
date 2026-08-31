@@ -36,21 +36,29 @@ enum RootRegistryError: Error, LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .unsupportedSchema(let version):
-            return "unsupported root registry schema \(version)"
+            return String(
+                format: String(localized: "ios_registry_error_schema"),
+                locale: .current,
+                version.formatted()
+            )
         case .tooManyRoots(let count):
-            return "root registry contains \(count) selected roots"
+            return String(
+                format: String(localized: "ios_registry_error_too_many_roots"),
+                locale: .current,
+                count.formatted()
+            )
         case .duplicateRootID:
-            return "root registry contains a duplicate root ID"
+            return String(localized: "ios_registry_error_duplicate_id")
         case .invalidRootID:
-            return "root registry contains an invalid root ID"
+            return String(localized: "ios_registry_error_invalid_id")
         case .invalidGeneration:
-            return "root registry contains an invalid generation"
+            return String(localized: "ios_registry_error_generation")
         case .invalidLabel:
-            return "root registry contains an invalid label"
+            return String(localized: "ios_registry_error_label")
         case .invalidBookmark:
-            return "root registry contains invalid bookmark data"
+            return String(localized: "ios_registry_error_bookmark")
         case .generationOverflow:
-            return "root generation overflowed"
+            return String(localized: "ios_registry_error_generation_overflow")
         }
     }
 }

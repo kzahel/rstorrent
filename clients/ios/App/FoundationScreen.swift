@@ -7,18 +7,21 @@ struct FoundationScreen: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Engine") {
-                    LabeledContent("Status", value: model.engineStatus)
+                Section(String(localized: "ios_foundation_engine")) {
+                    LabeledContent(
+                        String(localized: "ios_runtime_status_label"),
+                        value: model.engineStatus.text
+                    )
                         .accessibilityIdentifier("engine-status")
                 }
-                Section("Storage folders") {
+                Section(String(localized: "ios_foundation_storage_folders")) {
                     ForEach(model.roots) { root in
                         VStack(alignment: .leading, spacing: 4) {
                             Label(
                                 root.label,
                                 systemImage: root.available ? "folder.fill" : "exclamationmark.triangle.fill"
                             )
-                            Text(root.detail)
+                            Text(root.detailText)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -26,17 +29,20 @@ struct FoundationScreen: View {
                     Button {
                         model.isFolderPickerPresented = true
                     } label: {
-                        Label("Choose Download Folder", systemImage: "folder.badge.plus")
+                        Label(
+                            String(localized: "settings_download_folder_choose_button"),
+                            systemImage: "folder.badge.plus"
+                        )
                     }
                     .disabled(model.isBusy)
                     .accessibilityIdentifier("choose-folder")
-                    Text(model.selectionStatus)
+                    Text(model.selectionStatus.text)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .accessibilityIdentifier("selected-root-status")
                 }
             }
-            .navigationTitle("RSTorrent")
+            .navigationTitle(String(localized: "app_name"))
             .fileImporter(
                 isPresented: $model.isFolderPickerPresented,
                 allowedContentTypes: [.folder],

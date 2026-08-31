@@ -66,6 +66,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: org.rstorrent.ios.dev
         PRODUCT_NAME: RSTorrent
         SWIFT_VERSION: "5.10"
+        SWIFT_EMIT_LOC_STRINGS: YES
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: App/Info.plist
         SUPPORTS_MACCATALYST: NO

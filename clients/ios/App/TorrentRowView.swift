@@ -30,7 +30,7 @@ struct TorrentRowView: View {
                             systemImage: torrentStatusSymbol(torrent)
                         )
                         .lineLimit(1)
-                        Label(String(torrent.numPeers), systemImage: "person.2")
+                        Label(localizedPeerCount(torrent.numPeers), systemImage: "person.2")
                             .lineLimit(1)
                     }
                     .font(.caption)
@@ -38,11 +38,11 @@ struct TorrentRowView: View {
 
                     HStack(spacing: 16) {
                         TorrentMetricView(
-                            title: L10n.string("ios_torrent_row_download_label"),
+                            title: String(localized: "ios_torrent_row_download_label"),
                             value: formattedBytesPerSecond(torrent.downloadSpeed)
                         )
                         TorrentMetricView(
-                            title: L10n.string("ios_torrent_row_upload_label"),
+                            title: String(localized: "ios_torrent_row_upload_label"),
                             value: "—"
                         )
                     }
@@ -59,15 +59,15 @@ struct TorrentRowView: View {
                 .buttonStyle(.borderless)
                 .accessibilityLabel(
                     torrent.isStopped
-                        ? L10n.string("torrent_detail_resume_button")
-                        : L10n.string("torrent_detail_pause_button")
+                        ? String(localized: "torrent_detail_resume_button")
+                        : String(localized: "torrent_detail_pause_button")
                 )
 
                 Button(role: .destructive, action: onRemove) {
                     Image(systemName: "trash").frame(width: 28, height: 28)
                 }
                 .buttonStyle(.borderless)
-                .accessibilityLabel(L10n.string("dialog_remove_confirm_button"))
+                .accessibilityLabel(String(localized: "dialog_remove_confirm_button"))
             }
             .foregroundStyle(.secondary)
         }

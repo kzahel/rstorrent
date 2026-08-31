@@ -26,7 +26,7 @@ final class IOSApplicationLifecycleOwner: ObservableObject {
     let model: AppModel
     @Published private(set) var state = IOSLifecycleState()
     @Published private(set) var notificationsEnabled = false
-    @Published private(set) var backgroundStatus = "Foreground service"
+    @Published private(set) var backgroundStatus = BackgroundPresentationStatus.foreground
 
     private var starting = false
     private var observedScenePhase: IOSLifecyclePhase = .foreground
@@ -81,7 +81,7 @@ final class IOSApplicationLifecycleOwner: ObservableObject {
                 || continuedTaskLease != nil
             finishFiniteOpportunity(success: true, notify: false)
             if !hadFiniteOpportunity {
-                backgroundStatus = "Foreground service"
+                backgroundStatus = .foreground
             }
             if !model.isReady { Task { await start() } }
         case .inactive:
@@ -91,13 +91,13 @@ final class IOSApplicationLifecycleOwner: ObservableObject {
             observedScenePhase = .background
             state.scene(.background)
             guard currentWork().active else {
-                backgroundStatus = "No active background work"
+                backgroundStatus = .inactive
                 return
             }
             beginUIKitBackgroundAssertion()
             backgroundStatus = continuedRequestIdentifier == nil
-                ? "Finite UIKit background time"
-                : "Continued processing requested"
+                ? .finiteUIKitTime
+                : .continuedRequested
             startMonitor()
         @unknown default:
             observedScenePhase = .inactive
@@ -112,14 +112,14 @@ final class IOSApplicationLifecycleOwner: ObservableObject {
             guard !magnet.isEmpty,
                   magnet.lengthOfBytes(using: .utf8) <= Self.maximumMagnetBytes
             else {
-                model.reportStatus("The incoming magnet link is empty or too large.")
+                model.reportStatus(.incomingMagnetInvalid)
                 return
             }
             input = .magnet(magnet)
         } else if url.isFileURL && url.pathExtension.lowercased() == "torrent" {
             input = .torrentFile(url)
         } else {
-            model.reportStatus("RSTorrent can open magnet links and .torrent files.")
+            model.reportStatus(.incomingTypeUnsupported)
             return
         }
 
@@ -128,9 +128,9 @@ final class IOSApplicationLifecycleOwner: ObservableObject {
             pendingInput = input
             Task { await drainPendingInput() }
         case .duplicate:
-            model.reportStatus("That incoming torrent was already handled.")
+            model.reportStatus(.incomingAlreadyHandled)
         case .occupied:
-            model.reportStatus("Finish the pending incoming torrent before opening another.")
+            model.reportStatus(.incomingOccupied)
         }
     }
 
@@ -138,11 +138,11 @@ final class IOSApplicationLifecycleOwner: ObservableObject {
         if enabled {
             notificationsEnabled = await notifications.requestAuthorization()
             backgroundStatus = notificationsEnabled
-                ? "Background completion notifications enabled"
-                : "Notifications were not authorized"
+                ? .notificationsEnabled
+                : .notificationsUnauthorized
         } else {
             notificationsEnabled = false
-            backgroundStatus = "Background completion notifications disabled"
+            backgroundStatus = .notificationsDisabled
         }
     }
 
@@ -164,7 +164,7 @@ final class IOSApplicationLifecycleOwner: ObservableObject {
                 await self.expireFiniteOpportunity()
             }
         }
-        backgroundStatus = "Continued processing active"
+        backgroundStatus = .continuedActive
         startMonitor()
     }
 
@@ -174,17 +174,17 @@ final class IOSApplicationLifecycleOwner: ObservableObject {
         let identifier = "\(Self.continuedTaskPrefix).\(UUID().uuidString.lowercased())"
         let request = BGContinuedProcessingTaskRequest(
             identifier: identifier,
-            title: "RSTorrent download",
-            subtitle: "Downloading and verifying selected content"
+            title: String(localized: "ios_background_task_title"),
+            subtitle: String(localized: "ios_background_task_subtitle")
         )
         request.strategy = .fail
         do {
             try BGTaskScheduler.shared.submit(request)
             continuedRequestIdentifier = identifier
-            backgroundStatus = "Continued processing requested"
+            backgroundStatus = .continuedRequested
             startMonitor()
         } catch {
-            backgroundStatus = "Continued processing unavailable; UIKit fallback will be used"
+            backgroundStatus = .continuedUnavailable
         }
     }
 
@@ -199,9 +199,9 @@ final class IOSApplicationLifecycleOwner: ObservableObject {
             case .torrentFile(let url):
                 _ = try await model.addTorrentFile(url)
             }
-            model.reportStatus("Incoming torrent accepted.")
+            model.reportStatus(.incomingAccepted)
         } catch {
-            model.reportStatus(error.localizedDescription)
+            model.reportStatus(.error(error.localizedDescription))
         }
     }
 
@@ -250,8 +250,13 @@ final class IOSApplicationLifecycleOwner: ObservableObject {
         continuedTask.progress.totalUnitCount = work.total
         continuedTask.progress.completedUnitCount = work.completed
         continuedTask.updateTitle(
-            "RSTorrent download",
-            subtitle: "\(work.completed) of \(work.total) pieces verified"
+            String(localized: "ios_background_task_title"),
+            subtitle: String(
+                format: String(localized: "ios_background_task_progress"),
+                locale: .current,
+                work.completed.formatted(),
+                work.total.formatted()
+            )
         )
     }
 
@@ -274,7 +279,7 @@ final class IOSApplicationLifecycleOwner: ObservableObject {
         if notify, notificationsEnabled {
             Task { await notifications.postCompletion() }
         }
-        backgroundStatus = success ? "Background work complete" : "Background time expired"
+        backgroundStatus = success ? .workComplete : .timeExpired
     }
 
     private func expireFiniteOpportunity() async {
@@ -283,11 +288,11 @@ final class IOSApplicationLifecycleOwner: ObservableObject {
             return
         }
         state.beginStopping()
-        backgroundStatus = "Background time expired; saving state"
+        backgroundStatus = .savingAfterExpiration
         do {
             try await model.shutdown()
         } catch {
-            model.reportStatus(error.localizedDescription)
+            model.reportStatus(.error(error.localizedDescription))
         }
         finishFiniteOpportunity(success: false, notify: false)
         state.engineStopped()
@@ -427,8 +432,8 @@ private actor IOSNotificationCoordinator {
 
     func postCompletion() async {
         let content = UNMutableNotificationContent()
-        content.title = "RSTorrent"
-        content.body = "Background download work completed."
+        content.title = String(localized: "app_name")
+        content.body = String(localized: "ios_notification_background_complete")
         content.categoryIdentifier = Self.category
         UNUserNotificationCenter.current().removePendingNotificationRequests(
             withIdentifiers: [Self.request]

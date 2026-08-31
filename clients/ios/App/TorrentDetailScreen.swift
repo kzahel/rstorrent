@@ -9,13 +9,13 @@ private enum TorrentDetailSection: CaseIterable, Identifiable {
     case pieces
 
     var id: Self { self }
-    var titleKey: String {
+    var title: LocalizedStringResource {
         switch self {
-        case .status: return "tab_status"
-        case .files: return "tab_files"
-        case .trackers: return "tab_trackers"
-        case .peers: return "tab_peers"
-        case .pieces: return "tab_pieces"
+        case .status: return LocalizedStringResource("tab_status")
+        case .files: return LocalizedStringResource("tab_files")
+        case .trackers: return LocalizedStringResource("tab_trackers")
+        case .peers: return LocalizedStringResource("tab_peers")
+        case .pieces: return LocalizedStringResource("tab_pieces")
         }
     }
     var projection: ViewProjection {
@@ -67,13 +67,13 @@ struct TorrentDetailScreen: View {
                         }
                         .accessibilityLabel(
                             torrent.isStopped
-                                ? L10n.string("torrent_detail_resume_button")
-                                : L10n.string("torrent_detail_pause_button")
+                                ? String(localized: "torrent_detail_resume_button")
+                                : String(localized: "torrent_detail_pause_button")
                         )
                         Button(role: .destructive) { pendingRemovalTorrent = torrent } label: {
                             Image(systemName: "trash")
                         }
-                        .accessibilityLabel(L10n.string("torrent_detail_remove_button"))
+                        .accessibilityLabel(String(localized: "torrent_detail_remove_button"))
                     }
                 }
                 .task(id: selectedSection) {
@@ -112,7 +112,7 @@ struct TorrentDetailScreen: View {
                     Image(systemName: "exclamationmark.triangle")
                         .font(.largeTitle)
                         .foregroundStyle(.secondary)
-                    Text(L10n.string("torrent_detail_error_title"))
+                    Text(String(localized: "torrent_detail_error_title"))
                         .font(.headline)
                     Text(torrentID)
                         .font(.caption.monospaced())
@@ -209,15 +209,15 @@ private struct TorrentOverviewCard: View {
             ProgressView(value: min(max(torrent.progress, 0), 1))
             HStack(spacing: 12) {
                 OverviewPill(
-                    title: L10n.string("ios_torrent_row_download_label"),
+                    title: String(localized: "ios_torrent_row_download_label"),
                     value: formattedBytesPerSecond(torrent.downloadSpeed)
                 )
                 OverviewPill(
-                    title: L10n.string("ios_torrent_row_upload_label"),
+                    title: String(localized: "ios_torrent_row_upload_label"),
                     value: "—"
                 )
                 OverviewPill(
-                    title: L10n.string("ios_torrent_row_peers_label"),
+                    title: String(localized: "ios_torrent_row_peers_label"),
                     value: String(torrent.numPeers)
                 )
             }
@@ -254,7 +254,7 @@ private struct DetailSectionPicker: View {
             HStack(spacing: 8) {
                 ForEach(TorrentDetailSection.allCases) { section in
                     Button { selectedSection = section } label: {
-                        Text(L10n.string(section.titleKey))
+                        Text(section.title)
                             .font(.subheadline.weight(.semibold))
                             .padding(.horizontal, 14)
                             .padding(.vertical, 8)
@@ -280,51 +280,57 @@ private struct TorrentStatusSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(L10n.string("tab_status")).font(.headline)
+            Text(String(localized: "tab_status")).font(.headline)
             LazyVGrid(columns: columns, spacing: 12) {
                 DetailMetricCard(
-                    title: L10n.string("tab_status_download_label"),
+                    title: String(localized: "tab_status_download_label"),
                     value: formattedBytesPerSecond(torrent.downloadSpeed)
                 )
                 DetailMetricCard(
-                    title: L10n.string("tab_status_connected_peers_label"),
-                    value: String(torrent.numPeers)
+                    title: String(localized: "tab_status_connected_peers_label"),
+                    value: torrent.numPeers.formatted()
                 )
                 DetailMetricCard(
-                    title: L10n.string("tab_pieces_progress"),
+                    title: String(localized: "tab_pieces_progress"),
                     value: formattedProgress(torrent.progress)
                 )
                 DetailMetricCard(
-                    title: L10n.string("tab_details_piece_count"),
-                    value: "\(torrent.value.verifiedPieceCount) / \(torrent.value.pieceCount)"
+                    title: String(localized: "tab_details_piece_count"),
+                    value: formattedCountRatio(
+                        torrent.value.verifiedPieceCount,
+                        torrent.value.pieceCount
+                    )
                 )
             }
             DetailFactRow(
-                title: L10n.string("tab_details_save_location"),
+                title: String(localized: "tab_details_save_location"),
                 value: enumLabel(torrent.value.storageState)
             )
             if let v1 = torrent.value.protocolIdentities.v1,
                let v2 = torrent.value.protocolIdentities.v2 {
                 DetailFactRow(
-                    title: L10n.string("tab_details_info_hash_v1"),
+                    title: String(localized: "tab_details_info_hash_v1"),
                     value: v1
                 )
                 DetailFactRow(
-                    title: L10n.string("tab_details_info_hash_v2"),
+                    title: String(localized: "tab_details_info_hash_v2"),
                     value: v2
                 )
             } else {
                 DetailFactRow(
-                    title: L10n.string("tab_details_info_hash"),
+                    title: String(localized: "tab_details_info_hash"),
                     value: torrent.infoHash
                 )
             }
             if let error = torrent.value.error {
-                DetailFactRow(title: L10n.string("torrent_list_error"), value: error)
+                DetailFactRow(title: String(localized: "torrent_list_error"), value: error)
             }
             if torrent.value.forceRecheckAvailable {
                 Button(action: onForceRecheck) {
-                    Label("Force recheck", systemImage: "checkmark.arrow.trianglehead.counterclockwise")
+                    Label(
+                        String(localized: "torrent_detail_recheck_button"),
+                        systemImage: "checkmark.arrow.trianglehead.counterclockwise"
+                    )
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
@@ -343,12 +349,12 @@ private struct TorrentFilesSection: View {
     var body: some View {
         if files.isEmpty {
             DetailPlaceholderCard(
-                title: L10n.string("tab_files_empty_title"),
-                message: L10n.string("tab_files_empty_description")
+                title: String(localized: "tab_files_empty_title"),
+                message: String(localized: "tab_files_empty_description")
             )
         } else {
             VStack(alignment: .leading, spacing: 16) {
-                Text(L10n.string("tab_files")).font(.headline)
+                Text(String(localized: "tab_files")).font(.headline)
                 ForEach(files, id: \.fileId) { file in
                     HStack(alignment: .top, spacing: 12) {
                         VStack(alignment: .leading, spacing: 6) {
@@ -371,29 +377,31 @@ private struct TorrentFilesSection: View {
                         if let selection = file.selection {
                             Text(
                                 selection == .high
-                                    ? L10n.string("file_priority_high")
+                                    ? String(localized: "file_priority_high")
                                     : selection == .skipped
-                                        ? L10n.string("file_priority_skip")
-                                        : L10n.string("file_priority_normal")
+                                        ? String(localized: "file_priority_skip")
+                                        : String(localized: "file_priority_normal")
                             )
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(.secondary)
                         }
                         Menu {
-                            Button(L10n.string("file_priority_high")) {
+                            Button(String(localized: "file_priority_high")) {
                                 onPriority([file.fileIndex], .high)
                             }
-                            Button(L10n.string("file_priority_normal")) {
+                            Button(String(localized: "file_priority_normal")) {
                                 onPriority([file.fileIndex], .normal)
                             }
-                            Button(L10n.string("file_priority_skip")) {
+                            Button(String(localized: "file_priority_skip")) {
                                 onPriority([file.fileIndex], .skip)
                             }
                             if file.selection == .skipped {
-                                Button("Download now") { onDownloadNow(file.fileIndex) }
+                                Button(String(localized: "ios_file_download_now")) {
+                                    onDownloadNow(file.fileIndex)
+                                }
                             }
                             if file.mediaAvailability == .available {
-                                Button(L10n.string("torrent_detail_open_with")) {
+                                Button(String(localized: "torrent_detail_open_with")) {
                                     onOpen(file)
                                 }
                             }
@@ -414,19 +422,25 @@ private struct TorrentTrackersSection: View {
     var body: some View {
         if trackers.isEmpty {
             DetailPlaceholderCard(
-                title: L10n.string("tab_trackers_empty_title"),
-                message: L10n.string("tab_trackers_empty_description")
+                title: String(localized: "tab_trackers_empty_title"),
+                message: String(localized: "tab_trackers_empty_description")
             )
         } else {
             VStack(alignment: .leading, spacing: 14) {
-                Text(L10n.string("tab_trackers")).font(.headline)
+                Text(String(localized: "tab_trackers")).font(.headline)
                 ForEach(trackers, id: \.trackerId) { tracker in
                     VStack(alignment: .leading, spacing: 5) {
                         Text(tracker.url).font(.subheadline).textSelection(.enabled)
                         HStack {
                             Label(enumLabel(tracker.status), systemImage: "antenna.radiowaves.left.and.right")
                             Spacer()
-                            Text("Tier \(tracker.tier)")
+                            Text(
+                                String(
+                                    format: String(localized: "ios_tracker_tier"),
+                                    locale: .current,
+                                    tracker.tier.formatted()
+                                )
+                            )
                         }
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -447,12 +461,12 @@ private struct TorrentPeersSection: View {
     var body: some View {
         if peers.isEmpty {
             DetailPlaceholderCard(
-                title: L10n.string("tab_peers_empty_title"),
-                message: L10n.string("tab_peers_empty_description")
+                title: String(localized: "tab_peers_empty_title"),
+                message: String(localized: "tab_peers_empty_description")
             )
         } else {
             VStack(alignment: .leading, spacing: 14) {
-                Text(L10n.string("tab_peers")).font(.headline)
+                Text(String(localized: "tab_peers")).font(.headline)
                 ForEach(peers, id: \.connectionId) { peer in
                     VStack(alignment: .leading, spacing: 5) {
                         Text(peer.clientName ?? peer.remoteEndpoint).font(.subheadline.weight(.semibold))
@@ -480,22 +494,28 @@ private struct TorrentPiecesSection: View {
     var body: some View {
         if let activity, activity.pieceCount > 0 {
             VStack(alignment: .leading, spacing: 16) {
-                Text(L10n.string("tab_pieces")).font(.headline)
+                Text(String(localized: "tab_pieces")).font(.headline)
                 PieceMapView(activity: activity)
                     .frame(height: 180)
                     .accessibilityLabel(
-                        "\(verifiedCount(activity)) of \(activity.pieceCount) pieces verified"
+                        localizedVerifiedPieces(
+                            verifiedCount(activity),
+                            activity.pieceCount
+                        )
                     )
                 DetailFactRow(
-                    title: L10n.string("tab_pieces_progress"),
-                    value: "\(verifiedCount(activity)) / \(activity.pieceCount)"
+                    title: String(localized: "tab_pieces_progress"),
+                    value: formattedCountRatio(
+                        verifiedCount(activity),
+                        activity.pieceCount
+                    )
                 )
             }
             .detailCard()
         } else {
             DetailPlaceholderCard(
-                title: L10n.string("tab_pieces_empty_title"),
-                message: L10n.string("tab_pieces_empty_description")
+                title: String(localized: "tab_pieces_empty_title"),
+                message: String(localized: "tab_pieces_empty_description")
             )
         }
     }

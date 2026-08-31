@@ -22,9 +22,9 @@ struct AddTorrentSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section(L10n.string("dialog_add_torrent_magnet_label")) {
+                Section(String(localized: "dialog_add_torrent_magnet_label")) {
                     TextField(
-                        L10n.string("dialog_add_torrent_magnet_hint"),
+                        String(localized: "dialog_add_torrent_magnet_hint"),
                         text: $magnetInput,
                         axis: .vertical
                     )
@@ -34,33 +34,33 @@ struct AddTorrentSheet: View {
                     .submitLabel(.done)
                     .onSubmit(submitMagnet)
 
-                    Button(L10n.string("dialog_add_torrent_paste_button")) {
+                    Button(String(localized: "dialog_add_torrent_paste_button")) {
                         magnetInput = clipboardText ?? magnetInput
                     }
                     .disabled(clipboardText == nil)
                 }
 
                 Section {
-                    Button(L10n.string("dialog_add_torrent_add_button")) {
+                    Button(String(localized: "dialog_add_torrent_add_button")) {
                         submitMagnet()
                     }
                     .disabled(!canAddMagnet)
 
-                    Button(L10n.string("dialog_add_torrent_browse_button")) {
+                    Button(String(localized: "dialog_add_torrent_browse_button")) {
                         dismiss()
                         onBrowse()
                     }
                 }
             }
-            .navigationTitle(L10n.string("dialog_add_torrent_title"))
+            .navigationTitle(String(localized: "dialog_add_torrent_title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(L10n.string("dialog_add_torrent_cancel_button")) { dismiss() }
+                    Button(String(localized: "dialog_add_torrent_cancel_button")) { dismiss() }
                 }
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
-                    Button(L10n.string("dialog_add_torrent_add_button")) {
+                    Button(String(localized: "dialog_add_torrent_add_button")) {
                         submitMagnet()
                     }
                     .disabled(!canAddMagnet)

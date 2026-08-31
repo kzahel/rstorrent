@@ -4,16 +4,19 @@ import RSTorrentSession
 
 struct RootDisplayItem: Identifiable, Equatable {
     var id: String
-    var label: String
+    var name: RootDisplayName
     var available: Bool
-    var detail: String
+    var detail: RootDisplayDetail
+
+    var label: String { name.text }
+    var detailText: String { detail.text }
 }
 
 @MainActor
 final class AppModel: ObservableObject {
     @Published private(set) var roots: [RootDisplayItem] = []
-    @Published private(set) var engineStatus = "Starting…"
-    @Published private(set) var selectionStatus = "No external folder selected"
+    @Published private(set) var engineStatus = EnginePresentationStatus.starting
+    @Published private(set) var selectionStatus = SelectionPresentationStatus.noneSelected
     @Published private(set) var isBusy = false
     @Published var isFolderPickerPresented = false
     let presentation = IOSPresentationRepository()
@@ -64,28 +67,28 @@ final class AppModel: ObservableObject {
             roots = [
                 RootDisplayItem(
                     id: "ios-documents",
-                    label: "RSTorrent Documents",
+                    name: .appDocuments,
                     available: true,
-                    detail: "On My iPhone"
+                    detail: .onMyDevice
                 )
             ] + reconciled
-            engineStatus = "Ready"
+            engineStatus = .ready
             if document.selectedRoots.isEmpty {
-                selectionStatus = "No external folder selected"
+                selectionStatus = .noneSelected
             } else if reconciled.allSatisfy(\.available) {
-                selectionStatus = "External folders ready"
+                selectionStatus = .externalFoldersReady
             } else {
-                selectionStatus = "An external folder needs repair"
+                selectionStatus = .folderNeedsRepair
             }
         } catch {
-            engineStatus = "Unavailable: \(error.localizedDescription)"
+            engineStatus = .unavailable(error.localizedDescription)
         }
     }
 
     func selectFolder(_ url: URL) async {
         guard !isBusy else { return }
         isBusy = true
-        selectionStatus = "Checking selected folder…"
+        selectionStatus = .checkingSelection
         defer { isBusy = false }
         do {
             let document = try await rootStore.load()
@@ -103,20 +106,20 @@ final class AppModel: ObservableObject {
             )
             try await restart()
             _ = try await dispatch(.setDefaultStorageRoot(storageRoot: record.id))
-            selectionStatus = "\(record.displayLabel) is ready"
+            selectionStatus = .folderReady(record.displayLabel)
         } catch {
-            selectionStatus = error.localizedDescription
+            selectionStatus = .error(error.localizedDescription)
         }
     }
 
     func repairFolder(rootID: String, with url: URL) async {
         guard !isBusy else { return }
         guard rootID != "ios-documents" else {
-            selectionStatus = "The app-owned folder does not require bookmark repair."
+            selectionStatus = .appFolderNeedsNoRepair
             return
         }
         isBusy = true
-        selectionStatus = "Checking replacement folder…"
+        selectionStatus = .checkingReplacement
         defer { isBusy = false }
         var restartTorrentIDs: [String] = []
         do {
@@ -144,14 +147,14 @@ final class AppModel: ObservableObject {
             for torrentID in restartTorrentIDs {
                 _ = try await dispatch(.resume(torrentId: torrentID))
             }
-            selectionStatus = "\(record.displayLabel) repaired"
+            selectionStatus = .folderRepaired(record.displayLabel)
         } catch {
             if client != nil {
                 for torrentID in restartTorrentIDs {
                     _ = try? await dispatch(.resume(torrentId: torrentID))
                 }
             }
-            selectionStatus = error.localizedDescription
+            selectionStatus = .error(error.localizedDescription)
         }
     }
 
@@ -162,7 +165,7 @@ final class AppModel: ObservableObject {
         await storageBridge?.stopAfterClientShutdown()
         self.client = nil
         storageBridge = nil
-        engineStatus = "Stopped"
+        engineStatus = .stopped
     }
 
     @discardableResult
@@ -262,9 +265,9 @@ final class AppModel: ObservableObject {
                 try await rootStore.remove(id: root.id)
             }
             try await restart()
-            selectionStatus = "RSTorrent Documents is the default folder"
+            selectionStatus = .appFolderIsDefault
         } catch {
-            selectionStatus = error.localizedDescription
+            selectionStatus = .error(error.localizedDescription)
         }
     }
 
@@ -283,9 +286,9 @@ final class AppModel: ObservableObject {
         roots = [
             RootDisplayItem(
                 id: "ios-documents",
-                label: "RSTorrent Documents",
+                name: .appDocuments,
                 available: true,
-                detail: "On My iPhone"
+                detail: .onMyDevice
             )
         ] + reconcile(restored, with: health)
     }
@@ -294,7 +297,7 @@ final class AppModel: ObservableObject {
         let roots = [
             IosStorageRootConfig(
                 id: "ios-documents",
-                label: "RSTorrent Documents",
+                label: String(localized: "ios_app_documents"),
                 path: documentsURL.path
             )
         ] + records.map {
@@ -337,9 +340,9 @@ final class AppModel: ObservableObject {
             guard root.available, health[root.id] == false else { return root }
             return RootDisplayItem(
                 id: root.id,
-                label: root.label,
+                name: root.name,
                 available: false,
-                detail: "Root access probe failed; repair folder access."
+                detail: .probeFailed
             )
         }
     }
@@ -380,10 +383,10 @@ final class AppModel: ObservableObject {
     }
 
     private func presentationError(_ error: Error) {
-        selectionStatus = error.localizedDescription
+        selectionStatus = .error(error.localizedDescription)
     }
 
-    func reportStatus(_ status: String) {
+    func reportStatus(_ status: SelectionPresentationStatus) {
         selectionStatus = status
     }
 
@@ -407,18 +410,18 @@ final class AppModel: ObservableObject {
                 displays.append(
                     RootDisplayItem(
                         id: record.id,
-                        label: restored.displayLabel,
+                        name: .supplied(restored.displayLabel),
                         available: true,
-                        detail: "Qualified on-device folder"
+                        detail: .qualified
                     )
                 )
             } catch {
                 displays.append(
                     RootDisplayItem(
                         id: record.id,
-                        label: record.displayLabel,
+                        name: .supplied(record.displayLabel),
                         available: false,
-                        detail: error.localizedDescription
+                        detail: .error(error.localizedDescription)
                     )
                 )
             }
@@ -443,15 +446,19 @@ enum AppModelError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notReady:
-            return "RSTorrent is still starting."
+            return String(localized: "ios_error_not_ready")
         case .command(let message):
             return message
         case .missingAddResult:
-            return "The engine did not return an add result."
+            return String(localized: "ios_error_missing_add_result")
         case .invalidTorrentLength(let count):
-            return "The selected torrent file has an unsupported size (\(count) bytes)."
+            return String(
+                format: String(localized: "ios_error_invalid_torrent_length"),
+                locale: .current,
+                count.formatted(.byteCount(style: .file))
+            )
         case .unknownStorageRoot:
-            return "The storage root is no longer registered."
+            return String(localized: "ios_error_unknown_storage_root")
         }
     }
 }
