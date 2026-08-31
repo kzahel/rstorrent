@@ -59,6 +59,7 @@ PROFILE_CHOICES = (
     "product-unmetered-network",
     "product-background-lifecycle",
     "product-external-intake",
+    "product-media-playback",
     "slow-storage",
     "cancellation",
     "peer-failure",
@@ -270,6 +271,141 @@ class SeedFixture:
             self.alerts.extend(
                 alert.message() for alert in self.session.pop_alerts()
             )
+        except Exception:
+            pass
+        try:
+            if self.handle.is_valid():
+                self.session.remove_torrent(self.handle)
+        except Exception:
+            pass
+        try:
+            self.session.pause()
+        except Exception:
+            pass
+        self.handle = None
+        self.session = None
+        gc.collect()
+        shutil.rmtree(self.run_path)
+
+
+@dataclass
+class MediaSeedFixture:
+    run_path: Path
+    torrent_path: Path
+    info_hash: str
+    name: str
+    file_size: int
+    expected_sha1: str
+    piece_count: int
+    session: Any
+    handle: Any
+    host_port: int
+    alerts: list[str]
+
+    @classmethod
+    def create(
+        cls,
+        interop: ModuleType,
+        label: str,
+    ) -> "MediaSeedFixture":
+        import libtorrent as lt
+
+        ffmpeg = shutil.which("ffmpeg")
+        if ffmpeg is None:
+            raise BootstrapFailure("product-media-playback requires ffmpeg")
+        run_path = Path(tempfile.mkdtemp(prefix=f"rstorrent-android-{label}-"))
+        source_root = run_path / "source"
+        torrent_root = source_root / "media-playback"
+        torrent_root.mkdir(parents=True)
+        media_path = torrent_root / "controlled.mp4"
+        encoded = subprocess.run(
+            [
+                ffmpeg,
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=320x180:rate=24",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:sample_rate=44100",
+                "-t",
+                "30",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-profile:v",
+                "baseline",
+                "-pix_fmt",
+                "yuv420p",
+                "-b:v",
+                "160k",
+                "-maxrate",
+                "160k",
+                "-bufsize",
+                "320k",
+                "-g",
+                "48",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "32k",
+                "-movflags",
+                "+faststart",
+                str(media_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=90,
+            check=False,
+        )
+        if encoded.returncode != 0 or not media_path.is_file():
+            shutil.rmtree(run_path)
+            raise BootstrapFailure(
+                "could not create controlled Android media fixture\n" + encoded.stderr
+            )
+        file_size = media_path.stat().st_size
+        if not 256 * 1024 <= file_size <= 2 * 1024 * 1024:
+            shutil.rmtree(run_path)
+            raise BootstrapFailure(
+                f"controlled media fixture has unexpected size {file_size}"
+            )
+        storage = lt.file_storage()
+        storage.add_file("media-playback/controlled.mp4", file_size)
+        creator = lt.create_torrent(
+            storage,
+            piece_size=32 * 1024,
+            flags=lt.create_torrent.v1_only,
+        )
+        lt.set_piece_hashes(creator, str(source_root))
+        torrent_path = run_path / "media-playback.torrent"
+        torrent_path.write_bytes(bytes(lt.bencode(creator.generate())))
+        torrent_info = lt.torrent_info(str(torrent_path))
+        alerts: list[str] = []
+        session = interop.create_session()
+        host_port = interop.wait_for_listener(session, alerts)
+        handle = interop.add_seed(session, torrent_info, source_root, alerts)
+        return cls(
+            run_path=run_path,
+            torrent_path=torrent_path,
+            info_hash=str(torrent_info.info_hashes().v1),
+            name=str(torrent_info.name()),
+            file_size=file_size,
+            expected_sha1=hashlib.sha1(media_path.read_bytes()).hexdigest(),
+            piece_count=torrent_info.num_pieces(),
+            session=session,
+            handle=handle,
+            host_port=host_port,
+            alerts=alerts,
+        )
+
+    def close(self) -> None:
+        try:
+            self.alerts.extend(alert.message() for alert in self.session.pop_alerts())
         except Exception:
             pass
         try:
@@ -575,6 +711,150 @@ class RequestClosingProxy:
             return
         if self.failure is not None and not self.saw_request.is_set():
             raise BootstrapFailure(f"peer-failure proxy failed: {self.failure}")
+
+
+class RepeatedDelayedPieceProxy:
+    """Relay repeated plaintext peers while delaying piece payload frames."""
+
+    def __init__(self, target: tuple[str, int], piece_delay_seconds: float) -> None:
+        self.target = target
+        self.piece_delay_seconds = piece_delay_seconds
+        self.listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.listener.bind(("127.0.0.1", 0))
+        self.listener.listen(8)
+        self.listener.settimeout(0.2)
+        self.endpoint = ("127.0.0.1", int(self.listener.getsockname()[1]))
+        self.pieces: list[tuple[int, int, int]] = []
+        self._closing = threading.Event()
+        self._sockets: list[socket.socket] = []
+        self._failure: BaseException | None = None
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        try:
+            while not self._closing.is_set():
+                try:
+                    downstream, _ = self.listener.accept()
+                except TimeoutError:
+                    continue
+                upstream = socket.create_connection(self.target, timeout=5)
+                upstream.settimeout(None)
+                downstream.settimeout(None)
+                self._sockets.extend((downstream, upstream))
+                self._relay_connection(downstream, upstream)
+        except BaseException as error:
+            if not (self._closing.is_set() and isinstance(error, OSError)):
+                self._failure = error
+        finally:
+            self._shutdown_sockets()
+
+    def _relay_connection(
+        self,
+        downstream: socket.socket,
+        upstream: socket.socket,
+    ) -> None:
+        stop = threading.Event()
+        workers = (
+            threading.Thread(
+                target=self._relay_guard,
+                args=(downstream, upstream, stop, False),
+                daemon=True,
+            ),
+            threading.Thread(
+                target=self._relay_guard,
+                args=(upstream, downstream, stop, True),
+                daemon=True,
+            ),
+        )
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join()
+        for stream in (downstream, upstream):
+            try:
+                stream.close()
+            except OSError:
+                pass
+
+    def _relay_guard(
+        self,
+        source: socket.socket,
+        destination: socket.socket,
+        stop: threading.Event,
+        observe_pieces: bool,
+    ) -> None:
+        try:
+            handshake = self._recv_exact(source, 68)
+            if not handshake.startswith(b"\x13BitTorrent protocol"):
+                raise BootstrapFailure("media proxy received a non-BitTorrent handshake")
+            destination.sendall(handshake)
+            while not stop.is_set():
+                prefix = self._recv_maybe_exact(source, 4)
+                if prefix is None:
+                    return
+                length = struct.unpack(">I", prefix)[0]
+                body = self._recv_exact(source, length) if length else b""
+                destination.sendall(prefix + body)
+                if observe_pieces and len(body) >= 9 and body[0] == 7:
+                    piece, begin = struct.unpack(">II", body[1:9])
+                    self.pieces.append((piece, begin, len(body) - 9))
+                    time.sleep(self.piece_delay_seconds)
+        except (ConnectionError, EOFError, OSError):
+            pass
+        except BaseException as error:
+            self._failure = error
+        finally:
+            stop.set()
+            for stream in (source, destination):
+                try:
+                    stream.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+
+    @staticmethod
+    def _recv_exact(stream: socket.socket, length: int) -> bytes:
+        data = bytearray()
+        while len(data) < length:
+            chunk = stream.recv(length - len(data))
+            if not chunk:
+                raise EOFError("media proxy peer closed within a frame")
+            data.extend(chunk)
+        return bytes(data)
+
+    @classmethod
+    def _recv_maybe_exact(
+        cls,
+        stream: socket.socket,
+        length: int,
+    ) -> bytes | None:
+        first = stream.recv(length)
+        if not first:
+            return None
+        if len(first) == length:
+            return first
+        return first + cls._recv_exact(stream, length - len(first))
+
+    def _shutdown_sockets(self) -> None:
+        for stream in self._sockets:
+            try:
+                stream.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+    def close(self) -> None:
+        self._closing.set()
+        try:
+            self.listener.close()
+        except OSError:
+            pass
+        self._shutdown_sockets()
+        self._thread.join(timeout=5)
+        if self._thread.is_alive():
+            raise BootstrapFailure("media proxy did not join")
+        if self._failure is not None:
+            raise BootstrapFailure(f"media proxy failed: {self._failure}")
 
 
 @dataclass
@@ -3207,6 +3487,34 @@ def request_product_torrent_action(target: Any, torrent_id: str, action: str) ->
     )
 
 
+def request_product_media_action(target: Any, torrent_id: str, action: str) -> None:
+    result = target.shell(
+        [
+            "am",
+            "broadcast",
+            "-a",
+            "org.rstorrent.bootstrap.PRODUCT_TEST",
+            "-n",
+            f"{PACKAGE}/.ProductTestReceiver",
+            "--es",
+            "torrent_id",
+            torrent_id,
+            "--es",
+            "torrent_action",
+            action,
+        ],
+        timeout=30,
+        check=False,
+    )
+    if "result=0" not in result.stdout or result.returncode != 0:
+        raise BootstrapFailure(f"could not request product media action {action}")
+    wait_product_log(
+        target,
+        f"torrent_action_completed torrent={torrent_id} action={action}",
+        f"product media action {action}",
+    )
+
+
 def verify_product_upload(
     target: Any,
     fixture: SeedFixture,
@@ -5159,6 +5467,281 @@ def run_product_incomplete_duplex_profile(
         shutil.rmtree(run_path, ignore_errors=True)
 
 
+def run_product_media_playback_profile(
+    target: Any,
+    target_kind: str,
+    identity: dict[str, str],
+    probe: ModuleType,
+    interop: ModuleType,
+    duplex: ModuleType,
+    ordinal: int,
+    storage: str,
+) -> dict[str, Any]:
+    if not storage.startswith("saf-"):
+        raise BootstrapFailure("product-media-playback requires a SAF storage mode")
+    grant_storage = "sdcard" if storage == "saf-sdcard" else "internal"
+    fixture = MediaSeedFixture.create(
+        interop,
+        f"{target_kind}-product-media-playback-{ordinal}",
+    )
+    proxy: Any | None = None
+    transport: ReverseTransport | None = None
+    torrent_id = "unallocated"
+    baseline_fds = 0
+    output_path = f"{probe.grant_path(grant_storage)}/{fixture.name}/controlled.mp4"
+
+    def add_slow_media(slot: int) -> tuple[str, Any, ReverseTransport]:
+        nonlocal torrent_id
+        media_proxy = RepeatedDelayedPieceProxy(
+            ("127.0.0.1", fixture.host_port),
+            piece_delay_seconds=0.1,
+        )
+        media_transport = ReverseTransport.create(
+            target,
+            target_kind,
+            media_proxy.endpoint[1],
+            ordinal,
+            slot=slot,
+        )
+        magnet = (
+            f"magnet:?xt=urn:btih:{fixture.info_hash}&dn={fixture.name}"
+            f"&x.pe=127.0.0.1:{media_transport.device_port}"
+        )
+        prior = product_add_count(target, fixture.info_hash)
+        started = target.shell(
+            [
+                "am",
+                "start",
+                "-n",
+                ACTIVITY,
+                "--es",
+                "product_magnet",
+                shlex.quote(magnet),
+            ],
+            timeout=30,
+            check=False,
+        )
+        if "Error:" in started.stdout or (
+            started.returncode != 0 and "Starting:" not in started.stdout
+        ):
+            media_transport.close()
+            media_proxy.close()
+            raise BootstrapFailure("could not add controlled Android media torrent")
+        torrent_id = wait_product_torrent_id(target, fixture.info_hash, prior)
+        return torrent_id, media_proxy, media_transport
+
+    def wait_incomplete_playable_progress(timeout: float = 45) -> int:
+        deadline = time.monotonic() + timeout
+        high_water = 0
+        logs = ""
+        while time.monotonic() < deadline:
+            logs = product_logs(target)
+            high_water = max(
+                high_water,
+                maximum_product_verified_count(logs, torrent_id) or 0,
+            )
+            if 2 <= high_water < fixture.piece_count:
+                return high_water
+            if "product service initialization failed" in logs:
+                break
+            time.sleep(0.1)
+        raise BootstrapFailure(
+            "controlled media torrent did not expose incomplete verified ranges\n" + logs
+        )
+
+    def player_instance(marker: str, description: str, timeout: float = 30) -> str:
+        deadline = time.monotonic() + timeout
+        logs = ""
+        while time.monotonic() < deadline:
+            logs = product_logs(target)
+            matches = re.findall(r"media_playback_created instance=(\d+)", logs)
+            if marker in logs and matches:
+                return matches[-1]
+            if "product service initialization failed" in logs:
+                break
+            time.sleep(0.1)
+        raise BootstrapFailure(f"timed out waiting for {description}\n{logs}")
+
+    try:
+        clear_application(target)
+        prepare_product_saf(target, probe, grant_storage)
+        baseline_fds = product_fd_count(target)
+
+        # First generation: prove that removing an incomplete torrent revokes the
+        # ordinary Media3 HTTP source rather than serving stale SAF bytes.
+        torrent_id, proxy, transport = add_slow_media(slot=0)
+        first_verified = wait_incomplete_playable_progress()
+        target.run(["logcat", "-c"], check=False)
+        request_product_media_action(target, torrent_id, "play_file:0")
+        first_instance = player_instance(
+            f"media_playback_capability torrent={torrent_id} file=0 outcome=created",
+            "incomplete media capability",
+        )
+        wait_product_log(
+            target,
+            f"media_playback_first_frame instance={first_instance}",
+            "incomplete media first frame",
+            timeout=45,
+        )
+        request_product_media_action(target, torrent_id, "remove")
+        wait_product_log(
+            target,
+            f"saf_removal_confirmed torrent={torrent_id}",
+            "incomplete media removal",
+        )
+        wait_product_log(
+            target,
+            f"media_playback_error instance={first_instance}",
+            "removed media source failure",
+            timeout=30,
+        )
+        request_product_media_action(target, torrent_id, "close_media")
+        wait_product_log(
+            target,
+            f"media_playback_released instance={first_instance}",
+            "removed media player release",
+        )
+        transport.close()
+        transport = None
+        proxy.close()
+        proxy = None
+
+        # Second generation: seek while incomplete, retain playback through
+        # Home/PiP, and continue using the same player across final publication.
+        target.run(["logcat", "-c"], check=False)
+        torrent_id, proxy, transport = add_slow_media(slot=1)
+        second_verified = wait_incomplete_playable_progress()
+        target.run(["logcat", "-c"], check=False)
+        request_product_media_action(target, torrent_id, "play_file:0")
+        second_instance = player_instance(
+            f"media_playback_capability torrent={torrent_id} file=0 outcome=created",
+            "handoff media capability",
+        )
+        wait_product_log(
+            target,
+            f"media_playback_first_frame instance={second_instance}",
+            "handoff media first frame",
+            timeout=45,
+        )
+        if (maximum_product_verified_count(product_logs(target), torrent_id) or 0) >= fixture.piece_count:
+            raise BootstrapFailure("controlled media completed before the incomplete playback gate")
+
+        target.shell(["input", "keyevent", "KEYCODE_HOME"], check=False)
+        wait_product_log(
+            target,
+            f"media_playback_pip instance={second_instance} active=true",
+            "media picture-in-picture entry",
+            timeout=20,
+        )
+        wait_product_service_state(target, running=True, foreground=True)
+
+        request_product_media_action(target, torrent_id, "seek_media:20000")
+        wait_product_log(
+            target,
+            f"media_playback_seek_requested instance={second_instance} position=20000",
+            "incomplete media seek",
+        )
+        wait_product_log(
+            target,
+            f"media_playback_position instance={second_instance}",
+            "incomplete media seek discontinuity",
+            timeout=30,
+        )
+
+        def assert_playback_owner() -> None:
+            if not product_service_state(target)[0]:
+                raise BootstrapFailure("playback lease did not retain the product service")
+
+        metrics, fd_high_water = wait_product_completion(
+            target,
+            torrent_id,
+            baseline_fds,
+            sample=assert_playback_owner,
+        )
+        wait_product_service_state(target, running=True, foreground=True)
+        request_product_media_action(target, torrent_id, "seek_media:5000")
+        wait_product_log(
+            target,
+            f"media_playback_seek_requested instance={second_instance} position=5000",
+            "post-publication media seek",
+        )
+        time.sleep(2)
+        final_logs = product_logs(target)
+        if f"media_playback_error instance={second_instance}" in final_logs:
+            raise BootstrapFailure("same-player publication handoff ended in playback failure")
+        if len(re.findall(r"media_playback_created instance=", final_logs)) != 1:
+            raise BootstrapFailure("publication handoff replaced the player activity")
+        if target.shell(["test", "-f", output_path], check=False).returncode != 0:
+            raise BootstrapFailure("completed controlled SAF media file is absent")
+        digest = target.shell(["sha1sum", output_path]).stdout.split()[0]
+        if digest != fixture.expected_sha1:
+            raise BootstrapFailure("completed controlled SAF media hash differs")
+        leaks = private_app_source_leaks(target, [b"http://127.0.0.1:"])
+        if leaks:
+            raise BootstrapFailure(f"media capability origin persisted in private files: {leaks}")
+
+        request_product_media_action(target, torrent_id, "close_media")
+        wait_product_log(
+            target,
+            f"media_playback_released instance={second_instance}",
+            "handoff media player release",
+        )
+        target.shell(["input", "keyevent", "KEYCODE_HOME"], check=False)
+        wait_product_log(
+            target,
+            "product_shutdown_complete reason=lifecycle_idle",
+            "post-playback lifecycle shutdown",
+            timeout=30,
+        )
+        wait_product_service_state(target, running=False)
+
+        target.shell(["am", "start", "-W", "-n", ACTIVITY], check=False)
+        request_product_torrent_action(target, torrent_id, "remove")
+        wait_product_log(
+            target,
+            f"saf_removal_confirmed torrent={torrent_id}",
+            "completed media removal",
+        )
+        return {
+            "target": target_kind,
+            "profile": "product-media-playback",
+            "run": ordinal,
+            "identity": identity,
+            "torrent_id": torrent_id,
+            "v1_info_hash": fixture.info_hash,
+            "file_size": fixture.file_size,
+            "piece_count": fixture.piece_count,
+            "first_incomplete_verified": first_verified,
+            "second_incomplete_verified": second_verified,
+            "incomplete_first_frame": True,
+            "removal_revoked_source": True,
+            "picture_in_picture": True,
+            "incomplete_seek": True,
+            "publication_handoff": "same_player",
+            "completed_hash": "exact",
+            "capability_persistence": "absent",
+            "playback_release": "joined",
+            "storage_metrics": metrics,
+            "process_fds": {
+                "baseline": baseline_fds,
+                "high_water": fd_high_water,
+                "final": product_fd_count(target),
+            },
+        }
+    finally:
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+        if transport is not None:
+            transport.close()
+        if proxy is not None:
+            proxy.close()
+        fixture.close()
+        target.shell(
+            ["rm", "-rf", f"{probe.grant_path(grant_storage)}/{fixture.name}"],
+            check=False,
+        )
+        probe.remove_grant_folder(target, grant_storage)
+
+
 def run_product_mse_profile(
     target: Any,
     target_kind: str,
@@ -6710,6 +7293,7 @@ def main() -> int:
                     "product-unmetered-network",
                     "product-background-lifecycle",
                     "product-external-intake",
+                    "product-media-playback",
                 )
                 else 1
             )
@@ -6879,6 +7463,17 @@ def main() -> int:
                         probe,
                         interop,
                         tracker_support,
+                        ordinal,
+                        arguments.storage,
+                    )
+                elif profile == "product-media-playback":
+                    result = run_product_media_playback_profile(
+                        target,
+                        arguments.target,
+                        identity,
+                        probe,
+                        interop,
+                        duplex_support,
                         ordinal,
                         arguments.storage,
                     )

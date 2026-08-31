@@ -461,6 +461,15 @@ class ProductEngineService : Service() {
             admitExternalIntent(intent)
         } else if (intent?.action == ACTION_ENABLE_CHROMEOS_COMPANION) {
             enableChromeOsCompanion()
+        } else if (
+            intent?.action == ACTION_DEBUG_TORRENT_CONTROL &&
+                ProductSafDocuments.isDebuggable(this)
+        ) {
+            val torrentId = intent.getStringExtra(EXTRA_DEBUG_TORRENT_ID)
+            val action = intent.getStringExtra(EXTRA_DEBUG_TORRENT_ACTION)
+            if (!torrentId.isNullOrBlank() && !action.isNullOrBlank()) {
+                exerciseTorrentActionForTest(torrentId, action)
+            }
         }
         refreshNotificationEligibility("start")
         return if (
@@ -2332,6 +2341,34 @@ class ProductEngineService : Service() {
                                 ?: error("download-file action has an invalid index")
                         dispatchAwait(Command.DownloadFiles(torrentId, listOf(fileIndex)))
                     }
+                    action.startsWith("play_file:") -> {
+                        val fileIndex =
+                            action.substringAfter(':').toUIntOrNull()
+                                ?: error("play-file action has an invalid index")
+                        startMediaPlayback(torrentId, fileIndex, "Controlled media")
+                    }
+                    action.startsWith("seek_media:") -> {
+                        val positionMillis =
+                            action.substringAfter(':').toLongOrNull()?.takeIf { it >= 0L }
+                                ?: error("media-seek action has an invalid position")
+                        withContext(Dispatchers.Main.immediate) {
+                            startActivity(
+                                PlayerActivity.controlIntent(
+                                    this@ProductEngineService,
+                                    positionMillis,
+                                ),
+                            )
+                        }
+                    }
+                    action == "close_media" ->
+                        withContext(Dispatchers.Main.immediate) {
+                            startActivity(
+                                PlayerActivity.controlIntent(
+                                    this@ProductEngineService,
+                                    positionMillis = null,
+                                ),
+                            )
+                        }
                     action == "pause" -> dispatchAwait(Command.Pause(torrentId))
                     action == "resume" -> dispatchAwait(Command.Resume(torrentId))
                     action == "observe" -> {
@@ -2575,18 +2612,34 @@ class ProductEngineService : Service() {
             mutableState.update { it.copy(error = "This file is not available for playback") }
             return
         }
+        startMediaPlayback(
+            torrentId,
+            file.fileIndex,
+            file.path.lastOrNull() ?: "Media",
+        )
+    }
+
+    private fun startMediaPlayback(
+        torrentId: String,
+        fileIndex: UInt,
+        title: String,
+    ) {
         if (!mediaLaunchGate.tryAcquire()) return
         mutableState.update { it.copy(mediaLaunchPending = true, error = null) }
         scope.launch {
             try {
                 clientReady.await()
-                val response = client.createMediaUrl(torrentId, file.fileIndex)
-                check(response.torrentId == torrentId && response.fileIndex == file.fileIndex) {
+                val response = client.createMediaUrl(torrentId, fileIndex)
+                check(response.torrentId == torrentId && response.fileIndex == fileIndex) {
                     "Playback response did not match the requested file"
                 }
                 when (val outcome = response.outcome) {
                     is MediaUrlOutcome.Created -> {
-                        val title = file.path.lastOrNull() ?: "Media"
+                        Log.i(
+                            TAG,
+                            "media_playback_capability torrent=$torrentId file=$fileIndex " +
+                                "outcome=created",
+                        )
                         val launch =
                             PlayerActivity.launchIntent(
                                 this@ProductEngineService,
@@ -2602,6 +2655,11 @@ class ProductEngineService : Service() {
                         }
                     }
                     is MediaUrlOutcome.Unavailable -> {
+                        Log.i(
+                            TAG,
+                            "media_playback_capability torrent=$torrentId file=$fileIndex " +
+                                "outcome=unavailable reason=${outcome.reason}",
+                        )
                         error(AndroidMediaPlaybackPolicy.unavailableMessage(outcome.reason))
                     }
                 }
@@ -3839,6 +3897,10 @@ class ProductEngineService : Service() {
         const val ACTION_STOP = "org.rstorrent.bootstrap.PRODUCT_STOP"
         const val ACTION_ENABLE_CHROMEOS_COMPANION =
             "org.rstorrent.bootstrap.ENABLE_CHROMEOS_COMPANION"
+        const val ACTION_DEBUG_TORRENT_CONTROL =
+            "org.rstorrent.bootstrap.PRODUCT_DEBUG_TORRENT_CONTROL"
+        const val EXTRA_DEBUG_TORRENT_ID = "torrent_id"
+        const val EXTRA_DEBUG_TORRENT_ACTION = "torrent_action"
         private const val ACTION_BACKGROUND_ADMITTED =
             "org.rstorrent.bootstrap.BACKGROUND_ADMITTED"
         private const val ACTION_BACKGROUND_REVOKED =

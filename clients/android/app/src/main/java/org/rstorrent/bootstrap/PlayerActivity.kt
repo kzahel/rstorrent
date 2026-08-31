@@ -10,6 +10,7 @@ import android.content.res.Configuration
 import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.util.Rational
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -39,7 +40,9 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import kotlin.math.roundToInt
 import org.rstorrent.bootstrap.ui.ProductThemeMode
@@ -60,12 +63,19 @@ class PlayerActivity : ComponentActivity() {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 preparing =
                     playbackState == Player.STATE_IDLE || playbackState == Player.STATE_BUFFERING
+                Log.i(
+                    TAG,
+                    "media_playback_state instance=$instanceId state=${stateLabel(playbackState)} " +
+                        "position=${player?.currentPosition ?: 0L} " +
+                        "buffered=${player?.bufferedPosition ?: 0L}",
+                )
                 updatePictureInPictureParameters()
             }
 
             override fun onPlayerError(error: PlaybackException) {
                 preparing = false
                 playbackError = error.localizedMessage ?: "Playback failed"
+                Log.e(TAG, "media_playback_error instance=$instanceId code=${error.errorCode}")
                 updatePictureInPictureParameters()
             }
 
@@ -76,9 +86,32 @@ class PlayerActivity : ComponentActivity() {
                         videoSize.height.toDouble()
                 val bounded = ratio.coerceIn(MIN_PIP_ASPECT_RATIO, MAX_PIP_ASPECT_RATIO)
                 videoAspectRatio = Rational((bounded * ASPECT_RATIO_SCALE).roundToInt(), ASPECT_RATIO_SCALE)
+                Log.i(
+                    TAG,
+                    "media_playback_video instance=$instanceId width=${videoSize.width} " +
+                        "height=${videoSize.height}",
+                )
                 updatePictureInPictureParameters()
             }
+
+            override fun onRenderedFirstFrame() {
+                Log.i(TAG, "media_playback_first_frame instance=$instanceId")
+            }
+
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int,
+            ) {
+                Log.i(
+                    TAG,
+                    "media_playback_position instance=$instanceId reason=$reason " +
+                        "from=${oldPosition.positionMs} to=${newPosition.positionMs}",
+                )
+            }
         }
+
+    private val instanceId = nextInstanceId.incrementAndGet()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -88,6 +121,7 @@ class PlayerActivity : ComponentActivity() {
             return
         }
         acquireInteractionLease()
+        Log.i(TAG, "media_playback_created instance=$instanceId")
         initializePlayer(request)
         setContent {
             RstorrentTheme(ProductThemeMode.SYSTEM, dynamicColor = true) {
@@ -155,6 +189,24 @@ class PlayerActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        when (intent.getStringExtra(EXTRA_CONTROL)) {
+            CONTROL_SEEK -> {
+                val position = intent.getLongExtra(EXTRA_POSITION_MILLIS, -1L)
+                intent.removeExtra(EXTRA_CONTROL)
+                intent.removeExtra(EXTRA_POSITION_MILLIS)
+                if (position >= 0L) {
+                    Log.i(TAG, "media_playback_seek_requested instance=$instanceId position=$position")
+                    player?.seekTo(position)
+                }
+                return
+            }
+            CONTROL_CLOSE -> {
+                intent.removeExtra(EXTRA_CONTROL)
+                Log.i(TAG, "media_playback_close_requested instance=$instanceId")
+                finishAndRemoveTask()
+                return
+            }
+        }
         val request = consumeRequest(intent)
         if (request == null) {
             player?.stop()
@@ -186,6 +238,10 @@ class PlayerActivity : ComponentActivity() {
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         inPictureInPicture = isInPictureInPictureMode
+        Log.i(
+            TAG,
+            "media_playback_pip instance=$instanceId active=$isInPictureInPictureMode",
+        )
     }
 
     override fun onDestroy() {
@@ -195,6 +251,7 @@ class PlayerActivity : ComponentActivity() {
         player?.release()
         player = null
         releaseInteractionLease()
+        Log.i(TAG, "media_playback_released instance=$instanceId")
         super.onDestroy()
     }
 
@@ -207,6 +264,14 @@ class PlayerActivity : ComponentActivity() {
                 .build()
         player =
             ExoPlayer.Builder(this)
+                .setMediaSourceFactory(
+                    DefaultMediaSourceFactory(this)
+                        .setDataSourceFactory(
+                            DefaultHttpDataSource.Factory()
+                                .setConnectTimeoutMs(MEDIA_CONNECT_TIMEOUT_MILLIS)
+                                .setReadTimeoutMs(MEDIA_READ_TIMEOUT_MILLIS),
+                        ),
+                )
                 .setAudioAttributes(audioAttributes, true)
                 .build()
                 .also { mediaPlayer ->
@@ -272,12 +337,21 @@ class PlayerActivity : ComponentActivity() {
     )
 
     companion object {
+        private const val TAG = "RSTorrentProduct"
         private const val EXTRA_SOURCE = "org.rstorrent.bootstrap.extra.MEDIA_SOURCE"
         private const val EXTRA_TITLE = "org.rstorrent.bootstrap.extra.MEDIA_TITLE"
+        private const val EXTRA_CONTROL = "org.rstorrent.bootstrap.extra.MEDIA_CONTROL"
+        private const val EXTRA_POSITION_MILLIS =
+            "org.rstorrent.bootstrap.extra.MEDIA_POSITION_MILLIS"
+        private const val CONTROL_SEEK = "seek"
+        private const val CONTROL_CLOSE = "close"
         private const val MAX_TITLE_CHARACTERS = 256
         private const val ASPECT_RATIO_SCALE = 10_000
         private const val MIN_PIP_ASPECT_RATIO = 1.0 / 2.39
         private const val MAX_PIP_ASPECT_RATIO = 2.39
+        private const val MEDIA_CONNECT_TIMEOUT_MILLIS = 15_000
+        private const val MEDIA_READ_TIMEOUT_MILLIS = 125_000
+        private val nextInstanceId = java.util.concurrent.atomic.AtomicLong(0L)
 
         internal fun launchIntent(
             context: Context,
@@ -290,6 +364,27 @@ class PlayerActivity : ComponentActivity() {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+
+        internal fun controlIntent(
+            context: Context,
+            positionMillis: Long?,
+        ): Intent =
+            Intent(context, PlayerActivity::class.java).apply {
+                putExtra(EXTRA_CONTROL, if (positionMillis == null) CONTROL_CLOSE else CONTROL_SEEK)
+                positionMillis?.let { putExtra(EXTRA_POSITION_MILLIS, it) }
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+
+        private fun stateLabel(state: Int): String =
+            when (state) {
+                Player.STATE_IDLE -> "idle"
+                Player.STATE_BUFFERING -> "buffering"
+                Player.STATE_READY -> "ready"
+                Player.STATE_ENDED -> "ended"
+                else -> "unknown"
             }
     }
 }
