@@ -7176,7 +7176,7 @@ mod tests {
                 projection: ViewProjection::Summary,
                 delivery: DeliveryPolicy {
                     min_interval_millis: 0,
-                    max_queue_bytes: 4096,
+                    max_queue_bytes: 8 * 1_024,
                 },
                 diagnostics: None,
                 catalog_page: None,
@@ -11993,6 +11993,7 @@ mod tests {
             encryption: Default::default(),
             ipv6_enabled: true,
             tracker_https_server_authentication: Default::default(),
+            ..ClientSettings::default()
         };
         service
             .dispatch(RequestEnvelope {
@@ -15839,6 +15840,7 @@ mod tests {
                 encryption: Default::default(),
                 ipv6_enabled: true,
                 tracker_https_server_authentication: Default::default(),
+                ..ClientSettings::default()
             },
         );
         fs::create_dir_all(root.join("payload")).expect("create payload root");
@@ -16028,6 +16030,7 @@ mod tests {
             encryption: Default::default(),
             ipv6_enabled: true,
             tracker_https_server_authentication: Default::default(),
+            ..ClientSettings::default()
         };
         first
             .dispatch(RequestEnvelope {
@@ -16498,6 +16501,7 @@ mod tests {
             encryption: Default::default(),
             ipv6_enabled: true,
             tracker_https_server_authentication: Default::default(),
+            ..ClientSettings::default()
         };
         let response = conflicted
             .dispatch(RequestEnvelope {

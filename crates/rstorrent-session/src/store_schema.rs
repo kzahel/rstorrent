@@ -1,6 +1,6 @@
 //! SQLite schema facts for the current disposable-incubation catalog epoch.
 
-pub(crate) const SCHEMA_VERSION: i64 = 22;
+pub(crate) const SCHEMA_VERSION: i64 = 23;
 
 pub(crate) const FILE_PRIORITIES_TABLE_SQL: &str = "CREATE TABLE file_priorities (
         torrent_id BLOB NOT NULL CHECK (

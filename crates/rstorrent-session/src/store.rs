@@ -138,6 +138,7 @@ pub struct ResumeRecord {
     pub storage_state: StorageState,
     pub desired_running: bool,
     pub download_queue_position: Option<i64>,
+    pub accounting: TorrentAccounting,
     pub raw_info: Option<Vec<u8>>,
     /// Verbatim complete outer metainfo. Pure-v2 restart requires this source
     /// because `raw_info` cannot carry piece layers.
@@ -145,6 +146,112 @@ pub struct ResumeRecord {
     pub have: Option<HaveState>,
     pub(crate) verification: VerificationState,
     pub(crate) quarantine_reason: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct TorrentAccounting {
+    pub total_uploaded: u64,
+    pub total_downloaded: u64,
+    pub active_seconds: u64,
+    pub finished_seconds: u64,
+    pub seeding_seconds: u64,
+    pub tracker_complete: Option<u32>,
+    pub tracker_incomplete: Option<u32>,
+}
+
+// The schema gate proves this write boundary before the runtime accumulator
+// consumes it in the immediately following Tactical 201 gate.
+#[allow(dead_code)]
+pub(crate) const MAX_ACCOUNTING_BATCH: usize = 500;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[allow(dead_code)]
+pub(crate) struct TorrentAccountingUpdate {
+    pub(crate) torrent_id: TorrentId,
+    pub(crate) accounting: TorrentAccounting,
+}
+
+fn decode_torrent_accounting(
+    total_uploaded: i64,
+    total_downloaded: i64,
+    active_seconds: i64,
+    finished_seconds: i64,
+    seeding_seconds: i64,
+    tracker_complete: Option<i64>,
+    tracker_incomplete: Option<i64>,
+) -> Result<TorrentAccounting, StoreError> {
+    let accounting = TorrentAccounting {
+        total_uploaded: u64::try_from(total_uploaded)
+            .map_err(|_| StoreError::DurableState("negative lifetime upload total".to_owned()))?,
+        total_downloaded: u64::try_from(total_downloaded)
+            .map_err(|_| StoreError::DurableState("negative lifetime download total".to_owned()))?,
+        active_seconds: u64::try_from(active_seconds)
+            .map_err(|_| StoreError::DurableState("negative active time".to_owned()))?,
+        finished_seconds: u64::try_from(finished_seconds)
+            .map_err(|_| StoreError::DurableState("negative finished time".to_owned()))?,
+        seeding_seconds: u64::try_from(seeding_seconds)
+            .map_err(|_| StoreError::DurableState("negative seeding time".to_owned()))?,
+        tracker_complete: tracker_complete
+            .map(u32::try_from)
+            .transpose()
+            .map_err(|_| StoreError::DurableState("invalid tracker complete count".to_owned()))?,
+        tracker_incomplete: tracker_incomplete
+            .map(u32::try_from)
+            .transpose()
+            .map_err(|_| StoreError::DurableState("invalid tracker incomplete count".to_owned()))?,
+    };
+    if accounting.finished_seconds > accounting.active_seconds {
+        return Err(StoreError::DurableState(
+            "finished time exceeds active time".to_owned(),
+        ));
+    }
+    if accounting.seeding_seconds > accounting.finished_seconds {
+        return Err(StoreError::DurableState(
+            "seeding time exceeds finished time".to_owned(),
+        ));
+    }
+    Ok(accounting)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[allow(dead_code)]
+struct EncodedTorrentAccounting {
+    total_uploaded: i64,
+    total_downloaded: i64,
+    active_seconds: i64,
+    finished_seconds: i64,
+    seeding_seconds: i64,
+    tracker_complete: Option<i64>,
+    tracker_incomplete: Option<i64>,
+}
+
+#[allow(dead_code)]
+fn encode_torrent_accounting(
+    accounting: TorrentAccounting,
+) -> Result<EncodedTorrentAccounting, StoreError> {
+    if accounting.finished_seconds > accounting.active_seconds {
+        return Err(StoreError::DurableState(
+            "finished time exceeds active time".to_owned(),
+        ));
+    }
+    if accounting.seeding_seconds > accounting.finished_seconds {
+        return Err(StoreError::DurableState(
+            "seeding time exceeds finished time".to_owned(),
+        ));
+    }
+    let bounded = |value, field| {
+        i64::try_from(value)
+            .map_err(|_| StoreError::DurableState(format!("{field} exceeds durable range")))
+    };
+    Ok(EncodedTorrentAccounting {
+        total_uploaded: bounded(accounting.total_uploaded, "lifetime upload total")?,
+        total_downloaded: bounded(accounting.total_downloaded, "lifetime download total")?,
+        active_seconds: bounded(accounting.active_seconds, "active time")?,
+        finished_seconds: bounded(accounting.finished_seconds, "finished time")?,
+        seeding_seconds: bounded(accounting.seeding_seconds, "seeding time")?,
+        tracker_complete: accounting.tracker_complete.map(i64::from),
+        tracker_incomplete: accounting.tracker_incomplete.map(i64::from),
+    })
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -425,7 +532,7 @@ impl SessionStore {
 
         if let Some(maximum_bytes) = ephemeral_maximum_bytes {
             configure_ephemeral_connection(&connection, maximum_bytes)?;
-            create_or_validate_schema_22(
+            create_or_validate_schema_23(
                 &mut connection,
                 profile_id,
                 initial_client_settings,
@@ -438,7 +545,7 @@ impl SessionStore {
             match preparation {
                 CatalogPreparation::Current => {
                     configure_durable_connection(&connection)?;
-                    create_or_validate_schema_22(
+                    create_or_validate_schema_23(
                         &mut connection,
                         profile_id,
                         initial_client_settings,
@@ -447,7 +554,7 @@ impl SessionStore {
                 }
                 CatalogPreparation::Create { reset_report } => {
                     connection.pragma_update(None, "synchronous", "FULL")?;
-                    create_or_validate_schema_22(
+                    create_or_validate_schema_23(
                         &mut connection,
                         profile_id,
                         initial_client_settings,
@@ -552,6 +659,68 @@ impl SessionStore {
 
     pub fn client_settings(&self) -> Result<ClientSettings, StoreError> {
         read_client_settings(&self.connection).map_err(StoreError::from)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn replace_accounting_batch(
+        &mut self,
+        updates: &[TorrentAccountingUpdate],
+    ) -> Result<(), StoreError> {
+        if updates.len() > MAX_ACCOUNTING_BATCH {
+            return Err(StoreError::ResourceLimit {
+                resource: "accounting batch rows",
+                actual: updates.len(),
+                maximum: MAX_ACCOUNTING_BATCH,
+            });
+        }
+        let mut unique = std::collections::BTreeSet::new();
+        let mut encoded = Vec::with_capacity(updates.len());
+        for update in updates {
+            if !unique.insert(update.torrent_id) {
+                return Err(StoreError::DurableState(format!(
+                    "duplicate accounting update for {}",
+                    update.torrent_id
+                )));
+            }
+            encoded.push((
+                update.torrent_id,
+                encode_torrent_accounting(update.accounting)?,
+            ));
+        }
+
+        let transaction = self.connection.transaction()?;
+        for (torrent_id, accounting) in encoded {
+            let changed = transaction.execute(
+                "UPDATE torrents
+                 SET total_uploaded = ?2, total_downloaded = ?3,
+                     active_seconds = ?4, finished_seconds = ?5,
+                     seeding_seconds = ?6, tracker_complete = ?7,
+                     tracker_incomplete = ?8
+                 WHERE torrent_id = ?1
+                   AND total_uploaded <= ?2
+                   AND total_downloaded <= ?3
+                   AND active_seconds <= ?4
+                   AND finished_seconds <= ?5
+                   AND seeding_seconds <= ?6",
+                params![
+                    torrent_id.as_bytes().as_slice(),
+                    accounting.total_uploaded,
+                    accounting.total_downloaded,
+                    accounting.active_seconds,
+                    accounting.finished_seconds,
+                    accounting.seeding_seconds,
+                    accounting.tracker_complete,
+                    accounting.tracker_incomplete,
+                ],
+            )?;
+            if changed != 1 {
+                return Err(StoreError::DurableState(format!(
+                    "accounting update for {torrent_id} was missing or regressed"
+                )));
+            }
+        }
+        transaction.commit()?;
+        Ok(())
     }
 
     pub fn storage_roots(&self) -> Result<Vec<StoredStorageRoot>, StoreError> {
@@ -1146,7 +1315,9 @@ impl SessionStore {
                         piece_count, content_fingerprint, have_state,
                         desired_state, verification_requested,
                         verification_completed, quarantine_reason,
-                        download_queue_position
+                        download_queue_position, total_uploaded,
+                        total_downloaded, active_seconds, finished_seconds,
+                        seeding_seconds, tracker_complete, tracker_incomplete
                  FROM torrents
                 WHERE torrent_id = ?1",
                 [torrent_id.as_bytes()],
@@ -1163,6 +1334,13 @@ impl SessionStore {
                         row.get::<_, i64>(8)?,
                         row.get::<_, Option<String>>(9)?,
                         row.get::<_, Option<i64>>(10)?,
+                        row.get::<_, i64>(11)?,
+                        row.get::<_, i64>(12)?,
+                        row.get::<_, i64>(13)?,
+                        row.get::<_, i64>(14)?,
+                        row.get::<_, i64>(15)?,
+                        row.get::<_, Option<i64>>(16)?,
+                        row.get::<_, Option<i64>>(17)?,
                     ))
                 },
             )
@@ -1262,6 +1440,8 @@ impl SessionStore {
         } else {
             StorageState::Available
         };
+        let accounting =
+            decode_torrent_accounting(row.11, row.12, row.13, row.14, row.15, row.16, row.17)?;
         Ok(ResumeRecord {
             torrent_id,
             info_hashes,
@@ -1274,6 +1454,7 @@ impl SessionStore {
             storage_state,
             desired_running,
             download_queue_position: row.10,
+            accounting,
             raw_info: row.2,
             metainfo_source,
             have,
@@ -2522,7 +2703,7 @@ fn pragma_u64(connection: &Connection, pragma: &str) -> Result<u64, StoreError> 
     u64::try_from(value).map_err(|_| StoreError::DurableState(format!("negative SQLite {pragma}")))
 }
 
-fn create_or_validate_schema_22(
+fn create_or_validate_schema_23(
     connection: &mut Connection,
     profile_id: &str,
     initial_client_settings: &ClientSettings,
@@ -2530,7 +2711,7 @@ fn create_or_validate_schema_22(
 ) -> Result<(), StoreError> {
     let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version != 0 {
-        return validate_schema_22(connection, profile_id);
+        return validate_schema_23(connection, profile_id);
     }
     let transaction = connection.transaction()?;
     transaction.execute_batch(
@@ -2542,7 +2723,7 @@ fn create_or_validate_schema_22(
          CREATE TABLE profile_reset_report (
             singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
             previous_schema_version INTEGER NOT NULL CHECK (
-                previous_schema_version BETWEEN 1 AND 21
+                previous_schema_version BETWEEN 1 AND 22
             ),
             discarded_categories_json TEXT NOT NULL CHECK (
                 length(discarded_categories_json) BETWEEN 2 AND 1024
@@ -2615,6 +2796,29 @@ fn create_or_validate_schema_22(
             download_rate_limit INTEGER NOT NULL DEFAULT 0 CHECK (
                 download_rate_limit = 0 OR
                 download_rate_limit BETWEEN 1024 AND 4294967295
+            ),
+            total_uploaded INTEGER NOT NULL DEFAULT 0 CHECK (
+                total_uploaded >= 0
+            ),
+            total_downloaded INTEGER NOT NULL DEFAULT 0 CHECK (
+                total_downloaded >= 0
+            ),
+            active_seconds INTEGER NOT NULL DEFAULT 0 CHECK (
+                active_seconds >= 0
+            ),
+            finished_seconds INTEGER NOT NULL DEFAULT 0 CHECK (
+                finished_seconds >= 0 AND finished_seconds <= active_seconds
+            ),
+            seeding_seconds INTEGER NOT NULL DEFAULT 0 CHECK (
+                seeding_seconds >= 0 AND seeding_seconds <= finished_seconds
+            ),
+            tracker_complete INTEGER CHECK (
+                tracker_complete IS NULL OR
+                tracker_complete BETWEEN 0 AND 4294967295
+            ),
+            tracker_incomplete INTEGER CHECK (
+                tracker_incomplete IS NULL OR
+                tracker_incomplete BETWEEN 0 AND 4294967295
             ),
             created_revision INTEGER NOT NULL,
             updated_revision INTEGER NOT NULL,
@@ -2697,10 +2901,10 @@ fn create_or_validate_schema_22(
     transaction.execute_batch(FILE_PRIORITIES_TABLE_SQL)?;
     transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     transaction.commit()?;
-    validate_schema_22(connection, profile_id)
+    validate_schema_23(connection, profile_id)
 }
 
-fn validate_schema_22(connection: &Connection, profile_id: &str) -> Result<(), StoreError> {
+fn validate_schema_23(connection: &Connection, profile_id: &str) -> Result<(), StoreError> {
     let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version != SCHEMA_VERSION {
         return Err(StoreError::UnsupportedSchema {
@@ -5525,8 +5729,9 @@ mod tests {
     use sha2::Sha256;
 
     use super::{
-        ConfiguredStorageRoot, PendingReconciliation, SCHEMA_VERSION, SessionStore, StoreError,
-        StoredTracker, StoredTrackerSource, StoredTrackerTransport, synthesize_magnet_export,
+        ConfiguredStorageRoot, MAX_ACCOUNTING_BATCH, PendingReconciliation, SCHEMA_VERSION,
+        SessionStore, StoreError, StoredTracker, StoredTrackerSource, StoredTrackerTransport,
+        TorrentAccounting, TorrentAccountingUpdate, synthesize_magnet_export,
     };
     use crate::ClientSettings;
     use crate::have::{HaveState, MAX_DURABLE_HAVE_STATE_BYTES, MAX_DURABLE_PIECES};
@@ -7647,9 +7852,9 @@ mod tests {
     }
 
     #[test]
-    fn schemas_nineteen_and_twenty_reset_without_retaining_profile_state() {
-        for previous_version in [19_i64, 20_i64] {
-            let root = test_root(&format!("schema-{previous_version}-to-21"));
+    fn recognized_recent_schemas_reset_without_retaining_profile_state() {
+        for previous_version in [19_i64, 20_i64, 21_i64, 22_i64] {
+            let root = test_root(&format!("schema-{previous_version}-to-23"));
             let configured = configured_root(&root);
             let mut store = SessionStore::open(&root, "default", std::slice::from_ref(&configured))
                 .expect("open current profile");
@@ -8948,6 +9153,114 @@ mod tests {
     }
 
     #[test]
+    fn schema_23_accounting_batches_are_exact_monotonic_and_bounded() {
+        let root = test_root("schema-23-accounting");
+        let configured = configured_root(&root);
+        let mut store =
+            SessionStore::open(&root, "default", std::slice::from_ref(&configured)).unwrap();
+        let added = store
+            .handle_durable(&add_hash_request("add-accounting-target", 8))
+            .unwrap();
+        let torrent_id = added_torrent_id(&added);
+        let durable_id = store.load_resume(&torrent_id).unwrap().torrent_id;
+        assert_eq!(
+            store.load_resume(&torrent_id).unwrap().accounting,
+            TorrentAccounting::default()
+        );
+
+        let accounting = TorrentAccounting {
+            total_uploaded: 8_192,
+            total_downloaded: 4_096,
+            active_seconds: 60,
+            finished_seconds: 40,
+            seeding_seconds: 30,
+            tracker_complete: Some(u32::MAX),
+            tracker_incomplete: None,
+        };
+        store
+            .replace_accounting_batch(&[TorrentAccountingUpdate {
+                torrent_id: durable_id,
+                accounting,
+            }])
+            .unwrap();
+        assert_eq!(
+            store.load_resume(&torrent_id).unwrap().accounting,
+            accounting
+        );
+
+        let regression = TorrentAccounting {
+            total_uploaded: accounting.total_uploaded - 1,
+            ..accounting
+        };
+        assert!(
+            store
+                .replace_accounting_batch(&[TorrentAccountingUpdate {
+                    torrent_id: durable_id,
+                    accounting: regression,
+                }])
+                .is_err()
+        );
+        assert_eq!(
+            store.load_resume(&torrent_id).unwrap().accounting,
+            accounting
+        );
+
+        let malformed = TorrentAccounting {
+            active_seconds: 1,
+            finished_seconds: 2,
+            ..accounting
+        };
+        assert!(
+            store
+                .replace_accounting_batch(&[TorrentAccountingUpdate {
+                    torrent_id: durable_id,
+                    accounting: malformed,
+                }])
+                .is_err()
+        );
+        let oversized = vec![
+            TorrentAccountingUpdate {
+                torrent_id: durable_id,
+                accounting,
+            };
+            MAX_ACCOUNTING_BATCH + 1
+        ];
+        assert!(matches!(
+            store.replace_accounting_batch(&oversized),
+            Err(StoreError::ResourceLimit { .. })
+        ));
+
+        let database_path = store.database_path().unwrap().to_owned();
+        drop(store);
+        let reopened =
+            SessionStore::open(&root, "default", std::slice::from_ref(&configured)).unwrap();
+        assert_eq!(
+            reopened.load_resume(&torrent_id).unwrap().accounting,
+            accounting
+        );
+        drop(reopened);
+
+        let connection = Connection::open(database_path).unwrap();
+        connection
+            .pragma_update(None, "ignore_check_constraints", true)
+            .unwrap();
+        connection
+            .execute(
+                "UPDATE torrents SET active_seconds = 1, finished_seconds = 2",
+                [],
+            )
+            .unwrap();
+        drop(connection);
+        let corrupt = SessionStore::open(&root, "default", &[configured]).unwrap();
+        assert!(matches!(
+            corrupt.load_resume(&torrent_id),
+            Err(StoreError::DurableState(_))
+        ));
+        drop(corrupt);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn settings_patches_preserve_omissions_and_reject_invalid_groups_atomically() {
         let root = test_root("settings-patch-semantics");
         let configured = configured_root(&root);
@@ -9207,6 +9520,7 @@ mod tests {
             encryption: Default::default(),
             ipv6_enabled: true,
             tracker_https_server_authentication: Default::default(),
+            ..ClientSettings::default()
         };
         let request = RequestEnvelope {
             version: CONTROL_VERSION,

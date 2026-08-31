@@ -2,12 +2,15 @@
 
 Topic: `client-persistence`
 
-Status: Tactical [`191`](../tactical/191-direct-filesystem-storage.md)
-completed the direct-filesystem replacement on 2026-08-29. Fresh schema 22
-contains no publication name/state, namespace intent, or managed-deletion
-policy. Recognized pre-22 state resets only application-private database files
-and preserves external final files, legacy hidden artifacts, part files, and
-unrelated root content. Earlier schema history below remains historical.
+Status: Active Tactical
+[`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md) advances
+the disposable catalog to fresh schema 23. It adds bounded monotonic lifetime
+peer-payload totals, active/finished/seeding timers, explicit-unknown tracker
+counts, and the four typed global seed settings. Recognized schemas `1..=22`
+reset only application-private database files and preserve external final
+files and unrelated root content. The runtime accounting owner is the next
+open gate; schema 23 stores no derived rank, goal, admission, rate, or task
+state. Earlier schema history below remains historical.
 
 Completed Tactical
 [`188`](../tactical/188-existing-payload-adoption-and-recheck.md) changes no
@@ -717,13 +720,16 @@ open without paying these policy costs now.
 ## Schema Direction
 
 The implemented successor is a fresh direct-storage schema, not a migration of
-publication-era ownership. Tactical `191` advances schema 21 to disposable
-schema 22, removes publication-specific columns/constraints and compatibility
-readers, and replaces `delete_managed` with a plain exact delete-data job.
-Durable verified metainfo, root/selection/run intent, verification generations,
-synchronized have evidence, repair facts, and restartable exact deletion
-remain. Final content is recovered by re-add and checking; unknown legacy
-hidden artifacts are neither adopted nor deleted by reset.
+publication-era ownership. Tactical `191` advanced schema 21 to disposable
+schema 22 and removed publication-specific state. Active Tactical `201` now
+advances that shape to schema 23 with seeding settings and durable scalar
+accounting. Its fixed-size write transaction accepts at most 500 unique rows,
+rejects counter/timer regression and malformed timer ordering, and keeps
+tracker unknown distinct from zero. Durable verified metainfo, root/selection/
+run intent, verification generations, synchronized have evidence, repair
+facts, and restartable exact deletion remain. Final content is recovered by
+re-add and checking; unknown legacy hidden artifacts are neither adopted nor
+deleted by reset.
 
 Tactical `007` should define the first exact schema and migrations. The
 continuing direction is:

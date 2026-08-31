@@ -3,8 +3,9 @@
 Status: **Active.** User direction on 2026-08-31 selected the exact pinned
 libtorrent implementation semantics for the seed queue, durable counters,
 timers, and goal ranking. End-to-end implementation was authorized on the same
-date. The task-free policy gate is implemented; persistence, runtime admission,
-generated clients, presentation, and end-to-end evidence remain open.
+date. The task-free policy and fresh schema-23 gates are implemented; runtime
+accounting/admission, generated clients, presentation, and end-to-end evidence
+remain open.
 
 Topics: `incoming-reachability-and-seeding`, `client-persistence`,
 `application-control`, `client-surfaces`, `android-jstorrent-replacement`,
@@ -37,6 +38,20 @@ Validation at this checkpoint:
 - `cargo fmt --all -- --check`;
 - `cargo test -p rstorrent-session seed_policy`; and
 - `cargo clippy -p rstorrent-session --lib -- -D warnings`.
+
+The fresh durable gate now installs schema 23 and recognizes every schema
+`1..=22` through the bounded disposable reset. The singleton round-trips the
+typed active-seed limit and three exact goal thresholds. Each torrent stores
+only monotonic payload totals/timers and explicit-unknown tracker counts; a
+fixed transaction accepts at most 500 unique rows and rejects regression,
+overflow, or malformed timer ordering. Fresh/reopen, hostile-state, exact
+setting-boundary, batch-bound, and schema-22 payload-sentinel tests pass. The
+batch writer and effective seed-limit helper are intentionally task-free and
+temporarily allowed unused until the immediately following accounting and
+admission gates consume them. `cargo test -p rstorrent-session` passes 311
+tests with two opt-in cases ignored; the settings-bearing test subscription
+budget was raised from 4 KiB to 8 KiB without changing the production 256 KiB
+default or queue-count limits.
 
 ## Decision And Desired Outcome
 

@@ -6,9 +6,11 @@ use rstorrent_engine::{
 use rusqlite::Connection;
 
 use super::{
-    ActiveDownloadsClampReason, AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus,
-    ClientSettings, ClientSettingsApplicationState, ClientSettingsError, ClientSettingsPatch,
-    ClientSettingsRuntimeView, EffectiveListenerSettings, EncryptionPolicy,
+    ActiveDownloadsClampReason, ActiveSeedLimit, AdvertisedPeerEndpointScope,
+    AdvertisedPeerEndpointStatus, ClientSettings, ClientSettingsApplicationState,
+    ClientSettingsError, ClientSettingsPatch, ClientSettingsRuntimeView,
+    DEFAULT_FINISHED_DOWNLOAD_RATIO_LIMIT_PERCENT, DEFAULT_FINISHED_TIME_LIMIT_SECONDS,
+    DEFAULT_SHARE_RATIO_LIMIT_PERCENT, EffectiveListenerSettings, EncryptionPolicy,
     HttpsServerAuthenticationPolicy, Ipv6PinholeStatus, ListenerPolicy, ListenerStatus,
     PortMappingPolicy, PortMappingStatus, SessionUdpStatus, SettingsPersistenceError,
     TorrentSettingsPatch, TransferRateLimit, classify_listener_bind_failure,
@@ -88,6 +90,67 @@ fn transfer_rate_limits_are_semantic_and_validate_finite_bounds() {
         }
         .validate()
         .is_err()
+    );
+}
+
+#[test]
+fn seed_settings_match_pinned_defaults_and_exact_bounds() {
+    let settings = ClientSettings::default();
+    assert_eq!(
+        settings.active_seeds,
+        ActiveSeedLimit::Limited { torrents: 5 }
+    );
+    assert_eq!(
+        settings.share_ratio_limit_percent,
+        DEFAULT_SHARE_RATIO_LIMIT_PERCENT
+    );
+    assert_eq!(
+        settings.finished_download_ratio_limit_percent,
+        DEFAULT_FINISHED_DOWNLOAD_RATIO_LIMIT_PERCENT
+    );
+    assert_eq!(
+        settings.finished_time_limit_seconds,
+        DEFAULT_FINISHED_TIME_LIMIT_SECONDS
+    );
+
+    for active_seeds in [
+        ActiveSeedLimit::Unlimited,
+        ActiveSeedLimit::Limited { torrents: 0 },
+        ActiveSeedLimit::Limited { torrents: 500 },
+    ] {
+        assert_eq!(
+            ClientSettings {
+                active_seeds,
+                ..ClientSettings::default()
+            }
+            .validate(),
+            Ok(())
+        );
+    }
+    assert_eq!(
+        ClientSettings {
+            active_seeds: ActiveSeedLimit::Limited { torrents: 501 },
+            ..ClientSettings::default()
+        }
+        .validate(),
+        Err(ClientSettingsError::ActiveSeeds { value: 501 })
+    );
+    assert!(
+        ClientSettings {
+            share_ratio_limit_percent: i32::MAX as u32 + 1,
+            ..ClientSettings::default()
+        }
+        .validate()
+        .is_err()
+    );
+
+    assert_eq!(
+        serde_json::to_value(ActiveSeedLimit::Unlimited).unwrap(),
+        serde_json::json!({"type": "unlimited"})
+    );
+    assert_eq!(
+        serde_json::to_value(ActiveSeedLimit::Limited { torrents: 0 }).unwrap(),
+        serde_json::json!({"type": "limited", "torrents": 0})
     );
 }
 
@@ -250,6 +313,7 @@ fn runtime_view_distinguishes_configured_effective_domains_and_observed_facts() 
         encryption: EncryptionPolicy::Required,
         ipv6_enabled: false,
         tracker_https_server_authentication: HttpsServerAuthenticationPolicy::Disabled,
+        ..ClientSettings::default()
     };
     let view = ClientSettingsRuntimeView {
         configured: configured.clone(),
@@ -378,6 +442,10 @@ fn typed_persistence_round_trips_one_atomic_group() {
         peer_connection_limit: 1,
         upload_slots: 0,
         active_downloads: 3,
+        active_seeds: ActiveSeedLimit::Unlimited,
+        share_ratio_limit_percent: 0,
+        finished_download_ratio_limit_percent: i32::MAX as u32,
+        finished_time_limit_seconds: 123,
         upload_rate_limit: TransferRateLimit::Limited {
             bytes_per_second: 32 * 1_024,
         },
@@ -405,6 +473,24 @@ fn sqlite_constraints_and_decoder_reject_invalid_durable_shapes() {
         connection
             .execute(
                 "UPDATE client_settings SET peer_connection_limit = 0 WHERE singleton = 1",
+                [],
+            )
+            .is_err()
+    );
+    assert!(
+        connection
+            .execute(
+                "UPDATE client_settings SET active_seeds = 501 WHERE singleton = 1",
+                [],
+            )
+            .is_err()
+    );
+    assert!(
+        connection
+            .execute(
+                "UPDATE client_settings
+                 SET share_ratio_limit_percent = 2147483648
+                 WHERE singleton = 1",
                 [],
             )
             .is_err()

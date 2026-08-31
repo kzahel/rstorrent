@@ -19,6 +19,15 @@ pub const MAX_UPLOAD_SLOTS: u16 = 50;
 pub const DEFAULT_ACTIVE_DOWNLOADS: u16 = 3;
 pub const MIN_ACTIVE_DOWNLOADS: u16 = 1;
 pub const MAX_ACTIVE_DOWNLOADS: u16 = 20;
+pub const DEFAULT_ACTIVE_SEEDS: u16 = crate::seed_policy::DEFAULT_ACTIVE_SEEDS;
+pub const MAX_ACTIVE_SEEDS: u16 = crate::seed_policy::HARD_ACTIVE_TORRENT_LIMIT as u16;
+pub const DEFAULT_SHARE_RATIO_LIMIT_PERCENT: u32 =
+    crate::seed_policy::DEFAULT_SHARE_RATIO_LIMIT_PERCENT;
+pub const DEFAULT_FINISHED_DOWNLOAD_RATIO_LIMIT_PERCENT: u32 =
+    crate::seed_policy::DEFAULT_FINISHED_DOWNLOAD_RATIO_LIMIT_PERCENT;
+pub const DEFAULT_FINISHED_TIME_LIMIT_SECONDS: u32 =
+    crate::seed_policy::DEFAULT_FINISHED_TIME_LIMIT_SECONDS;
+pub const MAX_SEED_GOAL_VALUE: u32 = i32::MAX as u32;
 pub const MIN_TRANSFER_RATE_BYTES_PER_SECOND: u32 = 1_024;
 pub(crate) const MAX_RUNTIME_DETAIL_BYTES: usize = 512;
 
@@ -32,6 +41,65 @@ pub enum TransferRateLimit {
         #[schemars(range(min = 1_024))]
         bytes_per_second: u32,
     },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ActiveSeedLimit {
+    Unlimited,
+    Limited {
+        #[schemars(range(min = 0, max = 500))]
+        torrents: u16,
+    },
+}
+
+impl Default for ActiveSeedLimit {
+    fn default() -> Self {
+        Self::Limited {
+            torrents: DEFAULT_ACTIVE_SEEDS,
+        }
+    }
+}
+
+impl ActiveSeedLimit {
+    pub(crate) fn validate(self) -> Result<(), ClientSettingsError> {
+        if let Self::Limited { torrents } = self
+            && torrents > MAX_ACTIVE_SEEDS
+        {
+            return Err(ClientSettingsError::ActiveSeeds { value: torrents });
+        }
+        Ok(())
+    }
+
+    // Consumed by the combined-admission gate immediately after schema 23.
+    #[allow(dead_code)]
+    pub(crate) const fn effective(self) -> u16 {
+        match self {
+            Self::Unlimited => MAX_ACTIVE_SEEDS,
+            Self::Limited { torrents } => torrents,
+        }
+    }
+
+    pub(crate) const fn persisted(self) -> i64 {
+        match self {
+            Self::Unlimited => -1,
+            Self::Limited { torrents } => torrents as i64,
+        }
+    }
+
+    pub(crate) fn from_persisted(value: i64) -> Result<Self, ClientSettingsError> {
+        let limit = if value == -1 {
+            Self::Unlimited
+        } else {
+            Self::Limited {
+                torrents: u16::try_from(value)
+                    .map_err(|_| ClientSettingsError::ActiveSeeds { value: u16::MAX })?,
+            }
+        };
+        limit.validate()?;
+        Ok(limit)
+    }
 }
 
 impl TransferRateLimit {
@@ -250,6 +318,17 @@ pub struct ClientSettings {
     #[schemars(range(min = 1, max = 20))]
     pub active_downloads: u16,
     #[serde(default)]
+    pub active_seeds: ActiveSeedLimit,
+    #[serde(default = "default_share_ratio_limit_percent")]
+    #[schemars(range(min = 0, max = 2_147_483_647))]
+    pub share_ratio_limit_percent: u32,
+    #[serde(default = "default_finished_download_ratio_limit_percent")]
+    #[schemars(range(min = 0, max = 2_147_483_647))]
+    pub finished_download_ratio_limit_percent: u32,
+    #[serde(default = "default_finished_time_limit_seconds")]
+    #[schemars(range(min = 0, max = 2_147_483_647))]
+    pub finished_time_limit_seconds: u32,
+    #[serde(default)]
     pub upload_rate_limit: TransferRateLimit,
     #[serde(default)]
     pub download_rate_limit: TransferRateLimit,
@@ -269,6 +348,10 @@ impl Default for ClientSettings {
             upload_slots: u16::try_from(DEFAULT_UNCHOKE_SLOTS)
                 .expect("engine upload-slot default fits the settings contract"),
             active_downloads: DEFAULT_ACTIVE_DOWNLOADS,
+            active_seeds: ActiveSeedLimit::default(),
+            share_ratio_limit_percent: DEFAULT_SHARE_RATIO_LIMIT_PERCENT,
+            finished_download_ratio_limit_percent: DEFAULT_FINISHED_DOWNLOAD_RATIO_LIMIT_PERCENT,
+            finished_time_limit_seconds: DEFAULT_FINISHED_TIME_LIMIT_SECONDS,
             upload_rate_limit: TransferRateLimit::Unlimited,
             download_rate_limit: TransferRateLimit::Unlimited,
             encryption: EncryptionPolicy::Allow,
@@ -322,6 +405,19 @@ impl ClientSettings {
             return Err(ClientSettingsError::ActiveDownloads {
                 value: self.active_downloads,
             });
+        }
+        self.active_seeds.validate()?;
+        for (field, value) in [
+            ("share ratio", self.share_ratio_limit_percent),
+            (
+                "finished/download ratio",
+                self.finished_download_ratio_limit_percent,
+            ),
+            ("finished time", self.finished_time_limit_seconds),
+        ] {
+            if value > MAX_SEED_GOAL_VALUE {
+                return Err(ClientSettingsError::SeedGoal { field, value });
+            }
         }
         self.upload_rate_limit.validate()?;
         self.download_rate_limit.validate()?;
@@ -382,6 +478,34 @@ pub struct ClientSettingsPatch {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_optional_patch_value"
     )]
+    #[schemars(with = "ActiveSeedLimit")]
+    pub active_seeds: Option<ActiveSeedLimit>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_patch_value"
+    )]
+    #[schemars(with = "u32", range(min = 0, max = 2_147_483_647))]
+    pub share_ratio_limit_percent: Option<u32>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_patch_value"
+    )]
+    #[schemars(with = "u32", range(min = 0, max = 2_147_483_647))]
+    pub finished_download_ratio_limit_percent: Option<u32>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_patch_value"
+    )]
+    #[schemars(with = "u32", range(min = 0, max = 2_147_483_647))]
+    pub finished_time_limit_seconds: Option<u32>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_patch_value"
+    )]
     #[schemars(with = "TransferRateLimit")]
     pub upload_rate_limit: Option<TransferRateLimit>,
     #[serde(
@@ -422,6 +546,10 @@ impl ClientSettingsPatch {
             && self.peer_connection_limit.is_none()
             && self.upload_slots.is_none()
             && self.active_downloads.is_none()
+            && self.active_seeds.is_none()
+            && self.share_ratio_limit_percent.is_none()
+            && self.finished_download_ratio_limit_percent.is_none()
+            && self.finished_time_limit_seconds.is_none()
             && self.upload_rate_limit.is_none()
             && self.download_rate_limit.is_none()
             && self.encryption.is_none()
@@ -448,6 +576,16 @@ impl ClientSettingsPatch {
                 .unwrap_or(current.peer_connection_limit),
             upload_slots: self.upload_slots.unwrap_or(current.upload_slots),
             active_downloads: self.active_downloads.unwrap_or(current.active_downloads),
+            active_seeds: self.active_seeds.unwrap_or(current.active_seeds),
+            share_ratio_limit_percent: self
+                .share_ratio_limit_percent
+                .unwrap_or(current.share_ratio_limit_percent),
+            finished_download_ratio_limit_percent: self
+                .finished_download_ratio_limit_percent
+                .unwrap_or(current.finished_download_ratio_limit_percent),
+            finished_time_limit_seconds: self
+                .finished_time_limit_seconds
+                .unwrap_or(current.finished_time_limit_seconds),
             upload_rate_limit: self.upload_rate_limit.unwrap_or(current.upload_rate_limit),
             download_rate_limit: self
                 .download_rate_limit
@@ -472,6 +610,12 @@ impl From<ClientSettings> for ClientSettingsPatch {
             peer_connection_limit: Some(settings.peer_connection_limit),
             upload_slots: Some(settings.upload_slots),
             active_downloads: Some(settings.active_downloads),
+            active_seeds: Some(settings.active_seeds),
+            share_ratio_limit_percent: Some(settings.share_ratio_limit_percent),
+            finished_download_ratio_limit_percent: Some(
+                settings.finished_download_ratio_limit_percent,
+            ),
+            finished_time_limit_seconds: Some(settings.finished_time_limit_seconds),
             upload_rate_limit: Some(settings.upload_rate_limit),
             download_rate_limit: Some(settings.download_rate_limit),
             encryption: Some(settings.encryption),
@@ -493,6 +637,18 @@ const fn default_active_downloads() -> u16 {
     DEFAULT_ACTIVE_DOWNLOADS
 }
 
+const fn default_share_ratio_limit_percent() -> u32 {
+    DEFAULT_SHARE_RATIO_LIMIT_PERCENT
+}
+
+const fn default_finished_download_ratio_limit_percent() -> u32 {
+    DEFAULT_FINISHED_DOWNLOAD_RATIO_LIMIT_PERCENT
+}
+
+const fn default_finished_time_limit_seconds() -> u32 {
+    DEFAULT_FINISHED_TIME_LIMIT_SECONDS
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ClientSettingsError {
     PreferredListenerPort { port: u16 },
@@ -500,6 +656,8 @@ pub enum ClientSettingsError {
     PeerConnectionLimit { value: u32 },
     UploadSlots { value: u16 },
     ActiveDownloads { value: u16 },
+    ActiveSeeds { value: u16 },
+    SeedGoal { field: &'static str, value: u32 },
     TransferRateLimit { value: u32 },
 }
 
@@ -524,6 +682,16 @@ impl fmt::Display for ClientSettingsError {
             Self::ActiveDownloads { .. } => write!(
                 formatter,
                 "active downloads must be {MIN_ACTIVE_DOWNLOADS}..={MAX_ACTIVE_DOWNLOADS}"
+            ),
+            Self::ActiveSeeds { .. } => {
+                write!(
+                    formatter,
+                    "active seeds must be Unlimited or 0..={MAX_ACTIVE_SEEDS}"
+                )
+            }
+            Self::SeedGoal { field, .. } => write!(
+                formatter,
+                "{field} seed goal must be 0..={MAX_SEED_GOAL_VALUE}"
             ),
             Self::TransferRateLimit { .. } => write!(
                 formatter,

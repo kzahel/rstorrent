@@ -4,8 +4,8 @@ use std::fmt;
 use rusqlite::{Connection, Transaction, params};
 
 use super::contract::{
-    ClientSettings, EncryptionPolicy, HttpsServerAuthenticationPolicy, ListenerPolicy,
-    PortMappingPolicy, TransferRateLimit,
+    ActiveSeedLimit, ClientSettings, EncryptionPolicy, HttpsServerAuthenticationPolicy,
+    ListenerPolicy, PortMappingPolicy, TransferRateLimit,
 };
 
 const CLIENT_SETTINGS_TABLE_SQL: &str = "CREATE TABLE client_settings (
@@ -29,6 +29,18 @@ const CLIENT_SETTINGS_TABLE_SQL: &str = "CREATE TABLE client_settings (
         upload_slots INTEGER NOT NULL CHECK (upload_slots BETWEEN 0 AND 50),
         active_downloads INTEGER NOT NULL DEFAULT 3 CHECK (
             active_downloads BETWEEN 1 AND 20
+        ),
+        active_seeds INTEGER NOT NULL DEFAULT 5 CHECK (
+            active_seeds BETWEEN -1 AND 500
+        ),
+        share_ratio_limit_percent INTEGER NOT NULL DEFAULT 200 CHECK (
+            share_ratio_limit_percent BETWEEN 0 AND 2147483647
+        ),
+        finished_download_ratio_limit_percent INTEGER NOT NULL DEFAULT 700 CHECK (
+            finished_download_ratio_limit_percent BETWEEN 0 AND 2147483647
+        ),
+        finished_time_limit_seconds INTEGER NOT NULL DEFAULT 86400 CHECK (
+            finished_time_limit_seconds BETWEEN 0 AND 2147483647
         ),
         upload_rate_limit INTEGER NOT NULL DEFAULT 0 CHECK (
             upload_rate_limit = 0 OR
@@ -101,10 +113,14 @@ pub(crate) fn create_client_settings(
         "INSERT INTO client_settings(
             singleton, listener_mode, listener_port, preferred_listen_port,
             port_mapping_mode, peer_connection_limit, upload_slots,
-            active_downloads, upload_rate_limit, download_rate_limit,
-            encryption, ipv6_enabled,
+            active_downloads, active_seeds, share_ratio_limit_percent,
+            finished_download_ratio_limit_percent, finished_time_limit_seconds,
+            upload_rate_limit, download_rate_limit, encryption, ipv6_enabled,
             tracker_https_server_authentication
-         ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+         ) VALUES (
+            1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
+            ?13, ?14, ?15, ?16
+         )",
         params![
             mode,
             port.map(i64::from),
@@ -113,6 +129,10 @@ pub(crate) fn create_client_settings(
             i64::from(settings.peer_connection_limit),
             i64::from(settings.upload_slots),
             i64::from(settings.active_downloads),
+            settings.active_seeds.persisted(),
+            i64::from(settings.share_ratio_limit_percent),
+            i64::from(settings.finished_download_ratio_limit_percent),
+            i64::from(settings.finished_time_limit_seconds),
             settings.upload_rate_limit.persisted(),
             settings.download_rate_limit.persisted(),
             encryption,
@@ -141,6 +161,10 @@ pub(crate) fn read_client_settings(
         peer_connection_limit,
         upload_slots,
         active_downloads,
+        active_seeds,
+        share_ratio_limit_percent,
+        finished_download_ratio_limit_percent,
+        finished_time_limit_seconds,
         upload_rate_limit,
         download_rate_limit,
         encryption,
@@ -149,6 +173,8 @@ pub(crate) fn read_client_settings(
     ) = connection.query_row(
         "SELECT listener_mode, listener_port, preferred_listen_port, port_mapping_mode,
                 peer_connection_limit, upload_slots, active_downloads,
+                active_seeds, share_ratio_limit_percent,
+                finished_download_ratio_limit_percent, finished_time_limit_seconds,
                 upload_rate_limit, download_rate_limit, encryption, ipv6_enabled,
                 tracker_https_server_authentication
          FROM client_settings WHERE singleton = 1",
@@ -164,9 +190,13 @@ pub(crate) fn read_client_settings(
                 row.get::<_, i64>(6)?,
                 row.get::<_, i64>(7)?,
                 row.get::<_, i64>(8)?,
-                row.get::<_, String>(9)?,
-                row.get::<_, bool>(10)?,
-                row.get::<_, String>(11)?,
+                row.get::<_, i64>(9)?,
+                row.get::<_, i64>(10)?,
+                row.get::<_, i64>(11)?,
+                row.get::<_, i64>(12)?,
+                row.get::<_, String>(13)?,
+                row.get::<_, bool>(14)?,
+                row.get::<_, String>(15)?,
             ))
         },
     )?;
@@ -218,6 +248,22 @@ pub(crate) fn read_client_settings(
         active_downloads: u16::try_from(active_downloads).map_err(|_| {
             SettingsPersistenceError::Corrupt(
                 "active download limit cannot be represented".to_owned(),
+            )
+        })?,
+        active_seeds: ActiveSeedLimit::from_persisted(active_seeds)
+            .map_err(|error| SettingsPersistenceError::Corrupt(error.to_string()))?,
+        share_ratio_limit_percent: u32::try_from(share_ratio_limit_percent).map_err(|_| {
+            SettingsPersistenceError::Corrupt("share ratio limit cannot be represented".to_owned())
+        })?,
+        finished_download_ratio_limit_percent: u32::try_from(finished_download_ratio_limit_percent)
+            .map_err(|_| {
+                SettingsPersistenceError::Corrupt(
+                    "finished/download ratio limit cannot be represented".to_owned(),
+                )
+            })?,
+        finished_time_limit_seconds: u32::try_from(finished_time_limit_seconds).map_err(|_| {
+            SettingsPersistenceError::Corrupt(
+                "finished time limit cannot be represented".to_owned(),
             )
         })?,
         upload_rate_limit: TransferRateLimit::from_persisted(upload_rate_limit)
@@ -272,9 +318,12 @@ pub(crate) fn replace_client_settings(
          SET listener_mode = ?1, listener_port = ?2,
              preferred_listen_port = ?3, port_mapping_mode = ?4,
              peer_connection_limit = ?5, upload_slots = ?6,
-             active_downloads = ?7, upload_rate_limit = ?8,
-             download_rate_limit = ?9, encryption = ?10, ipv6_enabled = ?11,
-             tracker_https_server_authentication = ?12
+             active_downloads = ?7, active_seeds = ?8,
+             share_ratio_limit_percent = ?9,
+             finished_download_ratio_limit_percent = ?10,
+             finished_time_limit_seconds = ?11, upload_rate_limit = ?12,
+             download_rate_limit = ?13, encryption = ?14, ipv6_enabled = ?15,
+             tracker_https_server_authentication = ?16
          WHERE singleton = 1",
         params![
             mode,
@@ -284,6 +333,10 @@ pub(crate) fn replace_client_settings(
             i64::from(settings.peer_connection_limit),
             i64::from(settings.upload_slots),
             i64::from(settings.active_downloads),
+            settings.active_seeds.persisted(),
+            i64::from(settings.share_ratio_limit_percent),
+            i64::from(settings.finished_download_ratio_limit_percent),
+            i64::from(settings.finished_time_limit_seconds),
             settings.upload_rate_limit.persisted(),
             settings.download_rate_limit.persisted(),
             encryption,

@@ -72,14 +72,17 @@ pub use rstorrent_engine::{
     NetworkPrerequisiteHandle, NetworkPrerequisiteSnapshot, PeerTransportPolicy,
 };
 pub use settings::{
-    ActiveDownloadsClampReason, AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus,
-    AdvertisedPeerEndpointUnavailableReason, ApplicationNetworkPrerequisiteView,
-    ApplicationNetworkRuntimeState, ApplicationNetworkRuntimeView, BandwidthDirectionRuntimeView,
-    BandwidthRuntimeView, ClientSettings, ClientSettingsApplicationState,
-    ClientSettingsDegradedReason, ClientSettingsError, ClientSettingsPatch,
-    ClientSettingsRuntimeView, DEFAULT_ACTIVE_DOWNLOADS, EffectiveListenerSettings,
-    EncryptionPolicy, HttpsServerAuthenticationPolicy, Ipv6PinholeFailureStage, Ipv6PinholeStatus,
-    ListenerBindFailureReason, ListenerPolicy, ListenerStatus, MAX_ACTIVE_DOWNLOADS,
+    ActiveDownloadsClampReason, ActiveSeedLimit, AdvertisedPeerEndpointScope,
+    AdvertisedPeerEndpointStatus, AdvertisedPeerEndpointUnavailableReason,
+    ApplicationNetworkPrerequisiteView, ApplicationNetworkRuntimeState,
+    ApplicationNetworkRuntimeView, BandwidthDirectionRuntimeView, BandwidthRuntimeView,
+    ClientSettings, ClientSettingsApplicationState, ClientSettingsDegradedReason,
+    ClientSettingsError, ClientSettingsPatch, ClientSettingsRuntimeView, DEFAULT_ACTIVE_DOWNLOADS,
+    DEFAULT_ACTIVE_SEEDS, DEFAULT_FINISHED_DOWNLOAD_RATIO_LIMIT_PERCENT,
+    DEFAULT_FINISHED_TIME_LIMIT_SECONDS, DEFAULT_SHARE_RATIO_LIMIT_PERCENT,
+    EffectiveListenerSettings, EncryptionPolicy, HttpsServerAuthenticationPolicy,
+    Ipv6PinholeFailureStage, Ipv6PinholeStatus, ListenerBindFailureReason, ListenerPolicy,
+    ListenerStatus, MAX_ACTIVE_DOWNLOADS, MAX_ACTIVE_SEEDS, MAX_SEED_GOAL_VALUE,
     MIN_ACTIVE_DOWNLOADS, PortMappingFailureStage, PortMappingMechanism, PortMappingPolicy,
     PortMappingStatus, SessionUdpStatus, StorageRootAvailability, StorageRootSnapshot,
     StorageSettingsSnapshot, TorrentSettingsPatch, TorrentTransferLimits, TransferRateLimit,
@@ -93,7 +96,7 @@ pub use speed::{
 pub use store::{
     ConfiguredStorageRoot, MAX_STORAGE_ROOT_LOCATOR_LENGTH, MAX_STORAGE_ROOTS, RemovalRecord,
     ResumeRecord, SessionStore, StorageRootLocation, StoreError, StoredStorageRoot, StoredTracker,
-    StoredTrackerSource, StoredTrackerTransport,
+    StoredTrackerSource, StoredTrackerTransport, TorrentAccounting,
 };
 pub use tracker_views::{
     TrackerAnnounceEventView, TrackerCatalogState, TrackerConnectionFamilyView,
