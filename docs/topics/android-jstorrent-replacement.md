@@ -242,7 +242,7 @@ blocker for an independent RSTorrent beta.
 | Native/progressive playback | Completed Tactical `202` gives RSTorrent Android native Media3 playback for typed completed and eligible incomplete video through the shared Rust HTTP capability, with audio focus, picture-in-picture, removal revocation, seek, publication handoff, and playback lifetime ownership proven on physical ChromeOS. | Treat native playback as implemented. Sidecar/external subtitles, codec breadth, resume/history, background-audio controls, and production-package qualification remain separate dispositions. |
 | Localization | JSTorrent currently ships system/app locale selection and numerous translated `values-*` resources. RSTorrent Compose strings are predominantly inline English. | Select the replacement locale set and translation/update workflow; record any reduced first-release set in the listing and release notes. |
 | Reset, clear data, and support | JSTorrent exposes reset settings, clear all data with optional payload deletion, and a prefilled report-bug path. RSTorrent shows Reset engine settings as unavailable. | Add safe, separately worded metadata reset and payload deletion operations plus support/diagnostic handoff, or explicitly narrow them. Never combine payload deletion with an implicit migration reset. |
-| Add-time file selection | JSTorrent can show a file-selection step during add. RSTorrent selects a root during Add and changes High/Normal/Skip intent from Files after addition. | Decide whether the existing RSTorrent flow is the accepted replacement behavior or whether pre-start selection is required. Preserve bounded BEP 53 selection intent. |
+| Add-time file selection | JSTorrent can show a file-selection step during add. RSTorrent currently selects a root during Add and changes High/Normal/Skip intent from Files after addition. | Active Tactical [`203`](../tactical/203-jstorrent-shaped-add-time-file-selection.md) selects the JSTorrent-shaped default-on step for shared React and Compose: checked is Normal, unchecked is Skip, All/None are logical, magnets fetch metadata without content, and one atomic confirmation starts the durable selection. High remains post-add. Preserve bounded BEP 53 intent, exact cancel/duplicate safety, restart, paging, and shared application ownership. |
 | Download manifest integration | JSTorrent can write a sidecar manifest for external playback integration. RSTorrent does not. | Confirm whether any supported integration consumes it; implement a safe final-path equivalent or retire it. |
 | Active-piece memory override | JSTorrent exposes an Android memory-budget override. RSTorrent uses bounded engine-owned resource policy without an equivalent user control. | Prefer measured automatic limits unless physical evidence justifies an advanced setting. Record this as a deliberate difference. |
 | Tracker mutation | RSTorrent Android can inspect trackers but not mutate them. | Defer unless current user journeys or ordinary interoperability require it; use a typed application command if implemented. |
@@ -473,8 +473,11 @@ live run.
    independent background-lifetime decision.
 7. Design `JAR-005` with the production extension before either store update
    is scheduled.
-8. Decide VPN, proxy, DHT/PEX controls, search/plugins, playback follow-ups,
-   localization, reset/support, and the remaining table rows individually.
+8. Complete active Tactical
+   [`203`](../tactical/203-jstorrent-shaped-add-time-file-selection.md) as the
+   Add-time file-selection disposition, then decide VPN, proxy, DHT/PEX
+   controls, search/plugins, playback follow-ups, localization, reset/support,
+   and the remaining table rows individually.
    Proxy and any engine/network privacy work follow the source-first engine
    campaign; search/plugin and playback follow-ups remain separate security/
    lifecycle campaigns.

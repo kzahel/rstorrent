@@ -871,6 +871,12 @@ exactly.
 
 ### Active
 
+- Implement **Tactical `203`** with one durable application-owned pending-add
+  state and the JSTorrent-shaped checkbox flow across shared React and Android
+  Compose. Checked means Normal, unchecked means Skip, High remains post-add,
+  magnets acquire metadata without content, and atomic confirm/cancel must
+  survive restart, duplicate intake, concurrent presentations, and bounded
+  maximum-file catalogs.
 - Finish qualification evidence for **Tactical `196`**. The implementation
   now supplies the default-compiled lazy desktop/headless endpoint,
   authenticated direct-only signaling, completed-file **Save file...**,
