@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -97,6 +98,41 @@ class AdbTarget:
 
     def property(self, name: str) -> str:
         return self.shell(["getprop", name]).stdout.strip()
+
+
+class SshAdbTarget(AdbTarget):
+    def __init__(self, host: str, serial: str, name: str) -> None:
+        super().__init__(["ssh", host, shlex.join(["adb", "-s", serial])], name)
+        self.host = host
+        self.serial = serial
+
+    def run(
+        self,
+        arguments: Sequence[str],
+        *,
+        timeout: float = 30,
+        check: bool = True,
+    ) -> CommandResult:
+        remote_command = shlex.join(["adb", "-s", self.serial, *arguments])
+        completed = subprocess.run(
+            ["ssh", self.host, remote_command],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+        result = CommandResult(
+            stdout=completed.stdout,
+            stderr=completed.stderr,
+            returncode=completed.returncode,
+        )
+        if check and completed.returncode != 0:
+            raise ProbeFailure(
+                f"{self.name} command failed: {' '.join(arguments)}\n"
+                f"stdout:\n{completed.stdout}\n"
+                f"stderr:\n{completed.stderr}"
+            )
+        return result
 
 
 def repository_root() -> Path:
@@ -320,8 +356,9 @@ def prepare_chromeos() -> AdbTarget:
             )
     run_host([*chromeos, "testbed", "--", "adb-connect"], timeout=30)
     for serial in CHROMEOS_SERIALS:
-        target = AdbTarget(
-            ["ssh", "chromeroot", "adb", "-s", serial],
+        target = SshAdbTarget(
+            "chromeroot",
+            serial,
             f"Chromebook ARCVM {serial}",
         )
         if target.run(["get-state"], check=False).stdout.strip() == "device":
