@@ -47,6 +47,13 @@ class ProductBackgroundLifecycleTest {
             assertFalse(service.resourceSnapshotForTest().foreground)
             waitForOngoingNotification(context, expected = false)
 
+            context.startForegroundService(Intent(context, ProductEngineService::class.java))
+            withTimeout(5_000L) {
+                service.state.first { !it.lifecycle.foreground }
+            }
+            assertFalse(service.resourceSnapshotForTest().shutdownComplete)
+            waitForOngoingNotification(context, expected = false)
+
             service.setBackgroundDownloadsEnabled(true)
             assertTrue(service.state.value.lifecycle.backgroundDownloadsEnabled)
             assertTrue(service.state.value.lifecycle.effectiveBackgroundDownloads)

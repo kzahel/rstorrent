@@ -2087,14 +2087,37 @@ def run_product_background_lifecycle_profile(
         torrent_id = wait_product_torrent_id(target, fixture.info_hash, add_count)
         staging_root = f"{probe.grant_path(grant_storage)}/.{torrent_id}.rstorrent-staging"
         part_path = f"{probe.grant_path(grant_storage)}/.{torrent_id}.rstorrent-parts"
-        wait_product_torrent_progress(
-            target,
-            torrent_id,
-            state="DOWNLOADING",
-            verified=1,
-            description="background-lifecycle first verified piece",
-            timeout=45,
-        )
+        try:
+            wait_product_torrent_progress(
+                target,
+                torrent_id,
+                state="DOWNLOADING",
+                verified=1,
+                description="background-lifecycle first verified piece",
+                timeout=45,
+            )
+        except BootstrapFailure as error:
+            fixture.alerts.extend(
+                alert.message() for alert in fixture.session.pop_alerts()
+            )
+            seed_status = fixture.handle.status()
+            reverse_mappings = target.run(
+                ["reverse", "--list"], timeout=15, check=False
+            ).stdout.strip()
+            tunnel_status = (
+                peer_transport.chrome_tunnel.poll()
+                if peer_transport.chrome_tunnel is not None
+                else None
+            )
+            raise BootstrapFailure(
+                f"{error}\n"
+                f"controlled_seed listening={fixture.session.is_listening()} "
+                f"port={fixture.host_port} peers={seed_status.num_peers} "
+                f"seeding={seed_status.is_seeding}\n"
+                f"reverse_mappings={reverse_mappings!r} "
+                f"chrome_tunnel_status={tunnel_status!r}\n"
+                f"seed_alerts={fixture.alerts[-32:]!r}"
+            ) from error
         verified_before_stop = 1
 
         target.run(["logcat", "-c"], check=False)

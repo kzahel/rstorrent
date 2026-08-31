@@ -441,6 +441,14 @@ class ProductEngineService : Service() {
         latestStartId.set(startId)
         startCommandReceived = true
         if (!firstStartCommand.isCompleted) firstStartCommand.complete(intent == null)
+        if (
+            intent?.action != ACTION_BACKGROUND_ADMITTED &&
+                intent?.action != ACTION_BACKGROUND_REVOKED &&
+                !acknowledgeForegroundServiceStart()
+        ) {
+            requestStop("foreground_start_acknowledgement_failed", startId)
+            return START_NOT_STICKY
+        }
         if (intent?.action == ACTION_STOP) {
             lifecycleCoordinator.terminal(ProductLifetimeStopReason.EXPLICIT_STOP)
             requestStop("notification_stop", startId)
@@ -3421,6 +3429,15 @@ class ProductEngineService : Service() {
             )
             false
         }
+    }
+
+    private fun acknowledgeForegroundServiceStart(): Boolean {
+        val snapshot = lifecycleCoordinator.snapshot() ?: return true
+        if (!promoteForeground(snapshot)) return false
+        Handler(Looper.getMainLooper()).post {
+            lifecycleCoordinator.snapshot()?.let(::applyLifecycleDecision)
+        }
+        return true
     }
 
     private fun demoteForeground() {
