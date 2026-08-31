@@ -656,6 +656,49 @@ class ReverseTransport:
                 self.chrome_tunnel.wait(timeout=5)
 
 
+@dataclass
+class ChromeForwardTransport:
+    local_port: int
+    process: subprocess.Popen[str]
+
+    @classmethod
+    def create(cls, host: str, remote_port: int) -> "ChromeForwardTransport":
+        last_detail = ""
+        for _ in range(8):
+            reservation = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            reservation.bind(("127.0.0.1", 0))
+            local_port = int(reservation.getsockname()[1])
+            reservation.close()
+            process = subprocess.Popen(
+                [
+                    "ssh",
+                    "-N",
+                    "-o",
+                    "ExitOnForwardFailure=yes",
+                    "-L",
+                    f"127.0.0.1:{local_port}:127.0.0.1:{remote_port}",
+                    host,
+                ],
+                cwd=repository_root(),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            time.sleep(0.2)
+            if process.poll() is None:
+                return cls(local_port, process)
+            last_detail = process.stderr.read() if process.stderr else ""
+        raise BootstrapFailure(f"ChromeOS forward SSH tunnel failed: {last_detail}")
+
+    def close(self) -> None:
+        self.process.terminate()
+        try:
+            self.process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            self.process.kill()
+            self.process.wait(timeout=5)
+
+
 def clear_application(target: Any) -> None:
     target.shell(["am", "force-stop", PACKAGE], check=False)
     cleared = target.shell(["pm", "clear", PACKAGE], check=False)
@@ -3183,6 +3226,10 @@ def verify_product_upload(
     if not host_port_text.isdigit():
         raise BootstrapFailure(f"adb did not report an upload forward port: {host_port_text!r}")
     host_port = int(host_port_text)
+    chrome_forward = None
+    target_host = getattr(target, "host", None)
+    if isinstance(target_host, str):
+        chrome_forward = ChromeForwardTransport.create(target_host, host_port)
     output_root = Path(tempfile.mkdtemp(prefix="rstorrent-android-upload-"))
     session = lt.session(
         {
@@ -3204,9 +3251,11 @@ def verify_product_upload(
     hash_proxy = None
     diagnostics: list[str] = []
     try:
-        peer_port = host_port
+        peer_port = (
+            chrome_forward.local_port if chrome_forward is not None else host_port
+        )
         if pure_v2 is not None:
-            hash_proxy = pure_v2.PlaintextBep52Proxy(("127.0.0.1", host_port))
+            hash_proxy = pure_v2.PlaintextBep52Proxy(("127.0.0.1", peer_port))
             peer_port = hash_proxy.endpoint[1]
         if magnet_only:
             worker = repository_root() / "tests" / "interop" / "controlled_libtorrent_leech.py"
@@ -3326,6 +3375,8 @@ def verify_product_upload(
         if hash_proxy is not None:
             hash_proxy.close()
         target.run(["forward", "--remove", f"tcp:{host_port}"], timeout=15, check=False)
+        if chrome_forward is not None:
+            chrome_forward.close()
         shutil.rmtree(output_root)
 
 
