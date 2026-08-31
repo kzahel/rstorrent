@@ -1,11 +1,4 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type UIEvent,
-} from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type UIEvent } from "react";
 
 import { formatExactBytes } from "../format";
 import type { DataUnits } from "../appearance";
@@ -13,11 +6,21 @@ import type { FileRow, FileSet, TorrentRow } from "../model";
 import styles from "./AddTorrentDialog.module.css";
 
 const MAX_OVERRIDES = 4_096;
+const MAX_CACHED_PAGES = 3;
+const FILE_ROW_HEIGHT_PX = 52;
+const VIEWPORT_OVERSCAN_ROWS = 6;
 
 interface DraftOverride {
   readonly selected: boolean;
   readonly initialSelected: boolean;
   readonly lengthBytes: string;
+}
+
+interface CachedPage {
+  readonly offset: number;
+  readonly limit: number;
+  readonly nextOffset: number | null;
+  readonly rows: ReadonlyMap<number, FileRow>;
 }
 
 export interface PendingFileSelectionDialogProps {
@@ -53,15 +56,16 @@ export function PendingFileSelectionDialog({
   const [overrides, setOverrides] = useState<ReadonlyMap<number, DraftOverride>>(
     new Map(),
   );
-  const [loadedRows, setLoadedRows] = useState<ReadonlyMap<number, FileRow>>(
+  const [pages, setPages] = useState<ReadonlyMap<number, CachedPage>>(
     new Map(),
   );
+  const [viewport, setViewport] = useState({ scrollTop: 0, height: 400 });
   const [disableFuture, setDisableFuture] = useState(false);
   const [pending, setPending] = useState<"confirm" | "cancel" | null>(null);
   const [error, setError] = useState("");
   const dialogRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
-  const lastRequestedOffset = useRef(0);
+  const lastRequestedOffset = useRef<number | null>(null);
 
   useEffect(() => {
     cancelRef.current?.focus();
@@ -69,20 +73,48 @@ export function PendingFileSelectionDialog({
 
   useEffect(() => {
     if (files === undefined || files.state !== "available") return;
-    setLoadedRows((current) => {
-      const next = files.page.offset === 0 ? new Map<number, FileRow>() : new Map(current);
+    setPages((current) => {
+      const pageRows = new Map<number, FileRow>();
       for (const id of files.order) {
         const row = files.rows[id];
-        if (row !== undefined && !row.padding) next.set(row.index, row);
+        if (row !== undefined && !row.padding) pageRows.set(row.index, row);
       }
-      return next;
+      const next = new Map(current);
+      next.set(files.page.offset, {
+        offset: files.page.offset,
+        limit: files.page.limit,
+        nextOffset: files.page.nextOffset,
+        rows: pageRows,
+      });
+      return new Map(
+        [...next.entries()]
+          .sort(
+            ([left], [right]) =>
+              Math.abs(left - files.page.offset) - Math.abs(right - files.page.offset),
+          )
+          .slice(0, MAX_CACHED_PAGES),
+      );
     });
-    lastRequestedOffset.current = files.page.offset;
+    lastRequestedOffset.current = null;
   }, [files]);
 
-  const rows = useMemo(
-    () => [...loadedRows.values()].sort((left, right) => left.index - right.index),
-    [loadedRows],
+  const totalRows = files?.state === "available" ? files.page.total : 0;
+  const firstVisibleIndex = Math.max(
+    0,
+    Math.floor(viewport.scrollTop / FILE_ROW_HEIGHT_PX) - VIEWPORT_OVERSCAN_ROWS,
+  );
+  const lastVisibleIndex = Math.min(
+    Math.max(0, totalRows - 1),
+    Math.ceil((viewport.scrollTop + viewport.height) / FILE_ROW_HEIGHT_PX) +
+      VIEWPORT_OVERSCAN_ROWS,
+  );
+  const visibleRows = useMemo(
+    () =>
+      [...pages.values()]
+        .flatMap((page) => [...page.rows.values()])
+        .filter((row) => row.index >= firstVisibleIndex && row.index <= lastVisibleIndex)
+        .sort((left, right) => left.index - right.index),
+    [firstVisibleIndex, lastVisibleIndex, pages],
   );
   const summary = useMemo(
     () => draftSummary(torrent, base, overrides),
@@ -134,14 +166,41 @@ export function PendingFileSelectionDialog({
     setError("");
   };
 
-  const loadNextPage = (event: UIEvent<HTMLDivElement>) => {
-    const page = files?.page;
-    if (page?.nextOffset === null || page?.nextOffset === undefined) return;
+  const loadVisiblePage = (event: UIEvent<HTMLDivElement>) => {
     const target = event.currentTarget;
-    if (target.scrollHeight - target.scrollTop - target.clientHeight > 240) return;
-    if (lastRequestedOffset.current === page.nextOffset) return;
-    lastRequestedOffset.current = page.nextOffset;
-    onPage(page.nextOffset);
+    const height = target.clientHeight > 0 ? target.clientHeight : viewport.height;
+    setViewport({ scrollTop: target.scrollTop, height });
+    const first = Math.max(0, Math.floor(target.scrollTop / FILE_ROW_HEIGHT_PX));
+    const last = Math.max(first, Math.ceil((target.scrollTop + height) / FILE_ROW_HEIGHT_PX));
+    const coveringPage = [...pages.values()].find((page) => {
+      const end = page.nextOffset ?? Math.min(totalRows, page.offset + page.limit);
+      return first >= page.offset && first < end;
+    });
+    let requestedOffset: number | null = null;
+    if (coveringPage === undefined) {
+      const limit = Math.max(1, files?.page.limit ?? 1_024);
+      requestedOffset = Math.floor(first / limit) * limit;
+    } else if (
+      coveringPage.nextOffset !== null &&
+      last >= coveringPage.nextOffset - VIEWPORT_OVERSCAN_ROWS
+    ) {
+      requestedOffset = coveringPage.nextOffset;
+    } else if (
+      first <= coveringPage.offset + VIEWPORT_OVERSCAN_ROWS &&
+      coveringPage.offset > 0
+    ) {
+      requestedOffset = Math.max(0, coveringPage.offset - coveringPage.limit);
+    }
+    if (
+      requestedOffset === null ||
+      requestedOffset >= totalRows ||
+      pages.has(requestedOffset) ||
+      lastRequestedOffset.current === requestedOffset
+    ) {
+      return;
+    }
+    lastRequestedOffset.current = requestedOffset;
+    onPage(requestedOffset);
   };
 
   const confirm = async () => {
@@ -227,9 +286,24 @@ export function PendingFileSelectionDialog({
                 {" · "}{formatExactBytes(summary.bytes.toString(), dataUnits)}
               </span>
             </div>
-            <div className={styles.selectionList} onScroll={loadNextPage}>
-              {rows.map((row) => (
-                <label key={row.id} className={styles.selectionRow}>
+            <div
+              className={styles.selectionList}
+              role="list"
+              aria-label="Torrent files"
+              data-cached-page-count={pages.size}
+              onScroll={loadVisiblePage}
+            >
+              <div
+                className={styles.selectionListExtent}
+                style={{ height: `${totalRows * FILE_ROW_HEIGHT_PX}px` }}
+              >
+              {visibleRows.map((row) => (
+                <label
+                  key={row.id}
+                  className={styles.selectionRow}
+                  role="listitem"
+                  style={{ top: `${row.index * FILE_ROW_HEIGHT_PX}px` }}
+                >
                   <input
                     type="checkbox"
                     checked={selectedFor(row)}
@@ -242,9 +316,7 @@ export function PendingFileSelectionDialog({
                   </span>
                 </label>
               ))}
-              {files.page.nextOffset === null ? null : (
-                <p className={styles.loadingMore}>Scroll to load more files</p>
-              )}
+              </div>
             </div>
           </>
         )}

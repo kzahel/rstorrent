@@ -66,16 +66,46 @@ describe("pending file selection", () => {
   it("loads the next bounded page near the end of the continuous list", () => {
     const onPage = vi.fn();
     renderDialog({ onPage });
-    const list = screen.getByText("Scroll to load more files").parentElement!;
+    const list = screen.getByRole("list", { name: "Torrent files" });
     Object.defineProperties(list, {
-      scrollHeight: { value: 1_000 },
-      scrollTop: { value: 700, configurable: true },
-      clientHeight: { value: 200 },
+      scrollTop: { value: 52, configurable: true },
+      clientHeight: { value: 52 },
     });
 
     fireEvent.scroll(list);
 
     expect(onPage).toHaveBeenCalledWith(2);
+  });
+
+  it("virtualizes rows and retains at most three catalog pages", async () => {
+    const rows = Array.from({ length: 1_024 }, (_, index) =>
+      file(index, `file-${index}.bin`, "1"),
+    );
+    const view = renderDialog({ files: filePage(0, 4_096, 1_024, rows) });
+
+    expect(screen.getAllByRole("checkbox").length).toBeLessThan(40);
+    view.rerender(
+      dialogElement({
+        files: filePage(1_024, 4_096, 2_048, [file(1_024, "b.bin", "1")]),
+      }),
+    );
+    view.rerender(
+      dialogElement({
+        files: filePage(2_048, 4_096, 3_072, [file(2_048, "c.bin", "1")]),
+      }),
+    );
+    view.rerender(
+      dialogElement({
+        files: filePage(3_072, 4_096, null, [file(3_072, "d.bin", "1")]),
+      }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("list", { name: "Torrent files" })).toHaveAttribute(
+        "data-cached-page-count",
+        "3",
+      ),
+    );
   });
 });
 
@@ -84,7 +114,13 @@ function renderDialog(
     React.ComponentProps<typeof PendingFileSelectionDialog>
   > = {},
 ) {
-  return render(
+  return render(dialogElement(overrides));
+}
+
+function dialogElement(
+  overrides: Partial<React.ComponentProps<typeof PendingFileSelectionDialog>> = {},
+) {
+  return (
     <PendingFileSelectionDialog
       torrent={torrent()}
       files={availableFiles()}
@@ -95,7 +131,7 @@ function renderDialog(
       onConfirm={async () => undefined}
       onCancel={async () => undefined}
       {...overrides}
-    />,
+    />
   );
 }
 
@@ -132,6 +168,21 @@ function metadataPendingFiles(): FileSet {
     page: { offset: 0, limit: 1_024, total: 0, nextOffset: null },
     order: [],
     rows: {},
+  };
+}
+
+function filePage(
+  offset: number,
+  total: number,
+  nextOffset: number | null,
+  files: readonly FileRow[],
+): FileSet {
+  return {
+    state: "available",
+    filesystemContentBase: null,
+    page: { offset, limit: 1_024, total, nextOffset },
+    order: files.map((entry) => entry.id),
+    rows: Object.fromEntries(files.map((entry) => [entry.id, entry])),
   };
 }
 

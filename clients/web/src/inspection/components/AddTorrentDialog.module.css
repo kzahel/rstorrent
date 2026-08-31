@@ -260,18 +260,27 @@
 
 .selectionList {
   overflow-y: auto;
+  position: relative;
   min-height: 10rem;
   max-height: min(25rem, 48vh);
   margin-top: 0.6rem;
   border-block: 1px solid var(--border-soft);
 }
 
+.selectionListExtent {
+  position: relative;
+  min-width: 0;
+}
+
 .selectionRow {
+  position: absolute;
+  inset-inline: 0;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 0.65rem;
-  min-height: 3.25rem;
+  box-sizing: border-box;
+  height: 3.25rem;
   border-bottom: 1px solid var(--border-soft);
   padding: 0.5rem 0.35rem;
   cursor: pointer;
@@ -289,14 +298,9 @@
   white-space: nowrap;
 }
 
-.selectionRow small,
-.loadingMore {
+.selectionRow small {
   color: var(--text-muted);
   font-size: var(--ui-font-caption);
-}
-
-.loadingMore {
-  text-align: center;
 }
 
 @media (max-width: 520px) {
