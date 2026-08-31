@@ -195,6 +195,7 @@ final class AppModel: ObservableObject {
                 magnet: magnet,
                 storageRoot: root,
                 startContent: true,
+                awaitFileSelection: false,
                 skipFiles: []
             )
         )
@@ -223,6 +224,7 @@ final class AppModel: ObservableObject {
                 expectedRevision: nil,
                 storageRoot: presentation.storage?.defaultRoot ?? "ios-documents",
                 startContent: true,
+                awaitFileSelection: false,
                 selection: .all,
                 sourceLength: sourceLength
             ),

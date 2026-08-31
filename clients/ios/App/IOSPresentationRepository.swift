@@ -414,6 +414,14 @@ final class IOSPresentationRepository: ObservableObject {
             case .transferLimits(let value): next.transferLimits = value
             case .storageState(let value): next.storageState = value
             case .metadataAvailable(let value): next.metadataAvailable = value
+            case .awaitingFileSelection(let value): next.awaitingFileSelection = value
+            case .pendingFileSelectionPosition(let value):
+                next.pendingFileSelectionPosition = value
+            case .fileCatalogId(let value): next.fileCatalogId = value
+            case .selectableFileCount(let value): next.selectableFileCount = value
+            case .selectedFileCount(let value): next.selectedFileCount = value
+            case .selectableFileBytes(let value): next.selectableFileBytes = value
+            case .selectedFileBytes(let value): next.selectedFileBytes = value
             case .pieceCount(let value): next.pieceCount = value
             case .totalSizeBytes(let value): next.totalSizeBytes = value
             case .verifiedPieceCount(let value): next.verifiedPieceCount = value
@@ -452,6 +460,13 @@ final class IOSPresentationRepository: ObservableObject {
         case .transferLimits: return 6
         case .storageState: return 7
         case .metadataAvailable: return 8
+        case .awaitingFileSelection: return 31
+        case .pendingFileSelectionPosition: return 32
+        case .fileCatalogId: return 33
+        case .selectableFileCount: return 34
+        case .selectedFileCount: return 35
+        case .selectableFileBytes: return 36
+        case .selectedFileBytes: return 37
         case .pieceCount: return 9
         case .totalSizeBytes: return 28
         case .verifiedPieceCount: return 10
