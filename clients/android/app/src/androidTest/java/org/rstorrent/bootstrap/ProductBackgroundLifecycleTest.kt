@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -88,6 +89,50 @@ class ProductBackgroundLifecycleTest {
             assertFalse(terminal.networkCallbackRegistered)
             waitForOngoingNotification(context, expected = false)
         } finally {
+            context.stopService(Intent(context, ProductEngineService::class.java))
+            ProductInteractionRegistry.resetForTest()
+            ProductLifecyclePreferenceStore(context).write(ProductLifecyclePreferences())
+        }
+    }
+
+    @Test
+    fun visibleStartCreatesANewGenerationAfterJoinedShutdown() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        assertTrue(ProductLifecyclePreferenceStore(context).write(ProductLifecyclePreferences()))
+        ProductInteractionRegistry.resetForTest()
+        ProductInteractionRegistry.setActivityVisible(true)
+        var testBound = false
+
+        try {
+            context.startForegroundService(Intent(context, ProductEngineService::class.java))
+            val firstBinder =
+                serviceRule.bindService(Intent(context, ProductEngineService::class.java))
+            testBound = true
+            val first = (firstBinder as ProductEngineService.LocalBinder).service
+            withTimeout(30_000L) { first.state.first { it.ready } }
+
+            first.shutdownFromUi()
+            val shutdownDeadline = SystemClock.elapsedRealtime() + 10_000L
+            while (
+                !first.resourceSnapshotForTest().shutdownComplete &&
+                    SystemClock.elapsedRealtime() < shutdownDeadline
+            ) {
+                SystemClock.sleep(25L)
+            }
+            assertTrue(first.resourceSnapshotForTest().shutdownComplete)
+            serviceRule.unbindService()
+            testBound = false
+
+            context.startForegroundService(Intent(context, ProductEngineService::class.java))
+            val secondBinder =
+                serviceRule.bindService(Intent(context, ProductEngineService::class.java))
+            testBound = true
+            val second = (secondBinder as ProductEngineService.LocalBinder).service
+            assertNotSame(first, second)
+            withTimeout(30_000L) { second.state.first { it.ready } }
+            assertFalse(second.resourceSnapshotForTest().shutdownComplete)
+        } finally {
+            if (testBound) serviceRule.unbindService()
             context.stopService(Intent(context, ProductEngineService::class.java))
             ProductInteractionRegistry.resetForTest()
             ProductLifecyclePreferenceStore(context).write(ProductLifecyclePreferences())

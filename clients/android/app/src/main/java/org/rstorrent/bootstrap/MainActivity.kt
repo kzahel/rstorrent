@@ -30,6 +30,7 @@ class MainActivity : ComponentActivity() {
     private val dynamicColor = mutableStateOf(true)
     private var productBound = false
     private var productMode = false
+    private var productStartRequested = false
     private var pendingProductMagnet: String? = null
     private var pendingProductTorrentUri: String? = null
     private var pendingProductTorrentBase64: String? = null
@@ -311,7 +312,10 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         ProductInteractionRegistry.setActivityVisible(true)
-        if (productMode) bindProductService()
+        if (productMode) {
+            if (!productStartRequested) startProductService()
+            bindProductService()
+        }
     }
 
     override fun onResume() {
@@ -334,6 +338,7 @@ class MainActivity : ComponentActivity() {
             productBound = false
             productService.value = null
         }
+        productStartRequested = false
         super.onStop()
     }
 
@@ -751,6 +756,7 @@ class MainActivity : ComponentActivity() {
     private fun showDiagnosticSurface() {
         if (productMode) {
             productMode = false
+            productStartRequested = false
             if (productBound) {
                 unbindService(productConnection)
                 productBound = false
@@ -805,6 +811,7 @@ class MainActivity : ComponentActivity() {
         } else {
             startService(serviceIntent)
         }
+        productStartRequested = true
     }
 
     private fun launchProductTreePicker(repairRootId: String? = null) {
