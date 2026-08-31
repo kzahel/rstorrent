@@ -1,10 +1,5 @@
 //! Runtime-independent libtorrent-shaped seed goals and queue ranking.
 
-// The first Tactical 201 gate intentionally lands before runtime admission.
-// The following gate removes this allowance as the application owner consumes
-// the policy values.
-#![allow(dead_code)]
-
 use std::error::Error;
 use std::fmt;
 
@@ -175,8 +170,7 @@ pub(crate) struct InactivityState {
 }
 
 impl InactivityState {
-    #[cfg(test)]
-    const fn inactive(self) -> bool {
+    pub(crate) const fn inactive(self) -> bool {
         self.inactive
     }
 

@@ -12,10 +12,9 @@ use rstorrent_engine::{
     DEFAULT_INCOMING_HANDSHAKE_TIMEOUT, DEFAULT_INCOMING_INACTIVITY_TIMEOUT,
     DEFAULT_INCOMING_KEEPALIVE_INTERVAL, DEFAULT_INCOMING_NO_REQUEST_TIMEOUT,
     DEFAULT_INCOMING_PEER_ACTIVITY_TIMEOUT, DEFAULT_PEER_ID, DEFAULT_STORAGE_FILE_LIMIT,
-    DEFAULT_UPLOAD_READ_JOBS, DirectContentLayout, DiscoveryAdvertisementError,
-    DiscoveryAdvertisementHandle, DiscoveryAdvertisementRegistration, DiskCheckpointStage,
-    DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink, DownloadControl,
-    DownloadError, DownloadResourceLimits, ExternalMagnetMetadataDownloadConfig,
+    DEFAULT_UPLOAD_READ_JOBS, DirectContentLayout, DiscoveryAdvertisementRegistration,
+    DiskCheckpointStage, DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink,
+    DownloadControl, DownloadError, DownloadResourceLimits, ExternalMagnetMetadataDownloadConfig,
     FileSelectionUpdate, IncomingPeerError, IncomingPeerServiceSnapshot, MseHandshakeObservation,
     MseHandshakeOutcome, MseHandshakeSink, NetworkConfig, NetworkPolicy, NetworkPrerequisiteHandle,
     NetworkPrerequisiteSnapshot, PeerEncryptionPolicy, PeerTransportPolicy, PlatformStorageClient,
@@ -40,7 +39,10 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::accounting::{AccountingActivity, TorrentAccountingOwner};
-use crate::auto_manager::{AdmissionAction, TorrentAdmissionState, TorrentAutoManager};
+use crate::auto_manager::{
+    AdmissionAction, TorrentAdmissionKind, TorrentAdmissionState, TorrentAdmissionType,
+    TorrentAutoManager,
+};
 use crate::control::{
     AddTorrentBytesRequest, AddTorrentDisposition, Command, CommandResult, ErrorCode, FilePriority,
     RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseEnvelope, ResponseOutcome,
@@ -52,10 +54,14 @@ use crate::diagnostics::{
 };
 use crate::file_views::FileProgressModel;
 use crate::have::HaveState;
-use crate::incoming_seeding::{IncomingSeeding, IncomingSeedingError, SeedReconcileOutcome};
+use crate::incoming_seeding::{IncomingSeedingError, SeedReconcileOutcome};
 use crate::media::{
     MediaCapabilities, MediaFileAvailability, MediaOriginError, MediaRegistryError,
     MediaResolveError, MediaUrlResponse, VerifiedMediaSource,
+};
+use crate::seed_policy::{
+    AUTO_MANAGE_INTERVAL_SECONDS, HARD_ACTIVE_TORRENT_LIMIT, InactivityState, SeedGoalInput,
+    SeedGoalLimits, SeedRankInput, rate_is_inactive, seed_rank,
 };
 use crate::session_network::{SessionNetworkConfig, SessionNetworkError, SessionNetworkRuntime};
 use crate::settings::{StorageRootSnapshot, TorrentTransferLimits};
@@ -65,7 +71,7 @@ use crate::store::{
     StoreError, StoredStorageRoot, StoredTracker, StoredTrackerSource, StoredTrackerTransport,
     prepare_torrent_bytes,
 };
-use crate::torrent_runtime::{ActiveDownload, TorrentRuntime, TorrentRuntimeHandle};
+use crate::torrent_runtime::{ActiveDownload, TorrentRuntime};
 use crate::tracker_views::TrackerViewModel;
 
 fn parse_durable_metainfo(raw_info: &[u8]) -> Result<Metainfo, MetainfoError> {
@@ -544,6 +550,9 @@ pub struct ApplicationService {
     views: ViewHub,
     view_set_reaper: Option<ViewSetLeaseReaper>,
     admission_wake: Arc<Notify>,
+    admission_started_at: Instant,
+    admission_inactivity: BTreeMap<String, AdmissionInactivityState>,
+    admitted_seeds: BTreeSet<String>,
     accounting_wake: Arc<Notify>,
     accounting: TorrentAccountingOwner,
     discovery_wake: Arc<Notify>,
@@ -557,6 +566,13 @@ enum MaintenanceAction {
     Admission,
     Discovery,
     Accounting,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct AdmissionInactivityState {
+    generation: u64,
+    selected_finished: bool,
+    state: InactivityState,
 }
 
 impl ApplicationService {
@@ -809,6 +825,9 @@ impl ApplicationService {
             views,
             view_set_reaper: Some(view_set_reaper),
             admission_wake,
+            admission_started_at: Instant::now(),
+            admission_inactivity: BTreeMap::new(),
+            admitted_seeds: BTreeSet::new(),
             accounting_wake,
             accounting,
             discovery_wake,
@@ -1689,7 +1708,6 @@ impl ApplicationService {
             )
         })? > revision_before;
         self.refresh_views()?;
-        self.reconcile_discovery_catalog().await?;
 
         let shutting_down = matches!(&command, Command::Shutdown);
         match command {
@@ -2330,16 +2348,88 @@ impl ApplicationService {
         self.torrent_runtimes
             .values()
             .map(|runtime| {
-                let full_seed = runtime.handle().has_seed_registration();
+                let active_download = runtime.active_download();
+                let admitted_download =
+                    active_download.is_some_and(|active| !active.control.checking_is_paused());
+                let full_seed =
+                    active_download.is_none() && runtime.handle().has_seed_registration();
                 AccountingActivity {
                     torrent_id: runtime.handle().identity().torrent_id(),
                     generation: runtime.generation(),
-                    active: runtime.active_download().is_some() || full_seed,
+                    active: admitted_download || full_seed,
                     finished: full_seed,
                     seeding: full_seed,
                 }
             })
             .collect()
+    }
+
+    fn maintain_admission_inactivity(&mut self) -> Result<bool, ApplicationError> {
+        let now_seconds = self.admission_started_at.elapsed().as_secs();
+        let samples = self
+            .torrent_runtimes
+            .iter()
+            .filter_map(|(torrent_id, runtime)| {
+                let selected_finished = if runtime
+                    .active_download()
+                    .is_some_and(|active| active.control.checker_snapshot().is_none())
+                {
+                    false
+                } else if runtime.handle().has_seed_registration() {
+                    true
+                } else {
+                    return None;
+                };
+                let peers = runtime.peers().connection_snapshot();
+                let upload_rate = peers.iter().fold(0_u64, |total, peer| {
+                    total.saturating_add(peer.upload.map_or(0, |upload| upload.payload_rate))
+                });
+                let download_rate = peers.iter().fold(0_u64, |total, peer| {
+                    total.saturating_add(
+                        peer.content
+                            .map_or(0, |content| content.observed_payload_rate)
+                            .try_into()
+                            .unwrap_or(u64::MAX),
+                    )
+                });
+                Some((
+                    torrent_id.clone(),
+                    runtime.generation(),
+                    selected_finished,
+                    rate_is_inactive(selected_finished, upload_rate, download_rate),
+                ))
+            })
+            .collect::<Vec<_>>();
+        let active = samples
+            .iter()
+            .map(|(torrent_id, _, _, _)| torrent_id.clone())
+            .collect::<BTreeSet<_>>();
+        self.admission_inactivity
+            .retain(|torrent_id, _| active.contains(torrent_id));
+
+        let mut changed = false;
+        for (torrent_id, generation, selected_finished, observed_inactive) in samples {
+            let entry = self.admission_inactivity.entry(torrent_id).or_default();
+            if entry.generation != generation || entry.selected_finished != selected_finished {
+                *entry = AdmissionInactivityState {
+                    generation,
+                    selected_finished,
+                    state: InactivityState::default(),
+                };
+            }
+            changed |= entry
+                .state
+                .observe(now_seconds, observed_inactive)
+                .map_err(|error| ApplicationError::Configuration(error.to_string()))?
+                .is_some();
+        }
+        Ok(changed)
+    }
+
+    fn torrent_inactive(&self, torrent_id: &str, generation: u64) -> bool {
+        self.admission_inactivity
+            .get(torrent_id)
+            .is_some_and(|entry| entry.generation == generation && entry.state.inactive())
     }
 
     fn maintain_accounting(&mut self, force: bool) -> Result<(), ApplicationError> {
@@ -2391,7 +2481,8 @@ impl ApplicationService {
         let task = tokio::spawn(async move {
             let mut accounting_tick = tokio::time::interval(Duration::from_secs(1));
             accounting_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-            let mut admission_tick = tokio::time::interval(Duration::from_secs(30));
+            let mut admission_tick =
+                tokio::time::interval(Duration::from_secs(AUTO_MANAGE_INTERVAL_SECONDS));
             admission_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
                 let action = tokio::select! {
@@ -2411,7 +2502,11 @@ impl ApplicationService {
                     _ = cancellation.cancelled() => break,
                     service = service.lock() => service,
                 };
-                let result = service.maintain_accounting(false);
+                let inactivity_changed = service.maintain_admission_inactivity();
+                if matches!(inactivity_changed, Ok(true)) {
+                    service.admission_wake.notify_one();
+                }
+                let result = inactivity_changed.and_then(|_| service.maintain_accounting(false));
                 let result = if result.is_err() || service.session_network.is_none() {
                     result
                 } else {
@@ -2476,7 +2571,8 @@ impl ApplicationService {
         let task = tokio::spawn(async move {
             let mut accounting_tick = tokio::time::interval(Duration::from_secs(1));
             accounting_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-            let mut admission_tick = tokio::time::interval(Duration::from_secs(30));
+            let mut admission_tick =
+                tokio::time::interval(Duration::from_secs(AUTO_MANAGE_INTERVAL_SECONDS));
             admission_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
                 let action = tokio::select! {
@@ -2499,7 +2595,11 @@ impl ApplicationService {
                 let Some(service) = service.as_mut() else {
                     break;
                 };
-                let result = service.maintain_accounting(false);
+                let inactivity_changed = service.maintain_admission_inactivity();
+                if matches!(inactivity_changed, Ok(true)) {
+                    service.admission_wake.notify_one();
+                }
+                let result = inactivity_changed.and_then(|_| service.maintain_accounting(false));
                 let result = if result.is_err() || service.session_network.is_none() {
                     result
                 } else {
@@ -3439,6 +3539,8 @@ impl ApplicationService {
         torrent_id: &str,
         discard_accounting: bool,
     ) -> Result<(), ApplicationError> {
+        self.admitted_seeds.remove(torrent_id);
+        self.admission_inactivity.remove(torrent_id);
         let Some(runtime) = self.torrent_runtimes.remove(torrent_id) else {
             return Ok(());
         };
@@ -3488,11 +3590,25 @@ impl ApplicationService {
             self.refresh_views()?;
             return Ok(());
         }
+        self.maintain_admission_inactivity()?;
+        self.maintain_accounting(false)?;
         let snapshot = self.store_mut()?.snapshot()?;
-        let effective_limit = snapshot
+        let effective_download_limit = snapshot
             .client_settings
             .active_downloads
             .min(self.active_download_cap.unwrap_or(u16::MAX));
+        let effective_seed_limit = snapshot.client_settings.active_seeds.effective();
+        let goal_limits = SeedGoalLimits {
+            share_ratio_limit_percent: snapshot.client_settings.share_ratio_limit_percent,
+            finished_download_ratio_limit_percent: snapshot
+                .client_settings
+                .finished_download_ratio_limit_percent,
+            finished_time_limit_seconds: snapshot.client_settings.finished_time_limit_seconds,
+        };
+        let incoming_seeding = self.session_network().incoming_seeding();
+        for torrent in &snapshot.torrents {
+            self.ensure_torrent_runtime(&torrent.torrent_id)?;
+        }
         let mut states = Vec::with_capacity(snapshot.torrents.len());
         let mut checking = Vec::new();
         let mut checking_to_resume = Vec::new();
@@ -3522,17 +3638,60 @@ impl ApplicationService {
                     );
                 }
             }
-            let active_generation = (!is_checking && active).then(|| {
-                self.torrent_runtimes
-                    .get(&torrent.torrent_id)
-                    .expect("active torrent runtime exists")
-                    .generation()
-            });
+            let runtime = self
+                .torrent_runtimes
+                .get(&torrent.torrent_id)
+                .expect("torrent runtime exists during admission");
+            let generation = runtime.generation();
+            let complete = resume.state == TorrentState::Complete;
+            let active_seed = complete
+                && runtime
+                    .handle()
+                    .has_current_seed_registration(&incoming_seeding);
+            let active_generation = if active_seed || !is_checking && active {
+                Some(generation)
+            } else {
+                None
+            };
+            let kind = if complete {
+                let accounting = self
+                    .accounting
+                    .current(runtime.handle().identity().torrent_id(), generation)
+                    .map_err(|error| ApplicationError::Persistence(error.to_string()))?;
+                let total_size = parse_resume_content(&resume)
+                    .map(|content| ContentLayout::from_content(&content).total_length())
+                    .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+                let live_peers =
+                    u32::try_from(runtime.peers().connection_snapshot().len()).unwrap_or(u32::MAX);
+                let rank = seed_rank(
+                    SeedRankInput {
+                        selected_finished: true,
+                        full_seed: true,
+                        paused: !active_seed,
+                        goals: SeedGoalInput {
+                            total_uploaded: accounting.total_uploaded,
+                            total_downloaded: accounting.total_downloaded,
+                            total_size,
+                            active_seconds: accounting.active_seconds,
+                            finished_seconds: accounting.finished_seconds,
+                        },
+                        tracker_complete: accounting.tracker_complete,
+                        tracker_incomplete: accounting.tracker_incomplete,
+                        live_seeds: 0,
+                        live_peers,
+                    },
+                    goal_limits,
+                )
+                .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+                TorrentAdmissionKind::Seed { rank }
+            } else {
+                TorrentAdmissionKind::Download {
+                    queue_position: resume.download_queue_position,
+                }
+            };
             states.push(TorrentAdmissionState {
                 torrent_id: torrent.torrent_id.clone(),
-                queue_position: resume.download_queue_position,
                 desired_running: resume.desired_running || resume.raw_info.is_none(),
-                incomplete: resume.state != TorrentState::Complete,
                 checking: is_checking,
                 blocked: torrent.archived
                     || torrent.removal_state.is_some()
@@ -3541,7 +3700,10 @@ impl ApplicationService {
                         resume.state,
                         TorrentState::NeedsRepair | TorrentState::Error
                     ),
+                kind,
                 active_generation,
+                inactive: active_generation
+                    .is_some_and(|_| self.torrent_inactive(&torrent.torrent_id, generation)),
             });
         }
 
@@ -3556,16 +3718,80 @@ impl ApplicationService {
             self.start_if_possible_with_mode(torrent_id, true).await?;
         }
 
-        let decisions = TorrentAutoManager::reconcile(&states, usize::from(effective_limit));
+        let decisions = TorrentAutoManager::reconcile(
+            &states,
+            usize::from(effective_download_limit),
+            usize::from(effective_seed_limit),
+            HARD_ACTIVE_TORRENT_LIMIT,
+        );
         for decision in &decisions {
-            if matches!(decision.action, AdmissionAction::Stop { .. }) {
-                self.join_active_content(&decision.torrent_id).await?;
+            if !matches!(decision.action, AdmissionAction::Stop { .. }) {
+                continue;
+            }
+            match decision.admission_type {
+                TorrentAdmissionType::Download => {
+                    self.join_active_content(&decision.torrent_id).await?;
+                }
+                TorrentAdmissionType::Seed => {
+                    self.admitted_seeds.remove(&decision.torrent_id);
+                    self.stop_discovery_torrent(&decision.torrent_id).await?;
+                    self.unregister_incoming(&decision.torrent_id).await?;
+                    if let Some(runtime) = self.torrent_runtimes.get(&decision.torrent_id) {
+                        runtime
+                            .publish_inactive()
+                            .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+                    }
+                    self.storage_file_pool
+                        .invalidate_storage(&decision.torrent_id);
+                    self.admission_inactivity.remove(&decision.torrent_id);
+                }
+            }
+        }
+        for decision in &decisions {
+            if decision.admission_type != TorrentAdmissionType::Seed {
+                continue;
+            }
+            match decision.action {
+                AdmissionAction::Retain { .. } => {
+                    self.admitted_seeds.insert(decision.torrent_id.clone());
+                }
+                AdmissionAction::Idle | AdmissionAction::Stop { .. } => {
+                    self.admitted_seeds.remove(&decision.torrent_id);
+                }
+                AdmissionAction::Start => {}
             }
         }
         for decision in decisions {
-            if decision.action == AdmissionAction::Start {
-                self.start_if_possible_with_mode(&decision.torrent_id, false)
-                    .await?;
+            if decision.action != AdmissionAction::Start {
+                continue;
+            }
+            match decision.admission_type {
+                TorrentAdmissionType::Download => {
+                    self.start_if_possible_with_mode(&decision.torrent_id, false)
+                        .await?;
+                }
+                TorrentAdmissionType::Seed => {
+                    self.admitted_seeds.insert(decision.torrent_id.clone());
+                    if let Err(error) = self.reconcile_incoming_torrent(&decision.torrent_id).await
+                    {
+                        self.admitted_seeds.remove(&decision.torrent_id);
+                        return Err(error);
+                    }
+                    let registered =
+                        self.torrent_runtimes
+                            .get(&decision.torrent_id)
+                            .is_some_and(|runtime| {
+                                runtime
+                                    .handle()
+                                    .has_current_seed_registration(&incoming_seeding)
+                            });
+                    if registered {
+                        self.reconcile_discovery_torrent(&decision.torrent_id)
+                            .await?;
+                    } else {
+                        self.admitted_seeds.remove(&decision.torrent_id);
+                    }
+                }
             }
         }
         self.refresh_views()?;
@@ -4018,44 +4244,12 @@ impl ApplicationService {
         }
         let store = self.store.clone();
         let storage_roots = self.storage_roots.clone();
-        let incoming_seeding = Some(self.session_network().incoming_seeding());
-        let storage_file_pool = self.storage_file_pool.clone();
-        let torrent_runtime = self
-            .torrent_runtimes
-            .get(torrent_id)
-            .expect("torrent runtime exists before its operation starts")
-            .handle();
-        let discovery_handle = self.session_network().discovery_handle();
         let admission_wake = self.admission_wake.clone();
         let views = self.views.clone();
         let torrent_id = torrent_id.to_owned();
         Ok(tokio::spawn(async move {
             let outcome = operation.await;
             let result = handle_task_outcome(&store, &storage_roots, &views, &torrent_id, outcome);
-            let reconcile = reconcile_completed_seed(
-                &store,
-                &storage_roots,
-                &views,
-                incoming_seeding.as_ref(),
-                &storage_file_pool,
-                &torrent_runtime,
-                &torrent_id,
-            )
-            .await;
-            let advertise = reconcile_completed_advertisement(
-                &store,
-                &views,
-                &discovery_handle,
-                &torrent_runtime,
-                &torrent_id,
-            )
-            .await;
-            let result = match (result, reconcile, advertise) {
-                (Ok(()), Ok(()), Ok(())) => Ok(()),
-                (Err(error), _, _) | (Ok(()), Err(error), _) | (Ok(()), Ok(()), Err(error)) => {
-                    Err(error)
-                }
-            };
             admission_wake.notify_one();
             result
         }))
@@ -4174,11 +4368,6 @@ impl ApplicationService {
                 .views
                 .deactivate_eta_generation(&torrent_id, eta_generation)
                 .map_err(ApplicationError::from);
-            if let Err(error) = self.reconcile_incoming_torrent(&torrent_id).await
-                && first_error.is_none()
-            {
-                first_error = Some(error);
-            }
             if let Err(error) = result.and(eta_result)
                 && first_error.is_none()
             {
@@ -4235,11 +4424,13 @@ impl ApplicationService {
             return Ok(());
         };
         let active = self.active_download_for(torrent_id).is_some();
+        let complete_admitted =
+            prepared.0.state != TorrentState::Complete || self.admitted_seeds.contains(torrent_id);
         let outcome = runtime
             .reconcile_seed(
                 &incoming,
                 &prepared.0,
-                prepared.1,
+                prepared.1 && complete_admitted,
                 prepared.2.as_ref(),
                 active,
                 &self.storage_file_pool,
@@ -4307,13 +4498,13 @@ impl ApplicationService {
             .torrent_runtimes
             .get(torrent_id)
             .expect("torrent runtime exists during discovery reconciliation");
-        if !catalog_eligible {
+        let complete = resume.state == TorrentState::Complete;
+        if !catalog_eligible || complete && !self.admitted_seeds.contains(torrent_id) {
             return self.stop_discovery_torrent(torrent_id).await;
         }
         let handle = runtime.handle();
         let counters = handle.tracker_counters();
         let (privacy, left) = tracker_metadata_state(&resume)?;
-        let complete = resume.state == TorrentState::Complete;
         let admitted_download = !complete
             && resume.state != TorrentState::Checking
             && self.active_download_for(torrent_id).is_some();
@@ -4838,131 +5029,6 @@ fn preflight_direct_file(path: &Path) -> Result<Option<PathBuf>, ApplicationErro
         )));
     }
     Ok(Some(path.to_path_buf()))
-}
-
-async fn reconcile_completed_seed(
-    store: &Arc<Mutex<SessionStore>>,
-    storage_roots: &BTreeMap<String, StorageRootLocation>,
-    views: &ViewHub,
-    incoming: Option<&IncomingSeeding>,
-    storage_file_pool: &StorageFilePool,
-    runtime: &TorrentRuntimeHandle,
-    torrent_id: &str,
-) -> Result<(), String> {
-    let Some(incoming) = incoming else {
-        return runtime
-            .publish_inactive()
-            .map_err(|error| error.to_string());
-    };
-    let prepared = {
-        let store = store
-            .lock()
-            .map_err(|_| "session store lock is poisoned".to_owned())?;
-        seed_reconcile_inputs(&store, storage_roots, torrent_id)
-            .map_err(|error| error.to_string())?
-    };
-    let Some(prepared) = prepared else {
-        runtime
-            .unregister_seed(incoming)
-            .await
-            .map_err(|error| error.to_string())?;
-        return runtime
-            .publish_inactive()
-            .map_err(|error| error.to_string());
-    };
-    let outcome = runtime
-        .reconcile_seed(
-            incoming,
-            &prepared.0,
-            prepared.1,
-            prepared.2.as_ref(),
-            false,
-            storage_file_pool,
-        )
-        .await
-        .map_err(|error| error.to_string())?;
-    if let Some(outcome) = outcome {
-        record_seed_reconcile(views, torrent_id, &outcome).map_err(|error| error.to_string())?;
-        apply_seed_reconcile_state(store, storage_roots, views, torrent_id, &outcome)?;
-    }
-    Ok(())
-}
-
-async fn reconcile_completed_advertisement(
-    store: &Arc<Mutex<SessionStore>>,
-    views: &ViewHub,
-    discovery: &DiscoveryAdvertisementHandle,
-    runtime: &TorrentRuntimeHandle,
-    torrent_id: &str,
-) -> Result<(), String> {
-    let (resume, catalog_eligible) = {
-        let store = store
-            .lock()
-            .map_err(|_| "session store lock is poisoned".to_owned())?;
-        let resume = match store.load_resume(torrent_id) {
-            Ok(resume) => resume,
-            Err(StoreError::UnknownTorrent(_)) => return Ok(()),
-            Err(error) => return Err(error.to_string()),
-        };
-        let snapshot = store.snapshot().map_err(|error| error.to_string())?;
-        let eligible = snapshot.torrents.iter().any(|torrent| {
-            torrent.torrent_id == torrent_id && !torrent.archived && torrent.removal_state.is_none()
-        });
-        (resume, eligible)
-    };
-    if !catalog_eligible {
-        return discovery
-            .remove(
-                runtime.identity().swarm_key().into_bytes(),
-                runtime.generation(),
-            )
-            .await
-            .or_else(|error| match error {
-                DiscoveryAdvertisementError::OwnerStopped => Ok(()),
-                error => Err(error),
-            })
-            .map_err(|error| error.to_string());
-    }
-    let counters = runtime.tracker_counters();
-    let (privacy, left) = tracker_metadata_state(&resume).map_err(|error| error.to_string())?;
-    counters.set_left(left);
-    discovery
-        .upsert(DiscoveryAdvertisementRegistration {
-            generation: runtime.generation(),
-            info_hash: runtime.identity().swarm_key().into_bytes(),
-            info_hashes: runtime.identity().info_hashes(),
-            trackers: operational_trackers(&resume.trackers).map_err(|error| error.to_string())?,
-            desired_running: resume.desired_running,
-            complete: resume.state == TorrentState::Complete,
-            incoming_routable: runtime.has_seed_registration(),
-            privacy,
-            counters,
-            peers: runtime.peers(),
-            activity_sink: tracker_activity_sink(torrent_id, views, runtime),
-        })
-        .await
-        .or_else(|error| match error {
-            DiscoveryAdvertisementError::OwnerStopped => Ok(()),
-            error => Err(error),
-        })
-        .map_err(|error| error.to_string())
-}
-
-fn tracker_activity_sink(
-    torrent_id: &str,
-    views: &ViewHub,
-    runtime: &TorrentRuntimeHandle,
-) -> Arc<dyn DownloadActivitySink> {
-    Arc::new(ViewActivitySink {
-        torrent_id: torrent_id.to_owned(),
-        durable_torrent_id: runtime.identity().torrent_id(),
-        torrent_generation: runtime.generation(),
-        accounting: runtime.accounting(),
-        eta_generation: None,
-        views: views.clone(),
-        trace_checkpoint_stages: false,
-        last_checkpoint_stage: Mutex::new(None),
-    })
 }
 
 type SeedReconcileInputs = (ResumeRecord, bool, Option<StorageRootLocation>);
@@ -6751,7 +6817,7 @@ pub fn application_error_response(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
     use std::path::{Path, PathBuf};
@@ -7316,10 +7382,12 @@ mod tests {
     }
 
     async fn wait_for_seed_registrations(service: &ApplicationService, expected: usize) {
-        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        let mut last = None;
+        let outcome = tokio::time::timeout(std::time::Duration::from_secs(5), async {
             loop {
-                if service
-                    .incoming_peer_snapshot()
+                last = service.incoming_peer_snapshot();
+                if last
+                    .as_ref()
                     .is_some_and(|snapshot| snapshot.registrations == expected)
                 {
                     break;
@@ -7327,8 +7395,11 @@ mod tests {
                 tokio::task::yield_now().await;
             }
         })
-        .await
-        .unwrap_or_else(|_| panic!("incoming seed registration count did not reach {expected}"));
+        .await;
+        assert!(
+            outcome.is_ok(),
+            "incoming seed registration count did not reach {expected}; last={last:?}"
+        );
     }
 
     async fn client_settings_runtime(
@@ -8195,6 +8266,7 @@ mod tests {
                 peer_connection_limit: 200,
                 upload_slots: 8,
                 active_downloads: 3,
+                active_seeds: crate::ActiveSeedLimit::Unlimited,
                 ..ClientSettings::default()
             },
         );
@@ -8208,8 +8280,8 @@ mod tests {
         )
         .expect("open seed catalog store");
         let payload = b"abcdefg";
-        let mut first_seed = None;
         let mut seed_ids = Vec::with_capacity(500);
+        let mut seed_identities = Vec::with_capacity(500);
         for sequence in 0..500_u16 {
             let name = format!("seed-{sequence}.bin");
             let raw_info = single_file_info(&name, payload, 4);
@@ -8226,7 +8298,7 @@ mod tests {
             store.mark_complete(&torrent_id).expect("complete seed row");
             fs::write(root.join("payload").join(name), payload)
                 .expect("write complete seed payload");
-            first_seed.get_or_insert(info_hash);
+            seed_identities.push((torrent_id.clone(), info_hash));
             seed_ids.push(torrent_id);
         }
 
@@ -8275,8 +8347,14 @@ mod tests {
                     .0,
             );
         }
-        wait_for_seed_registrations(&service, 500).await;
+        wait_for_seed_registrations(&service, 497).await;
         assert_eq!(service.active_download_ids().len(), 3);
+        assert_eq!(service.admitted_seeds.len(), 497);
+        let admitted_seed = seed_identities
+            .iter()
+            .find(|(torrent_id, _)| service.admitted_seeds.contains(torrent_id))
+            .map(|(_, info_hash)| *info_hash)
+            .expect("one ranked seed wins admission");
         let resources = service.session_download_resource_snapshot();
         assert_eq!(resources.registered_generations, 3);
         assert_eq!(resources.active_storage_hashes, 0);
@@ -8291,12 +8369,8 @@ mod tests {
 
         let mut incoming_peers = Vec::new();
         for generation in 1_u8..=10 {
-            let (mut stream, decoder, pending) = connect_application_seed(
-                &service,
-                first_seed.expect("first seed identity"),
-                [generation; 20],
-            )
-            .await;
+            let (mut stream, decoder, pending) =
+                connect_application_seed(&service, admitted_seed, [generation; 20]).await;
             stream
                 .write_all(&encode_message(&PeerMessage::Interested).expect("encode interest"))
                 .await
@@ -8322,13 +8396,13 @@ mod tests {
         let combined = service
             .incoming_peer_snapshot()
             .expect("combined incoming snapshot");
-        assert_eq!(combined.registrations, 500);
+        assert_eq!(combined.registrations, 497);
         assert_eq!(combined.established, 10);
         assert_eq!(combined.upload_scheduler.peers, 10);
         assert_eq!(combined.upload_scheduler.interested, 10);
         assert_eq!(combined.upload_scheduler.regular, 7);
         assert_eq!(combined.upload_scheduler.optimistic, 1);
-        assert_eq!(combined.torrent_uploads.len(), 500);
+        assert_eq!(combined.torrent_uploads.len(), 497);
         assert_eq!(
             combined
                 .torrent_uploads
@@ -8350,6 +8424,244 @@ mod tests {
         assert_eq!(terminal.buffered_payload_bytes, 0);
         drop((incoming_peers, active_streams, service));
         fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn seed_goal_crossing_and_live_limits_reconcile_and_restart_exactly() {
+        let root = test_root("seed-goal-admission");
+        let configuration = config(&root);
+        persist_client_settings(
+            &configuration,
+            ClientSettings {
+                listener: ListenerPolicy::AutomaticLoopback,
+                active_seeds: crate::ActiveSeedLimit::Limited { torrents: 1 },
+                ..ClientSettings::default()
+            },
+        );
+        fs::create_dir_all(root.join("payload")).expect("create seed payload root");
+        let payload = b"abcdefg";
+        let mut store = SessionStore::open(
+            configuration
+                .durable_profile_root()
+                .expect("durable profile root"),
+            &configuration.profile_id,
+            &configuration.storage_roots,
+        )
+        .expect("open seed-goal store");
+        let mut seeds = Vec::new();
+        for sequence in 0..2 {
+            let name = format!("goal-seed-{sequence}.bin");
+            let raw_info = single_file_info(&name, payload, payload.len());
+            let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+            let torrent_id = add_store_torrent(
+                &mut store,
+                &format!("add-goal-seed-{sequence}"),
+                &super::encode_info_hash(info_hash),
+            );
+            store
+                .record_metadata(&torrent_id, &raw_info)
+                .expect("record seed metadata");
+            store
+                .record_pieces(&torrent_id, &[0])
+                .expect("record seed piece");
+            store.mark_complete(&torrent_id).expect("complete seed");
+            fs::write(root.join("payload").join(name), payload).expect("write seed payload");
+            seeds.push((torrent_id, info_hash));
+        }
+        seeds.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+        let preferred = seeds[0].clone();
+        let initially_goal_unmet = seeds[1].clone();
+        store
+            .replace_accounting_batch(&[
+                crate::store::TorrentAccountingUpdate {
+                    torrent_id: preferred.0.parse().expect("preferred owner"),
+                    accounting: crate::store::TorrentAccounting {
+                        total_uploaded: 14,
+                        total_downloaded: 7,
+                        active_seconds: 1_801,
+                        finished_seconds: 100,
+                        seeding_seconds: 100,
+                        tracker_complete: Some(2),
+                        tracker_incomplete: Some(100),
+                    },
+                },
+                crate::store::TorrentAccountingUpdate {
+                    torrent_id: initially_goal_unmet.0.parse().expect("goal-unmet owner"),
+                    accounting: crate::store::TorrentAccounting {
+                        total_uploaded: 13,
+                        total_downloaded: 7,
+                        active_seconds: 1_801,
+                        finished_seconds: 100,
+                        seeding_seconds: 100,
+                        tracker_complete: Some(2),
+                        tracker_incomplete: Some(0),
+                    },
+                },
+            ])
+            .expect("seed rank accounting");
+        drop(store);
+
+        let mut service = ApplicationService::open(configuration.clone())
+            .await
+            .expect("open ranked seed service");
+        wait_for_seed_registrations(&service, 1).await;
+        assert_eq!(
+            service.admitted_seeds,
+            [initially_goal_unmet.0.clone()].into_iter().collect()
+        );
+        let generations = service
+            .torrent_runtimes
+            .iter()
+            .map(|(torrent_id, runtime)| (torrent_id.clone(), runtime.generation()))
+            .collect::<BTreeMap<_, _>>();
+
+        let (mut peer, mut decoder, mut pending) =
+            connect_application_seed_with_expected_availability(
+                &service,
+                initially_goal_unmet.1,
+                *b"-RS-GOAL-CROSS-00000",
+                false,
+                vec![0b1000_0000],
+            )
+            .await;
+        peer.write_all(&encode_message(&PeerMessage::Interested).expect("encode interest"))
+            .await
+            .expect("send interest");
+        assert_eq!(
+            read_peer_message(&mut peer, &mut decoder, &mut pending).await,
+            PeerMessage::Unchoke
+        );
+        peer.write_all(
+            &encode_message(&PeerMessage::Request(BlockRequest {
+                index: 0,
+                begin: 0,
+                length: 1,
+            }))
+            .expect("encode one-byte request"),
+        )
+        .await
+        .expect("request goal-crossing byte");
+        assert_eq!(
+            read_peer_message(&mut peer, &mut decoder, &mut pending).await,
+            PeerMessage::Piece {
+                index: 0,
+                begin: 0,
+                block: b"a".to_vec(),
+            }
+        );
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "reconcile-seed-goal-crossing".to_owned(),
+                expected_revision: None,
+                command: Command::Snapshot,
+            })
+            .await
+            .expect("reconcile crossed seed goal");
+        assert_eq!(peer.read(&mut [0; 1]).await.expect("demoted peer close"), 0);
+        wait_for_seed_registrations(&service, 1).await;
+        assert_eq!(
+            service.admitted_seeds,
+            [preferred.0.clone()].into_iter().collect()
+        );
+        service
+            .maintain_accounting(true)
+            .expect("flush crossed seed goal accounting");
+        assert_eq!(
+            service
+                .store_mut()
+                .unwrap()
+                .load_resume(&initially_goal_unmet.0)
+                .unwrap()
+                .accounting
+                .total_uploaded,
+            14
+        );
+
+        for (request_id, limit, expected) in [
+            (
+                "zero-active-seeds",
+                crate::ActiveSeedLimit::Limited { torrents: 0 },
+                0,
+            ),
+            (
+                "unlimited-active-seeds",
+                crate::ActiveSeedLimit::Unlimited,
+                2,
+            ),
+            (
+                "one-active-seed",
+                crate::ActiveSeedLimit::Limited { torrents: 1 },
+                1,
+            ),
+        ] {
+            service
+                .dispatch(RequestEnvelope {
+                    version: CONTROL_VERSION,
+                    request_id: request_id.to_owned(),
+                    expected_revision: None,
+                    command: Command::UpdateClientSettings {
+                        patch: crate::ClientSettingsPatch {
+                            active_seeds: Some(limit),
+                            ..crate::ClientSettingsPatch::default()
+                        },
+                    },
+                })
+                .await
+                .expect("apply active-seed limit");
+            wait_for_seed_registrations(&service, expected).await;
+            assert_eq!(service.admitted_seeds.len(), expected);
+        }
+        assert_eq!(
+            service.admitted_seeds,
+            [preferred.0.clone()].into_iter().collect()
+        );
+        for (torrent_id, _) in &seeds {
+            assert!(
+                service
+                    .store_mut()
+                    .unwrap()
+                    .load_resume(torrent_id)
+                    .unwrap()
+                    .desired_running,
+                "queued seed must retain desired-running intent: {torrent_id}"
+            );
+        }
+        assert_eq!(
+            service
+                .torrent_runtimes
+                .iter()
+                .map(|(torrent_id, runtime)| (torrent_id.clone(), runtime.generation()))
+                .collect::<BTreeMap<_, _>>(),
+            generations
+        );
+
+        service
+            .shutdown()
+            .await
+            .expect("shutdown ranked seed service");
+        drop(service);
+        let mut reopened = ApplicationService::open(configuration)
+            .await
+            .expect("reopen ranked seed service");
+        wait_for_seed_registrations(&reopened, 1).await;
+        assert_eq!(
+            reopened.admitted_seeds,
+            [preferred.0.clone()].into_iter().collect()
+        );
+        assert_eq!(
+            reopened
+                .store_mut()
+                .unwrap()
+                .load_resume(&initially_goal_unmet.0)
+                .unwrap()
+                .accounting
+                .total_uploaded,
+            14
+        );
+        reopened.shutdown().await.expect("shutdown reopened seeds");
+        drop(reopened);
+        fs::remove_dir_all(root).expect("remove seed-goal root");
     }
 
     async fn serve_single_piece_peer(
@@ -9385,7 +9697,20 @@ mod tests {
             fs::read(root.join("payload/tracker-ipv6.bin")).expect("direct payload"),
             payload
         );
-        let trackers = torrent_tracker_views(&service, &torrent_id).await;
+        let trackers = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let trackers = torrent_tracker_views(&service, &torrent_id).await;
+                if trackers
+                    .first()
+                    .is_some_and(|tracker| tracker.last_peer_count == Some(1))
+                {
+                    break trackers;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("completed tracker view restores its peer count");
         assert_eq!(trackers.len(), 1);
         assert_eq!(trackers[0].last_peer_count, Some(1));
         assert_eq!(
@@ -16066,6 +16391,28 @@ mod tests {
             .expect("configured listener is active");
         assert_eq!(first_incoming.peer_budget.configured_limit, 1);
         assert_eq!(first_incoming.peer_budget.effective_limit, 1);
+        assert!(
+            first.admitted_seeds.contains(&torrent_id),
+            "completed seed must win the default seed limit"
+        );
+        assert!(
+            first
+                .torrent_runtimes
+                .get(&torrent_id)
+                .unwrap()
+                .handle()
+                .has_seed_registration(),
+            "admitted completed seed must own its registration"
+        );
+        assert!(
+            first
+                .torrent_runtimes
+                .get(&torrent_id)
+                .unwrap()
+                .handle()
+                .has_current_seed_registration(&first.session_network().incoming_seeding()),
+            "admitted completed seed token must remain current"
+        );
         wait_for_seed_registrations(&first, 1).await;
         let (mut peer, mut decoder, mut pending) =
             connect_application_seed_with_extensions(&first, info_hash, DEFAULT_PEER_ID, true)
@@ -16364,6 +16711,19 @@ mod tests {
             configured.upload_slots_application,
             crate::ClientSettingsApplicationState::Applied
         );
+        assert_eq!(
+            configured.configured.active_seeds,
+            crate::ActiveSeedLimit::Limited { torrents: 5 }
+        );
+        assert!(first.admitted_seeds.contains(&torrent_id));
+        assert!(
+            first
+                .torrent_runtimes
+                .get(&torrent_id)
+                .unwrap()
+                .handle()
+                .has_current_seed_registration(&first.session_network().incoming_seeding())
+        );
         let mut second = first;
         let second_runtime = client_settings_runtime(&second).await;
         assert_eq!(second_runtime.configured, zero_slots);
@@ -16462,6 +16822,13 @@ mod tests {
                 .expect("observe recheck close"),
             0
         );
+        wait_for_torrent_state(
+            &mut second,
+            &torrent_id,
+            TorrentState::Complete,
+            "rechecked-seed-complete",
+        )
+        .await;
         wait_for_seed_registrations(&second, 1).await;
         assert_eq!(
             second

@@ -103,12 +103,17 @@ impl IncomingSeeding {
                 tokens: Vec::new(),
             });
         }
-        if !current.is_empty() {
+        if !current.is_empty()
+            && current
+                .iter()
+                .all(|token| self.handle.registration_is_current(*token))
+        {
             return Ok(SeedReconcileResult {
                 outcome: SeedReconcileOutcome::AlreadyRegistered,
                 tokens: current,
             });
         }
+        self.unregister_all(current).await?;
         let raw_info = resume
             .raw_info
             .as_ref()
@@ -312,6 +317,13 @@ impl IncomingSeeding {
             removed += usize::from(self.unregister(token).await?);
         }
         Ok(removed)
+    }
+
+    pub(crate) fn registrations_are_current(&self, tokens: &[SeedRegistrationToken]) -> bool {
+        !tokens.is_empty()
+            && tokens
+                .iter()
+                .all(|token| self.handle.registration_is_current(*token))
     }
 
     pub(crate) fn stop(&self) {

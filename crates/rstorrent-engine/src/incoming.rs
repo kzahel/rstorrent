@@ -1492,6 +1492,13 @@ impl IncomingPeerHandle {
         Ok(true)
     }
 
+    pub fn registration_is_current(&self, token: SeedRegistrationToken) -> bool {
+        self.shared
+            .registry_guard()
+            .get(&token.swarm_key)
+            .is_some_and(|registration| registration.generation == token.generation)
+    }
+
     pub fn snapshot(&self) -> IncomingPeerServiceSnapshot {
         self.shared.snapshot()
     }

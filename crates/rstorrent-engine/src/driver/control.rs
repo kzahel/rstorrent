@@ -1336,6 +1336,10 @@ impl DownloadControl {
         self.inner.checking_paused.send_replace(false);
     }
 
+    pub fn checking_is_paused(&self) -> bool {
+        *self.inner.checking_paused.borrow()
+    }
+
     pub(super) fn checking_pause_updates(&self) -> watch::Receiver<bool> {
         self.inner.checking_paused.subscribe()
     }

@@ -72,8 +72,6 @@ impl ActiveSeedLimit {
         Ok(())
     }
 
-    // Consumed by the combined-admission gate immediately after schema 23.
-    #[allow(dead_code)]
     pub(crate) const fn effective(self) -> u16 {
         match self {
             Self::Unlimited => MAX_ACTIVE_SEEDS,

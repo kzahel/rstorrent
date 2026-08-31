@@ -3,9 +3,9 @@
 Status: **Active.** User direction on 2026-08-31 selected the exact pinned
 libtorrent implementation semantics for the seed queue, durable counters,
 timers, and goal ranking. End-to-end implementation was authorized on the same
-date. The task-free policy, fresh schema-23, and runtime-accounting gates are
-implemented; combined admission, generated clients, presentation, and
-end-to-end evidence remain open.
+date. The task-free policy, fresh schema-23, runtime-accounting, and combined
+admission gates are implemented; generated clients, presentation, platform
+validation, and final end-to-end evidence remain open.
 
 Topics: `incoming-reachability-and-seeding`, `client-persistence`,
 `application-control`, `client-surfaces`, `android-jstorrent-replacement`,
@@ -67,6 +67,31 @@ their accumulator only after durable row finalization. Focused pure-v2 evidence
 proves exact pre-completion download and upload accounting across the active to
 complete handover; completed-seed evidence proves a seven-byte checkpoint and
 restart upload continuity.
+
+The combined-admission gate now classifies downloads and full completed seeds
+in one runtime-independent transition. Downloads retain durable queue order;
+seeds sort by descending exact rank with canonical identity ties; inactive
+active torrents consume only the hard slot; downloads receive the fixed
+500-torrent hard capacity first; and zero, five, Unlimited, shrink, and growth
+limits are exact. The existing joined maintenance owner samples inactivity and
+reconciles the pinned 30-second interval plus ordinary wakes. Seed demotion
+joins peer, route, discovery, and read ownership before promotion without
+rewriting durable run intent or replacing unaffected runtime generations.
+Stale route tokens are detected and recovered rather than accepted as active.
+An end-to-end test proves a successful one-byte upload crossing the exact ratio
+goal, peer closure, demand-ranked replacement, live `0`/Unlimited/`1` setting
+changes, durable intent and generation retention, and the same winner after
+restart. The 500-torrent scale case admits 497 seeds beside three preferred
+downloads under the fixed hard limit while retaining the established peer,
+slot, bandwidth, and storage bounds.
+
+Validation at this checkpoint:
+
+- `cargo fmt --all`;
+- `cargo test -p rstorrent-session` (322 passed, two opt-in cases ignored,
+  plus all package binary tests); and
+- `cargo clippy -p rstorrent-engine -p rstorrent-session --lib --bins -- -D
+  warnings`.
 
 ## Decision And Desired Outcome
 

@@ -174,6 +174,10 @@ impl TorrentRuntimeHandle {
         !self.seed_state().tokens.is_empty()
     }
 
+    pub(crate) fn has_current_seed_registration(&self, incoming: &IncomingSeeding) -> bool {
+        incoming.registrations_are_current(&self.seed_state().tokens)
+    }
+
     pub(crate) fn tracker_counters(&self) -> TrackerCounters {
         self.tracker_counters.clone()
     }

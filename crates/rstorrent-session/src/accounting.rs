@@ -295,6 +295,29 @@ impl AccountingModel {
         Ok(())
     }
 
+    fn current(
+        &mut self,
+        torrent_id: TorrentId,
+        generation: u64,
+        now: Duration,
+    ) -> Result<TorrentAccounting, AccountingError> {
+        let entry = self
+            .entries
+            .get_mut(&torrent_id)
+            .ok_or(AccountingError::UnknownTorrent)?;
+        if entry.generation != generation {
+            return Err(AccountingError::UnknownTorrent);
+        }
+        let saturation_events = entry.advance(now)?;
+        let current = entry.current;
+        self.high_water.saturation_events = self
+            .high_water
+            .saturation_events
+            .saturating_add(saturation_events);
+        self.update_high_water();
+        Ok(current)
+    }
+
     fn flush_due(&self, now: Duration, force: bool) -> bool {
         if !self.entries.values().any(AccountingEntry::dirty) {
             return false;
@@ -470,6 +493,14 @@ impl TorrentAccountingOwner {
         activities: &[AccountingActivity],
     ) -> Result<(), AccountingError> {
         self.model()?.observe_activities(activities, self.now())
+    }
+
+    pub(crate) fn current(
+        &self,
+        torrent_id: TorrentId,
+        generation: u64,
+    ) -> Result<TorrentAccounting, AccountingError> {
+        self.model()?.current(torrent_id, generation, self.now())
     }
 
     pub(crate) fn prepare_flush(
