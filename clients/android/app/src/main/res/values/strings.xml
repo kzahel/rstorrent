@@ -315,9 +315,9 @@
     <string name="setting_effective">Effective %1$d · %2$s</string>
     <string name="setting_effective_android">Effective on Android: %1$d</string>
     <string name="setting_effective_android_clamped">Effective on Android: %1$d · %2$s</string>
-    <string name="setting_share_ratio_goal">Share-ratio priority goal (%%)</string>
+    <string name="setting_share_ratio_goal">Share-ratio priority goal (%)</string>
     <string name="setting_share_ratio_goal_detail">Seeding priority, not a stop rule · reaching any one goal is sufficient</string>
-    <string name="setting_finished_download_goal">Finished/download time priority goal (%%)</string>
+    <string name="setting_finished_download_goal">Finished/download time priority goal (%)</string>
     <string name="setting_finished_download_goal_detail">Cumulative active finished time compared with active download time</string>
     <string name="setting_finished_time_goal">Finished-time priority goal (seconds)</string>
     <string name="setting_finished_time_goal_detail">A goal-met torrent may continue seeding while capacity is available</string>

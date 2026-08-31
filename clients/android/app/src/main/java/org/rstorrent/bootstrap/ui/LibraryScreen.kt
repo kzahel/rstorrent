@@ -2,6 +2,8 @@ package org.rstorrent.bootstrap.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -559,7 +561,7 @@ private fun SelectionActions(
 }
 
 @Composable
-private fun AddTorrentDialog(
+internal fun AddTorrentDialog(
     enabled: Boolean,
     onDismiss: () -> Unit,
     onAddMagnet: (String) -> Unit,
@@ -570,7 +572,10 @@ private fun AddTorrentDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.add_torrent_title)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 OutlinedTextField(
                     value = magnet,
                     onValueChange = { magnet = it },
