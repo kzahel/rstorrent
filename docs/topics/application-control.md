@@ -497,6 +497,18 @@ content becomes idle without losing running intent, and a later promotion is
 runnable without a selection-triggered full-check request. Dynamic fixed-
 descriptor selection remains deliberately fail-closed.
 
+Completed Tactical
+[`203`](../tactical/203-jstorrent-shaped-add-time-file-selection.md) adds the
+pre-content counterpart without moving authority into a client. Schema 24
+stores one pending-add state, FIFO projection, and default-on preference.
+Pending magnets may own a bounded metadata acquisition generation but cannot
+request or write content. React or Compose submits one catalog-fenced compact
+Normal/Skip draft; the transaction atomically installs selection, clears the
+pending state, and appends running content intent. Cancel is valid only for a
+new pending add and joins ordinary keep-payload removal. Duplicate adds confer
+no cancel authority. Completed-selection expansion remains download-owned
+until verified boundary bytes have been materialized from the part store.
+
 Tactical `085` deliberately keeps multi-target orchestration above this
 boundary. The React owner snapshots materialized torrent order and sends one
 fresh ordinary request at a time, continues after per-target failure, and

@@ -252,6 +252,13 @@ have state and storage-root identity.
 - Durable High/Normal ordinary ranking never outranks an active bounded
   current/ahead streaming lease; removing the lease restores the same ordinary
   weighted order.
+- A torrent awaiting add-time file selection may acquire verified metadata but
+  cannot request, accept, write, verify, or report content. Its Normal/Skip
+  intent becomes runnable only after one durable catalog-fenced confirmation.
+- Expanding selection on a completed torrent returns it to download ownership
+  until newly wanted pieces are fetched or already verified boundary bytes are
+  promoted from the part store. Stale seed admission cannot make that work
+  appear complete.
 
 ### Progress Assessment
 

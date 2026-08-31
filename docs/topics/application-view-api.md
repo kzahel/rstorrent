@@ -1124,6 +1124,16 @@ rows in the requested page; changing pages is an ordinary view-spec update
 that yields a coherent snapshot. Clients do not infer total accepted file or
 tracker count from page length.
 
+Completed Tactical
+[`203`](../tactical/203-jstorrent-shaped-add-time-file-selection.md) reuses
+those pages for add-time selection. The torrent projection carries durable
+pending/FIFO state, immutable catalog identity, and exact selectable/selected
+count and byte totals. Clients retain only a compact base-plus-range draft and
+at most three 1,024-row pages; All/None applies to the logical catalog rather
+than mounted rows. One catalog-fenced command commits the whole draft, so
+neither React nor Compose sends a per-file mutation loop or owns a second
+pending queue.
+
 Responsive interest requests Files only while that tab is visible and evicts
 the materialization after the ordered view removal. A phone detail does not
 retain the library. Browser suspension follows the existing stale/reopen
@@ -1239,6 +1249,13 @@ The completed foundation evidence proves:
   snapshots and diffs through polling; and
 - one controlled libtorrent-seeded download observed through that client from
   add through verified publication and clean shutdown.
+
+Tactical `203` additionally passes exhaustive generated reducers and
+validators, a 122-file controlled browser flow with at most three cached pages
+and zero serious/critical Axe findings, API-35 installed selection and process
+recovery, and physical ChromeOS API-33 partial-selection evidence. The same
+projection survives service/process replacement and stale confirmation fails
+against the immutable catalog identity.
 
 Tactical `084` additionally proves immediate settings replacement after an
 atomic mutation, no substitution of configured intent for active state, and

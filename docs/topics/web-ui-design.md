@@ -677,8 +677,13 @@ shared React surface requests a platform-owned picker capability and selects
 established root identities; it never persists an ambient path or browser
 directory handle. The accepted root, start-content, and metadata-backed file
 selection flow lives in [`download-roots.md`](download-roots.md).
-Metadata-only intake uses durable paused application intent; the Files tab
-remains the only file-selection surface.
+Metadata-only intake uses durable paused application intent. Completed
+Tactical
+[`203`](../tactical/203-jstorrent-shaped-add-time-file-selection.md) adds the
+other deliberate selection surface: a default-on add stage backed by durable
+application pending state. It uses checked Normal/unchecked Skip, logical
+All/None, a compact range draft, and at most three cached 1,024-row pages.
+High and every post-add priority change remain in the Files tab.
 
 ## Validation Direction
 
@@ -711,6 +716,12 @@ the peer row remained visibly stale, and a fresh view-set snapshot restored
 connected state. Serious and critical axe findings were empty. The demo scale
 measurements above remain the larger rendering-pressure evidence; one live
 peer is interoperability evidence, not a scale profile.
+
+Tactical `203` adds wide/narrow, keyboard, focus, paging, restart, and Axe
+coverage for the staged add dialog. Its controlled 122-file product run kept
+at most three pages, selected one boundary file, created no pre-confirm
+payload, and later exercised Files **Download** on an initially skipped file.
+The final live run reported zero serious or critical Axe findings.
 
 Tactical `040` preserves the same independent frontend path for lifecycle
 controls. The demo adapter deterministically archives and removes rows; the

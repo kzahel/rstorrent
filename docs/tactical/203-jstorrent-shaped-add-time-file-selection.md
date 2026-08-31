@@ -1,11 +1,10 @@
 # Tactical 203: JSTorrent-Shaped Add-Time File Selection
 
-Status: **Active as of 2026-08-31.** User direction selected the JSTorrent
-add-time interaction: each ordinary file has one checkbox, checked means
-**Normal**, unchecked means **Skip**, and **High** remains a post-add Files
-action. This planning commit authorizes bounded end-to-end implementation but
-does not authorize a release, production identity change, public swarm, or
-store operation.
+Status: **Complete as of 2026-08-31.** New magnet and local `.torrent` adds now
+share one durable, application-owned selection stage in React and Compose.
+Each ordinary file has one checkbox, checked means **Normal**, unchecked means
+**Skip**, and **High** remains a post-add Files action. No release, production
+identity change, public swarm, or store operation was performed.
 
 Topics: `application-control`, `application-view-api`, `client-persistence`,
 `client-surfaces`, `web-ui-design`, `android-jstorrent-replacement`,
@@ -431,18 +430,120 @@ Stop for maintainer direction if evidence requires:
 Ordinary implementation, test, AVD, or approved ChromeOS failures remain
 within this tactical and should be diagnosed rather than escalated.
 
-## Documentation Completion
+## Completion Evidence
 
-Before marking complete:
+### Landed slices
 
-- record commits, schema, exact reference paths, commands, fixtures, browser,
-  AVD/device identities, resource high waters, failures, and cleanup here;
-- update `application-control`, `application-view-api`, `client-persistence`,
-  `download-correctness`, `web-ui-design`, and `client-surfaces` with landed
-  behavior and evidence;
-- mark the Add-time file selection disposition implemented in
-  `android-jstorrent-replacement`;
-- update the Android Compose row and current work sets in
-  `capability-readiness`; and
-- leave localization, JAR-004/JAR-005/JAR-010, Tactical `199`, VPN/proxy,
-  search/plugins, and release work unchanged.
+- `f492071` planned the bounded product and application contract.
+- `5d6d0c0` advanced the disposable profile to schema 24 and added durable
+  pending state, preference, FIFO projection, compact range confirmation,
+  validated cancellation, restart, duplicate, and resource-bound coverage.
+- `9a24c12` added the shared React flow, settings, generated TypeScript/schema,
+  desktop byte intake, and exhaustive adapters and reducers.
+- `8011de0` added the Compose flow, Android application/service boundary,
+  lifecycle policy, and deterministic JVM/instrumentation coverage.
+- `960d274` bounded the React catalog to 1,024-row pages with at most three
+  mounted/cached pages while preserving one continuous list and logical
+  All/None behavior.
+- `2c3e484` regenerated Swift and kept the iOS boundary exhaustive without
+  adding an iOS selection presentation.
+- `d6441a5` admitted pending magnets for metadata acquisition without content.
+- `76d1633` added the installed Android/ChromeOS profile and fixed restored
+  catalog and process-recovery presentation races.
+- `99e9f41` completed the live browser path and repaired completed-selection
+  expansion so newly wanted bytes are materialized under download ownership
+  before the torrent can return to seed admission.
+- `9896797` restored the pre-existing durable FIFO rank for ordinary paused
+  magnets and restricted synthetic metadata admission to pending-selection
+  magnets.
+
+No implementation copied libtorrent or JSTorrent source. The exact pinned
+specification, libtorrent, and JSTorrent paths recorded in **Source Study**
+were the behavior and edge-case oracles.
+
+### Deterministic and generated gates
+
+The final committed source passed:
+
+```text
+cargo fmt --all -- --check
+cargo clippy --workspace -- -D warnings
+cargo test --workspace
+npm run generate --prefix clients/web
+npm run typecheck --prefix clients/web
+npm run test --prefix clients/web
+npm run test:e2e --prefix clients/web
+uv run --project tests/interop --locked \
+  python tests/interop/browser_peer_inspection_surface.py --file-selection
+./clients/android/build.sh
+./clients/android/gradlew -p clients/android lintDebug \
+  assembleDebugAndroidTest
+```
+
+The web unit run passed 373 tests with 2 skipped; Playwright passed 37 with 14
+skipped. The Android build regenerated both ABI libraries and Kotlin UniFFI,
+then passed unit tests, APK assembly, lint, and Android-test APK assembly. The
+connected API-35 suite passed 29 tests. The unchanged generated iOS boundary
+passed its 29 unit and 2 UI tests during this tactical.
+
+### Controlled shared-product evidence
+
+The 122-file, 17-piece controlled magnet acquired 27,015 bytes of metadata,
+showed the pending dialog, and created no payload artifacts before explicit
+confirmation. React selected 1 of 122 files through the paged checklist,
+retained at most three catalog pages, and reported zero serious or critical
+Axe findings. The selected 7,000-byte boundary file completed with SHA-1
+`ea72e3546b649ee43d7b28d57e86af4624092e2d`; the skipped prefix remained
+absent and its boundary bytes stayed in the part store. Post-add **Download**
+on that skipped file materialized it, removed the part artifact, published
+**Normal**, and retained exact cleanup. The profile passed in 2.4 seconds with
+zero tracker requests, joined peer removal, terminal swarm cleanup, and joined
+gateway shutdown.
+
+The harness uses its existing scoped `tcp_only` test transport for this one
+unauthenticated loopback profile because the pinned seed fixture accepts TCP
+only. Product `PreferUtp` behavior is unchanged. A 30-second view lease keeps
+the profile proportional to a real metadata-and-selection interaction rather
+than the unrelated 500-ms lease-expiry fixture.
+
+### Installed Android and ChromeOS evidence
+
+The owned API-35 AVD `product-file-selection` profile proved magnet metadata
+wait, zero pre-confirm content upload and payload artifacts, force-stopped
+process replacement, exact **None** plus 2-of-6 selection, wanted hashes,
+skipped-file absence, Force recheck, exact removal, and joined local-torrent
+cancel. Catalog page high water was 1, draft override high water was 2, SAF
+handles reached 3 of 40, and process descriptors were 142 baseline, 183 high,
+and 156 final. All Java, native, and total RSS channels produced nonzero
+baseline and high-water samples. The separate external-intake profile also
+passed.
+
+The authorized physical ChromeOS target reported ChromeOS 150 with Android
+API 33 on `nami_cheets`. The same installed profile passed metadata wait,
+process recovery, strict partial selection, exact wanted completion, skipped
+absence, recheck, cancellation, removal, and resource sampling. Its page and
+draft high waters remained 1 and 2, SAF stayed below the 40-handle limit, and
+all task-owned grants, payloads, package state, fixture peers, reverses, and
+temporary artifacts were removed. Machine Control doctor was green before
+the run.
+
+### Failures closed during qualification
+
+Qualification found and fixed four material integration gaps:
+
+- pending magnets initially lacked a bounded metadata admission path;
+- Compose could briefly clear a restored catalog while a newer service
+  snapshot was already authoritative;
+- the React reducer omitted additive pending-selection and lifetime fields;
+  exhaustive `never` checks now prevent another silent omission; and
+- expanding a completed selection could retain stale seed admission and fail
+  to promote verified boundary bytes from the part store.
+
+The final full workspace run then exposed the ordinary paused-magnet FIFO
+regression introduced by pending admission. Restoring its durable rank made
+the 100-runnable and live-limit admission tests pass while leaving pending
+selection outside the content queue until confirmation.
+
+The stopping condition is met. Localization, JAR-004/JAR-005/JAR-010,
+Tactical `199`, VPN/proxy, search/plugins, release, and production identity
+work remain unchanged.

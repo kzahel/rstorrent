@@ -94,11 +94,12 @@ that scope and its cleanup or compatibility rules explicitly.
 ## Current Tacticals
 
 - [`203-jstorrent-shaped-add-time-file-selection.md`](203-jstorrent-shaped-add-time-file-selection.md):
-  active; adds one durable application-owned pending-add state and a
+  complete; adds one durable application-owned pending-add state and a
   JSTorrent-shaped checked-Normal/unchecked-Skip selection stage to shared
   React and Android Compose. Magnets acquire metadata without content,
   confirmation is one atomic selection-plus-start transition, cancellation
-  removes only the new pending add, and High remains a post-add Files action.
+  removes only the new pending add, High remains a post-add Files action, and
+  controlled browser, API-35, and physical ChromeOS evidence passes.
 - [`201-durable-seeding-goals-and-seed-admission.md`](201-durable-seeding-goals-and-seed-admission.md):
   complete; exact pinned-default seed goals, rank, delayed inactivity, schema
   23 accounting, combined download/seed admission, generated clients, and

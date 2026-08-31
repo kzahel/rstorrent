@@ -727,11 +727,17 @@ schema 22 and removed publication-specific state. Completed Tactical `201`
 advances that shape to schema 23 with seeding settings and durable scalar
 accounting. Its fixed-size write transaction accepts at most 500 unique rows,
 rejects counter/timer regression and malformed timer ordering, and keeps
-tracker unknown distinct from zero. Durable verified metainfo, root/selection/
-run intent, verification generations, synchronized have evidence, repair
-facts, and restartable exact deletion remain. Final content is recovered by
-re-add and checking; unknown legacy hidden artifacts are neither adopted nor
-deleted by reset.
+tracker unknown distinct from zero. Completed Tactical
+[`203`](../tactical/203-jstorrent-shaped-add-time-file-selection.md) advances
+the disposable profile to schema 24 with one pending-add-selection bit and a
+default-on product preference. Pending FIFO position is derived from durable
+creation order; catalog identity derives from verified metadata. One compact
+base-plus-range confirmation transaction validates the final sparse selection
+before clearing pending state and appending running intent. Durable verified
+metainfo, root/selection/run intent, verification generations, synchronized
+have evidence, repair facts, and restartable exact deletion remain. Final
+content is recovered by re-add and checking; unknown legacy hidden artifacts
+are neither adopted nor deleted by reset.
 
 Tactical `007` should define the first exact schema and migrations. The
 continuing direction is:
@@ -764,6 +770,14 @@ row, stores only skipped overrides, and retains the request receipt at the
 same revision. A no-op is replay-safe. Metadata-only add uses ordinary durable
 paused intent while allowing the metadata worker to finish; restart restores
 that acquisition without preparing payload storage.
+
+Tactical `203` distinguishes that ordinary paused-magnet behavior from a
+pending add. Ordinary magnets retain their durable download FIFO rank even
+while paused. Pending-selection magnets remain outside the content queue and
+receive only a bounded synthetic metadata rank until verified metadata
+arrives; explicit atomic confirmation then appends their durable content rank.
+Restart before or after metadata reconstructs the same state without a client-
+owned queue or payload artifact.
 
 Tactical `176` composes a second bounded sparse set beside those rows. One
 transaction validates the complete file target, makes High/Normal wanted,

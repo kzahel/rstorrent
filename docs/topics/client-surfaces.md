@@ -533,9 +533,14 @@ application currently supports inspection, magnet and local `.torrent` add,
 pause/resume, force recheck, archive/restore, removal, and Normal/Skip file
 selection, but not the full application command set. Its HTTP, WebSocket, and
 Tauri clients implement the generated transport-neutral byte-intake operation.
+Completed Tactical
+[`203`](../tactical/203-jstorrent-shaped-add-time-file-selection.md) makes that
+intake a shared staged flow when the default-on product preference is enabled.
 React emits transport-neutral magnet or byte intent; only the live adapter
-constructs the generated application request, assigns selection `all`, and
-chooses the active transport.
+constructs the generated application request and chooses the active transport.
+The application owns pending FIFO, metadata wait, exact totals, and atomic
+confirm/cancel; React owns only the bounded checkbox draft. Disabling the
+preference retains the established immediate all-file behavior.
 Typed and curated magnet intake share that path. A deterministic catalog test
 keeps the UI shortcuts identical to `tests/live/torrents.json`; public swarm
 availability remains variable evidence rather than a UI guarantee.
@@ -856,6 +861,12 @@ streamable video, while completed **Open** remains. The activity owns audio
 focus, transport controls, picture-in-picture, error presentation, and one
 existing playback interaction lease; Rust retains all HTTP, verification,
 demand, handoff, SAF, capability, and listener ownership.
+Completed Tactical `203` similarly composes one native add-time selection
+dialog with the shared application owner. Compose pages the authoritative file
+catalog, retains only compact Normal/Skip draft intent, survives Activity and
+process replacement, and never turns Back or dismissal into Download All.
+Installed API-35 and physical ChromeOS API-33 partial-selection campaigns pass
+with exact SAF cleanup.
 
 ## Current Gaps
 
