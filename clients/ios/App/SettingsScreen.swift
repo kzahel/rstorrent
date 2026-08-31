@@ -36,6 +36,7 @@ struct SettingsScreen: View {
                 Button(String(localized: "settings_download_folder_choose_button")) {
                     isPresentingFolderPicker = true
                 }
+                .accessibilityIdentifier("choose-download-folder")
                 .disabled(appModel.isBusy)
 
                 if appModel.roots.count > 1 {
@@ -77,6 +78,7 @@ struct SettingsScreen: View {
                             .disabled(appModel.isBusy)
                         }
                     }
+                    .accessibilityIdentifier("storage-root-\(root.id)")
                 }
             }
 
@@ -104,6 +106,7 @@ struct SettingsScreen: View {
                     .foregroundStyle(appModel.selectionStatus.isError ? .red : .secondary)
             }
         }
+        .accessibilityIdentifier("settings-screen")
         .navigationTitle(String(localized: "settings_title"))
         .sheet(isPresented: $isPresentingFolderPicker) {
             DownloadFolderPicker(

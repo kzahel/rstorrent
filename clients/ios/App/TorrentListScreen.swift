@@ -95,6 +95,7 @@ struct TorrentListScreen: View {
                 }
             }
         }
+        .accessibilityIdentifier("torrent-library")
         .listStyle(.insetGrouped)
         .toolbar(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -197,12 +198,15 @@ private struct AppTopBar: View {
                     .lineLimit(1)
             }
             .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("product-name")
             Spacer(minLength: 12)
             HStack(spacing: 12) {
                 Button(action: onOpenSettings) { Image(systemName: "gearshape") }
                     .accessibilityLabel(String(localized: "settings_title"))
+                    .accessibilityIdentifier("open-settings")
                 Button(action: onAddTorrent) { Image(systemName: "plus") }
                     .accessibilityLabel(String(localized: "torrent_list_add_torrent"))
+                    .accessibilityIdentifier("add-torrent")
             }
             .font(.title2)
             .padding(.horizontal, 18)
@@ -285,7 +289,9 @@ private struct EmptyTorrentState: View {
     let filter: TorrentListFilter
     var body: some View {
         VStack(spacing: 6) {
-            Text(filter.emptyTitle).font(.headline)
+            Text(filter.emptyTitle)
+                .font(.headline)
+                .accessibilityIdentifier("torrent-list-empty")
             Text(filter.emptyHint)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)

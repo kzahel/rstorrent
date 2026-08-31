@@ -31,6 +31,7 @@ struct AddTorrentSheet: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .focused($isMagnetFieldFocused)
+                    .accessibilityIdentifier("magnet-input")
                     .submitLabel(.done)
                     .onSubmit(submitMagnet)
 
@@ -50,8 +51,10 @@ struct AddTorrentSheet: View {
                         dismiss()
                         onBrowse()
                     }
+                    .accessibilityIdentifier("browse-torrent")
                 }
             }
+            .accessibilityIdentifier("add-torrent-sheet")
             .navigationTitle(String(localized: "dialog_add_torrent_title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
