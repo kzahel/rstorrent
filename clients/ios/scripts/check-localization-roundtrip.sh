@@ -16,6 +16,10 @@ trap cleanup EXIT
 export_root="${task_root}/export"
 copied_client="${task_root}/repo/clients/ios"
 
+mkdir -p "${task_root}/repo/clients"
+ditto "${client_root}" "${copied_client}"
+ln -s "${repo_root}/target" "${task_root}/repo/target"
+
 xcodebuild \
   -quiet \
   -exportLocalizations \
@@ -24,9 +28,12 @@ xcodebuild \
   -exportLanguage en
 
 test -f "${export_root}/en.xcloc/Localized Contents/en.xliff"
-mkdir -p "${task_root}/repo/clients"
-ditto "${client_root}" "${copied_client}"
-ln -s "${repo_root}/target" "${task_root}/repo/target"
+cmp \
+  "${client_root}/App/Localization/Localizable.xcstrings" \
+  "${copied_client}/App/Localization/Localizable.xcstrings"
+cmp \
+  "${client_root}/App/Localization/InfoPlist.xcstrings" \
+  "${copied_client}/App/Localization/InfoPlist.xcstrings"
 
 xcodebuild \
   -quiet \

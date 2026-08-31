@@ -1,8 +1,32 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "BitTorrent metainfo" : {
+      "comment" : "The system-visible description of the imported .torrent file type.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "BitTorrent metainfo"
+          }
+        }
+      }
+    },
     "CFBundleDisplayName" : {
       "comment" : "The product name displayed below the app icon.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "RSTorrent"
+          }
+        }
+      }
+    },
+    "CFBundleName" : {
+      "comment" : "The app bundle name used by system UI when a display name is unavailable.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -45,18 +69,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "RSTorrent connects directly to peers on your local network."
-          }
-        }
-      }
-    },
-    "UTTypeDescription" : {
-      "comment" : "The system-visible description of the imported .torrent file type.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "BitTorrent metainfo"
           }
         }
       }

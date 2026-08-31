@@ -391,23 +391,33 @@ function checkIOSCatalog() {
 
   const info = fs.readFileSync(path.join(repositoryRoot, "clients/ios/App/Info.plist"), "utf8");
   const requiredInfo = {
-    CFBundleDisplayName: "RSTorrent",
-    CFBundleTypeName: "BitTorrent metainfo",
-    CFBundleURLName: "Magnet link",
-    NSLocalNetworkUsageDescription: "RSTorrent connects directly to peers on your local network.",
-    UTTypeDescription: "BitTorrent metainfo",
+    "BitTorrent metainfo": { plistKey: "UTTypeDescription", value: "BitTorrent metainfo" },
+    CFBundleDisplayName: { plistKey: "CFBundleDisplayName", value: "RSTorrent" },
+    CFBundleName: { plistKey: "CFBundleName", value: "RSTorrent", source: "$(PRODUCT_NAME)" },
+    CFBundleTypeName: { plistKey: "CFBundleTypeName", value: "BitTorrent metainfo" },
+    CFBundleURLName: { plistKey: "CFBundleURLName", value: "Magnet link" },
+    NSLocalNetworkUsageDescription: {
+      plistKey: "NSLocalNetworkUsageDescription",
+      value: "RSTorrent connects directly to peers on your local network.",
+    },
   };
   const infoIds = Object.keys(infoCatalog.strings).sort();
   if (JSON.stringify(infoIds) !== JSON.stringify(Object.keys(requiredInfo).sort())) {
     fail("iOS Info.plist String Catalog has missing or orphaned keys");
   }
-  for (const [id, value] of Object.entries(requiredInfo)) {
+  for (const [id, requirement] of Object.entries(requiredInfo)) {
     const entry = infoCatalog.strings[id];
-    if (entry?.localizations?.en?.stringUnit?.value !== value || !entry.comment?.trim()) {
+    if (
+      entry?.localizations?.en?.stringUnit?.value !== requirement.value ||
+      entry.extractionState !== "manual" ||
+      !entry.comment?.trim()
+    ) {
       fail(`iOS Info.plist message ${id} is incomplete`);
     }
-    const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    if (!new RegExp(`<key>${escaped}</key>[\\s\\S]*?<string>${value}</string>`).test(info)) {
+    const escapedKey = requirement.plistKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const escapedSource = (requirement.source ?? requirement.value)
+      .replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (!new RegExp(`<key>${escapedKey}</key>[\\s\\S]*?<string>${escapedSource}</string>`).test(info)) {
       fail(`iOS Info.plist source for ${id} differs from its String Catalog`);
     }
   }
