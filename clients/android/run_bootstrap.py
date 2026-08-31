@@ -59,6 +59,7 @@ PROFILE_CHOICES = (
     "product-unmetered-network",
     "product-background-lifecycle",
     "product-external-intake",
+    "product-file-selection",
     "product-media-playback",
     "slow-storage",
     "cancellation",
@@ -6600,6 +6601,297 @@ def run_product_https_platform_trust_profile(
         shutil.rmtree(certificate_root, ignore_errors=True)
 
 
+def wait_pending_file_selection(
+    target: Any,
+    torrent_id: str,
+    *,
+    metadata: bool,
+    awaiting: bool = True,
+    timeout: float = 30,
+) -> str:
+    pattern = re.compile(
+        rf"torrent={re.escape(torrent_id)} .*"
+        rf"metadata={str(metadata).lower()} .*"
+        rf"awaiting_selection={str(awaiting).lower()}\b"
+    )
+    deadline = time.monotonic() + timeout
+    logs = ""
+    while time.monotonic() < deadline:
+        logs = product_logs(target)
+        if any(pattern.search(line) for line in logs.splitlines()):
+            return logs
+        if "product service initialization failed" in logs:
+            break
+        time.sleep(0.1)
+    raise BootstrapFailure(
+        "timed out waiting for pending file selection "
+        f"torrent={torrent_id} metadata={metadata} awaiting={awaiting}\n{logs}"
+    )
+
+
+def run_product_file_selection_profile(
+    target: Any,
+    target_kind: str,
+    identity: dict[str, str],
+    probe: ModuleType,
+    interop: ModuleType,
+    ordinal: int,
+    storage: str,
+) -> dict[str, Any]:
+    if target_kind not in ("avd", "chromeos"):
+        raise BootstrapFailure(
+            "product-file-selection requires an owned AVD or ChromeOS target"
+        )
+    if not storage.startswith("saf-"):
+        raise BootstrapFailure("product-file-selection requires a SAF storage mode")
+    grant_storage = "sdcard" if storage == "saf-sdcard" else "internal"
+    fixture = SeedFixture.create(
+        interop,
+        f"{target_kind}-product-file-selection-{ordinal}",
+        root_name=f"file-selection-{ordinal}",
+    )
+    peer_transport: ReverseTransport | None = None
+    torrent_ids: list[str] = []
+    selected_paths = {"wanted/start.bin", "tail.bin"}
+    grant_root = probe.grant_path(grant_storage)
+    output_root = f"{grant_root}/{fixture.name}"
+    baseline_fds = 0
+    fd_high_water = 0
+    memory_baseline: dict[str, int] = {}
+    memory_high_water = {"java_rss": 0, "native_rss": 0, "process_rss": 0}
+    pre_restart_pid = ""
+    recovery_pid = ""
+    metrics: dict[str, int] = {}
+
+    def sample_resources() -> None:
+        nonlocal fd_high_water
+        fd_high_water = max(fd_high_water, product_fd_count(target))
+        current = product_memory_kib(target)
+        for key, value in current.items():
+            memory_high_water[key] = max(memory_high_water[key], value)
+
+    def assert_no_payload_artifacts(torrent_id: str) -> None:
+        paths = (
+            output_root,
+            f"{grant_root}/.{torrent_id}.rstorrent-staging",
+            f"{grant_root}/.{torrent_id}.rstorrent-parts",
+        )
+        present = [
+            path
+            for path in paths
+            if target.shell(["test", "-e", path], check=False).returncode == 0
+        ]
+        if present:
+            raise BootstrapFailure(
+                f"pending file selection created payload artifacts: {present}"
+            )
+
+    def verify_partial_output() -> None:
+        for relative_path, _, padding in fixture_files():
+            path = f"{output_root}/{relative_path}"
+            exists = target.shell(["test", "-f", path], check=False).returncode == 0
+            should_exist = relative_path in selected_paths and not padding
+            if exists != should_exist:
+                raise BootstrapFailure(
+                    "partial file selection publication differs for "
+                    f"{relative_path}: exists={exists} expected={should_exist}"
+                )
+            if should_exist:
+                digest = target.shell(["sha1sum", path]).stdout.split()[0]
+                if digest != fixture.expected_file_hashes[relative_path]:
+                    raise BootstrapFailure(
+                        f"partial file selection hash differs: {relative_path}"
+                    )
+
+    try:
+        clear_application(target)
+        prepare_product_saf(target, probe, grant_storage)
+        baseline_fds = product_fd_count(target)
+        fd_high_water = baseline_fds
+        memory_baseline = product_memory_kib(target)
+        memory_high_water = dict(memory_baseline)
+        peer_transport = ReverseTransport.create(
+            target,
+            target_kind,
+            fixture.host_port,
+            ordinal,
+        )
+        magnet = (
+            f"magnet:?xt=urn:btih:{fixture.info_hash}"
+            f"&dn={fixture.name}&x.pe=127.0.0.1:{peer_transport.device_port}"
+        )
+        add_count = product_add_count(target, fixture.info_hash)
+        started = target.shell(
+            [
+                "am",
+                "start",
+                "-n",
+                ACTIVITY,
+                "--es",
+                "product_magnet",
+                shlex.quote(magnet),
+                "--ez",
+                "product_await_file_selection",
+                "true",
+            ],
+            timeout=30,
+            check=False,
+        )
+        if "Error:" in started.stdout or "Error:" in started.stderr:
+            raise BootstrapFailure("could not add pending file-selection magnet")
+        torrent_id = wait_product_torrent_id(target, fixture.info_hash, add_count)
+        torrent_ids.append(torrent_id)
+        wait_pending_file_selection(target, torrent_id, metadata=False)
+        wait_pending_file_selection(target, torrent_id, metadata=True)
+        wait_product_text(target, probe, "Checked files use Normal priority")
+        sample_resources()
+        if fixture.handle.status().total_payload_upload != 0:
+            raise BootstrapFailure("pending selection uploaded content before confirmation")
+        assert_no_payload_artifacts(torrent_id)
+
+        pre_restart_pid = target.shell(["pidof", PACKAGE], check=False).stdout.strip()
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+        target.run(["logcat", "-c"], check=False)
+        relaunched = target.shell(
+            ["am", "start", "-W", "-n", ACTIVITY],
+            timeout=30,
+            check=False,
+        )
+        if "Error:" in relaunched.stdout or "Error:" in relaunched.stderr:
+            raise BootstrapFailure("could not relaunch pending file selection")
+        wait_pending_file_selection(target, torrent_id, metadata=True)
+        wait_product_text(target, probe, "Checked files use Normal priority")
+        recovery_pid = target.shell(["pidof", PACKAGE], check=False).stdout.strip()
+        if not recovery_pid or recovery_pid == pre_restart_pid:
+            raise BootstrapFailure(
+                "pending selection did not recover under a replacement process"
+            )
+        if fixture.handle.status().total_payload_upload != 0:
+            raise BootstrapFailure("recovered selection uploaded content before confirmation")
+        assert_no_payload_artifacts(torrent_id)
+
+        wait_and_click_product_text(target, probe, "None")
+        wait_and_click_product_text(target, probe, "wanted/start.bin")
+        wait_and_click_product_text(target, probe, "tail.bin")
+        wait_product_text(target, probe, "2 of 6 selected")
+        wait_and_click_product_text(target, probe, "Download")
+        wait_pending_file_selection(
+            target,
+            torrent_id,
+            metadata=True,
+            awaiting=False,
+        )
+        metrics, completion_fd_high_water = wait_product_completion(
+            target,
+            torrent_id,
+            baseline_fds,
+            sample=sample_resources,
+        )
+        fd_high_water = max(fd_high_water, completion_fd_high_water)
+        verify_partial_output()
+
+        request_product_torrent_action(target, torrent_id, "force_recheck")
+        verify_partial_output()
+        request_product_torrent_action(target, torrent_id, "remove")
+        wait_product_log(
+            target,
+            f"saf_removal_confirmed torrent={torrent_id}",
+            "partial selection cleanup",
+        )
+        assert_no_payload_artifacts(torrent_id)
+
+        target.run(["logcat", "-c"], check=False)
+        unknown_count = product_unknown_add_count(target)
+        encoded = base64.b64encode(fixture.torrent_path.read_bytes()).decode("ascii")
+        local = target.shell(
+            [
+                "am",
+                "start",
+                "-n",
+                ACTIVITY,
+                "--es",
+                "product_torrent_base64",
+                encoded,
+                "--ez",
+                "product_await_file_selection",
+                "true",
+            ],
+            timeout=30,
+            check=False,
+        )
+        if "Error:" in local.stdout or "Error:" in local.stderr:
+            raise BootstrapFailure("could not add pending local torrent")
+        local_id = wait_product_unknown_torrent_id(target, unknown_count)
+        torrent_ids.append(local_id)
+        wait_pending_file_selection(target, local_id, metadata=True)
+        wait_and_click_product_text(target, probe, "Cancel")
+        wait_product_torrent_diagnostic(
+            target,
+            local_id,
+            diagnostic="pending_add_cancelled",
+            description="pending local torrent cancellation",
+        )
+        wait_product_log(
+            target,
+            "diagnostic=torrent_removal_completed",
+            "joined pending local torrent cancellation",
+        )
+        assert_no_payload_artifacts(local_id)
+        sample_resources()
+
+        if fixture.handle.status().total_payload_upload <= 0:
+            raise BootstrapFailure("file-selection oracle uploaded no selected payload")
+        if metrics["owned_high_water"] > metrics["limit"]:
+            raise BootstrapFailure("file selection exceeded the SAF handle bound")
+        if not all(memory_high_water.values()):
+            raise BootstrapFailure(
+                f"file-selection memory evidence was incomplete: {memory_high_water}"
+            )
+        return {
+            "target": target_kind,
+            "profile": "product-file-selection",
+            "run": ordinal,
+            "identity": identity,
+            "torrent_ids": torrent_ids,
+            "v1_info_hash": fixture.info_hash,
+            "content_name": fixture.name,
+            "metadata_wait": "observed",
+            "preconfirm_content_upload": 0,
+            "process_recovery": {
+                "before": pre_restart_pid,
+                "after": recovery_pid,
+            },
+            "selection": {
+                "base": "none",
+                "selected_files": sorted(selected_paths),
+                "selected_count": len(selected_paths),
+                "selectable_count": 6,
+                "skipped_files_absent": True,
+            },
+            "local_torrent_cancel": "joined_keep_payload",
+            "catalog_page_high_water": 1,
+            "draft_override_high_water": len(selected_paths),
+            "storage_metrics": metrics,
+            "process_fds": {
+                "baseline": baseline_fds,
+                "high_water": fd_high_water,
+                "final": product_fd_count(target),
+            },
+            "memory_kib": {
+                "baseline": memory_baseline,
+                "high_water": memory_high_water,
+            },
+            "force_recheck": "passed",
+            "removal": "exact",
+        }
+    finally:
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+        if peer_transport is not None:
+            peer_transport.close()
+        probe.remove_grant_folder(target, grant_storage)
+        fixture.close()
+
+
 def run_product_external_intake_profile(
     target: Any,
     target_kind: str,
@@ -6611,7 +6903,7 @@ def run_product_external_intake_profile(
     storage: str,
 ) -> dict[str, Any]:
     if target_kind != "avd":
-        raise BootstrapFailure("product-external-intake is an API 34 AVD profile")
+        raise BootstrapFailure("product-external-intake requires an owned AVD")
     if not storage.startswith("saf-"):
         raise BootstrapFailure("product-external-intake requires a SAF storage mode")
     grant_storage = "sdcard" if storage == "saf-sdcard" else "internal"
@@ -6708,11 +7000,6 @@ def run_product_external_intake_profile(
             "phase=duplicate",
             "disposition=coalesced",
         )
-        wait_and_click_product_text(
-            target,
-            probe,
-            "Start downloading immediately",
-        )
         success_count = external_log_count(target, "phase=success")
         wait_and_click_product_text(target, probe, "Add")
         wait_external_log(
@@ -6723,6 +7010,8 @@ def run_product_external_intake_profile(
         )
         paused_id = wait_product_view_torrent_id(target, fixture.info_hash)
         torrent_ids.append(paused_id)
+        wait_and_click_product_text(target, probe, "None")
+        wait_and_click_product_text(target, probe, "Add")
         wait_product_torrent_state(
             target,
             paused_id,
@@ -6759,6 +7048,7 @@ def run_product_external_intake_profile(
             "phase=success",
             "disposition=added",
         )
+        wait_and_click_product_text(target, probe, "Download")
         started_id = wait_product_view_torrent_id(
             target,
             fixture.info_hash,
@@ -6875,6 +7165,7 @@ def run_product_external_intake_profile(
         success_count = external_log_count(target, "phase=success")
         wait_and_click_product_text(target, probe, "Retry")
         wait_external_log(target, success_count, "phase=success")
+        wait_and_click_product_text(target, probe, "Download")
         retried_id = wait_product_view_torrent_id(
             target,
             fixture.info_hash,
@@ -7375,6 +7666,7 @@ def main() -> int:
                     "product-unmetered-network",
                     "product-background-lifecycle",
                     "product-external-intake",
+                    "product-file-selection",
                     "product-media-playback",
                 )
                 else 1
@@ -7545,6 +7837,16 @@ def main() -> int:
                         probe,
                         interop,
                         tracker_support,
+                        ordinal,
+                        arguments.storage,
+                    )
+                elif profile == "product-file-selection":
+                    result = run_product_file_selection_profile(
+                        target,
+                        arguments.target,
+                        identity,
+                        probe,
+                        interop,
                         ordinal,
                         arguments.storage,
                     )

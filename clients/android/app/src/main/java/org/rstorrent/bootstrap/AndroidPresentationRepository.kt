@@ -5,8 +5,10 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -168,9 +170,10 @@ internal class AndroidPresentationRepository(
     }
 
     fun clearPendingFileSelection() {
-        pendingSelectionRequest.incrementAndGet()
+        val request = pendingSelectionRequest.incrementAndGet()
         scope.launch {
             ownership.withLock {
+                if (request != pendingSelectionRequest.get()) return@withLock
                 pendingSelection?.close()
                 pendingSelection = null
                 val torrentId = pendingSelectionTorrent
@@ -290,7 +293,13 @@ internal class AndroidPresentationRepository(
                         }
                     }
                 } catch (error: Throwable) {
-                    if (!stopped.get() && error !is CancellationException) onError(error)
+                    if (
+                        !stopped.get() &&
+                            currentCoroutineContext().isActive &&
+                            error !is CancellationException
+                    ) {
+                        onError(error)
+                    }
                 } finally {
                     subscription.close()
                 }

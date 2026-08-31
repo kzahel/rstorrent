@@ -44,6 +44,7 @@ class MainActivity : ComponentActivity() {
     private var pendingProductTrackerPolicy: String? = null
     private var pendingProductEncryptionPolicy: String? = null
     private var pendingProductStartContent = true
+    private var pendingProductAwaitFileSelection = false
     private var pendingProductSkipFiles: List<UInt> = emptyList()
     private var pendingProductTrackerEvidenceTorrent: String? = null
     private var pendingProductMseEvidence = false
@@ -177,9 +178,16 @@ class MainActivity : ComponentActivity() {
                                 encryption,
                                 pendingProductSkipFiles,
                             )
-                        else -> service.addMagnet(it, pendingProductSkipFiles)
+                        else ->
+                            service.addMagnet(
+                                it,
+                                pendingProductSkipFiles,
+                                pendingProductStartContent,
+                                pendingProductAwaitFileSelection,
+                            )
                     }
                     pendingProductStartContent = true
+                    pendingProductAwaitFileSelection = false
                     pendingProductSkipFiles = emptyList()
                 }
                 pendingProductTorrentUri?.let { encoded ->
@@ -198,8 +206,10 @@ class MainActivity : ComponentActivity() {
                         android.util.Base64.decode(encoded, android.util.Base64.DEFAULT),
                         pendingProductTorrentStartContent,
                         pendingProductTorrentSelection,
+                        pendingProductTorrentAwaitFileSelection,
                     )
                     pendingProductTorrentStartContent = true
+                    pendingProductTorrentAwaitFileSelection = false
                     pendingProductTorrentSelection = FileSelectionIntent.All
                 }
                 pendingProductTrackerEvidenceTorrent?.let {
@@ -701,6 +711,9 @@ class MainActivity : ComponentActivity() {
                     val startContent =
                         command.getBooleanExtra(EXTRA_PRODUCT_START_CONTENT, true)
                     command.removeExtra(EXTRA_PRODUCT_START_CONTENT)
+                    val awaitFileSelection =
+                        command.getBooleanExtra(EXTRA_PRODUCT_AWAIT_FILE_SELECTION, false)
+                    command.removeExtra(EXTRA_PRODUCT_AWAIT_FILE_SELECTION)
                     val selection =
                         command
                             .getStringExtra(EXTRA_PRODUCT_WANTED_FILE_RANGES)
@@ -717,6 +730,7 @@ class MainActivity : ComponentActivity() {
                     if (service == null) {
                         pendingProductTorrentBase64 = encoded
                         pendingProductTorrentStartContent = startContent
+                        pendingProductTorrentAwaitFileSelection = awaitFileSelection
                         pendingProductTorrentSelection = selection
                     } else {
                         service.addTorrentBytes(
@@ -726,6 +740,7 @@ class MainActivity : ComponentActivity() {
                             ),
                             startContent,
                             selection,
+                            awaitFileSelection,
                         )
                     }
                 }
@@ -734,6 +749,9 @@ class MainActivity : ComponentActivity() {
             command.removeExtra(EXTRA_PRODUCT_MAGNET)
             val startContent = command.getBooleanExtra(EXTRA_PRODUCT_START_CONTENT, true)
             command.removeExtra(EXTRA_PRODUCT_START_CONTENT)
+            val awaitFileSelection =
+                command.getBooleanExtra(EXTRA_PRODUCT_AWAIT_FILE_SELECTION, false)
+            command.removeExtra(EXTRA_PRODUCT_AWAIT_FILE_SELECTION)
             val skipFiles =
                 command
                     .getStringExtra(EXTRA_PRODUCT_SKIP_FILES)
@@ -746,6 +764,7 @@ class MainActivity : ComponentActivity() {
             if (service == null) {
                 pendingProductMagnet = it
                 pendingProductStartContent = startContent
+                pendingProductAwaitFileSelection = awaitFileSelection
                 pendingProductSkipFiles = skipFiles
             } else {
                 val policy = pendingProductTrackerPolicy
@@ -757,7 +776,7 @@ class MainActivity : ComponentActivity() {
                         service.addMagnetWithTrackerPolicyForTest(it, policy, startContent)
                     encryption != null ->
                         service.addMagnetWithEncryptionPolicyForTest(it, encryption, skipFiles)
-                    else -> service.addMagnet(it, skipFiles)
+                    else -> service.addMagnet(it, skipFiles, startContent, awaitFileSelection)
                 }
             }
         }
@@ -1081,6 +1100,7 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_PRODUCT_TORRENT_BASE64 = "product_torrent_base64"
         const val EXTRA_PRODUCT_WANTED_FILE_RANGES = "product_wanted_file_ranges"
         const val EXTRA_PRODUCT_START_CONTENT = "product_start_content"
+        const val EXTRA_PRODUCT_AWAIT_FILE_SELECTION = "product_await_file_selection"
         const val EXTRA_PRODUCT_SKIP_FILES = "product_skip_files"
         const val EXTRA_PRODUCT_TRACKER_EVIDENCE_TORRENT = "product_tracker_evidence_torrent"
         const val EXTRA_PRODUCT_SELECT_SAF = "product_select_saf"

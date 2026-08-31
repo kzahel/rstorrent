@@ -3509,6 +3509,10 @@ class ProductEngineService : Service() {
                 "kind=$kind state=${torrent?.state?.name ?: "none"} " +
                 "storage=${torrent?.storageState?.name ?: "none"} " +
                 "metadata=${torrent?.metadataAvailable ?: false} " +
+                "awaiting_selection=${torrent?.awaitingFileSelection ?: false} " +
+                "catalog=${torrent?.fileCatalogId ?: "none"} " +
+                "selected_files=${torrent?.selectedFileCount ?: 0U}/" +
+                "${torrent?.selectableFileCount ?: 0U} " +
                 "progress=${torrent?.progress?.disposition?.name ?: "none"} " +
                 "reason=${torrent?.progress?.reason?.name ?: "none"} " +
                 "diagnostic=${diagnostic?.code ?: "none"} " +
