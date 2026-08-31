@@ -875,8 +875,12 @@ successful mutation unreadable after upgrade.
   and exact replay saves resubmit authoritative intent after persistence
   resolution so degraded runtime state can retry.
   Completed Tactical `134` adds finite session and per-torrent peer-transfer
-  limits without adding durable transfer totals. Durable upload totals and
-  ratio/time seeding goals remain later boundaries.
+  limits without adding durable transfer totals. Decision-complete Tactical
+  [`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md) is Ready
+  to add exact pinned-libtorrent payload totals, unpaused active/finished/
+  seeding timers, cached swarm counts, and global seed-goal settings in fresh
+  schema 23. Recognized schemas 1 through 22 retain the disposable reset
+  contract, and no derived rank or active/queued result becomes durable.
 - JSTorrent migration is accepted as an explicit user-initiated semantic
   import into one selected backend, not in-place reuse of the legacy database
   or live synchronization between backends. The exact supported source

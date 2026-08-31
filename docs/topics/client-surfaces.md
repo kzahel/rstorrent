@@ -1014,8 +1014,12 @@ streaming demand, expiry, and revocation remain unchanged.
   authorized physical-phone gate open. Background lifetime is implemented and
   qualified by completed Tactical `200` through its accepted AVD,
   deterministic-companion, and prior physical ChromeOS evidence composition.
-  VPN, proxy, low-battery, and broader seeding policy remain separate
-  product/engine slices.
+  Decision-complete Tactical
+  [`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md) is Ready
+  to add the exact pinned libtorrent global active-seed and ratio/time priority
+  settings plus truthful active/queued/goal status to React and Compose; it
+  does not promise hard stop-on-goal. VPN, proxy, and low-battery remain
+  separate product/engine slices.
 - Tracker HTTPS authentication is intentionally absent from ordinary React
   and Compose settings. The advanced typed `disabled` override exists for
   compatibility/debug use and remains visibly unauthenticated in tracker

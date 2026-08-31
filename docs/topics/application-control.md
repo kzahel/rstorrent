@@ -256,6 +256,15 @@ count/grace transitions, and Tactical `194`'s physical ChromeOS transport and
 shutdown evidence; the accepted compositional close makes no new OEM-duration
 or unavailable-device claim.
 
+Decision-complete Tactical
+[`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md) is Ready
+to extend ordinary admission with the exact pinned libtorrent seed queue. One
+combined application owner will apply download-first hard/type limits,
+inactive exemption, and descending seed rank while preserving the existing
+typed settings revision path. Goal completion changes runtime priority only;
+it never synthesizes Pause, Stop Torrent, queue mutation, or another durable
+intent.
+
 Typed diagnostics use a separate bounded reactive projection. They may explain
 the facts behind a progress assessment, but clients do not parse diagnostic
 text to determine torrent state, available actions, or correctness. A view

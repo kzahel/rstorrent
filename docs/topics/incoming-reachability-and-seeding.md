@@ -37,7 +37,12 @@ Completed Tactical
 [`134`](../tactical/134-hierarchical-transfer-rate-enforcement.md) adds live
 session/torrent upload and download limits at the common established-peer
 boundary for initiated and accepted TCP/uTP streams. Ratio/time seeding goals
-remain a future slice.
+are now decision-complete and Ready in Tactical
+[`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md): exact
+pinned libtorrent global thresholds, durable totals/timers, active-seed rank,
+inactivity, and defaults. Reaching any one threshold lowers automatic seed
+priority; it does not unregister a seed when capacity remains or rewrite
+durable run intent.
 
 Completed very-high-priority Tactical
 [`124`](../tactical/124-duplex-verified-piece-upload.md) replaces the
@@ -621,8 +626,10 @@ behavior. Tactical `097` now applies that persisted group live with explicit
 configured/effective convergence and no schema change.
 Pending-handshake and incoming-slack tuning remain internal safety policy.
 Tactical `134` subsequently supplies finite session/torrent peer-transfer
-limits. Durable accounting/reset policy and ratio/time seeding goals still
-wait for their own owners.
+limits. Decision-complete Tactical `201` now owns durable payload accounting,
+fresh reset/schema policy, global ratio/time goals, and seed admission under
+the exact pinned libtorrent semantics. It is Ready, not implemented by the
+present incoming-runtime evidence.
 
 Controlled product evidence persists automatic/37/one through the production
 web gateway, reopens onto an observed nonzero listener, and seeds an exact

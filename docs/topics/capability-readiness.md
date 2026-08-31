@@ -726,7 +726,9 @@ session/torrent caps, full duplex, exact hashes, terminal ownership, schema-18
 restart/convergence, generated React/Compose controls, both Android builds,
 headless Chrome, API 34 AVD, and complete repository gates pass. The policy
 counts established peer-stream bytes; automatic network policy, total-device
-accounting, and ratio/time seeding goals remain separate.
+accounting, and ratio/time seeding goals remain separate. Decision-complete
+Tactical `201` now owns the latter without changing Tactical `134`'s landed
+rate-enforcement claim.
 
 Tactical
 [`135`](../tactical/135-controlled-tcp-storage-near-parity.md) is complete.
@@ -879,6 +881,17 @@ exactly.
 
 ### Ready
 
+- Implement decision-complete Tactical
+  [`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md). It
+  adopts the exact pinned libtorrent global active-seed limit, durable payload
+  totals and unpaused active/finished/seeding timers, all-three seed-goal
+  predicate, bit-ranked demand order, inactive exemption, and defaults.
+  Reaching any one threshold makes the goal met and lowers automatic priority;
+  it does not stop the torrent or rewrite desired-running intent. The bounded
+  slice includes fresh schema 23, one combined admission/accounting owner,
+  generated React/Compose truth, Android lifetime composition, and controlled
+  pinned-libtorrent evidence; per-torrent goals and hard stop policy remain
+  excluded.
 - Declare the future first supported version and freeze its fresh application
   identities and persistence/API baseline only from that version forward.
   Complete changelog, privacy/support presentation, and the repeatable beta

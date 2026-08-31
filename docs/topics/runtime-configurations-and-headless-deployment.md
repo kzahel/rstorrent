@@ -71,8 +71,9 @@ end-to-end record protection, and relay threat models.
 native-picker matrix and accepted validated absolute server-path entry for the
 Linux headless presentation.
 [`incoming-reachability-and-seeding.md`](incoming-reachability-and-seeding.md)
-owns peer-listener and upload behavior; durable ratio/time seeding goals remain
-separate application policy.
+owns peer-listener and upload behavior. Decision-complete Tactical
+[`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md) now owns
+the separate durable ratio/time priority and seed-admission policy.
 
 This topic does not select a password protocol, authorize a public relay,
 define a stable third-party daemon API, or make a maintainer-configured Basic
@@ -178,8 +179,9 @@ indefinite seeding, a share ratio, elapsed seeding time, or explicit stop.
 
 RSTorrent currently supports durable completed-torrent seeding and manual
 pause/removal, but not ratio/time seeding goals. A Linux service baseline must
-not hide that gap behind an automatic process-exit rule. Seeding goals belong
-to their own bounded application/engine tactical.
+not hide that gap behind an automatic process-exit rule. Tactical `201` is
+Ready with exact pinned-libtorrent goal-met-not-stop semantics; it is not yet
+an implemented headless capability.
 
 ### Remote exposure
 
@@ -476,7 +478,8 @@ The important remaining gaps are:
   beyond the implemented Tailscale trusted-network operator mode;
 - owner remote authentication, host identity, authorized-browser resume,
   complete authorization/circuit audit, and direct versus relay delivery;
-- ratio/time seeding goals and seed admission/ranking policy; and
+- implementation of Tactical `201`'s decision-complete ratio/time seeding
+  goals and seed admission/ranking policy; and
 - release, update, compatibility, and recovery evidence for an unattended
   headless installation.
 

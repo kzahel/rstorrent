@@ -229,7 +229,7 @@ blocker for an independent RSTorrent beta.
 | VPN-only mode | JSTorrent suspends when the active default network is not reported as VPN. RSTorrent has no control. The legacy check does not prove socket binding or leak prevention. | Implement only with Android `Network` binding, fail-closed startup/handover, closure or rebinding of existing TCP/UDP sockets, and peer/tracker/DHT/DNS leakage evidence; otherwise retire and disclose it. |
 | SOCKS5 proxy | JSTorrent exposes host, port, optional credentials, and peer/HTTP-tracker/UDP-tracker routing choices. RSTorrent shows a disabled placeholder and has no engine proxy owner. | Use a source-first engine tactical covering DNS, authentication-secret storage, UDP ASSOCIATE or a truthful unsupported state, reconnect, bypass prevention, resource limits, and interoperability. |
 | DHT and PEX controls | Both RSTorrent engine capabilities exist, but Compose has no enable/disable controls. | Add backed settings or explicitly retain always-on public-torrent policy. Preserve private-torrent gating regardless. |
-| Seeding and queue policy | JSTorrent has an active-seed limit and stop/close versus keep-seeding choice. RSTorrent exposes active-download admission but not equivalent seed goals/policy. | Tactical `200` selects default stop-on-completion and a separate keep-seeding-in-background opt-in without adding active-seed limits or ratio/time goals. Those broader seed policies remain separate. |
+| Seeding and queue policy | JSTorrent has an active-seed limit and stop/close versus keep-seeding choice. RSTorrent exposes active-download admission but not equivalent seed goals/policy. | Tactical `200` selects default background closure and a separate keep-seeding-in-background opt-in. Decision-complete Tactical `201` is Ready to add exact pinned-libtorrent global active-seed and ratio/time priority semantics. Reaching a goal will not hard-stop or rewrite torrent intent. |
 | Low-battery shutdown | JSTorrent offers an opt-in 5–50% threshold. RSTorrent has only the active-work sleep setting and a disabled Battery policy row. | Decide whether Android replacement retains this safety valve. If implemented, define charging, threshold hysteresis, notification, intent preservation, and restart behavior. |
 | Companion idle/auto-close | JSTorrent can stop its separate legacy daemon after a configured disconnected interval. Tactical `194` instead owns one semantic service/application owner. | Tactical `200` selects a fixed 60-second authenticated-disconnect grace and no user-facing timer. A configurable idle policy remains deferred unless product evidence justifies it. |
 | Search and plugins | JSTorrent has search UI plus installed/recommended URL-fetched JavaScript plugins in an Android WebView sandbox. RSTorrent has no search/plugin product capability. | Treat as a separate security and product campaign. Implement only with explicit network-code trust, sandbox, update, disclosure, and Play-review policy; otherwise retire/defer visibly. |
@@ -455,13 +455,18 @@ live run.
    Tactical `194`'s physical ChromeOS transport/security proof; a later
    available-device rerun may strengthen confidence but is not a release-gate
    claim. Low-battery shutdown remains a separately bounded decision.
-6. Design `JAR-005` with the production extension before either store update
+6. Implement decision-complete Tactical
+   [`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md) when
+   seed-policy work is selected. Preserve its exact pinned-libtorrent
+   goal-met-not-stop contract and compose Compose settings/status with
+   Tactical `200`'s independent background-lifetime decision.
+7. Design `JAR-005` with the production extension before either store update
    is scheduled.
-7. Decide VPN, proxy, DHT/PEX controls, search/plugins, playback,
+8. Decide VPN, proxy, DHT/PEX controls, search/plugins, playback,
    localization, reset/support, and the remaining table rows individually.
    Proxy and any engine/network privacy work follow the source-first engine
    campaign; search/plugin and playback remain separate security/lifecycle
    campaigns.
-8. Run `JAR-010` only after the required gates and disposition ledger converge.
+9. Run `JAR-010` only after the required gates and disposition ledger converge.
    Signing, store upload, staged rollout, production extension publication,
    and release promotion each remain explicitly authorized operations.

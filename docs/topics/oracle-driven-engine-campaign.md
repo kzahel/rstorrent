@@ -707,11 +707,16 @@ exact action is the bounded current-API physical-phone handoff after explicit
 maintainer authorization; no further engine implementation is implied by the
 present evidence.
 
-Durable seeding goals remain the leading unrelated policy candidate, while
-embedded playback, Android streaming presentation, and stable sharing have
-distinct ownership and security boundaries. The post-discovery Ubuntu stall
-remains one non-reproducible changing-swarm observation and is not authority
-for an unplanned change.
+Decision-complete Tactical
+[`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md) now owns
+the leading unrelated policy candidate. It is Ready with the exact pinned
+libtorrent seed-goal predicate, rank, active-seed/inactivity admission,
+durable counter/timer semantics, and defaults; goal completion lowers
+automatic priority rather than stopping torrent intent. Embedded playback,
+Android streaming presentation, and stable sharing retain distinct ownership
+and security boundaries. The post-discovery Ubuntu stall remains one non-
+reproducible changing-swarm observation and is not authority for an unplanned
+change.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the
