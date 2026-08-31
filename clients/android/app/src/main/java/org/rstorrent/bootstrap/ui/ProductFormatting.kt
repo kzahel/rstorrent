@@ -1,8 +1,11 @@
 package org.rstorrent.bootstrap.ui
 
+import java.math.BigInteger
 import java.util.Locale
 import kotlin.math.max
 import org.rstorrent.session.uniffi.ClientSettingsApplicationState
+import org.rstorrent.session.uniffi.SeedAdmissionView
+import org.rstorrent.session.uniffi.SeedGoalView
 import org.rstorrent.session.uniffi.TorrentEtaView
 import org.rstorrent.session.uniffi.TorrentOperationalState
 import org.rstorrent.session.uniffi.TorrentView
@@ -37,6 +40,34 @@ internal fun formatDuration(seconds: ULong): String {
         minutes > 0UL -> "${minutes}m ${remaining}s"
         else -> "${remaining}s"
     }
+}
+
+internal fun formatDuration(decimal: String): String =
+    decimal.toULongOrNull()?.let(::formatDuration) ?: "—"
+
+internal fun formatShareRatio(hundredths: String?): String {
+    val value = hundredths?.toBigIntegerOrNull()?.takeIf { it.signum() >= 0 } ?: return "—"
+    val parts = value.divideAndRemainder(BigInteger.valueOf(100))
+    return "${parts[0]}.${parts[1].toString().padStart(2, '0')}"
+}
+
+internal fun seedAdmissionLabel(admission: SeedAdmissionView): String =
+    when (admission) {
+        SeedAdmissionView.ACTIVE -> "Active seed"
+        SeedAdmissionView.QUEUED -> "Queued seed"
+        SeedAdmissionView.INACTIVE_EXEMPT -> "Active, inactive-exempt seed"
+        SeedAdmissionView.INELIGIBLE -> "Not eligible to seed"
+    }
+
+internal fun seedGoalLabel(goal: SeedGoalView?): String {
+    goal ?: return "—"
+    val thresholds =
+        buildList {
+            if (goal.shareRatioMet) add("share ratio")
+            if (goal.finishedDownloadRatioMet) add("finished/download time ratio")
+            if (goal.finishedTimeMet) add("finished time")
+        }.ifEmpty { listOf("none yet") }
+    return "${goal.status.name.lowercase()} · met: ${thresholds.joinToString()}"
 }
 
 internal fun torrentProgress(torrent: TorrentView): Float {

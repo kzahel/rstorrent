@@ -26,10 +26,12 @@ import org.rstorrent.bootstrap.ui.ProductThemeMode
 import org.rstorrent.session.uniffi.ApplicationNetworkPrerequisiteView
 import org.rstorrent.session.uniffi.ApplicationNetworkRuntimeState
 import org.rstorrent.session.uniffi.ApplicationNetworkRuntimeView
+import org.rstorrent.session.uniffi.ActiveSeedLimit
 import org.rstorrent.session.uniffi.ProgressAssessment
 import org.rstorrent.session.uniffi.ProgressDisposition
 import org.rstorrent.session.uniffi.ProgressPhase
 import org.rstorrent.session.uniffi.ProgressReason
+import org.rstorrent.session.uniffi.SeedAdmissionView
 import org.rstorrent.session.uniffi.AdvertisedPeerEndpointStatus
 import org.rstorrent.session.uniffi.BandwidthDirectionRuntimeView
 import org.rstorrent.session.uniffi.BandwidthRuntimeView
@@ -50,9 +52,11 @@ import org.rstorrent.session.uniffi.StorageState
 import org.rstorrent.session.uniffi.TorrentTransferLimits
 import org.rstorrent.session.uniffi.TransferRateLimit
 import org.rstorrent.session.uniffi.TorrentEtaView
+import org.rstorrent.session.uniffi.TorrentLifetimeView
 import org.rstorrent.session.uniffi.TorrentOperationalState
 import org.rstorrent.session.uniffi.TorrentProtocolIdentities
 import org.rstorrent.session.uniffi.TorrentState
+import org.rstorrent.session.uniffi.TorrentSeedingView
 import org.rstorrent.session.uniffi.TorrentView
 import org.rstorrent.session.uniffi.TorrentSettingsPatch
 
@@ -567,6 +571,8 @@ class ProductNavigationTest {
             remainingPayloadBytes = "49152",
             etaPayloadDownloadRateBytes = "4096",
             eta = TorrentEtaView.Estimate("12"),
+            lifetime = TorrentLifetimeView("0", "8192", "0", "0", "0", "0"),
+            seeding = TorrentSeedingView(SeedAdmissionView.INELIGIBLE, null),
             progress =
                 ProgressAssessment(
                     ProgressDisposition.ACTIVE,
@@ -591,6 +597,10 @@ class ProductNavigationTest {
                 peerConnectionLimit = 200U,
                 uploadSlots = 8U.toUShort(),
                 activeDownloads = 3U.toUShort(),
+                activeSeeds = ActiveSeedLimit.Limited(5U.toUShort()),
+                shareRatioLimitPercent = 200U,
+                finishedDownloadRatioLimitPercent = 700U,
+                finishedTimeLimitSeconds = 86_400U,
                 uploadRateLimit = TransferRateLimit.Limited(128U * 1_024U),
                 downloadRateLimit = TransferRateLimit.Limited(256U * 1_024U),
                 encryption = EncryptionPolicy.ALLOW,
@@ -618,11 +628,14 @@ class ProductNavigationTest {
             effectivePeerConnectionLimit = 200U,
             effectiveUploadSlots = 8U.toUShort(),
             effectiveActiveDownloads = 3U.toUShort(),
+            effectiveActiveSeeds = configured.activeSeeds,
             effectiveUploadRateLimit = configured.uploadRateLimit,
             effectiveDownloadRateLimit = configured.downloadRateLimit,
             activeDownloadsClampReason = null,
             activeDownloadCount = 0U.toUShort(),
             checkingCount = 0U.toUShort(),
+            activeSeedCount = 0U.toUShort(),
+            inactiveSeedCount = 0U.toUShort(),
             effectiveEncryption = EncryptionPolicy.ALLOW,
             effectiveIpv6Enabled = true,
             effectiveTrackerHttpsServerAuthentication =

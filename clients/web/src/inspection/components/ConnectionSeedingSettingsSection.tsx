@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState, type FormEvent } from "react";
 
 import type {
+  ActiveSeedLimit,
   AdvertisedPeerEndpointStatus,
   ClientSettings,
   ClientSettingsPatch,
@@ -41,6 +42,10 @@ const UPLOAD_SLOTS_MINIMUM = 0;
 const UPLOAD_SLOTS_MAXIMUM = 50;
 const ACTIVE_DOWNLOADS_MINIMUM = 1;
 const ACTIVE_DOWNLOADS_MAXIMUM = 20;
+const ACTIVE_SEEDS_MINIMUM = 0;
+const ACTIVE_SEEDS_MAXIMUM = 500;
+const SEED_GOAL_MINIMUM = 0;
+const SEED_GOAL_MAXIMUM = 2_147_483_647;
 const DEFAULT_UPLOAD_RATE_KIB = "1024";
 const DEFAULT_DOWNLOAD_RATE_KIB = "4096";
 
@@ -59,6 +64,10 @@ interface DraftValidation {
   readonly peerLimitError: string | null;
   readonly uploadSlotsError: string | null;
   readonly activeDownloadsError: string | null;
+  readonly activeSeedsError: string | null;
+  readonly shareRatioError: string | null;
+  readonly finishedDownloadRatioError: string | null;
+  readonly finishedTimeError: string | null;
   readonly uploadRateError: string | null;
   readonly downloadRateError: string | null;
 }
@@ -101,6 +110,10 @@ export function ConnectionSeedingSettingsSection({
         draft.peerLimit,
         draft.uploadSlots,
         draft.activeDownloads,
+        draft.activeSeeds,
+        draft.shareRatioLimit,
+        draft.finishedDownloadRatioLimit,
+        draft.finishedTimeLimit,
         uploadRate,
         downloadRate,
         draft.encryption,
@@ -281,6 +294,105 @@ export function ConnectionSeedingSettingsSection({
             dispatchDraft({ type: "edit", field: "activeDownloads", value })
           }
         />
+
+        <div
+          className={styles.settingGroup}
+          role="group"
+          aria-labelledby="seeding-priority-heading"
+        >
+          <div className={styles.settingHeading}>
+            <strong id="seeding-priority-heading">Automatic seeding priority</strong>
+            <span>
+              Goals rank completed torrents when active seed capacity is scarce.
+              Meeting a goal does not stop a torrent; it may keep seeding while
+              capacity is available.
+            </span>
+          </div>
+          <label className={styles.option}>
+            <input
+              type="checkbox"
+              checked={draft.activeSeeds.unlimited}
+              disabled={!manageable}
+              onChange={(event) =>
+                dispatchDraft({
+                  type: "edit",
+                  field: "activeSeeds",
+                  value: {
+                    ...draft.activeSeeds,
+                    unlimited: event.currentTarget.checked,
+                  },
+                })
+              }
+            />
+            <span>
+              <strong>Unlimited active seeds</strong>
+              <small>
+                Remove the seed-only limit. The fixed shared 500-torrent safety
+                ceiling still applies.
+              </small>
+            </span>
+          </label>
+          <NumberField
+            id="active-seeds"
+            label="Active seeds"
+            description="Completed torrents counted in the active seed queue. Zero keeps eligible seeds queued."
+            value={draft.activeSeeds.torrents}
+            minimum={ACTIVE_SEEDS_MINIMUM}
+            maximum={ACTIVE_SEEDS_MAXIMUM}
+            error={validation.activeSeedsError}
+            disabled={!manageable || draft.activeSeeds.unlimited}
+            onChange={(torrents) =>
+              dispatchDraft({
+                type: "edit",
+                field: "activeSeeds",
+                value: { ...draft.activeSeeds, torrents },
+              })
+            }
+          />
+          <NumberField
+            id="share-ratio-limit"
+            label="Share-ratio priority goal (%)"
+            description="Uploaded payload as a percentage of the larger of downloaded payload or full torrent size."
+            value={draft.shareRatioLimit}
+            minimum={SEED_GOAL_MINIMUM}
+            maximum={SEED_GOAL_MAXIMUM}
+            error={validation.shareRatioError}
+            disabled={!manageable}
+            onChange={(value) =>
+              dispatchDraft({ type: "edit", field: "shareRatioLimit", value })
+            }
+          />
+          <NumberField
+            id="finished-download-ratio-limit"
+            label="Finished/download time priority goal (%)"
+            description="Finished active time as a percentage of active download time."
+            value={draft.finishedDownloadRatioLimit}
+            minimum={SEED_GOAL_MINIMUM}
+            maximum={SEED_GOAL_MAXIMUM}
+            error={validation.finishedDownloadRatioError}
+            disabled={!manageable}
+            onChange={(value) =>
+              dispatchDraft({
+                type: "edit",
+                field: "finishedDownloadRatioLimit",
+                value,
+              })
+            }
+          />
+          <NumberField
+            id="finished-time-limit"
+            label="Finished-time priority goal (seconds)"
+            description="Cumulative active finished time. Reaching any one priority goal marks the seeding goal met."
+            value={draft.finishedTimeLimit}
+            minimum={SEED_GOAL_MINIMUM}
+            maximum={SEED_GOAL_MAXIMUM}
+            error={validation.finishedTimeError}
+            disabled={!manageable}
+            onChange={(value) =>
+              dispatchDraft({ type: "edit", field: "finishedTimeLimit", value })
+            }
+          />
+        </div>
 
         <div
           className={styles.settingGroup}
@@ -711,6 +823,12 @@ function RuntimeState({ settings }: { readonly settings: ClientSettingsRuntimeVi
           ? "."
           : ` · ${settings.checking_count} checking.`}
       </span>
+      <span>
+        Active seeds: {settings.active_seed_count} counted of {activeSeedLimitLabel(settings.effective_active_seeds)}
+        {settings.inactive_seed_count === 0
+          ? "."
+          : ` · ${settings.inactive_seed_count} active but inactive-exempt.`}
+      </span>
       {settings.active_downloads_clamp_reason === "platform_limit" ? (
         <span>
           The configured {settings.configured.active_downloads}-download setting is limited to {settings.effective_active_downloads} on this platform.
@@ -724,6 +842,10 @@ function RuntimeState({ settings }: { readonly settings: ClientSettingsRuntimeVi
       </span>
     </div>
   );
+}
+
+function activeSeedLimitLabel(limit: ActiveSeedLimit): string {
+  return limit.type === "unlimited" ? "Unlimited" : String(limit.torrents);
 }
 
 function listenerPolicyLabel(listener: ListenerPolicy): string {
@@ -937,6 +1059,11 @@ interface RateLimitDraftField {
   readonly valueKiB: string;
 }
 
+interface ActiveSeedDraftField {
+  readonly unlimited: boolean;
+  readonly torrents: string;
+}
+
 interface ListenerDraftField {
   readonly mode: ListenerMode;
   readonly fixedPort: string;
@@ -949,6 +1076,10 @@ interface ClientSettingsDraft {
   readonly peerLimit: string;
   readonly uploadSlots: string;
   readonly activeDownloads: string;
+  readonly activeSeeds: ActiveSeedDraftField;
+  readonly shareRatioLimit: string;
+  readonly finishedDownloadRatioLimit: string;
+  readonly finishedTimeLimit: string;
   readonly uploadRate: RateLimitDraftField;
   readonly downloadRate: RateLimitDraftField;
   readonly encryption: EncryptionPolicy;
@@ -964,6 +1095,12 @@ const CLIENT_SETTINGS_COMPARATORS: SettingsDraftComparators<ClientSettingsDraft>
   peerLimit: Object.is,
   uploadSlots: Object.is,
   activeDownloads: Object.is,
+  activeSeeds: (left, right) =>
+    left.unlimited === right.unlimited &&
+    (left.unlimited || left.torrents === right.torrents),
+  shareRatioLimit: Object.is,
+  finishedDownloadRatioLimit: Object.is,
+  finishedTimeLimit: Object.is,
   uploadRate: sameRateLimitDraftField,
   downloadRate: sameRateLimitDraftField,
   encryption: Object.is,
@@ -983,6 +1120,18 @@ function clientSettingsDraft(settings: ClientSettings): ClientSettingsDraft {
     peerLimit: String(settings.peer_connection_limit),
     uploadSlots: String(settings.upload_slots),
     activeDownloads: String(settings.active_downloads),
+    activeSeeds: {
+      unlimited: settings.active_seeds.type === "unlimited",
+      torrents:
+        settings.active_seeds.type === "limited"
+          ? String(settings.active_seeds.torrents)
+          : "5",
+    },
+    shareRatioLimit: String(settings.share_ratio_limit_percent),
+    finishedDownloadRatioLimit: String(
+      settings.finished_download_ratio_limit_percent,
+    ),
+    finishedTimeLimit: String(settings.finished_time_limit_seconds),
     uploadRate: {
       unlimited: settings.upload_rate_limit.type === "unlimited",
       valueKiB: rateLimitDraftValue(
@@ -1032,6 +1181,21 @@ function clientSettingsPatch(
     ...(fields.includes("activeDownloads")
       ? { active_downloads: settings.active_downloads }
       : {}),
+    ...(fields.includes("activeSeeds")
+      ? { active_seeds: settings.active_seeds }
+      : {}),
+    ...(fields.includes("shareRatioLimit")
+      ? { share_ratio_limit_percent: settings.share_ratio_limit_percent }
+      : {}),
+    ...(fields.includes("finishedDownloadRatioLimit")
+      ? {
+          finished_download_ratio_limit_percent:
+            settings.finished_download_ratio_limit_percent,
+        }
+      : {}),
+    ...(fields.includes("finishedTimeLimit")
+      ? { finished_time_limit_seconds: settings.finished_time_limit_seconds }
+      : {}),
     ...(fields.includes("uploadRate")
       ? { upload_rate_limit: settings.upload_rate_limit }
       : {}),
@@ -1069,6 +1233,10 @@ function validateDraft(
   peerLimit: string,
   uploadSlots: string,
   activeDownloads: string,
+  activeSeeds: ActiveSeedDraftField,
+  shareRatioLimit: string,
+  finishedDownloadRatioLimit: string,
+  finishedTimeLimit: string,
   uploadRate: RateLimitValidation,
   downloadRate: RateLimitValidation,
   encryption: EncryptionPolicy,
@@ -1100,6 +1268,26 @@ function validateDraft(
     ACTIVE_DOWNLOADS_MINIMUM,
     ACTIVE_DOWNLOADS_MAXIMUM,
   );
+  const seeds = parseBoundedInteger(
+    activeSeeds.torrents,
+    ACTIVE_SEEDS_MINIMUM,
+    ACTIVE_SEEDS_MAXIMUM,
+  );
+  const shareRatio = parseBoundedInteger(
+    shareRatioLimit,
+    SEED_GOAL_MINIMUM,
+    SEED_GOAL_MAXIMUM,
+  );
+  const finishedDownloadRatio = parseBoundedInteger(
+    finishedDownloadRatioLimit,
+    SEED_GOAL_MINIMUM,
+    SEED_GOAL_MAXIMUM,
+  );
+  const finishedTime = parseBoundedInteger(
+    finishedTimeLimit,
+    SEED_GOAL_MINIMUM,
+    SEED_GOAL_MAXIMUM,
+  );
   const fixedPortError =
     !isFixedListenerMode(listenerMode)
       ? null
@@ -1122,12 +1310,34 @@ function validateDraft(
     downloads === null
       ? `Enter a whole number from ${ACTIVE_DOWNLOADS_MINIMUM} to ${ACTIVE_DOWNLOADS_MAXIMUM}.`
       : null;
+  const activeSeedsError =
+    activeSeeds.unlimited || seeds !== null
+      ? null
+      : `Enter a whole number from ${ACTIVE_SEEDS_MINIMUM} to ${ACTIVE_SEEDS_MAXIMUM}.`;
+  const shareRatioError =
+    shareRatio === null
+      ? `Enter a whole number from ${SEED_GOAL_MINIMUM} to ${SEED_GOAL_MAXIMUM}.`
+      : null;
+  const finishedDownloadRatioError =
+    finishedDownloadRatio === null
+      ? `Enter a whole number from ${SEED_GOAL_MINIMUM} to ${SEED_GOAL_MAXIMUM}.`
+      : null;
+  const finishedTimeError =
+    finishedTime === null
+      ? `Enter a whole number from ${SEED_GOAL_MINIMUM} to ${SEED_GOAL_MAXIMUM}.`
+      : null;
   if (
     preferredPortError !== null ||
     fixedPortError !== null ||
     peerLimitError !== null ||
-    uploadSlotsError !== null
-    || activeDownloadsError !== null || uploadRate.error !== null || downloadRate.error !== null
+    uploadSlotsError !== null ||
+    activeDownloadsError !== null ||
+    activeSeedsError !== null ||
+    shareRatioError !== null ||
+    finishedDownloadRatioError !== null ||
+    finishedTimeError !== null ||
+    uploadRate.error !== null ||
+    downloadRate.error !== null
   ) {
     return {
       settings: null,
@@ -1136,6 +1346,10 @@ function validateDraft(
       peerLimitError,
       uploadSlotsError,
       activeDownloadsError,
+      activeSeedsError,
+      shareRatioError,
+      finishedDownloadRatioError,
+      finishedTimeError,
       uploadRateError: uploadRate.error,
       downloadRateError: downloadRate.error,
     };
@@ -1151,6 +1365,12 @@ function validateDraft(
       peer_connection_limit: peers as number,
       upload_slots: slots as number,
       active_downloads: downloads as number,
+      active_seeds: activeSeeds.unlimited
+        ? { type: "unlimited" }
+        : { type: "limited", torrents: seeds as number },
+      share_ratio_limit_percent: shareRatio as number,
+      finished_download_ratio_limit_percent: finishedDownloadRatio as number,
+      finished_time_limit_seconds: finishedTime as number,
       upload_rate_limit: uploadRate.limit as TransferRateLimit,
       download_rate_limit: downloadRate.limit as TransferRateLimit,
       encryption,
@@ -1162,6 +1382,10 @@ function validateDraft(
     peerLimitError: null,
     uploadSlotsError: null,
     activeDownloadsError: null,
+    activeSeedsError: null,
+    shareRatioError: null,
+    finishedDownloadRatioError: null,
+    finishedTimeError: null,
     uploadRateError: null,
     downloadRateError: null,
   };

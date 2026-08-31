@@ -364,6 +364,9 @@ fn eta_durable(
                 verified_required_payload_bytes,
             }),
             trackers: TrackerViewModel::default(),
+            total_size: 0,
+            lifetime: Default::default(),
+            seeding: Default::default(),
         },
     )])
 }
@@ -1285,6 +1288,9 @@ fn durable_replacement_preserves_exact_have_ranges() {
                 files: None,
                 eta_geometry: None,
                 trackers: TrackerViewModel::default(),
+                total_size: 0,
+                lifetime: Default::default(),
+                seeding: Default::default(),
             },
         )]),
     )
@@ -1336,6 +1342,9 @@ async fn source_name_is_provisional_until_verified_metadata_patches_both_summari
                 files: None,
                 eta_geometry: None,
                 trackers: TrackerViewModel::default(),
+                total_size: 0,
+                lifetime: Default::default(),
+                seeding: Default::default(),
             },
         )]),
     )
@@ -1382,6 +1391,9 @@ async fn source_name_is_provisional_until_verified_metadata_patches_both_summari
                 files: None,
                 eta_geometry: None,
                 trackers: TrackerViewModel::default(),
+                total_size: 0,
+                lifetime: Default::default(),
+                seeding: Default::default(),
             },
         )]),
     )

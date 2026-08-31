@@ -1503,6 +1503,15 @@ function torrent(): TorrentView {
     remaining_payload_bytes: "98304",
     eta_payload_download_rate_bytes: "4096",
     eta: { state: "estimate", seconds: "24" },
+    lifetime: {
+      uploaded_payload_bytes: "0",
+      downloaded_payload_bytes: "16384",
+      active_seconds: "1",
+      finished_seconds: "0",
+      seeding_seconds: "0",
+      share_ratio_hundredths: "0",
+    },
+    seeding: { admission: "ineligible" },
     progress: {
       disposition: "active",
       phase: "transfer",

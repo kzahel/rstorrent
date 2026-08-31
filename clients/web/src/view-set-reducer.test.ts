@@ -39,6 +39,27 @@ function torrent(verified: number): TorrentView {
       verified === 3
         ? { state: "unavailable" }
         : { state: "estimate", seconds: "8" },
+    lifetime: {
+      uploaded_payload_bytes: "0",
+      downloaded_payload_bytes: "16384",
+      active_seconds: "0",
+      finished_seconds: "0",
+      seeding_seconds: "0",
+      share_ratio_hundredths: "0",
+    },
+    seeding: {
+      admission: verified === 3 ? "active" : "ineligible",
+      ...(verified === 3
+        ? {
+            goal: {
+              status: "met" as const,
+              share_ratio_met: true,
+              finished_download_ratio_met: false,
+              finished_time_met: false,
+            },
+          }
+        : {}),
+    },
     progress: {
       disposition: verified === 3 ? "inactive" : "active",
       phase: verified === 3 ? "complete" : "transfer",
@@ -410,6 +431,10 @@ describe("view-set reducer", () => {
       peer_connection_limit: 320,
       upload_slots: 12,
       active_downloads: 3,
+      active_seeds: { type: "limited" as const, torrents: 5 },
+      share_ratio_limit_percent: 200,
+      finished_download_ratio_limit_percent: 700,
+      finished_time_limit_seconds: 86_400,
       upload_rate_limit: { type: "unlimited" as const },
       download_rate_limit: { type: "unlimited" as const },
       encryption: "allow" as const,

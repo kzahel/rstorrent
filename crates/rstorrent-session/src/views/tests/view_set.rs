@@ -52,6 +52,8 @@ fn torrent_view(id: &str, verified: u32) -> TorrentView {
         remaining_payload_bytes: None,
         eta_payload_download_rate_bytes: "0".to_owned(),
         eta: TorrentEtaView::Unavailable,
+        lifetime: Default::default(),
+        seeding: Default::default(),
         progress: ProgressAssessment {
             disposition: ProgressDisposition::Active,
             phase: ProgressPhase::Transfer,

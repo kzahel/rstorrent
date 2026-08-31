@@ -61,7 +61,7 @@ use crate::media::{
 };
 use crate::seed_policy::{
     AUTO_MANAGE_INTERVAL_SECONDS, HARD_ACTIVE_TORRENT_LIMIT, InactivityState, SeedGoalInput,
-    SeedGoalLimits, SeedRankInput, rate_is_inactive, seed_rank,
+    SeedGoalLimits, SeedRankInput, assess_seed_goals, rate_is_inactive, seed_rank,
 };
 use crate::session_network::{SessionNetworkConfig, SessionNetworkError, SessionNetworkRuntime};
 use crate::settings::{StorageRootSnapshot, TorrentTransferLimits};
@@ -4574,10 +4574,65 @@ impl ApplicationService {
     }
 
     fn refresh_views(&self) -> Result<(), ApplicationError> {
-        let (snapshot, durable) = {
+        let (snapshot, mut durable) = {
             let store = self.store_mut()?;
             durable_view_state(&store, &self.storage_roots)?
         };
+        let goal_limits = SeedGoalLimits {
+            share_ratio_limit_percent: snapshot.client_settings.share_ratio_limit_percent,
+            finished_download_ratio_limit_percent: snapshot
+                .client_settings
+                .finished_download_ratio_limit_percent,
+            finished_time_limit_seconds: snapshot.client_settings.finished_time_limit_seconds,
+        };
+        let mut active_seed_count = 0_usize;
+        let mut inactive_seed_count = 0_usize;
+        for torrent in &snapshot.torrents {
+            let Some(state) = durable.get_mut(&torrent.torrent_id) else {
+                continue;
+            };
+            let accounting = if let Some(runtime) = self.torrent_runtimes.get(&torrent.torrent_id) {
+                self.accounting
+                    .current(
+                        runtime.handle().identity().torrent_id(),
+                        runtime.generation(),
+                    )
+                    .map_err(|error| ApplicationError::Persistence(error.to_string()))?
+            } else {
+                continue;
+            };
+            state.lifetime = torrent_lifetime_view(accounting, state.total_size);
+            if torrent.state != TorrentState::Complete {
+                continue;
+            }
+            state.seeding.goal = Some(torrent_seed_goal_view(
+                accounting,
+                state.total_size,
+                goal_limits,
+            )?);
+            state.seeding.admission = if self.admitted_seeds.contains(&torrent.torrent_id) {
+                let inactive =
+                    self.torrent_runtimes
+                        .get(&torrent.torrent_id)
+                        .is_some_and(|runtime| {
+                            self.torrent_inactive(&torrent.torrent_id, runtime.generation())
+                        });
+                if inactive {
+                    inactive_seed_count = inactive_seed_count.saturating_add(1);
+                    crate::SeedAdmissionView::InactiveExempt
+                } else {
+                    active_seed_count = active_seed_count.saturating_add(1);
+                    crate::SeedAdmissionView::Active
+                }
+            } else if torrent.desired_running
+                && !torrent.archived
+                && torrent.removal_state.is_none()
+            {
+                crate::SeedAdmissionView::Queued
+            } else {
+                crate::SeedAdmissionView::Ineligible
+            };
+        }
         self.views.replace_durable(&snapshot, &durable)?;
         let configured_limit = snapshot.client_settings.active_downloads;
         let effective_limit = configured_limit.min(self.active_download_cap.unwrap_or(u16::MAX));
@@ -4600,6 +4655,11 @@ impl ApplicationService {
             clamp_reason,
             u16::try_from(active_download_count).unwrap_or(u16::MAX),
             u16::try_from(checking_count).unwrap_or(u16::MAX),
+        )?;
+        self.views.set_seed_admission_state(
+            snapshot.client_settings.active_seeds,
+            u16::try_from(active_seed_count).unwrap_or(u16::MAX),
+            u16::try_from(inactive_seed_count).unwrap_or(u16::MAX),
         )?;
         self.views
             .set_waiting_for_unmetered_network(!self.network_prerequisite.load().is_allowed())?;
@@ -6521,6 +6581,51 @@ fn storage_root_label(path: &Path) -> String {
     label
 }
 
+fn torrent_lifetime_view(
+    accounting: crate::store::TorrentAccounting,
+    total_size: u64,
+) -> crate::TorrentLifetimeView {
+    let downloaded_base = accounting.total_downloaded.max(total_size);
+    crate::TorrentLifetimeView {
+        uploaded_payload_bytes: accounting.total_uploaded.to_string(),
+        downloaded_payload_bytes: accounting.total_downloaded.to_string(),
+        active_seconds: accounting.active_seconds.to_string(),
+        finished_seconds: accounting.finished_seconds.to_string(),
+        seeding_seconds: accounting.seeding_seconds.to_string(),
+        share_ratio_hundredths: (downloaded_base != 0).then(|| {
+            (u128::from(accounting.total_uploaded) * 100 / u128::from(downloaded_base)).to_string()
+        }),
+    }
+}
+
+fn torrent_seed_goal_view(
+    accounting: crate::store::TorrentAccounting,
+    total_size: u64,
+    limits: SeedGoalLimits,
+) -> Result<crate::SeedGoalView, ApplicationError> {
+    let goals = assess_seed_goals(
+        SeedGoalInput {
+            total_uploaded: accounting.total_uploaded,
+            total_downloaded: accounting.total_downloaded,
+            total_size,
+            active_seconds: accounting.active_seconds,
+            finished_seconds: accounting.finished_seconds,
+        },
+        limits,
+    )
+    .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+    Ok(crate::SeedGoalView {
+        status: if goals.goal_unmet {
+            crate::SeedGoalStatusView::Unmet
+        } else {
+            crate::SeedGoalStatusView::Met
+        },
+        share_ratio_met: goals.share_ratio_met,
+        finished_download_ratio_met: goals.finished_download_ratio_met,
+        finished_time_met: goals.finished_time_met,
+    })
+}
+
 fn durable_view_state(
     store: &SessionStore,
     storage_roots: &BTreeMap<String, StorageRootLocation>,
@@ -6534,6 +6639,13 @@ fn durable_view_state(
     let mut snapshot = store.snapshot()?;
     apply_runtime_storage_availability(&mut snapshot, storage_roots);
     let tracker_https_authentication = store.client_settings()?.tracker_https_server_authentication;
+    let goal_limits = SeedGoalLimits {
+        share_ratio_limit_percent: snapshot.client_settings.share_ratio_limit_percent,
+        finished_download_ratio_limit_percent: snapshot
+            .client_settings
+            .finished_download_ratio_limit_percent,
+        finished_time_limit_seconds: snapshot.client_settings.finished_time_limit_seconds,
+    };
     let mut durable = BTreeMap::new();
     for torrent in &snapshot.torrents {
         let Ok(resume) = store.load_resume(&torrent.torrent_id) else {
@@ -6547,6 +6659,9 @@ fn durable_view_state(
                     files: None,
                     eta_geometry: None,
                     trackers: TrackerViewModel::default(),
+                    total_size: 0,
+                    lifetime: crate::TorrentLifetimeView::default(),
+                    seeding: crate::TorrentSeedingView::default(),
                 },
             );
             continue;
@@ -6593,6 +6708,29 @@ fn durable_view_state(
             .map(|(files, have)| files.required_payload_geometry(have.pieces()))
             .transpose()
             .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+        let total_size = content
+            .as_ref()
+            .map(|content| ContentLayout::from_content(content).total_length())
+            .unwrap_or(0);
+        let seeding = if torrent.state == TorrentState::Complete {
+            crate::TorrentSeedingView {
+                admission: if torrent.desired_running
+                    && !torrent.archived
+                    && torrent.removal_state.is_none()
+                {
+                    crate::SeedAdmissionView::Queued
+                } else {
+                    crate::SeedAdmissionView::Ineligible
+                },
+                goal: Some(torrent_seed_goal_view(
+                    resume.accounting,
+                    total_size,
+                    goal_limits,
+                )?),
+            }
+        } else {
+            crate::TorrentSeedingView::default()
+        };
         durable.insert(
             torrent.torrent_id.clone(),
             DurableTorrentViewState {
@@ -6606,6 +6744,9 @@ fn durable_view_state(
                 files,
                 eta_geometry,
                 trackers,
+                total_size,
+                lifetime: torrent_lifetime_view(resume.accounting, total_size),
+                seeding,
             },
         );
     }
@@ -7430,6 +7571,36 @@ mod tests {
             panic!("expected torrent-list client settings snapshot");
         };
         client_settings
+    }
+
+    async fn torrent_summary(service: &ApplicationService, torrent_id: &str) -> crate::TorrentView {
+        let subscription = service
+            .subscribe(SubscriptionSpec {
+                selector: ViewSelector::Torrent {
+                    torrent_id: torrent_id.to_owned(),
+                },
+                projection: ViewProjection::Summary,
+                delivery: DeliveryPolicy {
+                    min_interval_millis: 0,
+                    max_queue_bytes: 8 * 1_024,
+                },
+                diagnostics: None,
+                catalog_page: None,
+            })
+            .expect("subscribe to torrent summary");
+        let update = subscription
+            .next_update()
+            .await
+            .expect("initial torrent summary snapshot");
+        let ViewUpdatePayload::Snapshot {
+            snapshot: ViewSnapshot::Torrent {
+                torrent: Some(torrent),
+            },
+        } = update.payload
+        else {
+            panic!("expected selected torrent summary snapshot");
+        };
+        torrent
     }
 
     async fn dht_runtime(service: &ApplicationService) -> crate::DhtInspectionView {
@@ -8509,6 +8680,41 @@ mod tests {
             service.admitted_seeds,
             [initially_goal_unmet.0.clone()].into_iter().collect()
         );
+        let runtime = client_settings_runtime(&service).await;
+        assert_eq!(
+            runtime.effective_active_seeds,
+            crate::ActiveSeedLimit::Limited { torrents: 1 }
+        );
+        assert_eq!(runtime.active_seed_count, 1);
+        assert_eq!(runtime.inactive_seed_count, 0);
+        let active_view = torrent_summary(&service, &initially_goal_unmet.0).await;
+        assert_eq!(
+            active_view.operational_state,
+            crate::TorrentOperationalState::Seeding
+        );
+        assert_eq!(active_view.lifetime.uploaded_payload_bytes, "13");
+        assert_eq!(active_view.lifetime.downloaded_payload_bytes, "7");
+        assert_eq!(
+            active_view.lifetime.share_ratio_hundredths.as_deref(),
+            Some("185")
+        );
+        assert_eq!(
+            active_view.seeding.admission,
+            crate::SeedAdmissionView::Active
+        );
+        assert_eq!(
+            active_view.seeding.goal.as_ref().map(|goal| goal.status),
+            Some(crate::SeedGoalStatusView::Unmet)
+        );
+        let queued_view = torrent_summary(&service, &preferred.0).await;
+        assert_eq!(
+            queued_view.operational_state,
+            crate::TorrentOperationalState::Queued
+        );
+        assert_eq!(
+            queued_view.seeding.admission,
+            crate::SeedAdmissionView::Queued
+        );
         let generations = service
             .torrent_runtimes
             .iter()
@@ -8564,6 +8770,23 @@ mod tests {
             service.admitted_seeds,
             [preferred.0.clone()].into_iter().collect()
         );
+        let crossed_view = torrent_summary(&service, &initially_goal_unmet.0).await;
+        assert_eq!(
+            crossed_view.operational_state,
+            crate::TorrentOperationalState::Queued
+        );
+        assert_eq!(crossed_view.lifetime.uploaded_payload_bytes, "14");
+        assert_eq!(
+            crossed_view.lifetime.share_ratio_hundredths.as_deref(),
+            Some("200")
+        );
+        assert_eq!(
+            crossed_view.seeding.admission,
+            crate::SeedAdmissionView::Queued
+        );
+        let crossed_goal = crossed_view.seeding.goal.expect("completed seed goal");
+        assert_eq!(crossed_goal.status, crate::SeedGoalStatusView::Met);
+        assert!(crossed_goal.share_ratio_met);
         service
             .maintain_accounting(true)
             .expect("flush crossed seed goal accounting");
@@ -8611,6 +8834,10 @@ mod tests {
                 .expect("apply active-seed limit");
             wait_for_seed_registrations(&service, expected).await;
             assert_eq!(service.admitted_seeds.len(), expected);
+            let runtime = client_settings_runtime(&service).await;
+            assert_eq!(runtime.effective_active_seeds, limit);
+            assert_eq!(runtime.active_seed_count, expected as u16);
+            assert_eq!(runtime.inactive_seed_count, 0);
         }
         assert_eq!(
             service.admitted_seeds,
@@ -8748,6 +8975,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn serve_restartable_two_piece_peer(
         listener: TcpListener,
         info_hash: [u8; 20],

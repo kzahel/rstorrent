@@ -223,6 +223,62 @@ describe("inspection application", () => {
     expect(progress).toHaveAttribute("data-indeterminate", "true");
   });
 
+  it("shows truthful queued seed accounting and priority goals", async () => {
+    const user = userEvent.setup();
+    const source = buildScenarioSnapshot("healthy-download", 42_000, false, 1);
+    const torrent = source.torrents[DEMO_PRIMARY_TORRENT_ID]!;
+    const snapshot = {
+      ...source,
+      demo: null,
+      torrents: {
+        ...source.torrents,
+        [DEMO_PRIMARY_TORRENT_ID]: {
+          ...torrent,
+          status: "complete" as const,
+          operationalState: "queued" as const,
+          progress: 1,
+          lifetimeUploadedBytes: "14",
+          lifetimeDownloadedBytes: "7",
+          activeSeconds: "1801",
+          finishedSeconds: "100",
+          seedingSeconds: "90",
+          shareRatioHundredths: "200",
+          seedAdmission: "queued" as const,
+          seedGoal: {
+            status: "met" as const,
+            share_ratio_met: true,
+            finished_download_ratio_met: false,
+            finished_time_met: false,
+          },
+        },
+      },
+    };
+    renderApplication(
+      new RecordingLiveApplication({ type: "snapshot", snapshot }),
+    );
+    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(screen.getByRole("tab", { name: "General" }));
+    const detail = screen.getByRole("region", { name: "Torrent details" });
+    expect(within(detail).getByText("Status").parentElement).toHaveTextContent(
+      "Statusqueued",
+    );
+    expect(
+      within(detail).getByText("Lifetime uploaded").parentElement,
+    ).toHaveTextContent("14 B");
+    expect(within(detail).getByText("Share ratio").parentElement).toHaveTextContent(
+      "2.00",
+    );
+    expect(within(detail).getByText("Active time").parentElement).toHaveTextContent(
+      "30m 1s",
+    );
+    expect(
+      within(detail).getByText("Seeding priority").parentElement,
+    ).toHaveTextContent("queued seed · goal met");
+    expect(
+      within(detail).getByText(/a goal-met torrent may keep seeding/i),
+    ).toHaveTextContent("Met thresholds: share ratio");
+  });
+
   it("saves one atomic per-torrent upload and download limit pair", async () => {
     const user = userEvent.setup();
     const snapshot = {
@@ -2763,6 +2819,34 @@ describe("inspection application", () => {
     });
     await user.clear(activeDownloads);
     await user.type(activeDownloads, "4");
+    expect(
+      within(dialog).getByText(/Meeting a goal does not stop a torrent/i),
+    ).toBeVisible();
+    const activeSeeds = within(dialog).getByRole("spinbutton", {
+      name: "Active seeds",
+    });
+    expect(activeSeeds).toHaveValue(5);
+    await user.click(
+      within(dialog).getByRole("checkbox", {
+        name: /Unlimited active seeds/,
+      }),
+    );
+    expect(activeSeeds).toBeDisabled();
+    const shareRatio = within(dialog).getByRole("spinbutton", {
+      name: "Share-ratio priority goal (%)",
+    });
+    await user.clear(shareRatio);
+    await user.type(shareRatio, "250");
+    const finishedDownloadRatio = within(dialog).getByRole("spinbutton", {
+      name: "Finished/download time priority goal (%)",
+    });
+    await user.clear(finishedDownloadRatio);
+    await user.type(finishedDownloadRatio, "800");
+    const finishedTime = within(dialog).getByRole("spinbutton", {
+      name: "Finished-time priority goal (seconds)",
+    });
+    await user.clear(finishedTime);
+    await user.type(finishedTime, "90000");
     await user.click(
       within(dialog).getByRole("checkbox", {
         name: "All torrents upload limit unlimited",
@@ -2808,6 +2892,10 @@ describe("inspection application", () => {
           peer_connection_limit: 2000,
           upload_slots: 0,
           active_downloads: 4,
+          active_seeds: { type: "unlimited" },
+          share_ratio_limit_percent: 250,
+          finished_download_ratio_limit_percent: 800,
+          finished_time_limit_seconds: 90_000,
           upload_rate_limit: {
             type: "limited",
             bytes_per_second: 65_536,
@@ -2837,6 +2925,10 @@ describe("inspection application", () => {
           peer_connection_limit: 2000,
           upload_slots: 0,
           active_downloads: 4,
+          active_seeds: { type: "unlimited" },
+          share_ratio_limit_percent: 250,
+          finished_download_ratio_limit_percent: 800,
+          finished_time_limit_seconds: 90_000,
           encryption: "prefer",
           ipv6_enabled: false,
           tracker_https_server_authentication: "system_trust",
@@ -2882,6 +2974,10 @@ describe("inspection application", () => {
       peer_connection_limit: 200,
       upload_slots: 8,
       active_downloads: 3,
+      active_seeds: { type: "limited" as const, torrents: 5 },
+      share_ratio_limit_percent: 200,
+      finished_download_ratio_limit_percent: 700,
+      finished_time_limit_seconds: 86_400,
       upload_rate_limit: { type: "unlimited" as const },
       download_rate_limit: { type: "unlimited" as const },
       encryption: "allow" as const,
@@ -2910,10 +3006,13 @@ describe("inspection application", () => {
           effective_peer_connection_limit: 200,
           effective_upload_slots: 8,
           effective_active_downloads: 3,
+          effective_active_seeds: { type: "limited", torrents: 5 },
           effective_upload_rate_limit: { type: "unlimited" },
           effective_download_rate_limit: { type: "unlimited" },
           active_download_count: 0,
           checking_count: 0,
+          active_seed_count: 0,
+          inactive_seed_count: 0,
           effective_encryption: "allow",
           effective_ipv6_enabled: true,
           effective_tracker_https_server_authentication: "system_trust",

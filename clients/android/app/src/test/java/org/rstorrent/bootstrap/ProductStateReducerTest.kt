@@ -6,6 +6,7 @@ import org.junit.Test
 import org.rstorrent.bootstrap.uniffi.SafStorageObjectKind
 import org.rstorrent.session.uniffi.ActivePiece
 import org.rstorrent.session.uniffi.ActivePieceStageView
+import org.rstorrent.session.uniffi.ActiveSeedLimit
 import org.rstorrent.session.uniffi.AdvertisedPeerEndpointStatus
 import org.rstorrent.session.uniffi.ApplicationNetworkPrerequisiteView
 import org.rstorrent.session.uniffi.ApplicationNetworkRuntimeState
@@ -45,6 +46,9 @@ import org.rstorrent.session.uniffi.ProgressAssessment
 import org.rstorrent.session.uniffi.ProgressDisposition
 import org.rstorrent.session.uniffi.ProgressPhase
 import org.rstorrent.session.uniffi.ProgressReason
+import org.rstorrent.session.uniffi.SeedAdmissionView
+import org.rstorrent.session.uniffi.SeedGoalStatusView
+import org.rstorrent.session.uniffi.SeedGoalView
 import org.rstorrent.session.uniffi.SessionUdpStatus
 import org.rstorrent.session.uniffi.SessionCurrentRatesView
 import org.rstorrent.session.uniffi.SpeedCurrentRate
@@ -62,10 +66,12 @@ import org.rstorrent.session.uniffi.SubscriptionSpec
 import org.rstorrent.session.uniffi.TorrentEtaView
 import org.rstorrent.session.uniffi.TorrentFieldUpdate
 import org.rstorrent.session.uniffi.TorrentOperationalState
+import org.rstorrent.session.uniffi.TorrentLifetimeView
 import org.rstorrent.session.uniffi.TorrentProtocolIdentities
 import org.rstorrent.session.uniffi.TorrentRowUpdate
 import org.rstorrent.session.uniffi.TorrentState
 import org.rstorrent.session.uniffi.TorrentTransferLimits
+import org.rstorrent.session.uniffi.TorrentSeedingView
 import org.rstorrent.session.uniffi.TorrentView
 import org.rstorrent.session.uniffi.TransferRateLimit
 import org.rstorrent.session.uniffi.ViewPatch
@@ -252,6 +258,10 @@ class ProductStateReducerTest {
                 peerConnectionLimit = 2_000U,
                 uploadSlots = 50U.toUShort(),
                 activeDownloads = 20U.toUShort(),
+                activeSeeds = ActiveSeedLimit.Limited(500U.toUShort()),
+                shareRatioLimitPercent = UInt.MAX_VALUE,
+                finishedDownloadRatioLimitPercent = UInt.MAX_VALUE,
+                finishedTimeLimitSeconds = UInt.MAX_VALUE,
                 uploadRateLimit = TransferRateLimit.Limited(1_024U),
                 downloadRateLimit = TransferRateLimit.Unlimited,
                 encryption = EncryptionPolicy.REQUIRED,
@@ -261,11 +271,19 @@ class ProductStateReducerTest {
 
         val patch = clientSettingsPatch(
             peerConnectionLimit = settings.peerConnectionLimit,
+            activeSeeds = ActiveSeedLimit.Unlimited,
+            shareRatioLimitPercent = 250U,
+            finishedDownloadRatioLimitPercent = 800U,
+            finishedTimeLimitSeconds = 90_000U,
             encryption = settings.encryption,
         )
         val command = Command.UpdateClientSettings(patch)
         assertEquals(2_000U, command.patch.peerConnectionLimit)
         assertEquals(EncryptionPolicy.REQUIRED, command.patch.encryption)
+        assertEquals(ActiveSeedLimit.Unlimited, command.patch.activeSeeds)
+        assertEquals(250U, command.patch.shareRatioLimitPercent)
+        assertEquals(800U, command.patch.finishedDownloadRatioLimitPercent)
+        assertEquals(90_000U, command.patch.finishedTimeLimitSeconds)
         assertEquals(null, command.patch.uploadSlots)
         assertEquals(settings, clientSettings(settings).configured)
     }
@@ -774,6 +792,27 @@ class ProductStateReducerTest {
                                             TorrentFieldUpdate.DisplayName(null),
                                             TorrentFieldUpdate.TotalSizeBytes(null),
                                             TorrentFieldUpdate.PayloadDownloadRateBytes("4096"),
+                                            TorrentFieldUpdate.Lifetime(
+                                                TorrentLifetimeView(
+                                                    "14",
+                                                    "7",
+                                                    "1801",
+                                                    "100",
+                                                    "90",
+                                                    "200",
+                                                ),
+                                            ),
+                                            TorrentFieldUpdate.Seeding(
+                                                TorrentSeedingView(
+                                                    SeedAdmissionView.QUEUED,
+                                                    SeedGoalView(
+                                                        SeedGoalStatusView.MET,
+                                                        true,
+                                                        false,
+                                                        false,
+                                                    ),
+                                                ),
+                                            ),
                                         ),
                                     ),
                                 ),
@@ -788,6 +827,8 @@ class ProductStateReducerTest {
         assertEquals(null, patched.torrents.getValue("first").displayName)
         assertEquals(null, patched.torrents.getValue("first").totalSizeBytes)
         assertEquals("4096", patched.torrents.getValue("first").payloadDownloadRateBytes)
+        assertEquals("14", patched.torrents.getValue("first").lifetime.uploadedPayloadBytes)
+        assertEquals(SeedAdmissionView.QUEUED, patched.torrents.getValue("first").seeding.admission)
 
         assertThrows(ViewContinuityException::class.java) {
             ProductStateReducer.reduce(
@@ -1018,6 +1059,10 @@ class ProductStateReducerTest {
                 peerConnectionLimit = 200U,
                 uploadSlots = 8U.toUShort(),
                 activeDownloads = 3U.toUShort(),
+                activeSeeds = ActiveSeedLimit.Limited(5U.toUShort()),
+                shareRatioLimitPercent = 200U,
+                finishedDownloadRatioLimitPercent = 700U,
+                finishedTimeLimitSeconds = 86_400U,
                 uploadRateLimit = TransferRateLimit.Unlimited,
                 downloadRateLimit = TransferRateLimit.Unlimited,
                 encryption = EncryptionPolicy.ALLOW,
@@ -1045,11 +1090,14 @@ class ProductStateReducerTest {
             effectivePeerConnectionLimit = 200U,
             effectiveUploadSlots = 8U.toUShort(),
             effectiveActiveDownloads = configured.activeDownloads,
+            effectiveActiveSeeds = configured.activeSeeds,
             effectiveUploadRateLimit = configured.uploadRateLimit,
             effectiveDownloadRateLimit = configured.downloadRateLimit,
             activeDownloadsClampReason = null,
             activeDownloadCount = 0U.toUShort(),
             checkingCount = 0U.toUShort(),
+            activeSeedCount = 0U.toUShort(),
+            inactiveSeedCount = 0U.toUShort(),
             effectiveEncryption = configured.encryption,
             effectiveIpv6Enabled = configured.ipv6Enabled,
             effectiveTrackerHttpsServerAuthentication =
@@ -1170,6 +1218,8 @@ class ProductStateReducerTest {
             remainingPayloadBytes = "565248000",
             etaPayloadDownloadRateBytes = "0",
             eta = TorrentEtaView.Unavailable,
+            lifetime = TorrentLifetimeView("0", "0", "0", "0", "0", "0"),
+            seeding = TorrentSeedingView(SeedAdmissionView.INELIGIBLE, null),
             progress = ProgressAssessment(
                 ProgressDisposition.ACTIVE,
                 ProgressPhase.TRANSFER,

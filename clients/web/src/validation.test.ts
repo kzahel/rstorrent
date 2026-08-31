@@ -145,6 +145,10 @@ describe("client settings validation", () => {
         peer_connection_limit: 200,
         upload_slots: 8,
         active_downloads: 3,
+        active_seeds: { type: "limited", torrents: 5 },
+        share_ratio_limit_percent: 200,
+        finished_download_ratio_limit_percent: 700,
+        finished_time_limit_seconds: 86_400,
         upload_rate_limit: { type: "unlimited" },
         download_rate_limit: { type: "unlimited" },
         encryption: "allow",
@@ -182,6 +186,25 @@ describe("client settings validation", () => {
     fractional.updates[0]!.snapshot.client_settings.configured.upload_slots = 1.5;
     expect(() => decodeUpdateBatch(JSON.stringify(fractional))).toThrow(
       ContractError,
+    );
+
+    const oversizedSeeds = torrentBatch("Oversized seeds");
+    oversizedSeeds.updates[0]!.snapshot.client_settings.configured.active_seeds = {
+      type: "limited",
+      torrents: 501,
+    };
+    expect(() => decodeUpdateBatch(JSON.stringify(oversizedSeeds))).toThrow(
+      ContractError,
+    );
+
+    const excessActiveSeeds = torrentBatch("Excess active seeds");
+    excessActiveSeeds.updates[0]!.snapshot.client_settings.effective_active_seeds = {
+      type: "limited",
+      torrents: 1,
+    };
+    excessActiveSeeds.updates[0]!.snapshot.client_settings.active_seed_count = 2;
+    expect(() => decodeUpdateBatch(JSON.stringify(excessActiveSeeds))).toThrow(
+      /active seed count exceeds/,
     );
 
     const inconsistent = torrentBatch("Inconsistent");
@@ -525,10 +548,50 @@ describe("torrent total-size validation", () => {
     const torrent = batch.updates[0]!.snapshot.torrents[0]! as TorrentView;
     expect(decodeUpdateBatch(JSON.stringify(batch)).updates).toHaveLength(1);
     torrent.total_size_bytes = null;
+    torrent.lifetime.share_ratio_hundredths = null;
     expect(decodeUpdateBatch(JSON.stringify(batch)).updates).toHaveLength(1);
     torrent.total_size_bytes = "01";
     expect(() => decodeUpdateBatch(JSON.stringify(batch))).toThrow(
       /torrent total size must be a bounded canonical decimal/,
+    );
+  });
+});
+
+describe("torrent seeding validation", () => {
+  it("rejects invented accounting and inconsistent goal or admission state", () => {
+    const mismatchedRatio = torrentBatch("Mismatched ratio");
+    mismatchedRatio.updates[0]!.snapshot.torrents[0]!.lifetime.share_ratio_hundredths = "1";
+    expect(() => decodeUpdateBatch(JSON.stringify(mismatchedRatio))).toThrow(
+      /share ratio does not match/,
+    );
+
+    const malformedTimers = torrentBatch("Malformed timers");
+    malformedTimers.updates[0]!.snapshot.torrents[0]!.lifetime.finished_seconds = "1";
+    expect(() => decodeUpdateBatch(JSON.stringify(malformedTimers))).toThrow(
+      /timers are not nested/,
+    );
+
+    const inconsistentGoal = torrentBatch("Inconsistent goal");
+    const torrent = inconsistentGoal.updates[0]!.snapshot.torrents[0]! as TorrentView;
+    torrent.state = "complete";
+    torrent.operational_state = "queued";
+    torrent.seeding = {
+      admission: "queued",
+      goal: {
+        status: "met",
+        share_ratio_met: false,
+        finished_download_ratio_met: false,
+        finished_time_met: false,
+      },
+    };
+    expect(() => decodeUpdateBatch(JSON.stringify(inconsistentGoal))).toThrow(
+      /goal status does not match/,
+    );
+
+    torrent.seeding.goal!.status = "unmet";
+    torrent.operational_state = "seeding";
+    expect(() => decodeUpdateBatch(JSON.stringify(inconsistentGoal))).toThrow(
+      /queued seed admission is not reported as queued/,
     );
   });
 });
@@ -1110,6 +1173,15 @@ function torrentBatch(displayName: string) {
               remaining_payload_bytes: "65536",
               eta_payload_download_rate_bytes: "4096",
               eta: { state: "estimate" as const, seconds: "16" },
+              lifetime: {
+                uploaded_payload_bytes: "0",
+                downloaded_payload_bytes: "0",
+                active_seconds: "0",
+                finished_seconds: "0",
+                seeding_seconds: "0",
+                share_ratio_hundredths: "0",
+              },
+              seeding: { admission: "ineligible" as const },
               progress: {
                 disposition: "active",
                 phase: "transfer",

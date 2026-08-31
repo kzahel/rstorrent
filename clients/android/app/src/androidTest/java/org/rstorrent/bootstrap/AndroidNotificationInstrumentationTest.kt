@@ -22,6 +22,7 @@ import org.junit.runners.MethodSorters
 import org.rstorrent.session.uniffi.ApplicationNetworkPrerequisiteView
 import org.rstorrent.session.uniffi.ApplicationNetworkRuntimeState
 import org.rstorrent.session.uniffi.ApplicationNetworkRuntimeView
+import org.rstorrent.session.uniffi.ActiveSeedLimit
 import org.rstorrent.session.uniffi.ProgressAssessment
 import org.rstorrent.session.uniffi.AdvertisedPeerEndpointStatus
 import org.rstorrent.session.uniffi.BandwidthDirectionRuntimeView
@@ -40,13 +41,16 @@ import org.rstorrent.session.uniffi.PortMappingStatus
 import org.rstorrent.session.uniffi.ProgressDisposition
 import org.rstorrent.session.uniffi.ProgressPhase
 import org.rstorrent.session.uniffi.ProgressReason
+import org.rstorrent.session.uniffi.SeedAdmissionView
 import org.rstorrent.session.uniffi.SessionUdpStatus
 import org.rstorrent.session.uniffi.StorageSettingsSnapshot
 import org.rstorrent.session.uniffi.StorageState
 import org.rstorrent.session.uniffi.TorrentEtaView
+import org.rstorrent.session.uniffi.TorrentLifetimeView
 import org.rstorrent.session.uniffi.TorrentOperationalState
 import org.rstorrent.session.uniffi.TorrentProtocolIdentities
 import org.rstorrent.session.uniffi.TorrentState
+import org.rstorrent.session.uniffi.TorrentSeedingView
 import org.rstorrent.session.uniffi.TorrentTransferLimits
 import org.rstorrent.session.uniffi.TorrentView
 import org.rstorrent.session.uniffi.TransferRateLimit
@@ -369,6 +373,8 @@ class AndroidNotificationInstrumentationTest {
             remainingPayloadBytes = "1",
             etaPayloadDownloadRateBytes = "0",
             eta = TorrentEtaView.Unavailable,
+            lifetime = TorrentLifetimeView("0", received.toString(), "0", "0", "0", "0"),
+            seeding = TorrentSeedingView(SeedAdmissionView.INELIGIBLE, null),
             progress =
                 ProgressAssessment(
                     ProgressDisposition.ACTIVE,
@@ -398,6 +404,10 @@ class AndroidNotificationInstrumentationTest {
                 peerConnectionLimit = 200U,
                 uploadSlots = 8U.toUShort(),
                 activeDownloads = 3U.toUShort(),
+                activeSeeds = ActiveSeedLimit.Limited(5U.toUShort()),
+                shareRatioLimitPercent = 200U,
+                finishedDownloadRatioLimitPercent = 700U,
+                finishedTimeLimitSeconds = 86_400U,
                 uploadRateLimit = TransferRateLimit.Unlimited,
                 downloadRateLimit = TransferRateLimit.Unlimited,
                 encryption = EncryptionPolicy.ALLOW,
@@ -416,11 +426,14 @@ class AndroidNotificationInstrumentationTest {
             effectivePeerConnectionLimit = 200U,
             effectiveUploadSlots = 8U.toUShort(),
             effectiveActiveDownloads = 3U.toUShort(),
+            effectiveActiveSeeds = configured.activeSeeds,
             effectiveUploadRateLimit = TransferRateLimit.Unlimited,
             effectiveDownloadRateLimit = TransferRateLimit.Unlimited,
             activeDownloadsClampReason = null,
             activeDownloadCount = 0U.toUShort(),
             checkingCount = 0U.toUShort(),
+            activeSeedCount = 0U.toUShort(),
+            inactiveSeedCount = 0U.toUShort(),
             effectiveEncryption = EncryptionPolicy.ALLOW,
             effectiveIpv6Enabled = true,
             effectiveTrackerHttpsServerAuthentication =

@@ -9,8 +9,8 @@ use rstorrent_gateway::{
 };
 use rstorrent_session::{
     ActiveDownloadsClampReason, ActivePiece, ActivePieceFieldUpdate, ActivePieceStageView,
-    ActivePieceUpdate, AddTorrentBytesRequest, AddTorrentDisposition, AddTorrentResult,
-    AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus,
+    ActivePieceUpdate, ActiveSeedLimit, AddTorrentBytesRequest, AddTorrentDisposition,
+    AddTorrentResult, AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus,
     AdvertisedPeerEndpointUnavailableReason, ApiBackendIdentity, ApiEncoding, ApiHello, ApiLimits,
     ApiVersion, ApplicationCall, ApplicationCallResult, ApplicationNetworkPrerequisiteView,
     ApplicationNetworkRuntimeState, ApplicationNetworkRuntimeView, BandwidthDirectionRuntimeView,
@@ -35,19 +35,21 @@ use rstorrent_session::{
     PeerTransportKind, PeerView, PortMappingFailureStage, PortMappingMechanism, PortMappingPolicy,
     PortMappingStatus, ProgressAction, ProgressAssessment, ProgressDisposition, ProgressPhase,
     ProgressReason, RemovalDataPolicy, RemovalState, RequestEnvelope, ResetReason,
-    ResponseEnvelope, ResponseOutcome, ServiceSnapshot, SessionCurrentRatesView, SessionUdpStatus,
-    SpeedCurrentRate, SpeedHistoryAppend, SpeedHistoryView, SpeedMetric, SpeedMetricAvailability,
+    ResponseEnvelope, ResponseOutcome, SeedAdmissionView, SeedGoalStatusView, SeedGoalView,
+    ServiceSnapshot, SessionCurrentRatesView, SessionUdpStatus, SpeedCurrentRate,
+    SpeedHistoryAppend, SpeedHistoryView, SpeedMetric, SpeedMetricAvailability,
     SpeedPersistenceState, SpeedRange, SpeedSeriesAppend, SpeedSeriesView, StorageRootAvailability,
     StorageRootSnapshot, StorageSettingsSnapshot, StorageState, SubscriptionSpec,
     SwarmCatalogState, SwarmCountsView, SwarmPeerState, SwarmPeerView, TorrentEtaView,
-    TorrentFieldUpdate, TorrentOperationalState, TorrentPreparationView, TorrentProtocolIdentities,
-    TorrentRowUpdate, TorrentSettingsPatch, TorrentSnapshot, TorrentState, TorrentTransferLimits,
-    TorrentView, TorrentViewChange, TrackerAnnounceEventView, TrackerCatalogState,
-    TrackerConnectionFamilyView, TrackerNextActionView, TrackerSecurityView, TrackerSourceView,
-    TrackerStatusView, TrackerTransportView, TrackerView, TransferRateLimit,
-    TransportAddressFamily, TransportFamilyRuntimeView, UpdateBatch, UpdateViewSetRequest,
-    ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector, ViewSetUpdate, ViewSnapshot,
-    ViewSpec, ViewUpdate, ViewUpdatePayload,
+    TorrentFieldUpdate, TorrentLifetimeView, TorrentOperationalState, TorrentPreparationView,
+    TorrentProtocolIdentities, TorrentRowUpdate, TorrentSeedingView, TorrentSettingsPatch,
+    TorrentSnapshot, TorrentState, TorrentTransferLimits, TorrentView, TorrentViewChange,
+    TrackerAnnounceEventView, TrackerCatalogState, TrackerConnectionFamilyView,
+    TrackerNextActionView, TrackerSecurityView, TrackerSourceView, TrackerStatusView,
+    TrackerTransportView, TrackerView, TransferRateLimit, TransportAddressFamily,
+    TransportFamilyRuntimeView, UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy, ViewPatch,
+    ViewProjection, ViewSelector, ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdate,
+    ViewUpdatePayload,
 };
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -89,6 +91,7 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<TransferRateLimit>(&mut declarations)?;
     append::<TorrentTransferLimits>(&mut declarations)?;
     append::<TorrentSettingsPatch>(&mut declarations)?;
+    append::<ActiveSeedLimit>(&mut declarations)?;
     append::<ClientSettingsPatch>(&mut declarations)?;
     append::<Command>(&mut declarations)?;
     append::<ListenerPolicy>(&mut declarations)?;
@@ -211,6 +214,11 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<IntegrityPreparationView>(&mut declarations)?;
     append::<TorrentPreparationView>(&mut declarations)?;
     append::<TorrentOperationalState>(&mut declarations)?;
+    append::<SeedAdmissionView>(&mut declarations)?;
+    append::<SeedGoalStatusView>(&mut declarations)?;
+    append::<SeedGoalView>(&mut declarations)?;
+    append::<TorrentLifetimeView>(&mut declarations)?;
+    append::<TorrentSeedingView>(&mut declarations)?;
     append::<TorrentView>(&mut declarations)?;
     append::<TorrentFieldUpdate>(&mut declarations)?;
     append::<TorrentRowUpdate>(&mut declarations)?;
@@ -568,6 +576,23 @@ fn fixture_torrent(torrent_id: &str, verified: u32) -> TorrentView {
             TorrentEtaView::Estimate {
                 seconds: "8".to_owned(),
             }
+        },
+        lifetime: rstorrent_session::TorrentLifetimeView {
+            share_ratio_hundredths: Some("0".to_owned()),
+            ..rstorrent_session::TorrentLifetimeView::default()
+        },
+        seeding: if verified == 3 {
+            rstorrent_session::TorrentSeedingView {
+                admission: rstorrent_session::SeedAdmissionView::Active,
+                goal: Some(rstorrent_session::SeedGoalView {
+                    status: rstorrent_session::SeedGoalStatusView::Unmet,
+                    share_ratio_met: false,
+                    finished_download_ratio_met: false,
+                    finished_time_met: false,
+                }),
+            }
+        } else {
+            rstorrent_session::TorrentSeedingView::default()
         },
         progress: ProgressAssessment {
             disposition: if verified == 3 {

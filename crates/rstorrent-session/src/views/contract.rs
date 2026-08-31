@@ -905,6 +905,7 @@ pub struct ProgressInputs {
     pub discovery_retry_scheduled: bool,
     pub dht_enabled: bool,
     pub integrity_preparation_active: Option<bool>,
+    pub seed_admission: SeedAdmissionView,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -919,6 +920,71 @@ pub enum TorrentOperationalState {
     Seeding,
     Paused,
     Error,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum SeedAdmissionView {
+    Active,
+    Queued,
+    InactiveExempt,
+    #[default]
+    Ineligible,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum SeedGoalStatusView {
+    Unmet,
+    #[default]
+    Met,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+#[serde(deny_unknown_fields)]
+pub struct SeedGoalView {
+    pub status: SeedGoalStatusView,
+    pub share_ratio_met: bool,
+    pub finished_download_ratio_met: bool,
+    pub finished_time_met: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+#[serde(deny_unknown_fields)]
+pub struct TorrentLifetimeView {
+    pub uploaded_payload_bytes: String,
+    pub downloaded_payload_bytes: String,
+    pub active_seconds: String,
+    pub finished_seconds: String,
+    pub seeding_seconds: String,
+    #[schemars(required, schema_with = "required_nullable_string_schema")]
+    pub share_ratio_hundredths: Option<String>,
+}
+
+impl Default for TorrentLifetimeView {
+    fn default() -> Self {
+        Self {
+            uploaded_payload_bytes: "0".to_owned(),
+            downloaded_payload_bytes: "0".to_owned(),
+            active_seconds: "0".to_owned(),
+            finished_seconds: "0".to_owned(),
+            seeding_seconds: "0".to_owned(),
+            share_ratio_hundredths: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+#[serde(deny_unknown_fields)]
+pub struct TorrentSeedingView {
+    pub admission: SeedAdmissionView,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub goal: Option<SeedGoalView>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -1198,6 +1264,10 @@ pub struct TorrentView {
     pub remaining_payload_bytes: Option<String>,
     pub eta_payload_download_rate_bytes: String,
     pub eta: TorrentEtaView,
+    #[serde(default)]
+    pub lifetime: TorrentLifetimeView,
+    #[serde(default)]
+    pub seeding: TorrentSeedingView,
     pub progress: ProgressAssessment,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checking: Option<CheckingProgressView>,

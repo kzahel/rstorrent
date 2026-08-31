@@ -56,6 +56,35 @@ export function formatExactBytes(
   return `${whole.toString()}.${tenth.toString()} ${suffixes[exponent]}`;
 }
 
+export function formatShareRatio(hundredths: string | null): string {
+  if (hundredths === null) return "—";
+  try {
+    const value = BigInt(hundredths);
+    if (value < 0n) return "—";
+    return `${(value / 100n).toString()}.${(value % 100n).toString().padStart(2, "0")}`;
+  } catch {
+    return "—";
+  }
+}
+
+export function formatElapsedSeconds(value: string): string {
+  let seconds: bigint;
+  try {
+    seconds = BigInt(value);
+  } catch {
+    return "—";
+  }
+  if (seconds < 0n) return "—";
+  const days = seconds / 86_400n;
+  const hours = (seconds % 86_400n) / 3_600n;
+  const minutes = (seconds % 3_600n) / 60n;
+  const tail = seconds % 60n;
+  if (days > 0n) return `${days.toString()}d ${hours.toString()}h`;
+  if (hours > 0n) return `${hours.toString()}h ${minutes.toString()}m`;
+  if (minutes > 0n) return `${minutes.toString()}m ${tail.toString()}s`;
+  return `${tail.toString()}s`;
+}
+
 export function formatDecimalProgress(done: string, length: string): string {
   try {
     const doneBytes = BigInt(done);

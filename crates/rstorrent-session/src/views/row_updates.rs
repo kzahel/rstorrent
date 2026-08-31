@@ -18,7 +18,7 @@ use super::contract::{
     ActivePiece, ActivePieceStageView, CheckingProgressView, IndexRange, PeerDirection,
     PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView, PeerLifecycle, PeerMseMethodView,
     PeerRequestPhase, PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAssessment,
-    TorrentEtaView, TorrentOperationalState, TorrentView,
+    TorrentEtaView, TorrentLifetimeView, TorrentOperationalState, TorrentSeedingView, TorrentView,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -119,6 +119,8 @@ semantic_fields!(
         RemainingPayloadBytes => remaining_payload_bytes: Option<String>,
         EtaPayloadDownloadRateBytes => eta_payload_download_rate_bytes: String,
         Eta => eta: TorrentEtaView,
+        Lifetime => lifetime: TorrentLifetimeView,
+        Seeding => seeding: TorrentSeedingView,
         Progress => progress: ProgressAssessment,
         Checking => checking: Option<CheckingProgressView>,
         Archived => archived: bool,
@@ -173,6 +175,8 @@ impl TorrentRowUpdate {
         changed!(RemainingPayloadBytes, remaining_payload_bytes);
         changed!(EtaPayloadDownloadRateBytes, eta_payload_download_rate_bytes);
         changed!(Eta, eta);
+        changed!(Lifetime, lifetime);
+        changed!(Seeding, seeding);
         changed!(Progress, progress);
         changed!(Checking, checking);
         changed!(Archived, archived);
@@ -540,6 +544,8 @@ mod tests {
             remaining_payload_bytes: None,
             eta_payload_download_rate_bytes: "0".to_owned(),
             eta: TorrentEtaView::Unavailable,
+            lifetime: TorrentLifetimeView::default(),
+            seeding: TorrentSeedingView::default(),
             progress: ProgressAssessment {
                 disposition: ProgressDisposition::Active,
                 phase: ProgressPhase::Transfer,
@@ -586,6 +592,15 @@ mod tests {
         current.remaining_payload_bytes = Some("12".to_owned());
         current.eta_payload_download_rate_bytes = "13".to_owned();
         current.eta = TorrentEtaView::WarmingUp;
+        current.lifetime.uploaded_payload_bytes = "14".to_owned();
+        current.lifetime.share_ratio_hundredths = Some("1400".to_owned());
+        current.seeding.admission = crate::SeedAdmissionView::Active;
+        current.seeding.goal = Some(crate::SeedGoalView {
+            status: crate::SeedGoalStatusView::Unmet,
+            share_ratio_met: false,
+            finished_download_ratio_met: false,
+            finished_time_met: false,
+        });
         current.progress = ProgressAssessment {
             disposition: ProgressDisposition::Waiting,
             phase: ProgressPhase::Discovery,
@@ -614,7 +629,7 @@ mod tests {
         current.error = Some("failure".to_owned());
 
         let update = TorrentRowUpdate::between(&previous, &current).expect("all fields changed");
-        assert_eq!(update.fields.len(), 28);
+        assert_eq!(update.fields.len(), 30);
         let mut applied = previous;
         update.apply(&mut applied).expect("apply");
         assert_eq!(applied, current);

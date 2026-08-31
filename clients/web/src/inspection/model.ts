@@ -15,6 +15,8 @@ import type {
   SpeedMetric,
   SpeedRange,
   SpeedSeriesView,
+  SeedAdmissionView,
+  SeedGoalView,
   SwarmCatalogState,
   SwarmCountsView,
   SwarmPeerState,
@@ -222,6 +224,14 @@ export interface TorrentRow {
   readonly remainingPayloadBytes: string | null;
   readonly etaDownloadRateBytes: string;
   readonly eta: TorrentEta;
+  readonly lifetimeUploadedBytes: string;
+  readonly lifetimeDownloadedBytes: string;
+  readonly activeSeconds: string;
+  readonly finishedSeconds: string;
+  readonly seedingSeconds: string;
+  readonly shareRatioHundredths: string | null;
+  readonly seedAdmission: SeedAdmissionView;
+  readonly seedGoal: SeedGoalView | null;
   readonly addedAtMs: number | null;
   readonly archived: boolean | null;
   readonly removalState: "pending" | "awaiting_platform" | "failed" | null;

@@ -1571,6 +1571,25 @@ function validateClientSettings(value: unknown): void {
   );
   boundedInteger(settings.upload_slots, "upload slots", 0, 50);
   boundedInteger(settings.active_downloads, "active downloads", 1, 20);
+  validateActiveSeedLimit(settings.active_seeds, "active seeds");
+  boundedInteger(
+    settings.share_ratio_limit_percent,
+    "share ratio priority goal",
+    0,
+    2_147_483_647,
+  );
+  boundedInteger(
+    settings.finished_download_ratio_limit_percent,
+    "finished/download time priority goal",
+    0,
+    2_147_483_647,
+  );
+  boundedInteger(
+    settings.finished_time_limit_seconds,
+    "finished time priority goal",
+    0,
+    2_147_483_647,
+  );
   validateTransferRateLimit(settings.upload_rate_limit, "upload rate limit");
   validateTransferRateLimit(settings.download_rate_limit, "download rate limit");
   oneOf(settings.encryption, "encryption policy", [
@@ -1632,6 +1651,10 @@ function validateClientSettingsRuntime(value: unknown): void {
     1,
     20,
   );
+  const effectiveSeeds = validateActiveSeedLimit(
+    runtime.effective_active_seeds,
+    "effective active seeds",
+  );
   validateTransferRateLimit(
     runtime.effective_upload_rate_limit,
     "effective upload rate limit",
@@ -1652,6 +1675,24 @@ function validateClientSettingsRuntime(value: unknown): void {
   }
   boundedInteger(runtime.active_download_count, "active download count", 0, 20);
   boundedInteger(runtime.checking_count, "checking count", 0, 1);
+  const activeSeedCount = boundedInteger(
+    runtime.active_seed_count,
+    "active seed count",
+    0,
+    500,
+  );
+  const inactiveSeedCount = boundedInteger(
+    runtime.inactive_seed_count,
+    "inactive-exempt seed count",
+    0,
+    500,
+  );
+  if (activeSeedCount + inactiveSeedCount > 500) {
+    throw new ContractError("active seed counts exceed the shared hard limit");
+  }
+  if (effectiveSeeds !== null && activeSeedCount > effectiveSeeds) {
+    throw new ContractError("active seed count exceeds the effective seed limit");
+  }
   oneOf(runtime.effective_encryption, "effective encryption policy", [
     "disabled",
     "allow",
@@ -2096,6 +2137,74 @@ export function validateTorrentView(value: unknown): asserts value is TorrentVie
   ) {
     throw new ContractError("active torrent ETA has no remaining work");
   }
+  const lifetime = asRecord(torrent.lifetime, "torrent lifetime accounting");
+  const uploaded = decimal(
+    lifetime.uploaded_payload_bytes,
+    "lifetime uploaded payload",
+  );
+  const downloaded = decimal(
+    lifetime.downloaded_payload_bytes,
+    "lifetime downloaded payload",
+  );
+  const activeSeconds = decimal(lifetime.active_seconds, "active seconds");
+  const finishedSeconds = decimal(lifetime.finished_seconds, "finished seconds");
+  const seedingSeconds = decimal(lifetime.seeding_seconds, "seeding seconds");
+  if (
+    BigInt(finishedSeconds) > BigInt(activeSeconds) ||
+    BigInt(seedingSeconds) > BigInt(finishedSeconds)
+  ) {
+    throw new ContractError("torrent lifetime timers are not nested");
+  }
+  const shareRatio = nullableDecimal(
+    lifetime.share_ratio_hundredths,
+    "share ratio hundredths",
+  );
+  const totalSize = torrent.total_size_bytes === null
+    ? 0n
+    : BigInt(decimal(torrent.total_size_bytes, "torrent total size"));
+  const downloadedBase = BigInt(downloaded) > totalSize ? BigInt(downloaded) : totalSize;
+  const expectedShareRatio = downloadedBase === 0n
+    ? null
+    : ((BigInt(uploaded) * 100n) / downloadedBase).toString();
+  if (shareRatio !== expectedShareRatio) {
+    throw new ContractError("share ratio does not match lifetime payload totals");
+  }
+  const seeding = asRecord(torrent.seeding, "torrent seeding status");
+  const admission = oneOf(seeding.admission, "seed admission", [
+    "active",
+    "queued",
+    "inactive_exempt",
+    "ineligible",
+  ]);
+  const goal = seeding.goal === undefined || seeding.goal === null
+    ? null
+    : asRecord(seeding.goal, "seed goal");
+  if ((torrent.state === "complete") !== (goal !== null)) {
+    throw new ContractError("seed goal availability does not match torrent completion");
+  }
+  if (goal !== null) {
+    const status = oneOf(goal.status, "seed goal status", ["unmet", "met"]);
+    const anyThresholdMet = [
+      boolean(goal.share_ratio_met, "share ratio goal state"),
+      boolean(
+        goal.finished_download_ratio_met,
+        "finished/download time ratio goal state",
+      ),
+      boolean(goal.finished_time_met, "finished time goal state"),
+    ].some(Boolean);
+    if ((status === "met") !== anyThresholdMet) {
+      throw new ContractError("seed goal status does not match its threshold states");
+    }
+  }
+  if (
+    (admission === "active" || admission === "inactive_exempt") &&
+    torrent.operational_state !== "seeding"
+  ) {
+    throw new ContractError("active seed admission is not reported as seeding");
+  }
+  if (admission === "queued" && torrent.operational_state !== "queued") {
+    throw new ContractError("queued seed admission is not reported as queued");
+  }
   const progress = asRecord(torrent.progress, "progress assessment");
   oneOf(progress.disposition, "progress disposition", [
     "active",
@@ -2196,6 +2305,14 @@ function validateTorrentTransferLimits(value: unknown, label: string): void {
   const limits = asRecord(value, label);
   validateTransferRateLimit(limits.upload, `${label} upload`);
   validateTransferRateLimit(limits.download, `${label} download`);
+}
+
+function validateActiveSeedLimit(value: unknown, label: string): number | null {
+  const limit = asRecord(value, label);
+  const type = oneOf(limit.type, `${label} type`, ["unlimited", "limited"]);
+  return type === "limited"
+    ? boundedInteger(limit.torrents, `${label} torrent count`, 0, 500)
+    : null;
 }
 
 function validateTransferRateLimit(value: unknown, label: string): void {

@@ -3,6 +3,7 @@ package org.rstorrent.bootstrap
 import org.rstorrent.session.uniffi.ClientSettings
 import org.rstorrent.session.uniffi.ClientSettingsPatch
 import org.rstorrent.session.uniffi.ClientSettingsRuntimeView
+import org.rstorrent.session.uniffi.ActiveSeedLimit
 import org.rstorrent.session.uniffi.EncryptionPolicy
 import org.rstorrent.session.uniffi.HttpsServerAuthenticationPolicy
 import org.rstorrent.session.uniffi.ListenerPolicy
@@ -19,6 +20,10 @@ enum class ClientSettingsField {
     PEER_CONNECTION_LIMIT,
     UPLOAD_SLOTS,
     ACTIVE_DOWNLOADS,
+    ACTIVE_SEEDS,
+    SHARE_RATIO_LIMIT,
+    FINISHED_DOWNLOAD_RATIO_LIMIT,
+    FINISHED_TIME_LIMIT,
     UPLOAD_RATE_LIMIT,
     DOWNLOAD_RATE_LIMIT,
     ENCRYPTION,
@@ -265,6 +270,10 @@ internal fun ClientSettings.fieldValues(): Map<ClientSettingsField, Any> =
         ClientSettingsField.PEER_CONNECTION_LIMIT to peerConnectionLimit,
         ClientSettingsField.UPLOAD_SLOTS to uploadSlots,
         ClientSettingsField.ACTIVE_DOWNLOADS to activeDownloads,
+        ClientSettingsField.ACTIVE_SEEDS to activeSeeds,
+        ClientSettingsField.SHARE_RATIO_LIMIT to shareRatioLimitPercent,
+        ClientSettingsField.FINISHED_DOWNLOAD_RATIO_LIMIT to finishedDownloadRatioLimitPercent,
+        ClientSettingsField.FINISHED_TIME_LIMIT to finishedTimeLimitSeconds,
         ClientSettingsField.UPLOAD_RATE_LIMIT to uploadRateLimit,
         ClientSettingsField.DOWNLOAD_RATE_LIMIT to downloadRateLimit,
         ClientSettingsField.ENCRYPTION to encryption,
@@ -280,6 +289,12 @@ internal fun ClientSettingsPatch.fieldValues(): Map<ClientSettingsField, Any> =
         peerConnectionLimit?.let { put(ClientSettingsField.PEER_CONNECTION_LIMIT, it) }
         uploadSlots?.let { put(ClientSettingsField.UPLOAD_SLOTS, it) }
         activeDownloads?.let { put(ClientSettingsField.ACTIVE_DOWNLOADS, it) }
+        activeSeeds?.let { put(ClientSettingsField.ACTIVE_SEEDS, it) }
+        shareRatioLimitPercent?.let { put(ClientSettingsField.SHARE_RATIO_LIMIT, it) }
+        finishedDownloadRatioLimitPercent?.let {
+            put(ClientSettingsField.FINISHED_DOWNLOAD_RATIO_LIMIT, it)
+        }
+        finishedTimeLimitSeconds?.let { put(ClientSettingsField.FINISHED_TIME_LIMIT, it) }
         uploadRateLimit?.let { put(ClientSettingsField.UPLOAD_RATE_LIMIT, it) }
         downloadRateLimit?.let { put(ClientSettingsField.DOWNLOAD_RATE_LIMIT, it) }
         encryption?.let { put(ClientSettingsField.ENCRYPTION, it) }
@@ -297,6 +312,11 @@ internal fun Map<ClientSettingsField, Any>.toClientSettingsPatch(): ClientSettin
         peerConnectionLimit = get(ClientSettingsField.PEER_CONNECTION_LIMIT) as? UInt,
         uploadSlots = get(ClientSettingsField.UPLOAD_SLOTS) as? UShort,
         activeDownloads = get(ClientSettingsField.ACTIVE_DOWNLOADS) as? UShort,
+        activeSeeds = get(ClientSettingsField.ACTIVE_SEEDS) as? ActiveSeedLimit,
+        shareRatioLimitPercent = get(ClientSettingsField.SHARE_RATIO_LIMIT) as? UInt,
+        finishedDownloadRatioLimitPercent =
+            get(ClientSettingsField.FINISHED_DOWNLOAD_RATIO_LIMIT) as? UInt,
+        finishedTimeLimitSeconds = get(ClientSettingsField.FINISHED_TIME_LIMIT) as? UInt,
         uploadRateLimit = get(ClientSettingsField.UPLOAD_RATE_LIMIT) as? TransferRateLimit,
         downloadRateLimit = get(ClientSettingsField.DOWNLOAD_RATE_LIMIT) as? TransferRateLimit,
         encryption = get(ClientSettingsField.ENCRYPTION) as? EncryptionPolicy,
@@ -339,6 +359,11 @@ internal fun ProductState.presentedClientSettings(): ClientSettingsRuntimeView? 
                     values[ClientSettingsField.PEER_CONNECTION_LIMIT] as UInt,
                 uploadSlots = values[ClientSettingsField.UPLOAD_SLOTS] as UShort,
                 activeDownloads = values[ClientSettingsField.ACTIVE_DOWNLOADS] as UShort,
+                activeSeeds = values[ClientSettingsField.ACTIVE_SEEDS] as ActiveSeedLimit,
+                shareRatioLimitPercent = values[ClientSettingsField.SHARE_RATIO_LIMIT] as UInt,
+                finishedDownloadRatioLimitPercent =
+                    values[ClientSettingsField.FINISHED_DOWNLOAD_RATIO_LIMIT] as UInt,
+                finishedTimeLimitSeconds = values[ClientSettingsField.FINISHED_TIME_LIMIT] as UInt,
                 uploadRateLimit =
                     values[ClientSettingsField.UPLOAD_RATE_LIMIT] as TransferRateLimit,
                 downloadRateLimit =

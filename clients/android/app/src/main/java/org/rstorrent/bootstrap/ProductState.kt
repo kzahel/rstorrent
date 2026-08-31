@@ -674,6 +674,8 @@ internal object ProductStateReducer {
                 is TorrentFieldUpdate.EtaPayloadDownloadRateBytes ->
                     next.etaPayloadDownloadRateBytes = field.value
                 is TorrentFieldUpdate.Eta -> next.eta = field.value
+                is TorrentFieldUpdate.Lifetime -> next.lifetime = field.value
+                is TorrentFieldUpdate.Seeding -> next.seeding = field.value
                 is TorrentFieldUpdate.Progress -> next.progress = field.value
                 is TorrentFieldUpdate.Checking -> next.checking = field.value
                 is TorrentFieldUpdate.Archived -> next.archived = field.value

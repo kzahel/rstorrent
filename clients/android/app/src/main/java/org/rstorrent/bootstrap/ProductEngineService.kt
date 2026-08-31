@@ -68,6 +68,7 @@ import org.rstorrent.session.uniffi.CommandResult
 import org.rstorrent.session.uniffi.AddTorrentDisposition
 import org.rstorrent.session.uniffi.AddTorrentResult
 import org.rstorrent.session.uniffi.AddTorrentBytesRequest
+import org.rstorrent.session.uniffi.ActiveSeedLimit
 import org.rstorrent.session.uniffi.CatalogPageRequest
 import org.rstorrent.session.uniffi.ClientSettings
 import org.rstorrent.session.uniffi.ClientSettingsPatch
@@ -1233,6 +1234,10 @@ class ProductEngineService : Service() {
                             peerConnectionLimit = 200U,
                             uploadSlots = 8U.toUShort(),
                             activeDownloads = 3U.toUShort(),
+                            activeSeeds = ActiveSeedLimit.Limited(5U.toUShort()),
+                            shareRatioLimitPercent = 200U,
+                            finishedDownloadRatioLimitPercent = 700U,
+                            finishedTimeLimitSeconds = 86_400U,
                             uploadRateLimit = TransferRateLimit.Unlimited,
                             downloadRateLimit = TransferRateLimit.Unlimited,
                             encryption = EncryptionPolicy.ALLOW,
@@ -1286,6 +1291,10 @@ class ProductEngineService : Service() {
                             peerConnectionLimit = 200U,
                             uploadSlots = 8U.toUShort(),
                             activeDownloads = 3U.toUShort(),
+                            activeSeeds = ActiveSeedLimit.Limited(5U.toUShort()),
+                            shareRatioLimitPercent = 200U,
+                            finishedDownloadRatioLimitPercent = 700U,
+                            finishedTimeLimitSeconds = 86_400U,
                             uploadRateLimit = TransferRateLimit.Unlimited,
                             downloadRateLimit = TransferRateLimit.Unlimited,
                             encryption = policy,

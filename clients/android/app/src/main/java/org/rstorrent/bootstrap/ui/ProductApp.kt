@@ -621,6 +621,28 @@ private fun ProductNavHost(
                                 clientSettingsPatch(activeDownloads = value),
                             )
                         },
+                        onActiveSeeds = { value ->
+                            onUpdateClientSettings(
+                                clientSettingsPatch(activeSeeds = value),
+                            )
+                        },
+                        onShareRatioLimit = { value ->
+                            onUpdateClientSettings(
+                                clientSettingsPatch(shareRatioLimitPercent = value),
+                            )
+                        },
+                        onFinishedDownloadRatioLimit = { value ->
+                            onUpdateClientSettings(
+                                clientSettingsPatch(
+                                    finishedDownloadRatioLimitPercent = value,
+                                ),
+                            )
+                        },
+                        onFinishedTimeLimit = { value ->
+                            onUpdateClientSettings(
+                                clientSettingsPatch(finishedTimeLimitSeconds = value),
+                            )
+                        },
                         onUploadRateLimit = { value ->
                             onUpdateClientSettings(
                                 clientSettingsPatch(uploadRateLimit = value),
@@ -1083,6 +1105,20 @@ private fun DetailTabContent(
                     add("Remaining" to formatBytes(torrent.remainingPayloadBytes))
                     add("Pieces" to "${torrent.verifiedPieceCount} / ${torrent.pieceCount}")
                     add("Trackers" to (torrent.configuredTrackerCount?.toString() ?: "—"))
+                    add("Lifetime downloaded" to formatBytes(torrent.lifetime.downloadedPayloadBytes))
+                    add("Lifetime uploaded" to formatBytes(torrent.lifetime.uploadedPayloadBytes))
+                    add("Share ratio" to formatShareRatio(torrent.lifetime.shareRatioHundredths))
+                    add("Active time" to formatDuration(torrent.lifetime.activeSeconds))
+                    add("Finished time" to formatDuration(torrent.lifetime.finishedSeconds))
+                    add("Seeding time" to formatDuration(torrent.lifetime.seedingSeconds))
+                    if (torrent.seeding.goal != null) {
+                        add("Seed admission" to seedAdmissionLabel(torrent.seeding.admission))
+                        add("Seeding priority goal" to seedGoalLabel(torrent.seeding.goal))
+                        add(
+                            "Goal behavior" to
+                                "Goals affect priority; a goal-met torrent may continue seeding",
+                        )
+                    }
                 }.toTypedArray(),
             )
         TorrentDetailTab.STATUS ->

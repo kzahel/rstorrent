@@ -8,12 +8,15 @@ import org.rstorrent.session.uniffi.ProgressAssessment
 import org.rstorrent.session.uniffi.ProgressDisposition
 import org.rstorrent.session.uniffi.ProgressPhase
 import org.rstorrent.session.uniffi.ProgressReason
+import org.rstorrent.session.uniffi.SeedAdmissionView
 import org.rstorrent.session.uniffi.StorageState
 import org.rstorrent.session.uniffi.TorrentEtaView
+import org.rstorrent.session.uniffi.TorrentLifetimeView
 import org.rstorrent.session.uniffi.TorrentOperationalState
 import org.rstorrent.session.uniffi.TorrentProtocolIdentities
 import org.rstorrent.session.uniffi.TorrentState
 import org.rstorrent.session.uniffi.TorrentTransferLimits
+import org.rstorrent.session.uniffi.TorrentSeedingView
 import org.rstorrent.session.uniffi.TorrentView
 import org.rstorrent.session.uniffi.TransferRateLimit
 
@@ -279,6 +282,8 @@ class AndroidNotificationPolicyTest {
             remainingPayloadBytes = "50",
             etaPayloadDownloadRateBytes = "1",
             eta = TorrentEtaView.Unavailable,
+            lifetime = TorrentLifetimeView("0", received.toString(), "0", "0", "0", "0"),
+            seeding = TorrentSeedingView(SeedAdmissionView.INELIGIBLE, null),
             progress =
                 ProgressAssessment(
                     ProgressDisposition.ACTIVE,

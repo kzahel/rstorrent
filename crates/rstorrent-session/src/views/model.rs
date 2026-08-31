@@ -37,8 +37,9 @@ use super::{
     PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView, PeerLifecycle, PeerMseMethodView,
     PeerRequestPhase, PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction,
     ProgressAssessment, ProgressDisposition, ProgressInputs, ProgressPhase, ProgressReason,
-    SubscriptionError, SwarmCatalogState, SwarmCountsView, SwarmPeerState, SwarmPeerView,
-    TorrentEtaView, TorrentOperationalState, TorrentPreparationView, TorrentView,
+    SeedAdmissionView, SubscriptionError, SwarmCatalogState, SwarmCountsView, SwarmPeerState,
+    SwarmPeerView, TorrentEtaView, TorrentLifetimeView, TorrentOperationalState,
+    TorrentPreparationView, TorrentSeedingView, TorrentView,
 };
 
 impl DhtInspectionView {
@@ -295,7 +296,14 @@ pub(crate) fn operational_state(
         return TorrentOperationalState::Paused;
     }
     if snapshot.state == TorrentState::Complete {
-        return TorrentOperationalState::Seeding;
+        return match inputs.seed_admission {
+            SeedAdmissionView::Active | SeedAdmissionView::InactiveExempt => {
+                TorrentOperationalState::Seeding
+            }
+            SeedAdmissionView::Queued | SeedAdmissionView::Ineligible => {
+                TorrentOperationalState::Queued
+            }
+        };
     }
     if snapshot.download_queue_position.is_some() {
         return TorrentOperationalState::Queued;
@@ -732,6 +740,9 @@ pub(crate) struct DurableTorrentViewState {
     pub(crate) files: Option<FileProgressModel>,
     pub(crate) eta_geometry: Option<RequiredPayloadGeometry>,
     pub(crate) trackers: TrackerViewModel,
+    pub(crate) total_size: u64,
+    pub(crate) lifetime: TorrentLifetimeView,
+    pub(crate) seeding: TorrentSeedingView,
 }
 
 impl TorrentModel {
@@ -763,6 +774,8 @@ impl TorrentModel {
                 remaining_payload_bytes: None,
                 eta_payload_download_rate_bytes: "0".to_owned(),
                 eta: TorrentEtaView::Unavailable,
+                lifetime: TorrentLifetimeView::default(),
+                seeding: TorrentSeedingView::default(),
                 progress: assess_progress(snapshot, progress_inputs),
                 checking: None,
                 archived: snapshot.archived,

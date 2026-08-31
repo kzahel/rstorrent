@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import org.rstorrent.bootstrap.ProductNetworkState
+import org.rstorrent.session.uniffi.ActiveSeedLimit
 import org.rstorrent.session.uniffi.ClientSettingsRuntimeView
 import org.rstorrent.session.uniffi.EncryptionPolicy
 import org.rstorrent.session.uniffi.ListenerPolicy
@@ -34,6 +35,10 @@ internal fun ConnectionLimitsSettings(
     onPeerConnections: (UInt) -> Unit,
     onUploadSlots: (UShort) -> Unit,
     onActiveDownloads: (UShort) -> Unit,
+    onActiveSeeds: (ActiveSeedLimit) -> Unit,
+    onShareRatioLimit: (UInt) -> Unit,
+    onFinishedDownloadRatioLimit: (UInt) -> Unit,
+    onFinishedTimeLimit: (UInt) -> Unit,
     onUploadRateLimit: (TransferRateLimit) -> Unit,
     onDownloadRateLimit: (TransferRateLimit) -> Unit,
 ) {
@@ -61,6 +66,32 @@ internal fun ConnectionLimitsSettings(
             "Effective on Android: ${settings.effectiveActiveDownloads}" +
                 (settings.activeDownloadsClampReason?.let { " · ${it.name.lowercase()}" } ?: ""),
     ) { onActiveDownloads(it.toUShort()) }
+    ActiveSeedSetting(
+        configured = settings.configured.activeSeeds,
+        effective = settings.effectiveActiveSeeds,
+        activeCount = settings.activeSeedCount,
+        inactiveCount = settings.inactiveSeedCount,
+        onValue = onActiveSeeds,
+    )
+    NumericSetting(
+        "Share-ratio priority goal (%)",
+        settings.configured.shareRatioLimitPercent.toInt(),
+        0..Int.MAX_VALUE,
+        supporting =
+            "Seeding priority, not a stop rule · reaching any one goal is sufficient",
+    ) { onShareRatioLimit(it.toUInt()) }
+    NumericSetting(
+        "Finished/download time priority goal (%)",
+        settings.configured.finishedDownloadRatioLimitPercent.toInt(),
+        0..Int.MAX_VALUE,
+        supporting = "Cumulative active finished time compared with active download time",
+    ) { onFinishedDownloadRatioLimit(it.toUInt()) }
+    NumericSetting(
+        "Finished-time priority goal (seconds)",
+        settings.configured.finishedTimeLimitSeconds.toInt(),
+        0..Int.MAX_VALUE,
+        supporting = "A goal-met torrent may continue seeding while capacity is available",
+    ) { onFinishedTimeLimit(it.toUInt()) }
     RateLimitSetting(
         title = "All torrents download limit",
         configured = settings.configured.downloadRateLimit,
@@ -76,6 +107,86 @@ internal fun ConnectionLimitsSettings(
         onValue = onUploadRateLimit,
     )
 }
+
+@Composable
+private fun ActiveSeedSetting(
+    configured: ActiveSeedLimit,
+    effective: ActiveSeedLimit,
+    activeCount: UShort,
+    inactiveCount: UShort,
+    onValue: (ActiveSeedLimit) -> Unit,
+) {
+    var dialog by remember { mutableStateOf(false) }
+    val configuredLabel = activeSeedLimitLabel(configured)
+    ListItem(
+        headlineContent = { Text("Active seeds") },
+        supportingContent = {
+            Text(
+                "Goals affect priority, not durable run intent · effective " +
+                    "${activeSeedLimitLabel(effective)} · $activeCount counted · " +
+                    "$inactiveCount inactive-exempt",
+            )
+        },
+        trailingContent = {
+            Text(configuredLabel, color = MaterialTheme.colorScheme.primary)
+        },
+        modifier = Modifier.clickable { dialog = true },
+    )
+    HorizontalDivider()
+    if (dialog) {
+        var unlimited by remember(configured) {
+            mutableStateOf(configured is ActiveSeedLimit.Unlimited)
+        }
+        var text by remember(configured) {
+            mutableStateOf((configured as? ActiveSeedLimit.Limited)?.torrents?.toString() ?: "5")
+        }
+        val parsed = if (unlimited) null else text.toIntOrNull()?.takeIf { it in 0..500 }
+        AlertDialog(
+            onDismissRequest = { dialog = false },
+            title = { Text("Active seeds") },
+            text = {
+                Column(Modifier.fillMaxWidth()) {
+                    ListItem(
+                        headlineContent = { Text("Unlimited") },
+                        supportingContent = { Text("The fixed shared 500-torrent ceiling remains") },
+                        trailingContent = {
+                            Switch(unlimited, onCheckedChange = { unlimited = it })
+                        },
+                    )
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { text = it.filter(Char::isDigit) },
+                        enabled = !unlimited,
+                        singleLine = true,
+                        label = { Text("Count") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        supportingText = { Text("0–500; zero keeps eligible seeds queued") },
+                        isError = !unlimited && parsed == null,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onValue(
+                            if (unlimited) ActiveSeedLimit.Unlimited
+                            else ActiveSeedLimit.Limited(requireNotNull(parsed).toUShort()),
+                        )
+                        dialog = false
+                    },
+                    enabled = unlimited || parsed != null,
+                ) { Text("Apply") }
+            },
+            dismissButton = { TextButton(onClick = { dialog = false }) { Text("Cancel") } },
+        )
+    }
+}
+
+private fun activeSeedLimitLabel(limit: ActiveSeedLimit): String =
+    when (limit) {
+        ActiveSeedLimit.Unlimited -> "Unlimited"
+        is ActiveSeedLimit.Limited -> limit.torrents.toString()
+    }
 
 @Composable
 internal fun RateLimitSetting(

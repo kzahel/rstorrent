@@ -212,6 +212,43 @@
       ],
       "type": "object"
     },
+    "ActiveSeedLimit": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "unlimited",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "torrents": {
+              "format": "uint16",
+              "maximum": 500,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "limited",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "torrents"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "AddTorrentBytesRequest": {
       "properties": {
         "expected_revision": {
@@ -1650,6 +1687,13 @@
           "minimum": 1,
           "type": "integer"
         },
+        "active_seeds": {
+          "$ref": "#/$defs/ActiveSeedLimit",
+          "default": {
+            "torrents": 5,
+            "type": "limited"
+          }
+        },
         "download_rate_limit": {
           "$ref": "#/$defs/TransferRateLimit",
           "default": {
@@ -1658,6 +1702,20 @@
         },
         "encryption": {
           "$ref": "#/$defs/EncryptionPolicy"
+        },
+        "finished_download_ratio_limit_percent": {
+          "default": 700,
+          "format": "uint32",
+          "maximum": 2147483647,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "finished_time_limit_seconds": {
+          "default": 86400,
+          "format": "uint32",
+          "maximum": 2147483647,
+          "minimum": 0,
+          "type": "integer"
         },
         "ipv6_enabled": {
           "type": "boolean"
@@ -1678,6 +1736,13 @@
           "format": "uint16",
           "maximum": 65535,
           "minimum": 1024,
+          "type": "integer"
+        },
+        "share_ratio_limit_percent": {
+          "default": 200,
+          "format": "uint32",
+          "maximum": 2147483647,
+          "minimum": 0,
           "type": "integer"
         },
         "tracker_https_server_authentication": {
@@ -1783,11 +1848,26 @@
           "minimum": 1,
           "type": "integer"
         },
+        "active_seeds": {
+          "$ref": "#/$defs/ActiveSeedLimit"
+        },
         "download_rate_limit": {
           "$ref": "#/$defs/TransferRateLimit"
         },
         "encryption": {
           "$ref": "#/$defs/EncryptionPolicy"
+        },
+        "finished_download_ratio_limit_percent": {
+          "format": "uint32",
+          "maximum": 2147483647,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "finished_time_limit_seconds": {
+          "format": "uint32",
+          "maximum": 2147483647,
+          "minimum": 0,
+          "type": "integer"
         },
         "ipv6_enabled": {
           "type": "boolean"
@@ -1808,6 +1888,12 @@
           "format": "uint16",
           "maximum": 65535,
           "minimum": 1024,
+          "type": "integer"
+        },
+        "share_ratio_limit_percent": {
+          "format": "uint32",
+          "maximum": 2147483647,
+          "minimum": 0,
           "type": "integer"
         },
         "tracker_https_server_authentication": {
@@ -1844,6 +1930,12 @@
             }
           ]
         },
+        "active_seed_count": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
         "advertised_peer_endpoint": {
           "$ref": "#/$defs/AdvertisedPeerEndpointStatus"
         },
@@ -1870,6 +1962,9 @@
           "maximum": 65535,
           "minimum": 0,
           "type": "integer"
+        },
+        "effective_active_seeds": {
+          "$ref": "#/$defs/ActiveSeedLimit"
         },
         "effective_download_rate_limit": {
           "$ref": "#/$defs/TransferRateLimit"
@@ -1919,6 +2014,12 @@
         },
         "encryption_application": {
           "$ref": "#/$defs/ClientSettingsApplicationState"
+        },
+        "inactive_seed_count": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
         },
         "ipv6_application": {
           "$ref": "#/$defs/ClientSettingsApplicationState"
@@ -1970,10 +2071,13 @@
         "effective_peer_connection_limit",
         "effective_upload_slots",
         "effective_active_downloads",
+        "effective_active_seeds",
         "effective_upload_rate_limit",
         "effective_download_rate_limit",
         "active_download_count",
         "checking_count",
+        "active_seed_count",
+        "inactive_seed_count",
         "effective_encryption",
         "effective_ipv6_enabled",
         "transport_application",
@@ -6131,16 +6235,62 @@
       ],
       "type": "object"
     },
+    "SeedAdmissionView": {
+      "enum": [
+        "active",
+        "queued",
+        "inactive_exempt",
+        "ineligible"
+      ],
+      "type": "string"
+    },
+    "SeedGoalStatusView": {
+      "enum": [
+        "unmet",
+        "met"
+      ],
+      "type": "string"
+    },
+    "SeedGoalView": {
+      "additionalProperties": false,
+      "properties": {
+        "finished_download_ratio_met": {
+          "type": "boolean"
+        },
+        "finished_time_met": {
+          "type": "boolean"
+        },
+        "share_ratio_met": {
+          "type": "boolean"
+        },
+        "status": {
+          "$ref": "#/$defs/SeedGoalStatusView"
+        }
+      },
+      "required": [
+        "status",
+        "share_ratio_met",
+        "finished_download_ratio_met",
+        "finished_time_met"
+      ],
+      "type": "object"
+    },
     "ServiceSnapshot": {
       "properties": {
         "client_settings": {
           "$ref": "#/$defs/ClientSettings",
           "default": {
             "active_downloads": 3,
+            "active_seeds": {
+              "torrents": 5,
+              "type": "limited"
+            },
             "download_rate_limit": {
               "type": "unlimited"
             },
             "encryption": "allow",
+            "finished_download_ratio_limit_percent": 700,
+            "finished_time_limit_seconds": 86400,
             "ipv6_enabled": true,
             "listener": {
               "type": "disabled"
@@ -6148,6 +6298,7 @@
             "peer_connection_limit": 200,
             "port_mapping": "disabled",
             "preferred_listen_port": 6881,
+            "share_ratio_limit_percent": 200,
             "tracker_https_server_authentication": "system_trust",
             "upload_rate_limit": {
               "type": "unlimited"
@@ -7169,6 +7320,38 @@
         {
           "properties": {
             "field": {
+              "const": "lifetime",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/TorrentLifetimeView"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
+              "const": "seeding",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/TorrentSeedingView"
+            }
+          },
+          "required": [
+            "field",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "field": {
               "const": "progress",
               "type": "string"
             },
@@ -7294,6 +7477,41 @@
         }
       ]
     },
+    "TorrentLifetimeView": {
+      "additionalProperties": false,
+      "properties": {
+        "active_seconds": {
+          "type": "string"
+        },
+        "downloaded_payload_bytes": {
+          "type": "string"
+        },
+        "finished_seconds": {
+          "type": "string"
+        },
+        "seeding_seconds": {
+          "type": "string"
+        },
+        "share_ratio_hundredths": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "uploaded_payload_bytes": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "uploaded_payload_bytes",
+        "downloaded_payload_bytes",
+        "active_seconds",
+        "finished_seconds",
+        "seeding_seconds",
+        "share_ratio_hundredths"
+      ],
+      "type": "object"
+    },
     "TorrentOperationalState": {
       "enum": [
         "queued",
@@ -7367,6 +7585,28 @@
       "required": [
         "torrent_id",
         "fields"
+      ],
+      "type": "object"
+    },
+    "TorrentSeedingView": {
+      "additionalProperties": false,
+      "properties": {
+        "admission": {
+          "$ref": "#/$defs/SeedAdmissionView"
+        },
+        "goal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SeedGoalView"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "admission"
       ],
       "type": "object"
     },
@@ -7598,6 +7838,17 @@
         "force_recheck_available": {
           "type": "boolean"
         },
+        "lifetime": {
+          "$ref": "#/$defs/TorrentLifetimeView",
+          "default": {
+            "active_seconds": "0",
+            "downloaded_payload_bytes": "0",
+            "finished_seconds": "0",
+            "seeding_seconds": "0",
+            "share_ratio_hundredths": null,
+            "uploaded_payload_bytes": "0"
+          }
+        },
         "metadata_available": {
           "type": "boolean"
         },
@@ -7645,6 +7896,12 @@
             "string",
             "null"
           ]
+        },
+        "seeding": {
+          "$ref": "#/$defs/TorrentSeedingView",
+          "default": {
+            "admission": "ineligible"
+          }
         },
         "source_display_name": {
           "type": [
@@ -8640,6 +8897,7 @@
               "$ref": "#/$defs/ClientSettingsRuntimeView",
               "default": {
                 "active_download_count": 0,
+                "active_seed_count": 0,
                 "advertised_peer_endpoint": {
                   "type": "unavailable"
                 },
@@ -8680,10 +8938,16 @@
                 "checking_count": 0,
                 "configured": {
                   "active_downloads": 3,
+                  "active_seeds": {
+                    "torrents": 5,
+                    "type": "limited"
+                  },
                   "download_rate_limit": {
                     "type": "unlimited"
                   },
                   "encryption": "allow",
+                  "finished_download_ratio_limit_percent": 700,
+                  "finished_time_limit_seconds": 86400,
                   "ipv6_enabled": true,
                   "listener": {
                     "type": "disabled"
@@ -8691,6 +8955,7 @@
                   "peer_connection_limit": 200,
                   "port_mapping": "disabled",
                   "preferred_listen_port": 6881,
+                  "share_ratio_limit_percent": 200,
                   "tracker_https_server_authentication": "system_trust",
                   "upload_rate_limit": {
                     "type": "unlimited"
@@ -8698,6 +8963,10 @@
                   "upload_slots": 8
                 },
                 "effective_active_downloads": 3,
+                "effective_active_seeds": {
+                  "torrents": 5,
+                  "type": "limited"
+                },
                 "effective_download_rate_limit": {
                   "type": "unlimited"
                 },
@@ -8719,6 +8988,7 @@
                 "encryption_application": {
                   "type": "applied"
                 },
+                "inactive_seed_count": 0,
                 "ipv6_application": {
                   "type": "applied"
                 },

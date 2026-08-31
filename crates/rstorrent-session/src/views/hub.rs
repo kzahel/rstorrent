@@ -29,10 +29,10 @@ use crate::diagnostics::{
 use crate::file_views::{FileCatalogState, FileProgressModel, FileViewChange};
 use crate::media_catalog_views::{MediaCatalogState, MediaItemView};
 use crate::settings::{
-    ActiveDownloadsClampReason, AdvertisedPeerEndpointStatus, ClientSettingsApplicationState,
-    ClientSettingsDegradedReason, ClientSettingsRuntimeView, Ipv6PinholeStatus,
-    MAX_RUNTIME_DETAIL_BYTES, PortMappingStatus, SettingsDomainGeneration, StorageSettingsSnapshot,
-    bounded_utf8,
+    ActiveDownloadsClampReason, ActiveSeedLimit, AdvertisedPeerEndpointStatus,
+    ClientSettingsApplicationState, ClientSettingsDegradedReason, ClientSettingsRuntimeView,
+    Ipv6PinholeStatus, MAX_RUNTIME_DETAIL_BYTES, PortMappingStatus, SettingsDomainGeneration,
+    StorageSettingsSnapshot, bounded_utf8,
 };
 use crate::speed::SessionRateHistory;
 use crate::tracker_views::{TrackerCatalogState, TrackerViewModel};
@@ -400,12 +400,18 @@ impl ViewHub {
             if let Some(state) = durable.get(&torrent.torrent_id) {
                 model.view.display_name = state.display_name.clone();
                 model.view.source_display_name = state.source_display_name.clone();
+                model.view.lifetime = state.lifetime.clone();
+                model.view.seeding = state.seeding.clone();
+                model.progress_inputs.seed_admission = state.seeding.admission;
                 model.verified = state.verified.clone();
                 model.files = state.files.clone();
                 model.trackers = state.trackers.clone();
             } else if let Some(old) = previous.get(&torrent.torrent_id) {
                 model.view.display_name = old.view.display_name.clone();
                 model.view.source_display_name = old.view.source_display_name.clone();
+                model.view.lifetime = old.view.lifetime.clone();
+                model.view.seeding = old.view.seeding.clone();
+                model.progress_inputs.seed_admission = old.view.seeding.admission;
                 model.verified = old.verified.clone();
                 model.files = old.files.clone();
                 model.trackers = old.trackers.clone();
@@ -426,6 +432,7 @@ impl ViewHub {
                 model.view.checking = old.view.checking.clone();
                 model.preparation = old.preparation.clone();
                 model.progress_inputs = old.progress_inputs;
+                model.progress_inputs.seed_admission = model.view.seeding.admission;
                 model.view.progress = assess_progress(torrent, model.progress_inputs);
                 model.view.operational_state = operational_state(torrent, model.progress_inputs);
                 model.active = old.active.clone();
@@ -732,6 +739,27 @@ impl ViewHub {
         hub.client_settings.active_downloads_clamp_reason = clamp_reason;
         hub.client_settings.active_download_count = active_download_count;
         hub.client_settings.checking_count = checking_count;
+        if hub.client_settings == previous_client_settings {
+            return Ok(());
+        }
+        let previous_torrents = hub.torrents.clone();
+        hub.publish_changes(&previous_torrents, None, Some(&previous_client_settings))
+    }
+
+    pub(crate) fn set_seed_admission_state(
+        &self,
+        effective_active_seeds: ActiveSeedLimit,
+        active_seed_count: u16,
+        inactive_seed_count: u16,
+    ) -> Result<(), SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        let previous_client_settings = hub.client_settings.clone();
+        hub.client_settings.effective_active_seeds = effective_active_seeds;
+        hub.client_settings.active_seed_count = active_seed_count;
+        hub.client_settings.inactive_seed_count = inactive_seed_count;
         if hub.client_settings == previous_client_settings {
             return Ok(());
         }

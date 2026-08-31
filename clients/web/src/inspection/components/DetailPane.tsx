@@ -6,8 +6,11 @@ import {
   checkingStatusLabel,
   formatBytes,
   formatDuration,
+  formatElapsedSeconds,
+  formatExactBytes,
   formatProgress,
   formatRate,
+  formatShareRatio,
   torrentVisibleProgress,
 } from "../format";
 import type { DetailTab } from "../model";
@@ -272,19 +275,26 @@ function GeneralDetail({
         </dl>
       )}
       <dl className={styles.metrics}>
-        <Metric label="Status" value={torrent.status} />
+        <Metric
+          label="Status"
+          value={torrent.operationalState.replaceAll("_", " ")}
+        />
         <Metric
           label="Size"
           value={formatBytes(torrent.sizeBytes, dataUnits)}
         />
         <Metric
-          label="Downloaded"
-          value={formatBytes(torrent.downloadedBytes, dataUnits)}
+          label="Lifetime downloaded"
+          value={formatExactBytes(torrent.lifetimeDownloadedBytes, dataUnits)}
         />
         <Metric
-          label="Uploaded"
-          value={formatBytes(torrent.uploadedBytes, dataUnits)}
+          label="Lifetime uploaded"
+          value={formatExactBytes(torrent.lifetimeUploadedBytes, dataUnits)}
         />
+        <Metric label="Share ratio" value={formatShareRatio(torrent.shareRatioHundredths)} />
+        <Metric label="Active time" value={formatElapsedSeconds(torrent.activeSeconds)} />
+        <Metric label="Finished time" value={formatElapsedSeconds(torrent.finishedSeconds)} />
+        <Metric label="Seeding time" value={formatElapsedSeconds(torrent.seedingSeconds)} />
         <Metric
           label="Download speed"
           value={formatRate(torrent.downloadRate, dataUnits)}
@@ -301,7 +311,19 @@ function GeneralDetail({
           label="Known peers"
           value={torrent.peersKnown?.toLocaleString() ?? "—"}
         />
+        {torrent.seedGoal === null ? null : (
+          <Metric
+            label="Seeding priority"
+            value={`${seedAdmissionLabel(torrent.seedAdmission)} · goal ${torrent.seedGoal.status}`}
+          />
+        )}
       </dl>
+      {torrent.seedGoal === null ? null : (
+        <p>
+          Seeding goals affect automatic priority; a goal-met torrent may keep
+          seeding while capacity is available. Met thresholds: {seedGoalThresholds(torrent.seedGoal)}.
+        </p>
+      )}
       {torrent.protocolIdentities?.v1 != null &&
       torrent.protocolIdentities.v2 != null ? (
         <>
@@ -329,6 +351,34 @@ function GeneralDetail({
       )}
     </div>
   );
+}
+
+function seedAdmissionLabel(
+  admission: NonNullable<ReturnType<typeof useCurrentTorrent>>["seedAdmission"],
+): string {
+  switch (admission) {
+    case "active":
+      return "active seed";
+    case "queued":
+      return "queued seed";
+    case "inactive_exempt":
+      return "active, inactive-exempt seed";
+    case "ineligible":
+      return "not eligible to seed";
+  }
+}
+
+function seedGoalThresholds(
+  goal: NonNullable<
+    NonNullable<ReturnType<typeof useCurrentTorrent>>["seedGoal"]
+  >,
+): string {
+  const met = [
+    goal.share_ratio_met ? "share ratio" : null,
+    goal.finished_download_ratio_met ? "finished/download time ratio" : null,
+    goal.finished_time_met ? "finished time" : null,
+  ].filter((value): value is string => value !== null);
+  return met.length === 0 ? "none yet" : met.join(", ");
 }
 
 function TorrentRateLimits({

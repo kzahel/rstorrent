@@ -1982,6 +1982,25 @@ function torrent(input: Partial<TorrentRow> & Pick<TorrentRow, "id" | "name" | "
     etaDownloadRateBytes:
       input.etaDownloadRateBytes ?? (eta.state === "estimate" ? "1" : "0"),
     eta,
+    lifetimeUploadedBytes: input.lifetimeUploadedBytes ?? String(input.uploadedBytes ?? 0),
+    lifetimeDownloadedBytes:
+      input.lifetimeDownloadedBytes ?? String(input.downloadedBytes ?? 0),
+    activeSeconds: input.activeSeconds ?? "0",
+    finishedSeconds: input.finishedSeconds ?? "0",
+    seedingSeconds: input.seedingSeconds ?? "0",
+    shareRatioHundredths: input.shareRatioHundredths ?? null,
+    seedAdmission:
+      input.seedAdmission ?? (input.status === "complete" ? "active" : "ineligible"),
+    seedGoal:
+      input.seedGoal ??
+      (input.status === "complete"
+        ? {
+            status: "met",
+            share_ratio_met: true,
+            finished_download_ratio_met: false,
+            finished_time_met: false,
+          }
+        : null),
     addedAtMs: input.addedAtMs ?? BASE_TIME_MS - 3_600_000,
     archived: input.archived ?? false,
     removalState: input.removalState ?? null,

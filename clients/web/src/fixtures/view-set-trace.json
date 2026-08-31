@@ -62,6 +62,17 @@
                   "state": "estimate",
                   "seconds": "8"
                 },
+                "lifetime": {
+                  "uploaded_payload_bytes": "0",
+                  "downloaded_payload_bytes": "0",
+                  "active_seconds": "0",
+                  "finished_seconds": "0",
+                  "seeding_seconds": "0",
+                  "share_ratio_hundredths": "0"
+                },
+                "seeding": {
+                  "admission": "ineligible"
+                },
                 "progress": {
                   "disposition": "active",
                   "phase": "transfer",
@@ -87,6 +98,13 @@
                 "peer_connection_limit": 200,
                 "upload_slots": 8,
                 "active_downloads": 3,
+                "active_seeds": {
+                  "type": "limited",
+                  "torrents": 5
+                },
+                "share_ratio_limit_percent": 200,
+                "finished_download_ratio_limit_percent": 700,
+                "finished_time_limit_seconds": 86400,
                 "upload_rate_limit": {
                   "type": "unlimited"
                 },
@@ -114,6 +132,10 @@
               "effective_peer_connection_limit": 200,
               "effective_upload_slots": 8,
               "effective_active_downloads": 3,
+              "effective_active_seeds": {
+                "type": "limited",
+                "torrents": 5
+              },
               "effective_upload_rate_limit": {
                 "type": "unlimited"
               },
@@ -122,6 +144,8 @@
               },
               "active_download_count": 0,
               "checking_count": 0,
+              "active_seed_count": 0,
+              "inactive_seed_count": 0,
               "effective_encryption": "allow",
               "effective_ipv6_enabled": true,
               "effective_tracker_https_server_authentication": "system_trust",
@@ -249,6 +273,17 @@
                   "state": "estimate",
                   "seconds": "8"
                 },
+                "lifetime": {
+                  "uploaded_payload_bytes": "0",
+                  "downloaded_payload_bytes": "0",
+                  "active_seconds": "0",
+                  "finished_seconds": "0",
+                  "seeding_seconds": "0",
+                  "share_ratio_hundredths": "0"
+                },
+                "seeding": {
+                  "admission": "ineligible"
+                },
                 "progress": {
                   "disposition": "active",
                   "phase": "transfer",
@@ -318,6 +353,23 @@
                 "eta": {
                   "state": "unavailable"
                 },
+                "lifetime": {
+                  "uploaded_payload_bytes": "0",
+                  "downloaded_payload_bytes": "0",
+                  "active_seconds": "0",
+                  "finished_seconds": "0",
+                  "seeding_seconds": "0",
+                  "share_ratio_hundredths": "0"
+                },
+                "seeding": {
+                  "admission": "active",
+                  "goal": {
+                    "status": "unmet",
+                    "share_ratio_met": false,
+                    "finished_download_ratio_met": false,
+                    "finished_time_met": false
+                  }
+                },
                 "progress": {
                   "disposition": "inactive",
                   "phase": "complete",
@@ -343,6 +395,13 @@
                 "peer_connection_limit": 200,
                 "upload_slots": 8,
                 "active_downloads": 3,
+                "active_seeds": {
+                  "type": "limited",
+                  "torrents": 5
+                },
+                "share_ratio_limit_percent": 200,
+                "finished_download_ratio_limit_percent": 700,
+                "finished_time_limit_seconds": 86400,
                 "upload_rate_limit": {
                   "type": "unlimited"
                 },
@@ -370,6 +429,10 @@
               "effective_peer_connection_limit": 200,
               "effective_upload_slots": 8,
               "effective_active_downloads": 3,
+              "effective_active_seeds": {
+                "type": "limited",
+                "torrents": 5
+              },
               "effective_upload_rate_limit": {
                 "type": "unlimited"
               },
@@ -378,6 +441,8 @@
               },
               "active_download_count": 0,
               "checking_count": 0,
+              "active_seed_count": 0,
+              "inactive_seed_count": 0,
               "effective_encryption": "allow",
               "effective_ipv6_enabled": true,
               "effective_tracker_https_server_authentication": "system_trust",
