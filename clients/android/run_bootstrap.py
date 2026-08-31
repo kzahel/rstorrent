@@ -1112,6 +1112,46 @@ def app_exists(target: Any, relative_path: str) -> bool:
     return result.returncode == 0
 
 
+def push_local_file(
+    target: Any,
+    target_kind: str,
+    source: Path,
+    destination: str,
+    *,
+    timeout: float = 30,
+) -> None:
+    if target_kind != "chromeos":
+        target.run(["push", str(source), destination], timeout=timeout)
+        return
+    host = getattr(target, "host", None)
+    if not isinstance(host, str) or not host:
+        raise BootstrapFailure("ChromeOS ADB target does not expose its SSH host")
+    remote_source = (
+        f"/tmp/rstorrent-upload-{os.getpid()}-{time.monotonic_ns()}-{source.name}"
+    )
+    staged = subprocess.run(
+        ["scp", str(source), f"{host}:{remote_source}"],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
+    if staged.returncode != 0:
+        raise BootstrapFailure(
+            f"could not stage ChromeOS upload {source.name}: {staged.stderr.strip()}"
+        )
+    try:
+        target.run(["push", remote_source, destination], timeout=timeout)
+    finally:
+        subprocess.run(
+            ["ssh", host, shlex.join(["rm", "-f", remote_source])],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+
+
 def wait_result(
     target: Any,
     run_id: str,
@@ -1920,6 +1960,13 @@ def product_logs(target: Any) -> str:
         timeout=15,
         check=False,
     ).stdout
+
+
+def product_saf_tree_active(logs: str) -> bool:
+    return (
+        "saf_tree_ready" in logs
+        or "saf_root_health source=startup available=true" in logs
+    )
 
 
 def launch_product_ipv6_policy(target: Any, mode: str) -> None:
@@ -3101,7 +3148,12 @@ def prepare_product_saf(target: Any, probe: ModuleType, grant_storage: str) -> N
         raise BootstrapFailure("product SAF grant was not persisted")
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
-        if "saf_tree_ready" in product_logs(target):
+        if product_saf_tree_active(product_logs(target)):
+            # A startup reconciliation can make the selected root healthy
+            # before MainActivity's service binding has completed. Fence that
+            # binding before sending the next product intent so it cannot be
+            # lost behind the still-finishing picker handoff.
+            launch_product_lifecycle_evidence(target, "observe")
             return
         time.sleep(0.2)
     raise BootstrapFailure("product service did not activate the persisted SAF tree")
@@ -3241,35 +3293,51 @@ def assert_no_product_notification(
     raise BootstrapFailure(f"{description} replayed notifications: {records!r}")
 
 
+def activate_chromeos_notification(body: str) -> None:
+    if os.environ.get("RSTORRENT_MANUAL_NOTIFICATION") != "1":
+        raise BootstrapFailure(
+            "ChromeOS notification activation requires a manual system-UI tap; "
+            "rerun with RSTORRENT_MANUAL_NOTIFICATION=1"
+        )
+    input(
+        "close the ChromeOS Files picker if it remains open, then manually "
+        f"activate notification {body!r} and press Enter: "
+    )
+
+
 def tap_product_notification(
     target: Any,
+    target_kind: str,
     probe: ModuleType,
     *,
     body: str,
     expected_text: str,
     timeout: float = 15,
 ) -> None:
-    target.shell(["cmd", "statusbar", "expand-notifications"], check=False)
-    deadline = time.monotonic() + timeout
-    visible: list[str] = []
-    while time.monotonic() < deadline:
-        nodes = probe.ui_nodes(target)
-        visible = [
-            value
-            for node in nodes
-            for value in (
-                node.attrib.get("text", "").strip(),
-                node.attrib.get("content-desc", "").strip(),
-            )
-            if value
-        ]
-        if probe.click_from_nodes(target, nodes, [body]):
-            break
-        time.sleep(0.2)
+    if target_kind == "chromeos":
+        activate_chromeos_notification(body)
     else:
-        raise BootstrapFailure(
-            f"could not tap notification body {body!r}; visible={visible!r}"
-        )
+        target.shell(["cmd", "statusbar", "expand-notifications"], check=False)
+        deadline = time.monotonic() + timeout
+        visible: list[str] = []
+        while time.monotonic() < deadline:
+            nodes = probe.ui_nodes(target)
+            visible = [
+                value
+                for node in nodes
+                for value in (
+                    node.attrib.get("text", "").strip(),
+                    node.attrib.get("content-desc", "").strip(),
+                )
+                if value
+            ]
+            if probe.click_from_nodes(target, nodes, [body]):
+                break
+            time.sleep(0.2)
+        else:
+            raise BootstrapFailure(
+                f"could not tap notification body {body!r}; visible={visible!r}"
+            )
 
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -3290,7 +3358,8 @@ def tap_product_notification(
             return
         time.sleep(0.2)
     raise BootstrapFailure(
-        f"notification tap did not reach {expected_text!r}; visible={sorted(text)!r}"
+        f"notification tap did not reach {expected_text!r}; "
+        f"visible={sorted(text)!r} package_active={PACKAGE in activity}"
     )
 
 
@@ -3749,7 +3818,12 @@ def run_product_dynamic_saf_profile(
                 )
                 connection.execute("PRAGMA user_version = 21")
             remote_database = f"/data/local/tmp/rstorrent-schema21-{ordinal}.db"
-            target.run(["push", str(legacy_database), remote_database])
+            push_local_file(
+                target,
+                target_kind,
+                legacy_database,
+                remote_database,
+            )
             target.shell(
                 ["run-as", PACKAGE, "mkdir", "-p", "files/product-profile"]
             )
@@ -3778,7 +3852,7 @@ def run_product_dynamic_saf_profile(
                 source = fixture.run_path / name
                 source.write_bytes(content)
                 destination = f"{probe.grant_path(grant_storage)}/{name}"
-                target.run(["push", str(source), destination])
+                push_local_file(target, target_kind, source, destination)
                 reset_sentinels[destination] = hashlib.sha256(content).hexdigest()
         target.shell(
             ["pm", "grant", PACKAGE, "android.permission.POST_NOTIFICATIONS"],
@@ -3820,7 +3894,7 @@ def run_product_dynamic_saf_profile(
                 timeout=15,
                 check=False,
             ).stdout
-            if "saf_tree_ready" in logs:
+            if product_saf_tree_active(logs):
                 break
             time.sleep(0.2)
         else:
@@ -4020,7 +4094,7 @@ def run_product_dynamic_saf_profile(
 
         unrelated_source = fixture.run_path / "unrelated-sentinel.bin"
         unrelated_source.write_bytes(unrelated_content)
-        target.run(["push", str(unrelated_source), unrelated_path])
+        push_local_file(target, target_kind, unrelated_source, unrelated_path)
 
         request_product_torrent_action(target, torrent_id, "remove")
         wait_product_log(
@@ -4264,9 +4338,10 @@ def run_product_notifications_profile(
         )
         tap_product_notification(
             target,
+            target_kind,
             probe,
             body=completion_body,
-            expected_text=fixture.name,
+            expected_text="Info hash",
         )
         assert_no_product_notification(
             target,
@@ -4352,6 +4427,7 @@ def run_product_notifications_profile(
         )
         tap_product_notification(
             target,
+            target_kind,
             probe,
             body=attention_body,
             expected_text="Storage",
@@ -4360,7 +4436,13 @@ def run_product_notifications_profile(
 
         target.shell(["rm", "-rf", corrupt_path])
         source_path = fixture.run_path / "seed" / fixture.name / corrupt_relative
-        target.run(["push", str(source_path), corrupt_path], timeout=30)
+        push_local_file(
+            target,
+            target_kind,
+            source_path,
+            corrupt_path,
+            timeout=30,
+        )
 
         request_product_torrent_action(target, torrent_id, "remove")
         wait_product_log(

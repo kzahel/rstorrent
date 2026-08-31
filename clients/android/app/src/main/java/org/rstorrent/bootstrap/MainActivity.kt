@@ -2,6 +2,7 @@ package org.rstorrent.bootstrap
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -408,7 +409,9 @@ class MainActivity : ComponentActivity() {
 
     private fun consumeNotificationRoute(command: Intent): Intent? {
         val action = command.action ?: return null
-        if (!action.startsWith("$packageName.action.NOTIFICATION_ROUTE.")) return null
+        val notification =
+            AndroidNotificationContract.routedNotification(packageName, action) ?: return null
+        getSystemService(NotificationManager::class.java).cancel(notification.tag, notification.id)
         notificationNavigationSequence += 1
         notificationNavigation.value =
             when (command.getStringExtra(AndroidNotificationContract.EXTRA_ROUTE)) {

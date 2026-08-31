@@ -25,6 +25,8 @@ internal object AndroidNotificationContract {
     const val ATTENTION_CHANNEL_ID = "rstorrent-action-required"
     const val ONGOING_NOTIFICATION_ID = 42
     const val COMPANION_ROOT_NOTIFICATION_ID = 43
+    const val COMPLETION_NOTIFICATION_ID = 44
+    const val ATTENTION_NOTIFICATION_ID = 45
     const val EXTRA_TORRENT_ID = "notification_torrent_id"
     const val EXTRA_ROUTE = "notification_route"
     const val EXTRA_STORAGE_ROOT_ID = "notification_storage_root_id"
@@ -35,7 +37,30 @@ internal object AndroidNotificationContract {
         packageName: String,
         opaqueTag: String,
     ): String = "$packageName.action.NOTIFICATION_ROUTE.$opaqueTag"
+
+    fun routedNotification(
+        packageName: String,
+        action: String,
+    ): ProductNotificationIdentity? {
+        val prefix = "$packageName.action.NOTIFICATION_ROUTE."
+        if (!action.startsWith(prefix)) return null
+        val tag = action.removePrefix(prefix)
+        val category =
+            ProductNotificationCategory.entries.firstOrNull { category ->
+                val tagPrefix = productNotificationTagPrefix(category)
+                tag.startsWith(tagPrefix) &&
+                    OPAQUE_TAG_SUFFIX.matches(tag.removePrefix(tagPrefix))
+            } ?: return null
+        return ProductNotificationIdentity(tag, eventNotificationId(category))
+    }
+
+    private val OPAQUE_TAG_SUFFIX = Regex("[0-9a-f]{64}")
 }
+
+internal data class ProductNotificationIdentity(
+    val tag: String,
+    val id: Int,
+)
 
 internal class ProductNotificationPreferenceStore(context: Context) {
     private val preferences =
@@ -431,24 +456,24 @@ internal class AndroidNotificationCoordinator(
                 it != NotificationManager.IMPORTANCE_NONE
             } == true
 
-    private fun eventNotificationId(category: ProductNotificationCategory): Int =
-        when (category) {
-            ProductNotificationCategory.DOWNLOAD_COMPLETE -> COMPLETION_NOTIFICATION_ID
-            ProductNotificationCategory.NEEDS_ATTENTION -> ATTENTION_NOTIFICATION_ID
-        }
-
-    private fun productNotificationTagPrefix(category: ProductNotificationCategory): String =
-        "rstorrent-${category.name.lowercase()}-"
-
     companion object {
         private const val ONGOING_OPEN_REQUEST = 42
         private const val ONGOING_STOP_REQUEST = 43
-        private const val COMPLETION_NOTIFICATION_ID = 44
-        private const val ATTENTION_NOTIFICATION_ID = 45
         private const val MAX_ACTIVE_PER_CATEGORY = 32
         private const val TAG = "RSTorrentProduct"
     }
 }
+
+internal fun eventNotificationId(category: ProductNotificationCategory): Int =
+    when (category) {
+        ProductNotificationCategory.DOWNLOAD_COMPLETE ->
+            AndroidNotificationContract.COMPLETION_NOTIFICATION_ID
+        ProductNotificationCategory.NEEDS_ATTENTION ->
+            AndroidNotificationContract.ATTENTION_NOTIFICATION_ID
+    }
+
+internal fun productNotificationTagPrefix(category: ProductNotificationCategory): String =
+    "rstorrent-${category.name.lowercase()}-"
 
 internal fun productOngoingNotificationText(product: ProductState): String {
     if (!product.ready && product.error == null) return "Opening profile"

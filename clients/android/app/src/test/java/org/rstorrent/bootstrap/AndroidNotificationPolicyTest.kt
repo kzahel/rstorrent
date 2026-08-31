@@ -2,6 +2,7 @@ package org.rstorrent.bootstrap
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.rstorrent.session.uniffi.ProgressAssessment
@@ -244,6 +245,35 @@ class AndroidNotificationPolicyTest {
         assertEquals(completion, repeated)
         assertFalse(completion.contains(ID))
         assertFalse(completion == attention)
+    }
+
+    @Test
+    fun routedNotificationAcceptsOnlyOwnedOpaqueAutomaticTags() {
+        val packageName = "org.rstorrent.bootstrap"
+        ProductNotificationCategory.entries.forEach { category ->
+            val tag = productNotificationTag(category, ID)
+            val action = AndroidNotificationContract.routeAction(packageName, tag)
+            val identity =
+                requireNotNull(
+                    AndroidNotificationContract.routedNotification(packageName, action),
+                )
+            assertEquals(tag, identity.tag)
+            assertEquals(eventNotificationId(category), identity.id)
+        }
+
+        assertNull(
+            AndroidNotificationContract.routedNotification(
+                packageName,
+                "$packageName.action.NOTIFICATION_ROUTE.rstorrent-download_complete-$ID",
+            ),
+        )
+        assertNull(
+            AndroidNotificationContract.routedNotification(
+                packageName,
+                "other.package.action.NOTIFICATION_ROUTE." +
+                    productNotificationTag(ProductNotificationCategory.DOWNLOAD_COMPLETE, ID),
+            ),
+        )
     }
 
     private fun torrent(
