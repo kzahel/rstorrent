@@ -1,10 +1,10 @@
 # Tactical 202: Android Progressive Media Playback
 
-Status: **Active as of 2026-08-31.** User direction authorizes end-to-end
-implementation and commits. This tactical selects lazy first-use startup of
-the existing shared media listener, retained until joined Android application
-shutdown. Idle listener teardown, subtitles, and production release remain
-deferred.
+Status: **Complete as of 2026-08-31.** Android now consumes the existing
+shared media capability through a lazy exact-loopback listener and a private
+Media3 player. Deterministic, generated-boundary, dual-ABI, focused device,
+and physical ChromeOS progressive playback gates pass. Idle listener teardown,
+subtitles, and production release remain deferred.
 
 Topics: `android-jstorrent-replacement`, `android-saf-storage`,
 `http-file-serving-and-streaming`, `application-view-api`, `client-surfaces`,
@@ -324,4 +324,80 @@ level honestly and must not claim hardware codec breadth from an emulator.
 
 ## Evidence Record
 
-Pending implementation.
+The implementation landed incrementally in commits `75e7639`, `b9e3ec3`,
+`ada8a1b`, and `6bd8342`. Those gates respectively record this decision,
+add the lazy Rust media-server boundary and joined shutdown, add the native
+player/security/Compose policy, and prove progressive playback on physical
+ChromeOS.
+
+`AndroidApplicationClient` now owns one
+`AsyncMutex<Option<LoopbackMediaServer>>`. Its first `create_media_url` call
+binds exact `127.0.0.1:0`, concurrent calls converge on that owner, later calls
+reuse it, and application shutdown fences creation before closing the shared
+application and joining the listener. The existing typed `MediaUrlOutcome`
+crosses UniFFI directly; Kotlin receives the complete URL and never derives a
+port, token, path, range, or storage read.
+
+The Android application uses Media3 `1.9.2`, the version compatible with the
+repository's API-35 compile baseline. The private `singleTask`
+`PlayerActivity` validates the exact capability URL, requests audio focus,
+uses `PlayerView`, supports picture-in-picture, and holds the existing
+playback interaction lease until release. Network Security Configuration
+permits Java/Kotlin cleartext only for numerical `127.0.0.1`; nonloopback and
+`localhost` controls remain denied. The Files presentation enables **Play**
+only for classifier-v1 video with typed `available` or `streamable` authority,
+while completed files retain **Open**.
+
+Real integration found that Media3's default HTTP read timeout was shorter
+than the shared server's bounded 120-second wait for a requested verified
+range before response progress. The player therefore uses a 125-second read
+timeout and a 15-second connection timeout. This changes no HTTP, scheduler,
+verification, or storage semantics; the server still emits only verified
+64-KiB chunks and retains its existing no-progress bound.
+
+The owned `product-media-playback` campaign creates a deterministic 30-second
+H.264/AAC fast-start MP4, seeds it through pinned libtorrent, delays real
+BitTorrent piece frames, and drives the installed Android product through SAF,
+the shared Rust HTTP server, and Media3. On physical ChromeOS 150 / ARC API 33
+(`nami_cheets`) the 749,195-byte, 23-piece run proves:
+
+- the first player renders a frame while incomplete, then torrent removal
+  revokes its source and releases the player;
+- a second incomplete generation renders, enters native picture-in-picture,
+  survives Home, seeks to 20 seconds while incomplete, completes without
+  replacing the player, and seeks again to five seconds after publication;
+- the final SAF payload hash is exact, the loopback origin is absent from
+  private persisted files, playback release joins, default-off lifecycle
+  shutdown follows the last invisible interaction, and exact cleanup passes;
+- incomplete gates were observed at two and three verified pieces; SAF
+  ownership peaked at one of 40 handles and two pending requests; process file
+  descriptors were 127 baseline, 549 high-water, and 157 final before final
+  package cleanup.
+
+The two exact network/private-activity instrumentation tests and the two
+focused Compose Play/Open tests pass on the same Chromebook. An exploratory
+whole `ProductNavigationTest` run also encountered four unrelated existing
+form-factor-sensitive cases; rerunning the four Tactical 202 cases alone
+passed, so those cases are not claimed as a whole-class gate.
+
+Final repository evidence:
+
+- `cargo fmt --all -- --check`, `cargo clippy --workspace -- -D warnings`,
+  and `cargo test --workspace` pass, including 13 Android host tests, seven
+  media tests, 597 engine tests with 11 ignored, and 322 session tests with two
+  ignored;
+- `npm run typecheck --prefix clients/web` and `npm run test --prefix
+  clients/web` pass; Vitest reports 367 passed and two skipped tests;
+- `clients/android/build.sh` passes both x86_64 and arm64-v8a Rust/UniFFI
+  builds, 96 JVM tests, and debug APK assembly;
+- `:app:assembleDebugAndroidTest` passes, the four focused installed tests
+  pass, and `python3 -m py_compile clients/android/run_bootstrap.py` passes;
+  and
+- the physical `product-media-playback` profile returns `result=pass` and
+  `cleanup=ok`; `git diff --check` passes.
+
+No new server, byte bridge, payload callback, custom Media3 data source,
+storage reader, protocol behavior, public swarm, remote listener, production
+package, release, or deployment was added. Listener idle teardown, subtitles,
+codec breadth, background-audio controls, and stable/durable URLs remain the
+explicit next boundaries rather than hidden parts of this completion.

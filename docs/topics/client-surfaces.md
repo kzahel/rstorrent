@@ -834,22 +834,28 @@ actions.
 
 ## HTTP Playback Data Plane
 
-Desktop/browser hosting now exposes bounded ephemeral capability URLs for
-published and eligible active torrent files. That server is a content data
-plane, not the command and reactive-view transport. Android deliberately has
-no HTTP listener or incomplete-file presentation.
+Desktop/browser and Android hosting now expose bounded ephemeral capability
+URLs for published and eligible active torrent files. That server is a content
+data plane, not the command and reactive-view transport. Android starts its
+exact-loopback listener only on the first native Play request.
 
 Tacticals `138` and `139` implement exact interface binding, capabilities,
 expiry/revocation, `HEAD` and single-range behavior, verified-only active
 reads, bounded incomplete-file scheduling, body/backpressure limits, and
 joined lifecycle ownership. File bytes flow between Rust storage and HTTP
-clients without crossing the UI contract. Embedded playback, stable sharing,
-remote exposure, and Android streaming remain independent product decisions.
+clients without crossing the UI contract. Embedded desktop playback, stable
+sharing, and remote exposure remain independent product decisions.
 Completed Tactical `189` exposes that existing data plane as Library Media
 Play: a direct browser activation reserves an isolated tab before requesting
 the exact file capability, then browser-native media handling consumes the
 URL. This adds presentation only; capability eligibility, byte service,
 streaming demand, expiry, and revocation remain unchanged.
+Completed Tactical `202` adds the corresponding Android-native presentation:
+Compose **Play** launches one private Media3 activity for typed available or
+streamable video, while completed **Open** remains. The activity owns audio
+focus, transport controls, picture-in-picture, error presentation, and one
+existing playback interaction lease; Rust retains all HTTP, verification,
+demand, handoff, SAF, capability, and listener ownership.
 
 ## Current Gaps
 
@@ -857,8 +863,9 @@ streaming demand, expiry, and revocation remain unchanged.
   top level remains torrent-backed. Library-wide item aggregation, durable
   media identity/organization, thumbnails or provider artwork, watched state,
   and embedded in-application playback remain separate product capabilities.
-  Browser-native playback handoff exists for eligible Media rows; Android and
-  iOS have no corresponding derived-media presentation.
+  Browser-native playback handoff exists for eligible Media rows, and Android
+  has native progressive playback from the Files surface. iOS has no
+  corresponding progressive derived-media presentation.
 
 - The loopback WebSocket gateway and configured private-host Basic service are
   not a production owner-remote-access design. Tacticals `190` and `192`
@@ -948,8 +955,10 @@ streaming demand, expiry, and revocation remain unchanged.
 - The Android Compose product now presents authoritative multi-torrent queue
   and concurrent-admission state plus live Peers, Files, Trackers, Pieces,
   Disk, Swarm, Logs, Speed, and dual-family DHT projections. Search/plugins,
-  playback, VPN/proxy policy, and tracker mutation remain explicitly
-  unavailable rather than discarded or simulated. Completed Tactical
+  VPN/proxy policy, and tracker mutation remain explicitly unavailable rather
+  than discarded or simulated. Completed Tactical `202` adds native
+  progressive video playback without adding a second engine, scheduler,
+  storage reader, or HTTP implementation. Completed Tactical
   [`197`](../tactical/197-android-external-torrent-intake.md) adds bounded
   external `magnet:` and cross-package `content://` `.torrent` activation to
   the one `singleTop` activity and service-owned application flow. Generic
@@ -1031,8 +1040,9 @@ streaming demand, expiry, and revocation remain unchanged.
   and Compose settings. The advanced typed `disabled` override exists for
   compatibility/debug use and remains visibly unauthenticated in tracker
   rows; custom roots, pins, and certificate-management UI are absent.
-- No embedded playback UI, stable media sharing, remote media listener, or
-  Android HTTP playback server exists.
+- No embedded desktop playback UI, stable media sharing, or remote media
+  listener exists. Android's media-only HTTP listener is exact loopback,
+  starts lazily, and remains private to one application generation.
 - The maintained RSTorrent iOS product now supports the bounded scope recorded
   by completed Tacticals `147`--`149`, `152`, and `154`: qualified selected
   folders,

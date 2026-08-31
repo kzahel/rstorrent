@@ -237,7 +237,7 @@ blocker for an independent RSTorrent beta.
 | Low-battery shutdown | JSTorrent offers an opt-in 5–50% threshold. RSTorrent has only the active-work sleep setting and a disabled Battery policy row. | Decide whether Android replacement retains this safety valve. If implemented, define charging, threshold hysteresis, notification, intent preservation, and restart behavior. |
 | Companion idle/auto-close | JSTorrent can stop its separate legacy daemon after a configured disconnected interval. Tactical `194` instead owns one semantic service/application owner. | Tactical `200` selects a fixed 60-second authenticated-disconnect grace and no user-facing timer. A configurable idle policy remains deferred unless product evidence justifies it. |
 | Search and plugins | JSTorrent has search UI plus installed/recommended URL-fetched JavaScript plugins in an Android WebView sandbox. RSTorrent has no search/plugin product capability. | Treat as a separate security and product campaign. Implement only with explicit network-code trust, sandbox, update, disclosure, and Play-review policy; otherwise retire/defer visibly. |
-| Native/progressive playback | JSTorrent has Media3 playback for local and incomplete content, subtitles, streaming-aware activity ownership, and picture-in-picture. RSTorrent has completed-file Android open and engine/shared-web streaming foundations, but no native Android playback presentation. | Separate native presentation/lifecycle tactical. Do not equate engine byte availability with qualified Android playback. |
+| Native/progressive playback | Completed Tactical `202` gives RSTorrent Android native Media3 playback for typed completed and eligible incomplete video through the shared Rust HTTP capability, with audio focus, picture-in-picture, removal revocation, seek, publication handoff, and playback lifetime ownership proven on physical ChromeOS. | Treat native playback as implemented. Sidecar/external subtitles, codec breadth, resume/history, background-audio controls, and production-package qualification remain separate dispositions. |
 | Localization | JSTorrent currently ships system/app locale selection and numerous translated `values-*` resources. RSTorrent Compose strings are predominantly inline English. | Select the replacement locale set and translation/update workflow; record any reduced first-release set in the listing and release notes. |
 | Reset, clear data, and support | JSTorrent exposes reset settings, clear all data with optional payload deletion, and a prefilled report-bug path. RSTorrent shows Reset engine settings as unavailable. | Add safe, separately worded metadata reset and payload deletion operations plus support/diagnostic handoff, or explicitly narrow them. Never combine payload deletion with an implicit migration reset. |
 | Add-time file selection | JSTorrent can show a file-selection step during add. RSTorrent selects a root during Add and changes High/Normal/Skip intent from Files after addition. | Decide whether the existing RSTorrent flow is the accepted replacement behavior or whether pre-start selection is required. Preserve bounded BEP 53 selection intent. |
@@ -470,11 +470,11 @@ live run.
    independent background-lifetime decision.
 7. Design `JAR-005` with the production extension before either store update
    is scheduled.
-8. Decide VPN, proxy, DHT/PEX controls, search/plugins, playback,
+8. Decide VPN, proxy, DHT/PEX controls, search/plugins, playback follow-ups,
    localization, reset/support, and the remaining table rows individually.
    Proxy and any engine/network privacy work follow the source-first engine
-   campaign; search/plugin and playback remain separate security/lifecycle
-   campaigns.
+   campaign; search/plugin and playback follow-ups remain separate security/
+   lifecycle campaigns.
 9. Run `JAR-010` only after the required gates and disposition ledger converge.
    Signing, store upload, staged rollout, production extension publication,
    and release promotion each remain explicitly authorized operations.

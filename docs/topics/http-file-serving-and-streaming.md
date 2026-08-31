@@ -6,7 +6,9 @@ Status: Implemented on 2026-08-11 through completed Tacticals
 [`138`](../tactical/138-verified-http-file-serving.md) and
 [`139`](../tactical/139-incomplete-file-streaming-demand.md). Bounded
 capabilities now serve both published files and eligible active incomplete
-files through verified-only progressive HTTP reads.
+files through verified-only progressive HTTP reads. Completed Tactical
+[`202`](../tactical/202-android-progressive-media-playback.md) now composes the
+same listener and router into Android on first playback use.
 
 ## Purpose And Scope
 
@@ -115,16 +117,19 @@ The same bounded media router has two deployment modes:
    mount `/media/v1/<capability>` on that listener. Browser-hosted and private
    deployments therefore retain one address, port, origin, TLS termination,
    process lifetime, and graceful-shutdown owner.
-2. **In-process client without an HTTP gateway.** A client such as Tauri may
-   start one media-only listener on `127.0.0.1:0`. Port `0` asks the operating
-   system for an available ephemeral port. This is a narrow byte-serving
-   exception to Tauri's ordinary no-application-socket posture, not a reason
-   to expose the application API over loopback.
+2. **In-process client without an HTTP gateway.** A client such as Tauri or
+   Android may start one media-only listener on `127.0.0.1:0`. Port `0` asks
+   the operating system for an available ephemeral port. This is a narrow
+   byte-serving exception to the ordinary no-application-socket posture, not
+   a reason to expose the application API over loopback. Android starts its
+   listener lazily on the first accepted media-URL request and retains it until
+   joined application shutdown.
 
 The service must not multiplex HTTP onto the BitTorrent peer listener. It must
 not introduce a native host, IO daemon, companion process, or filesystem
-proxy. Android and other platform lifecycle integration require their own
-bounded evidence before support is claimed.
+proxy. Platform lifecycle integration requires its own bounded evidence before
+support is claimed. Android is now qualified by Tactical `202`; other
+platforms retain that requirement.
 
 ### Port policy
 
@@ -380,8 +385,9 @@ The existing gateway mounts the route under its authentication and hosting
 policy. Tauri owns one media-only `127.0.0.1:0` listener and validates the
 exact current URL before the system opener. React Files exposes `Open` only
 for typed `available` rows; browser mode uses an opener-isolated new tab.
-Android remains on its complete-file `content://` path and starts no HTTP
-listener.
+Completed Tactical `202` gives Android the same media-only listener on lazy
+first use. Its private Media3 activity consumes the complete Rust-created URL,
+while the existing completed-file `content://` **Open** path remains available.
 
 Completed Tactical `139` adds `streamable` as a distinct typed eligibility
 fact. Each active body owns one current interval and at most 4 MiB/16 pieces
@@ -403,8 +409,9 @@ and deliberate deferrals.
 
 ## Recommended Next Work
 
-Stable sharing, remote exposure, playback UI, Android streaming presentation,
-and transcoding remain independent product decisions. The direct remote path
+Stable sharing, remote exposure, embedded desktop playback, iOS progressive
+presentation, subtitles, and transcoding remain independent product decisions.
+The direct remote path
 and its browser presentation investigation now live in
 [`direct-remote-file-streaming.md`](direct-remote-file-streaming.md). A future
 embedded player may provide real presentation deadlines through the existing

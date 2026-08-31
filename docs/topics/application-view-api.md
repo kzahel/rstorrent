@@ -11,6 +11,14 @@ wanted-completion, seeding, and repair facts are the sole authority. Earlier
 generated-contract history below remains as an implementation record.
 
 Completed Tactical
+[`202`](../tactical/202-android-progressive-media-playback.md) changes no view
+DTO, selector, cursor, reducer, or delivery rule. Android exposes the existing
+typed semantic `create_media_url` result through UniFFI and consumes the
+complete ephemeral URL internally in Media3. Play eligibility still comes
+from authoritative file availability and classifier facts; no payload bytes,
+capability token, player state, or Android lifecycle fact enters a view.
+
+Completed Tactical
 [`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md) adds
 schema-23 seeding truth without changing view ownership. The generated
 settings snapshot and sparse patch carry active seeds plus three priority

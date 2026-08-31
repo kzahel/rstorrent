@@ -92,6 +92,9 @@ python3 clients/android/run_bootstrap.py \
   --target avd --avd jstorrent-tablet --storage saf-internal --runs 1 \
   --profile product-external-intake --no-build
 python3 clients/android/run_bootstrap.py \
+  --target chromeos --storage saf-internal --runs 1 \
+  --profile product-media-playback --no-build
+python3 clients/android/run_bootstrap.py \
   --target motox4 --storage saf-sdcard --runs 3 --profile success
 ```
 
@@ -166,6 +169,16 @@ SAF-handle high waters. The profile scans product diagnostics and app-private
 files for source leakage, proves settled descriptors and temporary-grant
 revocation, and removes every app, provider, transport, grant, and payload
 artifact.
+
+The `product-media-playback` profile generates a bounded H.264/AAC fast-start
+MP4, seeds it through pinned libtorrent, and delays real Piece frames to keep
+playback observably incomplete. It proves a first frame through the lazy
+shared Rust HTTP listener, removal revocation, a fresh incomplete playback,
+native picture-in-picture, incomplete seek, same-player completion handoff,
+completed seek, exact SAF hash, capability non-persistence, playback-lease and
+lifecycle release, resource high waters, and exact cleanup. It requires a SAF
+storage mode and `ffmpeg`; no public swarm or custom Android data source is
+used.
 
 The `product-unmetered-network` profile runs only on a fresh task-owned API 28
 or API 35 AVD. It enables the persisted default-off cost policy, crosses a
