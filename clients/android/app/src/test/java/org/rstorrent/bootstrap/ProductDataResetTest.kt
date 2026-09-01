@@ -12,6 +12,48 @@ import org.junit.Test
 
 class ProductDataResetTest {
     @Test
+    fun journalAcceptsExactTargetAndRootBoundsAndRejectsOneMore() {
+        val torrents =
+            List(ProductDataResetJournal.MAX_TORRENTS) { index ->
+                "t1-${index.toString(16).padStart(32, '0')}"
+            }
+        val roots =
+            List(ProductSafRootRegistry.MAX_ROOTS) { index ->
+                ProductSafRootGrant(
+                    rootId = "root_$index",
+                    label = "Folder $index",
+                    treeUri = "content://provider/tree/$index",
+                    generation = 1,
+                )
+            }
+        val journal = ProductDataResetJournal.capture(true, torrents, roots)
+        val encoded = ProductDataResetJournalCodec.encode(journal)
+
+        assertTrue(encoded.toByteArray(Charsets.US_ASCII).size <= ProductDataResetJournal.MAX_ENCODED_BYTES)
+        assertEquals(journal, ProductDataResetJournalCodec.decode(encoded))
+        assertThrows(IllegalArgumentException::class.java) {
+            ProductDataResetJournal.capture(
+                true,
+                torrents + "t1-${ProductDataResetJournal.MAX_TORRENTS.toString(16).padStart(32, '0')}",
+                roots,
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ProductDataResetJournal.capture(
+                true,
+                torrents,
+                roots +
+                    ProductSafRootGrant(
+                        rootId = "root_overflow",
+                        label = "Overflow",
+                        treeUri = "content://provider/tree/overflow",
+                        generation = 1,
+                    ),
+            )
+        }
+    }
+
+    @Test
     fun journalRoundTripsBoundsProgressFailureAndExplicitDowngrade() {
         val journal =
             ProductDataResetJournal.capture(
