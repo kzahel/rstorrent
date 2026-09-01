@@ -51,4 +51,5 @@ winreg = "=0.55.0"
 
 [dev-dependencies]
 rcgen = "0.14.8"
+rusqlite = { workspace = true }
 rstorrent-remote-relay = { path = "../../../crates/rstorrent-remote-relay" }

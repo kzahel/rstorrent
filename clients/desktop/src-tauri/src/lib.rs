@@ -16,9 +16,10 @@ use rstorrent_remote_host::{
 use rstorrent_session::{
     AddTorrentBytesRequest, ApplicationConfig, ApplicationService, CONTROL_VERSION, Command,
     DeliveryPolicy, ErrorCode, FileIndexRange, FileSelectionIntent, MediaUrlResponse,
-    NetworkConfig, NetworkPolicy, RequestEnvelope, ResponseEnvelope, ResponseOutcome,
-    StorageRootSnapshot, SubscriptionSpec, ViewPatch, ViewProjection, ViewSelector, ViewSnapshot,
-    ViewSubscription, ViewUpdate, ViewUpdatePayload, application_error_response,
+    NetworkConfig, NetworkPolicy, ProductStateOwner, RequestEnvelope, ResponseEnvelope,
+    ResponseOutcome, StorageRootSnapshot, SubscriptionSpec, ViewPatch, ViewProjection,
+    ViewSelector, ViewSnapshot, ViewSubscription, ViewUpdate, ViewUpdatePayload,
+    application_error_response,
 };
 use tauri::WebviewWindowBuilder;
 use tauri::ipc::{Channel, InvokeBody, Request as IpcRequest};
@@ -58,7 +59,7 @@ use external_intake::{
     read_torrent_source,
 };
 use native_host_registration::repair_native_host_registration;
-use updater::{desktop_release_info, get_or_create_installation_id};
+use updater::{desktop_release_info, open_desktop_product_state};
 use view_delivery::{
     DesktopViewResources, application_view_close, application_view_hello, application_view_open,
     application_view_stream, application_view_stream_ack, application_view_stream_close,
@@ -92,6 +93,7 @@ const HEADER_WANTED_RANGES: &str = "x-rstorrent-wanted-ranges";
 
 struct DesktopState {
     service: Arc<Mutex<ApplicationService>>,
+    product_state: ProductStateOwner,
     remote_runtime: Option<Arc<RemoteApplicationRuntime>>,
     subscriptions: Arc<Mutex<BTreeMap<(String, String), DesktopSubscription>>>,
     view_resources: Arc<DesktopViewResources>,
@@ -296,6 +298,16 @@ async fn desktop_remote_access_clear_history(
     remote_access_owner(&state)?
         .clear_history()
         .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn desktop_updater_installation_id(
+    state: State<'_, DesktopState>,
+) -> Result<Option<String>, String> {
+    state
+        .product_state
+        .updater_installation_id()
         .map_err(|error| error.to_string())
 }
 
@@ -1380,6 +1392,12 @@ async fn perform_application_shutdown(app: AppHandle) {
         .shutdown()
         .await
         .map_err(|error| error.to_string());
+    if let Err(error) = state.product_state.record_clean_shutdown() {
+        eprintln!(
+            "desktop product-state clean shutdown record failed: {}",
+            bounded_diagnostic(error.to_string())
+        );
+    }
     let media_result = if let Some(mut media_server) = state.media_server.lock().await.take() {
         media_server
             .shutdown()
@@ -1908,17 +1926,15 @@ pub fn run() {
             }
             let (tray_menu, background_menu_item) =
                 build_desktop_tray_menu(app, shell_settings.settings.run_in_background)?;
-            let installation_id = get_or_create_installation_id(&config_dir)?;
-            let updater = tauri_plugin_updater::Builder::new()
-                .header("X-CFU-Id", &installation_id)?
-                .build();
+            let product_state = open_desktop_product_state(&config_dir, env!("CARGO_PKG_VERSION"))?;
+            let updater = tauri_plugin_updater::Builder::new().build();
             app.handle().plugin(updater)?;
             let app_data = app
                 .path()
                 .app_data_dir()
                 .map_err(|error| format!("resolve application data directory: {error}"))?;
             let service = tauri::async_runtime::block_on(ApplicationService::open(
-                desktop_application_config(&app_data),
+                desktop_application_config_with_product_state(&app_data, product_state.clone()),
             ))
             .map_err(|error| error.to_string())?;
             let service = Arc::new(Mutex::new(service));
@@ -1966,6 +1982,7 @@ pub fn run() {
             );
             let state = DesktopState {
                 service,
+                product_state,
                 remote_runtime,
                 subscriptions: Arc::new(Mutex::new(BTreeMap::new())),
                 view_resources: Arc::new(DesktopViewResources::new()),
@@ -2067,6 +2084,7 @@ pub fn run() {
             application_restart,
             desktop_update_check_generation,
             desktop_release_info,
+            desktop_updater_installation_id,
         ])
         .build(tauri::generate_context!())
         .expect("build RSTorrent desktop application");
@@ -2097,14 +2115,28 @@ pub fn run() {
     });
 }
 
-fn desktop_application_config(app_data: &std::path::Path) -> ApplicationConfig {
-    ApplicationConfig::new(
+fn desktop_application_config_with_product_state(
+    app_data: &std::path::Path,
+    product_state: ProductStateOwner,
+) -> ApplicationConfig {
+    let mut config = ApplicationConfig::new(
         app_data.join("profile"),
         "default".to_owned(),
         Vec::new(),
         NetworkConfig::new(NetworkPolicy::Online, PEER_CONNECT_TIMEOUT, PEER_IO_TIMEOUT),
     )
-    .with_fresh_profile_defaults()
+    .with_fresh_profile_defaults();
+    config.product_state = Some(product_state);
+    config
+}
+
+#[cfg(test)]
+fn desktop_application_config(app_data: &std::path::Path) -> ApplicationConfig {
+    desktop_application_config_with_product_state(
+        app_data,
+        ProductStateOwner::open_ephemeral(env!("CARGO_PKG_VERSION"))
+            .expect("open test desktop product state"),
+    )
 }
 
 #[cfg(test)]

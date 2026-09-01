@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 const PRODUCT_DATABASE_FILENAME: &str = "product.db";
-const PRODUCT_SCHEMA_VERSION: i64 = 1;
+const PRODUCT_SCHEMA_VERSION: i64 = 2;
 const BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 const MAX_PRODUCT_VERSION_BYTES: usize = 128;
 const MAX_U64_TEXT_BYTES: usize = 20;
@@ -229,6 +229,10 @@ impl ProductStateOwner {
     pub fn database_path(&self) -> Result<Option<PathBuf>, ProductStateError> {
         Ok(self.store()?.database_path().map(Path::to_path_buf))
     }
+
+    pub fn updater_installation_id(&self) -> Result<Option<String>, ProductStateError> {
+        self.store()?.updater_installation_id()
+    }
 }
 
 impl fmt::Debug for ProductStateStore {
@@ -357,7 +361,8 @@ impl ProductStateStore {
                  torrents_added = '0',
                  downloads_completed = '0',
                  foreground_sessions = '0',
-                 reset_generation = ?3
+                 reset_generation = ?3,
+                 legacy_updater_id_permitted = 0
              WHERE singleton = 1",
             params![
                 Uuid::new_v4().to_string(),
@@ -374,6 +379,29 @@ impl ProductStateStore {
         increment_counter(&transaction, "foreground_sessions")?;
         transaction.commit()?;
         self.summary()
+    }
+
+    pub fn updater_installation_id(&self) -> Result<Option<String>, ProductStateError> {
+        let (installation_id, disclosure_version, statistics_enabled, legacy_permitted) =
+            self.connection.query_row(
+                "SELECT installation_id, disclosure_version, statistics_enabled,
+                        legacy_updater_id_permitted
+                 FROM product_state WHERE singleton = 1",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, bool>(2)?,
+                        row.get::<_, bool>(3)?,
+                    ))
+                },
+            )?;
+        let current_disclosure =
+            disclosure_version == i64::from(CURRENT_PRODUCT_DISCLOSURE_VERSION);
+        Ok(((current_disclosure && statistics_enabled)
+            || (!current_disclosure && legacy_permitted))
+            .then_some(installation_id))
     }
 
     pub fn record_clean_shutdown(&mut self) -> Result<(), ProductStateError> {
@@ -492,6 +520,7 @@ fn initialize(
             legacy_installation_id,
             now_millis,
         )?,
+        1 => migrate_schema_1(&mut connection, legacy_installation_id)?,
         PRODUCT_SCHEMA_VERSION => validate_schema(&connection)?,
         actual => {
             return Err(ProductStateError::UnsupportedSchema {
@@ -528,15 +557,45 @@ fn initialize(
     })
 }
 
+fn migrate_schema_1(
+    connection: &mut Connection,
+    legacy_installation_id: Option<&str>,
+) -> Result<(), ProductStateError> {
+    let stored_installation_id: String = connection.query_row(
+        "SELECT installation_id FROM product_state WHERE singleton = 1",
+        [],
+        |row| row.get(0),
+    )?;
+    let legacy_updater_id_permitted = legacy_installation_id
+        .and_then(canonical_uuid)
+        .is_some_and(|legacy| legacy == stored_installation_id);
+    let transaction = connection.transaction()?;
+    transaction.execute_batch(
+        "ALTER TABLE product_state
+         ADD COLUMN legacy_updater_id_permitted INTEGER NOT NULL DEFAULT 0 CHECK (
+            legacy_updater_id_permitted IN (0, 1)
+         );",
+    )?;
+    transaction.execute(
+        "UPDATE product_state SET legacy_updater_id_permitted = ?1 WHERE singleton = 1",
+        [legacy_updater_id_permitted],
+    )?;
+    transaction.pragma_update(None, "user_version", PRODUCT_SCHEMA_VERSION)?;
+    transaction.commit()?;
+    validate_schema(connection)
+}
+
 fn create_schema(
     connection: &mut Connection,
     current_version: &str,
     legacy_installation_id: Option<&str>,
     now_millis: u64,
 ) -> Result<(), ProductStateError> {
+    let legacy_installation_id = legacy_installation_id.and_then(canonical_uuid);
+    let legacy_updater_id_permitted = legacy_installation_id.is_some();
     let installation_id = legacy_installation_id
-        .and_then(|value| Uuid::parse_str(value.trim()).ok())
-        .map_or_else(|| Uuid::new_v4().to_string(), |value| value.to_string());
+        .map(str::to_owned)
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
     let transaction = connection.transaction()?;
     transaction.execute_batch(
         "CREATE TABLE product_state (
@@ -577,6 +636,9 @@ fn create_schema(
             last_clean_shutdown_millis TEXT CHECK (
                 last_clean_shutdown_millis IS NULL OR
                 length(last_clean_shutdown_millis) BETWEEN 1 AND 20
+            ),
+            legacy_updater_id_permitted INTEGER NOT NULL DEFAULT 0 CHECK (
+                legacy_updater_id_permitted IN (0, 1)
             )
          );
          CREATE TABLE product_source_watermarks (
@@ -592,13 +654,15 @@ fn create_schema(
     transaction.execute(
         "INSERT INTO product_state(
             singleton, installation_id, created_at_millis, first_version,
-            current_version, reset_generation, last_start_millis
-         ) VALUES (1, ?1, ?2, ?3, ?3, ?4, ?2)",
+            current_version, reset_generation, last_start_millis,
+            legacy_updater_id_permitted
+         ) VALUES (1, ?1, ?2, ?3, ?3, ?4, ?2, ?5)",
         params![
             installation_id,
             now,
             current_version,
             Uuid::new_v4().to_string(),
+            legacy_updater_id_permitted,
         ],
     )?;
     transaction.pragma_update(None, "user_version", PRODUCT_SCHEMA_VERSION)?;
@@ -620,7 +684,7 @@ fn validate_schema(connection: &Connection) -> Result<(), ProductStateError> {
                     current_version, disclosure_version, statistics_enabled,
                     torrents_added, downloads_completed, foreground_sessions,
                     reset_generation, last_start_millis,
-                    last_clean_shutdown_millis
+                    last_clean_shutdown_millis, legacy_updater_id_permitted
              FROM product_state WHERE singleton = 1",
             [],
             |row| {
@@ -637,6 +701,7 @@ fn validate_schema(connection: &Connection) -> Result<(), ProductStateError> {
                     row.get::<_, String>(9)?,
                     row.get::<_, String>(10)?,
                     row.get::<_, Option<String>>(11)?,
+                    row.get::<_, bool>(12)?,
                 ))
             },
         )
@@ -665,6 +730,7 @@ fn validate_schema(connection: &Connection) -> Result<(), ProductStateError> {
     if let Some(value) = &row.11 {
         decode_u64(value, "last-clean-shutdown time")?;
     }
+    let _legacy_updater_id_permitted = row.12;
     let source_count: i64 = connection.query_row(
         "SELECT COUNT(*) FROM product_source_watermarks",
         [],
@@ -790,6 +856,14 @@ fn validate_version(value: &str) -> Result<(), ProductStateError> {
     Ok(())
 }
 
+fn canonical_uuid(value: &str) -> Option<&str> {
+    let value = value.trim();
+    Uuid::parse_str(value)
+        .ok()
+        .filter(|uuid| uuid.to_string() == value)
+        .map(|_| value)
+}
+
 fn invalid_configuration_as_state(error: ProductStateError) -> ProductStateError {
     ProductStateError::InvalidState(error.to_string())
 }
@@ -870,6 +944,7 @@ mod tests {
         assert!(first_summary.statistics_enabled);
         assert_eq!(first_summary.disclosure_version, 0);
         assert!(!first_summary.transmission_allowed);
+        assert_eq!(first.updater_installation_id().unwrap(), None);
         assert_eq!(first_summary.days_since_first_use, 0);
         drop(first);
 
@@ -905,6 +980,10 @@ mod tests {
         let first = ProductStateStore::open_at(root.path(), "1", Some(legacy), START)
             .expect("adopt legacy ID");
         assert_eq!(first.summary_at(START).unwrap().installation_id, legacy);
+        assert_eq!(
+            first.updater_installation_id().unwrap().as_deref(),
+            Some(legacy)
+        );
         drop(first);
 
         let reopened = ProductStateStore::open_at(
@@ -918,6 +997,24 @@ mod tests {
             reopened.summary_at(START + 1).unwrap().installation_id,
             legacy
         );
+        assert_eq!(
+            reopened.updater_installation_id().unwrap().as_deref(),
+            Some(legacy)
+        );
+
+        let malformed_root = tempfile::tempdir().expect("malformed legacy root");
+        let malformed = ProductStateStore::open_at(
+            malformed_root.path(),
+            "1",
+            Some("87E66203-9849-44C5-A557-8E77C29E7587"),
+            START,
+        )
+        .expect("replace noncanonical legacy ID");
+        assert_ne!(
+            malformed.summary_at(START).unwrap().installation_id,
+            "87e66203-9849-44c5-a557-8e77c29e7587"
+        );
+        assert_eq!(malformed.updater_installation_id().unwrap(), None);
     }
 
     #[test]
@@ -934,9 +1031,11 @@ mod tests {
             CURRENT_PRODUCT_DISCLOSURE_VERSION
         );
         assert!(acknowledged.transmission_allowed);
+        assert!(store.updater_installation_id().unwrap().is_some());
         let disabled = store.set_statistics_enabled(false).unwrap();
         assert!(!disabled.statistics_enabled);
         assert!(!disabled.transmission_allowed);
+        assert_eq!(store.updater_installation_id().unwrap(), None);
         let old_id = disabled.installation_id;
         let old_generation = disabled.reset_generation;
         store.record_foreground_session().unwrap();
@@ -947,6 +1046,45 @@ mod tests {
         assert_eq!(reset.foreground_sessions, "0");
         assert!(!reset.statistics_enabled);
         assert!(!reset.transmission_allowed);
+        assert_eq!(store.updater_installation_id().unwrap(), None);
+    }
+
+    #[test]
+    fn reset_removes_the_pre_disclosure_legacy_updater_exception() {
+        let root = tempfile::tempdir().expect("temporary product root");
+        let legacy = "87e66203-9849-44c5-a557-8e77c29e7587";
+        let mut store = ProductStateStore::open_at(root.path(), "1", Some(legacy), START).unwrap();
+        assert_eq!(
+            store.updater_installation_id().unwrap().as_deref(),
+            Some(legacy)
+        );
+        store.acknowledge_disclosure(false).unwrap();
+        assert_eq!(store.updater_installation_id().unwrap(), None);
+        store.reset_statistics_at(START + 1).unwrap();
+        assert_eq!(store.updater_installation_id().unwrap(), None);
+    }
+
+    #[test]
+    fn schema_one_migration_recovers_legacy_updater_provenance_without_a_second_id() {
+        let root = tempfile::tempdir().expect("temporary product root");
+        let legacy = "87e66203-9849-44c5-a557-8e77c29e7587";
+        let store = ProductStateStore::open_at(root.path(), "1", Some(legacy), START).unwrap();
+        store
+            .connection
+            .execute_batch(
+                "ALTER TABLE product_state DROP COLUMN legacy_updater_id_permitted;
+                 PRAGMA user_version = 1;",
+            )
+            .expect("downgrade fixture to original schema one");
+        drop(store);
+
+        let migrated =
+            ProductStateStore::open_at(root.path(), "2", Some(legacy), START + 1).unwrap();
+        assert_eq!(migrated.summary().unwrap().installation_id, legacy);
+        assert_eq!(
+            migrated.updater_installation_id().unwrap().as_deref(),
+            Some(legacy)
+        );
     }
 
     #[test]

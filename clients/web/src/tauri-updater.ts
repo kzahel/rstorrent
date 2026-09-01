@@ -27,6 +27,17 @@ interface NativeDesktopReleaseInfo {
 }
 
 const UPDATE_CHECK_EVENT = "rstorrent://check-for-updates";
+const DESKTOP_UPDATE_DOWNLOAD_OPTIONS = { headers: {} } as const;
+
+export function desktopUpdateCheckHeaders(
+  reason: CheckReason,
+  installationId: string | null,
+): Readonly<Record<string, string>> {
+  return {
+    "X-Check-Reason": reason,
+    ...(installationId === null ? {} : { "X-CFU-Id": installationId }),
+  };
+}
 
 export async function createTauriDesktopUpdater(): Promise<DesktopUpdater> {
   const [nativeInfo, bundleType] = await Promise.all([
@@ -40,8 +51,11 @@ export async function createTauriDesktopUpdater(): Promise<DesktopUpdater> {
   };
   const backend: DesktopUpdateBackend = {
     async check(reason, timeoutMs) {
+      const installationId = await invoke<string | null>(
+        "desktop_updater_installation_id",
+      );
       const update = await checkForTauriUpdate({
-        headers: { "X-Check-Reason": reason },
+        headers: desktopUpdateCheckHeaders(reason, installationId),
         timeout: timeoutMs,
       });
       return update === null ? null : new TauriUpdateCandidate(update);
@@ -109,7 +123,10 @@ class TauriUpdateCandidate implements UpdateCandidate {
   async downloadAndInstall(
     onEvent: (event: UpdateDownloadEvent) => void,
   ): Promise<void> {
-    await this.update.downloadAndInstall((event) => onEvent(mapEvent(event)));
+    await this.update.downloadAndInstall(
+      (event) => onEvent(mapEvent(event)),
+      DESKTOP_UPDATE_DOWNLOAD_OPTIONS,
+    );
   }
 
   async close(): Promise<void> {
