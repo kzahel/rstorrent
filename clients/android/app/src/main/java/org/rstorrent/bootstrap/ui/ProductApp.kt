@@ -86,6 +86,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.launch
 import org.rstorrent.bootstrap.ProductEngineService
+import org.rstorrent.bootstrap.ProductDataResetPhase
+import org.rstorrent.bootstrap.ProductDataResetState
 import org.rstorrent.bootstrap.R
 import org.rstorrent.bootstrap.ProductNotificationNavigation
 import org.rstorrent.bootstrap.ProductNotificationPreference
@@ -138,6 +140,11 @@ fun ProductApp(
     onConfirmExternalIntake: ((Long) -> Unit)? = null,
     onRetryExternalIntake: ((Long) -> Unit)? = null,
     onCancelExternalIntake: ((Long) -> Unit)? = null,
+    onResetClientSettings: (() -> Unit)? = null,
+    onClearAllData: ((Boolean) -> Unit)? = null,
+    onRetryDataReset: (() -> Unit)? = null,
+    onFinishDataResetKeepingFiles: (() -> Unit)? = null,
+    onDismissCompletedDataReset: (() -> Unit)? = null,
 ) {
     RstorrentTheme(mode = themeMode, dynamicColor = dynamicColor) {
         val state =
@@ -225,6 +232,20 @@ fun ProductApp(
                             service?.updateTorrentSettings(torrentId, patch)
                             Unit
                         },
+                    dataManagementEnabled =
+                        service != null ||
+                            onResetClientSettings != null ||
+                            onClearAllData != null,
+                    onResetClientSettings =
+                        onResetClientSettings ?: {
+                            service?.resetClientSettings()
+                            Unit
+                        },
+                    onClearAllData =
+                        onClearAllData ?: {
+                            service?.clearAllData(it)
+                            Unit
+                        },
                 )
             }
             SnackbarHost(
@@ -232,7 +253,9 @@ fun ProductApp(
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
-        state.externalIntake?.takeIf { pendingSelection == null }?.let { intake ->
+        state.externalIntake
+            ?.takeIf { pendingSelection == null && state.dataReset == null }
+            ?.let { intake ->
             ExternalTorrentIntakeDialog(
                 intake = intake,
                 storageRootReady = state.storageRootReady,
@@ -256,7 +279,7 @@ fun ProductApp(
                     },
             )
         }
-        pendingSelection?.let { torrent ->
+        pendingSelection?.takeIf { state.dataReset == null }?.let { torrent ->
             val root = state.storage?.roots?.singleOrNull { it.rootId == torrent.storageRoot }
             val rootReady =
                 root?.availability == StorageRootAvailability.AVAILABLE &&
@@ -286,7 +309,7 @@ fun ProductApp(
                 onCancel = { service?.cancelPendingAdd(torrent.torrentId) },
             )
         }
-        state.companionPairing?.let { pairing ->
+        state.companionPairing?.takeIf { state.dataReset == null }?.let { pairing ->
             AlertDialog(
                 onDismissRequest = {},
                 title = { Text(stringResource(R.string.pairing_title)) },
@@ -320,8 +343,160 @@ fun ProductApp(
                 },
             )
         }
+        state.dataReset?.let { reset ->
+            ProductDataResetDialog(
+                reset = reset,
+                onRetry =
+                    onRetryDataReset ?: {
+                        service?.retryDataReset()
+                        Unit
+                    },
+                onFinishKeepingFiles =
+                    onFinishDataResetKeepingFiles ?: {
+                        service?.finishDataResetKeepingRemainingFiles()
+                        Unit
+                    },
+                onDone =
+                    onDismissCompletedDataReset ?: {
+                        service?.dismissCompletedDataReset()
+                        Unit
+                    },
+            )
+        }
     }
 }
+
+@Composable
+private fun ProductDataResetDialog(
+    reset: ProductDataResetState,
+    onRetry: () -> Unit,
+    onFinishKeepingFiles: () -> Unit,
+    onDone: () -> Unit,
+) {
+    var confirmKeepRemaining by remember(reset.operationId) { mutableStateOf(false) }
+    val failure = reset.failure
+    val canKeepRemaining =
+        failure != null &&
+            reset.phase == ProductDataResetPhase.REMOVING_TORRENTS &&
+            reset.deleteDataRequested &&
+            !reset.downgradedToKeep
+    AlertDialog(
+        onDismissRequest = {},
+        title = {
+            Text(
+                stringResource(
+                    when {
+                        reset.complete -> R.string.data_reset_complete_title
+                        failure != null -> R.string.data_reset_failed_title
+                        else -> R.string.data_reset_progress_title
+                    },
+                ),
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                when {
+                    reset.complete ->
+                        Text(
+                            stringResource(
+                                when {
+                                    reset.downgradedToKeep ->
+                                        R.string.data_reset_complete_downgraded
+                                    reset.deleteDataRequested ->
+                                        R.string.data_reset_complete_deleted
+                                    else -> R.string.data_reset_complete_kept
+                                },
+                            ),
+                        )
+                    failure != null -> {
+                        Text(
+                            if (reset.phase == null) {
+                                stringResource(R.string.data_reset_invalid_journal)
+                            } else {
+                                stringResource(R.string.data_reset_failure_detail, failure.detail)
+                            },
+                        )
+                        failure.torrentId?.let {
+                            Text(
+                                stringResource(R.string.data_reset_failure_torrent, it),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                            )
+                        }
+                        if (canKeepRemaining) {
+                            Text(stringResource(R.string.data_reset_failure_keep_available))
+                        }
+                    }
+                    else -> {
+                        Text(dataResetPhaseText(reset.phase))
+                        Text(
+                            stringResource(
+                                R.string.data_reset_progress_count,
+                                reset.completedTorrents,
+                                reset.totalTorrents,
+                            ),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            when {
+                reset.complete ->
+                    TextButton(onClick = onDone) {
+                        Text(stringResource(R.string.action_done))
+                    }
+                failure != null && reset.phase != null ->
+                    TextButton(onClick = onRetry) {
+                        Text(stringResource(R.string.action_retry))
+                    }
+            }
+        },
+        dismissButton = {
+            if (canKeepRemaining) {
+                TextButton(onClick = { confirmKeepRemaining = true }) {
+                    Text(stringResource(R.string.action_finish_keep_remaining))
+                }
+            }
+        },
+    )
+    if (confirmKeepRemaining) {
+        AlertDialog(
+            onDismissRequest = { confirmKeepRemaining = false },
+            title = { Text(stringResource(R.string.data_reset_keep_remaining_title)) },
+            text = { Text(stringResource(R.string.data_reset_keep_remaining_detail)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmKeepRemaining = false
+                        onFinishKeepingFiles()
+                    },
+                ) {
+                    Text(stringResource(R.string.action_finish_keep_remaining))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmKeepRemaining = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun dataResetPhaseText(phase: ProductDataResetPhase?): String =
+    stringResource(
+        when (phase) {
+            ProductDataResetPhase.REMOVING_TORRENTS -> R.string.data_reset_phase_torrents
+            ProductDataResetPhase.RESETTING_PROFILE -> R.string.data_reset_phase_profile
+            ProductDataResetPhase.RELEASING_ROOTS -> R.string.data_reset_phase_folders
+            ProductDataResetPhase.RESETTING_PREFERENCES -> R.string.data_reset_phase_preferences
+            ProductDataResetPhase.RESTARTING_APPLICATION -> R.string.data_reset_phase_restarting
+            ProductDataResetPhase.VERIFYING_APPLICATION -> R.string.data_reset_phase_verifying
+            null -> R.string.data_reset_phase_starting
+        },
+    )
 
 @Composable
 private fun ExternalTorrentIntakeDialog(
@@ -447,11 +622,17 @@ private fun ProductNavHost(
     onDynamicColor: (Boolean) -> Unit,
     onUpdateClientSettings: (ClientSettingsPatch) -> Unit,
     onUpdateTorrentSettings: (String, TorrentSettingsPatch) -> Unit,
+    dataManagementEnabled: Boolean,
+    onResetClientSettings: () -> Unit,
+    onClearAllData: (Boolean) -> Unit,
 ) {
     val navController = rememberNavController()
     var removeTargets by remember { mutableStateOf(emptySet<String>()) }
     var removeStorageRoot by remember { mutableStateOf<String?>(null) }
     var confirmKeepSeeding by remember { mutableStateOf(false) }
+    var confirmResetEngine by remember { mutableStateOf(false) }
+    var confirmClearAllData by remember { mutableStateOf(false) }
+    var deleteDownloadedFiles by remember { mutableStateOf(false) }
     val torrentMissingMessage = stringResource(R.string.notification_torrent_missing)
     val folderMissingMessage = stringResource(R.string.notification_folder_missing)
     val backgroundDownloadsDescription =
@@ -998,9 +1179,103 @@ private fun ProductNavHost(
                 HorizontalDivider()
                 FeedbackSetting(onOpenFeedback)
                 UnavailableSetting(stringResource(R.string.settings_search_plugins))
-                UnavailableSetting(stringResource(R.string.settings_reset_engine))
+                SettingAction(
+                    title = stringResource(R.string.settings_reset_engine),
+                    detail = stringResource(R.string.settings_reset_engine_detail),
+                    onClick = { confirmResetEngine = true },
+                    action = stringResource(R.string.action_reset),
+                    enabled = dataManagementEnabled,
+                )
+                SettingAction(
+                    title = stringResource(R.string.settings_clear_all_data),
+                    detail = stringResource(R.string.settings_clear_all_data_detail),
+                    onClick = {
+                        deleteDownloadedFiles = false
+                        confirmClearAllData = true
+                    },
+                    action = stringResource(R.string.action_clear),
+                    enabled = dataManagementEnabled,
+                )
             }
         }
+    }
+    if (confirmResetEngine) {
+        AlertDialog(
+            onDismissRequest = { confirmResetEngine = false },
+            title = { Text(stringResource(R.string.reset_engine_title)) },
+            text = { Text(stringResource(R.string.reset_engine_detail)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmResetEngine = false
+                        onResetClientSettings()
+                    },
+                ) {
+                    Text(stringResource(R.string.action_reset))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmResetEngine = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
+    if (confirmClearAllData) {
+        AlertDialog(
+            onDismissRequest = { confirmClearAllData = false },
+            title = { Text(stringResource(R.string.clear_all_data_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.clear_all_data_detail))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier =
+                            Modifier.fillMaxWidth()
+                                .clickable { deleteDownloadedFiles = !deleteDownloadedFiles }
+                                .semantics(mergeDescendants = true) { role = Role.Checkbox },
+                    ) {
+                        Checkbox(
+                            checked = deleteDownloadedFiles,
+                            onCheckedChange = { deleteDownloadedFiles = it },
+                        )
+                        Text(stringResource(R.string.clear_all_data_delete_files))
+                    }
+                    Text(
+                        stringResource(
+                            if (deleteDownloadedFiles) {
+                                R.string.clear_all_data_delete_scope
+                            } else {
+                                R.string.clear_all_data_keep_scope
+                            },
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val delete = deleteDownloadedFiles
+                        confirmClearAllData = false
+                        deleteDownloadedFiles = false
+                        onClearAllData(delete)
+                    },
+                ) {
+                    Text(stringResource(R.string.action_clear_all_data))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        confirmClearAllData = false
+                        deleteDownloadedFiles = false
+                    },
+                ) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
     }
     if (removeTargets.isNotEmpty()) {
         RemoveDialog(
@@ -1632,11 +1907,12 @@ private fun SettingAction(
     detail: String,
     onClick: () -> Unit,
     action: String,
+    enabled: Boolean = true,
 ) {
     ListItem(
         headlineContent = { Text(title) },
         supportingContent = { Text(detail) },
-        trailingContent = { TextButton(onClick = onClick) { Text(action) } },
+        trailingContent = { TextButton(onClick = onClick, enabled = enabled) { Text(action) } },
     )
     HorizontalDivider()
 }

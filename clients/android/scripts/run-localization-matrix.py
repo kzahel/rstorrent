@@ -8,6 +8,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import platform
 import subprocess
 import sys
 
@@ -16,6 +17,15 @@ REPOSITORY = Path(__file__).resolve().parents[3]
 ANDROID = REPOSITORY / "clients" / "android"
 PROBE_PATH = REPOSITORY / "experiments" / "android-storage-probe" / "run_probe.py"
 DEVICES = {"28": "pixel_6", "35": "pixel_tablet"}
+
+
+def system_image_abi() -> str:
+    machine = platform.machine().lower()
+    if machine in {"x86_64", "amd64"}:
+        return "x86_64"
+    if machine in {"arm64", "aarch64"}:
+        return "arm64-v8a"
+    raise RuntimeError(f"unsupported Android emulator host architecture {machine!r}")
 
 
 def load_probe():
@@ -56,7 +66,7 @@ def avd_exists(avdmanager: str, name: str) -> bool:
     return f"Name: {name}" in listing
 
 
-def create_avd(avdmanager: str, name: str, api: str) -> None:
+def create_avd(avdmanager: str, name: str, api: str, abi: str) -> None:
     if avd_exists(avdmanager, name):
         raise RuntimeError(f"refusing to replace existing AVD {name}")
     subprocess.run(
@@ -67,7 +77,7 @@ def create_avd(avdmanager: str, name: str, api: str) -> None:
             "--name",
             name,
             "--package",
-            f"system-images;android-{api};google_apis;arm64-v8a",
+            f"system-images;android-{api};google_apis;{abi}",
             "--device",
             DEVICES[api],
         ],
@@ -91,6 +101,7 @@ def main() -> int:
     parser.add_argument("--class", dest="test_class")
     arguments = parser.parse_args()
     apis = arguments.api or ["28", "35"]
+    abi = system_image_abi()
     avdmanager = sdk_tool("avdmanager")
     probe = load_probe()
     results = []
@@ -99,7 +110,7 @@ def main() -> int:
         session = None
         created = False
         try:
-            create_avd(avdmanager, name, api)
+            create_avd(avdmanager, name, api, abi)
             created = True
             session = probe.start_avd(name, api)
             serial = session.target.prefix[-1]

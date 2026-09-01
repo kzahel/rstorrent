@@ -4,6 +4,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasAnyAncestor
@@ -16,6 +17,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
@@ -142,6 +144,133 @@ class ProductNavigationTest {
             .performSemanticsAction(SemanticsActions.OnClick)
 
         compose.runOnIdle { assertEquals(1, feedbackCalls) }
+    }
+
+    @Test
+    fun advancedResetAndClearRequireExplicitNonStickyConfirmations() {
+        var resetCalls = 0
+        val clearCalls = mutableListOf<Boolean>()
+        compose.setContent {
+            ProductApp(
+                service = null,
+                onSelectStorage = {},
+                onBrowseTorrent = {},
+                notificationsGranted = true,
+                onRequestNotifications = {},
+                onOpenNotificationSettings = {},
+                themeMode = ProductThemeMode.LIGHT,
+                dynamicColor = false,
+                onThemeMode = {},
+                onDynamicColor = {},
+                onResetClientSettings = { resetCalls += 1 },
+                onClearAllData = { clearCalls += it },
+            )
+        }
+
+        compose
+            .onNodeWithContentDescription("More options")
+            .performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Advanced").performScrollTo().performClick()
+
+        compose.onNodeWithText("Reset engine settings").performScrollTo()
+        compose.onNodeWithText("Reset").performClick()
+        compose.onNodeWithText("Reset all engine settings?").assertIsDisplayed()
+        compose.onNode(hasText("Reset") and hasAnyAncestor(isDialog())).performClick()
+        compose.runOnIdle { assertEquals(1, resetCalls) }
+
+        compose.onNodeWithText("Clear all data").performScrollTo()
+        compose.onNodeWithText("Clear").performClick()
+        compose
+            .onNode(isToggleable() and hasAnyAncestor(isDialog()))
+            .assertIsOff()
+            .performClick()
+        compose.onNode(hasText("Clear all data") and hasAnyAncestor(isDialog())).performClick()
+        compose.runOnIdle { assertEquals(listOf(true), clearCalls) }
+
+        compose.onNodeWithText("Clear").performClick()
+        compose.onNode(isToggleable() and hasAnyAncestor(isDialog())).assertIsOff()
+        compose.onNode(hasText("Cancel") and hasAnyAncestor(isDialog())).performClick()
+        compose.runOnIdle { assertEquals(listOf(true), clearCalls) }
+    }
+
+    @Test
+    fun clearProgressFailureDowngradeAndSuccessFollowServiceState() {
+        var retries = 0
+        var keepRemaining = 0
+        var completions = 0
+        var state by
+            mutableStateOf(
+                ProductState(
+                    dataReset =
+                        ProductDataResetState(
+                            operationId = "operation",
+                            phase = ProductDataResetPhase.REMOVING_TORRENTS,
+                            completedTorrents = 2,
+                            totalTorrents = 5,
+                            deleteDataRequested = true,
+                            downgradedToKeep = false,
+                        ),
+                ),
+            )
+        compose.setContent {
+            ProductApp(
+                service = null,
+                onSelectStorage = {},
+                onBrowseTorrent = {},
+                notificationsGranted = true,
+                onRequestNotifications = {},
+                onOpenNotificationSettings = {},
+                themeMode = ProductThemeMode.LIGHT,
+                dynamicColor = false,
+                onThemeMode = {},
+                onDynamicColor = {},
+                stateOverride = state,
+                onRetryDataReset = { retries += 1 },
+                onFinishDataResetKeepingFiles = { keepRemaining += 1 },
+                onDismissCompletedDataReset = { completions += 1 },
+            )
+        }
+
+        compose.onNodeWithText("Clearing app data").assertIsDisplayed()
+        compose.onNodeWithText("2 of 5 torrents removed").assertIsDisplayed()
+        compose.runOnIdle {
+            state =
+                state.copy(
+                    dataReset =
+                        requireNotNull(state.dataReset).copy(
+                            failure =
+                                ProductDataResetFailureState(
+                                    "provider_refused",
+                                    "the provider refused deletion",
+                                ),
+                        ),
+                )
+        }
+        compose.onNodeWithText("Couldn’t finish clearing data").assertIsDisplayed()
+        compose.onNodeWithText("Retry").performClick()
+        compose.onNodeWithText("Finish without deleting remaining files").performClick()
+        compose.onNodeWithText("Keep every remaining downloaded file?").assertIsDisplayed()
+        compose
+            .onAllNodesWithText("Finish without deleting remaining files")[1]
+            .performClick()
+        compose.runOnIdle {
+            assertEquals(1, retries)
+            assertEquals(1, keepRemaining)
+            state =
+                state.copy(
+                    dataReset =
+                        requireNotNull(state.dataReset).copy(
+                            completedTorrents = 5,
+                            downgradedToKeep = true,
+                            failure = null,
+                            complete = true,
+                        ),
+                )
+        }
+        compose.onNodeWithText("App data cleared").assertIsDisplayed()
+        compose.onNodeWithText("Done").performClick()
+        compose.runOnIdle { assertEquals(1, completions) }
     }
 
     @Test
