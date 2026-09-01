@@ -198,6 +198,15 @@ BEP is external protocol metadata, not RSTorrent readiness.
 
 ## Current Matrix
 
+Completed Tactical
+[`205`](../tactical/205-durable-dht-and-pex-controls.md) adds default-on durable
+session controls around the existing BEP 5 and BEP 11 implementations. DHT
+disable/re-enable preserves one bounded warm owner while stopping wire work;
+PEX sends repeated BEP 10 zero/enabled updates, stops both directions, and
+purges PEX-only contacts. The BEP 27 private gate remains independent and
+stronger than both settings. These are reversible product policy controls and
+do not broaden the protocol claims below.
+
 | Specification | Claim | Implemented subset and evidence | Deliberate limits and dependencies |
 | --- | --- | --- | --- |
 | [BEP 3: The BitTorrent Protocol Specification](https://www.bittorrent.org/beps/bep_0003.html) | Partial | Strict bounded bencoding; distinct `length` and `files` publication shapes over one v1 storage/resume pipeline; raw-info SHA-1 identity; outgoing and bounded multi-peer incoming TCP handshakes; exact self and duplicate peer-ID admission; keepalive, choke, unchoke, interested, not-interested, have, bitfield, request, cancel, and piece messages; bounded multi-peer download scheduling; and bounded verified metadata/payload upload from published or active selective storage under eight shared slots with exact physical accounting. Active initiated and accepted connections prove complementary Piece frames before completion; controlled ordinary/Fast/MSE pinned-libtorrent and Android SAF runs add sparse, cross-file, part-backed, lifecycle, and final-hash evidence. Ordinary routed Peers/Swarm observation, completed-seed interop, restart/crash/publication, authenticated tracker/DHT discovery, mapped off-LAN evidence, and hierarchical session/torrent peer-transfer limits cover the broader implemented subset. | Peer IDs are spoofable live claims rather than authenticated durable identities. Rate policy counts established peer-stream bytes rather than headers, setup, discovery, or total-device traffic. Tactical `201`'s ratio/time seed priority is application policy and adds no BEP 3 claim. Public incomplete-swarm reliability and comparable ordinary-swarm performance remain absent. |

@@ -125,6 +125,13 @@ and named API 37 Pixel 7a. Tactical `117` now presents the backed IPv6 setting
 and renders both DHT families within one bounded Compose view rather than
 adding a second page or client-owned inference.
 Completed Tactical
+[`205`](../tactical/205-durable-dht-and-pex-controls.md) adds default-on DHT and
+peer-exchange switches to the same Connection & seeding / Network settings
+contract in React and Compose. Both surfaces show configured intent plus live
+application/effective truth and state that private torrents never participate;
+generated Swift carries the same fields without inventing a separate iOS
+settings owner.
+Completed Tactical
 [`114`](../tactical/114-session-wide-concurrent-torrent-admission.md) adds
 authoritative operational state and queue position to shared torrent rows,
 configured/effective active-download limits and clamp state to Settings, and
@@ -1056,6 +1063,11 @@ with exact SAF cleanup.
   browser gates and an installed API-35 Compose profile prove the backed
   values, Unlimited, exact `1 active / 2 queued` truth, and priority-not-stop
   copy. VPN, proxy, and low-battery remain separate product/engine slices.
+  Completed Tactical
+  [`205`](../tactical/205-durable-dht-and-pex-controls.md) also exposes backed
+  default-on DHT and PEX switches here. Both apply live through the common
+  engine owners, report application state, and cannot weaken private-torrent
+  discovery exclusion.
 - Tracker HTTPS authentication is intentionally absent from ordinary React
   and Compose settings. The advanced typed `disabled` override exists for
   compatibility/debug use and remains visibly unauthenticated in tracker

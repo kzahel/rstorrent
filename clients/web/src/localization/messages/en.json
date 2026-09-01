@@ -587,6 +587,10 @@
     "defaultMessage": "development-only loopback mode",
     "description": "Product copy in inspection/components/ConnectionSeedingSettingsSection.tsx"
   },
+  "inspection.components.connection.seeding.settings.section.dht": {
+    "defaultMessage": "DHT",
+    "description": "Product copy in inspection/components/ConnectionSeedingSettingsSection.tsx"
+  },
   "inspection.components.connection.seeding.settings.section.disabled": {
     "defaultMessage": "disabled",
     "description": "Product copy in inspection/components/ConnectionSeedingSettingsSection.tsx"
@@ -605,6 +609,10 @@
   },
   "inspection.components.connection.seeding.settings.section.download.setting.is.limited.to": {
     "defaultMessage": "-download setting is limited to",
+    "description": "Product copy in inspection/components/ConnectionSeedingSettingsSection.tsx"
+  },
+  "inspection.components.connection.seeding.settings.section.effective.dht.policy": {
+    "defaultMessage": "Effective DHT policy:",
     "description": "Product copy in inspection/components/ConnectionSeedingSettingsSection.tsx"
   },
   "inspection.components.connection.seeding.settings.section.effective.gateway.mapping.policy": {
@@ -631,6 +639,10 @@
     "defaultMessage": "Effective peer download limit:",
     "description": "Product copy in inspection/components/ConnectionSeedingSettingsSection.tsx"
   },
+  "inspection.components.connection.seeding.settings.section.effective.peer.exchange.policy": {
+    "defaultMessage": "Effective peer exchange policy:",
+    "description": "Product copy in inspection/components/ConnectionSeedingSettingsSection.tsx"
+  },
   "inspection.components.connection.seeding.settings.section.effective.peer.upload.limit": {
     "defaultMessage": "Effective peer upload limit:",
     "description": "Product copy in inspection/components/ConnectionSeedingSettingsSection.tsx"
@@ -639,12 +651,24 @@
     "defaultMessage": "Effective protocol obfuscation policy:",
     "description": "Product copy in inspection/components/ConnectionSeedingSettingsSection.tsx"
   },
+  "inspection.components.connection.seeding.settings.section.enable.dht": {
+    "defaultMessage": "Enable DHT",
+    "description": "Product copy in inspection/components/ConnectionSeedingSettingsSection.tsx"
+  },
   "inspection.components.connection.seeding.settings.section.enable.ipv6": {
     "defaultMessage": "Enable IPv6",
     "description": "Product copy in inspection/components/ConnectionSeedingSettingsSection.tsx"
   },
+  "inspection.components.connection.seeding.settings.section.enable.peer.exchange": {
+    "defaultMessage": "Enable peer exchange",
+    "description": "Product copy in inspection/components/ConnectionSeedingSettingsSection.tsx"
+  },
   "inspection.components.connection.seeding.settings.section.enabled": {
     "defaultMessage": "enabled",
+    "description": "Product copy in inspection/components/ConnectionSeedingSettingsSection.tsx"
+  },
+  "inspection.components.connection.seeding.settings.section.exchange.peer.addresses.with.connected.public.torrents": {
+    "defaultMessage": "Exchange peer addresses with connected public torrents. Private torrents never use peer exchange.",
     "description": "Product copy in inspection/components/ConnectionSeedingSettingsSection.tsx"
   },
   "inspection.components.connection.seeding.settings.section.external.reachability.is.not.yet.observed": {
@@ -653,6 +677,10 @@
   },
   "inspection.components.connection.seeding.settings.section.external.reachability.is.unverified": {
     "defaultMessage": "; external reachability is unverified",
+    "description": "Product copy in inspection/components/ConnectionSeedingSettingsSection.tsx"
+  },
+  "inspection.components.connection.seeding.settings.section.find.peers.through.the.distributed.hash.table": {
+    "defaultMessage": "Find peers through the distributed hash table. Private torrents never use DHT.",
     "description": "Product copy in inspection/components/ConnectionSeedingSettingsSection.tsx"
   },
   "inspection.components.connection.seeding.settings.section.finished.download.time.priority.goal": {
@@ -813,6 +841,10 @@
   },
   "inspection.components.connection.seeding.settings.section.peer.connections": {
     "defaultMessage": "Peer connections",
+    "description": "Product copy in inspection/components/ConnectionSeedingSettingsSection.tsx"
+  },
+  "inspection.components.connection.seeding.settings.section.peer.exchange": {
+    "defaultMessage": "Peer exchange",
     "description": "Product copy in inspection/components/ConnectionSeedingSettingsSection.tsx"
   },
   "inspection.components.connection.seeding.settings.section.peer.protocols.may.advertise.local.tcp.port": {
@@ -1425,6 +1457,10 @@
   },
   "inspection.components.dht.panel.dht.status.facts": {
     "defaultMessage": "DHT status facts",
+    "description": "Product copy in inspection/components/DhtPanel.tsx"
+  },
+  "inspection.components.dht.panel.disabled": {
+    "defaultMessage": "Disabled",
     "description": "Product copy in inspection/components/DhtPanel.tsx"
   },
   "inspection.components.dht.panel.elapsed.left": {

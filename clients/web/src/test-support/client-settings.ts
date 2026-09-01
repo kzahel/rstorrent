@@ -16,6 +16,8 @@ export function clientSettingsFixture(): ClientSettings {
     download_rate_limit: { type: "unlimited" },
     encryption: "allow",
     ipv6_enabled: true,
+    dht_enabled: true,
+    peer_exchange_enabled: true,
     tracker_https_server_authentication: "system_trust",
   };
 }
@@ -48,6 +50,8 @@ export function clientSettingsRuntimeFixture(): ClientSettingsRuntimeView {
     inactive_seed_count: 0,
     effective_encryption: "allow",
     effective_ipv6_enabled: true,
+    effective_dht_enabled: true,
+    effective_peer_exchange_enabled: true,
     effective_tracker_https_server_authentication: "system_trust",
     transport_application: { type: "applied" },
     port_mapping_application: { type: "applied" },
@@ -60,6 +64,8 @@ export function clientSettingsRuntimeFixture(): ClientSettingsRuntimeView {
     },
     encryption_application: { type: "applied" },
     ipv6_application: { type: "applied" },
+    dht_application: { type: "applied" },
+    peer_exchange_application: { type: "applied" },
     tracker_https_authentication_application: { type: "applied" },
     listener_status: { type: "disabled" },
     session_udp_status: { type: "unavailable" },

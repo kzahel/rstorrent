@@ -505,6 +505,8 @@ describe("view-set reducer", () => {
       download_rate_limit: { type: "unlimited" as const },
       encryption: "allow" as const,
       ipv6_enabled: true,
+      dht_enabled: true,
+      peer_exchange_enabled: true,
       tracker_https_server_authentication: "system_trust" as const,
     };
     state = reduceUpdateBatch(

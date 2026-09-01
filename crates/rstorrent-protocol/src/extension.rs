@@ -293,6 +293,72 @@ pub fn encode_extension_handshake(
     Ok(encoded)
 }
 
+/// Encodes a repeated BEP 10 handshake update, including zero-valued
+/// disable entries that cannot be represented by `ExtensionAdvertisement`.
+pub fn encode_extension_handshake_update(
+    update: ExtensionHandshake,
+) -> Result<Vec<u8>, ExtensionError> {
+    let metadata_id = match update.metadata {
+        ExtensionUpdate::Enabled(id) if id != 0 => Some(id),
+        ExtensionUpdate::Enabled(_) => {
+            return Err(ExtensionError::InvalidField("local extension ID"));
+        }
+        ExtensionUpdate::Unchanged | ExtensionUpdate::Disabled => None,
+    };
+    let pex_id = match update.pex {
+        ExtensionUpdate::Enabled(id) if id != 0 => Some(id),
+        ExtensionUpdate::Enabled(_) => {
+            return Err(ExtensionError::InvalidField("local extension ID"));
+        }
+        ExtensionUpdate::Unchanged | ExtensionUpdate::Disabled => None,
+    };
+    if metadata_id.is_some() && metadata_id == pex_id {
+        return Err(ExtensionError::ConflictingIds);
+    }
+    if update.metadata_size.is_some_and(|size| size == 0) {
+        return Err(ExtensionError::InvalidField("metadata_size"));
+    }
+
+    let mut encoded = Vec::new();
+    encoded.push(b'd');
+    if !matches!(update.metadata, ExtensionUpdate::Unchanged)
+        || !matches!(update.pex, ExtensionUpdate::Unchanged)
+    {
+        encoded.extend_from_slice(b"1:md");
+        match update.metadata {
+            ExtensionUpdate::Unchanged => {}
+            ExtensionUpdate::Disabled => encoded.extend_from_slice(b"11:ut_metadatai0e"),
+            ExtensionUpdate::Enabled(id) => {
+                encoded.extend_from_slice(b"11:ut_metadatai");
+                push_integer(&mut encoded, u64::from(id));
+                encoded.push(b'e');
+            }
+        }
+        match update.pex {
+            ExtensionUpdate::Unchanged => {}
+            ExtensionUpdate::Disabled => encoded.extend_from_slice(b"6:ut_pexi0e"),
+            ExtensionUpdate::Enabled(id) => {
+                encoded.extend_from_slice(b"6:ut_pexi");
+                push_integer(&mut encoded, u64::from(id));
+                encoded.push(b'e');
+            }
+        }
+        encoded.push(b'e');
+    }
+    if let Some(size) = update.metadata_size {
+        encoded.extend_from_slice(b"13:metadata_sizei");
+        push_integer(&mut encoded, size as u64);
+        encoded.push(b'e');
+    }
+    if let Some(port) = update.listen_port {
+        encoded.extend_from_slice(b"1:pi");
+        push_integer(&mut encoded, u64::from(port));
+        encoded.push(b'e');
+    }
+    encoded.push(b'e');
+    Ok(encoded)
+}
+
 pub fn parse_pex_message(payload: &[u8]) -> Result<PexMessage, ExtensionError> {
     let root = parse_with_limits_permissive_dictionaries(payload, pex_limits())?;
     let entries = dictionary(&root).ok_or(ExtensionError::RootIsNotDictionary)?;
@@ -560,11 +626,39 @@ fn pex_limits() -> Limits {
 #[cfg(test)]
 mod tests {
     use super::{
-        ExtensionAdvertisement, ExtensionMap, ExtensionUpdate, MAX_PEX_ADDITIONS,
-        MAX_PEX_PAYLOAD_LENGTH, PexContact, PexEndpoint, PexFlags, PexIp, PexMessage,
-        encode_extension_handshake, encode_pex_message, parse_extension_handshake,
-        parse_pex_message,
+        ExtensionAdvertisement, ExtensionHandshake, ExtensionMap, ExtensionUpdate,
+        MAX_PEX_ADDITIONS, MAX_PEX_PAYLOAD_LENGTH, PexContact, PexEndpoint, PexFlags, PexIp,
+        PexMessage, encode_extension_handshake, encode_extension_handshake_update,
+        encode_pex_message, parse_extension_handshake, parse_pex_message,
     };
+
+    #[test]
+    fn repeated_handshake_update_encodes_pex_disable_and_reenable() {
+        let disabled = encode_extension_handshake_update(ExtensionHandshake {
+            pex: ExtensionUpdate::Disabled,
+            ..ExtensionHandshake::default()
+        })
+        .expect("disable update");
+        assert_eq!(
+            parse_extension_handshake(&disabled).expect("parse disable"),
+            ExtensionHandshake {
+                pex: ExtensionUpdate::Disabled,
+                ..ExtensionHandshake::default()
+            }
+        );
+
+        let enabled = encode_extension_handshake_update(ExtensionHandshake {
+            pex: ExtensionUpdate::Enabled(2),
+            ..ExtensionHandshake::default()
+        })
+        .expect("enable update");
+        assert_eq!(
+            parse_extension_handshake(&enabled)
+                .expect("parse enable")
+                .pex,
+            ExtensionUpdate::Enabled(2)
+        );
+    }
 
     #[test]
     fn recognized_map_is_directional_additive_and_disable_by_name() {

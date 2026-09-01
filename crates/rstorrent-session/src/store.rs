@@ -527,7 +527,7 @@ impl SessionStore {
 
         if let Some(maximum_bytes) = ephemeral_maximum_bytes {
             configure_ephemeral_connection(&connection, maximum_bytes)?;
-            create_or_validate_schema_24(
+            create_or_validate_schema_25(
                 &mut connection,
                 profile_id,
                 initial_client_settings,
@@ -540,7 +540,7 @@ impl SessionStore {
             match preparation {
                 CatalogPreparation::Current => {
                     configure_durable_connection(&connection)?;
-                    create_or_validate_schema_24(
+                    create_or_validate_schema_25(
                         &mut connection,
                         profile_id,
                         initial_client_settings,
@@ -549,7 +549,7 @@ impl SessionStore {
                 }
                 CatalogPreparation::Create { reset_report } => {
                     connection.pragma_update(None, "synchronous", "FULL")?;
-                    create_or_validate_schema_24(
+                    create_or_validate_schema_25(
                         &mut connection,
                         profile_id,
                         initial_client_settings,
@@ -2726,7 +2726,7 @@ fn pragma_u64(connection: &Connection, pragma: &str) -> Result<u64, StoreError> 
     u64::try_from(value).map_err(|_| StoreError::DurableState(format!("negative SQLite {pragma}")))
 }
 
-fn create_or_validate_schema_24(
+fn create_or_validate_schema_25(
     connection: &mut Connection,
     profile_id: &str,
     initial_client_settings: &ClientSettings,
@@ -2734,7 +2734,7 @@ fn create_or_validate_schema_24(
 ) -> Result<(), StoreError> {
     let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version != 0 {
-        return validate_schema_24(connection, profile_id);
+        return validate_schema_25(connection, profile_id);
     }
     let transaction = connection.transaction()?;
     transaction.execute_batch(
@@ -2746,7 +2746,7 @@ fn create_or_validate_schema_24(
          CREATE TABLE profile_reset_report (
             singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
             previous_schema_version INTEGER NOT NULL CHECK (
-                previous_schema_version BETWEEN 1 AND 23
+                previous_schema_version BETWEEN 1 AND 24
             ),
             discarded_categories_json TEXT NOT NULL CHECK (
                 length(discarded_categories_json) BETWEEN 2 AND 1024
@@ -2929,10 +2929,10 @@ fn create_or_validate_schema_24(
     transaction.execute_batch(FILE_PRIORITIES_TABLE_SQL)?;
     transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     transaction.commit()?;
-    validate_schema_24(connection, profile_id)
+    validate_schema_25(connection, profile_id)
 }
 
-fn validate_schema_24(connection: &Connection, profile_id: &str) -> Result<(), StoreError> {
+fn validate_schema_25(connection: &Connection, profile_id: &str) -> Result<(), StoreError> {
     let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version != SCHEMA_VERSION {
         return Err(StoreError::UnsupportedSchema {

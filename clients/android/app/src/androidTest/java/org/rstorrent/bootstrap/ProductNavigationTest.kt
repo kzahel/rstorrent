@@ -387,6 +387,54 @@ class ProductNavigationTest {
     }
 
     @Test
+    fun networkSettingsEmitIndependentDhtAndPeerExchangePatches() {
+        val patches = mutableListOf<ClientSettingsPatch>()
+        compose.setContent {
+            ProductApp(
+                service = null,
+                onSelectStorage = {},
+                onBrowseTorrent = {},
+                notificationsGranted = true,
+                onRequestNotifications = {},
+                onOpenNotificationSettings = {},
+                themeMode = ProductThemeMode.LIGHT,
+                dynamicColor = false,
+                onThemeMode = {},
+                onDynamicColor = {},
+                stateOverride =
+                    ProductState(
+                        ready = true,
+                        storageRootReady = true,
+                        clientSettings = clientSettings(),
+                    ),
+                onUpdateClientSettings = { patches += it },
+            )
+        }
+
+        compose
+            .onNodeWithContentDescription("More options")
+            .performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Settings").performSemanticsAction(SemanticsActions.OnClick)
+        compose
+            .onNodeWithText("Network & Privacy")
+            .performSemanticsAction(SemanticsActions.OnClick)
+        compose
+            .onNodeWithContentDescription("DHT")
+            .assertIsOn()
+            .performSemanticsAction(SemanticsActions.OnClick)
+        compose
+            .onNodeWithContentDescription("Peer exchange")
+            .assertIsOn()
+            .performSemanticsAction(SemanticsActions.OnClick)
+
+        assertEquals(2, patches.size)
+        assertEquals(false, patches[0].dhtEnabled)
+        assertNull(patches[0].peerExchangeEnabled)
+        assertNull(patches[1].dhtEnabled)
+        assertEquals(false, patches[1].peerExchangeEnabled)
+    }
+
+    @Test
     fun externalMagnetUsesGenericConfirmationBeforeFileSelection() {
         val confirmations = mutableListOf<Long>()
         compose.setContent {
@@ -865,6 +913,8 @@ class ProductNavigationTest {
                 downloadRateLimit = TransferRateLimit.Limited(256U * 1_024U),
                 encryption = EncryptionPolicy.ALLOW,
                 ipv6Enabled = true,
+                dhtEnabled = true,
+                peerExchangeEnabled = true,
                 trackerHttpsServerAuthentication =
                     HttpsServerAuthenticationPolicy.SYSTEM_TRUST,
             )
@@ -898,6 +948,8 @@ class ProductNavigationTest {
             inactiveSeedCount = 0U.toUShort(),
             effectiveEncryption = EncryptionPolicy.ALLOW,
             effectiveIpv6Enabled = true,
+            effectiveDhtEnabled = true,
+            effectivePeerExchangeEnabled = true,
             effectiveTrackerHttpsServerAuthentication =
                 HttpsServerAuthenticationPolicy.SYSTEM_TRUST,
             transportApplication = ClientSettingsApplicationState.Applied,
@@ -908,6 +960,8 @@ class ProductNavigationTest {
             bandwidth = BandwidthRuntimeView(bandwidthDirection(), bandwidthDirection()),
             encryptionApplication = ClientSettingsApplicationState.Applied,
             ipv6Application = ClientSettingsApplicationState.Applied,
+            dhtApplication = ClientSettingsApplicationState.Applied,
+            peerExchangeApplication = ClientSettingsApplicationState.Applied,
             trackerHttpsAuthenticationApplication = ClientSettingsApplicationState.Applied,
             listenerStatus = ListenerStatus.Disabled,
             sessionUdpStatus = SessionUdpStatus.Unavailable,

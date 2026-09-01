@@ -119,6 +119,8 @@ export function ConnectionSeedingSettingsSection({
         downloadRate,
         draft.encryption,
         draft.ipv6Enabled,
+        draft.dhtEnabled,
+        draft.peerExchangeEnabled,
         configured.tracker_https_server_authentication,
       );
     },
@@ -248,6 +250,44 @@ export function ConnectionSeedingSettingsSection({
           <span>
             <strong>{localizedMessage("inspection.components.connection.seeding.settings.section.enable.ipv6")}</strong>
             <small>{localizedMessage("inspection.components.connection.seeding.settings.section.use.ipv6.for.dht.trackers.peer.connections")}</small>
+          </span>
+        </label>
+
+        <label className={styles.option}>
+          <input
+            type="checkbox"
+            checked={draft.dhtEnabled}
+            disabled={!manageable}
+            onChange={(event) =>
+              dispatchDraft({
+                type: "edit",
+                field: "dhtEnabled",
+                value: event.currentTarget.checked,
+              })
+            }
+          />
+          <span>
+            <strong>{localizedMessage("inspection.components.connection.seeding.settings.section.enable.dht")}</strong>
+            <small>{localizedMessage("inspection.components.connection.seeding.settings.section.find.peers.through.the.distributed.hash.table")}</small>
+          </span>
+        </label>
+
+        <label className={styles.option}>
+          <input
+            type="checkbox"
+            checked={draft.peerExchangeEnabled}
+            disabled={!manageable}
+            onChange={(event) =>
+              dispatchDraft({
+                type: "edit",
+                field: "peerExchangeEnabled",
+                value: event.currentTarget.checked,
+              })
+            }
+          />
+          <span>
+            <strong>{localizedMessage("inspection.components.connection.seeding.settings.section.enable.peer.exchange")}</strong>
+            <small>{localizedMessage("inspection.components.connection.seeding.settings.section.exchange.peer.addresses.with.connected.public.torrents")}</small>
           </span>
         </label>
 
@@ -757,6 +797,14 @@ function RuntimeState({ settings }: { readonly settings: ClientSettingsRuntimeVi
         label={localizedMessage("inspection.components.connection.seeding.settings.section.protocol.obfuscation")}
         state={settings.encryption_application}
       />
+      <ApplicationState
+        label={localizedMessage("inspection.components.connection.seeding.settings.section.dht")}
+        state={settings.dht_application}
+      />
+      <ApplicationState
+        label={localizedMessage("inspection.components.connection.seeding.settings.section.peer.exchange")}
+        state={settings.peer_exchange_application}
+      />
       {settings.effective_peer_connection_limit <
       settings.configured.peer_connection_limit ? (
         <span>{localizedMessage("inspection.components.connection.seeding.settings.section.the.configured")}{" "}{settings.configured.peer_connection_limit}{localizedMessage("inspection.components.connection.seeding.settings.section.peer.setting.is.safely.limited.to")}{" "}{settings.effective_peer_connection_limit}{" "}{localizedMessage("inspection.components.connection.seeding.settings.section.by.available.file.descriptors")}</span>
@@ -787,6 +835,8 @@ function RuntimeState({ settings }: { readonly settings: ClientSettingsRuntimeVi
       </span>
       <span>{localizedMessage("inspection.components.connection.seeding.settings.section.effective.ipv6.policy")}{" "}{settings.effective_ipv6_enabled ? localizedMessage("inspection.components.connection.seeding.settings.section.enabled") : localizedMessage("inspection.components.connection.seeding.settings.section.disabled")}.
       </span>
+      <span>{localizedMessage("inspection.components.connection.seeding.settings.section.effective.dht.policy")}{" "}{settings.effective_dht_enabled ? localizedMessage("inspection.components.connection.seeding.settings.section.enabled") : localizedMessage("inspection.components.connection.seeding.settings.section.disabled")}.</span>
+      <span>{localizedMessage("inspection.components.connection.seeding.settings.section.effective.peer.exchange.policy")}{" "}{settings.effective_peer_exchange_enabled ? localizedMessage("inspection.components.connection.seeding.settings.section.enabled") : localizedMessage("inspection.components.connection.seeding.settings.section.disabled")}.</span>
     </div>
   );
 }
@@ -998,6 +1048,8 @@ interface ClientSettingsDraft {
   readonly downloadRate: RateLimitDraftField;
   readonly encryption: EncryptionPolicy;
   readonly ipv6Enabled: boolean;
+  readonly dhtEnabled: boolean;
+  readonly peerExchangeEnabled: boolean;
 }
 
 const CLIENT_SETTINGS_COMPARATORS: SettingsDraftComparators<ClientSettingsDraft> = {
@@ -1019,6 +1071,8 @@ const CLIENT_SETTINGS_COMPARATORS: SettingsDraftComparators<ClientSettingsDraft>
   downloadRate: sameRateLimitDraftField,
   encryption: Object.is,
   ipv6Enabled: Object.is,
+  dhtEnabled: Object.is,
+  peerExchangeEnabled: Object.is,
 };
 
 function clientSettingsDraft(settings: ClientSettings): ClientSettingsDraft {
@@ -1062,6 +1116,8 @@ function clientSettingsDraft(settings: ClientSettings): ClientSettingsDraft {
     },
     encryption: settings.encryption,
     ipv6Enabled: settings.ipv6_enabled,
+    dhtEnabled: settings.dht_enabled,
+    peerExchangeEnabled: settings.peer_exchange_enabled,
   };
 }
 
@@ -1122,6 +1178,12 @@ function clientSettingsPatch(
     ...(fields.includes("ipv6Enabled")
       ? { ipv6_enabled: settings.ipv6_enabled }
       : {}),
+    ...(fields.includes("dhtEnabled")
+      ? { dht_enabled: settings.dht_enabled }
+      : {}),
+    ...(fields.includes("peerExchangeEnabled")
+      ? { peer_exchange_enabled: settings.peer_exchange_enabled }
+      : {}),
   };
 }
 
@@ -1155,6 +1217,8 @@ function validateDraft(
   downloadRate: RateLimitValidation,
   encryption: EncryptionPolicy,
   ipv6Enabled: boolean,
+  dhtEnabled: boolean,
+  peerExchangeEnabled: boolean,
   trackerHttpsServerAuthentication: ClientSettings["tracker_https_server_authentication"],
 ): DraftValidation {
   const preferred = parseBoundedInteger(
@@ -1289,6 +1353,8 @@ function validateDraft(
       download_rate_limit: downloadRate.limit as TransferRateLimit,
       encryption,
       ipv6_enabled: ipv6Enabled,
+      dht_enabled: dhtEnabled,
+      peer_exchange_enabled: peerExchangeEnabled,
       tracker_https_server_authentication: trackerHttpsServerAuthentication,
     },
     preferredPortError: null,

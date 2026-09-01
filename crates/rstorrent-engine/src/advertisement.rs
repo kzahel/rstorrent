@@ -13,7 +13,9 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
 
-use crate::dht::{DhtAnnouncePorts, DhtAnnounceResult, DhtError, DhtHandle, MAX_ACTIVE_LOOKUPS};
+use crate::dht::{
+    DhtAnnouncePorts, DhtAnnounceResult, DhtError, DhtHandle, DhtLifecycle, MAX_ACTIVE_LOOKUPS,
+};
 use crate::driver::{
     DiscoveryLaneOperation, DiscoveryLanePhase, DownloadActivityEvent, DownloadActivitySink,
     DownloadControl, DownloadError, TrackerAnnounceInput, TrackerAnnounceOutcome,
@@ -807,6 +809,9 @@ async fn run_service(
         cancellation,
     } = runtime;
     let mut endpoint = *endpoint_receiver.borrow_and_update();
+    let mut dht_observations = dht.subscribe_observations();
+    let mut dht_observations_open = true;
+    let mut dht_enabled = !matches!(dht_observations.borrow().lifecycle, DhtLifecycle::Disabled);
     let mut entries = BTreeMap::<[u8; 20], TorrentEntry>::new();
     let mut operations = JoinSet::new();
     let mut dht_operations = JoinSet::new();
@@ -841,13 +846,17 @@ async fn run_service(
             network,
             endpoint,
         );
-        let dht_wait = fill_dht_operations(
-            &mut entries,
-            &mut dht_operations,
-            dht.clone(),
-            network.policy,
-            endpoint,
-        );
+        let dht_wait = dht_enabled
+            .then(|| {
+                fill_dht_operations(
+                    &mut entries,
+                    &mut dht_operations,
+                    dht.clone(),
+                    network.policy,
+                    endpoint,
+                )
+            })
+            .flatten();
         operation_high_water = operation_high_water.max(operations.len());
         dht_operation_high_water = dht_operation_high_water.max(dht_operations.len());
         let now = Instant::now();
@@ -1055,6 +1064,46 @@ async fn run_service(
                         immediate_shutdown = true;
                         shutdown_response = Some(response);
                         entries.clear();
+                    }
+                }
+            }
+            changed = dht_observations.changed(), if dht_observations_open && !shutting_down => {
+                let next_enabled = match changed {
+                    Ok(()) => !matches!(
+                        dht_observations.borrow_and_update().lifecycle,
+                        DhtLifecycle::Disabled
+                    ),
+                    Err(_) => {
+                        dht_observations_open = false;
+                        false
+                    }
+                };
+                if next_enabled != dht_enabled {
+                    dht_enabled = next_enabled;
+                    dht_operations.abort_all();
+                    while dht_operations.join_next().await.is_some() {}
+                    let now = Instant::now();
+                    for entry in entries.values_mut() {
+                        entry.dht_epoch = entry.dht_epoch.saturating_add(1);
+                        let cancelled = entry
+                            .lanes
+                            .iter()
+                            .filter(|lane| lane.dht_inflight)
+                            .map(|lane| lane.swarm_key)
+                            .collect::<Vec<_>>();
+                        for lane in &mut entry.lanes {
+                            lane.dht_inflight = false;
+                            if dht_enabled {
+                                lane.next_dht_action = now;
+                            }
+                        }
+                        for swarm_key in cancelled {
+                            entry.emit_lane(
+                                swarm_key,
+                                DiscoveryLaneOperation::DhtLookup,
+                                DiscoveryLanePhase::Cancelled,
+                            );
+                        }
                     }
                 }
             }
@@ -3301,6 +3350,7 @@ mod tests {
     #[tokio::test]
     async fn session_scheduler_announces_public_seed_and_keeps_dht_peers() {
         let server = crate::dht::DhtService::start(crate::dht::DhtConfig {
+            enabled: true,
             network_policy: NetworkPolicy::LoopbackOnly,
             bind_address: "127.0.0.1:0".parse().expect("bind address"),
             bootstrap_nodes: Vec::new(),
@@ -3318,6 +3368,7 @@ mod tests {
         let client = crate::dht::DhtService::start(crate::dht::DhtConfig {
             bootstrap_nodes: vec![crate::dht::BootstrapNode::Address(server.local_address())],
             ..crate::dht::DhtConfig {
+                enabled: true,
                 network_policy: NetworkPolicy::LoopbackOnly,
                 bind_address: "127.0.0.1:0".parse().expect("bind address"),
                 bootstrap_nodes: Vec::new(),
@@ -3387,6 +3438,24 @@ mod tests {
             .await
             .expect("lookup announced seed");
         assert!(discovered.iter().any(|peer| peer.port() == 55_002));
+        client
+            .handle()
+            .set_enabled(false)
+            .await
+            .expect("disable DHT");
+        assert_eq!(
+            client.handle().lookup([12; 20]).await,
+            Err(DhtError::NetworkDisabled)
+        );
+        client
+            .handle()
+            .set_enabled(true)
+            .await
+            .expect("re-enable DHT");
+        assert_eq!(
+            activity.wait_for_dht_announces(3).await,
+            (55_002, 1, 1, 1, 0)
+        );
 
         let terminal = service.shutdown().await.expect("shutdown scheduler");
         assert_eq!(terminal.tasks, 0);

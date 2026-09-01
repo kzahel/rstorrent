@@ -1042,6 +1042,12 @@
       "value": "development-only loopback mode"
     }
   ],
+  "inspection.components.connection.seeding.settings.section.dht": [
+    {
+      "type": 0,
+      "value": "DHT"
+    }
+  ],
   "inspection.components.connection.seeding.settings.section.disabled": [
     {
       "type": 0,
@@ -1070,6 +1076,12 @@
     {
       "type": 0,
       "value": "-download setting is limited to"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.effective.dht.policy": [
+    {
+      "type": 0,
+      "value": "Effective DHT policy:"
     }
   ],
   "inspection.components.connection.seeding.settings.section.effective.gateway.mapping.policy": [
@@ -1108,6 +1120,12 @@
       "value": "Effective peer download limit:"
     }
   ],
+  "inspection.components.connection.seeding.settings.section.effective.peer.exchange.policy": [
+    {
+      "type": 0,
+      "value": "Effective peer exchange policy:"
+    }
+  ],
   "inspection.components.connection.seeding.settings.section.effective.peer.upload.limit": [
     {
       "type": 0,
@@ -1120,16 +1138,34 @@
       "value": "Effective protocol obfuscation policy:"
     }
   ],
+  "inspection.components.connection.seeding.settings.section.enable.dht": [
+    {
+      "type": 0,
+      "value": "Enable DHT"
+    }
+  ],
   "inspection.components.connection.seeding.settings.section.enable.ipv6": [
     {
       "type": 0,
       "value": "Enable IPv6"
     }
   ],
+  "inspection.components.connection.seeding.settings.section.enable.peer.exchange": [
+    {
+      "type": 0,
+      "value": "Enable peer exchange"
+    }
+  ],
   "inspection.components.connection.seeding.settings.section.enabled": [
     {
       "type": 0,
       "value": "enabled"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.exchange.peer.addresses.with.connected.public.torrents": [
+    {
+      "type": 0,
+      "value": "Exchange peer addresses with connected public torrents. Private torrents never use peer exchange."
     }
   ],
   "inspection.components.connection.seeding.settings.section.external.reachability.is.not.yet.observed": [
@@ -1142,6 +1178,12 @@
     {
       "type": 0,
       "value": "; external reachability is unverified"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.find.peers.through.the.distributed.hash.table": [
+    {
+      "type": 0,
+      "value": "Find peers through the distributed hash table. Private torrents never use DHT."
     }
   ],
   "inspection.components.connection.seeding.settings.section.finished.download.time.priority.goal": [
@@ -1382,6 +1424,12 @@
     {
       "type": 0,
       "value": "Peer connections"
+    }
+  ],
+  "inspection.components.connection.seeding.settings.section.peer.exchange": [
+    {
+      "type": 0,
+      "value": "Peer exchange"
     }
   ],
   "inspection.components.connection.seeding.settings.section.peer.protocols.may.advertise.local.tcp.port": [
@@ -2300,6 +2348,12 @@
     {
       "type": 0,
       "value": "DHT status facts"
+    }
+  ],
+  "inspection.components.dht.panel.disabled": [
+    {
+      "type": 0,
+      "value": "Disabled"
     }
   ],
   "inspection.components.dht.panel.elapsed.left": [

@@ -81,6 +81,8 @@ impl ClientSettingsRuntimeView {
             inactive_seed_count: 0,
             effective_encryption: settings.encryption,
             effective_ipv6_enabled: settings.ipv6_enabled,
+            effective_dht_enabled: settings.dht_enabled,
+            effective_peer_exchange_enabled: settings.peer_exchange_enabled,
             effective_tracker_https_server_authentication: Some(
                 settings.tracker_https_server_authentication,
             ),
@@ -93,6 +95,8 @@ impl ClientSettingsRuntimeView {
             bandwidth: BandwidthRuntimeView::default(),
             encryption_application: ClientSettingsApplicationState::Applied,
             ipv6_application: ClientSettingsApplicationState::Applied,
+            dht_application: ClientSettingsApplicationState::Applied,
+            peer_exchange_application: ClientSettingsApplicationState::Applied,
             tracker_https_authentication_application: ClientSettingsApplicationState::Applied,
             listener_status: ListenerStatus::Disabled,
             session_udp_status: SessionUdpStatus::Unavailable,
@@ -116,6 +120,8 @@ impl ClientSettingsRuntimeView {
         self.bandwidth_application = ClientSettingsApplicationState::Applying;
         self.encryption_application = ClientSettingsApplicationState::Applying;
         self.ipv6_application = ClientSettingsApplicationState::Applying;
+        self.dht_application = ClientSettingsApplicationState::Applying;
+        self.peer_exchange_application = ClientSettingsApplicationState::Applying;
         self.tracker_https_authentication_application = ClientSettingsApplicationState::Applying;
     }
 
@@ -158,6 +164,8 @@ impl ClientSettingsRuntimeView {
             inactive_seed_count: 0,
             effective_encryption: active.encryption,
             effective_ipv6_enabled: active.ipv6_enabled,
+            effective_dht_enabled: active.dht_enabled,
+            effective_peer_exchange_enabled: active.peer_exchange_enabled,
             effective_tracker_https_server_authentication: Some(
                 active.tracker_https_server_authentication,
             ),
@@ -179,6 +187,8 @@ impl ClientSettingsRuntimeView {
             bandwidth: BandwidthRuntimeView::default(),
             encryption_application: ClientSettingsApplicationState::Applied,
             ipv6_application: ClientSettingsApplicationState::Applied,
+            dht_application: ClientSettingsApplicationState::Applied,
+            peer_exchange_application: ClientSettingsApplicationState::Applied,
             tracker_https_authentication_application: ClientSettingsApplicationState::Applied,
             listener_status,
             session_udp_status,

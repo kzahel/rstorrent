@@ -8,6 +8,12 @@ Typed resource patches, atomic merge/validation, receipt/revision convergence,
 and value-semantic web/Android drafts now pass SM-001 through SM-010. The
 unsupported old settings variants are removed without aliases, adapters, or a
 version bridge.
+Completed Tactical
+[`205`](../tactical/205-durable-dht-and-pex-controls.md) extends that same
+contract with independent default-on DHT and peer-exchange fields. Both are
+durable sparse properties with configured/effective/application truth; React
+and Compose retain the established draft/rebase behavior while the existing
+session reconciler applies each field live.
 
 ## Purpose And Scope
 
@@ -130,6 +136,8 @@ struct ClientSettingsPatch {
     download_rate_limit: Option<TransferRateLimit>,
     encryption: Option<EncryptionPolicy>,
     ipv6_enabled: Option<bool>,
+    dht_enabled: Option<bool>,
+    peer_exchange_enabled: Option<bool>,
     tracker_https_server_authentication:
         Option<HttpsServerAuthenticationPolicy>,
 }
@@ -304,6 +312,12 @@ snapshot/reset cost, convergence latency, and representative render work
 before selecting a wire change. It must preserve coherent fresh snapshots,
 cursor/epoch recovery, coalescing, and SM-010. Binary encoding and delivery
 profile policy remain separately owned concerns.
+
+Tactical `205` re-runs the same complete-update stress path while editing DHT
+and PEX. The web editor emits only the two dirty Boolean fields, Android's
+field overlay round-trips them independently, older serialized client settings
+default both to enabled, and generated TypeScript, Kotlin, and Swift consumers
+compile from the same Rust contract.
 
 Tactical 180's closing observation confirms that unchanged global
 `client_settings` are already omitted from unrelated torrent-list patches. A

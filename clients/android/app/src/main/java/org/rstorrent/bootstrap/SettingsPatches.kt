@@ -26,6 +26,8 @@ internal fun clientSettingsPatch(
     downloadRateLimit: TransferRateLimit? = null,
     encryption: EncryptionPolicy? = null,
     ipv6Enabled: Boolean? = null,
+    dhtEnabled: Boolean? = null,
+    peerExchangeEnabled: Boolean? = null,
     trackerHttpsServerAuthentication: HttpsServerAuthenticationPolicy? = null,
 ): ClientSettingsPatch =
     ClientSettingsPatch(
@@ -43,6 +45,8 @@ internal fun clientSettingsPatch(
         downloadRateLimit = downloadRateLimit,
         encryption = encryption,
         ipv6Enabled = ipv6Enabled,
+        dhtEnabled = dhtEnabled,
+        peerExchangeEnabled = peerExchangeEnabled,
         trackerHttpsServerAuthentication = trackerHttpsServerAuthentication,
     )
 
@@ -62,6 +66,8 @@ internal fun ClientSettings.asPatch(): ClientSettingsPatch =
         downloadRateLimit = downloadRateLimit,
         encryption = encryption,
         ipv6Enabled = ipv6Enabled,
+        dhtEnabled = dhtEnabled,
+        peerExchangeEnabled = peerExchangeEnabled,
         trackerHttpsServerAuthentication = trackerHttpsServerAuthentication,
     )
 

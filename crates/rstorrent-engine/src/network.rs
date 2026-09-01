@@ -393,6 +393,52 @@ impl Default for PeerEncryptionPolicyHandle {
     }
 }
 
+/// Shared live session policy for BEP 11 participation.
+///
+/// `NetworkConfig::peer_exchange` remains the immutable capability/profile
+/// gate. This handle is the reversible product setting sampled by current and
+/// future torrent owners.
+#[derive(Clone, Debug)]
+pub struct PeerExchangePolicyHandle {
+    enabled: Arc<AtomicBool>,
+    updates: watch::Sender<bool>,
+}
+
+impl PeerExchangePolicyHandle {
+    #[must_use]
+    pub fn new(enabled: bool) -> Self {
+        let (updates, _) = watch::channel(enabled);
+        Self {
+            enabled: Arc::new(AtomicBool::new(enabled)),
+            updates,
+        }
+    }
+
+    #[must_use]
+    pub fn load(&self) -> bool {
+        self.enabled.load(Ordering::Acquire)
+    }
+
+    pub fn replace(&self, enabled: bool) -> bool {
+        let previous = self.enabled.swap(enabled, Ordering::AcqRel);
+        if previous != enabled {
+            self.updates.send_replace(enabled);
+        }
+        previous
+    }
+
+    #[must_use]
+    pub fn subscribe(&self) -> watch::Receiver<bool> {
+        self.updates.subscribe()
+    }
+}
+
+impl Default for PeerExchangePolicyHandle {
+    fn default() -> Self {
+        Self::new(true)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NetworkPolicy {
     Offline,
@@ -526,8 +572,24 @@ mod tests {
         AddressFamily, AddressFamilyPolicy, ApplicationNetworkPrerequisite, NetworkConfig,
         NetworkPolicy, NetworkPrerequisiteError, NetworkPrerequisiteHandle,
         NetworkPrerequisiteSnapshot, PeerEncryptionPolicy, PeerEncryptionPolicyHandle,
-        is_valid_outbound_address,
+        PeerExchangePolicyHandle, is_valid_outbound_address,
     };
+
+    #[tokio::test]
+    async fn peer_exchange_policy_is_latest_value_and_idempotent() {
+        let handle = PeerExchangePolicyHandle::default();
+        let mut updates = handle.subscribe();
+        assert!(handle.load());
+        assert!(handle.replace(false));
+        updates.changed().await.expect("disable update");
+        assert!(!*updates.borrow_and_update());
+        assert!(!handle.load());
+        assert!(!handle.replace(false));
+        assert!(!updates.has_changed().expect("sender remains available"));
+        assert!(!handle.replace(true));
+        updates.changed().await.expect("enable update");
+        assert!(*updates.borrow_and_update());
+    }
 
     #[tokio::test]
     async fn network_prerequisite_is_nonzero_ordered_and_latest_value() {

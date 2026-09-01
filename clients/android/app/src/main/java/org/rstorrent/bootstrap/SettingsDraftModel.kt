@@ -28,6 +28,8 @@ enum class ClientSettingsField {
     DOWNLOAD_RATE_LIMIT,
     ENCRYPTION,
     IPV6_ENABLED,
+    DHT_ENABLED,
+    PEER_EXCHANGE_ENABLED,
     TRACKER_HTTPS_AUTHENTICATION,
 }
 
@@ -278,6 +280,8 @@ internal fun ClientSettings.fieldValues(): Map<ClientSettingsField, Any> =
         ClientSettingsField.DOWNLOAD_RATE_LIMIT to downloadRateLimit,
         ClientSettingsField.ENCRYPTION to encryption,
         ClientSettingsField.IPV6_ENABLED to ipv6Enabled,
+        ClientSettingsField.DHT_ENABLED to dhtEnabled,
+        ClientSettingsField.PEER_EXCHANGE_ENABLED to peerExchangeEnabled,
         ClientSettingsField.TRACKER_HTTPS_AUTHENTICATION to trackerHttpsServerAuthentication,
     )
 
@@ -299,6 +303,8 @@ internal fun ClientSettingsPatch.fieldValues(): Map<ClientSettingsField, Any> =
         downloadRateLimit?.let { put(ClientSettingsField.DOWNLOAD_RATE_LIMIT, it) }
         encryption?.let { put(ClientSettingsField.ENCRYPTION, it) }
         ipv6Enabled?.let { put(ClientSettingsField.IPV6_ENABLED, it) }
+        dhtEnabled?.let { put(ClientSettingsField.DHT_ENABLED, it) }
+        peerExchangeEnabled?.let { put(ClientSettingsField.PEER_EXCHANGE_ENABLED, it) }
         trackerHttpsServerAuthentication?.let {
             put(ClientSettingsField.TRACKER_HTTPS_AUTHENTICATION, it)
         }
@@ -321,6 +327,8 @@ internal fun Map<ClientSettingsField, Any>.toClientSettingsPatch(): ClientSettin
         downloadRateLimit = get(ClientSettingsField.DOWNLOAD_RATE_LIMIT) as? TransferRateLimit,
         encryption = get(ClientSettingsField.ENCRYPTION) as? EncryptionPolicy,
         ipv6Enabled = get(ClientSettingsField.IPV6_ENABLED) as? Boolean,
+        dhtEnabled = get(ClientSettingsField.DHT_ENABLED) as? Boolean,
+        peerExchangeEnabled = get(ClientSettingsField.PEER_EXCHANGE_ENABLED) as? Boolean,
         trackerHttpsServerAuthentication =
             get(ClientSettingsField.TRACKER_HTTPS_AUTHENTICATION)
                 as? HttpsServerAuthenticationPolicy,
@@ -370,6 +378,9 @@ internal fun ProductState.presentedClientSettings(): ClientSettingsRuntimeView? 
                     values[ClientSettingsField.DOWNLOAD_RATE_LIMIT] as TransferRateLimit,
                 encryption = values[ClientSettingsField.ENCRYPTION] as EncryptionPolicy,
                 ipv6Enabled = values[ClientSettingsField.IPV6_ENABLED] as Boolean,
+                dhtEnabled = values[ClientSettingsField.DHT_ENABLED] as Boolean,
+                peerExchangeEnabled =
+                    values[ClientSettingsField.PEER_EXCHANGE_ENABLED] as Boolean,
                 trackerHttpsServerAuthentication =
                     values[ClientSettingsField.TRACKER_HTTPS_AUTHENTICATION]
                         as HttpsServerAuthenticationPolicy,

@@ -124,7 +124,7 @@ pub use network::{
     AddressFamily, AddressFamilyPolicy, AddressFamilyPolicyHandle, ApplicationNetworkPrerequisite,
     DEFAULT_PEER_ID, NetworkConfig, NetworkPolicy, NetworkPrerequisiteError,
     NetworkPrerequisiteHandle, NetworkPrerequisiteSnapshot, PeerEncryptionPolicy,
-    PeerEncryptionPolicyHandle, PeerTransportPolicy,
+    PeerEncryptionPolicyHandle, PeerExchangePolicyHandle, PeerTransportPolicy,
 };
 pub use part_file::{PartFile, PartFileError, PartFileIdentity};
 pub use peer_budget::{

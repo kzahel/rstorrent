@@ -239,6 +239,7 @@ async fn main() -> ExitCode {
                             peer_budget: PeerBudget::system_default(),
                             mse_dh: MseDhWorkOwner::new(),
                             encryption,
+                            peer_exchange: Default::default(),
                             torrent_peers: Some(peers),
                             resource_limits: config.resource_limits,
                             skip_files: config.skip_files,

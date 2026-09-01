@@ -339,6 +339,10 @@
     <string name="setting_incoming_connections">Incoming connections</string>
     <string name="setting_upnp">UPnP port mapping</string>
     <string name="setting_ipv6" translatable="false">IPv6</string>
+    <string name="setting_dht" translatable="false">DHT</string>
+    <string name="setting_dht_detail">Find peers through the distributed hash table. Private torrents never use DHT. %1$s</string>
+    <string name="setting_peer_exchange">Peer exchange</string>
+    <string name="setting_peer_exchange_detail">Exchange peer addresses with connected public torrents. Private torrents never use peer exchange. %1$s</string>
     <string name="setting_peer_encryption">Peer encryption</string>
     <string name="setting_effective_value">Effective %1$s · %2$s</string>
     <string name="setting_vpn_only">VPN-only mode</string>

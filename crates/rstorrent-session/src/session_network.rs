@@ -14,10 +14,10 @@ use rstorrent_engine::{
     IncomingPeerError, IncomingPeerHandle, IncomingPeerRuntime, IncomingPeerServiceConfig,
     IncomingPeerServiceSnapshot, MseDhWorkOwner, MseHandshakeObservation, MseHandshakeOutcome,
     MseHandshakeSink, NetworkConfig, PeerAdvertisementEndpoint, PeerBudget, PeerEncryptionPolicy,
-    PeerEncryptionPolicyHandle, PeerTransportPolicy, SessionSocketConfig, SessionSocketError,
-    SessionSocketFamilySet, SessionSocketFamilyState, SessionSocketSet, SessionUdpError,
-    SessionUdpHandle, SessionUdpRepairRequest, SessionUdpService, TorrentBandwidth,
-    TorrentTransferRateLimits, UtpHandle, UtpRuntimeError, UtpService,
+    PeerEncryptionPolicyHandle, PeerExchangePolicyHandle, PeerTransportPolicy, SessionSocketConfig,
+    SessionSocketError, SessionSocketFamilySet, SessionSocketFamilyState, SessionSocketSet,
+    SessionUdpError, SessionUdpHandle, SessionUdpRepairRequest, SessionUdpService,
+    TorrentBandwidth, TorrentTransferRateLimits, UtpHandle, UtpRuntimeError, UtpService,
 };
 use rstorrent_engine::{
     BandwidthDirectionSnapshot, BandwidthError, SessionBandwidth, SessionBandwidthHandle,
@@ -191,6 +191,7 @@ pub(crate) struct SessionNetworkRuntime {
     peer_budget: PeerBudget,
     mse_dh: MseDhWorkOwner,
     encryption: PeerEncryptionPolicyHandle,
+    peer_exchange: PeerExchangePolicyHandle,
     mse_handshake_diagnostics: Arc<SessionMseHandshakeDiagnostics>,
     incoming_handle: IncomingPeerHandle,
     incoming_seeding: IncomingSeeding,
@@ -315,6 +316,8 @@ struct SessionNetworkOwner {
     peer_budget: PeerBudget,
     mse_dh: MseDhWorkOwner,
     encryption: PeerEncryptionPolicyHandle,
+    peer_exchange_capable: bool,
+    peer_exchange: PeerExchangePolicyHandle,
     incoming_runtime: Option<IncomingPeerRuntime>,
     incoming_acceptor: Option<IncomingPeerAcceptor>,
     incoming_ipv6_acceptor: Option<IncomingPeerAcceptor>,
@@ -378,9 +381,13 @@ impl SessionNetworkRuntime {
         let mse_dh = MseDhWorkOwner::new();
         let mse_handshake_diagnostics = Arc::new(SessionMseHandshakeDiagnostics::default());
         let encryption = PeerEncryptionPolicyHandle::new(settings.encryption.into_engine());
+        let peer_exchange_capable = network.peer_exchange;
+        let peer_exchange =
+            PeerExchangePolicyHandle::new(peer_exchange_capable && settings.peer_exchange_enabled);
         let mut incoming_config = IncomingPeerServiceConfig::new(settings.incoming_bootstrap())
             .with_peer_budget(peer_budget.clone())
             .with_encryption(settings.encryption.into_engine())
+            .with_peer_exchange(peer_exchange.clone())
             .with_mse_dh(mse_dh.clone());
         incoming_config.upload_scheduler = settings.upload_scheduler_config();
         incoming_config.upload_read_jobs = upload_read_jobs;
@@ -394,6 +401,7 @@ impl SessionNetworkRuntime {
         incoming_config.mse_handshake_sink = Some(mse_handshake_diagnostics.clone());
 
         dht.network_policy = network.policy;
+        dht.enabled = settings.dht_enabled;
         dht.initial_snapshot = initial_dht_snapshot;
         dht.byte_metric_sink = Some(byte_metric_sink);
         let dht_bind_address = dht.bind_address;
@@ -642,6 +650,7 @@ impl SessionNetworkRuntime {
         };
         let mut effective_settings = settings.clone();
         effective_settings.ipv6_enabled = address_families.ipv6_enabled();
+        effective_settings.peer_exchange_enabled = peer_exchange.load();
         let initial_transport_application = match &listener_status {
             ListenerStatus::BindFailed { detail, .. } => ClientSettingsApplicationState::Degraded {
                 reason: ClientSettingsDegradedReason::TransportBindFailed,
@@ -670,6 +679,8 @@ impl SessionNetworkRuntime {
             peer_budget: peer_budget.clone(),
             mse_dh: mse_dh.clone(),
             encryption: encryption.clone(),
+            peer_exchange_capable,
+            peer_exchange: peer_exchange.clone(),
             incoming_runtime,
             incoming_acceptor,
             incoming_ipv6_acceptor,
@@ -703,6 +714,8 @@ impl SessionNetworkRuntime {
             SettingsDomain::UploadSlots,
             SettingsDomain::Bandwidth,
             SettingsDomain::Encryption,
+            SettingsDomain::Dht,
+            SettingsDomain::PeerExchange,
         ] {
             assert!(convergence.apply(
                 initial_attempt.domain(domain),
@@ -723,6 +736,7 @@ impl SessionNetworkRuntime {
             peer_budget,
             mse_dh,
             encryption,
+            peer_exchange,
             mse_handshake_diagnostics,
             incoming_handle,
             incoming_seeding,
@@ -968,6 +982,10 @@ impl SessionNetworkRuntime {
 
     pub(crate) fn encryption(&self) -> PeerEncryptionPolicyHandle {
         self.encryption.clone()
+    }
+
+    pub(crate) fn peer_exchange(&self) -> PeerExchangePolicyHandle {
+        self.peer_exchange.clone()
     }
 
     pub(crate) fn incoming_seeding(&self) -> IncomingSeeding {
@@ -1421,6 +1439,65 @@ impl SessionNetworkOwner {
                 },
                 views,
             ),
+        }
+
+        let dht_generation = attempt.domain(SettingsDomain::Dht);
+        let dht_state = self
+            .dht
+            .as_ref()
+            .expect("DHT exists during reconciliation")
+            .handle()
+            .set_enabled(attempt.settings.dht_enabled)
+            .await;
+        match dht_state {
+            Ok(()) => {
+                self.effective_settings.dht_enabled = attempt.settings.dht_enabled;
+                if apply_state(
+                    convergence,
+                    dht_generation,
+                    ClientSettingsApplicationState::Applied,
+                )
+                .is_some()
+                {
+                    let enabled = attempt.settings.dht_enabled;
+                    let _ = views.update_client_settings_runtime_for(dht_generation, |runtime| {
+                        runtime.effective_dht_enabled = enabled;
+                        runtime.dht_application = ClientSettingsApplicationState::Applied;
+                    });
+                }
+            }
+            Err(error) => {
+                let state = ClientSettingsApplicationState::Degraded {
+                    reason: ClientSettingsDegradedReason::RuntimeStopped,
+                    detail: error.to_string(),
+                };
+                if apply_state(convergence, dht_generation, state.clone()).is_some() {
+                    let effective = self.effective_settings.dht_enabled;
+                    let _ = views.update_client_settings_runtime_for(dht_generation, |runtime| {
+                        runtime.effective_dht_enabled = effective;
+                        runtime.dht_application = state;
+                    });
+                }
+            }
+        }
+
+        let peer_exchange_generation = attempt.domain(SettingsDomain::PeerExchange);
+        let peer_exchange_enabled =
+            self.peer_exchange_capable && attempt.settings.peer_exchange_enabled;
+        self.peer_exchange.replace(peer_exchange_enabled);
+        self.effective_settings.peer_exchange_enabled = peer_exchange_enabled;
+        if apply_state(
+            convergence,
+            peer_exchange_generation,
+            ClientSettingsApplicationState::Applied,
+        )
+        .is_some()
+        {
+            let enabled = peer_exchange_enabled;
+            let _ = views.update_client_settings_runtime_for(peer_exchange_generation, |runtime| {
+                runtime.effective_peer_exchange_enabled = enabled;
+                runtime.peer_exchange_application = ClientSettingsApplicationState::Applied;
+            });
         }
 
         let transport_changed = self

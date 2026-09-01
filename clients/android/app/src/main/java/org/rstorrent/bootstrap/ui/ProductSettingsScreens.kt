@@ -20,6 +20,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import org.rstorrent.bootstrap.ProductNetworkState
@@ -320,6 +322,8 @@ internal fun NetworkSettings(
     onListener: (Boolean) -> Unit,
     onPortMapping: (Boolean) -> Unit,
     onIpv6: (Boolean) -> Unit,
+    onDht: (Boolean) -> Unit,
+    onPeerExchange: (Boolean) -> Unit,
     onEncryption: (EncryptionPolicy) -> Unit,
 ) {
     ToggleSetting(
@@ -364,6 +368,26 @@ internal fun NetworkSettings(
         detail = settingsApplicationLabel(settings.ipv6Application),
         checked = settings.configured.ipv6Enabled,
         onChecked = onIpv6,
+    )
+    ToggleSetting(
+        title = stringResource(R.string.setting_dht),
+        detail =
+            stringResource(
+                R.string.setting_dht_detail,
+                settingsApplicationLabel(settings.dhtApplication),
+            ),
+        checked = settings.configured.dhtEnabled,
+        onChecked = onDht,
+    )
+    ToggleSetting(
+        title = stringResource(R.string.setting_peer_exchange),
+        detail =
+            stringResource(
+                R.string.setting_peer_exchange_detail,
+                settingsApplicationLabel(settings.peerExchangeApplication),
+            ),
+        checked = settings.configured.peerExchangeEnabled,
+        onChecked = onPeerExchange,
     )
     ChoiceSetting(
         title = stringResource(R.string.setting_peer_encryption),
@@ -452,7 +476,13 @@ private fun ToggleSetting(
     ListItem(
         headlineContent = { Text(title) },
         supportingContent = { Text(detail) },
-        trailingContent = { Switch(checked, onCheckedChange = onChecked) },
+        trailingContent = {
+            Switch(
+                checked = checked,
+                onCheckedChange = onChecked,
+                modifier = Modifier.semantics { contentDescription = title },
+            )
+        },
     )
     HorizontalDivider()
 }

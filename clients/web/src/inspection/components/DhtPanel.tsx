@@ -726,6 +726,8 @@ function formatDuration(value: string): string {
 
 function lifecycleLabel(lifecycle: DhtInspectionView["lifecycle"]): string {
   switch (lifecycle) {
+    case "disabled":
+      return localizedMessage("inspection.components.dht.panel.disabled");
     case "offline":
       return localizedMessage("inspection.components.dht.panel.offline");
     case "bootstrap_empty":

@@ -1698,6 +1698,10 @@
             "type": "limited"
           }
         },
+        "dht_enabled": {
+          "default": true,
+          "type": "boolean"
+        },
         "download_rate_limit": {
           "$ref": "#/$defs/TransferRateLimit",
           "default": {
@@ -1732,6 +1736,10 @@
           "maximum": 2000,
           "minimum": 1,
           "type": "integer"
+        },
+        "peer_exchange_enabled": {
+          "default": true,
+          "type": "boolean"
         },
         "port_mapping": {
           "$ref": "#/$defs/PortMappingPolicy"
@@ -1855,6 +1863,9 @@
         "active_seeds": {
           "$ref": "#/$defs/ActiveSeedLimit"
         },
+        "dht_enabled": {
+          "type": "boolean"
+        },
         "download_rate_limit": {
           "$ref": "#/$defs/TransferRateLimit"
         },
@@ -1884,6 +1895,9 @@
           "maximum": 2000,
           "minimum": 1,
           "type": "integer"
+        },
+        "peer_exchange_enabled": {
+          "type": "boolean"
         },
         "port_mapping": {
           "$ref": "#/$defs/PortMappingPolicy"
@@ -1961,6 +1975,9 @@
         "configured": {
           "$ref": "#/$defs/ClientSettings"
         },
+        "dht_application": {
+          "$ref": "#/$defs/ClientSettingsApplicationState"
+        },
         "effective_active_downloads": {
           "format": "uint16",
           "maximum": 65535,
@@ -1969,6 +1986,9 @@
         },
         "effective_active_seeds": {
           "$ref": "#/$defs/ActiveSeedLimit"
+        },
+        "effective_dht_enabled": {
+          "type": "boolean"
         },
         "effective_download_rate_limit": {
           "$ref": "#/$defs/TransferRateLimit"
@@ -1993,6 +2013,9 @@
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
+        },
+        "effective_peer_exchange_enabled": {
+          "type": "boolean"
         },
         "effective_port_mapping": {
           "$ref": "#/$defs/PortMappingPolicy"
@@ -2035,6 +2058,9 @@
           "$ref": "#/$defs/ListenerStatus"
         },
         "peer_connections_application": {
+          "$ref": "#/$defs/ClientSettingsApplicationState"
+        },
+        "peer_exchange_application": {
           "$ref": "#/$defs/ClientSettingsApplicationState"
         },
         "port_mapping_application": {
@@ -2084,6 +2110,8 @@
         "inactive_seed_count",
         "effective_encryption",
         "effective_ipv6_enabled",
+        "effective_dht_enabled",
+        "effective_peer_exchange_enabled",
         "transport_application",
         "port_mapping_application",
         "peer_connections_application",
@@ -2092,6 +2120,8 @@
         "bandwidth",
         "encryption_application",
         "ipv6_application",
+        "dht_application",
+        "peer_exchange_application",
         "tracker_https_authentication_application",
         "listener_status",
         "session_udp_status",
@@ -2902,6 +2932,7 @@
     },
     "DhtLifecycleView": {
       "enum": [
+        "disabled",
         "offline",
         "bootstrap_empty",
         "participating",
@@ -6385,6 +6416,7 @@
               "torrents": 5,
               "type": "limited"
             },
+            "dht_enabled": true,
             "download_rate_limit": {
               "type": "unlimited"
             },
@@ -6396,6 +6428,7 @@
               "type": "disabled"
             },
             "peer_connection_limit": 200,
+            "peer_exchange_enabled": true,
             "port_mapping": "disabled",
             "preferred_listen_port": 6881,
             "share_ratio_limit_percent": 200,
@@ -9245,6 +9278,7 @@
                     "torrents": 5,
                     "type": "limited"
                   },
+                  "dht_enabled": true,
                   "download_rate_limit": {
                     "type": "unlimited"
                   },
@@ -9256,6 +9290,7 @@
                     "type": "disabled"
                   },
                   "peer_connection_limit": 200,
+                  "peer_exchange_enabled": true,
                   "port_mapping": "disabled",
                   "preferred_listen_port": 6881,
                   "share_ratio_limit_percent": 200,
@@ -9265,11 +9300,15 @@
                   },
                   "upload_slots": 8
                 },
+                "dht_application": {
+                  "type": "applied"
+                },
                 "effective_active_downloads": 3,
                 "effective_active_seeds": {
                   "torrents": 5,
                   "type": "limited"
                 },
+                "effective_dht_enabled": true,
                 "effective_download_rate_limit": {
                   "type": "unlimited"
                 },
@@ -9282,6 +9321,7 @@
                   "preferred_listen_port": 6881
                 },
                 "effective_peer_connection_limit": 200,
+                "effective_peer_exchange_enabled": true,
                 "effective_port_mapping": "disabled",
                 "effective_tracker_https_server_authentication": "system_trust",
                 "effective_upload_rate_limit": {
@@ -9302,6 +9342,9 @@
                   "type": "disabled"
                 },
                 "peer_connections_application": {
+                  "type": "applied"
+                },
+                "peer_exchange_application": {
                   "type": "applied"
                 },
                 "port_mapping_application": {

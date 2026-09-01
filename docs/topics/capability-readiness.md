@@ -863,6 +863,17 @@ archive, and catalog round-trip gates. English remains the only production
 locale. Selecting and qualifying the first native-reviewed real language is a
 separate product cohort, not an implied multilingual claim.
 
+Completed Tactical
+[`205`](../tactical/205-durable-dht-and-pex-controls.md) closes the simplest
+remaining Android settings-parity item with shared product behavior rather
+than a Compose-only switch. Fresh schema 25 persists default-on DHT and PEX
+intent; one existing settings reconciler applies both live through the
+long-lived DHT owner and a task-free shared PEX policy. React and Compose expose
+the backed controls and exact application truth, generated TypeScript/Kotlin/
+Swift consumers pass, and deterministic disable/re-enable, scheduler wake,
+PEX purge/repeated-handshake, private-gate, web, Android dual-ABI, and iOS
+simulator evidence pass. The protocol support levels do not change.
+
 Tactical `152` closes the selected-root multifile defect exposed after those
 three tacticals. Exact-target coordination passes deterministic sibling-lease
 and three-handle release tests. A controlled cross-file physical transfer
@@ -1039,6 +1050,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | HTTP and HTTPS trackers | Implemented | deterministic, runtime, interop, web, desktop, AVD, live | The long-lived application owner provides bounded HTTP/1.1 requests, Basic auth, five redirects, gzip/`x-gzip`, permissive hostile bencode, tracker IDs and BEP 31, compact/noncompact IPv4/IPv6 peers, policy/family DNS, lifecycle/cancellation, metadata-only activation, and connection-family projection. The focused resumable owner now uses the same task-free operation executor with system trust, tracker-ID continuation, mixed-transport fallback, cancellation, and completed/stopped lifecycle. Controlled libtorrent discovery/authenticated transfers, platform trust, and official Ubuntu HTTPS dispatch pass. One hidden application compatibility value remains encrypted but unauthenticated. Proxies, scrape, other authentication, custom roots/pins, and a public reliability claim are absent. | [`tracker-discovery`](tracker-discovery.md) |
 | DHT | Partial | deterministic, runtime, interop, live | One bounded actor owns independent IPv4/IPv6 identities, routing, tokens, transactions, traversals, peer values, native-family bootstrap, warm state, incoming queries, private gating, merged product lookups, and family-port self-announcement. One session scheduler survives download completion; strict hybrid evidence shares bootstrap while independently looking up and announcing both exact keys and completes over uTP. Controlled DHT-only discovery passes in both families, mapped off-LAN IPv4 seed discovery passes, and a native public IPv6 node reached 40 routing nodes and 41 valid responses during successful merged metadata acquisition. Foreign-family bootstrap optimization, BEP 5 `PORT`, and incoming IPv6 reachability remain absent. | [`dht-discovery`](dht-discovery.md) |
 | Peer exchange | Implemented | deterministic, runtime, interop | Verified-public BEP 11 uses bounded directional BEP 10 negotiation, 16-KiB/50-contact messages, 50-per-source and 200-per-torrent admission, a 4,096-event shared timeline, exact provenance/privacy cleanup, and the ordinary registry/dial owner. A controlled complementary two-hop pinned-libtorrent run captures one addition, an oracle-observed RSTorrent drop, and exact 16-MiB completion; underpopulated recent-peer exemptions, BEP 40, and durable PEX state remain absent. | [`peer-lifecycle`](peer-lifecycle.md), [`protocol-support`](protocol-support.md) |
+| User-visible DHT and PEX policy | Implemented | deterministic, persistence, runtime, web, Android build, simulator | Default-on durable session settings apply live without replacing the DHT, torrent, or peer generations. DHT disable stops wire participation and re-enable immediately wakes registered discovery. PEX disable updates established public peers and purges only PEX provenance. Private torrents remain independently excluded. React and Compose expose configured/effective/application truth; TypeScript, Kotlin, and Swift generated boundaries pass. | [`205`](../tactical/205-durable-dht-and-pex-controls.md), [`settings-mutation-and-draft-consistency`](settings-mutation-and-draft-consistency.md) |
 | Local service discovery | Absent | none | Interface, multicast, and local-network policy are unimplemented. | [`protocol-support`](protocol-support.md) |
 
 ### Peer And Swarm Lifecycle

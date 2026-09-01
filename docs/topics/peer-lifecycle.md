@@ -878,3 +878,14 @@ libtorrent complementary-peer evidence pass. Full parole selection still
 requires adversarial evidence that
 the existing retry and suspicion policy cannot recover; persisted peer caches
 also remain unplanned.
+
+Completed Tactical
+[`205`](../tactical/205-durable-dht-and-pex-controls.md) gives every current
+and future torrent plus accepted peer one shared default-on live PEX policy.
+Disable stops advertisement, receive, and send, purges PEX-only source
+provenance without disturbing mixed tracker/DHT/manual/incoming provenance,
+and sends a BEP 10 `ut_pex = 0` update to established extension-capable public
+peers. Re-enable retains negotiated remote IDs, sends the repeated enabled
+update, and resumes bounded cursors without replacing torrent or peer task
+generations. Verified private torrents remain blocked independently of the
+session setting.

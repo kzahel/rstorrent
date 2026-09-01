@@ -234,7 +234,7 @@ blocker for an independent RSTorrent beta.
 | --- | --- | --- |
 | VPN-only mode | JSTorrent suspends when the active default network is not reported as VPN. RSTorrent has no control. The legacy check does not prove socket binding or leak prevention. | Implement only with Android `Network` binding, fail-closed startup/handover, closure or rebinding of existing TCP/UDP sockets, and peer/tracker/DHT/DNS leakage evidence; otherwise retire and disclose it. |
 | SOCKS5 proxy | JSTorrent exposes host, port, optional credentials, and peer/HTTP-tracker/UDP-tracker routing choices. RSTorrent shows a disabled placeholder and has no engine proxy owner. | Use a source-first engine tactical covering DNS, authentication-secret storage, UDP ASSOCIATE or a truthful unsupported state, reconnect, bypass prevention, resource limits, and interoperability. |
-| DHT and PEX controls | Both RSTorrent engine capabilities exist, but Compose has no enable/disable controls. | Add backed settings or explicitly retain always-on public-torrent policy. Preserve private-torrent gating regardless. |
+| DHT and PEX controls | Completed Tactical [`205`](../tactical/205-durable-dht-and-pex-controls.md) adds backed default-on Compose controls, durable intent, live application truth, and shared engine enforcement. | Implemented. Private-torrent gating remains unconditional regardless of either setting. |
 | Seeding and queue policy | JSTorrent has backing state for an active-seed limit, although its current native Settings screen does not render that control, plus a stop/close versus keep-seeding choice. RSTorrent now has exact pinned-libtorrent global active-seed and ratio/time priority semantics, but deliberately does not reproduce stop/close-on-goal. | Tactical `200` selects default background closure and a separate keep-seeding-in-background opt-in. Completed Tactical `201` adds backed Compose settings and exact active/queued/goal truth. Its installed API-35 profile proves one active and two queued seeds across foreground reopening and opt-in background ownership. Reaching a goal does not hard-stop or rewrite torrent intent; whether that deliberate difference needs additional disclosure remains release work. |
 | Low-battery shutdown | JSTorrent offers an opt-in 5–50% threshold. RSTorrent has only the active-work sleep setting and a disabled Battery policy row. | Decide whether Android replacement retains this safety valve. If implemented, define charging, threshold hysteresis, notification, intent preservation, and restart behavior. |
 | Companion idle/auto-close | JSTorrent can stop its separate legacy daemon after a configured disconnected interval. Tactical `194` instead owns one semantic service/application owner. | Tactical `200` selects a fixed 60-second authenticated-disconnect grace and no user-facing timer. A configurable idle policy remains deferred unless product evidence justifies it. |
@@ -258,7 +258,8 @@ user outcome truthfully.
 
 This detailed native-settings comparison was refreshed against RSTorrent
 commit `3c6217285cb981fa9ee4fd6415684b11065a1f1e` and JSTorrent commit
-`25e4b701433fd815398ba89526546f5e4f072e3f`. It distinguishes controls that a
+`25e4b701433fd815398ba89526546f5e4f072e3f`, then reconciled through completed
+RSTorrent Tactical `205`. It distinguishes controls that a
 user can actually reach from backing settings that exist only in code. A
 missing control is not automatically selected work: the capability table
 above and a bounded tactical still own the implement, retire, or
@@ -288,8 +289,8 @@ defer-and-disclose decision.
 | Unmetered-only transfers | Labeled Wi-Fi only, but implemented from Android's unmetered-network fact. | Labeled Unmetered networks only, with live closure/restart and preserved torrent intent. | Equivalent product intent; RSTorrent has the more accurate label and stronger live-enforcement contract. |
 | VPN-only transfers | Suspends the engine when the default network is not reported as VPN. | Disabled placeholder. | Missing, but JSTorrent's observation does not prove socket binding, DNS confinement, or closure of existing TCP/UDP paths. Implement only as a separate fail-closed privacy feature. |
 | Peer encryption | Disabled, Allow, Prefer, and Required. | Disabled, Allow, Prefer, and Required. | Equivalent. |
-| DHT | Visible enable/disable toggle. | Capability is enabled by policy for eligible public torrents; detailed inspection exists, but no toggle. | Add a backed control or deliberately retain the current public-torrent policy. Private-torrent gating is unconditional. |
-| PEX | Visible enable/disable toggle. | Capability is enabled by policy with private-torrent gating, but no toggle. | Add a backed control or deliberately retain the current policy. |
+| DHT | Visible enable/disable toggle. | Visible default-on toggle with durable configured/effective/application truth; disable and re-enable act on the long-lived DHT owner. | Equivalent user outcome through Tactical `205`; RSTorrent retains bounded warm routing state while disabled. Private-torrent gating is unconditional. |
+| PEX | Visible enable/disable toggle. | Visible default-on toggle with durable configured/effective/application truth; established and future public peers apply it live. | Equivalent user outcome through Tactical `205`; disable additionally purges PEX-only candidates and updates negotiated peers. Private-torrent gating is unconditional. |
 | DHT inspection | Link to a DHT view. | Separate detailed DHT screen. | Equivalent; RSTorrent presentation is stronger. |
 | UPnP | Visible toggle. | Visible toggle with typed status mapping. | Equivalent. |
 | Incoming listener | No separate visible control beyond incoming/UPnP behavior. | Explicit enable/disable control and status. | RSTorrent-only presentation. |
@@ -366,19 +367,17 @@ order. It records priority, not implementation authorization:
 
 1. Implement safe settings reset, metadata/profile clear, optional joined
    payload deletion, and a redacted support/diagnostic handoff.
-2. Decide and, if retained, expose DHT and PEX controls while preserving
-   unconditional private-torrent gating.
-3. Decide whether to retain a low-battery policy with charging, hysteresis,
+2. Decide whether to retain a low-battery policy with charging, hysteresis,
    notification, preserved intent, restart, and joined-shutdown semantics.
-4. Treat SOCKS5 and a real VPN-only mode as separate source-first engine and
+3. Treat SOCKS5 and a real VPN-only mode as separate source-first engine and
    privacy tacticals rather than UI-only settings work.
-5. Select and qualify the first native-reviewed non-English cohort under the
+4. Select and qualify the first native-reviewed non-English cohort under the
    localization foundation.
-6. Make an explicit security/product decision on search and URL-fetched
+5. Make an explicit security/product decision on search and URL-fetched
    plugins before any implementation.
-7. Retain download-manifest integration only if a supported consumer still
+6. Retain download-manifest integration only if a supported consumer still
    requires it.
-8. Add per-torrent peer limits or a manual active-piece-memory override only
+7. Add per-torrent peer limits or a manual active-piece-memory override only
    if replacement or device evidence justifies the extra policy.
 
 ## Network And Privacy Decisions

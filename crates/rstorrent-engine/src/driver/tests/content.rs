@@ -1392,6 +1392,7 @@ async fn dry_swarm_probe_recovers_after_three_transient_handshake_failures() {
         Some(peer_handle),
         crate::mse::MseDhWorkOwner::new(),
         crate::network::PeerEncryptionPolicyHandle::new(network.encryption),
+        crate::PeerExchangePolicyHandle::new(network.peer_exchange),
     )
     .expect("peer coordinator");
     peers

@@ -14,8 +14,9 @@ use rstorrent_protocol::content::{
     TorrentContentWithIntegrity, TorrentIntegrity, V2ExpectedPieceQuery,
 };
 use rstorrent_protocol::extension::{
-    ExtensionAdvertisement, ExtensionMap, PexFlags, UT_PEX_LOCAL_ID,
-    encode_extension_handshake as encode_recognized_extension_handshake,
+    ExtensionAdvertisement, ExtensionHandshake, ExtensionMap, ExtensionUpdate, PexFlags,
+    UT_PEX_LOCAL_ID, encode_extension_handshake as encode_recognized_extension_handshake,
+    encode_extension_handshake_update,
     parse_extension_handshake as parse_recognized_extension_handshake,
 };
 use rstorrent_protocol::identity::{FullInfoHash, InfoHashes, SwarmKey};
@@ -59,7 +60,9 @@ use crate::metrics::ByteMetric;
 use crate::mse::MseDhWorkOwner;
 #[cfg(test)]
 use crate::network::DEFAULT_PEER_ID;
-use crate::network::{NetworkConfig, NetworkPolicy, PeerEncryptionPolicyHandle};
+use crate::network::{
+    NetworkConfig, NetworkPolicy, PeerEncryptionPolicyHandle, PeerExchangePolicyHandle,
+};
 use crate::peer::{
     DialAttempt, DialAttemptId, DialCandidate, DrySwarmProbeAdmission, DrySwarmProbeState,
     PeerEndpoint, PeerFailure, PeerIntegrityAction, PeerObservation, PeerRegistryCounts,
@@ -169,6 +172,18 @@ fn public_pex_extension_handshake() -> Vec<u8> {
         ..ExtensionAdvertisement::default()
     })
     .expect("the stable local PEX extension ID is valid")
+}
+
+fn pex_extension_update(enabled: bool) -> Vec<u8> {
+    encode_extension_handshake_update(ExtensionHandshake {
+        pex: if enabled {
+            ExtensionUpdate::Enabled(UT_PEX_LOCAL_ID)
+        } else {
+            ExtensionUpdate::Disabled
+        },
+        ..ExtensionHandshake::default()
+    })
+    .expect("the stable local PEX extension update is valid")
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -429,6 +444,8 @@ pub struct ResumableMagnetDownloadConfig {
     pub mse_dh: MseDhWorkOwner,
     /// Live session policy sampled when each future handshake starts.
     pub encryption: PeerEncryptionPolicyHandle,
+    /// Live session-wide BEP 11 participation policy.
+    pub peer_exchange: PeerExchangePolicyHandle,
     /// Long-lived per-torrent peer state supplied by the application session.
     /// Diagnostic and standalone callers leave this unset.
     pub torrent_peers: Option<TorrentPeerHandle>,
@@ -456,6 +473,7 @@ pub struct ResumableMetainfoDownloadConfig {
     pub peer_budget: PeerBudget,
     pub mse_dh: MseDhWorkOwner,
     pub encryption: PeerEncryptionPolicyHandle,
+    pub peer_exchange: PeerExchangePolicyHandle,
     pub torrent_peers: Option<TorrentPeerHandle>,
     pub resource_limits: DownloadResourceLimits,
     pub skip_files: Vec<usize>,
@@ -475,6 +493,7 @@ pub struct ExternalMagnetMetadataDownloadConfig {
     pub peer_budget: PeerBudget,
     pub mse_dh: MseDhWorkOwner,
     pub encryption: PeerEncryptionPolicyHandle,
+    pub peer_exchange: PeerExchangePolicyHandle,
     pub torrent_peers: TorrentPeerHandle,
     pub resource_limits: DownloadResourceLimits,
 }
@@ -943,6 +962,7 @@ pub async fn download_magnet_metadata_with_dht_and_peers(
             torrent_peers,
             mse_dh: MseDhWorkOwner::new(),
             encryption: PeerEncryptionPolicyHandle::new(network.encryption),
+            peer_exchange: PeerExchangePolicyHandle::new(network.peer_exchange),
         },
     )
     .await;
@@ -975,6 +995,7 @@ pub async fn download_magnet_metadata_with_external_discovery(
             torrent_peers: Some(config.torrent_peers),
             mse_dh: config.mse_dh,
             encryption: config.encryption,
+            peer_exchange: config.peer_exchange,
         },
     )
     .await;
@@ -2241,6 +2262,7 @@ struct TorrentPeerCoordinator {
     peer_budget: PeerBudget,
     mse_dh: MseDhWorkOwner,
     encryption: PeerEncryptionPolicyHandle,
+    peer_exchange: PeerExchangePolicyHandle,
     trackers: Vec<SwarmTrackerLane>,
     tracker_configs: Vec<TrackerConfig>,
     dht: Option<DhtHandle>,
@@ -2266,6 +2288,7 @@ struct TorrentPeerResources {
     torrent_peers: Option<TorrentPeerHandle>,
     mse_dh: MseDhWorkOwner,
     encryption: PeerEncryptionPolicyHandle,
+    peer_exchange: PeerExchangePolicyHandle,
 }
 
 impl TorrentPeerResources {
@@ -2275,6 +2298,7 @@ impl TorrentPeerResources {
             torrent_peers: None,
             mse_dh: MseDhWorkOwner::new(),
             encryption: PeerEncryptionPolicyHandle::new(network.encryption),
+            peer_exchange: PeerExchangePolicyHandle::new(network.peer_exchange),
         }
     }
 }
@@ -2497,6 +2521,7 @@ impl TorrentPeerCoordinator {
             None,
             MseDhWorkOwner::new(),
             PeerEncryptionPolicyHandle::new(network.encryption),
+            PeerExchangePolicyHandle::new(network.peer_exchange),
         )
     }
 
@@ -2507,6 +2532,7 @@ impl TorrentPeerCoordinator {
         peers: Option<TorrentPeerHandle>,
         mse_dh: MseDhWorkOwner,
         encryption: PeerEncryptionPolicyHandle,
+        peer_exchange: PeerExchangePolicyHandle,
     ) -> Result<Self, DownloadError> {
         validate_network_config(network)?;
         let owns_peer_sink = peers.is_none();
@@ -2531,6 +2557,7 @@ impl TorrentPeerCoordinator {
             peer_budget,
             mse_dh,
             encryption,
+            peer_exchange,
             trackers: Vec::new(),
             tracker_configs: Vec::new(),
             dht: None,
@@ -2842,24 +2869,25 @@ impl TorrentPeerCoordinator {
         connection: ConnectionId,
         payload: &[u8],
     ) -> Result<ExtensionMap, DownloadError> {
-        if !self.network.peer_exchange {
-            return Ok(ExtensionMap::default());
-        }
         let handshake = parse_recognized_extension_handshake(payload)
             .map_err(|error| DownloadError::Pex(PexError::Extension(error)))?;
-        Ok(self
-            .peers
-            .with_state(|state| state.pex.apply_extension_handshake(connection, handshake)))
+        Ok(self.peers.with_state(|state| {
+            let map = state.pex.apply_extension_handshake(connection, handshake);
+            if !self.peer_exchange_enabled() {
+                state.pex.disable_outbound(connection);
+            }
+            map
+        }))
     }
 
     fn install_extension_map(&mut self, connection: ConnectionId, map: ExtensionMap) {
-        let map = if self.network.peer_exchange {
-            map
-        } else {
-            ExtensionMap::default()
-        };
-        self.peers
-            .with_state(|state| state.pex.install_extension_map(connection, map));
+        let enabled = self.peer_exchange_enabled();
+        self.peers.with_state(|state| {
+            state.pex.install_extension_map(connection, map);
+            if !enabled {
+                state.pex.disable_outbound(connection);
+            }
+        });
     }
 
     fn receive_pex(
@@ -2868,7 +2896,7 @@ impl TorrentPeerCoordinator {
         payload: &[u8],
         verified_public: bool,
     ) -> Result<PexReceiveDisposition, DownloadError> {
-        if !self.network.peer_exchange {
+        if !self.peer_exchange_enabled() {
             return Ok(PexReceiveDisposition::PrivacyBlocked);
         }
         let source_endpoint = self
@@ -2909,6 +2937,9 @@ impl TorrentPeerCoordinator {
         &mut self,
         connection: ConnectionId,
     ) -> Result<Option<(u8, Vec<u8>)>, DownloadError> {
+        if !self.peer_exchange_enabled() {
+            return Ok(None);
+        }
         let now = self.elapsed();
         self.peers.with_state(|state| {
             let remote_id = state.pex.extension_map(connection).pex_id();
@@ -2930,6 +2961,16 @@ impl TorrentPeerCoordinator {
     fn purge_pex_for_private(&mut self) -> Result<(), DownloadError> {
         self.peers
             .with_state(|state| state.pex.purge(&mut state.registry));
+        self.publish_peer_runtime(true)
+    }
+
+    fn peer_exchange_enabled(&self) -> bool {
+        self.network.peer_exchange && self.peer_exchange.load()
+    }
+
+    fn apply_peer_exchange_policy(&mut self, enabled: bool) -> Result<(), DownloadError> {
+        self.peers
+            .with_state(|state| state.pex.set_session_enabled(enabled, &mut state.registry));
         self.publish_peer_runtime(true)
     }
 
@@ -3052,6 +3093,7 @@ impl TorrentPeerCoordinator {
             resources.torrent_peers,
             resources.mse_dh,
             resources.encryption,
+            resources.peer_exchange,
         )?;
         peers.set_content_identities(magnet.identities);
         peers.swarm_key = Some(magnet.identity.swarm_key());
@@ -3099,6 +3141,7 @@ impl TorrentPeerCoordinator {
             resources.torrent_peers,
             resources.mse_dh,
             resources.encryption,
+            resources.peer_exchange,
         )?;
         peers.set_content_identities(info_hashes);
         peers.swarm_key = Some(swarm_key);
@@ -4380,6 +4423,7 @@ async fn run_resumable_magnet_download(
                 torrent_peers: torrent_peers.clone(),
                 mse_dh: config.mse_dh.clone(),
                 encryption: config.encryption.clone(),
+                peer_exchange: config.peer_exchange.clone(),
             },
         )
         .await?;
@@ -4439,6 +4483,7 @@ async fn run_resumable_magnet_download(
             torrent_peers,
             mse_dh: config.mse_dh,
             encryption: config.encryption,
+            peer_exchange: config.peer_exchange,
         },
     )
     .await?;
@@ -4540,6 +4585,7 @@ async fn run_resumable_metainfo_download(
             torrent_peers: config.torrent_peers,
             mse_dh: config.mse_dh,
             encryption: config.encryption,
+            peer_exchange: config.peer_exchange,
         },
     )?;
     let resume = ResumeContext {
@@ -4886,6 +4932,7 @@ async fn run_download(
                 Some(torrent_peers),
                 MseDhWorkOwner::new(),
                 PeerEncryptionPolicyHandle::new(config.network.encryption),
+                PeerExchangePolicyHandle::new(config.network.peer_exchange),
             )?;
             peers.observe_address(config.peer, PeerSource::Manual)?;
             peers
@@ -7454,6 +7501,31 @@ async fn send_due_pex(
     Ok(failed)
 }
 
+async fn send_pex_policy_update(
+    sockets: &PeerSocketSet,
+    connections: &BTreeSet<ConnectionId>,
+    enabled: bool,
+) -> Vec<ConnectionId> {
+    let payload = pex_extension_update(enabled);
+    let mut failed = Vec::new();
+    for &connection in connections {
+        if sockets
+            .send(
+                connection,
+                PeerMessage::Extended {
+                    id: 0,
+                    payload: payload.clone(),
+                },
+            )
+            .await
+            .is_err()
+        {
+            failed.push(connection);
+        }
+    }
+    failed
+}
+
 async fn replace_content_connection(
     peers: &mut TorrentPeerCoordinator,
     sockets: &mut PeerSocketSet,
@@ -7788,6 +7860,8 @@ async fn run_selective_swarm_loop(
     let mut rate_limit_started = None;
     let mut next_maintenance_at = Duration::ZERO;
     let mut completion_drain_started = None;
+    let mut extension_connections = BTreeSet::new();
+    let mut peer_exchange_enabled = peers.peer_exchange_enabled() && !download.content.private();
     if let Some(connection) = peers.connection.take() {
         let attempt = connection.attempt();
         let fast_extension = connection.supports_fast_extension();
@@ -7802,6 +7876,7 @@ async fn run_selective_swarm_loop(
             .add_connection(id, peers.elapsed())
             .map_err(DownloadError::Swarm)?;
         peers.install_extension_map(id, extension_map);
+        extension_connections.insert(id);
         download
             .state
             .set_fast_extension(id, fast_extension)
@@ -7815,8 +7890,7 @@ async fn run_selective_swarm_loop(
                 send_initial_availability,
             )
             .await?;
-        if peers.network.peer_exchange
-            && !download.content.private()
+        if peer_exchange_enabled
             && sockets
                 .send(
                     id,
@@ -7852,6 +7926,31 @@ async fn run_selective_swarm_loop(
     }
 
     loop {
+        let active_connections = sockets
+            .connection_attempts()
+            .into_iter()
+            .map(connection_id)
+            .collect::<BTreeSet<_>>();
+        extension_connections.retain(|connection| active_connections.contains(connection));
+        let next_peer_exchange_enabled =
+            peers.peer_exchange_enabled() && !download.content.private();
+        if next_peer_exchange_enabled != peer_exchange_enabled {
+            peers.apply_peer_exchange_policy(next_peer_exchange_enabled)?;
+            for connection in
+                send_pex_policy_update(sockets, &extension_connections, next_peer_exchange_enabled)
+                    .await
+            {
+                close_content_connection(
+                    peers,
+                    sockets,
+                    &mut download.state,
+                    connection,
+                    Some(PeerFailure::RemoteClosed),
+                )
+                .await?;
+            }
+            peer_exchange_enabled = next_peer_exchange_enabled;
+        }
         download.prune_closed_incoming_content()?;
         let state = &download.state;
         download
@@ -8306,6 +8405,9 @@ async fn run_selective_swarm_loop(
                         let id = sockets
                             .add_connection(connection)
                             .map_err(download_peer_set_error)?;
+                        if handshake.supports_extensions() {
+                            extension_connections.insert(id);
+                        }
                         download
                             .state
                             .add_connection(id, peers.elapsed())
@@ -8339,7 +8441,7 @@ async fn run_selective_swarm_loop(
                             .await?;
                             continue;
                         }
-                        if peers.network.peer_exchange
+                        if peer_exchange_enabled
                             && handshake.supports_extensions()
                             && !download.content.private()
                             && sockets

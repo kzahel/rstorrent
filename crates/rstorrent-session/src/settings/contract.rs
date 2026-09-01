@@ -332,6 +332,10 @@ pub struct ClientSettings {
     pub download_rate_limit: TransferRateLimit,
     pub encryption: EncryptionPolicy,
     pub ipv6_enabled: bool,
+    #[serde(default = "default_enabled")]
+    pub dht_enabled: bool,
+    #[serde(default = "default_enabled")]
+    pub peer_exchange_enabled: bool,
     pub tracker_https_server_authentication: HttpsServerAuthenticationPolicy,
 }
 
@@ -354,6 +358,8 @@ impl Default for ClientSettings {
             download_rate_limit: TransferRateLimit::Unlimited,
             encryption: EncryptionPolicy::Allow,
             ipv6_enabled: true,
+            dht_enabled: true,
+            peer_exchange_enabled: true,
             tracker_https_server_authentication: HttpsServerAuthenticationPolicy::SystemTrust,
         }
     }
@@ -532,6 +538,20 @@ pub struct ClientSettingsPatch {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_optional_patch_value"
     )]
+    #[schemars(with = "bool")]
+    pub dht_enabled: Option<bool>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_patch_value"
+    )]
+    #[schemars(with = "bool")]
+    pub peer_exchange_enabled: Option<bool>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_patch_value"
+    )]
     #[schemars(with = "HttpsServerAuthenticationPolicy")]
     pub tracker_https_server_authentication: Option<HttpsServerAuthenticationPolicy>,
 }
@@ -552,6 +572,8 @@ impl ClientSettingsPatch {
             && self.download_rate_limit.is_none()
             && self.encryption.is_none()
             && self.ipv6_enabled.is_none()
+            && self.dht_enabled.is_none()
+            && self.peer_exchange_enabled.is_none()
             && self.tracker_https_server_authentication.is_none()
     }
 
@@ -590,6 +612,10 @@ impl ClientSettingsPatch {
                 .unwrap_or(current.download_rate_limit),
             encryption: self.encryption.unwrap_or(current.encryption),
             ipv6_enabled: self.ipv6_enabled.unwrap_or(current.ipv6_enabled),
+            dht_enabled: self.dht_enabled.unwrap_or(current.dht_enabled),
+            peer_exchange_enabled: self
+                .peer_exchange_enabled
+                .unwrap_or(current.peer_exchange_enabled),
             tracker_https_server_authentication: self
                 .tracker_https_server_authentication
                 .unwrap_or(current.tracker_https_server_authentication),
@@ -618,6 +644,8 @@ impl From<ClientSettings> for ClientSettingsPatch {
             download_rate_limit: Some(settings.download_rate_limit),
             encryption: Some(settings.encryption),
             ipv6_enabled: Some(settings.ipv6_enabled),
+            dht_enabled: Some(settings.dht_enabled),
+            peer_exchange_enabled: Some(settings.peer_exchange_enabled),
             tracker_https_server_authentication: Some(settings.tracker_https_server_authentication),
         }
     }
@@ -633,6 +661,10 @@ where
 
 const fn default_active_downloads() -> u16 {
     DEFAULT_ACTIVE_DOWNLOADS
+}
+
+const fn default_enabled() -> bool {
+    true
 }
 
 const fn default_share_ratio_limit_percent() -> u32 {
@@ -1058,6 +1090,8 @@ pub struct ClientSettingsRuntimeView {
     pub inactive_seed_count: u16,
     pub effective_encryption: EncryptionPolicy,
     pub effective_ipv6_enabled: bool,
+    pub effective_dht_enabled: bool,
+    pub effective_peer_exchange_enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effective_tracker_https_server_authentication: Option<HttpsServerAuthenticationPolicy>,
     pub transport_application: ClientSettingsApplicationState,
@@ -1068,6 +1102,8 @@ pub struct ClientSettingsRuntimeView {
     pub bandwidth: BandwidthRuntimeView,
     pub encryption_application: ClientSettingsApplicationState,
     pub ipv6_application: ClientSettingsApplicationState,
+    pub dht_application: ClientSettingsApplicationState,
+    pub peer_exchange_application: ClientSettingsApplicationState,
     pub tracker_https_authentication_application: ClientSettingsApplicationState,
     pub listener_status: ListenerStatus,
     pub session_udp_status: SessionUdpStatus,
@@ -1099,6 +1135,8 @@ impl Default for ClientSettingsRuntimeView {
             inactive_seed_count: 0,
             effective_encryption: settings.encryption,
             effective_ipv6_enabled: settings.ipv6_enabled,
+            effective_dht_enabled: settings.dht_enabled,
+            effective_peer_exchange_enabled: settings.peer_exchange_enabled,
             effective_tracker_https_server_authentication: Some(
                 settings.tracker_https_server_authentication,
             ),
@@ -1111,6 +1149,8 @@ impl Default for ClientSettingsRuntimeView {
             bandwidth: BandwidthRuntimeView::default(),
             encryption_application: ClientSettingsApplicationState::Applied,
             ipv6_application: ClientSettingsApplicationState::Applied,
+            dht_application: ClientSettingsApplicationState::Applied,
+            peer_exchange_application: ClientSettingsApplicationState::Applied,
             tracker_https_authentication_application: ClientSettingsApplicationState::Applied,
             listener_status: ListenerStatus::Disabled,
             session_udp_status: SessionUdpStatus::Unavailable,
@@ -1146,6 +1186,8 @@ impl ClientSettingsRuntimeView {
             inactive_seed_count: 0,
             effective_encryption: settings.encryption,
             effective_ipv6_enabled: false,
+            effective_dht_enabled: settings.dht_enabled,
+            effective_peer_exchange_enabled: settings.peer_exchange_enabled,
             effective_tracker_https_server_authentication: Some(
                 settings.tracker_https_server_authentication,
             ),
@@ -1158,6 +1200,8 @@ impl ClientSettingsRuntimeView {
             bandwidth: BandwidthRuntimeView::default(),
             encryption_application: ClientSettingsApplicationState::Applied,
             ipv6_application: ClientSettingsApplicationState::Applying,
+            dht_application: ClientSettingsApplicationState::Applied,
+            peer_exchange_application: ClientSettingsApplicationState::Applied,
             tracker_https_authentication_application: ClientSettingsApplicationState::Applied,
             listener_status: ListenerStatus::Disabled,
             session_udp_status: SessionUdpStatus::Unavailable,

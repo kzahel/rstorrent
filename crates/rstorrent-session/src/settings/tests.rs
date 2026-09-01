@@ -32,6 +32,8 @@ fn fresh_profile_defaults_enable_incoming_reachability() {
         u16::try_from(DEFAULT_UNCHOKE_SLOTS).unwrap()
     );
     assert_eq!(settings.encryption, EncryptionPolicy::Allow);
+    assert!(settings.dht_enabled);
+    assert!(settings.peer_exchange_enabled);
     assert_eq!(
         settings.tracker_https_server_authentication,
         HttpsServerAuthenticationPolicy::SystemTrust
@@ -159,11 +161,18 @@ fn settings_patch_json_is_sparse_and_closed() {
     let patch = ClientSettingsPatch {
         peer_connection_limit: Some(321),
         ipv6_enabled: Some(false),
+        dht_enabled: Some(false),
+        peer_exchange_enabled: Some(false),
         ..ClientSettingsPatch::default()
     };
     assert_eq!(
         serde_json::to_value(patch).unwrap(),
-        serde_json::json!({"peer_connection_limit": 321, "ipv6_enabled": false})
+        serde_json::json!({
+            "peer_connection_limit": 321,
+            "ipv6_enabled": false,
+            "dht_enabled": false,
+            "peer_exchange_enabled": false
+        })
     );
     assert!(
         serde_json::from_value::<ClientSettingsPatch>(serde_json::json!({"surprise": true}))
@@ -336,6 +345,8 @@ fn runtime_view_distinguishes_configured_effective_domains_and_observed_facts() 
         inactive_seed_count: 1,
         effective_encryption: Default::default(),
         effective_ipv6_enabled: true,
+        effective_dht_enabled: true,
+        effective_peer_exchange_enabled: false,
         effective_tracker_https_server_authentication: Some(
             HttpsServerAuthenticationPolicy::SystemTrust,
         ),
@@ -347,6 +358,8 @@ fn runtime_view_distinguishes_configured_effective_domains_and_observed_facts() 
         bandwidth: Default::default(),
         encryption_application: ClientSettingsApplicationState::Applied,
         ipv6_application: ClientSettingsApplicationState::Applying,
+        dht_application: ClientSettingsApplicationState::Applied,
+        peer_exchange_application: ClientSettingsApplicationState::Applied,
         tracker_https_authentication_application: ClientSettingsApplicationState::Applying,
         listener_status: ListenerStatus::Listening {
             address: "127.0.0.1".to_owned(),
@@ -457,6 +470,8 @@ fn typed_persistence_round_trips_one_atomic_group() {
         },
         encryption: Default::default(),
         ipv6_enabled: false,
+        dht_enabled: false,
+        peer_exchange_enabled: false,
         tracker_https_server_authentication: HttpsServerAuthenticationPolicy::Disabled,
     };
     assert!(replace_client_settings(&transaction, &configured).unwrap());

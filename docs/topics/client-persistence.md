@@ -2,16 +2,18 @@
 
 Topic: `client-persistence`
 
-Status: Completed Tactical
-[`201`](../tactical/201-durable-seeding-goals-and-seed-admission.md) advances
-the disposable catalog to fresh schema 23. It adds bounded monotonic lifetime
-peer-payload totals, active/finished/seeding timers, explicit-unknown tracker
-counts, and the four typed global seed settings. Recognized schemas `1..=22`
+Status: Completed Tacticals
+[`203`](../tactical/203-jstorrent-shaped-add-time-file-selection.md) and
+[`205`](../tactical/205-durable-dht-and-pex-controls.md) advance the disposable
+catalog through fresh schemas 24 and 25. Schema 24 adds pending add-time file
+selection and its default-on preference. Schema 25 adds constrained default-on
+`dht_enabled` and `peer_exchange_enabled` columns to the singleton client
+settings row. Recognized schemas `1..=24`
 reset only application-private database files and preserve external final
 files and unrelated root content. One session accumulator now checkpoints
 generation-fenced exact peer payload and nested monotonic activity timers in
 bounded 500-row transactions, including a synchronized clean-shutdown flush;
-schema 23 stores no derived rank, goal, admission, rate, or task state. Earlier
+schema 25 stores no derived rank, goal, admission, rate, or task state. Earlier
 schema history below remains historical.
 
 Completed Tactical
@@ -738,6 +740,13 @@ metainfo, root/selection/run intent, verification generations, synchronized
 have evidence, repair facts, and restartable exact deletion remain. Final
 content is recovered by re-add and checking; unknown legacy hidden artifacts
 are neither adopted nor deleted by reset.
+Completed Tactical
+[`205`](../tactical/205-durable-dht-and-pex-controls.md) advances that direct
+shape to schema 25 with two Boolean singleton settings. Both default on, sparse
+patch independently, survive reopen, and retain only intent; DHT routing,
+transactions, peer values, PEX contacts, negotiation maps, effective state,
+and application outcomes remain bounded runtime facts rather than database
+state.
 
 Tactical `007` should define the first exact schema and migrations. The
 continuing direction is:

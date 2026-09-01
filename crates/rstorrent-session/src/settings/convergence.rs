@@ -7,7 +7,7 @@ use std::fmt;
 use super::contract::{ClientSettings, ClientSettingsApplicationState, MAX_RUNTIME_DETAIL_BYTES};
 use super::runtime::bounded_utf8;
 
-const DOMAIN_COUNT: usize = 7;
+const DOMAIN_COUNT: usize = 9;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum SettingsDomain {
@@ -17,6 +17,8 @@ pub(crate) enum SettingsDomain {
     UploadSlots,
     Bandwidth,
     Encryption,
+    Dht,
+    PeerExchange,
     TrackerHttpsAuthentication,
 }
 
@@ -28,6 +30,8 @@ impl SettingsDomain {
         Self::UploadSlots,
         Self::Bandwidth,
         Self::Encryption,
+        Self::Dht,
+        Self::PeerExchange,
         Self::TrackerHttpsAuthentication,
     ];
 
@@ -39,7 +43,9 @@ impl SettingsDomain {
             Self::UploadSlots => 3,
             Self::Bandwidth => 4,
             Self::Encryption => 5,
-            Self::TrackerHttpsAuthentication => 6,
+            Self::Dht => 6,
+            Self::PeerExchange => 7,
+            Self::TrackerHttpsAuthentication => 8,
         }
     }
 }
@@ -277,8 +283,10 @@ mod tests {
             Err(SettingsGenerationOverflow)
         );
 
-        let mut domain_overflow =
-            SettingsConvergenceModel::with_generations_for_testing(1, [1, u64::MAX, 1, 1, 1, 1, 1]);
+        let mut domain_overflow = SettingsConvergenceModel::with_generations_for_testing(
+            1,
+            [1, u64::MAX, 1, 1, 1, 1, 1, 1, 1],
+        );
         assert_eq!(
             domain_overflow.begin(ClientSettings::default()),
             Err(SettingsGenerationOverflow)

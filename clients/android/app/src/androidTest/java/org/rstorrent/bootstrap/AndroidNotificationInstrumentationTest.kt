@@ -419,6 +419,8 @@ class AndroidNotificationInstrumentationTest {
                 downloadRateLimit = TransferRateLimit.Unlimited,
                 encryption = EncryptionPolicy.ALLOW,
                 ipv6Enabled = true,
+                dhtEnabled = true,
+                peerExchangeEnabled = true,
                 trackerHttpsServerAuthentication = HttpsServerAuthenticationPolicy.SYSTEM_TRUST,
             )
         return ClientSettingsRuntimeView(
@@ -443,6 +445,8 @@ class AndroidNotificationInstrumentationTest {
             inactiveSeedCount = 0U.toUShort(),
             effectiveEncryption = EncryptionPolicy.ALLOW,
             effectiveIpv6Enabled = true,
+            effectiveDhtEnabled = true,
+            effectivePeerExchangeEnabled = true,
             effectiveTrackerHttpsServerAuthentication =
                 HttpsServerAuthenticationPolicy.SYSTEM_TRUST,
             transportApplication = ClientSettingsApplicationState.Applied,
@@ -453,6 +457,8 @@ class AndroidNotificationInstrumentationTest {
             bandwidth = BandwidthRuntimeView(bandwidthDirection(), bandwidthDirection()),
             encryptionApplication = ClientSettingsApplicationState.Applied,
             ipv6Application = ClientSettingsApplicationState.Applied,
+            dhtApplication = ClientSettingsApplicationState.Applied,
+            peerExchangeApplication = ClientSettingsApplicationState.Applied,
             trackerHttpsAuthenticationApplication = ClientSettingsApplicationState.Applied,
             listenerStatus = ListenerStatus.Disabled,
             sessionUdpStatus = SessionUdpStatus.Unavailable,

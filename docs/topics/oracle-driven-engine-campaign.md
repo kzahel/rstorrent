@@ -729,6 +729,16 @@ remains one non-reproducible changing-swarm observation and is not authority
 for an unplanned change.
 
 Completed Tactical
+[`205`](../tactical/205-durable-dht-and-pex-controls.md) adds reversible product
+policy around the already supported DHT and PEX owners. The pinned BEP 5/10/11/
+27, libtorrent 2.0.13 settings/torrent/PEX tests, and JSTorrent Android setting
+paths are recorded in its source dossier. Disable/re-enable preserves task and
+identity ownership, bounds cancellation and provenance cleanup, immediately
+wakes registered DHT discovery, and leaves the verified-private gate stronger
+than either global setting. No new protocol or performance campaign is implied
+by this completed settings slice.
+
+Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the
 accepted trust policy against Tactical `116`'s common path/SAF observations.
 Eligible torrents use bounded per-torrent structural validation and trust

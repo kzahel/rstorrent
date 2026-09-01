@@ -3920,6 +3920,7 @@ impl ApplicationService {
             let peer_budget = self.session_network().peer_budget();
             let mse_dh = self.session_network().mse_dh();
             let encryption = self.session_network().encryption();
+            let peer_exchange = self.session_network().peer_exchange();
             let pure_v2 =
                 resume.info_hashes.v1_hash().is_none() && resume.info_hashes.v2_hash().is_some();
             let operation = async move {
@@ -3931,6 +3932,7 @@ impl ApplicationService {
                         peer_budget: peer_budget.clone(),
                         mse_dh: mse_dh.clone(),
                         encryption: encryption.clone(),
+                        peer_exchange: peer_exchange.clone(),
                         torrent_peers: torrent_peers.clone(),
                         resource_limits,
                     },
@@ -3996,6 +3998,7 @@ impl ApplicationService {
                         peer_budget,
                         mse_dh,
                         encryption,
+                        peer_exchange,
                         torrent_peers: Some(torrent_peers),
                         resource_limits,
                         skip_files,
@@ -4044,6 +4047,7 @@ impl ApplicationService {
             let peer_budget = self.session_network().peer_budget();
             let mse_dh = self.session_network().mse_dh();
             let encryption = self.session_network().encryption();
+            let peer_exchange = self.session_network().peer_exchange();
             let operation = async move {
                 let raw_info = download_magnet_metadata_with_external_discovery(
                     ExternalMagnetMetadataDownloadConfig {
@@ -4053,6 +4057,7 @@ impl ApplicationService {
                         peer_budget,
                         mse_dh,
                         encryption,
+                        peer_exchange,
                         torrent_peers,
                         resource_limits,
                     },
@@ -4132,6 +4137,7 @@ impl ApplicationService {
         let common_peer_budget = self.session_network().peer_budget();
         let common_mse_dh = self.session_network().mse_dh();
         let common_encryption = self.session_network().encryption();
+        let common_peer_exchange = self.session_network().peer_exchange();
         let has_v2_metainfo =
             resume.info_hashes.v2_hash().is_some() && resume.metainfo_source.is_some();
         let config = if has_v2_metainfo {
@@ -4147,6 +4153,7 @@ impl ApplicationService {
                 peer_budget: common_peer_budget,
                 mse_dh: common_mse_dh,
                 encryption: common_encryption,
+                peer_exchange: common_peer_exchange,
                 torrent_peers: Some(torrent_peers),
                 resource_limits: self.download_resource_limits,
                 skip_files,
@@ -4167,6 +4174,7 @@ impl ApplicationService {
                 peer_budget: common_peer_budget,
                 mse_dh: common_mse_dh,
                 encryption: common_encryption,
+                peer_exchange: common_peer_exchange,
                 torrent_peers: Some(torrent_peers),
                 resource_limits: self.download_resource_limits,
                 skip_files,

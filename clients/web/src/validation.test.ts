@@ -153,6 +153,8 @@ describe("client settings validation", () => {
         download_rate_limit: { type: "unlimited" },
         encryption: "allow",
         ipv6_enabled: true,
+        dht_enabled: true,
+        peer_exchange_enabled: true,
         tracker_https_server_authentication: "system_trust",
       });
     }

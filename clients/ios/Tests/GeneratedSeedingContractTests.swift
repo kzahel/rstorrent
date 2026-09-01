@@ -18,6 +18,8 @@ final class GeneratedSeedingContractTests: XCTestCase {
             downloadRateLimit: .limited(bytesPerSecond: 1_048_576),
             encryption: .prefer,
             ipv6Enabled: true,
+            dhtEnabled: false,
+            peerExchangeEnabled: false,
             trackerHttpsServerAuthentication: .systemTrust
         )
 
@@ -44,6 +46,8 @@ final class GeneratedSeedingContractTests: XCTestCase {
             downloadRateLimit: nil,
             encryption: nil,
             ipv6Enabled: nil,
+            dhtEnabled: false,
+            peerExchangeEnabled: true,
             trackerHttpsServerAuthentication: nil
         )
 

@@ -315,6 +315,32 @@ impl PexState {
         removed
     }
 
+    pub(crate) fn set_session_enabled(
+        &mut self,
+        enabled: bool,
+        registry: &mut PeerRegistry,
+    ) -> usize {
+        if enabled {
+            let connections = self
+                .extensions
+                .iter()
+                .filter_map(|(&connection, map)| map.pex_id().map(|_| connection))
+                .collect::<Vec<_>>();
+            for connection in connections {
+                self.enable_outbound(connection);
+            }
+            return 0;
+        }
+
+        let removed = registry.remove_source(PeerSource::PeerExchange);
+        self.sources.clear();
+        self.endpoint_sources.clear();
+        self.cursors.clear();
+        self.live.clear();
+        self.timeline.clear();
+        removed
+    }
+
     fn remove_endpoint_source(
         &mut self,
         endpoint: PeerEndpoint,
@@ -689,6 +715,57 @@ mod tests {
                 .find_endpoint(PeerEndpoint::new(peer).expect("endpoint"))
                 .is_none()
         );
+    }
+
+    #[test]
+    fn session_disable_purges_pex_only_contacts_but_retains_negotiation() {
+        let mut state = PexState::default();
+        let mut registry = registry();
+        let source = connection(7);
+        let peer = "203.0.113.9:6881".parse().expect("peer");
+        state.apply_extension_handshake(
+            source,
+            ExtensionHandshake {
+                pex: rstorrent_protocol::extension::ExtensionUpdate::Enabled(9),
+                ..ExtensionHandshake::default()
+            },
+        );
+        state
+            .receive(
+                source,
+                &payload(&[peer], &[]),
+                PexReceiveContext {
+                    source_endpoint: "198.51.100.1:5000".parse().expect("source"),
+                    now: Duration::ZERO,
+                    verified_public: true,
+                    network_policy: NetworkPolicy::Online,
+                    address_families: AddressFamilyPolicy::dual_stack(),
+                    self_endpoints: &[],
+                },
+                &mut registry,
+            )
+            .expect("receive PEX contact");
+
+        assert_eq!(state.set_session_enabled(false, &mut registry), 1);
+        assert!(
+            registry
+                .find_endpoint(PeerEndpoint::new(peer).expect("endpoint"))
+                .is_none()
+        );
+        assert_eq!(state.extension_map(source).pex_id(), Some(9));
+        assert_eq!(
+            state
+                .next_outbound(
+                    source,
+                    PeerEndpoint::new("203.0.113.10:6881".parse().expect("receiver"))
+                        .expect("receiver endpoint"),
+                    PEX_INTERVAL,
+                )
+                .expect("disabled outbound"),
+            None
+        );
+        state.set_session_enabled(true, &mut registry);
+        assert_eq!(state.extension_map(source).pex_id(), Some(9));
     }
 
     #[test]

@@ -1315,6 +1315,13 @@ degradation when no eligible global-unicast address exists. The named API 37
 Pixel 7a subsequently repeated the same default, disable, forced-restart,
 degraded re-enable, and cleanup assertions on its current network.
 
+Tactical `205` adds independent DHT and peer-exchange configured/effective/
+application fields to that same complete settings replacement. The DHT
+observatory gains one closed `Disabled` lifecycle; no endpoint or routing
+contact is exposed. Generated TypeScript/schema/validators and UniFFI Kotlin/
+Swift consumers pass, React and Compose mutate sparse Boolean patches, and
+older serialized complete settings default both new fields to enabled.
+
 Tactical `113` preserves complete replacement while projecting the two gateway
 mechanisms independently. Rust projection tests, generated TypeScript/schema/
 validators, and React fixtures cover simultaneous success/failure and the

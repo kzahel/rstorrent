@@ -114,6 +114,7 @@ fn family_inspection_view(family: &DhtFamilyObservation) -> DhtFamilyInspectionV
 
 const fn lifecycle_view(lifecycle: DhtLifecycle) -> DhtLifecycleView {
     match lifecycle {
+        DhtLifecycle::Disabled => DhtLifecycleView::Disabled,
         DhtLifecycle::Offline => DhtLifecycleView::Offline,
         DhtLifecycle::BootstrapEmpty => DhtLifecycleView::BootstrapEmpty,
         DhtLifecycle::Participating => DhtLifecycleView::Participating,

@@ -270,6 +270,8 @@ class ProductStateReducerTest {
                 downloadRateLimit = TransferRateLimit.Unlimited,
                 encryption = EncryptionPolicy.REQUIRED,
                 ipv6Enabled = true,
+                dhtEnabled = false,
+                peerExchangeEnabled = false,
                 trackerHttpsServerAuthentication = HttpsServerAuthenticationPolicy.DISABLED,
             )
 
@@ -280,6 +282,8 @@ class ProductStateReducerTest {
             finishedDownloadRatioLimitPercent = 800U,
             finishedTimeLimitSeconds = 90_000U,
             encryption = settings.encryption,
+            dhtEnabled = settings.dhtEnabled,
+            peerExchangeEnabled = settings.peerExchangeEnabled,
         )
         val command = Command.UpdateClientSettings(patch)
         assertEquals(2_000U, command.patch.peerConnectionLimit)
@@ -288,6 +292,8 @@ class ProductStateReducerTest {
         assertEquals(250U, command.patch.shareRatioLimitPercent)
         assertEquals(800U, command.patch.finishedDownloadRatioLimitPercent)
         assertEquals(90_000U, command.patch.finishedTimeLimitSeconds)
+        assertEquals(false, command.patch.dhtEnabled)
+        assertEquals(false, command.patch.peerExchangeEnabled)
         assertEquals(null, command.patch.uploadSlots)
         assertEquals(settings, clientSettings(settings).configured)
     }
@@ -1134,6 +1140,8 @@ class ProductStateReducerTest {
                 downloadRateLimit = TransferRateLimit.Unlimited,
                 encryption = EncryptionPolicy.ALLOW,
                 ipv6Enabled = true,
+                dhtEnabled = true,
+                peerExchangeEnabled = true,
                 trackerHttpsServerAuthentication = HttpsServerAuthenticationPolicy.SYSTEM_TRUST,
             ),
     ): ClientSettingsRuntimeView =
@@ -1167,6 +1175,8 @@ class ProductStateReducerTest {
             inactiveSeedCount = 0U.toUShort(),
             effectiveEncryption = configured.encryption,
             effectiveIpv6Enabled = configured.ipv6Enabled,
+            effectiveDhtEnabled = configured.dhtEnabled,
+            effectivePeerExchangeEnabled = configured.peerExchangeEnabled,
             effectiveTrackerHttpsServerAuthentication =
                 configured.trackerHttpsServerAuthentication,
             transportApplication =
@@ -1186,6 +1196,8 @@ class ProductStateReducerTest {
                 ),
             encryptionApplication = ClientSettingsApplicationState.Applied,
             ipv6Application = ClientSettingsApplicationState.Applied,
+            dhtApplication = ClientSettingsApplicationState.Applied,
+            peerExchangeApplication = ClientSettingsApplicationState.Applied,
             trackerHttpsAuthenticationApplication = ClientSettingsApplicationState.Applied,
             listenerStatus = ListenerStatus.Disabled,
             sessionUdpStatus = SessionUdpStatus.Unavailable,

@@ -1886,6 +1886,7 @@ async fn run(config: Config) -> ProbeResult {
             peer_budget: PeerBudget::new(budget_config),
             mse_dh: MseDhWorkOwner::new(),
             encryption: PeerEncryptionPolicyHandle::new(config.profile.encryption()),
+            peer_exchange: Default::default(),
             torrent_peers: Some(torrent_peers),
             resource_limits,
             skip_files: Vec::new(),

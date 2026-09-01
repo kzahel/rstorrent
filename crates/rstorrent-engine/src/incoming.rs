@@ -14,8 +14,9 @@ use std::time::Duration;
 
 use rstorrent_protocol::content::{HybridPaddingMap, TorrentContent, TorrentIntegrity};
 use rstorrent_protocol::extension::{
-    ExtensionAdvertisement, ExtensionMap, PexFlags, UT_PEX_LOCAL_ID,
-    encode_extension_handshake as encode_recognized_extension_handshake,
+    ExtensionAdvertisement, ExtensionHandshake, ExtensionMap, ExtensionUpdate, PexFlags,
+    UT_PEX_LOCAL_ID, encode_extension_handshake as encode_recognized_extension_handshake,
+    encode_extension_handshake_update,
     parse_extension_handshake as parse_recognized_extension_handshake,
 };
 use rstorrent_protocol::identity::{InfoHashes, SwarmKey, V1InfoHash};
@@ -49,7 +50,9 @@ use crate::mse::{
     MseDhWorkOwner, MseHandshakeAccounting, MseHandshakeFailure, MseHandshakeOutcome,
     MseHandshakeSink, record_mse_handshake,
 };
-use crate::network::{DEFAULT_PEER_ID, NetworkPolicy, PeerEncryptionPolicy};
+use crate::network::{
+    DEFAULT_PEER_ID, NetworkPolicy, PeerEncryptionPolicy, PeerExchangePolicyHandle,
+};
 use crate::peer::{PeerEndpoint, PeerFailure};
 use crate::peer_budget::{
     DEFAULT_LISTEN_BACKLOG, PeerBudget, PeerBudgetDirection, PeerBudgetPermit, PeerBudgetSnapshot,
@@ -117,6 +120,7 @@ pub struct IncomingPeerServiceConfig {
     pub upload_scheduler: UploadSchedulerConfig,
     pub upload_read_jobs: usize,
     pub encryption: PeerEncryptionPolicy,
+    pub peer_exchange: PeerExchangePolicyHandle,
     pub mse_dh: MseDhWorkOwner,
 }
 
@@ -136,6 +140,7 @@ impl IncomingPeerServiceConfig {
             upload_scheduler: UploadSchedulerConfig::default(),
             upload_read_jobs: DEFAULT_UPLOAD_READ_JOBS,
             encryption: PeerEncryptionPolicy::Allow,
+            peer_exchange: crate::PeerExchangePolicyHandle::default(),
             mse_dh: MseDhWorkOwner::new(),
         }
     }
@@ -147,6 +152,11 @@ impl IncomingPeerServiceConfig {
 
     pub fn with_encryption(mut self, encryption: PeerEncryptionPolicy) -> Self {
         self.encryption = encryption;
+        self
+    }
+
+    pub fn with_peer_exchange(mut self, peer_exchange: PeerExchangePolicyHandle) -> Self {
+        self.peer_exchange = peer_exchange;
         self
     }
 
@@ -900,6 +910,7 @@ struct Shared {
     byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
     mse_handshake_sink: Option<Arc<dyn MseHandshakeSink>>,
     encryption: Mutex<PeerEncryptionPolicy>,
+    peer_exchange: PeerExchangePolicyHandle,
     mse_dh: MseDhWorkOwner,
 }
 
@@ -965,13 +976,18 @@ impl IncomingPeerAttachmentGuard {
         handshake: rstorrent_protocol::extension::ExtensionHandshake,
         remote: SocketAddr,
         verified_public: bool,
+        peer_exchange_enabled: bool,
         policy: NetworkPolicy,
     ) -> Result<ExtensionMap, ()> {
         let map = self.peers.with_state(|state| {
             let map = state
                 .pex
                 .apply_extension_handshake(self.attachment.connection_id(), handshake);
-            if verified_public
+            if !peer_exchange_enabled {
+                state.pex.disable_outbound(self.attachment.connection_id());
+            }
+            if peer_exchange_enabled
+                && verified_public
                 && let Some(port) = map.listen_port()
                 && let Ok(endpoint) = PeerEndpoint::new(SocketAddr::new(remote.ip(), port))
                 && policy.allows(endpoint.address())
@@ -1031,6 +1047,12 @@ impl IncomingPeerAttachmentGuard {
                 }
             })
             .map_err(|_| ())
+    }
+
+    fn apply_peer_exchange_policy(&self, enabled: bool) -> Result<(), ()> {
+        self.peers
+            .with_state(|state| state.pex.set_session_enabled(enabled, &mut state.registry));
+        self.peers.publish_active(true).map_err(|_| ())
     }
 
     fn begin_disconnect(&mut self, failure: Option<PeerFailure>) {
@@ -1554,6 +1576,7 @@ impl IncomingPeerRuntime {
             byte_metric_sink: config.byte_metric_sink,
             mse_handshake_sink: config.mse_handshake_sink,
             encryption: Mutex::new(config.encryption),
+            peer_exchange: config.peer_exchange,
             mse_dh: config.mse_dh,
         });
         let upload_task = tokio::spawn(run_upload_scheduler(
@@ -3379,6 +3402,8 @@ async fn run_incoming_peer_loop(
     {
         return PeerTermination::Closed;
     }
+    let mut peer_exchange_updates = shared.peer_exchange.subscribe();
+    let mut peer_exchange_enabled = shared.peer_exchange.load() && !registration.private;
     let mut availability_cursor = upload.availability().snapshot().cursor();
     for piece in allowed_fast {
         if io
@@ -3395,7 +3420,7 @@ async fn run_incoming_peer_loop(
                 id: 0,
                 payload: encode_recognized_extension_handshake(ExtensionAdvertisement {
                     metadata_id: Some(UT_METADATA_LOCAL_ID),
-                    pex_id: (!registration.private).then_some(UT_PEX_LOCAL_ID),
+                    pex_id: peer_exchange_enabled.then_some(UT_PEX_LOCAL_ID),
                     metadata_size: Some(registration.raw_info.len()),
                     listen_port: Some(self_endpoint.port()),
                 })
@@ -3479,6 +3504,9 @@ async fn run_incoming_peer_loop(
             _ = budget_cancellation.cancelled() => PeerEvent::Cancelled,
             _ = maintenance.tick() => PeerEvent::Maintenance,
             changed = grants.changed() => PeerEvent::Grant(changed.map(|()| *grants.borrow_and_update())),
+            changed = peer_exchange_updates.changed() => PeerEvent::PeerExchange(
+                changed.map(|()| *peer_exchange_updates.borrow_and_update())
+            ),
             command = async {
                 runtime.content_bridge
                     .as_mut()
@@ -3546,8 +3574,8 @@ async fn run_incoming_peer_loop(
                     join_read(read.take()).await;
                     return PeerTermination::InactivityTimeout;
                 }
-                match peer_attachment.next_pex(remote) {
-                    Ok(Some((id, payload))) => {
+                match peer_exchange_enabled.then(|| peer_attachment.next_pex(remote)) {
+                    Some(Ok(Some((id, payload)))) => {
                         if io
                             .queue_message(&PeerMessage::Extended { id, payload })
                             .is_err()
@@ -3555,8 +3583,8 @@ async fn run_incoming_peer_loop(
                             return PeerTermination::Closed;
                         }
                     }
-                    Ok(None) => {}
-                    Err(()) => return PeerTermination::Protocol,
+                    Some(Ok(None)) | None => {}
+                    Some(Err(())) => return PeerTermination::Protocol,
                 }
                 if now.saturating_duration_since(last_keepalive) >= shared.keepalive_interval {
                     last_keepalive = now;
@@ -3587,6 +3615,35 @@ async fn run_incoming_peer_loop(
                 join_read(read.take()).await;
                 return PeerTermination::Cancelled;
             }
+            PeerEvent::PeerExchange(Ok(enabled)) => {
+                let enabled = enabled && !registration.private;
+                if enabled != peer_exchange_enabled {
+                    if peer_attachment.apply_peer_exchange_policy(enabled).is_err() {
+                        return PeerTermination::Protocol;
+                    }
+                    peer_exchange_enabled = enabled;
+                    if supports_extensions
+                        && io
+                            .queue_message(&PeerMessage::Extended {
+                                id: 0,
+                                payload: encode_extension_handshake_update(ExtensionHandshake {
+                                    pex: if enabled {
+                                        ExtensionUpdate::Enabled(UT_PEX_LOCAL_ID)
+                                    } else {
+                                        ExtensionUpdate::Disabled
+                                    },
+                                    ..ExtensionHandshake::default()
+                                })
+                                .expect("the stable local PEX extension update is valid"),
+                            })
+                            .is_err()
+                    {
+                        return PeerTermination::Closed;
+                    }
+                }
+                Vec::new()
+            }
+            PeerEvent::PeerExchange(Err(_)) => return PeerTermination::Cancelled,
             PeerEvent::ContentCommand(Some(IncomingContentCommand::Send(message))) => {
                 if io.queue_message(&message).is_err() {
                     join_read(read.take()).await;
@@ -3680,6 +3737,7 @@ async fn run_incoming_peer_loop(
                             handshake,
                             remote,
                             !registration.private,
+                            peer_exchange_enabled,
                             network_policy,
                         )
                         .is_err()
@@ -3691,6 +3749,9 @@ async fn run_incoming_peer_loop(
                     payload,
                 } = &message
                 {
+                    if !peer_exchange_enabled {
+                        continue;
+                    }
                     match peer_attachment.receive_pex(
                         payload,
                         remote,
@@ -3980,6 +4041,7 @@ enum PeerEvent {
     ContentCommand(Option<IncomingContentCommand>),
     Read(Result<Result<Vec<u8>, ()>, tokio::task::JoinError>),
     Grant(Result<UploadGrant, tokio::sync::watch::error::RecvError>),
+    PeerExchange(Result<bool, tokio::sync::watch::error::RecvError>),
     Message(Result<Option<PeerMessage>, crate::peer_io::PeerIoError>),
 }
 
@@ -4713,6 +4775,7 @@ mod tests {
             upload_scheduler: UploadSchedulerConfig::default(),
             upload_read_jobs: super::DEFAULT_UPLOAD_READ_JOBS,
             encryption: PeerEncryptionPolicy::Allow,
+            peer_exchange: crate::PeerExchangePolicyHandle::default(),
             mse_dh: MseDhWorkOwner::new(),
         }
     }

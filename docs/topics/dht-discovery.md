@@ -51,6 +51,17 @@ Returned peers retain their versioned lane into the common registry.
 Controlled evidence observed both exact keys, one shared bootstrap, two
 lookups and one announcement per key, uTP completion, and joined cleanup.
 
+Completed Tactical
+[`205`](../tactical/205-durable-dht-and-pex-controls.md) adds one default-on
+durable session setting and a live actor command. Disable cancels bounded
+lookups with `NetworkDisabled`, clears transactions and peer values, stops all
+queries, replies, bootstrap, and maintenance, and reports the typed Disabled
+lifecycle while retaining the same UDP route, node identities, and bounded
+warm routing state. Re-enable resolves current bootstrap inputs, bootstraps the
+same owner, and wakes registered torrent discovery immediately rather than
+waiting for the ordinary lookup interval. Private-torrent exclusion remains
+an independent stronger gate.
+
 ## Why DHT Was Front-Loaded
 
 Tracker discovery is useful but cannot be the only ordinary peer source.
@@ -356,7 +367,7 @@ The completed DHT foundation does not imply:
   32 cross-family bootstrap optimization;
 - UDP firewall pinholes, IPv6 uTP, or an incoming-IPv6 reachability claim from
   the implemented but not yet physically proven TCP firewall-pinhole path;
-- a product settings or log-window redesign;
+- per-torrent controls, schedules, or battery/network heuristics;
 - a remote daemon or socket control plane; or
 - speed-ratio gates that fail CI on normal public-swarm variance.
 
@@ -372,7 +383,8 @@ summaries per family with closest-responded prefix depth and last-improvement
 age. The static visual shows prefix depths `0..=31` directly and preserves
 every deeper bucket in an explicit aggregate tail; it does not treat
 statistically unlikely depths as unreachable. It exposes no raw routing-node
-endpoints or DHT controls and does not change the Partial protocol-support
+endpoints. Tactical `205` adds the backed session DHT control to Settings, not
+to this inspection view, and does not change the Partial protocol-support
 claim.
 
 ## Maintenance Contract

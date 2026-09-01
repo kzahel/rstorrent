@@ -54,6 +54,10 @@ const CLIENT_SETTINGS_TABLE_SQL: &str = "CREATE TABLE client_settings (
             encryption IN ('disabled', 'allow', 'prefer', 'required')
         ),
         ipv6_enabled INTEGER NOT NULL DEFAULT 1 CHECK (ipv6_enabled IN (0, 1)),
+        dht_enabled INTEGER NOT NULL DEFAULT 1 CHECK (dht_enabled IN (0, 1)),
+        peer_exchange_enabled INTEGER NOT NULL DEFAULT 1 CHECK (
+            peer_exchange_enabled IN (0, 1)
+        ),
         tracker_https_server_authentication TEXT NOT NULL CHECK (
             tracker_https_server_authentication IN ('system_trust', 'disabled')
         ),
@@ -116,10 +120,11 @@ pub(crate) fn create_client_settings(
             active_downloads, active_seeds, share_ratio_limit_percent,
             finished_download_ratio_limit_percent, finished_time_limit_seconds,
             upload_rate_limit, download_rate_limit, encryption, ipv6_enabled,
+            dht_enabled, peer_exchange_enabled,
             tracker_https_server_authentication
          ) VALUES (
             1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
-            ?13, ?14, ?15, ?16
+            ?13, ?14, ?15, ?16, ?17, ?18
          )",
         params![
             mode,
@@ -137,6 +142,8 @@ pub(crate) fn create_client_settings(
             settings.download_rate_limit.persisted(),
             encryption,
             settings.ipv6_enabled,
+            settings.dht_enabled,
+            settings.peer_exchange_enabled,
             tracker_https_authentication,
         ],
     )?;
@@ -169,6 +176,8 @@ pub(crate) fn read_client_settings(
         download_rate_limit,
         encryption,
         ipv6_enabled,
+        dht_enabled,
+        peer_exchange_enabled,
         tracker_https_authentication,
     ) = connection.query_row(
         "SELECT listener_mode, listener_port, preferred_listen_port, port_mapping_mode,
@@ -176,6 +185,7 @@ pub(crate) fn read_client_settings(
                 active_seeds, share_ratio_limit_percent,
                 finished_download_ratio_limit_percent, finished_time_limit_seconds,
                 upload_rate_limit, download_rate_limit, encryption, ipv6_enabled,
+                dht_enabled, peer_exchange_enabled,
                 tracker_https_server_authentication
          FROM client_settings WHERE singleton = 1",
         [],
@@ -196,7 +206,9 @@ pub(crate) fn read_client_settings(
                 row.get::<_, i64>(12)?,
                 row.get::<_, String>(13)?,
                 row.get::<_, bool>(14)?,
-                row.get::<_, String>(15)?,
+                row.get::<_, bool>(15)?,
+                row.get::<_, bool>(16)?,
+                row.get::<_, String>(17)?,
             ))
         },
     )?;
@@ -282,6 +294,8 @@ pub(crate) fn read_client_settings(
             }
         },
         ipv6_enabled,
+        dht_enabled,
+        peer_exchange_enabled,
         tracker_https_server_authentication: match tracker_https_authentication.as_str() {
             "system_trust" => HttpsServerAuthenticationPolicy::SystemTrust,
             "disabled" => HttpsServerAuthenticationPolicy::Disabled,
@@ -323,7 +337,8 @@ pub(crate) fn replace_client_settings(
              finished_download_ratio_limit_percent = ?10,
              finished_time_limit_seconds = ?11, upload_rate_limit = ?12,
              download_rate_limit = ?13, encryption = ?14, ipv6_enabled = ?15,
-             tracker_https_server_authentication = ?16
+             dht_enabled = ?16, peer_exchange_enabled = ?17,
+             tracker_https_server_authentication = ?18
          WHERE singleton = 1",
         params![
             mode,
@@ -341,6 +356,8 @@ pub(crate) fn replace_client_settings(
             settings.download_rate_limit.persisted(),
             encryption,
             settings.ipv6_enabled,
+            settings.dht_enabled,
+            settings.peer_exchange_enabled,
             tracker_https_authentication,
         ],
     )?;

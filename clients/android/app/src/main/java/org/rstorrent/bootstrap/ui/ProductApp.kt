@@ -845,6 +845,14 @@ private fun ProductNavHost(
                         onIpv6 = { enabled ->
                             onUpdateClientSettings(clientSettingsPatch(ipv6Enabled = enabled))
                         },
+                        onDht = { enabled ->
+                            onUpdateClientSettings(clientSettingsPatch(dhtEnabled = enabled))
+                        },
+                        onPeerExchange = { enabled ->
+                            onUpdateClientSettings(
+                                clientSettingsPatch(peerExchangeEnabled = enabled),
+                            )
+                        },
                         onEncryption = { policy ->
                             onUpdateClientSettings(clientSettingsPatch(encryption = policy))
                         },

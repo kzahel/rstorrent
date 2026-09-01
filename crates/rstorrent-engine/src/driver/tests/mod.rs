@@ -1388,6 +1388,7 @@ fn private_single_file_info(payload: &[u8]) -> Vec<u8> {
 
 fn dht_config(bootstrap: SocketAddr) -> DhtConfig {
     DhtConfig {
+        enabled: true,
         network_policy: NetworkPolicy::LoopbackOnly,
         bind_address: "127.0.0.1:0".parse().expect("DHT bind"),
         bootstrap_nodes: vec![BootstrapNode::Address(bootstrap)],

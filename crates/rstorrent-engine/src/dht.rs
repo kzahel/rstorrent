@@ -147,6 +147,8 @@ fn validate_identities(
 
 #[derive(Clone, Debug)]
 pub struct DhtConfig {
+    /// Whether the long-lived DHT owner participates on the wire.
+    pub enabled: bool,
     pub network_policy: NetworkPolicy,
     pub bind_address: SocketAddr,
     pub bootstrap_nodes: Vec<BootstrapNode>,
@@ -168,6 +170,7 @@ impl DhtConfig {
             SocketAddr::from((Ipv4Addr::LOCALHOST, 0))
         };
         Self {
+            enabled: true,
             network_policy,
             bind_address,
             bootstrap_nodes: vec![
@@ -259,6 +262,7 @@ pub struct DhtAnnounceResult {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DhtLifecycle {
+    Disabled,
     Offline,
     BootstrapEmpty,
     Participating,
@@ -306,8 +310,14 @@ pub struct DhtObservation {
 }
 
 impl DhtObservation {
-    fn initial(network_policy: NetworkPolicy, nodes: &BTreeMap<AddressFamily, DhtNode>) -> Self {
-        let lifecycle = if matches!(network_policy, NetworkPolicy::Offline) {
+    fn initial(
+        enabled: bool,
+        network_policy: NetworkPolicy,
+        nodes: &BTreeMap<AddressFamily, DhtNode>,
+    ) -> Self {
+        let lifecycle = if !enabled {
+            DhtLifecycle::Disabled
+        } else if matches!(network_policy, NetworkPolicy::Offline) {
             DhtLifecycle::Offline
         } else {
             DhtLifecycle::BootstrapEmpty
@@ -380,6 +390,7 @@ impl Error for DhtError {}
 #[derive(Clone, Debug)]
 pub struct DhtHandle {
     sender: mpsc::Sender<Command>,
+    observations: watch::Receiver<DhtObservation>,
 }
 
 impl DhtHandle {
@@ -446,6 +457,22 @@ impl DhtHandle {
             .map_err(|_| DhtError::ActorStopped)?;
         receiver.await.map_err(|_| DhtError::ActorStopped)?
     }
+
+    pub async fn set_enabled(&self, enabled: bool) -> Result<(), DhtError> {
+        let (sender, receiver) = oneshot::channel();
+        self.sender
+            .send(Command::SetEnabled {
+                enabled,
+                result: sender,
+            })
+            .await
+            .map_err(|_| DhtError::ActorStopped)?;
+        receiver.await.map_err(|_| DhtError::ActorStopped)?
+    }
+
+    pub fn subscribe_observations(&self) -> watch::Receiver<DhtObservation> {
+        self.observations.clone()
+    }
 }
 
 #[derive(Debug)]
@@ -509,7 +536,7 @@ impl DhtService {
         let bootstrap = tokio::select! {
             biased;
             _ = cancellation.cancelled() => return Err(DhtError::Cancelled),
-            bootstrap = resolve_bootstrap(&config, snapshot.as_ref()) => bootstrap,
+            bootstrap = resolve_bootstrap(&config, snapshot.as_ref(), config.enabled) => bootstrap,
         };
         let now = Instant::now();
         let mut nodes = BTreeMap::new();
@@ -553,8 +580,11 @@ impl DhtService {
             ));
         }
         let (sender, receiver) = mpsc::channel(DHT_COMMAND_QUEUE);
-        let (observation_sender, observations) =
-            watch::channel(DhtObservation::initial(config.network_policy, &nodes));
+        let (observation_sender, observations) = watch::channel(DhtObservation::initial(
+            config.enabled,
+            config.network_policy,
+            &nodes,
+        ));
         let task_cancellation = cancellation.clone();
         let actor = Actor::new(
             config,
@@ -568,7 +598,10 @@ impl DhtService {
         )?;
         let task = tokio::spawn(async move { actor.run().await });
         Ok(Self {
-            handle: DhtHandle { sender },
+            handle: DhtHandle {
+                sender,
+                observations: observations.clone(),
+            },
             cancellation,
             task: Some(task),
             transport: transport_handle,
@@ -645,6 +678,10 @@ fn validate_transport(config: &DhtConfig, address: SocketAddr) -> Result<(), Dht
 
 #[derive(Debug)]
 enum Command {
+    SetEnabled {
+        enabled: bool,
+        result: oneshot::Sender<Result<(), DhtError>>,
+    },
     Lookup {
         info_hash: NodeId,
         result: oneshot::Sender<Result<Vec<SocketAddr>, DhtError>>,
@@ -1222,6 +1259,7 @@ fn select_identity(identities: &[DhtIdentity], address: IpAddr) -> Option<&DhtId
 #[derive(Debug)]
 struct Actor {
     config: DhtConfig,
+    enabled: bool,
     transport: SessionUdpTransport,
     started: Instant,
     nodes: BTreeMap<AddressFamily, DhtNode>,
@@ -1259,6 +1297,7 @@ impl Actor {
             .map(|family| (family, DhtStats::default()))
             .collect();
         Ok(Self {
+            enabled: config.enabled,
             config,
             transport,
             started: now,
@@ -1294,7 +1333,9 @@ impl Actor {
     }
 
     async fn run_active(&mut self) -> Result<(), DhtError> {
-        let _ = self.bootstrap().await;
+        if self.enabled {
+            let _ = self.bootstrap().await;
+        }
         self.publish_observation(None);
         let mut maintenance = interval(Duration::from_millis(200));
         maintenance.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -1322,6 +1363,9 @@ impl Actor {
                 received = self.transport.receive() => {
                     match received {
                         Ok((bytes, source, wire_family)) => {
+                            if !self.enabled {
+                                continue;
+                            }
                             if AddressFamily::of(source.ip()) != wire_family
                                 || !self.nodes.contains_key(&wire_family)
                             {
@@ -1353,7 +1397,9 @@ impl Actor {
                     }
                 }
                 _ = maintenance.tick() => {
-                    self.maintain().await?;
+                    if self.enabled {
+                        self.maintain().await?;
+                    }
                     if Instant::now().saturating_duration_since(self.last_observation)
                         >= DHT_OBSERVATION_INTERVAL
                     {
@@ -1485,8 +1531,13 @@ impl Actor {
 
     async fn handle_command(&mut self, command: Command) -> Result<(), DhtError> {
         match command {
+            Command::SetEnabled { enabled, result } => {
+                let outcome = self.set_enabled(enabled).await;
+                let _ = result.send(outcome.clone());
+                outcome?;
+            }
             Command::Lookup { info_hash, result } => {
-                if matches!(self.config.network_policy, NetworkPolicy::Offline) {
+                if !self.enabled || matches!(self.config.network_policy, NetworkPolicy::Offline) {
                     let _ = result.send(Err(DhtError::NetworkDisabled));
                     return Ok(());
                 }
@@ -1502,7 +1553,7 @@ impl Actor {
                 ports,
                 result,
             } => {
-                if matches!(self.config.network_policy, NetworkPolicy::Offline) {
+                if !self.enabled || matches!(self.config.network_policy, NetworkPolicy::Offline) {
                     let _ = result.send(Err(DhtError::NetworkDisabled));
                     return Ok(());
                 }
@@ -1560,6 +1611,39 @@ impl Actor {
             }
             Command::Shutdown(_) => unreachable!("shutdown handled by run loop"),
         }
+        Ok(())
+    }
+
+    async fn set_enabled(&mut self, enabled: bool) -> Result<(), DhtError> {
+        if self.enabled == enabled {
+            self.publish_observation(None);
+            return Ok(());
+        }
+        if !enabled {
+            self.enabled = false;
+            self.cancel_all(DhtError::NetworkDisabled);
+            self.peer_store.clear();
+            for node in self.nodes.values_mut() {
+                node.bootstrap_queried.clear();
+                node.fallback_pending = false;
+            }
+            self.publish_observation(Some(DhtLifecycle::Disabled));
+            return Ok(());
+        }
+
+        let snapshot = self.snapshot();
+        let bootstrap = resolve_bootstrap(&self.config, Some(&snapshot), true).await;
+        self.bootstrap_templates = bootstrap.families.clone();
+        for (&family, node) in &mut self.nodes {
+            let family_bootstrap = bootstrap.families.get(&family).cloned().unwrap_or_default();
+            node.warm_bootstrap = family_bootstrap.warm;
+            node.fallback_bootstrap = family_bootstrap.fallback;
+            node.fallback_pending = false;
+            node.bootstrap_queried.clear();
+        }
+        self.enabled = true;
+        self.bootstrap().await?;
+        self.publish_observation(None);
         Ok(())
     }
 
@@ -2526,7 +2610,11 @@ impl Actor {
         let node = DhtNode::new(local_address, &identities, bootstrap, now)?;
         self.identity_hints.insert(family, node.identities.clone());
         self.nodes.insert(family, node);
-        self.bootstrap_family(family).await
+        if self.enabled {
+            self.bootstrap_family(family).await
+        } else {
+            Ok(())
+        }
     }
 
     async fn deactivate_family(
@@ -2696,7 +2784,9 @@ impl Actor {
             .unwrap_or(u32::MAX);
         stats.active_transactions = self.transactions.len().try_into().unwrap_or(u32::MAX);
         stats.active_lookups = self.lookups.len().try_into().unwrap_or(u32::MAX);
-        let default_lifecycle = if matches!(self.config.network_policy, NetworkPolicy::Offline) {
+        let default_lifecycle = if !self.enabled {
+            DhtLifecycle::Disabled
+        } else if matches!(self.config.network_policy, NetworkPolicy::Offline) {
             DhtLifecycle::Offline
         } else if self.nodes.values().all(|node| node.routing.is_empty()) {
             DhtLifecycle::BootstrapEmpty
@@ -2742,7 +2832,9 @@ impl Actor {
                 DhtFamilyObservation {
                     family,
                     lifecycle: lifecycle.unwrap_or({
-                        if matches!(self.config.network_policy, NetworkPolicy::Offline) {
+                        if !self.enabled {
+                            DhtLifecycle::Disabled
+                        } else if matches!(self.config.network_policy, NetworkPolicy::Offline) {
                             DhtLifecycle::Offline
                         } else if routing.routing_nodes == 0 {
                             DhtLifecycle::BootstrapEmpty
@@ -2860,6 +2952,7 @@ struct ResolvedBootstrap {
 async fn resolve_bootstrap(
     config: &DhtConfig,
     snapshot: Option<&DhtSnapshot>,
+    resolve_hosts: bool,
 ) -> ResolvedBootstrap {
     let mut families = BTreeMap::from([
         (AddressFamily::Ipv4, FamilyBootstrap::default()),
@@ -2902,7 +2995,7 @@ async fn resolve_bootstrap(
         }
     }
 
-    if matches!(config.network_policy, NetworkPolicy::Online) {
+    if resolve_hosts && matches!(config.network_policy, NetworkPolicy::Online) {
         let mut tasks = tokio::task::JoinSet::new();
         for node in &config.bootstrap_nodes {
             let BootstrapNode::Host { host, port } = node else {
@@ -3042,6 +3135,67 @@ mod tests {
             .iter()
             .find(|observation| observation.family == family)
             .expect("address-family observation")
+    }
+
+    #[tokio::test]
+    async fn live_disable_stops_wire_cancels_lookup_and_reenables_same_owner() {
+        let bootstrap = UdpSocket::bind("127.0.0.1:0")
+            .await
+            .expect("bootstrap socket");
+        let mut config = loopback_config(vec![BootstrapNode::Address(
+            bootstrap.local_addr().expect("bootstrap address"),
+        )]);
+        config.enabled = false;
+        let service = DhtService::start(config).await.expect("start disabled DHT");
+        let handle = service.handle();
+        let observations = service.subscribe_observations();
+        let initial_node_id = observations.borrow().families[0].local_node_id;
+        assert_eq!(observations.borrow().lifecycle, DhtLifecycle::Disabled);
+        assert!(
+            tokio::time::timeout(
+                Duration::from_millis(100),
+                bootstrap.recv_from(&mut [0; 2048])
+            )
+            .await
+            .is_err(),
+            "disabled startup must not emit bootstrap traffic"
+        );
+        assert_eq!(handle.lookup([9; 20]).await, Err(DhtError::NetworkDisabled));
+
+        handle.set_enabled(true).await.expect("enable DHT");
+        tokio::time::timeout(Duration::from_secs(2), bootstrap.recv_from(&mut [0; 2048]))
+            .await
+            .expect("enabled bootstrap timeout")
+            .expect("enabled bootstrap packet");
+
+        let (result, lookup) = oneshot::channel();
+        handle
+            .sender
+            .send(Command::Lookup {
+                info_hash: NodeId([7; 20]),
+                result,
+            })
+            .await
+            .expect("queue lookup");
+        handle.set_enabled(false).await.expect("disable DHT");
+        assert_eq!(
+            lookup.await.expect("lookup result"),
+            Err(DhtError::NetworkDisabled)
+        );
+        let stats = handle.stats().await.expect("disabled stats");
+        assert_eq!(stats.active_lookups, 0);
+        assert_eq!(stats.active_transactions, 0);
+
+        handle.set_enabled(true).await.expect("re-enable DHT");
+        tokio::time::timeout(Duration::from_secs(2), bootstrap.recv_from(&mut [0; 2048]))
+            .await
+            .expect("re-enabled bootstrap timeout")
+            .expect("re-enabled bootstrap packet");
+        assert_eq!(
+            service.subscribe_observations().borrow().families[0].local_node_id,
+            initial_node_id
+        );
+        service.shutdown().await.expect("shutdown DHT");
     }
 
     #[test]
@@ -3197,6 +3351,7 @@ mod tests {
 
     fn loopback_config(bootstrap: Vec<BootstrapNode>) -> DhtConfig {
         DhtConfig {
+            enabled: true,
             network_policy: NetworkPolicy::LoopbackOnly,
             bind_address: SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
             bootstrap_nodes: bootstrap,

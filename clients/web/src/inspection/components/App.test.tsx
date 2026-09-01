@@ -2875,6 +2875,12 @@ describe("inspection application", () => {
     await user.click(
       within(dialog).getByRole("checkbox", { name: /Enable IPv6/ }),
     );
+    await user.click(
+      within(dialog).getByRole("checkbox", { name: /Enable DHT/ }),
+    );
+    await user.click(
+      within(dialog).getByRole("checkbox", { name: /Enable peer exchange/ }),
+    );
     expect(
       within(dialog).getByText(/keeps interested peers choked/i),
     ).toBeVisible();
@@ -2906,6 +2912,8 @@ describe("inspection application", () => {
           },
           encryption: "prefer",
           ipv6_enabled: false,
+          dht_enabled: false,
+          peer_exchange_enabled: false,
         },
       }),
     );
@@ -2982,6 +2990,8 @@ describe("inspection application", () => {
       download_rate_limit: { type: "unlimited" as const },
       encryption: "allow" as const,
       ipv6_enabled: true,
+      dht_enabled: true,
+      peer_exchange_enabled: true,
       tracker_https_server_authentication: "system_trust" as const,
     };
     const application = new RecordingLiveApplication({
@@ -3015,6 +3025,8 @@ describe("inspection application", () => {
           inactive_seed_count: 0,
           effective_encryption: "allow",
           effective_ipv6_enabled: true,
+          effective_dht_enabled: true,
+          effective_peer_exchange_enabled: true,
           effective_tracker_https_server_authentication: "system_trust",
           transport_application: {
             type: "degraded",
@@ -3051,6 +3063,8 @@ describe("inspection application", () => {
           },
           encryption_application: { type: "applied" },
           ipv6_application: { type: "applied" },
+          dht_application: { type: "applied" },
+          peer_exchange_application: { type: "applied" },
           tracker_https_authentication_application: { type: "applied" },
           listener_status: {
             type: "bind_failed",

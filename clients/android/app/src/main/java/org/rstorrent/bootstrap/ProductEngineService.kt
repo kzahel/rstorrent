@@ -1304,6 +1304,8 @@ class ProductEngineService : Service() {
                             downloadRateLimit = TransferRateLimit.Unlimited,
                             encryption = EncryptionPolicy.ALLOW,
                             ipv6Enabled = true,
+                            dhtEnabled = true,
+                            peerExchangeEnabled = true,
                             trackerHttpsServerAuthentication = policy,
                         ).asPatch(),
                     ),
@@ -1367,6 +1369,8 @@ class ProductEngineService : Service() {
                             downloadRateLimit = TransferRateLimit.Unlimited,
                             encryption = policy,
                             ipv6Enabled = true,
+                            dhtEnabled = true,
+                            peerExchangeEnabled = true,
                             trackerHttpsServerAuthentication =
                                 HttpsServerAuthenticationPolicy.SYSTEM_TRUST,
                         ).asPatch(),
