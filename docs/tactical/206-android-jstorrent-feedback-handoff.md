@@ -1,10 +1,10 @@
 # Tactical 206: Android JSTorrent Feedback Handoff
 
-Status: **Ready for implementation as of 2026-09-01.** Maintainer direction
-selects the current JSTorrent Android feedback handoff exactly: one external
-browser navigation to the existing JSTorrent feedback page with the same four
-environment fields. No application code changes have landed under this
-tactical yet.
+Status: **Completed 2026-09-01.** Android Advanced Settings now performs one
+bounded external-browser navigation to the existing JSTorrent feedback page
+with exactly the selected four environment fields. Deterministic, Android 15
+AVD, and physical ChromeOS evidence pass without adding product state, an
+application contract, or a feedback backend.
 
 Topics: `android-jstorrent-replacement`, `product-state-and-feedback`,
 `client-surfaces`, `localization`, `capability-readiness`
@@ -188,6 +188,46 @@ the reference repository.
   embedded Google Form and GitHub choice, then returns to the unchanged
   RSTorrent activity. It submits neither recipient and leaves no application
   task, preference, profile mutation, or feedback artifact.
+
+## Implementation And Evidence
+
+- `AndroidFeedbackUrl` owns the exact HTTPS destination, four ordered query
+  keys, UTF-8 URI-component encoding, malformed-Unicode rejection, and an
+  incremental 2-KiB final bound. Its JVM tests cover exact output, reserved,
+  non-ASCII, and supplementary characters, the prohibited-context list, and
+  exact boundary acceptance/rejection without mutating inputs.
+- `AndroidFeedbackLauncher` constructs one plain `ACTION_VIEW` intent and
+  converts URL, missing-handler, and security failures into one injected
+  nonfatal failure callback. `MainActivity` supplies current Android build
+  facts and renders the localized failure toast; Compose receives only the
+  injected click callback.
+- Advanced Settings renders the localized **Report Bug / Send Feedback** row
+  and **Help us improve JSTorrent** supporting copy before the two existing
+  unavailable expert rows. The focused Compose test navigates from Library and
+  proves one click invokes the callback exactly once.
+- No Rust, UniFFI, application-view, service, preference, profile, permission,
+  socket, task, or interaction-lease boundary changed.
+
+Validation completed on 2026-09-01:
+
+- `node scripts/check-localization.mjs` passed with 1,234 React messages, 17
+  Tauri-native messages, 377 Android strings plus 7 quantities, 172 iOS
+  product messages, and 6 iOS Info.plist messages;
+- `clients/android/build.sh` rebuilt x86_64 and arm64-v8a native libraries,
+  regenerated Kotlin UniFFI bindings, assembled the debug APK, and passed all
+  debug JVM unit tests;
+- `lintDebug` and `assembleDebugAndroidTest` passed;
+- four focused instrumentation tests passed on the task-owned Android 15/API
+  35 x86_64 AVD: three platform handoff/failure cases and the installed
+  Compose route/callback case; the AVD was removed afterward; and
+- the physical ChromeOS 150 / Android 13 `Google nami` installation opened
+  exactly
+  `https://jstorrent.com/feedback.html?platform=android&v=0.1&android=13&device=Google%20nami`.
+  The live page visibly rendered the supplied platform, app version, Android
+  release, and device values, the embedded Google Form, and **Open an issue on
+  GitHub**. No form was submitted; the new browser tab was closed; RSTorrent
+  returned to the unchanged Advanced screen with no lifecycle, torrent,
+  profile, setting, or feedback state created.
 
 ## Stopping Condition
 

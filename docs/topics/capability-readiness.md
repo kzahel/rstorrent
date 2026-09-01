@@ -874,6 +874,18 @@ Swift consumers pass, and deterministic disable/re-enable, scheduler wake,
 PEX purge/repeated-handshake, private-gate, web, Android dual-ABI, and iOS
 simulator evidence pass. The protocol support levels do not change.
 
+Completed Tactical
+[`206`](../tactical/206-android-jstorrent-feedback-handoff.md) closes the
+selected Android support-action parity slice without adding product state or
+a report backend. Advanced Settings builds only the bounded four-field current
+JSTorrent URL and hands one plain `ACTION_VIEW` intent to the external browser;
+construction and launch failures are localized and nonfatal. Exact unit and
+platform tests, a four-test Android 15/API-35 run, and a physical ChromeOS 150
+device's Android 13 live-page check prove the route, supplied system fields,
+embedded Google Form, GitHub choice, return behavior, and absence of
+application-state
+mutation or submission.
+
 Tactical `152` closes the selected-root multifile defect exposed after those
 three tacticals. Exact-target coordination passes deterministic sibling-lease
 and three-handle release tests. A controlled cross-file physical transfer
@@ -916,13 +928,6 @@ exactly.
   item for `JAR-008` and the unmetered portion of `AND-010`.
 ### Ready
 
-- Implement planned Tactical
-  [`206`](../tactical/206-android-jstorrent-feedback-handoff.md): add the exact
-  current JSTorrent Android external-browser feedback handoff to
-  `jstorrent.com/feedback.html` with only platform, app version, Android
-  release, and device manufacturer/model. The hosted page continues to own
-  its Google Form and GitHub choices; RSTorrent adds no report backend,
-  diagnostic export, identifier, telemetry, or automatic submission.
 - Declare the future first supported version and freeze its fresh application
   identities and persistence/API baseline only from that version forward.
   Complete changelog, privacy/support presentation, and the repeatable beta

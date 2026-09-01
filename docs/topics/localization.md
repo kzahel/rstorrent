@@ -135,11 +135,15 @@ that falls through to raw keys or materially incomplete English.
 
 ## Evidence And Open Work
 
-The checked foundation contains 1,225 React messages, 17 Tauri-native
-messages, 370 Android strings plus 7 quantities, 172 iOS product messages,
-and 6 iOS Info.plist messages. Tactical 204 records the exact FormatJS pins
-and licenses, artifact deltas, API 28/35 and iPhone/iPad pseudo matrices,
-archive evidence, and repository gates.
+The currently checked catalogs contain 1,234 React messages, 17 Tauri-native
+messages, 377 Android strings plus 7 quantities, 172 iOS product messages,
+and 6 iOS Info.plist messages. Tactical 204 records the foundation's exact
+FormatJS pins and licenses, artifact deltas, API 28/35 and iPhone/iPad pseudo
+matrices, archive evidence, and repository gates. Completed Tactical
+[`206`](../tactical/206-android-jstorrent-feedback-handoff.md) adds three
+context-commented Android feedback strings; the checker, lint, Android build,
+focused API-35 route, and physical ChromeOS presentation pass without adding
+a production locale.
 
 A separate tactical is required to choose and ship the first real
 non-English cohort. Android replacement localization remains open until that

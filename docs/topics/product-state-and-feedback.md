@@ -5,11 +5,11 @@ Topic: `product-state-and-feedback`
 Status: Direction accepted on 2026-08-03. Installation-wide local identity,
 coarse engagement counters, campaign-specific prompt state, and visible
 user-submitted diagnostic context belong together in a product-state boundary
-above any one profile. No store, feedback transport, prompt campaign, or
-remote analytics service is implemented yet. Planned Tactical
-[`206`](../tactical/206-android-jstorrent-feedback-handoff.md) selects one
-narrow Android-only external feedback navigation described below; it is not
-implemented yet and creates no product-state owner. The desktop updater now
+above any one profile. No store, application-owned feedback transport, prompt
+campaign, or remote analytics service is implemented yet. Completed Tactical
+[`206`](../tactical/206-android-jstorrent-feedback-handoff.md) adds the one
+narrow Android-only external feedback navigation described below. It creates
+no product-state owner. The desktop updater now
 creates one random UUID in the application-config `cfu-id` file through
 bounded atomic create/repair, sends it only as the `desktop-update-v1`
 `X-CFU-Id` header, and discloses that use in About & updates. It is resettable
@@ -219,10 +219,10 @@ transmit the preview merely because an iframe or form loaded. Generate a fresh
 report ID and transmit the visible snapshot only after the user explicitly
 submits it.
 
-Maintainer direction on 2026-09-01 selects one closed replacement-parity
-exception in planned Tactical
+Maintainer direction on 2026-09-01 selected one closed replacement-parity
+exception in completed Tactical
 [`206`](../tactical/206-android-jstorrent-feedback-handoff.md). The Android
-Advanced Settings action will open the existing JSTorrent feedback page with
+Advanced Settings action opens the existing JSTorrent feedback page with
 exactly four current-JSTorrent environment fields in its query: literal
 platform `android`, application version name, Android release, and device
 manufacturer/model. Those fields are transmitted on navigation and may reach
@@ -297,10 +297,10 @@ explicit-submit boundary is an intentional difference.
 - Decide which platform/product lifecycle constitutes first use and a
   foreground session on desktop, Android, ChromeOS, and extension-controlled
   configurations.
-- Implement Tactical `206`'s selected Android-only navigation to the existing
-  JSTorrent feedback page. Any richer context, application-owned submission,
-  or other client surface still requires a separately reviewed recipient and
-  visible explicit-submit flow.
+- Preserve Tactical `206`'s closed four-field Android navigation boundary.
+  Any richer context, application-owned submission, or other client surface
+  still requires a separately reviewed recipient and visible explicit-submit
+  flow.
 - Design each review, feedback, extension, or migration prompt as an explicit
   campaign with its own eligibility, cooldown, and disposition behavior.
 - Decide whether sparse lifecycle/version facts need latest values or a bounded

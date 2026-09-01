@@ -297,7 +297,7 @@
     <string name="settings_power_management">Power Management</string>
     <string name="settings_power_management_detail">Foreground operation and battery behavior</string>
     <string name="settings_advanced">Advanced</string>
-    <string name="settings_advanced_detail">Appearance and unavailable expert features</string>
+    <string name="settings_advanced_detail">Appearance, feedback, and expert features</string>
     <string name="settings_loading">Settings are loading…</string>
     <string name="setting_not_available">Not available yet</string>
     <string name="setting_not_saved">Setting not saved</string>
@@ -377,6 +377,12 @@
     <string name="theme_system_colors_requirement">Available on Android 12 and later</string>
     <string name="settings_search_plugins">Search plugins</string>
     <string name="settings_reset_engine">Reset engine settings</string>
+    <!-- Translator context: Tappable Advanced Settings row that leaves the app and opens JSTorrent's feedback website in the device browser. -->
+    <string name="settings_report_bug">Report Bug / Send Feedback</string>
+    <!-- Translator context: Supporting copy beneath the feedback row; JSTorrent is the product name and must not be translated. -->
+    <string name="settings_report_bug_detail">Help us improve JSTorrent</string>
+    <!-- Translator context: Brief nonfatal message when Android cannot open the external feedback website in a browser. -->
+    <string name="feedback_open_failed">Feedback could not be opened in a browser.</string>
     <string name="power_continue_background">Continue downloads in background</string>
     <string name="power_continue_effective">Uses a visible notification and stops when selected work completes.</string>
     <string name="power_continue_blocked">Configured, but Android notification settings currently block it.</string>

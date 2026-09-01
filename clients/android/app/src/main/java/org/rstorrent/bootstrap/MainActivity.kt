@@ -13,6 +13,7 @@ import android.os.Bundle
 import android.os.IBinder
 import android.provider.Settings
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
@@ -553,6 +554,7 @@ class MainActivity : ComponentActivity() {
                     notificationsGranted = notificationsGranted.value,
                     onRequestNotifications = ::requestNotificationPermission,
                     onOpenNotificationSettings = ::openNotificationSettings,
+                    onOpenFeedback = ::openFeedback,
                     onBackgroundDownloads = ::setBackgroundDownloads,
                     notificationNavigation = notificationNavigation.value,
                     onNotificationNavigationConsumed = { sequence ->
@@ -1007,6 +1009,25 @@ class MainActivity : ComponentActivity() {
                 false,
             )
         }
+    }
+
+    private fun openFeedback() {
+        AndroidFeedbackLauncher.launch(
+            environment =
+                AndroidFeedbackEnvironment(
+                    applicationVersion = BuildConfig.VERSION_NAME,
+                    androidRelease = Build.VERSION.RELEASE,
+                    device = "${Build.MANUFACTURER} ${Build.MODEL}",
+                ),
+            startExternalActivity = ::startActivity,
+            onFailure = {
+                Toast.makeText(
+                    this,
+                    R.string.feedback_open_failed,
+                    Toast.LENGTH_LONG,
+                ).show()
+            },
+        )
     }
 
     private fun setThemeMode(mode: ProductThemeMode) {

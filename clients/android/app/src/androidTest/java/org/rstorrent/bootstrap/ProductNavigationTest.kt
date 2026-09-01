@@ -110,6 +110,41 @@ class ProductNavigationTest {
     }
 
     @Test
+    fun advancedSettingsFeedbackInvokesOneInjectedCallback() {
+        var feedbackCalls = 0
+        compose.setContent {
+            ProductApp(
+                service = null,
+                onSelectStorage = {},
+                onBrowseTorrent = {},
+                notificationsGranted = true,
+                onRequestNotifications = {},
+                onOpenNotificationSettings = {},
+                onOpenFeedback = { feedbackCalls += 1 },
+                themeMode = ProductThemeMode.LIGHT,
+                dynamicColor = false,
+                onThemeMode = {},
+                onDynamicColor = {},
+            )
+        }
+
+        compose
+            .onNodeWithContentDescription("More options")
+            .performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Settings").performSemanticsAction(SemanticsActions.OnClick)
+        compose
+            .onNodeWithText("Advanced")
+            .performScrollTo()
+            .performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Help us improve JSTorrent").performScrollTo().assertIsDisplayed()
+        compose
+            .onNodeWithText("Report Bug / Send Feedback")
+            .performSemanticsAction(SemanticsActions.OnClick)
+
+        compose.runOnIdle { assertEquals(1, feedbackCalls) }
+    }
+
+    @Test
     fun liveTorrentReachesAllDetailAndGlobalRoutes() {
         val torrent = torrent()
         compose.setContent {

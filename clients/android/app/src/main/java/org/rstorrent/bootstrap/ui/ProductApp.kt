@@ -27,6 +27,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.BatterySaver
+import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Info
@@ -119,6 +120,7 @@ fun ProductApp(
     notificationsGranted: Boolean,
     onRequestNotifications: () -> Unit,
     onOpenNotificationSettings: () -> Unit,
+    onOpenFeedback: () -> Unit = {},
     themeMode: ProductThemeMode,
     dynamicColor: Boolean,
     onThemeMode: (ProductThemeMode) -> Unit,
@@ -182,6 +184,7 @@ fun ProductApp(
                     notificationsGranted = notificationsGranted,
                     onRequestNotifications = onRequestNotifications,
                     onOpenNotificationSettings = onOpenNotificationSettings,
+                    onOpenFeedback = onOpenFeedback,
                     notificationNavigation = notificationNavigation,
                     onNotificationNavigationConsumed = onNotificationNavigationConsumed,
                     onNotificationNavigationFallback = { message ->
@@ -429,6 +432,7 @@ private fun ProductNavHost(
     notificationsGranted: Boolean,
     onRequestNotifications: () -> Unit,
     onOpenNotificationSettings: () -> Unit,
+    onOpenFeedback: () -> Unit,
     notificationNavigation: ProductNotificationNavigation?,
     onNotificationNavigationConsumed: (Long) -> Unit,
     onNotificationNavigationFallback: (String) -> Unit,
@@ -992,6 +996,7 @@ private fun ProductNavHost(
                     },
                 )
                 HorizontalDivider()
+                FeedbackSetting(onOpenFeedback)
                 UnavailableSetting(stringResource(R.string.settings_search_plugins))
                 UnavailableSetting(stringResource(R.string.settings_reset_engine))
             }
@@ -1603,6 +1608,20 @@ private fun UnavailableSetting(title: String) {
             headlineColor = MaterialTheme.colorScheme.onSurfaceVariant,
             supportingColor = MaterialTheme.colorScheme.outline,
         ),
+    )
+    HorizontalDivider()
+}
+
+@Composable
+private fun FeedbackSetting(onClick: () -> Unit) {
+    ListItem(
+        headlineContent = { Text(stringResource(R.string.settings_report_bug)) },
+        supportingContent = { Text(stringResource(R.string.settings_report_bug_detail)) },
+        leadingContent = { Icon(Icons.Outlined.BugReport, contentDescription = null) },
+        trailingContent = { Text(stringResource(R.string.navigation_disclosure)) },
+        modifier =
+            Modifier.clickable(onClick = onClick)
+                .semantics(mergeDescendants = true) { role = Role.Button },
     )
     HorizontalDivider()
 }
