@@ -92,6 +92,15 @@ grants keep earlier torrents on their original roots when a new root becomes
 current. This is workflow continuity, not legacy-state import, a raw IO
 daemon, a public remote API, or production-extension publication.
 
+Explicit user direction on 2026-09-01 further clarifies the succession goal:
+useful JSTorrent product behavior is not discarded merely because RSTorrent
+replaces its technical implementation. Ready Tactical
+[`208`](../tactical/208-installation-metrics-and-feedback-parity.md) therefore
+preserves the resettable installation identity, coarse local counters,
+feedback context, and extension-uninstall survey as deliberately disclosed
+product capabilities. It does not import historical metric values, authorize
+continuous analytics, or make graduation current work.
+
 ## Scope
 
 This topic owns the product shape that separates a native engine host from the
@@ -474,6 +483,14 @@ migration of every historical profile and runtime detail is not a prerequisite.
 Legacy completion claims still cannot become verified RSTorrent content without
 the new engine's ordinary integrity checks.
 
+Behavioral continuity is broader than database migration. Installation-level
+usage context, feedback entry points, uninstall survey behavior, update
+counting, privacy controls, and other small product journeys should be
+evaluated intentionally against the then-current JSTorrent product rather than
+silently disappearing in the rewrite. Tactical `208` accepts the first such
+closed behavior set with a fresh RSTorrent identity and counters; it explicitly
+does not migrate JSTorrent's historical telemetry UUID or counter values.
+
 This general direction reserves the production identity; it does not place the
 JSTorrent updater private key in RSTorrent beta automation, authorize a
 production update, or add migration work to the current beta checklist.
@@ -506,6 +523,8 @@ those products to use the proven Rust application contract instead of
 launching unrelated replacement identities. RSTorrent remains independently
 released during incubation. Exact extension, store, coexistence, and retirement
 mechanics are deliberately deferred until graduation work is authorized.
+Preserving a familiar product capability does not require preserving its old
+storage schema, JavaScript owner, Chrome-sync use, or unsafe privacy wording.
 
 ## Current Evidence And References
 

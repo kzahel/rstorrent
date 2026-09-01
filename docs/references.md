@@ -275,6 +275,18 @@ revision `66a8c0ee95494f5b8632f7a2424a36e2da7495dd` informed only repeatable
 target-triple Tauri sidecar construction. RSTorrent imports no reference
 source, fixture, test data, protocol claim, Crostini topology, or asset.
 
+Ready Tactical
+[`208`](tactical/208-installation-metrics-and-feedback-parity.md) additionally
+uses Chrome's official
+[`runtime.setUninstallURL`](https://developer.chrome.com/docs/extensions/reference/api/runtime),
+[`storage.local`](https://developer.chrome.com/docs/extensions/reference/api/storage),
+[disclosure requirements](https://developer.chrome.com/docs/webstore/program-policies/disclosure-requirements),
+and [user-data FAQ](https://developer.chrome.com/docs/webstore/program-policies/user-data-faq)
+as the uninstall-URL, local-record, prominent-disclosure, privacy-policy, and
+consent authorities. The tactical records the 1,023-character URL maximum and
+treats store-policy compliance as a release gate. No Chrome sample, fixture,
+or source is imported.
+
 ## JSTorrent
 
 Repository: [kzahel/jstorrent](https://github.com/kzahel/jstorrent)
@@ -295,6 +307,10 @@ existing torrent behavior and platform lessons. High-value areas include:
   Android socket lessons;
 - `android/app/`: foreground service, notification, Doze, lifecycle, storage
   root, and Chromebook UX lessons;
+- `extension/src/lib/{telemetry-id,metrics}.ts` and
+  `website/public/{feedback,uninstall,privacy}.html`: resettable product
+  identity, coarse local counters, uninstall/feedback behavior, recipients,
+  and privacy-language lessons for Tactical `208`;
 - `ios/`: the native SwiftUI/JavaScriptCore product's directory bookmarks,
   direct TCP/UDP, positioned file I/O, and foreground/background lifecycle;
   its documented Android/iOS runtime gaps are failure history rather than an

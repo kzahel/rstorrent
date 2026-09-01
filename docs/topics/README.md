@@ -53,7 +53,8 @@ Topics own the current truth for a continuing concern. Tactical docs under
   and the separation of backend availability from UI and seeding lifetime.
 - [`product-state-and-feedback.md`](product-state-and-feedback.md):
   installation identity, local usage summaries, prompt campaign state,
-  lifecycle/version facts, and explicit user-submitted diagnostic context.
+  lifecycle/version facts, disclosed update/feedback/uninstall context, and
+  pseudonymous statistics disable/reset controls.
 - [`capability-readiness.md`](capability-readiness.md): master engine and product
   scoreboard, evidence vocabulary, priority policy, and bounded current queue.
 - [`code-organization-and-refactoring.md`](code-organization-and-refactoring.md):

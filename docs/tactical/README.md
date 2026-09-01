@@ -93,6 +93,13 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`208-installation-metrics-and-feedback-parity.md`](208-installation-metrics-and-feedback-parity.md):
+  ready; preserves JSTorrent-shaped resettable installation identity, exact
+  coarse counters, previewed feedback context, and the extension uninstall
+  survey through one disclosed preference and reset control. It defines the
+  native `product.db`, crash-safe semantic milestone bridge, desktop updater-ID
+  adoption, extension-local record, strict transmission allowlist, and privacy
+  gates without adding a general analytics pipeline.
 - [`207-android-safe-reset-and-clear-data.md`](207-android-safe-reset-and-clear-data.md):
   ready; defines one configured-default atomic engine-settings reset and one
   durable Android clear-data workflow with unchecked-by-default Keep versus

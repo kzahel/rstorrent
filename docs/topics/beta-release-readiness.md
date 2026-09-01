@@ -153,6 +153,14 @@ instrumentation, controlled transfer, privacy, temporary-grant revocation,
 and cleanup pass. This does not select the production JSTorrent identity,
 publish a store artifact, or close notification/network/lifecycle gates.
 
+Explicit user direction on 2026-09-01 accepts JSTorrent-shaped installation
+metrics, feedback context, and extension-uninstall survey behavior in ready
+Tactical
+[`208`](../tactical/208-installation-metrics-and-feedback-parity.md). The
+capability is not retroactively a blocker for an incubation package, but any
+build that enables its richer transmission must first satisfy the exact
+disclosure, privacy, disable/reset, and hosted-recipient gates below.
+
 ## Scope And Release Definition
 
 This topic answers whether a build is ready to be handed to people outside the
@@ -266,7 +274,12 @@ compatibility and rollback policy declared with that baseline.
 - [ ] **REL-006 — Define support, privacy, and legal presentation.** Ship
   license/notices, a privacy statement for network behavior and any update
   installation ID, support/report instructions, and a safe diagnostics export
-  with user-visible contents.
+  with user-visible contents. If Tactical `208` is enabled, the statement and
+  in-product disclosure must additionally name the pseudonymous identifier,
+  exact coarse statistics and recipients, query-string exposure, default-on
+  choice, one-report override, durable disable, and reset behavior. The hosted
+  feedback/uninstall pages must no longer claim that no usage data is
+  collected.
 
 ### CI and repository health
 
@@ -367,6 +380,9 @@ compatibility and rollback policy declared with that baseline.
 - [ ] **QA-004 — Establish a crash/support loop.** Users need an accessible
   version/build identity, copyable bounded diagnostics, known-issues link, and
   a report path. Automatic crash or analytics upload is not required for beta.
+  Tactical `208`'s optional previewed coarse context may improve the report
+  path, but it does not replace a user-visible diagnostics export or authorize
+  automatic submission.
 - [ ] **QA-005 — Review dependencies, notices, and release artifacts.** Verify
   license provenance, dependency advisories, archive contents, absence of
   secrets/development endpoints, and published checksums. All public `0.1.0`
@@ -564,8 +580,9 @@ is still pending and is not the compatibility oracle.
 - [ ] **UPD-006 — Document update privacy and recovery.** Explain the random
   resettable installation ID, private server logging, automatic schedule,
   manual retry/download path, the absence of incubation rollback/state
-  compatibility, and behavior when an update, reset, or metadata service
-  fails.
+  compatibility, statistics disable/reset behavior, anonymous checks when the
+  disclosed preference is off, and behavior when an update, reset, or metadata
+  service fails.
 
 ## Android/ChromeOS Beta Checklist
 

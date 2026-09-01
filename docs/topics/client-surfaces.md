@@ -1084,6 +1084,14 @@ with exact SAF cleanup.
   metainfo-exact payload deletion. Its Android service journal must survive
   process death, preserve unrelated root content, surface partial failures,
   and release grants only after torrent work joins.
+  Ready Tactical
+  [`208`](../tactical/208-installation-metrics-and-feedback-parity.md) then
+  widens support presentation across shared React and Compose only after a
+  localized disclosure and exact confirmation preview. It adds a backed
+  statistics preference and identifier/counter reset, while the MV3 extension
+  separately maintains its own bounded uninstall-survey URL. Until it lands,
+  the four Android fields above and the desktop updater ID remain the only
+  implemented transmission behavior.
 - Tracker HTTPS authentication is intentionally absent from ordinary React
   and Compose settings. The advanced typed `disabled` override exists for
   compatibility/debug use and remains visibly unauthenticated in tracker

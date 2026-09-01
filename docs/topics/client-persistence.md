@@ -208,6 +208,12 @@ The desktop updater's random application-config `cfu-id` is deliberately
 installation-wide and separate from profile/session SQLite. A future
 installation product-state store must adopt or explicitly migrate it; profile
 creation/deletion must not silently rotate it or create a second identity.
+Ready Tactical
+[`208`](../tactical/208-installation-metrics-and-feedback-parity.md) now owns
+that adoption plus the exact cross-database milestone contract: a sequenced
+profile-local outbox is committed with authoritative add/completion state and
+drained idempotently into installation-wide `product.db`. The tactical has not
+landed, so the current session schema and `cfu-id` behavior remain unchanged.
 
 ## Scope
 
@@ -223,7 +229,7 @@ contracts beneath that UX.
 
 [`product-state-and-feedback.md`](product-state-and-feedback.md) owns the
 installation-wide local identity, aggregate engagement summary, prompt
-campaign dispositions, and voluntary diagnostic-submission boundary above
+campaign dispositions, and disclosed update/feedback/uninstall boundary above
 profile-scoped torrent state.
 
 It does not define the final product API, select a desktop or Android UI
@@ -880,8 +886,13 @@ that reset to Android app data or a user-selected download root.
 - The installation-level profile registry format, whether it shares
   `product.db`, and whether the first product exposes more than its
   automatically created profile.
-- Whether Android places the database in backed-up or explicitly no-backup
-  app-private storage.
+- Implement Tactical `208`'s closed `product.db`, bounded source-watermark and
+  profile-outbox semantics, legacy `cfu-id` adoption, corruption/reset policy,
+  and exact resource evidence without making derived counters torrent
+  authority.
+- Tactical `208` selects Android app-private backup exclusion for
+  `product.db`; implement and prove uninstall, OS clear-storage, explicit
+  Tactical `207` clear, and ordinary restart/update behavior.
 - The bounded durability epochs from
   [`storage-throughput-architecture.md`](storage-throughput-architecture.md)
   are implemented. Tactical `054`'s strengthened 80 MiB forced-death profile

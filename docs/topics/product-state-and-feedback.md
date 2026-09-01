@@ -2,11 +2,17 @@
 
 Topic: `product-state-and-feedback`
 
-Status: Direction accepted on 2026-08-03. Installation-wide local identity,
-coarse engagement counters, campaign-specific prompt state, and visible
-user-submitted diagnostic context belong together in a product-state boundary
-above any one profile. No store, application-owned feedback transport, prompt
-campaign, or remote analytics service is implemented yet. Completed Tactical
+Status: Direction accepted on 2026-08-03 and refined by explicit user
+direction on 2026-09-01. Installation-wide identity, coarse engagement
+counters, campaign-specific prompt state, and disclosed feedback/update/
+uninstall context belong together in a product-state boundary above any one
+profile. RSTorrent is intended to preserve this useful JSTorrent product
+behavior while replacing its technical implementation. It is not required to
+discard the behavior merely because the engine and state owners are new.
+No product-state store, prompt campaign, or general analytics service is
+implemented yet. Ready Tactical
+[`208`](../tactical/208-installation-metrics-and-feedback-parity.md) owns the
+first bounded implementation. Completed Tactical
 [`206`](../tactical/206-android-jstorrent-feedback-handoff.md) adds the one
 narrow Android-only external feedback navigation described below. It creates
 no product-state owner. The desktop updater now
@@ -39,8 +45,8 @@ This topic owns:
 - durable state for a concrete review, feedback, migration, or companion-
   installation prompt once that prompt is designed;
 - sparse installation lifecycle and version facts; and
-- the privacy and consent boundary for including local context in feedback or
-  bug reports.
+- the privacy and consent boundary for including local context in update
+  counting, feedback, bug reports, and the browser-extension uninstall survey.
 
 [`client-persistence.md`](client-persistence.md) owns the correctness-critical
 profile database and torrent restart state. Tactical
@@ -50,7 +56,8 @@ retention, and failure consequences from the product facts here.
 
 This topic does not authorize continuous analytics upload, a telemetry vendor,
 an arbitrary event API, a generic prompt framework, or collection of torrent
-names, hashes, paths, trackers, peers, endpoints, or payload content.
+names, hashes, paths, trackers, peers, endpoints, diagnostics, error text, or
+payload content.
 
 ## Why Keep These Facts
 
@@ -60,10 +67,11 @@ ninety days is different from a report on first launch before any torrent was
 accepted. The same facts can support restrained local milestones such as
 asking an established successful user whether they want to leave a review.
 
-Local collection and remote transmission are separate decisions. RSTorrent may
-retain the accepted bounded facts without contacting a server. A later feedback
-surface decides what to show and submit; a later analytics decision cannot
-inherit permission merely because local counters already exist.
+Local collection and remote transmission remain separate decisions. Explicit
+direction nevertheless accepts three closed transmission surfaces for these
+facts: the developer-operated update check, a user-opened feedback page, and
+the browser extension's uninstall survey. They are not permission for a
+continuous event stream, a third-party analytics SDK, or unrelated reporting.
 
 ## Identity Vocabulary
 
@@ -71,16 +79,20 @@ Do not reuse one identifier across unrelated ownership boundaries:
 
 | Identity | Scope and purpose | Persistence and transmission |
 | --- | --- | --- |
-| Installation ID | One local product-data installation across profiles and application updates | Random 128-bit value in installation product state; local by default |
+| Installation ID | One product installation across profiles and application updates | Random resettable 128-bit value in installation product state; may be sent only through the disclosed update, feedback, and extension-uninstall boundaries |
 | Profile ID | One torrent catalog, settings set, roots, and application-service instance | Stable beneath the profile root; never an analytics identity |
 | Client instance ID | One attached presentation lifetime and its reconnect/takeover ownership | Ephemeral; not product history |
 | Report ID | One user-submitted feedback or support case | Generated for that submission; may be sent with the visible report |
-| Analytics ID | Possible future remote longitudinal identity | Does not exist; must be separately justified, disclosed, resettable, and revocable |
+| Separate analytics ID | A second identity created only for remote measurement | Does not exist and is not needed by the accepted design; the installation ID is the sole disclosed pseudonymous product identity |
 
 RSTorrent currently has stable profile identity, an ephemeral WebSocket
 client-instance identity, and the desktop updater's random durable installation
-ID. It has no analytics ID. The installation ID is not derived from a profile
-ID, device serial, account, path, peer ID, or hardware fingerprint.
+ID. That updater ID is the seed for the accepted installation identity rather
+than a reason to create another telemetry UUID. The installation ID is
+pseudonymous, not anonymous: repeated allowed requests can be correlated until
+the user resets it. It is never derived from a profile ID, pairing ID, device
+serial, account, path, peer ID, or hardware fingerprint and is never an
+authentication credential.
 
 An installation's age is the elapsed time since its product state was first
 created. Presentation should call this **days since first use** unless platform
@@ -115,9 +127,11 @@ typed summary and record prompt disposition through that owner; they do not
 open SQLite independently.
 
 The initial store is local to one installation and does not sync through an
-operating-system account or merge across devices. Backup inclusion remains an
-explicit platform decision because restoring `product.db` also restores its
-identity, age, prompt dispositions, and counters.
+operating-system account or merge across devices. Tactical `208` selects
+Android app-private backup exclusion, while a deliberate desktop file-level
+backup/restore also restores `product.db` and therefore its identity, age,
+prompt dispositions, and counters. A later platform must state its backup
+behavior before enabling transmission.
 
 `product.db` is durable product state, not disposable telemetry. Its corruption
 or write failure must be observable and conservatively resettable, but it must
@@ -199,28 +213,59 @@ backup behavior, and payload limits before adding an event table. Error text,
 paths, URLs, torrent identity, and arbitrary structured payloads do not belong
 in a generic operational record.
 
-## Feedback And Diagnostic Submission
+## Feedback, Update Counting, And Uninstall Survey
 
-A feedback or bug-report surface should build its context snapshot locally and
-show the exact fields before submission. The user can omit optional fields and
-can submit feedback without a stable installation identifier. Appropriate
-default context may include:
+The first implementation uses one default-on, plainly disclosed
+**Include pseudonymous usage statistics** preference. Turning it off is
+durable and suppresses the installation ID and usage summary from every
+allowed transmission surface. Update checks then remain anonymous apart from
+ordinary request metadata. Local counters may continue so that re-enabling the
+preference and local engagement decisions retain an honest summary.
+
+A separate **Reset usage statistics and identifier** action rotates the
+installation ID and resets the coarse counters and first-use timestamp without
+removing torrents, payload, roots, settings, profile state, pairing, or the
+application. Full application-data clearing also resets them. Presentation
+must not describe either operation as deleting server logs already received.
+
+A feedback or bug-report surface builds its context snapshot locally, shows
+the exact optional fields before browser navigation or submission, and lets
+the user uncheck inclusion for that one report without changing the durable
+preference. Appropriate context is closed to:
 
 - product and platform version;
 - days since first use;
 - the closed aggregate counters;
-- current capability and lifecycle summaries; and
-- separately reviewed bounded diagnostics relevant to the reported problem.
+- whether the product has ever successfully connected to its engine/backend;
+  and
+- Android's already accepted OS release and manufacturer/model fields.
 
-Do not put the installation ID, counters, errors, or diagnostic context in a
-navigation query string. Query strings leak into browser history, logs,
-referrers, and embedded-resource requests. Opening a feedback page must not
-transmit the preview merely because an iframe or form loaded. Generate a fresh
-report ID and transmit the visible snapshot only after the user explicitly
-submits it.
+The current JSTorrent-hosted feedback and uninstall pages consume query
+parameters before the embedded Google Form is submitted. That behavior is
+accepted for replacement parity only after the confirmation names the fields
+and recipients. The product privacy presentation must explain that query
+values can reach browser history, website logs and referrers, the embedded
+Google Form, and the page's existing Cloudflare analytics. Do not claim that
+this flow is anonymous, local-only, or transmitted only on final form
+submission.
 
-Maintainer direction on 2026-09-01 selected one closed replacement-parity
-exception in completed Tactical
+The extension cannot ask for consent after it has been removed. While
+installed it maintains a bounded uninstall URL from the last durable privacy
+preference and cached summary. If statistics are disabled or state is
+unavailable, uninstall may still open the survey but its URL contains no
+stable ID or usage counters. The URL is always length-bounded and contains no
+user prose or diagnostic text.
+
+The exact cross-surface allowlist is product version, platform, installation
+ID, days since first use, torrents added, downloads completed, foreground
+sessions, and ever-connected state, plus the existing Android environment
+fields. A surface uses only the subset it needs. Torrent identity/content,
+paths, roots, trackers, peers, network addresses, credentials, account or
+hardware identifiers, errors, logs, diagnostics, and arbitrary event payloads
+are prohibited.
+
+Earlier maintainer direction on 2026-09-01 selected the first closed
+replacement-parity exception in completed Tactical
 [`206`](../tactical/206-android-jstorrent-feedback-handoff.md). The Android
 Advanced Settings action opens the existing JSTorrent feedback page with
 exactly four current-JSTorrent environment fields in its query: literal
@@ -229,19 +274,14 @@ manufacturer/model. Those fields are transmitted on navigation and may reach
 browser history, website logs/referrers, the embedded Google Form, and the
 page's existing analytics before form submission. No stable identifier,
 counter, error, runtime diagnostic, lifecycle fact, torrent/peer/storage fact,
-or user prose may enter that URL. This exception does not weaken the local
-preview and explicit-submit requirement for any future richer report.
-
-The installation ID is correlation, not diagnostic context, and is omitted by
-default. A future support flow that genuinely needs cross-report correlation
-must explain that purpose and offer an explicit visible choice. Continuous
-remote analytics, if ever adopted, requires its own topic and cannot reuse the
-installation ID or report consent.
+or user prose may enter that URL. Tactical `208` may widen it only to the
+accepted, previewed product summary after privacy presentation and controls
+land; until then Tactical `206`'s exact four-field URL remains authoritative.
 
 ## JSTorrent Reference Evidence
 
 The inspected JSTorrent revision is
-`9895410beeed6aff554053769bd006a3fbd373ef`.
+`0cad4dacf540f5be42ee53c4f1e1da27aa1b3685`.
 
 - `extension/src/lib/telemetry-id.ts` creates a random UUID in
   `chrome.storage.local` under `telemetryId`.
@@ -259,48 +299,55 @@ The inspected JSTorrent revision is
   profile ID explicitly, retaining the former only for metrics and the latter
   for session state and roots.
 
-RSTorrent adopts the useful separation and local milestone behavior, not
-Chrome account sync, the exact counters or thresholds, the storage format, or
-automatic identifier transmission.
+RSTorrent adopts the useful separation, local milestone behavior, and
+disclosed feedback/uninstall product outcome. It does not adopt Chrome account
+sync, the storage format, hardware-derived identity, a generic event API, or
+silent transmission outside the exact allowlist.
 
-JSTorrent made the usage summary visible in its uninstall and feedback pages,
-but encoded context in the page URL and immediately used it to load a
-pre-populated Google Forms iframe. Form submission was optional, yet visiting
-the page could already disclose the query and iframe parameters. RSTorrent's
-explicit-submit boundary is an intentional difference.
+JSTorrent makes the usage summary visible in its uninstall and feedback pages,
+encodes context in the page URL, and uses it to load a pre-populated Google
+Forms iframe. Form submission is optional, yet visiting the page can already
+disclose the query and iframe parameters. RSTorrent preserves this product
+behavior with truthful preview, disclosure, opt-out, and reset controls rather
+than describing navigation as a private local preview.
 
 ## Invariants
 
 - Product-state scope is one local installation, not one torrent profile,
   presentation, process, device account, or remote user.
 - Profile and transport identities are never repurposed as analytics identity.
-- Local measurement does not imply remote collection consent.
+- The installation identity is pseudonymous, resettable, and never an
+  authorization or hardware identity.
+- Local measurement does not authorize transmission beyond the update,
+  user-opened feedback, and extension-uninstall boundaries.
 - Prompt eligibility is evaluated locally and prompt dismissal is durable.
 - Counter and prompt writes are low-frequency and never enter peer, hashing,
   storage, or other engine hot paths.
 - Derived product-state failure cannot establish or invalidate verified torrent
   state and cannot fail a download.
-- Feedback context is visible before explicit submission and excludes sensitive
-  torrent or endpoint data by default.
+- Optional feedback context is visible before navigation, can be omitted for
+  one report, and excludes sensitive torrent, endpoint, and diagnostic data.
+- Disabling statistics suppresses stable identity and counters on every
+  allowed transmission surface; reset rotates identity without touching
+  torrent product state.
 - Adding a counter, prompt campaign, operational event, submitted field, or
   identity use requires a named semantic purpose and bounded representation.
 
 ## Known Gaps And Next Work
 
-- Add a user-facing reset-all-data path and decide updater-ID backup/reinstall
-  behavior. The `cfu-id` create/repair and disclosure are implemented; define
-  its exact adoption or migration into eventual `product.db` before that store
-  lands so two durable installation identities are never created.
-- Define the first exact `product.db` schema, migration, SQLite durability,
-  corruption recovery, reset, and platform backup policy in a bounded
-  tactical.
-- Decide which platform/product lifecycle constitutes first use and a
-  foreground session on desktop, Android, ChromeOS, and extension-controlled
-  configurations.
-- Preserve Tactical `206`'s closed four-field Android navigation boundary.
-  Any richer context, application-owned submission, or other client surface
-  still requires a separately reviewed recipient and visible explicit-submit
-  flow.
+- Implement Tactical `208`'s exact `product.db` schema, crash-safe semantic
+  milestone transfer, privacy preference, preview, reset, updater-ID adoption,
+  and extension-local uninstall summary. Until it lands, preserve Tactical
+  `206`'s four-field Android URL and the updater's existing `cfu-id` behavior.
+- Reconcile Tactical `207` clear-data semantics with the new store: Reset
+  engine settings preserves product metrics, while either clear-data outcome
+  resets the product identity and metrics without widening payload deletion.
+- Update the hosted JSTorrent privacy, feedback, and uninstall presentation
+  before enabling richer transmission. The current privacy page's claim that
+  no analytics or usage data is collected would be false after enablement.
+- Prove Tactical `208`'s selected backup/reinstall behavior and honest
+  cross-platform foreground-session boundaries; omit the counter on a platform
+  until its semantics are proven.
 - Design each review, feedback, extension, or migration prompt as an explicit
   campaign with its own eligibility, cooldown, and disposition behavior.
 - Decide whether sparse lifecycle/version facts need latest values or a bounded
