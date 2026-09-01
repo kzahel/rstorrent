@@ -102,6 +102,9 @@ python3 clients/android/run_bootstrap.py \
   --storage saf-internal --runs 1 --profile product-notifications --no-build
 python3 clients/android/run_bootstrap.py \
   --target avd --avd rstorrent-task-api35 --avd-api 35 \
+  --storage saf-internal --runs 1 --profile product-data-reset --no-build
+python3 clients/android/run_bootstrap.py \
+  --target avd --avd rstorrent-task-api35 --avd-api 35 \
   --storage saf-internal --runs 1 --profile product-background-lifecycle --no-build
 python3 clients/android/run_bootstrap.py \
   --target avd --avd jstorrent-tablet --storage saf-internal --runs 1 \
@@ -153,6 +156,16 @@ and AVD cleanup.
 API 35 evidence uses an explicitly created task-owned AVD whose name starts
 with `rstorrent-`, selects `--avd-api 35`, and removes that AVD after the run.
 The established API 34 path remains restricted to `jstorrent-tablet`.
+
+The `product-data-reset` profile grants two unique controlled SAF roots and
+persists one complete seed plus one active download across a process restart.
+It clears with Keep, verifies byte-exact registered payloads and unrelated
+root and nested sentinels, re-grants both roots, re-adds and rechecks the kept
+content, then clears with DeleteData. The final manifests must contain only
+the sentinels: no registered payload, part file, or staging artifact may
+survive. The profile records whole-process descriptor high water and removes
+only its fixed task-owned roots, reverse transports, fixtures, and package
+state.
 
 The `product-incomplete-duplex` profile stores exactly two verified pieces
 through a capped seed, revokes the SAF grant, force-stops and restarts the

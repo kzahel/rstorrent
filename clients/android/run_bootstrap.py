@@ -44,6 +44,7 @@ CANCELLATION_STORAGE_DELAY_MILLIS = 5_000
 RESULT_TIMEOUT_SECONDS = 45
 PROFILE_CHOICES = (
     "success",
+    "product-data-reset",
     "product-dynamic-saf",
     "product-hybrid-saf",
     "product-pure-v2-saf",
@@ -3421,7 +3422,15 @@ def wait_product_torrent_state(
         if "product service initialization failed" in logs:
             break
         time.sleep(0.1)
-    raise BootstrapFailure(f"timed out waiting for {description}\n{logs}")
+    relevant = "\n".join(
+        line
+        for line in logs.splitlines()
+        if f"torrent={torrent_id}" in line
+        or "product service initialization failed" in line
+    )
+    raise BootstrapFailure(
+        f"timed out waiting for {description}; torrent={torrent_id}\n{relevant}"
+    )
 
 
 def wait_product_torrent_diagnostic(
@@ -4268,6 +4277,422 @@ def run_product_dynamic_saf_profile(
         if peer_transport is not None:
             peer_transport.close()
         fixture.close()
+
+
+def select_product_saf_folder(
+    target: Any,
+    probe: ModuleType,
+    grant_storage: str,
+    folder: str,
+    *,
+    create: bool,
+) -> str:
+    path = probe.grant_path(grant_storage, folder)
+    if create:
+        probe.prepare_grant_folder(target, grant_storage, folder)
+    elif target.shell(["test", "-d", path], check=False).returncode != 0:
+        raise BootstrapFailure(f"retained SAF fixture root is absent: {path}")
+    previous = product_logs(target).count("saf_root_operation kind=add ")
+    selected = target.shell(
+        [
+            "am",
+            "start",
+            "-n",
+            ACTIVITY,
+            "--ez",
+            "product_select_saf",
+            "true",
+        ],
+        timeout=30,
+        check=False,
+    )
+    if "Error:" in selected.stdout or (
+        selected.returncode != 0 and "Starting:" not in selected.stdout
+    ):
+        raise BootstrapFailure(f"could not launch product SAF picker for {folder}")
+    probe.automate_tree_grant(target, grant_storage, folder)
+    deadline = time.monotonic() + 20
+    logs = ""
+    while time.monotonic() < deadline:
+        logs = product_logs(target)
+        if logs.count("saf_root_operation kind=add ") > previous:
+            return path
+        if "product service initialization failed" in logs:
+            break
+        time.sleep(0.2)
+    raise BootstrapFailure(f"product did not register SAF root {folder}\n{logs}")
+
+
+def add_product_fixture(
+    target: Any,
+    fixture: SeedFixture,
+    transport: ReverseTransport,
+) -> str:
+    magnet = (
+        f"magnet:?xt=urn:btih:{fixture.info_hash}"
+        f"&dn={fixture.name}&x.pe=127.0.0.1:{transport.device_port}"
+    )
+    previous = product_add_count(target, fixture.info_hash)
+    result = target.shell(
+        [
+            "am",
+            "start",
+            "-n",
+            ACTIVITY,
+            "--es",
+            "product_magnet",
+            shlex.quote(magnet),
+        ],
+        timeout=30,
+        check=False,
+    )
+    if "Error:" in result.stdout or (
+        result.returncode != 0 and "Starting:" not in result.stdout
+    ):
+        raise BootstrapFailure(f"could not add controlled fixture {fixture.name}")
+    return wait_product_torrent_id(target, fixture.info_hash, previous)
+
+
+def request_product_data_reset(
+    target: Any,
+    *,
+    delete_data: bool,
+    expected_torrents: int,
+    baseline_fds: int,
+) -> tuple[str, int]:
+    mode = "delete" if delete_data else "keep"
+    marker = (
+        f"torrents={expected_torrents} "
+        f"delete={'true' if delete_data else 'false'} downgraded=false"
+    )
+    previous = product_logs(target).count("data_reset_completed operation=")
+    previous_start_failures = product_logs(target).count("data_reset_start_failed ")
+    result = target.shell(
+        [
+            "am",
+            "start",
+            "-n",
+            ACTIVITY,
+            "--es",
+            "product_data_reset",
+            mode,
+        ],
+        timeout=30,
+        check=False,
+    )
+    if "Error:" in result.stdout or (
+        result.returncode != 0 and "Starting:" not in result.stdout
+    ):
+        raise BootstrapFailure(f"could not request product data reset {mode}")
+    deadline = time.monotonic() + 90
+    high_water_fds = baseline_fds
+    logs = ""
+    while time.monotonic() < deadline:
+        high_water_fds = max(high_water_fds, product_fd_count(target))
+        logs = product_logs(target)
+        completed = [
+            line
+            for line in logs.splitlines()
+            if "data_reset_completed operation=" in line
+        ]
+        if len(completed) > previous:
+            if marker not in completed[-1]:
+                raise BootstrapFailure(
+                    f"data reset completion differs for {mode}: {completed[-1]}"
+                )
+            return completed[-1], high_water_fds
+        if "product data reset failed" in logs:
+            break
+        if logs.count("data_reset_start_failed ") > previous_start_failures:
+            break
+        time.sleep(0.1)
+    relevant = "\n".join(
+        line
+        for line in logs.splitlines()
+        if "data_reset_" in line or "product data reset failed" in line
+    )
+    raise BootstrapFailure(
+        f"product data reset {mode} did not complete\n{relevant}"
+    )
+
+
+def remote_file_manifest(target: Any, root: str) -> dict[str, str]:
+    listing = target.shell(
+        ["find", root, "-type", "f", "-print"],
+        timeout=20,
+        check=False,
+    )
+    if listing.returncode != 0:
+        raise BootstrapFailure(f"could not enumerate controlled root {root}")
+    manifest: dict[str, str] = {}
+    for path in sorted(filter(None, listing.stdout.splitlines())):
+        digest = target.shell(["sha256sum", path], timeout=20, check=False)
+        if digest.returncode != 0:
+            raise BootstrapFailure(f"could not hash controlled file {path}")
+        manifest[path.removeprefix(f"{root}/")] = digest.stdout.split()[0]
+    return manifest
+
+
+def run_product_data_reset_profile(
+    target: Any,
+    target_kind: str,
+    identity: dict[str, str],
+    probe: ModuleType,
+    interop: ModuleType,
+    ordinal: int,
+    storage: str,
+) -> dict[str, Any]:
+    if not storage.startswith("saf-"):
+        raise BootstrapFailure("product-data-reset requires a SAF storage mode")
+    grant_storage = "sdcard" if storage == "saf-sdcard" else "internal"
+    folder_a = f"RSTorrentDataResetA{ordinal}"
+    folder_b = f"RSTorrentDataResetB{ordinal}"
+    fixture_a = SeedFixture.create(
+        interop,
+        f"{target_kind}-product-data-reset-a-{ordinal}",
+        root_name=f"data-reset-a-{ordinal}",
+    )
+    fixture_b = SeedFixture.create(
+        interop,
+        f"{target_kind}-product-data-reset-b-{ordinal}",
+        root_name=f"data-reset-b-{ordinal}",
+        content_offset=31,
+    )
+    transport_a: ReverseTransport | None = None
+    transport_b: ReverseTransport | None = None
+    root_a = probe.grant_path(grant_storage, folder_a)
+    root_b = probe.grant_path(grant_storage, folder_b)
+    output_a = f"{root_a}/{fixture_a.name}"
+    output_b = f"{root_b}/{fixture_b.name}"
+    root_sentinel_a = f"{root_a}/unrelated-root-a.bin"
+    root_sentinel_b = f"{root_b}/unrelated-root-b.bin"
+    nested_sentinel_a = f"{output_a}/unrelated-nested-a.bin"
+    nested_sentinel_b = f"{output_b}/unrelated-nested-b.bin"
+    sentinel_content = {
+        root_sentinel_a: b"preserve-root-a",
+        root_sentinel_b: b"preserve-root-b",
+        nested_sentinel_a: b"preserve-nested-a",
+        nested_sentinel_b: b"preserve-nested-b",
+    }
+    def install_sentinels() -> dict[str, str]:
+        expected: dict[str, str] = {}
+        for index, (destination, content) in enumerate(sentinel_content.items()):
+            source = fixture_a.run_path / f"sentinel-{index}.bin"
+            source.write_bytes(content)
+            push_local_file(target, target_kind, source, destination)
+            expected[destination] = hashlib.sha256(content).hexdigest()
+        return expected
+
+    def assert_sentinels(expected: dict[str, str]) -> None:
+        for path, digest in expected.items():
+            result = target.shell(["sha256sum", path], timeout=20, check=False)
+            if result.returncode != 0 or result.stdout.split()[0] != digest:
+                raise BootstrapFailure(f"data reset changed unrelated sentinel {path}")
+
+    def assert_fixture_files(root: str, fixture: SeedFixture, *, present: bool) -> None:
+        for relative_path, _, padding in fixture_files():
+            if padding:
+                continue
+            path = f"{root}/{fixture.name}/{relative_path}"
+            exists = target.shell(["test", "-f", path], check=False).returncode == 0
+            if exists != present:
+                outcome = "absent" if present else "survived exact deletion"
+                raise BootstrapFailure(f"fixture file {outcome}: {path}")
+            if present:
+                digest = target.shell(["sha1sum", path]).stdout.split()[0]
+                if digest != fixture.expected_file_hashes[relative_path]:
+                    raise BootstrapFailure(f"fixture hash differs after keep: {path}")
+
+    try:
+        clear_application(target)
+        target.shell(
+            ["pm", "grant", PACKAGE, "android.permission.POST_NOTIFICATIONS"],
+            check=False,
+        )
+        root_a = select_product_saf_folder(
+            target,
+            probe,
+            grant_storage,
+            folder_a,
+            create=True,
+        )
+        transport_a = ReverseTransport.create(
+            target,
+            target_kind,
+            fixture_a.host_port,
+            ordinal,
+            slot=0,
+        )
+        baseline_fds = product_fd_count(target)
+        first_id = add_product_fixture(target, fixture_a, transport_a)
+
+        root_b = select_product_saf_folder(
+            target,
+            probe,
+            grant_storage,
+            folder_b,
+            create=True,
+        )
+        transport_b = ReverseTransport.create(
+            target,
+            target_kind,
+            fixture_b.host_port,
+            ordinal,
+            slot=1,
+        )
+        fixture_b.handle.set_upload_limit(4 * 1024)
+        second_id = add_product_fixture(target, fixture_b, transport_b)
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+        restarted = target.shell(
+            ["am", "start", "-W", "-n", ACTIVITY],
+            timeout=30,
+            check=False,
+        )
+        if restarted.returncode != 0 or "Error:" in restarted.stdout:
+            raise BootstrapFailure("could not restart product for multi-root rehydration")
+        wait_product_torrent_state(
+            target,
+            second_id,
+            state="DOWNLOADING",
+            description="active second root before keep clear",
+            timeout=60,
+        )
+        fixture_b.handle.pause()
+        _, first_download_fds = wait_product_completion(
+            target,
+            first_id,
+            baseline_fds,
+        )
+        expected_sentinels = install_sentinels()
+        assert_fixture_files(root_a, fixture_a, present=True)
+        keep_line, keep_fds = request_product_data_reset(
+            target,
+            delete_data=False,
+            expected_torrents=2,
+            baseline_fds=baseline_fds,
+        )
+        assert_fixture_files(root_a, fixture_a, present=True)
+        assert_sentinels(expected_sentinels)
+        retained_after_keep = {
+            folder_a: remote_file_manifest(target, root_a),
+            folder_b: remote_file_manifest(target, root_b),
+        }
+
+        target.run(["logcat", "-c"], check=False)
+        select_product_saf_folder(
+            target,
+            probe,
+            grant_storage,
+            folder_a,
+            create=False,
+        )
+        readded_a = add_product_fixture(target, fixture_a, transport_a)
+        wait_product_torrent_state(
+            target,
+            readded_a,
+            state="COMPLETE",
+            description="kept first-root payload recheck",
+            timeout=60,
+        )
+        select_product_saf_folder(
+            target,
+            probe,
+            grant_storage,
+            folder_b,
+            create=False,
+        )
+        fixture_b.handle.set_upload_limit(0)
+        fixture_b.handle.resume()
+        readded_b = add_product_fixture(target, fixture_b, transport_b)
+        _, second_download_fds = wait_product_completion(
+            target,
+            readded_b,
+            baseline_fds,
+        )
+        assert_fixture_files(root_a, fixture_a, present=True)
+        assert_fixture_files(root_b, fixture_b, present=True)
+        assert_sentinels(expected_sentinels)
+
+        delete_line, delete_fds = request_product_data_reset(
+            target,
+            delete_data=True,
+            expected_torrents=2,
+            baseline_fds=baseline_fds,
+        )
+        assert_fixture_files(root_a, fixture_a, present=False)
+        assert_fixture_files(root_b, fixture_b, present=False)
+        for torrent_id, root in ((readded_a, root_a), (readded_b, root_b)):
+            for hidden in (
+                f"{root}/.{torrent_id}.rstorrent-staging",
+                f"{root}/.{torrent_id}.rstorrent-parts",
+            ):
+                if target.shell(["test", "-e", hidden], check=False).returncode == 0:
+                    raise BootstrapFailure(f"data reset left exact artifact {hidden}")
+        assert_sentinels(expected_sentinels)
+        final_manifests = {
+            folder_a: remote_file_manifest(target, root_a),
+            folder_b: remote_file_manifest(target, root_b),
+        }
+        expected_final = {
+            folder_a: {
+                root_sentinel_a.removeprefix(f"{root_a}/"): expected_sentinels[root_sentinel_a],
+                nested_sentinel_a.removeprefix(f"{root_a}/"): expected_sentinels[nested_sentinel_a],
+            },
+            folder_b: {
+                root_sentinel_b.removeprefix(f"{root_b}/"): expected_sentinels[root_sentinel_b],
+                nested_sentinel_b.removeprefix(f"{root_b}/"): expected_sentinels[nested_sentinel_b],
+            },
+        }
+        if final_manifests != expected_final:
+            raise BootstrapFailure(
+                "data reset final root manifests differ: "
+                f"actual={final_manifests} expected={expected_final}"
+            )
+        high_water_fds = max(
+            first_download_fds,
+            keep_fds,
+            second_download_fds,
+            delete_fds,
+        )
+        if baseline_fds and high_water_fds - baseline_fds > 48:
+            raise BootstrapFailure(
+                "data reset descriptor delta exceeded existing bounds: "
+                f"baseline={baseline_fds} high_water={high_water_fds}"
+            )
+        return {
+            "target": target_kind,
+            "profile": "product-data-reset",
+            "run": ordinal,
+            "identity": identity,
+            "roots": 2,
+            "keep": keep_line,
+            "retained_files": {
+                key: len(value) for key, value in retained_after_keep.items()
+            },
+            "readd_recheck": "complete",
+            "delete": delete_line,
+            "final_manifests": {
+                key: sorted(value) for key, value in final_manifests.items()
+            },
+            "process_fds": {
+                "baseline": baseline_fds,
+                "high_water": high_water_fds,
+                "final": product_fd_count(target),
+            },
+            "cleanup": "exact_registered_files_only",
+        }
+    finally:
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+        for root in (root_a, root_b):
+            target.shell(["rm", "-rf", root], timeout=20, check=False)
+            if target.shell(["test", "-e", root], check=False).returncode == 0:
+                raise BootstrapFailure(f"could not remove task-owned reset root {root}")
+        if transport_b is not None:
+            transport_b.close()
+        if transport_a is not None:
+            transport_a.close()
+        fixture_b.close()
+        fixture_a.close()
 
 
 def run_product_notifications_profile(
@@ -7654,6 +8079,7 @@ def main() -> int:
                 if profile
                 in (
                     "success",
+                    "product-data-reset",
                     "product-dynamic-saf",
                     "product-hybrid-saf",
                     "product-pure-v2-saf",
@@ -7689,6 +8115,16 @@ def main() -> int:
                         identity,
                         interop,
                         ordinal,
+                    )
+                elif profile == "product-data-reset":
+                    result = run_product_data_reset_profile(
+                        target,
+                        arguments.target,
+                        identity,
+                        probe,
+                        interop,
+                        ordinal,
+                        arguments.storage,
                     )
                 elif profile == "product-dynamic-saf":
                     result = run_product_dynamic_saf_profile(

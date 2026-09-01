@@ -593,14 +593,23 @@ def click_document_entry(
     return click_from_nodes(target, entries, labels)
 
 
-def grant_path(storage: str) -> str:
+def grant_path(storage: str, folder: str = GRANT_FOLDER) -> str:
+    if not folder or folder in {".", ".."} or any(
+        character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
+        for character in folder
+    ):
+        raise ProbeFailure(f"unsafe grant folder name {folder!r}")
     if storage == "sdcard":
-        return f"/storage/{MOTO_SD_VOLUME}/{GRANT_FOLDER}"
-    return f"/sdcard/Download/{GRANT_FOLDER}"
+        return f"/storage/{MOTO_SD_VOLUME}/{folder}"
+    return f"/sdcard/Download/{folder}"
 
 
-def remove_grant_folder(target: AdbTarget, storage: str) -> None:
-    path = grant_path(storage)
+def remove_grant_folder(
+    target: AdbTarget,
+    storage: str,
+    folder: str = GRANT_FOLDER,
+) -> None:
+    path = grant_path(storage, folder)
     exists = target.shell(["test", "-e", path], check=False)
     if exists.returncode != 0:
         return
@@ -612,9 +621,13 @@ def remove_grant_folder(target: AdbTarget, storage: str) -> None:
         raise ProbeFailure(f"probe grant directory is not empty: {path}")
 
 
-def prepare_grant_folder(target: AdbTarget, storage: str) -> None:
-    remove_grant_folder(target, storage)
-    path = grant_path(storage)
+def prepare_grant_folder(
+    target: AdbTarget,
+    storage: str,
+    folder: str = GRANT_FOLDER,
+) -> None:
+    remove_grant_folder(target, storage, folder)
+    path = grant_path(storage, folder)
     created = target.shell(["mkdir", path], check=False)
     if created.returncode != 0:
         raise ProbeFailure(
@@ -624,7 +637,11 @@ def prepare_grant_folder(target: AdbTarget, storage: str) -> None:
         )
 
 
-def automate_tree_grant(target: AdbTarget, storage: str) -> None:
+def automate_tree_grant(
+    target: AdbTarget,
+    storage: str,
+    folder: str = GRANT_FOLDER,
+) -> None:
     target.shell(
         ["input", "keyevent", "KEYCODE_WAKEUP"],
         timeout=10,
@@ -648,7 +665,7 @@ def automate_tree_grant(target: AdbTarget, storage: str) -> None:
         if showing_documents_ui and documents_ui_since is None:
             documents_ui_since = time.monotonic()
         if any(
-            node.attrib.get("text", "").strip() == GRANT_FOLDER
+            node.attrib.get("text", "").strip() == folder
             and node.attrib.get("resource-id", "").endswith(
                 ":id/breadcrumb_text"
             )
@@ -672,7 +689,7 @@ def automate_tree_grant(target: AdbTarget, storage: str) -> None:
             return
         if (
             not used_folder
-            and click_document_entry(target, nodes, [GRANT_FOLDER])
+            and click_document_entry(target, nodes, [folder])
         ):
             entered_folder = True
             time.sleep(0.5)

@@ -2855,6 +2855,7 @@ class ProductEngineService : Service() {
             rejectMutationDuringDataReset()
             return
         }
+        Log.i(TAG, "data_reset_requested delete=$deleteDownloadedFiles")
         refreshLifecycleInteractions()
         scope.launch {
             try {
@@ -2894,6 +2895,11 @@ class ProductEngineService : Service() {
                 if (dataResetJournal == null) {
                     dataResetActive.set(false)
                     refreshLifecycleInteractions()
+                    Log.e(
+                        TAG,
+                        "data_reset_start_failed delete=$deleteDownloadedFiles",
+                        error,
+                    )
                 }
                 reportError(error)
             }
@@ -3074,6 +3080,13 @@ class ProductEngineService : Service() {
                         dataResetJournal = null
                         dataResetActive.set(false)
                         refreshLifecycleInteractions()
+                        Log.i(
+                            TAG,
+                            "data_reset_completed operation=${journal.operationId} " +
+                                "torrents=${journal.torrentIds.size} " +
+                                "delete=${journal.deleteDataRequested} " +
+                                "downgraded=${journal.downgradedToKeep}",
+                        )
                         mutableState.update {
                             it.copy(
                                 ready = true,

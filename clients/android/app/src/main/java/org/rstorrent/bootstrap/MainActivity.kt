@@ -57,6 +57,7 @@ class MainActivity : ComponentActivity() {
     private var pendingProductLifecycleEvidence: String? = null
     private var pendingProductQuotaRestartEvidence = false
     private var pendingProductTorrentAction: Pair<String, String>? = null
+    private var pendingProductDataReset: Boolean? = null
     private var pendingNotificationSettingsReturn = false
     private var pendingBackgroundEnable = false
     private var notificationNavigationSequence = 0L
@@ -254,6 +255,10 @@ class MainActivity : ComponentActivity() {
                 pendingProductTorrentAction?.let { (torrentId, action) ->
                     pendingProductTorrentAction = null
                     service.exerciseTorrentActionForTest(torrentId, action)
+                }
+                pendingProductDataReset?.let { deleteData ->
+                    pendingProductDataReset = null
+                    service.clearAllData(deleteData)
                 }
             }
 
@@ -706,6 +711,23 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             command
+                .getStringExtra(EXTRA_PRODUCT_DATA_RESET)
+                ?.let { mode ->
+                    command.removeExtra(EXTRA_PRODUCT_DATA_RESET)
+                    val deleteData =
+                        when (mode) {
+                            "keep" -> false
+                            "delete" -> true
+                            else -> error("unknown product data reset mode")
+                        }
+                    val service = productService.value
+                    if (service == null) {
+                        pendingProductDataReset = deleteData
+                    } else {
+                        service.clearAllData(deleteData)
+                    }
+                }
+            command
                 .getStringExtra(EXTRA_PRODUCT_TORRENT_BASE64)
                 ?.takeIf(String::isNotBlank)
                 ?.let { encoded ->
@@ -1118,6 +1140,7 @@ class MainActivity : ComponentActivity() {
             "product_quota_restart_evidence"
         const val EXTRA_PRODUCT_TORRENT_ACTION = "product_torrent_action"
         const val EXTRA_PRODUCT_TORRENT_ID = "product_torrent_id"
+        const val EXTRA_PRODUCT_DATA_RESET = "product_data_reset"
         const val EXTRA_PRODUCT_TORRENT_BASE64 = "product_torrent_base64"
         const val EXTRA_PRODUCT_WANTED_FILE_RANGES = "product_wanted_file_ranges"
         const val EXTRA_PRODUCT_START_CONTENT = "product_start_content"
