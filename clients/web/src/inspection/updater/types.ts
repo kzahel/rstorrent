@@ -16,7 +16,10 @@ export interface DesktopReleaseInfo {
   readonly target: string;
   readonly arch: string;
   readonly bundleType: DesktopBundleType;
-  readonly checkPrivacy?: "installation-id" | "anonymous";
+  readonly checkPrivacy?:
+    | "installation-id"
+    | "preference-controlled"
+    | "anonymous";
 }
 
 export interface ManualUpdateAction {

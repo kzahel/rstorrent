@@ -46,6 +46,8 @@ import type {
   HostedAccessMode,
   HostedProduct,
 } from "../../headless-updater";
+import type { ProductPrivacyController } from "../product-privacy/types";
+import { ProductDisclosure } from "./ProductPrivacy";
 
 const DESTINATIONS: readonly {
   readonly id: ApplicationDestination;
@@ -67,6 +69,7 @@ export interface AppProps {
   readonly remoteAccess?: DesktopRemoteAccess | undefined;
   readonly accessMode?: HostedAccessMode | undefined;
   readonly hostedProduct?: HostedProduct | undefined;
+  readonly productPrivacy?: ProductPrivacyController | undefined;
 }
 
 export function App({
@@ -79,6 +82,7 @@ export function App({
   remoteAccess,
   accessMode,
   hostedProduct,
+  productPrivacy,
 }: AppProps) {
   return (
     <DesktopExternalIntakeProvider intake={externalIntake}>
@@ -91,6 +95,7 @@ export function App({
           remoteAccess={remoteAccess}
           accessMode={accessMode}
           hostedProduct={hostedProduct}
+          productPrivacy={productPrivacy}
           oneCurrentRoot={oneCurrentRoot}
         />
       </TorrentActionProvider>
@@ -107,6 +112,7 @@ function AppContent({
   remoteAccess,
   accessMode,
   hostedProduct,
+  productPrivacy,
 }: AppProps) {
   const session = useInspectionStore((state) => state.session);
   const demo = useInspectionStore((state) => state.demo);
@@ -503,6 +509,7 @@ function AppContent({
           webAuth={webAuth}
           updater={updater}
           updaterSnapshot={updaterSnapshot}
+          productPrivacy={productPrivacy}
           initialCategory={settingsCategory}
           returnFocus={settingsButtonRef}
           onColorThemeChange={setColorTheme}
@@ -534,6 +541,9 @@ function AppContent({
           onClose={() => setSettingsOpen(false)}
         />
       ) : null}
+      {productPrivacy === undefined ? null : (
+        <ProductDisclosure productPrivacy={productPrivacy} />
+      )}
     </div>
   );
 }

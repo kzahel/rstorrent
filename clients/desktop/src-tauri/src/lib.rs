@@ -16,10 +16,11 @@ use rstorrent_remote_host::{
 use rstorrent_session::{
     AddTorrentBytesRequest, ApplicationConfig, ApplicationService, CONTROL_VERSION, Command,
     DeliveryPolicy, ErrorCode, FileIndexRange, FileSelectionIntent, MediaUrlResponse,
-    NetworkConfig, NetworkPolicy, ProductStateOwner, RequestEnvelope, ResponseEnvelope,
+    NetworkConfig, NetworkPolicy, PRODUCT_PRIVACY_URL, ProductFeedbackEnvironment,
+    ProductFeedbackPreview, ProductStateOwner, ProductSummary, RequestEnvelope, ResponseEnvelope,
     ResponseOutcome, StorageRootSnapshot, SubscriptionSpec, ViewPatch, ViewProjection,
     ViewSelector, ViewSnapshot, ViewSubscription, ViewUpdate, ViewUpdatePayload,
-    application_error_response,
+    application_error_response, build_product_feedback_preview,
 };
 use tauri::WebviewWindowBuilder;
 use tauri::ipc::{Channel, InvokeBody, Request as IpcRequest};
@@ -82,6 +83,9 @@ const MAX_TORRENT_SOURCE_BYTES: usize = external_intake::MAX_TORRENT_SOURCE_BYTE
 const REMOTE_VALIDATION_RELAY_ENV: &str = "RSTORRENT_REMOTE_VALIDATION_RELAY";
 const REMOTE_VALIDATION_CERT_ENV: &str = "RSTORRENT_REMOTE_VALIDATION_CERT";
 const MAX_REMOTE_CERTIFICATE_BYTES: u64 = 64 * 1024;
+// Rich query fields remain fail-closed until the separately deployed hosted
+// privacy, feedback, and uninstall presentation has been verified.
+const HOSTED_PRODUCT_CONTEXT_READY: bool = false;
 
 const HEADER_REQUEST_ID: &str = "x-rstorrent-request-id";
 const HEADER_EXPECTED_REVISION: &str = "x-rstorrent-expected-revision";
@@ -110,6 +114,7 @@ struct DesktopState {
     shutdown_status: watch::Sender<ShutdownPhase>,
     shutdown_error: StdMutex<Option<String>>,
     restart_after_shutdown: AtomicBool,
+    foreground_visible: AtomicBool,
     update_check_generation: AtomicU64,
     external_activations: StdMutex<DesktopActivationState>,
 }
@@ -311,6 +316,92 @@ fn desktop_updater_installation_id(
         .map_err(|error| error.to_string())
 }
 
+fn desktop_feedback_preview(
+    state: &DesktopState,
+    include_statistics: bool,
+) -> Result<ProductFeedbackPreview, String> {
+    let summary = state
+        .product_state
+        .summary()
+        .map_err(|error| error.to_string())?;
+    build_product_feedback_preview(
+        &summary,
+        &ProductFeedbackEnvironment::desktop(env!("CARGO_PKG_VERSION")),
+        include_statistics,
+        HOSTED_PRODUCT_CONTEXT_READY,
+    )
+    .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn desktop_product_summary(state: State<'_, DesktopState>) -> Result<ProductSummary, String> {
+    state
+        .product_state
+        .summary()
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn desktop_product_acknowledge_disclosure(
+    state: State<'_, DesktopState>,
+    statistics_enabled: bool,
+) -> Result<ProductSummary, String> {
+    state
+        .product_state
+        .acknowledge_disclosure(statistics_enabled)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn desktop_product_set_statistics_enabled(
+    state: State<'_, DesktopState>,
+    statistics_enabled: bool,
+) -> Result<ProductSummary, String> {
+    state
+        .product_state
+        .set_statistics_enabled(statistics_enabled)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn desktop_product_reset_statistics(
+    state: State<'_, DesktopState>,
+) -> Result<ProductSummary, String> {
+    state
+        .product_state
+        .reset_statistics()
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn desktop_product_feedback_preview(
+    state: State<'_, DesktopState>,
+    include_statistics: bool,
+) -> Result<ProductFeedbackPreview, String> {
+    desktop_feedback_preview(&state, include_statistics)
+}
+
+#[tauri::command]
+fn desktop_product_open_feedback(
+    state: State<'_, DesktopState>,
+    include_statistics: bool,
+    expected_url: String,
+) -> Result<(), String> {
+    let preview = desktop_feedback_preview(&state, include_statistics)?;
+    if preview.url != expected_url {
+        return Err(
+            "product feedback context changed; review the current preview before opening"
+                .to_owned(),
+        );
+    }
+    open_with_system(&preview.url)
+}
+
+#[tauri::command]
+fn desktop_product_open_privacy() -> Result<(), String> {
+    open_with_system(PRODUCT_PRIVACY_URL)
+}
+
 #[tauri::command]
 async fn application_dispatch(
     state: State<'_, DesktopState>,
@@ -414,7 +505,27 @@ fn open_with_system(url: &str) -> Result<(), String> {
     command
         .spawn()
         .map(|_| ())
-        .map_err(|error| format!("open media URL with system handler: {error}"))
+        .map_err(|error| format!("open URL with system handler: {error}"))
+}
+
+fn record_desktop_foreground_if_new(state: &DesktopState) {
+    if !enter_visible_foreground_epoch(&state.foreground_visible) {
+        return;
+    }
+    if let Err(error) = state.product_state.record_foreground_session() {
+        eprintln!(
+            "desktop product foreground-session record failed: {}",
+            bounded_diagnostic(error.to_string())
+        );
+    }
+}
+
+fn enter_visible_foreground_epoch(foreground_visible: &AtomicBool) -> bool {
+    !foreground_visible.swap(true, Ordering::AcqRel)
+}
+
+fn mark_desktop_background(state: &DesktopState) {
+    state.foreground_visible.store(false, Ordering::Release);
 }
 
 #[tauri::command]
@@ -1521,10 +1632,11 @@ fn observe_window_destruction(
                 CloseAction::Allow => {}
                 CloseAction::Hide => {
                     api.prevent_close();
-                    if let Some(window) = app.get_webview_window(&label)
-                        && let Err(error) = window.hide()
-                    {
-                        eprintln!("failed to hide desktop window: {error}");
+                    if let Some(window) = app.get_webview_window(&label) {
+                        match window.hide() {
+                            Ok(()) => mark_desktop_background(&state),
+                            Err(error) => eprintln!("failed to hide desktop window: {error}"),
+                        }
                     }
                 }
                 CloseAction::StartShutdown => {
@@ -1535,6 +1647,7 @@ fn observe_window_destruction(
             }
         }
         WindowEvent::Destroyed => {
+            mark_desktop_background(&app.state::<DesktopState>());
             let service = service.clone();
             let subscriptions = subscriptions.clone();
             let view_resources = view_resources.clone();
@@ -1594,6 +1707,9 @@ fn restore_main_window(app: &AppHandle) -> Result<(), String> {
     window
         .show()
         .map_err(|error| format!("show main webview window: {error}"))?;
+    if let Some(state) = app.try_state::<DesktopState>() {
+        record_desktop_foreground_if_new(&state);
+    }
     window
         .set_focus()
         .map_err(|error| format!("focus main webview window: {error}"))
@@ -1999,6 +2115,7 @@ pub fn run() {
                 shutdown_status: watch::channel(ShutdownPhase::Running).0,
                 shutdown_error: StdMutex::new(None),
                 restart_after_shutdown: AtomicBool::new(false),
+                foreground_visible: AtomicBool::new(false),
                 update_check_generation: AtomicU64::new(0),
                 external_activations: StdMutex::new(external_activations),
             };
@@ -2011,6 +2128,9 @@ pub fn run() {
             apply_platform_window_icon(&window)?;
             observe_window_destruction(&window, service, subscriptions, view_resources, 1);
             app.manage(state);
+            if window.is_visible().unwrap_or(true) {
+                record_desktop_foreground_if_new(&app.state::<DesktopState>());
+            }
             let external_handle = app.handle().clone();
             app.deep_link().on_open_url(move |event| {
                 let urls = event.urls();
@@ -2085,6 +2205,13 @@ pub fn run() {
             desktop_update_check_generation,
             desktop_release_info,
             desktop_updater_installation_id,
+            desktop_product_summary,
+            desktop_product_acknowledge_disclosure,
+            desktop_product_set_statistics_enabled,
+            desktop_product_reset_statistics,
+            desktop_product_feedback_preview,
+            desktop_product_open_feedback,
+            desktop_product_open_privacy,
         ])
         .build(tauri::generate_context!())
         .expect("build RSTorrent desktop application");
@@ -2142,6 +2269,7 @@ fn desktop_application_config(app_data: &std::path::Path) -> ApplicationConfig {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
     use std::time::Duration;
 
     use rstorrent_session::{
@@ -2155,9 +2283,9 @@ mod tests {
         ApplicationConfig, DesktopNotificationKind, DesktopNotificationSettings,
         HEADER_AWAIT_FILE_SELECTION, HEADER_REQUEST_ID, HEADER_START_CONTENT, HEADER_STORAGE_ROOT,
         NetworkConfig, NetworkPolicy, decode_torrent_ipc, desktop_application_config,
-        notification_enabled, open_configured_desktop_remote_runtime,
-        register_download_root_selection, resolve_download_directory_selection,
-        validate_local_media_url,
+        enter_visible_foreground_epoch, notification_enabled,
+        open_configured_desktop_remote_runtime, register_download_root_selection,
+        resolve_download_directory_selection, validate_local_media_url,
     };
 
     #[test]
@@ -2487,5 +2615,14 @@ mod tests {
                 "{invalid}"
             );
         }
+    }
+
+    #[test]
+    fn desktop_foreground_epoch_suppresses_duplicate_visible_activation() {
+        let visible = AtomicBool::new(false);
+        assert!(enter_visible_foreground_epoch(&visible));
+        assert!(!enter_visible_foreground_epoch(&visible));
+        visible.store(false, std::sync::atomic::Ordering::Release);
+        assert!(enter_visible_foreground_epoch(&visible));
     }
 }

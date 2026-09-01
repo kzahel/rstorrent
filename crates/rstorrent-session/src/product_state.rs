@@ -5,6 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::{Deserialize, Serialize};
+use url::Url;
 use uuid::Uuid;
 
 const PRODUCT_DATABASE_FILENAME: &str = "product.db";
@@ -14,6 +15,9 @@ const MAX_PRODUCT_VERSION_BYTES: usize = 128;
 const MAX_U64_TEXT_BYTES: usize = 20;
 pub const CURRENT_PRODUCT_DISCLOSURE_VERSION: u32 = 1;
 pub const MAX_PRODUCT_SOURCES: usize = 128;
+pub const PRODUCT_FEEDBACK_URL: &str = "https://jstorrent.com/feedback.html";
+pub const PRODUCT_PRIVACY_URL: &str = "https://jstorrent.com/privacy.html";
+pub const MAX_PRODUCT_FEEDBACK_URL_BYTES: usize = 2 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -65,6 +69,175 @@ pub struct ProductSummary {
     pub last_clean_shutdown_millis: Option<String>,
     pub days_since_first_use: u64,
     pub transmission_allowed: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProductFeedbackPlatform {
+    Desktop,
+    Android,
+}
+
+impl ProductFeedbackPlatform {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Desktop => "desktop",
+            Self::Android => "android",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProductFeedbackEnvironment {
+    pub platform: ProductFeedbackPlatform,
+    pub application_version: String,
+    pub android_release: Option<String>,
+    pub device: Option<String>,
+}
+
+impl ProductFeedbackEnvironment {
+    pub fn desktop(application_version: impl Into<String>) -> Self {
+        Self {
+            platform: ProductFeedbackPlatform::Desktop,
+            application_version: application_version.into(),
+            android_release: None,
+            device: None,
+        }
+    }
+
+    pub fn android(
+        application_version: impl Into<String>,
+        android_release: impl Into<String>,
+        device: impl Into<String>,
+    ) -> Self {
+        Self {
+            platform: ProductFeedbackPlatform::Android,
+            application_version: application_version.into(),
+            android_release: Some(android_release.into()),
+            device: Some(device.into()),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProductFeedbackField {
+    pub name: String,
+    pub value: String,
+    pub pseudonymous: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProductFeedbackPreview {
+    pub destination: String,
+    pub url: String,
+    pub fields: Vec<ProductFeedbackField>,
+    pub statistics_available: bool,
+    pub statistics_included: bool,
+    pub hosted_context_ready: bool,
+}
+
+pub fn build_product_feedback_preview(
+    summary: &ProductSummary,
+    environment: &ProductFeedbackEnvironment,
+    include_statistics: bool,
+    hosted_context_ready: bool,
+) -> Result<ProductFeedbackPreview, ProductStateError> {
+    validate_feedback_environment(environment)?;
+    let statistics_available = summary.transmission_allowed && hosted_context_ready;
+    let statistics_included = include_statistics && statistics_available;
+    let mut fields = vec![
+        feedback_field("platform", environment.platform.as_str(), false),
+        feedback_field("v", &environment.application_version, false),
+    ];
+    if environment.platform == ProductFeedbackPlatform::Android {
+        fields.push(feedback_field(
+            "android",
+            environment
+                .android_release
+                .as_deref()
+                .expect("validated Android environment"),
+            false,
+        ));
+        fields.push(feedback_field(
+            "device",
+            environment
+                .device
+                .as_deref()
+                .expect("validated Android environment"),
+            false,
+        ));
+    }
+    if statistics_included {
+        fields.extend([
+            feedback_field("id", &summary.installation_id, true),
+            feedback_field("days", &summary.days_since_first_use.to_string(), true),
+            feedback_field("added", &summary.torrents_added, true),
+            feedback_field("completed", &summary.downloads_completed, true),
+            feedback_field("sessions", &summary.foreground_sessions, true),
+        ]);
+    }
+    let mut url = Url::parse(PRODUCT_FEEDBACK_URL).map_err(|_| {
+        ProductStateError::InvalidConfiguration("product feedback base URL is invalid".to_owned())
+    })?;
+    {
+        let mut query = url.query_pairs_mut();
+        for field in &fields {
+            query.append_pair(&field.name, &field.value);
+        }
+    }
+    let url = url.to_string();
+    if url.len() > MAX_PRODUCT_FEEDBACK_URL_BYTES {
+        return Err(ProductStateError::InvalidConfiguration(format!(
+            "product feedback URL exceeds {MAX_PRODUCT_FEEDBACK_URL_BYTES} bytes"
+        )));
+    }
+    Ok(ProductFeedbackPreview {
+        destination: PRODUCT_FEEDBACK_URL.to_owned(),
+        url,
+        fields,
+        statistics_available,
+        statistics_included,
+        hosted_context_ready,
+    })
+}
+
+fn feedback_field(name: &str, value: &str, pseudonymous: bool) -> ProductFeedbackField {
+    ProductFeedbackField {
+        name: name.to_owned(),
+        value: value.to_owned(),
+        pseudonymous,
+    }
+}
+
+fn validate_feedback_environment(
+    environment: &ProductFeedbackEnvironment,
+) -> Result<(), ProductStateError> {
+    validate_version(&environment.application_version)?;
+    match (
+        environment.platform,
+        environment.android_release.as_deref(),
+        environment.device.as_deref(),
+    ) {
+        (ProductFeedbackPlatform::Desktop, None, None) => Ok(()),
+        (ProductFeedbackPlatform::Android, Some(android), Some(device)) => {
+            validate_feedback_value(android, "Android release")?;
+            validate_feedback_value(device, "Android device")
+        }
+        _ => Err(ProductStateError::InvalidConfiguration(
+            "product feedback environment does not match its platform".to_owned(),
+        )),
+    }
+}
+
+fn validate_feedback_value(value: &str, field: &str) -> Result<(), ProductStateError> {
+    if value.is_empty() || value.len() > 512 || value.chars().any(char::is_control) {
+        return Err(ProductStateError::InvalidConfiguration(format!(
+            "{field} must be 1..=512 bytes without control characters"
+        )));
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -926,8 +1099,8 @@ fn pragma_u64(connection: &Connection, pragma: &str) -> Result<u64, ProductState
 mod tests {
     use super::{
         CURRENT_PRODUCT_DISCLOSURE_VERSION, MAX_PRODUCT_SOURCES, PRODUCT_DATABASE_FILENAME,
-        PRODUCT_SCHEMA_VERSION, ProductMilestone, ProductMilestoneKind, ProductStateError,
-        ProductStateStore,
+        PRODUCT_FEEDBACK_URL, PRODUCT_SCHEMA_VERSION, ProductFeedbackEnvironment, ProductMilestone,
+        ProductMilestoneKind, ProductStateError, ProductStateStore, build_product_feedback_preview,
     };
 
     const START: u64 = 1_800_000_000_000;
@@ -1085,6 +1258,113 @@ mod tests {
             migrated.updater_installation_id().unwrap().as_deref(),
             Some(legacy)
         );
+    }
+
+    #[test]
+    fn feedback_preview_has_a_closed_ordered_allowlist_and_release_gate() {
+        let mut store = ProductStateStore::open_ephemeral_at("1.2.3", START).unwrap();
+        store.acknowledge_disclosure(true).unwrap();
+        store.record_foreground_session().unwrap();
+        store
+            .apply_milestones(&[
+                ProductMilestone {
+                    source_epoch: [4; 16],
+                    sequence: 1,
+                    kind: ProductMilestoneKind::TorrentAdded,
+                },
+                ProductMilestone {
+                    source_epoch: [4; 16],
+                    sequence: 2,
+                    kind: ProductMilestoneKind::DownloadCompleted,
+                },
+            ])
+            .unwrap();
+        let summary = store.summary_at(START + 2 * 86_400_000).unwrap();
+        let environment = ProductFeedbackEnvironment::desktop("1.2.3");
+
+        let gated = build_product_feedback_preview(&summary, &environment, true, false).unwrap();
+        assert_eq!(
+            gated.url,
+            format!("{PRODUCT_FEEDBACK_URL}?platform=desktop&v=1.2.3")
+        );
+        assert!(!gated.statistics_available);
+        assert!(!gated.statistics_included);
+        assert_eq!(
+            gated
+                .fields
+                .iter()
+                .map(|field| field.name.as_str())
+                .collect::<Vec<_>>(),
+            ["platform", "v"]
+        );
+
+        let included = build_product_feedback_preview(&summary, &environment, true, true).unwrap();
+        assert!(included.statistics_available);
+        assert!(included.statistics_included);
+        assert_eq!(
+            included
+                .fields
+                .iter()
+                .map(|field| field.name.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "platform",
+                "v",
+                "id",
+                "days",
+                "added",
+                "completed",
+                "sessions"
+            ]
+        );
+        assert!(
+            included
+                .url
+                .contains("&days=2&added=1&completed=1&sessions=1")
+        );
+        for prohibited in [
+            "torrent", "hash", "path", "root", "tracker", "peer", "error", "log",
+        ] {
+            assert!(
+                !included
+                    .url
+                    .split_once('?')
+                    .expect("feedback URL has query")
+                    .1
+                    .contains(prohibited)
+            );
+        }
+
+        let omitted = build_product_feedback_preview(&summary, &environment, false, true).unwrap();
+        assert_eq!(omitted.url, gated.url);
+        assert!(!omitted.statistics_included);
+    }
+
+    #[test]
+    fn android_feedback_environment_is_encoded_and_bounded_without_partial_urls() {
+        let store = ProductStateStore::open_ephemeral_at("1", START).unwrap();
+        let summary = store.summary_at(START).unwrap();
+        let preview = build_product_feedback_preview(
+            &summary,
+            &ProductFeedbackEnvironment::android("0.1", "13", "Google nami/🙂"),
+            true,
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            preview.url,
+            "https://jstorrent.com/feedback.html?platform=android&v=0.1&android=13&device=Google+nami%2F%F0%9F%99%82"
+        );
+        assert!(!preview.statistics_included);
+        assert!(matches!(
+            build_product_feedback_preview(
+                &summary,
+                &ProductFeedbackEnvironment::android("0.1", "13", "x".repeat(513)),
+                false,
+                false,
+            ),
+            Err(ProductStateError::InvalidConfiguration(_))
+        ));
     }
 
     #[test]

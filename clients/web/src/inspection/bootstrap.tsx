@@ -14,6 +14,7 @@ import type { DesktopExternalIntake } from "../desktop-external-intake";
 import type { DesktopNotifications } from "./desktop-notifications/types";
 import type { DesktopPower } from "./desktop-power/types";
 import type { DesktopRemoteAccess } from "./remote-access/types";
+import type { ProductPrivacyController } from "./product-privacy/types";
 import type { ApplicationViewClient } from "../api/client";
 import { RemoteOnlyApplicationClient } from "../remote-application-client";
 import { HttpApplicationClient } from "../api/client";
@@ -131,7 +132,7 @@ async function openLiveInspection(
 }
 
 export async function startTauriInspection(): Promise<void> {
-  const [updater, notifications, power, remoteAccess, application, externalIntake] =
+  const [updater, notifications, power, remoteAccess, productPrivacy, application, externalIntake] =
     await Promise.all([
       import("../tauri-updater")
         .then(({ createTauriDesktopUpdater }) => createTauriDesktopUpdater())
@@ -164,6 +165,12 @@ export async function startTauriInspection(): Promise<void> {
           console.error("Desktop remote access initialization failed:", error);
           return undefined;
         }),
+      import("../tauri-product-privacy")
+        .then(({ createTauriProductPrivacy }) => createTauriProductPrivacy())
+        .catch((error: unknown) => {
+          console.error("Desktop product privacy initialization failed:", error);
+          return undefined;
+        }),
       LiveApplication.open(new TauriApplicationViewClient()),
       import("../desktop-external-intake").then(
         ({ TauriDesktopExternalIntake }) => TauriDesktopExternalIntake.open(),
@@ -179,6 +186,9 @@ export async function startTauriInspection(): Promise<void> {
     notifications,
     power,
     remoteAccess,
+    undefined,
+    undefined,
+    productPrivacy,
   );
 }
 
@@ -214,6 +224,7 @@ function renderInspection(
   remoteAccess?: DesktopRemoteAccess,
   accessMode?: HostedAccessMode,
   hostedProduct?: HostedProduct,
+  productPrivacy?: ProductPrivacyController,
 ): void {
   controller.start();
   root.render(
@@ -228,6 +239,7 @@ function renderInspection(
           remoteAccess={remoteAccess}
           accessMode={accessMode}
           hostedProduct={hostedProduct}
+          productPrivacy={productPrivacy}
         />
       </InspectionProvider>
     </LocalizationProvider>,

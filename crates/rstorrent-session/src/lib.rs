@@ -67,9 +67,11 @@ pub use media::{
 };
 pub use media_catalog_views::{MediaCatalogState, MediaItemView, MediaRoleView};
 pub use product_state::{
-    CURRENT_PRODUCT_DISCLOSURE_VERSION, MAX_PRODUCT_SOURCES, ProductMilestone,
-    ProductMilestoneKind, ProductStateError, ProductStateOwner, ProductStatePageUsage,
-    ProductStateStore, ProductSummary,
+    CURRENT_PRODUCT_DISCLOSURE_VERSION, MAX_PRODUCT_FEEDBACK_URL_BYTES, MAX_PRODUCT_SOURCES,
+    PRODUCT_FEEDBACK_URL, PRODUCT_PRIVACY_URL, ProductFeedbackEnvironment, ProductFeedbackField,
+    ProductFeedbackPlatform, ProductFeedbackPreview, ProductMilestone, ProductMilestoneKind,
+    ProductStateError, ProductStateOwner, ProductStatePageUsage, ProductStateStore, ProductSummary,
+    build_product_feedback_preview,
 };
 pub use profile_reset::ProfileResetReport;
 pub use reachability::Ipv6PinholeDiagnosticResult;

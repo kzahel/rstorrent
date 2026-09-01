@@ -1,0 +1,142 @@
+.backdrop {
+  position: fixed;
+  z-index: 300;
+  display: grid;
+  inset: 0;
+  place-items: center;
+  padding: var(--ui-space-md);
+  background: rgb(9 20 33 / 65%);
+}
+
+.dialog {
+  width: min(36rem, 100%);
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.75rem;
+  padding: var(--ui-space-lg);
+  background: var(--surface-primary);
+  box-shadow: 0 1rem 3rem rgb(8 20 34 / 35%);
+}
+
+.dialog h2,
+.dialog p,
+.settings p {
+  margin-top: 0;
+}
+
+.detail,
+.settings p {
+  color: var(--text-muted);
+  font-size: var(--ui-font-small);
+  line-height: 1.5;
+}
+
+.checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ui-space-sm);
+  margin: var(--ui-space-md) 0;
+  font-weight: 650;
+}
+
+.checkbox input {
+  margin-top: 0.2rem;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--ui-space-sm);
+  margin-top: var(--ui-space-md);
+}
+
+.actions button,
+.settings > fieldset > button {
+  min-height: var(--ui-control-height);
+  border: 1px solid var(--border-strong);
+  border-radius: 0.5rem;
+  padding: 0 var(--ui-space-md);
+  color: var(--text-primary);
+  background: var(--surface-secondary);
+  font: inherit;
+  font-size: var(--ui-font-small);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.actions button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.actions .primary {
+  border-color: var(--accent);
+  color: #fff;
+  background: var(--accent);
+}
+
+.actions .danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.settings {
+  display: grid;
+  gap: calc(var(--ui-space-lg) * 1.25);
+}
+
+.settings fieldset {
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.settings legend {
+  width: 100%;
+  margin-bottom: var(--ui-space-sm);
+  font-size: var(--ui-font-heading);
+  font-weight: 760;
+}
+
+.summary,
+.previewFields {
+  display: grid;
+  gap: var(--ui-space-xs);
+}
+
+.summary div,
+.previewFields div {
+  display: grid;
+  grid-template-columns: minmax(7rem, 0.4fr) minmax(0, 1fr);
+  gap: var(--ui-space-sm);
+  border-bottom: 1px solid var(--border-soft);
+  padding: var(--ui-space-xs) 0;
+}
+
+.summary dd,
+.previewFields dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.confirm {
+  margin-top: var(--ui-space-md);
+  border: 1px solid var(--border-strong);
+  border-radius: 0.5rem;
+  padding: var(--ui-space-md);
+  background: var(--surface-secondary);
+}
+
+.confirm p {
+  margin: var(--ui-space-xs) 0 0;
+}
+
+.error {
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}

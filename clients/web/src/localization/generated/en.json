@@ -256,6 +256,12 @@
       "value": "Checking for updates"
     }
   ],
+  "inspection.components.about.updates.settings.section.checks.follow.the.usage.statistics.preference": [
+    {
+      "type": 0,
+      "value": "Checks include the random resettable installation identifier only when the usage statistics preference permits it."
+    }
+  ],
   "inspection.components.about.updates.settings.section.checks.include.a.random.resettable.installation.identifier": [
     {
       "type": 0,
@@ -7370,6 +7376,162 @@
     {
       "type": 0,
       "value": ".torrent file selection is not available yet. Paste a magnet link instead."
+    }
+  ],
+  "product.feedback.description": [
+    {
+      "type": 0,
+      "value": "Open the JSTorrent feedback page after reviewing every value placed in its URL."
+    }
+  ],
+  "product.feedback.hosted.context.pending": [
+    {
+      "type": 0,
+      "value": "Pseudonymous statistics stay omitted until the hosted privacy and feedback pages have been deployed and verified."
+    }
+  ],
+  "product.feedback.include.for.report": [
+    {
+      "type": 0,
+      "value": "Include pseudonymous usage statistics for this report"
+    }
+  ],
+  "product.feedback.open.action": [
+    {
+      "type": 0,
+      "value": "Open feedback page"
+    }
+  ],
+  "product.feedback.preview.destination": [
+    {
+      "type": 0,
+      "value": "External destination"
+    }
+  ],
+  "product.feedback.preview.title": [
+    {
+      "type": 0,
+      "value": "Review feedback context"
+    }
+  ],
+  "product.feedback.review.action": [
+    {
+      "type": 0,
+      "value": "Review and send feedback"
+    }
+  ],
+  "product.feedback.title": [
+    {
+      "type": 0,
+      "value": "Feedback"
+    }
+  ],
+  "product.privacy.added": [
+    {
+      "type": 0,
+      "value": "Torrents added"
+    }
+  ],
+  "product.privacy.cancel": [
+    {
+      "type": 0,
+      "value": "Cancel"
+    }
+  ],
+  "product.privacy.completed": [
+    {
+      "type": 0,
+      "value": "Downloads completed"
+    }
+  ],
+  "product.privacy.continue": [
+    {
+      "type": 0,
+      "value": "Save and continue"
+    }
+  ],
+  "product.privacy.days": [
+    {
+      "type": 0,
+      "value": "Days since first use"
+    }
+  ],
+  "product.privacy.disclosure.summary": [
+    {
+      "type": 0,
+      "value": "RSTorrent keeps a random resettable installation identifier and coarse counts of additions, completed downloads, and foreground sessions. When enabled, the identifier may be used for update counting and these values may be offered with feedback. No torrent names, hashes, paths, peers, trackers, logs, or error text are included."
+    }
+  ],
+  "product.privacy.disclosure.title": [
+    {
+      "type": 0,
+      "value": "Usage statistics and feedback"
+    }
+  ],
+  "product.privacy.include.statistics": [
+    {
+      "type": 0,
+      "value": "Include pseudonymous usage statistics"
+    }
+  ],
+  "product.privacy.recipients.warning": [
+    {
+      "type": 0,
+      "value": "Values included in a feedback URL may appear in browser history and may reach website logs and referrers, the embedded Google Form, and the page's Cloudflare analytics before you submit a form."
+    }
+  ],
+  "product.privacy.reset.action": [
+    {
+      "type": 0,
+      "value": "Reset statistics and identifier"
+    }
+  ],
+  "product.privacy.reset.confirm": [
+    {
+      "type": 0,
+      "value": "Reset now"
+    }
+  ],
+  "product.privacy.reset.description": [
+    {
+      "type": 0,
+      "value": "This creates a new random identifier and clears these coarse counters. It does not remove torrents, payload files, settings, pairing, or records already received by a server."
+    }
+  ],
+  "product.privacy.reset.title": [
+    {
+      "type": 0,
+      "value": "Reset usage statistics and identifier?"
+    }
+  ],
+  "product.privacy.sessions": [
+    {
+      "type": 0,
+      "value": "Foreground sessions"
+    }
+  ],
+  "product.privacy.settings.category": [
+    {
+      "type": 0,
+      "value": "Privacy & feedback"
+    }
+  ],
+  "product.privacy.statistics.description": [
+    {
+      "type": 0,
+      "value": "These local coarse counters can continue while transmission is disabled. Turning the preference off removes the stable identifier and counters from every later allowed request."
+    }
+  ],
+  "product.privacy.statistics.title": [
+    {
+      "type": 0,
+      "value": "Usage statistics"
+    }
+  ],
+  "product.privacy.view.policy": [
+    {
+      "type": 0,
+      "value": "View privacy policy"
     }
   ],
   "remote.remote.access.gate.a.compromised.client.page.could.observe.entered": [

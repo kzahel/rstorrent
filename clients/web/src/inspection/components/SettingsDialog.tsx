@@ -26,6 +26,8 @@ import type { DesktopUpdater, DesktopUpdaterSnapshot } from "../updater/types";
 import type { DesktopNotifications } from "../desktop-notifications/types";
 import type { DesktopPower } from "../desktop-power/types";
 import type { DesktopRemoteAccess } from "../remote-access/types";
+import type { ProductPrivacyController } from "../product-privacy/types";
+import { ProductPrivacySettingsSection } from "./ProductPrivacy";
 
 export type SettingsCategory =
   | "appearance"
@@ -35,6 +37,7 @@ export type SettingsCategory =
   | "power"
   | "remote-access"
   | "web-access"
+  | "privacy"
   | "updates";
 
 export interface SettingsDialogProps {
@@ -53,6 +56,7 @@ export interface SettingsDialogProps {
   readonly webAuth?: WebAuthClient | undefined;
   readonly updater?: DesktopUpdater | undefined;
   readonly updaterSnapshot?: DesktopUpdaterSnapshot | undefined;
+  readonly productPrivacy?: ProductPrivacyController | undefined;
   readonly initialCategory?: SettingsCategory;
   readonly returnFocus: RefObject<HTMLButtonElement | null>;
   readonly onColorThemeChange: (colorTheme: ColorTheme) => void;
@@ -86,6 +90,7 @@ export function SettingsDialog({
   webAuth,
   updater,
   updaterSnapshot,
+  productPrivacy,
   initialCategory = "appearance",
   returnFocus,
   onColorThemeChange,
@@ -120,6 +125,9 @@ export function SettingsDialog({
     ...(webAuth === undefined
       ? []
       : [{ id: "web-access" as const, label: localizedMessage("inspection.components.settings.dialog.web.access") }]),
+    ...(productPrivacy === undefined
+      ? []
+      : [{ id: "privacy" as const, label: localizedMessage("product.privacy.settings.category") }]),
     ...(updater === undefined || updaterSnapshot === undefined
       ? []
       : [{ id: "updates" as const, label: localizedMessage("inspection.components.settings.dialog.about.updates") }]),
@@ -332,6 +340,16 @@ export function SettingsDialog({
                   updater={updater}
                   snapshot={updaterSnapshot}
                 />
+              </div>
+            )}
+            {productPrivacy === undefined ? null : (
+              <div
+                id="settings-panel-privacy"
+                role="tabpanel"
+                aria-labelledby="settings-tab-privacy"
+                hidden={category !== "privacy"}
+              >
+                <ProductPrivacySettingsSection productPrivacy={productPrivacy} />
               </div>
             )}
           </div>

@@ -67,6 +67,10 @@
     "defaultMessage": "Checks include a random resettable installation identifier used only to estimate active installations.",
     "description": "Product copy in inspection/components/AboutUpdatesSettingsSection.tsx"
   },
+  "inspection.components.about.updates.settings.section.checks.follow.the.usage.statistics.preference": {
+    "defaultMessage": "Checks include the random resettable installation identifier only when the usage statistics preference permits it.",
+    "description": "Preference-controlled desktop update counting disclosure"
+  },
   "inspection.components.about.updates.settings.section.contacting.the.rstorrent.update.service": {
     "defaultMessage": "Contacting the RSTorrent update service.",
     "description": "Product copy in inspection/components/AboutUpdatesSettingsSection.tsx"
@@ -4806,6 +4810,110 @@
   "inspection.torrent.input.torrent.file.selection.is.not.available.yet": {
     "defaultMessage": ".torrent file selection is not available yet. Paste a magnet link instead.",
     "description": "Product copy in inspection/torrentInput.ts"
+  },
+  "product.feedback.description": {
+    "defaultMessage": "Open the JSTorrent feedback page after reviewing every value placed in its URL.",
+    "description": "Desktop feedback settings explanation"
+  },
+  "product.feedback.hosted.context.pending": {
+    "defaultMessage": "Pseudonymous statistics stay omitted until the hosted privacy and feedback pages have been deployed and verified.",
+    "description": "Fail-closed hosted privacy release gate"
+  },
+  "product.feedback.include.for.report": {
+    "defaultMessage": "Include pseudonymous usage statistics for this report",
+    "description": "Per-report usage statistics override"
+  },
+  "product.feedback.open.action": {
+    "defaultMessage": "Open feedback page",
+    "description": "Confirmed external feedback navigation action"
+  },
+  "product.feedback.preview.destination": {
+    "defaultMessage": "External destination",
+    "description": "Feedback destination label"
+  },
+  "product.feedback.preview.title": {
+    "defaultMessage": "Review feedback context",
+    "description": "Feedback confirmation title"
+  },
+  "product.feedback.review.action": {
+    "defaultMessage": "Review and send feedback",
+    "description": "Open the feedback context confirmation"
+  },
+  "product.feedback.title": {
+    "defaultMessage": "Feedback",
+    "description": "Feedback settings section title"
+  },
+  "product.privacy.added": {
+    "defaultMessage": "Torrents added",
+    "description": "Product summary additions label"
+  },
+  "product.privacy.cancel": {
+    "defaultMessage": "Cancel",
+    "description": "Cancel a product privacy confirmation"
+  },
+  "product.privacy.completed": {
+    "defaultMessage": "Downloads completed",
+    "description": "Product summary completions label"
+  },
+  "product.privacy.continue": {
+    "defaultMessage": "Save and continue",
+    "description": "Acknowledge the initial statistics disclosure"
+  },
+  "product.privacy.days": {
+    "defaultMessage": "Days since first use",
+    "description": "Product summary age label"
+  },
+  "product.privacy.disclosure.summary": {
+    "defaultMessage": "RSTorrent keeps a random resettable installation identifier and coarse counts of additions, completed downloads, and foreground sessions. When enabled, the identifier may be used for update counting and these values may be offered with feedback. No torrent names, hashes, paths, peers, trackers, logs, or error text are included.",
+    "description": "Initial product statistics disclosure"
+  },
+  "product.privacy.disclosure.title": {
+    "defaultMessage": "Usage statistics and feedback",
+    "description": "Initial product statistics disclosure title"
+  },
+  "product.privacy.include.statistics": {
+    "defaultMessage": "Include pseudonymous usage statistics",
+    "description": "Durable usage statistics preference"
+  },
+  "product.privacy.recipients.warning": {
+    "defaultMessage": "Values included in a feedback URL may appear in browser history and may reach website logs and referrers, the embedded Google Form, and the page's Cloudflare analytics before you submit a form.",
+    "description": "Feedback URL recipient disclosure"
+  },
+  "product.privacy.reset.action": {
+    "defaultMessage": "Reset statistics and identifier",
+    "description": "Open product statistics reset confirmation"
+  },
+  "product.privacy.reset.confirm": {
+    "defaultMessage": "Reset now",
+    "description": "Confirm product statistics reset"
+  },
+  "product.privacy.reset.description": {
+    "defaultMessage": "This creates a new random identifier and clears these coarse counters. It does not remove torrents, payload files, settings, pairing, or records already received by a server.",
+    "description": "Product statistics reset boundary"
+  },
+  "product.privacy.reset.title": {
+    "defaultMessage": "Reset usage statistics and identifier?",
+    "description": "Product statistics reset confirmation title"
+  },
+  "product.privacy.sessions": {
+    "defaultMessage": "Foreground sessions",
+    "description": "Product summary foreground sessions label"
+  },
+  "product.privacy.settings.category": {
+    "defaultMessage": "Privacy & feedback",
+    "description": "Product privacy settings category"
+  },
+  "product.privacy.statistics.description": {
+    "defaultMessage": "These local coarse counters can continue while transmission is disabled. Turning the preference off removes the stable identifier and counters from every later allowed request.",
+    "description": "Product statistics preference explanation"
+  },
+  "product.privacy.statistics.title": {
+    "defaultMessage": "Usage statistics",
+    "description": "Product statistics settings section title"
+  },
+  "product.privacy.view.policy": {
+    "defaultMessage": "View privacy policy",
+    "description": "Open the external product privacy policy"
   },
   "remote.remote.access.gate.a.compromised.client.page.could.observe.entered": {
     "defaultMessage": "A compromised client page could observe entered passwords and decrypted application state. This local validation build uses no third-party scripts.",
