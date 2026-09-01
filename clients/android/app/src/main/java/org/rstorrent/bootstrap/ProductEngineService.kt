@@ -112,6 +112,9 @@ import org.rstorrent.session.uniffi.ViewSnapshot
 import org.rstorrent.session.uniffi.ViewUpdate
 import org.rstorrent.session.uniffi.ViewUpdatePayload
 
+private class ProductDataResetInProgressException :
+    IllegalStateException("clear data is already in progress")
+
 class ProductEngineService : Service() {
     inner class LocalBinder : Binder() {
         val service: ProductEngineService
@@ -124,6 +127,7 @@ class ProductEngineService : Service() {
     private val requestIds = AtomicLong(1)
     private val stopped = AtomicBoolean(false)
     private val stopRequested = AtomicBoolean(false)
+    private val dataResetActive = AtomicBoolean(false)
     private val latestStartId = AtomicInteger(0)
     @Volatile private var startCommandReceived = false
     private val firstStartCommand = CompletableDeferred<Boolean>()
@@ -152,6 +156,7 @@ class ProductEngineService : Service() {
     )
 
     @Volatile private lateinit var client: AndroidApplicationClient
+    @Volatile private var clientOpen = false
     private lateinit var presentationRepository: AndroidPresentationRepository
     private var initializationJob: Job? = null
     private var powerNotificationJob: Job? = null
@@ -188,6 +193,10 @@ class ProductEngineService : Service() {
     private val externalIntakeController = ExternalIntakeController()
     private val externalIntakeMutation = Mutex()
     private val externalContentMutation = Mutex()
+    private val productCommandMutation = Mutex()
+    private val dataResetOwnerMutation = Mutex()
+    @Volatile private var dataResetJournal: ProductDataResetJournal? = null
+    private var dataResetJob: Job? = null
     private val externalAdmissionHints = mutableMapOf<Long, ExternalContentHint>()
     private var externalAdmissionJob: Job? = null
     private var externalSubmissionJob: Job? = null
@@ -222,7 +231,38 @@ class ProductEngineService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        if (ProductDataSyncQuotaFence.isExhausted(this)) {
+        val recoveredDataReset = runCatching { ProductDataResetJournalStore.load(this) }
+        val recoveredJournal = recoveredDataReset.getOrNull()
+        if (recoveredJournal != null) {
+            dataResetJournal = recoveredJournal
+            dataResetActive.set(true)
+            publishDataReset(recoveredJournal)
+        } else if (recoveredDataReset.isFailure) {
+            dataResetActive.set(true)
+            mutableState.update {
+                it.copy(
+                    dataReset =
+                        ProductDataResetState(
+                            operationId = null,
+                            phase = null,
+                            completedTorrents = 0,
+                            totalTorrents = 0,
+                            deleteDataRequested = false,
+                            downgradedToKeep = false,
+                            failure =
+                                ProductDataResetFailureState(
+                                    "journal_invalid",
+                                    boundedDataResetDetail(
+                                        recoveredDataReset.exceptionOrNull()?.message
+                                            ?: "data reset journal is invalid",
+                                    ),
+                                ),
+                        ),
+                    error = ProductError.Code.DATA_RESET_IN_PROGRESS,
+                )
+            }
+        }
+        if (ProductDataSyncQuotaFence.isExhausted(this) && !dataResetActive.get()) {
             quotaExhaustedStartRejected = true
             Log.w(TAG, "product_quota_restart blocked=true")
             return
@@ -251,10 +291,7 @@ class ProductEngineService : Service() {
         ProductInteractionRegistry.attach { leases ->
             interactionLeases.clear()
             interactionLeases.addAll(leases)
-            lifecycleCoordinator.updateInteractions(
-                visible = INTERACTION_ACTIVITY in leases,
-                workflowLeaseCount = leases.count { it != INTERACTION_ACTIVITY },
-            )
+            refreshLifecycleInteractions()
             if (startCommandReceived) refreshNotificationEligibility("interaction")
         }
         registerNotificationBlockReceiver()
@@ -266,7 +303,7 @@ class ProductEngineService : Service() {
                 if (
                     desiredNetworkPrerequisite(networkState) ==
                         AndroidApplicationNetworkPrerequisite.WAITING_FOR_UNMETERED_NETWORK &&
-                        ::client.isInitialized
+                        clientOpen
                 ) {
                     runCatching { client.closeNetworkPrerequisite() }.onFailure { error ->
                         Log.e(TAG, "synchronous network prerequisite close failed", error)
@@ -326,105 +363,21 @@ class ProductEngineService : Service() {
                 }
                 recoveryNetworkGateClosed.set(stickyRecovery)
                 PlatformTrustBootstrap.ensureInitialized(applicationContext)
-                val profile = File(filesDir, "product-profile")
-                check(profile.mkdirs() || profile.isDirectory)
-                val openedClient =
-                    withTimeout(PRODUCT_LIFETIME_STARTUP_MILLIS) {
-                        AndroidApplicationClient.open(
-                            AndroidApplicationConfig(
-                                profile.absolutePath,
-                                "default",
-                                "",
-                                true,
-                                safRegistry.roots.map {
-                                    AndroidPlatformStorageRoot(it.rootId, it.label)
-                                },
-                                AndroidNetworkPolicy.ONLINE,
-                                desiredNetworkPrerequisite(initialNetworkState),
-                                15UL,
-                                60UL,
-                            ),
-                        )
-                    }
-                if (
-                    desiredNetworkPrerequisite(defaultNetworkObserver.snapshot()) ==
-                        AndroidApplicationNetworkPrerequisite.WAITING_FOR_UNMETERED_NETWORK
-                ) {
-                    openedClient.closeNetworkPrerequisite()
-                }
-                client = openedClient
-                networkConvergenceJob =
-                    scope.launch {
-                        for (ignored in networkConvergenceWake) {
-                            val observed = defaultNetworkObserver.snapshot()
-                            runCatching {
-                                applyNativeNetworkPrerequisite(
-                                    desiredNetworkPrerequisite(observed),
-                                )
-                            }.onFailure { error ->
-                                if (error is CancellationException && stopped.get()) return@onFailure
-                                Log.e(TAG, "network prerequisite convergence failed", error)
-                                mutableState.update {
-                                    it.copy(
-                                        network =
-                                            it.network.copy(
-                                                runtimeError =
-                                                    ProductError.Technical(
-                                                        error.message ?: error.toString(),
-                                                    ),
-                                            ),
-                                    )
-                                }
-                            }
-                        }
-                    }
-                networkConvergenceWake.trySend(Unit)
-                presentationRepository =
-                    AndroidPresentationRepository(
-                        scope,
-                        mutableState,
-                        stopped,
-                        onUpdate = { update, product, driveSaf ->
-                            updateSafRootState(product)
-                            traceUpdate(update, product)
-                            if (driveSaf) {
-                                lifecycleCoordinator.updateWork(
-                                    classifyProductLifetimeTorrentViews(
-                                        product.torrents.values,
-                                    ),
-                                )
-                                advanceSaf(product)
-                            }
-                            driveSettingsMutations()
-                        },
-                        onTorrentListUpdate = notificationCoordinator::onTorrentListUpdate,
-                        onTorrentListReset = {
-                            notificationCoordinator.onTorrentListReset()
-                            lifecycleCoordinator.resetWork()
-                        },
-                        onError = ::reportError,
-                    )
-                presentationRepository.start(client)
-                presentationReady.complete(Unit)
-                safStorageJobs =
-                    List(SAF_PROVIDER_CONCURRENCY) {
-                        scope.launch(Dispatchers.IO) { driveSafStorageRequests() }
-                    }
-                reconcileSafRootRegistry()
-                val storageRootHealthy = client.probeSafStorageRoots()
-                Log.i(TAG, "saf_root_health source=startup available=$storageRootHealthy")
-                refreshSafRootState()
-                mutableState.update { it.copy(ready = true) }
-                clientReady.complete(Unit)
-                if (
-                    ProductCompanionPreference.shouldStart(
-                        isChromeOs(),
-                        ProductCompanionPreference.read(this@ProductEngineService),
-                    )
-                ) {
-                    startChromeOsCompanionOwners()
-                }
                 observePowerAndNotification()
+                if (recoveredDataReset.isFailure) return@launch
+                if (
+                    recoveredJournal != null &&
+                    recoveredJournal.phase != ProductDataResetPhase.REMOVING_TORRENTS
+                ) {
+                    resumeDataReset(recoveredJournal)
+                    return@launch
+                }
+                openProductApplication(
+                    safRegistry,
+                    initialNetworkState,
+                    startCompanion = !dataResetActive.get(),
+                )
+                recoveredJournal?.let { resumeDataReset(it) }
             } catch (error: Throwable) {
                 if (error is CancellationException && stopped.get()) return@launch
                 if (!clientReady.isCompleted) {
@@ -472,7 +425,7 @@ class ProductEngineService : Service() {
             lifecycleCoordinator.terminal(ProductLifetimeStopReason.EXPLICIT_STOP)
             requestStop("notification_stop", startId)
         } else if (intent?.action == externalIntakeAction(packageName)) {
-            admitExternalIntent(intent)
+            if (!rejectMutationDuringDataReset()) admitExternalIntent(intent)
         } else if (intent?.action == ACTION_ENABLE_CHROMEOS_COMPANION) {
             enableChromeOsCompanion()
         } else if (
@@ -495,6 +448,115 @@ class ProductEngineService : Service() {
             START_STICKY
         } else {
             START_NOT_STICKY
+        }
+    }
+
+    private suspend fun openProductApplication(
+        safRegistry: ProductSafRootRegistryState,
+        initialNetworkState: AndroidDefaultNetworkState,
+        startCompanion: Boolean,
+    ) {
+        check(!clientOpen) { "Android application client is already open" }
+        val profile = File(filesDir, ProductPrivateProfileReset.PROFILE_DIRECTORY)
+        check(profile.mkdirs() || profile.isDirectory)
+        val openedClient =
+            withTimeout(PRODUCT_LIFETIME_STARTUP_MILLIS) {
+                AndroidApplicationClient.open(
+                    AndroidApplicationConfig(
+                        profile.absolutePath,
+                        "default",
+                        "",
+                        true,
+                        safRegistry.roots.map {
+                            AndroidPlatformStorageRoot(it.rootId, it.label)
+                        },
+                        AndroidNetworkPolicy.ONLINE,
+                        desiredNetworkPrerequisite(initialNetworkState),
+                        15UL,
+                        60UL,
+                    ),
+                )
+            }
+        if (
+            desiredNetworkPrerequisite(defaultNetworkObserver.snapshot()) ==
+                AndroidApplicationNetworkPrerequisite.WAITING_FOR_UNMETERED_NETWORK
+        ) {
+            openedClient.closeNetworkPrerequisite()
+        }
+        client = openedClient
+        clientOpen = true
+        networkConvergenceJob =
+            scope.launch {
+                for (ignored in networkConvergenceWake) {
+                    if (!clientOpen) continue
+                    val observed = defaultNetworkObserver.snapshot()
+                    runCatching {
+                        applyNativeNetworkPrerequisite(
+                            desiredNetworkPrerequisite(observed),
+                        )
+                    }.onFailure { error ->
+                        if (error is CancellationException && stopped.get()) return@onFailure
+                        Log.e(TAG, "network prerequisite convergence failed", error)
+                        mutableState.update {
+                            it.copy(
+                                network =
+                                    it.network.copy(
+                                        runtimeError =
+                                            ProductError.Technical(
+                                                error.message ?: error.toString(),
+                                            ),
+                                    ),
+                            )
+                        }
+                    }
+                }
+            }
+        networkConvergenceWake.trySend(Unit)
+        presentationRepository =
+            AndroidPresentationRepository(
+                scope,
+                mutableState,
+                stopped,
+                onUpdate = { update, product, driveSaf ->
+                    updateSafRootState(product)
+                    traceUpdate(update, product)
+                    if (driveSaf) {
+                        lifecycleCoordinator.updateWork(
+                            classifyProductLifetimeTorrentViews(
+                                product.torrents.values,
+                            ),
+                        )
+                        advanceSaf(product)
+                    }
+                    driveSettingsMutations()
+                },
+                onTorrentListUpdate = notificationCoordinator::onTorrentListUpdate,
+                onTorrentListReset = {
+                    notificationCoordinator.onTorrentListReset()
+                    lifecycleCoordinator.resetWork()
+                },
+                onError = ::reportError,
+            )
+        presentationRepository.start(client)
+        if (!presentationReady.isCompleted) presentationReady.complete(Unit)
+        safStorageJobs =
+            List(SAF_PROVIDER_CONCURRENCY) {
+                scope.launch(Dispatchers.IO) { driveSafStorageRequests() }
+            }
+        reconcileSafRootRegistry()
+        val storageRootHealthy = client.probeSafStorageRoots()
+        Log.i(TAG, "saf_root_health source=startup available=$storageRootHealthy")
+        refreshSafRootState()
+        mutableState.update { it.copy(ready = true) }
+        if (!clientReady.isCompleted) clientReady.complete(Unit)
+        if (
+            startCompanion &&
+            ProductCompanionPreference.shouldStart(
+                isChromeOs(),
+                ProductCompanionPreference.read(this@ProductEngineService),
+            )
+        ) {
+            startChromeOsCompanionOwners()
         }
     }
 
@@ -847,6 +909,7 @@ class ProductEngineService : Service() {
         intakeId: Long,
         startContent: Boolean,
     ) {
+        if (rejectMutationDuringDataReset()) return
         scope.launch {
             externalIntakeMutation.withLock {
                 if (externalIntakeController.setStartContent(intakeId, startContent)) {
@@ -857,6 +920,7 @@ class ProductEngineService : Service() {
     }
 
     fun confirmExternalIntake(intakeId: Long) {
+        if (rejectMutationDuringDataReset()) return
         scope.launch {
             externalIntakeMutation.withLock {
                 val work =
@@ -871,6 +935,7 @@ class ProductEngineService : Service() {
     }
 
     fun retryExternalIntake(intakeId: Long) {
+        if (rejectMutationDuringDataReset()) return
         scope.launch {
             externalIntakeMutation.withLock {
                 val work =
@@ -885,6 +950,7 @@ class ProductEngineService : Service() {
     }
 
     fun cancelExternalIntake(intakeId: Long) {
+        if (rejectMutationDuringDataReset()) return
         scope.launch {
             val submission =
                 externalIntakeMutation.withLock {
@@ -1131,6 +1197,7 @@ class ProductEngineService : Service() {
         startContent: Boolean = true,
         awaitFileSelection: Boolean = false,
     ) {
+        if (rejectMutationDuringDataReset()) return
         val storageRoot = currentSafRootForAdd()
         if (storageRoot == null) {
             mutableState.update { it.copy(error = ProductError.Code.SELECT_DOWNLOAD_FOLDER) }
@@ -1161,6 +1228,7 @@ class ProductEngineService : Service() {
         startContent: Boolean = true,
         awaitFileSelection: Boolean = false,
     ) {
+        if (rejectMutationDuringDataReset()) return
         val storageRoot = currentSafRootForAdd()
         if (storageRoot == null) {
             mutableState.update { it.copy(error = ProductError.Code.SELECT_DOWNLOAD_FOLDER) }
@@ -1188,6 +1256,7 @@ class ProductEngineService : Service() {
         selection: FileSelectionIntent = FileSelectionIntent.All,
         awaitFileSelection: Boolean = false,
     ) {
+        if (rejectMutationDuringDataReset()) return
         val storageRoot = currentSafRootForAdd()
         if (storageRoot == null) {
             mutableState.update { it.copy(error = ProductError.Code.SELECT_DOWNLOAD_FOLDER) }
@@ -1251,7 +1320,11 @@ class ProductEngineService : Service() {
                 selection = selection,
                 sourceLength = source.size.toUInt(),
             )
-        val response = client.addTorrentBytes(request, source)
+        val response =
+            productCommandMutation.withLock {
+                if (dataResetActive.get()) throw ProductDataResetInProgressException()
+                client.addTorrentBytes(request, source)
+            }
         val outcome = response.outcome
         if (outcome is ResponseOutcome.Error) error(outcome.error.message)
         return addResult(response)
@@ -1905,6 +1978,7 @@ class ProductEngineService : Service() {
         repairRootId: String? = null,
         companionRequestId: String? = null,
     ) {
+        if (rejectMutationDuringDataReset()) return
         ProductSafRootRegistry.recordSelectionCandidate(this, treeUri, repairRootId)
         scope.launch {
             try {
@@ -1923,7 +1997,7 @@ class ProductEngineService : Service() {
                     .filter { it.state == TorrentState.AWAITING_STORAGE }
                     .forEach { resume(it.torrentId) }
             } catch (error: Throwable) {
-                if (companionRequestId != null && ::client.isInitialized) {
+                if (companionRequestId != null && clientOpen) {
                     client.failCompanionRootRequest(
                         companionRequestId,
                         error.message ?: "Unable to use the selected download folder",
@@ -1936,6 +2010,7 @@ class ProductEngineService : Service() {
     }
 
     fun cancelCompanionRootRequest(requestId: String) {
+        if (rejectMutationDuringDataReset()) return
         scope.launch {
             try {
                 clientReady.await()
@@ -1948,10 +2023,12 @@ class ProductEngineService : Service() {
     }
 
     fun approveCompanionPairing(requestId: String) {
+        if (rejectMutationDuringDataReset()) return
         resolveCompanionPairing(requestId, approve = true)
     }
 
     fun rejectCompanionPairing(requestId: String) {
+        if (rejectMutationDuringDataReset()) return
         resolveCompanionPairing(requestId, approve = false)
     }
 
@@ -1975,6 +2052,7 @@ class ProductEngineService : Service() {
     }
 
     private fun enableChromeOsCompanion() {
+        if (rejectMutationDuringDataReset()) return
         if (!isChromeOs()) {
             Log.w(TAG, "ignored ChromeOS companion enable request on a non-ChromeOS device")
             return
@@ -2107,6 +2185,7 @@ class ProductEngineService : Service() {
             packageManager.hasSystemFeature("org.chromium.arc.device_management")
 
     fun makeSafRootCurrent(rootId: String) {
+        if (rejectMutationDuringDataReset()) return
         scope.launch {
             try {
                 clientReady.await()
@@ -2135,6 +2214,7 @@ class ProductEngineService : Service() {
     }
 
     fun removeSafRoot(rootId: String) {
+        if (rejectMutationDuringDataReset()) return
         scope.launch {
             try {
                 clientReady.await()
@@ -2660,6 +2740,7 @@ class ProductEngineService : Service() {
         torrentName: String,
         file: FileView,
     ) {
+        if (rejectMutationDuringDataReset()) return
         scope.launch(Dispatchers.IO) {
             try {
                 require(file.verifiedBytes == file.lengthBytes) { "File is not complete" }
@@ -2693,6 +2774,7 @@ class ProductEngineService : Service() {
         torrentId: String,
         file: FileView,
     ) {
+        if (rejectMutationDuringDataReset()) return
         if (!AndroidMediaPlaybackPolicy.isPlayActionEnabled(file, launchPending = false)) {
             mutableState.update {
                 it.copy(error = ProductError.MediaUnavailable(file.mediaAvailability))
@@ -2763,7 +2845,534 @@ class ProductEngineService : Service() {
         }
     }
 
+    fun resetClientSettings() {
+        if (rejectMutationDuringDataReset()) return
+        dispatch(Command.ResetClientSettings)
+    }
+
+    fun clearAllData(deleteDownloadedFiles: Boolean) {
+        if (!dataResetActive.compareAndSet(false, true)) {
+            rejectMutationDuringDataReset()
+            return
+        }
+        refreshLifecycleInteractions()
+        scope.launch {
+            try {
+                clientReady.await()
+                productCommandMutation.withLock { }
+                val snapshot = dataResetSnapshot()
+                check(snapshot.torrents.none { it.removalState != null }) {
+                    "wait for the current torrent removal to finish before clearing data"
+                }
+                val roots =
+                    safRootMutation.withLock {
+                        val registry = ProductSafRootRegistry.load(this@ProductEngineService)
+                        check(registry.pending == null) {
+                            "wait for the current download-folder operation to finish"
+                        }
+                        check(
+                            registry.selectionCandidate == null &&
+                                registry.selectionRepairRootId == null,
+                        ) { "finish or cancel the current download-folder selection" }
+                        check(
+                            registry.roots.map(ProductSafRootGrant::rootId).sorted() ==
+                                snapshot.storage.roots.map { it.rootId }.sorted(),
+                        ) { "Android and application download-folder registries differ" }
+                        registry.roots.sortedBy(ProductSafRootGrant::rootId)
+                    }
+                val journal =
+                    ProductDataResetJournal.capture(
+                        deleteData = deleteDownloadedFiles,
+                        torrentIds = snapshot.torrents.map { it.torrentId },
+                        roots = roots,
+                    )
+                ProductDataResetJournalStore.persist(this@ProductEngineService, journal)
+                dataResetJournal = journal
+                publishDataReset(journal)
+                resumeDataReset(journal)
+            } catch (error: Throwable) {
+                if (dataResetJournal == null) {
+                    dataResetActive.set(false)
+                    refreshLifecycleInteractions()
+                }
+                reportError(error)
+            }
+        }
+    }
+
+    fun retryDataReset() {
+        val current = dataResetJournal ?: return
+        if (current.failure == null) return
+        runCatching {
+            val resumed = current.copy(failure = null)
+            ProductDataResetJournalStore.persist(this, resumed)
+            dataResetJournal = resumed
+            publishDataReset(resumed)
+            resumeDataReset(resumed)
+        }.onFailure(::reportError)
+    }
+
+    fun finishDataResetKeepingRemainingFiles() {
+        val current = dataResetJournal ?: return
+        if (
+            current.phase != ProductDataResetPhase.REMOVING_TORRENTS ||
+            current.failure == null ||
+            !current.deleteRemainingData
+        ) {
+            return
+        }
+        runCatching {
+            val resumed = current.copy(deleteRemainingData = false, failure = null)
+            ProductDataResetJournalStore.persist(this, resumed)
+            dataResetJournal = resumed
+            publishDataReset(resumed)
+            resumeDataReset(resumed)
+        }.onFailure(::reportError)
+    }
+
+    fun dismissCompletedDataReset() {
+        if (dataResetActive.get()) return
+        mutableState.update { it.copy(dataReset = null) }
+    }
+
+    private fun resumeDataReset(journal: ProductDataResetJournal) {
+        dataResetJournal = journal
+        dataResetActive.set(true)
+        publishDataReset(journal)
+        refreshLifecycleInteractions()
+        if (dataResetJob?.isActive == true) return
+        dataResetJob =
+            scope.launch {
+                dataResetOwnerMutation.withLock {
+                    driveDataReset()
+                }
+            }
+    }
+
+    private suspend fun driveDataReset() {
+        val starting = dataResetJournal ?: return
+        if (starting.failure != null) return
+        try {
+            var journal = starting
+            while (true) {
+                when (journal.phase) {
+                    ProductDataResetPhase.REMOVING_TORRENTS -> {
+                        if (!clientOpen) {
+                            openProductApplication(
+                                ProductSafRootRegistry.load(this),
+                                defaultNetworkObserver.snapshot(),
+                                startCompanion = false,
+                            )
+                        }
+                        stopCompanionForDataReset()
+                        while (journal.nextTorrentIndex < journal.torrentIds.size) {
+                            val torrentId = journal.torrentIds[journal.nextTorrentIndex]
+                            removeDataResetTorrent(journal, torrentId)
+                            journal =
+                                persistDataReset(
+                                    journal.copy(
+                                        nextTorrentIndex = journal.nextTorrentIndex + 1,
+                                        failure = null,
+                                    ),
+                                )
+                        }
+                        closeClientForDataReset()
+                        journal =
+                            persistDataReset(
+                                journal.copy(
+                                    phase = ProductDataResetPhase.RESETTING_PROFILE,
+                                    failure = null,
+                                ),
+                            )
+                    }
+                    ProductDataResetPhase.RESETTING_PROFILE -> {
+                        check(!clientOpen) { "application client still owns the private profile" }
+                        withContext(Dispatchers.IO) {
+                            ProductPrivateProfileReset.reset(filesDir)
+                        }
+                        journal =
+                            persistDataReset(
+                                journal.copy(
+                                    phase = ProductDataResetPhase.RELEASING_ROOTS,
+                                    failure = null,
+                                ),
+                            )
+                    }
+                    ProductDataResetPhase.RELEASING_ROOTS -> {
+                        releaseDataResetRoots(journal)
+                        journal = requireNotNull(dataResetJournal)
+                        journal =
+                            persistDataReset(
+                                journal.copy(
+                                    phase = ProductDataResetPhase.RESETTING_PREFERENCES,
+                                    failure = null,
+                                ),
+                            )
+                    }
+                    ProductDataResetPhase.RESETTING_PREFERENCES -> {
+                        resetProductPreferencesForDataReset()
+                        resetPresentationStateForDataReset()
+                        journal =
+                            persistDataReset(
+                                journal.copy(
+                                    phase = ProductDataResetPhase.RESTARTING_APPLICATION,
+                                    failure = null,
+                                ),
+                            )
+                    }
+                    ProductDataResetPhase.RESTARTING_APPLICATION -> {
+                        recoveryNetworkGateClosed.set(false)
+                        if (!clientOpen) {
+                            openProductApplication(
+                                ProductSafRootRegistry.load(this),
+                                defaultNetworkObserver.snapshot(),
+                                startCompanion = false,
+                            )
+                        }
+                        journal =
+                            persistDataReset(
+                                journal.copy(
+                                    phase = ProductDataResetPhase.VERIFYING_APPLICATION,
+                                    failure = null,
+                                ),
+                            )
+                    }
+                    ProductDataResetPhase.VERIFYING_APPLICATION -> {
+                        recoveryNetworkGateClosed.set(false)
+                        if (!clientOpen) {
+                            openProductApplication(
+                                ProductSafRootRegistry.load(this),
+                                defaultNetworkObserver.snapshot(),
+                                startCompanion = false,
+                            )
+                        }
+                        val snapshot = dataResetSnapshot()
+                        check(snapshot.revision == "0") { "fresh profile revision is not zero" }
+                        check(snapshot.torrents.isEmpty()) { "fresh profile still contains torrents" }
+                        check(snapshot.storage.roots.isEmpty()) {
+                            "fresh profile still contains download folders"
+                        }
+                        check(snapshot.storage.defaultRoot == null) {
+                            "fresh profile still has a default download folder"
+                        }
+                        check(snapshot.storage.showAddOptions && snapshot.storage.showFileSelection) {
+                            "fresh profile add preferences are not defaults"
+                        }
+                        ProductDataResetJournalStore.clear(this)
+                        dataResetJournal = null
+                        dataResetActive.set(false)
+                        refreshLifecycleInteractions()
+                        mutableState.update {
+                            it.copy(
+                                ready = true,
+                                error = null,
+                                dataReset =
+                                    ProductDataResetState(
+                                        operationId = journal.operationId,
+                                        phase = ProductDataResetPhase.VERIFYING_APPLICATION,
+                                        completedTorrents = journal.torrentIds.size,
+                                        totalTorrents = journal.torrentIds.size,
+                                        deleteDataRequested = journal.deleteDataRequested,
+                                        downgradedToKeep = journal.downgradedToKeep,
+                                        complete = true,
+                                    ),
+                            )
+                        }
+                        notificationCoordinator.updateOngoingNotification(
+                            getString(R.string.notification_ready),
+                        )
+                        return
+                    }
+                }
+            }
+        } catch (error: Throwable) {
+            if (error is CancellationException && stopped.get()) return
+            val current = dataResetJournal ?: return
+            val failure =
+                ProductDataResetFailure(
+                    code = dataResetFailureCode(error),
+                    detail = boundedDataResetDetail(error.message ?: error.toString()),
+                    torrentId =
+                        current.torrentIds.getOrNull(current.nextTorrentIndex)
+                            ?.takeIf {
+                                current.phase == ProductDataResetPhase.REMOVING_TORRENTS
+                            },
+                )
+            runCatching { persistDataReset(current.copy(failure = failure)) }
+                .onFailure(error::addSuppressed)
+            Log.e(TAG, "product data reset failed phase=${current.phase}", error)
+            mutableState.update { it.copy(error = null) }
+            notificationCoordinator.updateOngoingNotification(
+                getString(R.string.notification_needs_attention),
+            )
+        }
+    }
+
+    private suspend fun removeDataResetTorrent(
+        journal: ProductDataResetJournal,
+        torrentId: String,
+    ) {
+        withTimeout(DATA_RESET_TORRENT_TIMEOUT_MILLIS) {
+            while (true) {
+                val torrent = dataResetSnapshot().torrents.singleOrNull { it.torrentId == torrentId }
+                    ?: return@withTimeout
+                when (torrent.removalState) {
+                    RemovalState.FAILED -> error(torrent.error ?: "torrent removal failed")
+                    RemovalState.AWAITING_PLATFORM -> {
+                        check(journal.deleteRemainingData) {
+                            "keep-files clear unexpectedly requested platform deletion"
+                        }
+                        val plan = client.safRemovalPlan(torrentId)
+                        val treeUri =
+                            ProductSafRootRegistry.treeForRoot(this@ProductEngineService, plan.storageRoot)
+                                ?: throw SafStorageRequestException(
+                                    SafStorageFailureKind.GRANT_UNAVAILABLE,
+                                    "persisted SAF grant is unavailable for the torrent root",
+                                )
+                        try {
+                            withContext(Dispatchers.IO) {
+                                ProductSafDocuments.deleteData(
+                                    this@ProductEngineService,
+                                    treeUri,
+                                    plan,
+                                )
+                            }
+                            client.confirmSafRemoval(torrentId, plan.operationId)
+                        } catch (error: Throwable) {
+                            runCatching {
+                                client.failSafRemoval(
+                                    torrentId,
+                                    plan.operationId,
+                                    boundedDataResetDetail(error.message ?: error.toString()),
+                                )
+                            }.onFailure(error::addSuppressed)
+                            throw error
+                        }
+                    }
+                    null -> {
+                        dispatchForResponse(
+                            Command.RemoveTorrent(
+                                torrentId,
+                                if (journal.deleteRemainingData) {
+                                    RemovalDataPolicy.DELETE_DATA
+                                } else {
+                                    RemovalDataPolicy.KEEP
+                                },
+                            ),
+                            dataResetOwner = true,
+                        )
+                    }
+                    else -> delay(DATA_RESET_POLL_MILLIS)
+                }
+            }
+        }
+    }
+
+    private suspend fun stopCompanionForDataReset() {
+        companionOwnerMutation.withLock {
+            companionConnectionSubscription?.close()
+            companionConnectionJob?.cancelAndJoin()
+            companionPairingJob?.cancelAndJoin()
+            companionRootJob?.cancelAndJoin()
+            companionRootRemovalJob?.cancelAndJoin()
+            companionConnectionSubscription = null
+            companionConnectionJob = null
+            companionPairingJob = null
+            companionRootJob = null
+            companionRootRemovalJob = null
+            client.stopChromeosCompanion()
+            lifecycleCoordinator.updateCompanionConnections(0)
+            mutableState.update { it.copy(companionPort = null, companionPairing = null) }
+        }
+    }
+
+    private suspend fun closeClientForDataReset() {
+        if (!clientOpen) return
+        networkConvergenceJob?.cancelAndJoin()
+        networkConvergenceJob = null
+        if (::presentationRepository.isInitialized) presentationRepository.close()
+        trackerEvidenceJob?.cancel()
+        trackerEvidenceSubscription?.close()
+        trackerEvidenceJob?.join()
+        trackerEvidenceJob = null
+        trackerEvidenceSubscription = null
+        try {
+            client.shutdown()
+        } finally {
+            safStorageJobs.forEach { it.join() }
+            safStorageJobs = emptyList()
+            client.close()
+            clientOpen = false
+        }
+        mutableState.update { it.copy(ready = false) }
+    }
+
+    private fun releaseDataResetRoots(starting: ProductDataResetJournal) {
+        var journal = starting
+        val currentRegistry = ProductSafRootRegistry.load(this)
+        if (currentRegistry.roots.isNotEmpty()) {
+            ProductSafRootRegistry.clearCaptured(this, journal.roots)
+        } else {
+            check(currentRegistry.pending == null && currentRegistry.selectionCandidate == null) {
+                "empty SAF registry retains a pending operation"
+            }
+        }
+        while (journal.nextRootIndex < journal.roots.size) {
+            val root = journal.roots[journal.nextRootIndex]
+            ProductSafDocuments.releaseGrantIfUnregistered(this, Uri.parse(root.treeUri))
+            journal =
+                persistDataReset(
+                    journal.copy(nextRootIndex = journal.nextRootIndex + 1, failure = null),
+                )
+        }
+    }
+
+    private fun resetProductPreferencesForDataReset() {
+        check(lifecyclePreferenceStore.reset()) { "could not reset lifecycle preferences" }
+        check(ProductNetworkPreference.reset(this)) { "could not reset network preferences" }
+        check(ProductPowerPreference.reset(this)) { "could not reset power preferences" }
+        check(ProductCompanionPreference.reset(this)) { "could not reset companion preference" }
+        check(ProductDataSyncQuotaFence.clearForUserVisibleStart(this)) {
+            "could not reset data-sync quota state"
+        }
+        check(notificationCoordinator.resetProductPreferencesAndEvents(interactionLeases.size)) {
+            "could not reset notification preferences or posted product notifications"
+        }
+        lifecyclePreferences = ProductLifecyclePreferences()
+        lifecycleCoordinator.updatePreferences(lifecyclePreferences)
+        val network = defaultNetworkObserver.setUnmeteredNetworksOnly(false)
+        mutableState.update {
+            it.copy(
+                preventSleepDuringActiveDownloads = true,
+                lifecycle =
+                    it.lifecycle.copy(
+                        backgroundDownloadsEnabled = false,
+                        keepSeedingEnabled = false,
+                        effectiveBackgroundDownloads = false,
+                        companionConnections = 0,
+                        preferenceError = null,
+                    ),
+                network =
+                    it.network.copy(
+                        unmeteredNetworksOnly = false,
+                        eligibility = network.eligibility,
+                        observationRevision = network.revision,
+                        preferenceError = null,
+                        runtimeError = null,
+                    ),
+            )
+        }
+    }
+
+    private fun resetPresentationStateForDataReset() {
+        mutableState.update { current ->
+            ProductState(
+                ready = false,
+                dataReset = current.dataReset,
+                lifecycle = current.lifecycle,
+                preventSleepDuringActiveDownloads = current.preventSleepDuringActiveDownloads,
+                network = current.network,
+                notifications = current.notifications,
+            )
+        }
+    }
+
+    private suspend fun dataResetSnapshot(): org.rstorrent.session.uniffi.ServiceSnapshot {
+        val outcome =
+            dispatchForResponse(Command.Snapshot, dataResetOwner = true).outcome
+                as? ResponseOutcome.Success
+                ?: error("data reset snapshot failed")
+        return outcome.snapshot
+    }
+
+    private fun persistDataReset(journal: ProductDataResetJournal): ProductDataResetJournal {
+        ProductDataResetJournalStore.persist(this, journal)
+        dataResetJournal = journal
+        publishDataReset(journal)
+        return journal
+    }
+
+    private fun publishDataReset(journal: ProductDataResetJournal) {
+        mutableState.update {
+            it.copy(
+                dataReset =
+                    ProductDataResetState(
+                        operationId = journal.operationId,
+                        phase = journal.phase,
+                        completedTorrents = journal.completedTorrentCount,
+                        totalTorrents = journal.torrentIds.size,
+                        deleteDataRequested = journal.deleteDataRequested,
+                        downgradedToKeep = journal.downgradedToKeep,
+                        failure =
+                            journal.failure?.let { failure ->
+                                ProductDataResetFailureState(
+                                    failure.code,
+                                    failure.detail,
+                                    failure.torrentId,
+                                )
+                            },
+                    ),
+                error = null,
+            )
+        }
+        if (::notificationCoordinator.isInitialized) {
+            val message =
+                if (journal.phase == ProductDataResetPhase.REMOVING_TORRENTS) {
+                    getString(
+                        R.string.notification_clearing_data_progress,
+                        journal.completedTorrentCount,
+                        journal.torrentIds.size,
+                    )
+                } else {
+                    getString(R.string.notification_clearing_data)
+                }
+            notificationCoordinator.updateOngoingNotification(message)
+        }
+    }
+
+    private fun rejectMutationDuringDataReset(): Boolean {
+        if (!dataResetActive.get()) return false
+        mutableState.update { it.copy(error = ProductError.Code.DATA_RESET_IN_PROGRESS) }
+        return true
+    }
+
+    private fun refreshLifecycleInteractions() {
+        lifecycleCoordinator.updateInteractions(
+            visible = INTERACTION_ACTIVITY in interactionLeases,
+            workflowLeaseCount =
+                interactionLeases.count { it != INTERACTION_ACTIVITY } +
+                    if (dataResetActive.get()) 1 else 0,
+        )
+    }
+
+    private fun boundedDataResetDetail(detail: String): String {
+        if (detail.toByteArray(Charsets.UTF_8).size <= ProductDataResetJournal.MAX_FAILURE_DETAIL_BYTES) {
+            return detail
+        }
+        var bytes = 0
+        var boundary = 0
+        while (boundary < detail.length) {
+            val codePoint = detail.codePointAt(boundary)
+            val encodedBytes = String(Character.toChars(codePoint)).toByteArray(Charsets.UTF_8).size
+            if (bytes + encodedBytes > ProductDataResetJournal.MAX_FAILURE_DETAIL_BYTES) break
+            bytes += encodedBytes
+            boundary += Character.charCount(codePoint)
+        }
+        return detail.substring(0, boundary)
+    }
+
+    private fun dataResetFailureCode(error: Throwable): String =
+        when (error) {
+            is SafStorageRequestException -> error.kind.name.lowercase()
+            is kotlinx.coroutines.TimeoutCancellationException -> "torrent_timeout"
+            is SecurityException -> "security_rejected"
+            is IllegalArgumentException -> "unsafe_state"
+            is IllegalStateException -> "operation_failed"
+            else -> "internal_failure"
+        }
+
     fun updateClientSettings(patch: ClientSettingsPatch) {
+        if (rejectMutationDuringDataReset()) return
         val changes = patch.fieldValues()
         if (changes.isEmpty()) {
             mutableState.update { it.copy(error = ProductError.Code.SETTINGS_UPDATE_EMPTY) }
@@ -2788,6 +3397,7 @@ class ProductEngineService : Service() {
     }
 
     fun setPreventSleepDuringActiveDownloads(enabled: Boolean) {
+        if (rejectMutationDuringDataReset()) return
         if (!ProductPowerPreference.persist(this, enabled)) {
             mutableState.update {
                 it.copy(error = ProductError.Code.POWER_SETTING_SAVE_FAILED)
@@ -2807,6 +3417,7 @@ class ProductEngineService : Service() {
         torrentId: String,
         patch: TorrentSettingsPatch,
     ) {
+        if (rejectMutationDuringDataReset()) return
         val changes = patch.fieldValues()
         if (changes.isEmpty()) {
             mutableState.update {
@@ -2975,10 +3586,12 @@ class ProductEngineService : Service() {
         preference: ProductNotificationPreference,
         enabled: Boolean,
     ) {
+        if (rejectMutationDuringDataReset()) return
         notificationCoordinator.setPreference(preference, enabled, interactionLeases.size)
     }
 
     internal fun setUnmeteredNetworksOnly(enabled: Boolean) {
+        if (rejectMutationDuringDataReset()) return
         scope.launch {
             networkPreferenceMutation.withLock {
                 if (stopped.get()) return@withLock
@@ -3195,16 +3808,27 @@ class ProductEngineService : Service() {
     private suspend fun dispatchForResponse(
         command: Command,
         expectedRevision: String? = null,
+        dataResetOwner: Boolean = false,
     ): org.rstorrent.session.uniffi.ResponseEnvelope {
-        val response =
-            client.dispatch(
-                RequestEnvelope(
-                    1U.toUShort(),
-                    "android-$requestPrefix-${requestIds.getAndIncrement()}",
-                    expectedRevision,
-                    command,
-                ),
+        if (dataResetActive.get() && !dataResetOwner) {
+            throw ProductDataResetInProgressException()
+        }
+        val request =
+            RequestEnvelope(
+                1U.toUShort(),
+                "android-$requestPrefix-${requestIds.getAndIncrement()}",
+                expectedRevision,
+                command,
             )
+        val response =
+            if (dataResetOwner) {
+                client.dispatch(request)
+            } else {
+                productCommandMutation.withLock {
+                    if (dataResetActive.get()) throw ProductDataResetInProgressException()
+                    client.dispatch(request)
+                }
+            }
         val outcome = response.outcome
         if (outcome is ResponseOutcome.Error) {
             error(outcome.error.message)
@@ -3380,6 +4004,7 @@ class ProductEngineService : Service() {
                 }
             }
             if (torrent.removalState != RemovalState.AWAITING_PLATFORM) continue
+            if (dataResetActive.get()) continue
             val action = "removal"
             val key = "${torrent.torrentId}:$action"
             if (!safWork.add(key)) continue
@@ -3562,6 +4187,7 @@ class ProductEngineService : Service() {
         (range.endExclusive - range.start).toULong()
 
     internal fun setBackgroundDownloadsEnabled(enabled: Boolean) {
+        if (rejectMutationDuringDataReset()) return
         synchronized(lifecyclePreferenceOwnership) {
             val eligible =
                 notificationCoordinator
@@ -3588,6 +4214,7 @@ class ProductEngineService : Service() {
     }
 
     internal fun setKeepSeedingInBackground(enabled: Boolean) {
+        if (rejectMutationDuringDataReset()) return
         synchronized(lifecyclePreferenceOwnership) {
             if (enabled && !lifecyclePreferences.backgroundDownloadsEnabled) {
                 mutableState.update {
@@ -3744,7 +4371,7 @@ class ProductEngineService : Service() {
         }.getOrElse { error ->
             Log.e(TAG, "foreground promotion failed", error)
             recoveryNetworkGateClosed.set(true)
-            if (::client.isInitialized) runCatching { client.closeNetworkPrerequisite() }
+            if (clientOpen) runCatching { client.closeNetworkPrerequisite() }
             lifecycleCoordinator.terminal(
                 ProductLifetimeStopReason.FOREGROUND_PROMOTION_FAILED,
             )
@@ -3782,7 +4409,7 @@ class ProductEngineService : Service() {
             backgroundAdmitted.set(false)
             Log.e(TAG, "background start admission failed", error)
             recoveryNetworkGateClosed.set(true)
-            if (::client.isInitialized) runCatching { client.closeNetworkPrerequisite() }
+            if (clientOpen) runCatching { client.closeNetworkPrerequisite() }
             lifecycleCoordinator.terminal(
                 ProductLifetimeStopReason.FOREGROUND_PROMOTION_FAILED,
             )
@@ -3883,7 +4510,7 @@ class ProductEngineService : Service() {
     ) {
         if (!stopRequested.compareAndSet(false, true)) return
         recoveryNetworkGateClosed.set(true)
-        if (::client.isInitialized) {
+        if (clientOpen) {
             runCatching { client.closeNetworkPrerequisite() }.onFailure { error ->
                 Log.w(TAG, "lifecycle network close failed", error)
             }
@@ -3911,6 +4538,7 @@ class ProductEngineService : Service() {
             ProductInteractionRegistry.detach()
             interactionLeases.clear()
             initializationJob?.cancelAndJoin()
+            dataResetJob?.cancelAndJoin()
             networkConvergenceJob?.cancelAndJoin()
             powerNotificationJob?.cancelAndJoin()
             externalAdmissionCancellationSignal?.cancel()
@@ -3932,7 +4560,7 @@ class ProductEngineService : Service() {
                 )
             }
             notificationCoordinator.close()
-            if (::client.isInitialized) {
+            if (clientOpen) {
                 try {
                     Log.i(TAG, "product_shutdown_client_begin")
                     client.shutdown()
@@ -3944,6 +4572,7 @@ class ProductEngineService : Service() {
                     companionRootRemovalJob?.join()
                     safStorageJobs.forEach { it.join() }
                     client.close()
+                    clientOpen = false
                 }
             }
             Log.i(TAG, "product_shutdown_complete reason=$reason")
@@ -3959,7 +4588,14 @@ class ProductEngineService : Service() {
     private fun reportError(error: Throwable) {
         Log.e(TAG, "product control failed", error)
         mutableState.update {
-            it.copy(error = ProductError.Technical(error.message ?: error.toString()))
+            it.copy(
+                error =
+                    if (error is ProductDataResetInProgressException) {
+                        ProductError.Code.DATA_RESET_IN_PROGRESS
+                    } else {
+                        ProductError.Technical(error.message ?: error.toString())
+                    },
+            )
         }
     }
 
@@ -4041,6 +4677,8 @@ class ProductEngineService : Service() {
         const val INTERACTION_TORRENT_PICKER = "torrent_picker"
         private const val COMPANION_PAIRING_POLL_MILLIS = 250L
         private const val EXTERNAL_PROVIDER_TIMEOUT_MILLIS = 30_000L
+        private const val DATA_RESET_POLL_MILLIS = 50L
+        private const val DATA_RESET_TORRENT_TIMEOUT_MILLIS = 120_000L
         private const val SAF_PROVIDER_CONCURRENCY = 4
         private const val ANDROID_RATE_BYTES_PER_SECOND = 24 * 1024
         private const val PRODUCT_QUOTA_RESTART_DELAY_MILLIS = 3_000L

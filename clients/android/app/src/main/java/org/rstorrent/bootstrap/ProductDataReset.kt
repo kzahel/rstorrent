@@ -11,9 +11,10 @@ import java.nio.file.Files
 import java.util.Base64
 import java.util.Comparator
 import java.util.UUID
+import java.util.stream.Collectors
 import java.util.zip.CRC32
 
-internal enum class ProductDataResetPhase {
+enum class ProductDataResetPhase {
     REMOVING_TORRENTS,
     RESETTING_PROFILE,
     RELEASING_ROOTS,
@@ -59,6 +60,25 @@ internal data class ProductDataResetJournal(
         ProductSafRootRegistry.validate(ProductSafRootRegistryState(roots = roots))
         require(nextTorrentIndex in 0..torrentIds.size) { "data reset torrent cursor is invalid" }
         require(nextRootIndex in 0..roots.size) { "data reset root cursor is invalid" }
+        if (phase != ProductDataResetPhase.REMOVING_TORRENTS) {
+            require(nextTorrentIndex == torrentIds.size) {
+                "data reset advanced before every torrent completed"
+            }
+        }
+        when (phase) {
+            ProductDataResetPhase.REMOVING_TORRENTS,
+            ProductDataResetPhase.RESETTING_PROFILE,
+            -> require(nextRootIndex == 0) {
+                "data reset released a root before profile reset"
+            }
+            ProductDataResetPhase.RELEASING_ROOTS -> Unit
+            ProductDataResetPhase.RESETTING_PREFERENCES,
+            ProductDataResetPhase.RESTARTING_APPLICATION,
+            ProductDataResetPhase.VERIFYING_APPLICATION,
+            -> require(nextRootIndex == roots.size) {
+                "data reset advanced before every root grant completed"
+            }
+        }
         require(deleteDataRequested || !deleteRemainingData) {
             "keep-mode data reset cannot enable deletion"
         }
@@ -69,6 +89,10 @@ internal data class ProductDataResetJournal(
             }
             value.torrentId?.let {
                 require(it.matches(TORRENT_ID)) { "data reset failure torrent ID is invalid" }
+                require(
+                    phase == ProductDataResetPhase.REMOVING_TORRENTS &&
+                        torrentIds.getOrNull(nextTorrentIndex) == it,
+                ) { "data reset failure does not identify the current torrent" }
             }
         }
     }
@@ -263,7 +287,9 @@ internal object ProductPrivateProfileReset {
         if (Files.exists(path)) {
             val entries =
                 Files.walk(path).use { stream ->
-                    stream.limit((MAX_PROFILE_ENTRIES + 1).toLong()).toList()
+                    stream
+                        .limit((MAX_PROFILE_ENTRIES + 1).toLong())
+                        .collect(Collectors.toList())
                 }
             require(entries.size <= MAX_PROFILE_ENTRIES) {
                 "product profile exceeds its bounded reset entry count"

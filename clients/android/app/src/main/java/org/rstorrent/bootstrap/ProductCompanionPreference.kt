@@ -17,6 +17,9 @@ object ProductCompanionPreference {
             .apply()
     }
 
+    fun reset(context: Context): Boolean =
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit().clear().commit()
+
     fun shouldStart(isChromeOs: Boolean, enabled: Boolean): Boolean =
         isChromeOs && enabled
 }

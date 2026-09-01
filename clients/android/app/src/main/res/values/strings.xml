@@ -254,6 +254,8 @@
     <string name="notification_finishing_shutdown">Finishing shutdown</string>
     <string name="notification_ready_chrome">Ready for Chrome</string>
     <string name="notification_ready">Ready</string>
+    <string name="notification_clearing_data">Clearing app data…</string>
+    <string name="notification_clearing_data_progress">Clearing app data… %1$d of %2$d torrents</string>
 
     <!-- Presentation for semantic Android adapter errors and network truth. -->
     <string name="error_select_download_folder">Select a download folder first.</string>
@@ -377,6 +379,7 @@
     <string name="theme_system_colors_requirement">Available on Android 12 and later</string>
     <string name="settings_search_plugins">Search plugins</string>
     <string name="settings_reset_engine">Reset engine settings</string>
+    <string name="error_data_reset_in_progress">Finish clearing app data before making other changes.</string>
     <!-- Translator context: Tappable Advanced Settings row that leaves the app and opens JSTorrent's feedback website in the device browser. -->
     <string name="settings_report_bug">Report Bug / Send Feedback</string>
     <!-- Translator context: Supporting copy beneath the feedback row; JSTorrent is the product name and must not be translated. -->

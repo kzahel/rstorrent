@@ -34,6 +34,8 @@ internal fun productErrorText(error: ProductError): String =
                         R.string.error_background_downloads_required
                     ProductError.Code.BACKGROUND_SETTING_SAVE_FAILED ->
                         R.string.error_background_setting_save_failed
+                    ProductError.Code.DATA_RESET_IN_PROGRESS ->
+                        R.string.error_data_reset_in_progress
                 },
             )
     }

@@ -110,6 +110,7 @@ sealed interface ProductError {
         BACKGROUND_NOTIFICATION_REQUIRED,
         BACKGROUND_DOWNLOADS_REQUIRED,
         BACKGROUND_SETTING_SAVE_FAILED,
+        DATA_RESET_IN_PROGRESS,
     }
 
     data class MediaUnavailable(val reason: org.rstorrent.session.uniffi.MediaFileAvailability) :
@@ -147,6 +148,7 @@ data class ProductState(
     val preventSleepDuringActiveDownloads: Boolean = true,
     val network: ProductNetworkState = ProductNetworkState(),
     val notifications: ProductNotificationState = ProductNotificationState(),
+    val dataReset: ProductDataResetState? = null,
     val selectedTorrent: String? = null,
     val torrents: Map<String, TorrentView> = emptyMap(),
     val preparations: Map<String, TorrentPreparationView> = emptyMap(),
@@ -171,6 +173,23 @@ data class ProductState(
     val diagnosticLocalEvicted: ULong = 0UL,
     val diagnosticResets: ULong = 0UL,
     internal val streams: Map<String, StreamPosition> = emptyMap(),
+)
+
+data class ProductDataResetFailureState(
+    val code: String,
+    val detail: String,
+    val torrentId: String? = null,
+)
+
+data class ProductDataResetState(
+    val operationId: String?,
+    val phase: ProductDataResetPhase?,
+    val completedTorrents: Int,
+    val totalTorrents: Int,
+    val deleteDataRequested: Boolean,
+    val downgradedToKeep: Boolean,
+    val failure: ProductDataResetFailureState? = null,
+    val complete: Boolean = false,
 )
 
 data class StreamPosition(

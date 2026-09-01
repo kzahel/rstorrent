@@ -20,6 +20,9 @@ internal object ProductNetworkPreference {
             .edit()
             .putBoolean(UNMETERED_NETWORKS_ONLY, enabled)
             .commit()
+
+    fun reset(context: Context): Boolean =
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit().clear().commit()
 }
 
 data class ProductNetworkState(

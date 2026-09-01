@@ -417,6 +417,22 @@ internal object ProductSafRootRegistry {
         persist(context, ProductSafRootRegistryState())
     }
 
+    @Synchronized
+    fun clearCaptured(
+        context: Context,
+        captured: List<ProductSafRootGrant>,
+    ) {
+        val state = load(context)
+        check(state.pending == null) { "cannot clear a pending SAF root operation" }
+        check(state.selectionCandidate == null && state.selectionRepairRootId == null) {
+            "cannot clear a pending SAF root selection"
+        }
+        check(state.roots.sortedBy(ProductSafRootGrant::rootId) == captured.sortedBy(ProductSafRootGrant::rootId)) {
+            "captured SAF root registry differs from current state"
+        }
+        persist(context, ProductSafRootRegistryState())
+    }
+
     internal fun validate(state: ProductSafRootRegistryState) {
         require(state.roots.size <= MAX_ROOTS) { "SAF root count exceeds $MAX_ROOTS" }
         require(state.roots.map(ProductSafRootGrant::rootId).distinct().size == state.roots.size) {

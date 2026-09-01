@@ -22,6 +22,9 @@ internal object ProductPowerPreference {
             .edit()
             .putBoolean(PREVENT_SLEEP, enabled)
             .commit()
+
+    fun reset(context: Context): Boolean =
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit().clear().commit()
 }
 
 internal fun requiresSleepInhibition(torrents: Collection<TorrentView>): Boolean =

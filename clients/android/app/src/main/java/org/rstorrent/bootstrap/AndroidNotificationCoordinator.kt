@@ -86,6 +86,8 @@ internal class ProductNotificationPreferenceStore(context: Context) {
                 enabled,
             ).commit()
 
+    fun reset(): Boolean = preferences.edit().clear().commit()
+
     companion object {
         private const val PREFERENCE_FILE = "product_notifications"
         private const val KEY_DOWNLOAD_COMPLETE = "notify_download_complete"
@@ -265,6 +267,26 @@ internal class AndroidNotificationCoordinator(
     fun close() {
         policy.reset()
         cancelCompanionRootNotification()
+    }
+
+    fun resetProductPreferencesAndEvents(interactionLeaseCount: Int): Boolean {
+        if (!preferenceStore.reset()) return false
+        preferences = preferenceStore.read()
+        policy.reset()
+        cancelCompanionRootNotification()
+        val canceled =
+            runCatching {
+                manager.activeNotifications
+                    .filter { notification ->
+                        ProductNotificationCategory.entries.any { category ->
+                            notification.id == eventNotificationId(category) &&
+                                notification.tag?.startsWith(productNotificationTagPrefix(category)) == true
+                        }
+                    }.forEach { manager.cancel(it.tag, it.id) }
+                submittedTags.values.forEach(ArrayDeque<String>::clear)
+            }.isSuccess
+        refreshPlatformState(interactionLeaseCount)
+        return canceled
     }
 
     private fun createChannels() {

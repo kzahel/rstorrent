@@ -1,8 +1,10 @@
 package org.rstorrent.bootstrap
 
 import java.io.File
+import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.util.Base64
+import java.util.zip.CRC32
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -55,9 +57,12 @@ class ProductDataResetTest {
             ProductDataResetJournalCodec.decode(corrupted.concatToString())
         }
 
-        val decoded = Base64.getUrlDecoder().decode(encoded)
-        decoded[3] = 2
-        val future = Base64.getUrlEncoder().withoutPadding().encodeToString(decoded)
+        val futureBytes = Base64.getUrlDecoder().decode(encoded)
+        ByteBuffer.wrap(futureBytes).putInt(2)
+        val payloadSize = futureBytes.size - Long.SIZE_BYTES
+        val checksum = CRC32().apply { update(futureBytes, 0, payloadSize) }.value
+        ByteBuffer.wrap(futureBytes, payloadSize, Long.SIZE_BYTES).putLong(checksum)
+        val future = Base64.getUrlEncoder().withoutPadding().encodeToString(futureBytes)
         assertThrows(IllegalArgumentException::class.java) {
             ProductDataResetJournalCodec.decode(future)
         }
@@ -72,6 +77,47 @@ class ProductDataResetTest {
             ProductDataResetJournalCodec.encode(
                 journal.copy(
                     failure = ProductDataResetFailure("failure", "x".repeat(513)),
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun journalRejectsSkippedPhaseWorkAndMismatchedFailureTarget() {
+        val journal =
+            ProductDataResetJournal.capture(
+                deleteData = true,
+                torrentIds = listOf(TORRENT_A, TORRENT_B),
+                roots =
+                    listOf(
+                        ProductSafRootGrant(
+                            "root_a",
+                            "Folder A",
+                            "content://provider/tree/a",
+                            1,
+                        ),
+                    ),
+                operationId = "123e4567-e89b-12d3-a456-426614174000",
+            )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            ProductDataResetJournalCodec.encode(
+                journal.copy(phase = ProductDataResetPhase.RESETTING_PROFILE),
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ProductDataResetJournalCodec.encode(
+                journal.copy(
+                    nextTorrentIndex = 1,
+                    failure = ProductDataResetFailure("delete_failed", "failed", TORRENT_A),
+                ),
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ProductDataResetJournalCodec.encode(
+                journal.copy(
+                    phase = ProductDataResetPhase.RESETTING_PREFERENCES,
+                    nextTorrentIndex = 2,
                 ),
             )
         }
