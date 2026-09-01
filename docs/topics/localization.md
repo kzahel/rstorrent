@@ -150,9 +150,10 @@ Implementation-complete Tactical
 reset/clear confirmation, progress, failure, retry, and explicit keep-
 remaining-files copy to this existing English catalog with translator comments.
 The 421-resource checker, lint, all 20 Compose navigation cases on owned API
-28/35 AVDs, and both service reset/recovery cases on those APIs pass. It does
-not select a production locale; the tactical's destructive and physical
-qualification gates remain independent of this catalog evidence.
+28/35 AVDs, and both service reset/recovery cases on those APIs pass. The
+controlled destructive gate also passes without changing the catalog. It does
+not select a production locale; physical ChromeOS qualification remains
+independent of this catalog evidence and open.
 
 A separate tactical is required to choose and ship the first real
 non-English cohort. Android replacement localization remains open until that

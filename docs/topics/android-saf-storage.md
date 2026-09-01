@@ -512,8 +512,11 @@ explicit keep-files downgrade, and never substitutes recursive tree deletion.
 Only after every removal is terminal does the coordinator release captured
 retained grants and reset the fixed private product profile. Existing exact-
 document, unrelated-sentinel, wrong-kind, provider-refusal, and missing-file
-tests pass; the new workflow's controlled multi-root DeleteData and physical
-ChromeOS qualification campaigns remain open.
+tests pass. Its owned API 35 multi-root campaign preserves unrelated root and
+nested sentinels through Keep, removes only registered files through
+DeleteData, recovers after the first durable delete cursor is interrupted by
+process death, and removes both task roots. Physical ChromeOS qualification
+remains open.
 
 ## Recommended Next Work
 

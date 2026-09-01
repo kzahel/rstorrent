@@ -870,8 +870,10 @@ profile, joins exact per-torrent removal first, then resets only the validated
 private profile and restarts into an empty fresh schema. Corruption fails
 closed; API 28/35 service recovery from a persisted mid-reset phase preserves
 unrelated private files. Crash recovery never broadens that reset to Android
-app data or a user-selected download root. Its controlled destructive and
-physical ChromeOS qualification gates remain open.
+app data or a user-selected download root. The owned API 35 two-root profile
+also kills the process after the first DeleteData cursor is durably committed;
+startup finishes the remaining target and reaches an empty fresh profile with
+sentinel-only root manifests. Physical ChromeOS qualification remains open.
 
 ## Known Gaps And Open Decisions
 

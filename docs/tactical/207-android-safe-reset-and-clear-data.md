@@ -5,10 +5,10 @@ Status: **Implementation complete; qualification remains active as of
 deletion, durable recovery/retry/downgrade, mutation exclusion, joined profile
 replacement, and the complete Compose surface have landed. Deterministic,
 workspace, dual-ABI Android, localization, Compose, and owned API 28/35 service
-evidence passes. The controlled multi-root DeleteData campaign, macOS-hosted
-generated Swift compile, and separately authorized physical ChromeOS campaign
-remain stopping-condition gates, so this tactical does not yet claim complete
-qualification.
+evidence passes, as does the owned API 35 multi-root Keep/DeleteData and
+process-death campaign. The macOS-hosted generated Swift compile and
+separately authorized physical ChromeOS campaign remain stopping-condition
+gates, so this tactical does not yet claim complete qualification.
 
 Topics: `android-jstorrent-replacement`, `client-surfaces`,
 `application-control`, `client-persistence`, `download-roots`,
@@ -562,16 +562,23 @@ Current evidence on the Linux host:
 - the coordinator structurally owns one reset coroutine, one serial removal,
   the existing single foreground notification, at most 32 captured grants,
   and no detached task or second application owner. Both connected-service
-  cases reach observable joined shutdown during cleanup.
+  cases reach observable joined shutdown during cleanup; and
+- the fresh owned API 35 `product-data-reset` profile binds two unique SAF
+  roots, restores one complete seed and one active download, clears two
+  torrents with Keep, preserves 8 and 2 exact files plus four unrelated
+  sentinels, re-grants both roots, re-adds and rechecks the content, then
+  clears with DeleteData. The process is killed after the first durable delete
+  cursor and startup recovery finishes the second target. Final root manifests
+  contain only the two root and two nested sentinels; descriptor baseline,
+  high water, and final counts are 153, 188, and 183. The fixed task roots,
+  package, transports, host fixtures, and AVD are removed.
 
-Qualification remains open for the controlled two-root active-download/seed
-Keep-and-re-add then DeleteData integration, genuine process-kill windows and
-notification/lifecycle interruption around destructive work, numeric process
-descriptor high water for that workload, the macOS-only generated Swift
-simulator/archive compile, and Tactical step 8's physical ChromeOS two-root and
-companion campaign. The physical gate still requires separate authorization;
-no attached phone, Chromebook, or user root was touched by this implementation
-run.
+Qualification remains open for additional notification/system-lifecycle
+interruption around destructive work, the macOS-only generated Swift
+simulator/archive compile, and Tactical step 8's physical ChromeOS two-root
+and companion campaign. The physical gate still requires separate
+authorization; no attached phone, Chromebook, or user root was touched by
+this implementation run.
 
 Public swarms, release signing, Play upload, production package identity,
 production extension publication, and real user-root deletion are not required

@@ -526,7 +526,9 @@ reach authoritative terminal states. A separate value-free
 `ResetClientSettings` command now installs the application configuration's
 complete fresh-profile setting set atomically; presentations do not reconstruct
 defaults. Store/application/workspace and API 28/35 service evidence passes;
-controlled destructive and physical qualification remains active.
+the owned API 35 two-root Keep/DeleteData profile also passes exact sentinel
+preservation, re-add/recheck, bounded descriptors, and genuine mid-delete
+process recovery. Physical qualification remains active.
 
 Tactical `088` extends the existing client-settings command rather than
 adding a gateway command surface. Restart applies the local-network listener

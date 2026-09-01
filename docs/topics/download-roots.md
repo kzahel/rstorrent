@@ -511,8 +511,10 @@ repair, retry, or an explicitly confirmed keep-files downgrade, and releases
 each captured grant only after no registered torrent needs it. Neither mode
 recursively deletes a selected root; keep mode does not open or alter
 registered payload or part artifacts. Existing exact-deletion unit evidence
-passes; the coordinator's controlled two-root destructive qualification and
-physical ChromeOS gate remain open.
+passes. The owned API 35 coordinator profile also passes two-root Keep,
+re-add/recheck, exact DeleteData, unrelated root/nested sentinel preservation,
+and mid-delete process-death recovery. The physical ChromeOS gate remains
+open.
 
 ## Recommended Next Work
 

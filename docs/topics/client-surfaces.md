@@ -1084,8 +1084,10 @@ with exact SAF cleanup.
   metainfo-exact payload deletion. Its service-owned count-only progress,
   bounded failure, Retry, and separately confirmed keep-remaining recovery
   survive navigation and activity recreation. Compose plus API 28/35 reset,
-  keep-clear, and persisted-phase recovery evidence passes; controlled
-  destructive and physical ChromeOS qualification remains active.
+  keep-clear, and persisted-phase recovery evidence passes. An owned API 35
+  two-root profile also passes Keep, re-add/recheck, exact DeleteData,
+  sentinel preservation, bounded descriptors, and recovery from a genuine
+  mid-delete process death. Physical ChromeOS qualification remains active.
   Ready Tactical
   [`208`](../tactical/208-installation-metrics-and-feedback-parity.md) then
   widens support presentation across shared React and Compose only after a
