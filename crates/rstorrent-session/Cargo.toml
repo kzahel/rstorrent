@@ -26,7 +26,9 @@ tokio-util = { workspace = true, features = ["rt"] }
 ts-rs = { workspace = true }
 uniffi = { version = "=0.31.0", default-features = false, optional = true }
 url = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 rstorrent-engine = { path = "../rstorrent-engine", features = ["test-platform-root"] }
+tempfile = { workspace = true }
 tokio-rustls = "0.26.4"

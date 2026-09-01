@@ -21,6 +21,7 @@ mod have;
 mod incoming_seeding;
 mod media;
 mod media_catalog_views;
+mod product_state;
 mod profile_reset;
 mod reachability;
 mod seed_policy;
@@ -65,6 +66,11 @@ pub use media::{
     MediaResolveError, MediaResourceSnapshot, MediaUrlOutcome, MediaUrlResponse,
 };
 pub use media_catalog_views::{MediaCatalogState, MediaItemView, MediaRoleView};
+pub use product_state::{
+    CURRENT_PRODUCT_DISCLOSURE_VERSION, MAX_PRODUCT_SOURCES, ProductMilestone,
+    ProductMilestoneKind, ProductStateError, ProductStatePageUsage, ProductStateStore,
+    ProductSummary,
+};
 pub use profile_reset::ProfileResetReport;
 pub use reachability::Ipv6PinholeDiagnosticResult;
 pub use rstorrent_engine::{

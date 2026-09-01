@@ -7984,8 +7984,8 @@ mod tests {
     fn pending_add_selection_confirms_atomically_and_survives_reopen() {
         let root = test_root("pending-add-selection");
         let configured = configured_root(&root);
-        let mut store =
-            SessionStore::open(&root, "default", &[configured.clone()]).expect("open store");
+        let mut store = SessionStore::open(&root, "default", std::slice::from_ref(&configured))
+            .expect("open store");
         let source = multi_file_torrent_source(3);
         let mut request = torrent_bytes_request("pending-add", &source);
         request.start_content = true;

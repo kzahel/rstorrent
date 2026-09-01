@@ -4807,12 +4807,14 @@ dependencies = [
  "serde_json",
  "sha1",
  "sha2",
+ "tempfile",
  "tokio",
  "tokio-rustls",
  "tokio-util",
  "ts-rs",
  "uniffi",
  "url",
+ "uuid",
 ]
 
 [[package]]
