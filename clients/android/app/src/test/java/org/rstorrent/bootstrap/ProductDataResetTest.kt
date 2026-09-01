@@ -29,6 +29,7 @@ class ProductDataResetTest {
         val journal = ProductDataResetJournal.capture(true, torrents, roots)
         val encoded = ProductDataResetJournalCodec.encode(journal)
 
+        assertEquals(27_135, encoded.toByteArray(Charsets.US_ASCII).size)
         assertTrue(encoded.toByteArray(Charsets.US_ASCII).size <= ProductDataResetJournal.MAX_ENCODED_BYTES)
         assertEquals(journal, ProductDataResetJournalCodec.decode(encoded))
         assertThrows(IllegalArgumentException::class.java) {

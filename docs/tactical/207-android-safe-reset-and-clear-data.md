@@ -1,8 +1,14 @@
 # Tactical 207: Android Safe Reset And Clear Data
 
-Status: **Ready as of 2026-09-01.** Explicit user direction selects the full
-Android reset/clear-data disposition as one bounded implementation slice. No
-implementation has landed yet.
+Status: **Implementation complete; qualification remains active as of
+2026-09-01.** Atomic reset, both clear outcomes, exact registered-file
+deletion, durable recovery/retry/downgrade, mutation exclusion, joined profile
+replacement, and the complete Compose surface have landed. Deterministic,
+workspace, dual-ABI Android, localization, Compose, and owned API 28/35 service
+evidence passes. The controlled multi-root DeleteData campaign, macOS-hosted
+generated Swift compile, and separately authorized physical ChromeOS campaign
+remain stopping-condition gates, so this tactical does not yet claim complete
+qualification.
 
 Topics: `android-jstorrent-replacement`, `client-surfaces`,
 `application-control`, `client-persistence`, `download-roots`,
@@ -499,6 +505,73 @@ tests pass.
 | ChromeOS | disposable two-root Compose plus extension profile; clear in both modes; listener refusal during/after clear; old pairing rejection; retained unrelated files; fresh repair/re-pair; descriptor/task/grant cleanup |
 | Generated clients | `npm run generate --prefix clients/web`, generated diff review, web typecheck/tests, Android boundary compile, and macOS-hosted iOS simulator/archive compile because `Command` changes |
 | Repository | `cargo fmt --all -- --check`, `cargo clippy --workspace -- -D warnings`, `cargo test --workspace`, `git diff --check`, stale unavailable-row search, and clean status |
+
+## Implementation And Current Evidence
+
+Implementation landed incrementally in commits `aa31e5f1`, `08f64509`,
+`fb39eb91`, `91aa6db4`, `9b1c4171`, and `05872bdd`:
+
+- `ResetClientSettings` carries no caller values, replaces the complete
+  configured setting set in one transaction, and retains ordinary no-op,
+  replay, expected-revision, restart, and live-runtime convergence semantics.
+- `ProductDataResetJournal` is versioned, checksummed, synchronously committed,
+  and fail-closed. The exact 500-torrent/32-root fixture is 27,135 encoded ASCII
+  bytes under the 512-KiB ceiling. It retains one ordered cursor, one current-
+  torrent retry marker, bounded safe failure detail, and no torrent names,
+  magnets, credentials, metainfo, or payload paths.
+- `ProductEngineService` checks recovery before ordinary application startup,
+  gates all non-owner mutations, stops companion admission, drives one existing
+  removal job at a time, joins the application/storage/media/presentation
+  owners, resets only `filesDir/product-profile`, releases only captured grants,
+  resets the enumerated Android product preferences, and verifies one empty
+  fresh application before removing the journal or publishing success.
+- DeleteData continues through the existing metainfo-exact path/SAF plan and
+  confirmation boundary. Provider or grant failure becomes durable Failed
+  state; Retry reissues only a failed target, while the second confirmed
+  downgrade retries that target and all remaining targets with Keep. Recovery
+  clears a retry marker if the target already disappeared or resumes an
+  in-flight removal without duplicating it.
+- Advanced Settings now exposes both enabled actions, resets the delete checkbox
+  on every dialog open, names the exact keep/delete scope, presents count-only
+  service-owned progress through navigation/recreation, and exposes bounded
+  failure, Retry, and separately confirmed keep-remaining recovery. Appearance,
+  Android permission/channel choices, and unrelated private files remain
+  outside the clear owner.
+
+Current evidence on the Linux host:
+
+- focused Rust store/application reset tests pass in the full workspace run
+  (the session crate reports 327 passed and 2 ignored); the full workspace
+  suite, `cargo fmt --all -- --check`, and warning-denied workspace Clippy pass;
+- `clients/android/build.sh` rebuilt locked x86_64 and arm64-v8a Rust/UniFFI
+  libraries and the debug client; `testDebugUnitTest`, `lintDebug`, and
+  `assembleDebugAndroidTest` pass;
+- the pure Android corpus covers exact SAF deletion, unrelated-content
+  preservation, provider refusal, wrong-kind preflight, journal corruption,
+  future version, hard bounds, retry marker, fixed-profile containment, and
+  symlink rejection;
+- all 20 `ProductNavigationTest` cases pass on fresh owned API 28 and API 35
+  AVDs. Both `ProductDataResetInstrumentationTest` cases also pass on each API:
+  reset preserves profile/root/Android/appearance state, clear-Keep produces a
+  fresh empty application, and startup resumes a persisted `RESETTING_PROFILE`
+  journal while preserving unrelated private and appearance sentinels. Every
+  task-owned AVD was deleted after its run;
+- `node scripts/check-localization.mjs` passes all 421 Android resources plus
+  the existing cross-product catalogs; generated web output is clean, web
+  typecheck passes, and Vitest reports 377 passed with 2 skipped; and
+- the coordinator structurally owns one reset coroutine, one serial removal,
+  the existing single foreground notification, at most 32 captured grants,
+  and no detached task or second application owner. Both connected-service
+  cases reach observable joined shutdown during cleanup.
+
+Qualification remains open for the controlled two-root active-download/seed
+Keep-and-re-add then DeleteData integration, genuine process-kill windows and
+notification/lifecycle interruption around destructive work, numeric process
+descriptor high water for that workload, the macOS-only generated Swift
+simulator/archive compile, and Tactical step 8's physical ChromeOS two-root and
+companion campaign. The physical gate still requires separate authorization;
+no attached phone, Chromebook, or user root was touched by this implementation
+run.
 
 Public swarms, release signing, Play upload, production package identity,
 production extension publication, and real user-root deletion are not required

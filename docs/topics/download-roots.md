@@ -503,13 +503,16 @@ source, fixture, or asset is imported by this topic.
 - Metadata-only add may perform bounded metadata networking and parsing but
   cannot create a payload, staging, or part artifact.
 
-Ready Tactical
-[`207`](../tactical/207-android-safe-reset-and-clear-data.md) composes the
+Implementation-complete Tactical
+[`207`](../tactical/207-android-safe-reset-and-clear-data.md) now composes the
 existing exact per-torrent keep/delete removal contracts for Android clear
 data. Delete mode remains manifest-based, retains a failed root grant for
-repair and retry, and releases each retained grant only after no registered
-torrent needs it. Neither mode recursively deletes a selected root; keep mode
-does not open or alter registered payload or part artifacts.
+repair, retry, or an explicitly confirmed keep-files downgrade, and releases
+each captured grant only after no registered torrent needs it. Neither mode
+recursively deletes a selected root; keep mode does not open or alter
+registered payload or part artifacts. Existing exact-deletion unit evidence
+passes; the coordinator's controlled two-root destructive qualification and
+physical ChromeOS gate remain open.
 
 ## Recommended Next Work
 

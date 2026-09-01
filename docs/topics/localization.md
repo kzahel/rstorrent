@@ -136,7 +136,7 @@ that falls through to raw keys or materially incomplete English.
 ## Evidence And Open Work
 
 The currently checked catalogs contain 1,234 React messages, 17 Tauri-native
-messages, 377 Android strings plus 7 quantities, 172 iOS product messages,
+messages, 414 Android strings plus 7 quantities, 172 iOS product messages,
 and 6 iOS Info.plist messages. Tactical 204 records the foundation's exact
 FormatJS pins and licenses, artifact deltas, API 28/35 and iPhone/iPad pseudo
 matrices, archive evidence, and repository gates. Completed Tactical
@@ -145,11 +145,14 @@ context-commented Android feedback strings; the checker, lint, Android build,
 focused API-35 route, and physical ChromeOS presentation pass without adding
 a production locale.
 
-Ready Tactical
-[`207`](../tactical/207-android-safe-reset-and-clear-data.md) will add the
-Android reset/clear confirmation, progress, failure, retry, and explicit
-keep-remaining-files copy to this existing English catalog with translator
-comments and pseudo-locale evidence. It does not select a production locale.
+Implementation-complete Tactical
+[`207`](../tactical/207-android-safe-reset-and-clear-data.md) adds the Android
+reset/clear confirmation, progress, failure, retry, and explicit keep-
+remaining-files copy to this existing English catalog with translator comments.
+The 421-resource checker, lint, all 20 Compose navigation cases on owned API
+28/35 AVDs, and both service reset/recovery cases on those APIs pass. It does
+not select a production locale; the tactical's destructive and physical
+qualification gates remain independent of this catalog evidence.
 
 A separate tactical is required to choose and ship the first real
 non-English cohort. Android replacement localization remains open until that

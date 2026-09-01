@@ -862,13 +862,16 @@ successful mutation unreadable after upgrade.
 - Corrupt or unsupported durable state cannot establish verified metadata,
   have-pieces, storage publication, or seeding eligibility.
 
-Ready Tactical
+Implementation-complete Tactical
 [`207`](../tactical/207-android-safe-reset-and-clear-data.md) distinguishes the
 automatic bounded schema reset above from an explicit user-confirmed Android
-clear. The latter journals its bounded phase outside the fixed product profile,
-joins exact per-torrent removal first, then resets only the validated private
-profile and restarts into an empty fresh schema. Crash recovery never broadens
-that reset to Android app data or a user-selected download root.
+clear. The latter now journals its bounded phase outside the fixed product
+profile, joins exact per-torrent removal first, then resets only the validated
+private profile and restarts into an empty fresh schema. Corruption fails
+closed; API 28/35 service recovery from a persisted mid-reset phase preserves
+unrelated private files. Crash recovery never broadens that reset to Android
+app data or a user-selected download root. Its controlled destructive and
+physical ChromeOS qualification gates remain open.
 
 ## Known Gaps And Open Decisions
 

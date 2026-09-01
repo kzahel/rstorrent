@@ -1076,14 +1076,16 @@ with exact SAF cleanup.
   a physical ChromeOS page/form/GitHub/return check pass. It adds no Rust/
   application contract, report backend, diagnostic export, durable state, or
   client-owned browser surface.
-  Reset and clear-data are still unavailable. Ready Tactical
-  [`207`](../tactical/207-android-safe-reset-and-clear-data.md) owns the two
+  Implementation-complete Tactical
+  [`207`](../tactical/207-android-safe-reset-and-clear-data.md) enables the two
   Advanced Settings actions and three exact outcomes: atomic configured-
   default engine-settings reset, joined profile clear while preserving every
   registered payload, and joined profile clear with unchecked-by-default
-  metainfo-exact payload deletion. Its Android service journal must survive
-  process death, preserve unrelated root content, surface partial failures,
-  and release grants only after torrent work joins.
+  metainfo-exact payload deletion. Its service-owned count-only progress,
+  bounded failure, Retry, and separately confirmed keep-remaining recovery
+  survive navigation and activity recreation. Compose plus API 28/35 reset,
+  keep-clear, and persisted-phase recovery evidence passes; controlled
+  destructive and physical ChromeOS qualification remains active.
   Ready Tactical
   [`208`](../tactical/208-installation-metrics-and-feedback-parity.md) then
   widens support presentation across shared React and Compose only after a
