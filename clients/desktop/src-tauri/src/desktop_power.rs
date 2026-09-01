@@ -6,6 +6,7 @@ use rstorrent_session::{
     TorrentFieldUpdate, TorrentOperationalState, TorrentRowUpdate, TorrentView,
 };
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use crate::desktop_localization;
 
 #[derive(Default)]
