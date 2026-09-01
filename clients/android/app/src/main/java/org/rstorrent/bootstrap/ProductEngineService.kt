@@ -196,6 +196,7 @@ class ProductEngineService : Service() {
     private val productCommandMutation = Mutex()
     private val dataResetOwnerMutation = Mutex()
     @Volatile private var dataResetJournal: ProductDataResetJournal? = null
+    @Volatile private var dataResetProcessKillAfterTorrentsForTest: Int? = null
     private var dataResetJob: Job? = null
     private val externalAdmissionHints = mutableMapOf<Long, ExternalContentHint>()
     private var externalAdmissionJob: Job? = null
@@ -2906,6 +2907,18 @@ class ProductEngineService : Service() {
         }
     }
 
+    fun clearAllDataWithProcessKillForTest(
+        deleteDownloadedFiles: Boolean,
+        completedTorrents: Int,
+    ) {
+        check(ProductSafDocuments.isDebuggable(this)) {
+            "data reset process-kill injection is debug-only"
+        }
+        require(completedTorrents > 0) { "process-kill cursor must be positive" }
+        dataResetProcessKillAfterTorrentsForTest = completedTorrents
+        clearAllData(deleteDownloadedFiles)
+    }
+
     fun retryDataReset() {
         val current = dataResetJournal ?: return
         if (current.failure == null) return
@@ -2993,6 +3006,7 @@ class ProductEngineService : Service() {
                                         failure = null,
                                     ),
                                 )
+                            maybeKillDataResetProcessForTest(journal)
                         }
                         closeClientForDataReset()
                         journal =
@@ -3135,6 +3149,18 @@ class ProductEngineService : Service() {
                 getString(R.string.notification_needs_attention),
             )
         }
+    }
+
+    private fun maybeKillDataResetProcessForTest(journal: ProductDataResetJournal) {
+        val completed = dataResetProcessKillAfterTorrentsForTest ?: return
+        if (journal.completedTorrentCount != completed) return
+        dataResetProcessKillAfterTorrentsForTest = null
+        Log.i(
+            TAG,
+            "data_reset_process_kill operation=${journal.operationId} " +
+                "completed=${journal.completedTorrentCount} total=${journal.torrentIds.size}",
+        )
+        android.os.Process.killProcess(android.os.Process.myPid())
     }
 
     private suspend fun removeDataResetTorrent(

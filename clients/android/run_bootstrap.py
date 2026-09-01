@@ -4315,8 +4315,14 @@ def select_product_saf_folder(
     logs = ""
     while time.monotonic() < deadline:
         logs = product_logs(target)
-        if logs.count("saf_root_operation kind=add ") > previous:
-            return path
+        added = re.findall(
+            r"saf_root_operation kind=add root=([a-z0-9_]+) result=complete",
+            logs,
+        )
+        if len(added) > previous:
+            root_id = added[previous]
+            if f"saf_tree_ready root={root_id}" in logs:
+                return path
         if "product service initialization failed" in logs:
             break
         time.sleep(0.2)
@@ -4359,14 +4365,20 @@ def request_product_data_reset(
     delete_data: bool,
     expected_torrents: int,
     baseline_fds: int,
+    kill_after_first: bool = False,
 ) -> tuple[str, int]:
-    mode = "delete" if delete_data else "keep"
+    if kill_after_first and (not delete_data or expected_torrents < 2):
+        raise BootstrapFailure("process-kill reset requires at least two delete targets")
+    mode = "delete-kill-after-first" if kill_after_first else (
+        "delete" if delete_data else "keep"
+    )
     marker = (
         f"torrents={expected_torrents} "
         f"delete={'true' if delete_data else 'false'} downgraded=false"
     )
     previous = product_logs(target).count("data_reset_completed operation=")
     previous_start_failures = product_logs(target).count("data_reset_start_failed ")
+    previous_process_kills = product_logs(target).count("data_reset_process_kill ")
     result = target.shell(
         [
             "am",
@@ -4386,16 +4398,40 @@ def request_product_data_reset(
         raise BootstrapFailure(f"could not request product data reset {mode}")
     deadline = time.monotonic() + 90
     high_water_fds = baseline_fds
+    recovered_process_kill = False
     logs = ""
     while time.monotonic() < deadline:
         high_water_fds = max(high_water_fds, product_fd_count(target))
         logs = product_logs(target)
+        if (
+            kill_after_first
+            and not recovered_process_kill
+            and logs.count("data_reset_process_kill ") > previous_process_kills
+        ):
+            process_deadline = time.monotonic() + 10
+            while time.monotonic() < process_deadline:
+                if not target.shell(["pidof", PACKAGE], check=False).stdout.strip():
+                    break
+                time.sleep(0.05)
+            else:
+                raise BootstrapFailure("data reset process-kill injection did not exit")
+            restarted = target.shell(
+                ["am", "start", "-W", "-n", ACTIVITY],
+                timeout=30,
+                check=False,
+            )
+            if restarted.returncode != 0 or "Error:" in restarted.stdout:
+                raise BootstrapFailure("could not restart data reset after process kill")
+            recovered_process_kill = True
+            continue
         completed = [
             line
             for line in logs.splitlines()
             if "data_reset_completed operation=" in line
         ]
         if len(completed) > previous:
+            if kill_after_first and not recovered_process_kill:
+                raise BootstrapFailure("data reset completed without the armed process kill")
             if marker not in completed[-1]:
                 raise BootstrapFailure(
                     f"data reset completion differs for {mode}: {completed[-1]}"
@@ -4525,6 +4561,12 @@ def run_product_data_reset_profile(
         )
         baseline_fds = product_fd_count(target)
         first_id = add_product_fixture(target, fixture_a, transport_a)
+        _, first_download_fds = wait_product_completion(
+            target,
+            first_id,
+            baseline_fds,
+        )
+        request_product_torrent_action(target, first_id, "pause")
 
         root_b = select_product_saf_folder(
             target,
@@ -4542,6 +4584,7 @@ def run_product_data_reset_profile(
         )
         fixture_b.handle.set_upload_limit(4 * 1024)
         second_id = add_product_fixture(target, fixture_b, transport_b)
+        target.run(["logcat", "-c"], check=False)
         target.shell(["am", "force-stop", PACKAGE], check=False)
         restarted = target.shell(
             ["am", "start", "-W", "-n", ACTIVITY],
@@ -4558,10 +4601,12 @@ def run_product_data_reset_profile(
             timeout=60,
         )
         fixture_b.handle.pause()
-        _, first_download_fds = wait_product_completion(
+        request_product_torrent_action(target, first_id, "resume")
+        request_product_torrent_action(target, first_id, "observe")
+        wait_product_log(
             target,
-            first_id,
-            baseline_fds,
+            f"torrent_state torrent={first_id} state=COMPLETE",
+            "resumed first-root seed",
         )
         expected_sentinels = install_sentinels()
         assert_fixture_files(root_a, fixture_a, present=True)
@@ -4618,6 +4663,7 @@ def run_product_data_reset_profile(
             delete_data=True,
             expected_torrents=2,
             baseline_fds=baseline_fds,
+            kill_after_first=True,
         )
         assert_fixture_files(root_a, fixture_a, present=False)
         assert_fixture_files(root_b, fixture_b, present=False)
@@ -4648,11 +4694,13 @@ def run_product_data_reset_profile(
                 "data reset final root manifests differ: "
                 f"actual={final_manifests} expected={expected_final}"
             )
+        final_fds = product_fd_count(target)
         high_water_fds = max(
             first_download_fds,
             keep_fds,
             second_download_fds,
             delete_fds,
+            final_fds,
         )
         if baseline_fds and high_water_fds - baseline_fds > 48:
             raise BootstrapFailure(
@@ -4670,6 +4718,7 @@ def run_product_data_reset_profile(
                 key: len(value) for key, value in retained_after_keep.items()
             },
             "readd_recheck": "complete",
+            "process_kill_recovery": "after_first_delete",
             "delete": delete_line,
             "final_manifests": {
                 key: sorted(value) for key, value in final_manifests.items()
@@ -4677,7 +4726,7 @@ def run_product_data_reset_profile(
             "process_fds": {
                 "baseline": baseline_fds,
                 "high_water": high_water_fds,
-                "final": product_fd_count(target),
+                "final": final_fds,
             },
             "cleanup": "exact_registered_files_only",
         }

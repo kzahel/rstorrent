@@ -57,7 +57,7 @@ class MainActivity : ComponentActivity() {
     private var pendingProductLifecycleEvidence: String? = null
     private var pendingProductQuotaRestartEvidence = false
     private var pendingProductTorrentAction: Pair<String, String>? = null
-    private var pendingProductDataReset: Boolean? = null
+    private var pendingProductDataReset: Pair<Boolean, Int?>? = null
     private var pendingNotificationSettingsReturn = false
     private var pendingBackgroundEnable = false
     private var notificationNavigationSequence = 0L
@@ -256,9 +256,16 @@ class MainActivity : ComponentActivity() {
                     pendingProductTorrentAction = null
                     service.exerciseTorrentActionForTest(torrentId, action)
                 }
-                pendingProductDataReset?.let { deleteData ->
+                pendingProductDataReset?.let { (deleteData, killAfterTorrents) ->
                     pendingProductDataReset = null
-                    service.clearAllData(deleteData)
+                    if (killAfterTorrents == null) {
+                        service.clearAllData(deleteData)
+                    } else {
+                        service.clearAllDataWithProcessKillForTest(
+                            deleteData,
+                            killAfterTorrents,
+                        )
+                    }
                 }
             }
 
@@ -714,17 +721,23 @@ class MainActivity : ComponentActivity() {
                 .getStringExtra(EXTRA_PRODUCT_DATA_RESET)
                 ?.let { mode ->
                     command.removeExtra(EXTRA_PRODUCT_DATA_RESET)
-                    val deleteData =
+                    val request =
                         when (mode) {
-                            "keep" -> false
-                            "delete" -> true
+                            "keep" -> false to null
+                            "delete" -> true to null
+                            "delete-kill-after-first" -> true to 1
                             else -> error("unknown product data reset mode")
                         }
                     val service = productService.value
                     if (service == null) {
-                        pendingProductDataReset = deleteData
+                        pendingProductDataReset = request
+                    } else if (request.second == null) {
+                        service.clearAllData(request.first)
                     } else {
-                        service.clearAllData(deleteData)
+                        service.clearAllDataWithProcessKillForTest(
+                            request.first,
+                            requireNotNull(request.second),
+                        )
                     }
                 }
             command

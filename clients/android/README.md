@@ -163,9 +163,10 @@ It clears with Keep, verifies byte-exact registered payloads and unrelated
 root and nested sentinels, re-grants both roots, re-adds and rechecks the kept
 content, then clears with DeleteData. The final manifests must contain only
 the sentinels: no registered payload, part file, or staging artifact may
-survive. The profile records whole-process descriptor high water and removes
-only its fixed task-owned roots, reverse transports, fixtures, and package
-state.
+survive. DeleteData kills the product process after its first durable target
+cursor and requires startup recovery to finish the second target. The profile
+records whole-process descriptor high water and removes only its fixed task-
+owned roots, reverse transports, fixtures, and package state.
 
 The `product-incomplete-duplex` profile stores exactly two verified pieces
 through a capped seed, revokes the SAF grant, force-stops and restarts the
