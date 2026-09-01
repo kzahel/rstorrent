@@ -2904,7 +2904,13 @@ class ProductEngineService : Service() {
         val current = dataResetJournal ?: return
         if (current.failure == null) return
         runCatching {
-            val resumed = current.copy(failure = null)
+            val resumed =
+                current.copy(
+                    retryCurrentTorrent =
+                        current.phase == ProductDataResetPhase.REMOVING_TORRENTS &&
+                            current.failure.torrentId != null,
+                    failure = null,
+                )
             ProductDataResetJournalStore.persist(this, resumed)
             dataResetJournal = resumed
             publishDataReset(resumed)
@@ -2922,7 +2928,12 @@ class ProductEngineService : Service() {
             return
         }
         runCatching {
-            val resumed = current.copy(deleteRemainingData = false, failure = null)
+            val resumed =
+                current.copy(
+                    deleteRemainingData = false,
+                    retryCurrentTorrent = true,
+                    failure = null,
+                )
             ProductDataResetJournalStore.persist(this, resumed)
             dataResetJournal = resumed
             publishDataReset(resumed)
@@ -2968,6 +2979,7 @@ class ProductEngineService : Service() {
                         while (journal.nextTorrentIndex < journal.torrentIds.size) {
                             val torrentId = journal.torrentIds[journal.nextTorrentIndex]
                             removeDataResetTorrent(journal, torrentId)
+                            journal = requireNotNull(dataResetJournal)
                             journal =
                                 persistDataReset(
                                     journal.copy(
@@ -3098,7 +3110,11 @@ class ProductEngineService : Service() {
                                 current.phase == ProductDataResetPhase.REMOVING_TORRENTS
                             },
                 )
-            runCatching { persistDataReset(current.copy(failure = failure)) }
+            runCatching {
+                persistDataReset(
+                    current.copy(retryCurrentTorrent = false, failure = failure),
+                )
+            }
                 .onFailure(error::addSuppressed)
             Log.e(TAG, "product data reset failed phase=${current.phase}", error)
             mutableState.update { it.copy(error = null) }
@@ -3113,23 +3129,73 @@ class ProductEngineService : Service() {
         torrentId: String,
     ) {
         withTimeout(DATA_RESET_TORRENT_TIMEOUT_MILLIS) {
+            var currentJournal = journal
             while (true) {
                 val torrent = dataResetSnapshot().torrents.singleOrNull { it.torrentId == torrentId }
-                    ?: return@withTimeout
+                if (torrent == null) {
+                    if (currentJournal.retryCurrentTorrent) {
+                        persistDataReset(currentJournal.copy(retryCurrentTorrent = false))
+                    }
+                    return@withTimeout
+                }
+                if (currentJournal.retryCurrentTorrent) {
+                    when (torrent.removalState) {
+                        RemovalState.FAILED -> {
+                            dispatchForResponse(
+                                Command.RemoveTorrent(
+                                    torrentId,
+                                    if (currentJournal.deleteRemainingData) {
+                                        RemovalDataPolicy.DELETE_DATA
+                                    } else {
+                                        RemovalDataPolicy.KEEP
+                                    },
+                                ),
+                                dataResetOwner = true,
+                            )
+                            currentJournal =
+                                persistDataReset(currentJournal.copy(retryCurrentTorrent = false))
+                            continue
+                        }
+                        RemovalState.AWAITING_PLATFORM -> {
+                            if (!currentJournal.deleteRemainingData) {
+                                val plan = client.safRemovalPlan(torrentId)
+                                client.failSafRemoval(
+                                    torrentId,
+                                    plan.operationId,
+                                    "clear data explicitly continued without deleting files",
+                                )
+                                dispatchForResponse(
+                                    Command.RemoveTorrent(torrentId, RemovalDataPolicy.KEEP),
+                                    dataResetOwner = true,
+                                )
+                                currentJournal =
+                                    persistDataReset(
+                                        currentJournal.copy(retryCurrentTorrent = false),
+                                    )
+                                continue
+                            }
+                        }
+                        else -> Unit
+                    }
+                    currentJournal =
+                        persistDataReset(currentJournal.copy(retryCurrentTorrent = false))
+                }
                 when (torrent.removalState) {
                     RemovalState.FAILED -> error(torrent.error ?: "torrent removal failed")
                     RemovalState.AWAITING_PLATFORM -> {
-                        check(journal.deleteRemainingData) {
+                        check(currentJournal.deleteRemainingData) {
                             "keep-files clear unexpectedly requested platform deletion"
                         }
                         val plan = client.safRemovalPlan(torrentId)
-                        val treeUri =
-                            ProductSafRootRegistry.treeForRoot(this@ProductEngineService, plan.storageRoot)
-                                ?: throw SafStorageRequestException(
+                        try {
+                            val treeUri =
+                                ProductSafRootRegistry.treeForRoot(
+                                    this@ProductEngineService,
+                                    plan.storageRoot,
+                                ) ?: throw SafStorageRequestException(
                                     SafStorageFailureKind.GRANT_UNAVAILABLE,
                                     "persisted SAF grant is unavailable for the torrent root",
                                 )
-                        try {
                             withContext(Dispatchers.IO) {
                                 ProductSafDocuments.deleteData(
                                     this@ProductEngineService,
@@ -3153,7 +3219,7 @@ class ProductEngineService : Service() {
                         dispatchForResponse(
                             Command.RemoveTorrent(
                                 torrentId,
-                                if (journal.deleteRemainingData) {
+                                if (currentJournal.deleteRemainingData) {
                                     RemovalDataPolicy.DELETE_DATA
                                 } else {
                                     RemovalDataPolicy.KEEP

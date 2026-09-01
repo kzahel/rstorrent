@@ -38,6 +38,7 @@ internal data class ProductDataResetJournal(
     val phase: ProductDataResetPhase = ProductDataResetPhase.REMOVING_TORRENTS,
     val nextTorrentIndex: Int = 0,
     val nextRootIndex: Int = 0,
+    val retryCurrentTorrent: Boolean = false,
     val failure: ProductDataResetFailure? = null,
 ) {
     val downgradedToKeep: Boolean
@@ -60,6 +61,13 @@ internal data class ProductDataResetJournal(
         ProductSafRootRegistry.validate(ProductSafRootRegistryState(roots = roots))
         require(nextTorrentIndex in 0..torrentIds.size) { "data reset torrent cursor is invalid" }
         require(nextRootIndex in 0..roots.size) { "data reset root cursor is invalid" }
+        if (retryCurrentTorrent) {
+            require(
+                phase == ProductDataResetPhase.REMOVING_TORRENTS &&
+                    nextTorrentIndex < torrentIds.size &&
+                    failure == null,
+            ) { "data reset torrent retry marker is invalid" }
+        }
         if (phase != ProductDataResetPhase.REMOVING_TORRENTS) {
             require(nextTorrentIndex == torrentIds.size) {
                 "data reset advanced before every torrent completed"
@@ -121,7 +129,7 @@ internal data class ProductDataResetJournal(
 }
 
 internal object ProductDataResetJournalCodec {
-    private const val VERSION = 1
+    private const val VERSION = 2
     private const val CHECKSUM_BYTES = Long.SIZE_BYTES
 
     fun encode(journal: ProductDataResetJournal): String {
@@ -135,6 +143,7 @@ internal object ProductDataResetJournalCodec {
             output.writeUTF(journal.phase.name)
             output.writeInt(journal.nextTorrentIndex)
             output.writeInt(journal.nextRootIndex)
+            output.writeBoolean(journal.retryCurrentTorrent)
             output.writeInt(journal.torrentIds.size)
             journal.torrentIds.forEach(output::writeUTF)
             output.writeInt(journal.roots.size)
@@ -185,6 +194,7 @@ internal object ProductDataResetJournalCodec {
                 val phase = ProductDataResetPhase.valueOf(input.readUTF())
                 val nextTorrentIndex = input.readInt()
                 val nextRootIndex = input.readInt()
+                val retryCurrentTorrent = input.readBoolean()
                 val torrentCount = input.readInt()
                 require(torrentCount in 0..ProductDataResetJournal.MAX_TORRENTS) {
                     "invalid data reset torrent count"
@@ -223,6 +233,7 @@ internal object ProductDataResetJournalCodec {
                     phase = phase,
                     nextTorrentIndex = nextTorrentIndex,
                     nextRootIndex = nextRootIndex,
+                    retryCurrentTorrent = retryCurrentTorrent,
                     failure = failure,
                 )
             }

@@ -58,7 +58,7 @@ class ProductDataResetTest {
         }
 
         val futureBytes = Base64.getUrlDecoder().decode(encoded)
-        ByteBuffer.wrap(futureBytes).putInt(2)
+        ByteBuffer.wrap(futureBytes).putInt(3)
         val payloadSize = futureBytes.size - Long.SIZE_BYTES
         val checksum = CRC32().apply { update(futureBytes, 0, payloadSize) }.value
         ByteBuffer.wrap(futureBytes, payloadSize, Long.SIZE_BYTES).putLong(checksum)
@@ -117,6 +117,16 @@ class ProductDataResetTest {
             ProductDataResetJournalCodec.encode(
                 journal.copy(
                     phase = ProductDataResetPhase.RESETTING_PREFERENCES,
+                    nextTorrentIndex = 2,
+                ),
+            )
+        }
+        val retry = journal.copy(nextTorrentIndex = 1, retryCurrentTorrent = true)
+        assertEquals(retry, ProductDataResetJournalCodec.decode(ProductDataResetJournalCodec.encode(retry)))
+        assertThrows(IllegalArgumentException::class.java) {
+            ProductDataResetJournalCodec.encode(
+                retry.copy(
+                    phase = ProductDataResetPhase.RESETTING_PROFILE,
                     nextTorrentIndex = 2,
                 ),
             )
