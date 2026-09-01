@@ -1427,6 +1427,45 @@ mod tests {
     }
 
     #[test]
+    fn maximum_source_watermarks_keep_native_storage_bounded() {
+        let root = tempfile::tempdir().expect("temporary product root");
+        let mut store = ProductStateStore::open_at(root.path(), "1", None, START).unwrap();
+        for index in 0..MAX_PRODUCT_SOURCES {
+            let mut epoch = [0; 16];
+            epoch[..8].copy_from_slice(&((index + 1) as u64).to_be_bytes());
+            store
+                .apply_milestones(&[ProductMilestone {
+                    source_epoch: epoch,
+                    sequence: 1,
+                    kind: ProductMilestoneKind::TorrentAdded,
+                }])
+                .unwrap();
+        }
+
+        let usage = store.page_usage().expect("read product page usage");
+        let database = root.path().join(PRODUCT_DATABASE_FILENAME);
+        let database_bytes = std::fs::metadata(&database)
+            .expect("product database metadata")
+            .len();
+        let wal_bytes = std::fs::metadata(database.with_extension("db-wal"))
+            .map(|metadata| metadata.len())
+            .unwrap_or(0);
+        eprintln!(
+            "product-state high water: page_size={} page_count={} logical_bytes={} database_bytes={} wal_bytes={}",
+            usage.page_size,
+            usage.page_count,
+            usage.page_size * usage.page_count,
+            database_bytes,
+            wal_bytes,
+        );
+
+        assert!(usage.page_size * usage.page_count <= 64 * 1024);
+        assert!(database_bytes <= 64 * 1024);
+        assert!(wal_bytes <= 4 * 1024 * 1024);
+        assert_eq!(store.summary().unwrap().torrents_added, "128");
+    }
+
+    #[test]
     fn counter_saturates_and_clock_rollback_reports_zero_days() {
         let mut store = ProductStateStore::open_ephemeral_at("1", START).unwrap();
         store
