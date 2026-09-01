@@ -1,3 +1,5 @@
+import { ProductMetricsOwner } from "./product-metrics.js";
+
 const NATIVE_HOST = "com.jstorrent.rstorrent.native";
 const PROTOCOL_VERSION = 1;
 const CROSTINI_ORIGIN = "http://penguin.linux.test:3030";
@@ -7,6 +9,8 @@ const CROSTINI_TAB_KEY = "crostiniUiTabId";
 const ANDROID_LAUNCH_URL = "rstorrent://chromeos-companion";
 const ANDROID_PAGE = "companion/companion.html";
 const ANDROID_TAB_KEY = "androidUiTabId";
+const productMetrics = new ProductMetricsOwner(chrome, chrome.runtime.getManifest().version);
+productMetrics.start();
 
 function sendNativeOperation(op) {
   const request = {
@@ -45,6 +49,15 @@ function sendNativeOperation(op) {
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === "productMetrics") {
+    const operation = productMetricsOperation(message);
+    if (operation === null) return false;
+    operation.then(
+      (state) => sendResponse({ ok: true, state }),
+      (error) => sendResponse({ ok: false, error: String(error).slice(0, 256) }),
+    );
+    return true;
+  }
   if (message?.type === "nativeBootstrap" && ["hello", "launch"].includes(message.op)) {
     sendNativeOperation(message.op).then(sendResponse);
     return true;
@@ -59,6 +72,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   return false;
 });
+
+function productMetricsOperation(message) {
+  switch (message.op) {
+    case "get": return productMetrics.snapshot();
+    case "session": return productMetrics.recordSession();
+    case "connected": return productMetrics.recordConnected();
+    case "acknowledge": return productMetrics.acknowledge(message.enabled === true);
+    case "setEnabled": return productMetrics.setStatisticsEnabled(message.enabled === true);
+    case "reset": return productMetrics.reset();
+    default: return null;
+  }
+}
 
 chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
   if (!validCrostiniLaunchMessage(message, sender)) {

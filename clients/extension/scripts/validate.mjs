@@ -24,6 +24,7 @@ export const packagedFiles = Object.freeze([
   "crostini/setup.html",
   "crostini/setup.css",
   "src/service-worker.js",
+  "src/product-metrics.js",
   ...companionPackagedFiles,
 ]);
 
@@ -84,6 +85,9 @@ export function validateSource() {
   if (manifest.background?.service_worker !== "src/service-worker.js") {
     fail("unexpected service worker entry point");
   }
+  if (manifest.background?.type !== "module") {
+    fail("product metrics require the reviewed module service worker");
+  }
   if (manifest.action?.default_popup !== "popup/popup.html") {
     fail("unexpected popup entry point");
   }
@@ -115,7 +119,9 @@ export function validateSource() {
       urls.some(
         (url) =>
           url !== "http://penguin.linux.test:3030" &&
-          url !== "http://100.115.92.2/*",
+          url !== "http://100.115.92.2/*" &&
+          url !== "https://jstorrent.com/privacy.html" &&
+          url !== "https://jstorrent.com/uninstall.html",
       )
     ) {
       fail(`${relativePath} contains an unexpected remote URL`);

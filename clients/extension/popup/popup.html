@@ -73,6 +73,42 @@
           and download locations.
         </p>
       </section>
+
+      <section id="privacy-surface">
+        <h2>Privacy &amp; feedback</h2>
+        <div id="metrics-disclosure" class="choice-card" hidden>
+          <h3>Usage statistics</h3>
+          <p>
+            The extension keeps one random resettable installation identifier,
+            days since first use, visible sessions, and whether it has connected.
+            If enabled after you continue, those values may be placed in the
+            uninstall survey URL. Torrent names, hashes, paths, peers, trackers,
+            credentials, logs, and errors are never included.
+          </p>
+          <label>
+            <input id="metrics-disclosure-enabled" type="checkbox" checked />
+            Include pseudonymous usage statistics
+          </label>
+          <button id="metrics-continue" type="button">Save and continue</button>
+        </div>
+        <div id="metrics-settings" class="choice-card" hidden>
+          <label>
+            <input id="metrics-enabled" type="checkbox" />
+            Include pseudonymous usage statistics
+          </label>
+          <p id="metrics-summary" class="status-detail"></p>
+          <button id="metrics-reset" class="secondary" type="button">
+            Reset statistics and identifier
+          </button>
+        </div>
+        <p class="footnote">
+          The uninstall URL is stored locally by Chrome. Opening it can disclose
+          included values to browser history, website logs and referrers, the
+          survey form, and the page’s Cloudflare analytics.
+        </p>
+        <button id="privacy-policy" class="secondary" type="button">Privacy policy</button>
+        <p id="metrics-status" class="status-detail" role="status"></p>
+      </section>
     </main>
     <script type="module" src="popup.js"></script>
   </body>

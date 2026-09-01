@@ -12,6 +12,16 @@ const linuxStatus = document.querySelector("#linux-status");
 const androidButton = document.querySelector("#connect-android");
 const androidStatus = document.querySelector("#android-status");
 const ANDROID_HOST_PERMISSION = "http://100.115.92.2/*";
+const PRIVACY_URL = "https://jstorrent.com/privacy.html";
+const metricsDisclosure = document.querySelector("#metrics-disclosure");
+const metricsDisclosureEnabled = document.querySelector("#metrics-disclosure-enabled");
+const metricsContinue = document.querySelector("#metrics-continue");
+const metricsSettings = document.querySelector("#metrics-settings");
+const metricsEnabled = document.querySelector("#metrics-enabled");
+const metricsSummary = document.querySelector("#metrics-summary");
+const metricsReset = document.querySelector("#metrics-reset");
+const metricsStatus = document.querySelector("#metrics-status");
+const privacyPolicy = document.querySelector("#privacy-policy");
 
 function setStatus(kind, title, detail) {
   statusDot.className = `status-dot ${kind}`;
@@ -36,6 +46,7 @@ async function checkDesktop() {
       "RSTorrent Desktop is ready",
       `Native bootstrap ${response.result.hostVersion} is installed.`,
     );
+    void updateMetrics("connected");
     launchButton.disabled = false;
   } catch (error) {
     setStatus(
@@ -145,4 +156,67 @@ async function initializePresentation() {
   }
 }
 
-initializePresentation();
+function metricsRequest(op, extra = {}) {
+  return chrome.runtime.sendMessage({ type: "productMetrics", op, ...extra });
+}
+
+function renderMetrics(state) {
+  const disclosed = state.disclosureVersion === 1;
+  metricsDisclosure.hidden = disclosed;
+  metricsSettings.hidden = !disclosed;
+  metricsEnabled.checked = state.statisticsEnabled;
+  const days = Math.max(0, Math.floor((Date.now() - Number(state.createdAtMillis)) / 86_400_000));
+  metricsSummary.textContent =
+    `${days} days since first use · ${state.sessions} visible sessions · ` +
+    (state.everConnected ? "connected" : "not connected yet");
+}
+
+async function updateMetrics(op, extra = {}) {
+  const response = await metricsRequest(op, extra);
+  if (!response?.ok) throw new Error(response?.error || "Privacy settings could not be saved.");
+  renderMetrics(response.state);
+}
+
+metricsContinue.addEventListener("click", async () => {
+  metricsContinue.disabled = true;
+  try {
+    await updateMetrics("acknowledge", { enabled: metricsDisclosureEnabled.checked });
+    metricsStatus.textContent = "Privacy preference saved.";
+  } catch (error) {
+    metricsStatus.textContent = error instanceof Error ? error.message : String(error);
+  } finally {
+    metricsContinue.disabled = false;
+  }
+});
+
+metricsEnabled.addEventListener("change", async () => {
+  metricsEnabled.disabled = true;
+  try {
+    await updateMetrics("setEnabled", { enabled: metricsEnabled.checked });
+    metricsStatus.textContent = "Privacy preference saved.";
+  } catch (error) {
+    metricsStatus.textContent = error instanceof Error ? error.message : String(error);
+  } finally {
+    metricsEnabled.disabled = false;
+  }
+});
+
+metricsReset.addEventListener("click", async () => {
+  if (!confirm("Create a new identifier and clear extension usage statistics?")) return;
+  try {
+    await updateMetrics("reset");
+    metricsStatus.textContent = "Statistics and identifier reset.";
+  } catch (error) {
+    metricsStatus.textContent = error instanceof Error ? error.message : String(error);
+  }
+});
+
+privacyPolicy.addEventListener("click", () => chrome.tabs.create({ url: PRIVACY_URL }));
+
+async function initialize() {
+  await Promise.all([initializePresentation(), updateMetrics("session")]);
+}
+
+initialize().catch((error) => {
+  metricsStatus.textContent = error instanceof Error ? error.message : String(error);
+});

@@ -4,12 +4,16 @@ import test, { beforeEach } from "node:test";
 let internalListener;
 let externalListener;
 let removedListener;
+let installedListener;
+let startupListener;
+let storageChangedListener;
 let nativeResponse;
 let nativeRequest;
 let nextTabId = 100;
 let focusedWindow;
 let stored = {};
 let tabs = new Map();
+let uninstallUrl;
 
 globalThis.chrome = {
   runtime: {
@@ -31,6 +35,22 @@ globalThis.chrome = {
     getURL(path) {
       return `chrome-extension://gcgoepclopkgijmclmlheafaglmbjlcc/${path}`;
     },
+    getManifest() {
+      return { version: "0.4.0" };
+    },
+    async setUninstallURL(url) {
+      uninstallUrl = url;
+    },
+    onInstalled: {
+      addListener(callback) {
+        installedListener = callback;
+      },
+    },
+    onStartup: {
+      addListener(callback) {
+        startupListener = callback;
+      },
+    },
   },
   storage: {
     session: {
@@ -42,6 +62,19 @@ globalThis.chrome = {
       },
       async remove(key) {
         delete stored[key];
+      },
+    },
+    local: {
+      async get(key) {
+        return { [key]: stored[key] };
+      },
+      async set(values) {
+        Object.assign(stored, values);
+      },
+    },
+    onChanged: {
+      addListener(callback) {
+        storageChangedListener = callback;
       },
     },
   },
@@ -90,6 +123,7 @@ beforeEach(() => {
   focusedWindow = undefined;
   stored = {};
   tabs = new Map();
+  uninstallUrl = undefined;
 });
 
 function sendInternal(message) {
@@ -242,4 +276,22 @@ test("unrecognized internal messages are not claimed", () => {
     internalListener({ type: "nativeBootstrap", op: "download" }, {}, () => {}),
     false,
   );
+});
+
+test("product metric messages serialize disclosure session and reset state", async () => {
+  const first = await sendInternal({ type: "productMetrics", op: "session" });
+  assert.equal(first.ok, true);
+  assert.equal(first.state.sessions, "1");
+  assert.equal(first.state.disclosureVersion, 0);
+  assert.equal(uninstallUrl, "https://jstorrent.com/uninstall.html?v=0.4.0");
+
+  const acknowledged = await sendInternal({
+    type: "productMetrics",
+    op: "acknowledge",
+    enabled: false,
+  });
+  assert.equal(acknowledged.state.statisticsEnabled, false);
+  const reset = await sendInternal({ type: "productMetrics", op: "reset" });
+  assert.equal(reset.state.sessions, "0");
+  assert.notEqual(reset.state.installationId, first.state.installationId);
 });
