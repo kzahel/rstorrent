@@ -145,6 +145,12 @@ context-commented Android feedback strings; the checker, lint, Android build,
 focused API-35 route, and physical ChromeOS presentation pass without adding
 a production locale.
 
+Ready Tactical
+[`207`](../tactical/207-android-safe-reset-and-clear-data.md) will add the
+Android reset/clear confirmation, progress, failure, retry, and explicit
+keep-remaining-files copy to this existing English catalog with translator
+comments and pseudo-locale evidence. It does not select a production locale.
+
 A separate tactical is required to choose and ship the first real
 non-English cohort. Android replacement localization remains open until that
 cohort passes provenance, native review, lifecycle, layout, accessibility,

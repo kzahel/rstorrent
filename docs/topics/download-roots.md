@@ -503,6 +503,14 @@ source, fixture, or asset is imported by this topic.
 - Metadata-only add may perform bounded metadata networking and parsing but
   cannot create a payload, staging, or part artifact.
 
+Ready Tactical
+[`207`](../tactical/207-android-safe-reset-and-clear-data.md) composes the
+existing exact per-torrent keep/delete removal contracts for Android clear
+data. Delete mode remains manifest-based, retains a failed root grant for
+repair and retry, and releases each retained grant only after no registered
+torrent needs it. Neither mode recursively deletes a selected root; keep mode
+does not open or alter registered payload or part artifacts.
+
 ## Recommended Next Work
 
 Preserve Tactical `194`'s implemented Android retained-root/current-default

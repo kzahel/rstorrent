@@ -93,6 +93,13 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`207-android-safe-reset-and-clear-data.md`](207-android-safe-reset-and-clear-data.md):
+  ready; defines one configured-default atomic engine-settings reset and one
+  durable Android clear-data workflow with unchecked-by-default Keep versus
+  exact registered-payload deletion. Every captured torrent must join before
+  root/grant/profile cleanup, unrelated root content remains untouched,
+  partial failures remain repairable/retryable, and implicit migration reset
+  can never select deletion.
 - [`204-cross-product-localization-foundation.md`](204-cross-product-localization-foundation.md):
   complete; shared React/Tauri, Android Compose/platform, and iOS
   SwiftUI/platform presentation use complete checked English catalogs, system

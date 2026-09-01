@@ -504,6 +504,14 @@ bridge; after acquisition, payload I/O remains in Rust.
   repair resumes the same partial torrent; exact application removal and AVD
   cleanup pass.
 
+Ready Tactical
+[`207`](../tactical/207-android-safe-reset-and-clear-data.md) uses this exact
+removal and grant-repair boundary for the product clear-data workflow. Android
+serializes at most one delete job, keeps a failed grant until retry or an
+explicit keep-files downgrade, and never substitutes recursive tree deletion.
+Only after every removal is terminal may the coordinator release retained
+grants and reset the fixed private product profile.
+
 ## Recommended Next Work
 
 Do not restore or extend the diagnostic-only fixed-manifest or publication

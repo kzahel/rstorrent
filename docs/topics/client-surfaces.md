@@ -1076,6 +1076,14 @@ with exact SAF cleanup.
   a physical ChromeOS page/form/GitHub/return check pass. It adds no Rust/
   application contract, report backend, diagnostic export, durable state, or
   client-owned browser surface.
+  Reset and clear-data are still unavailable. Ready Tactical
+  [`207`](../tactical/207-android-safe-reset-and-clear-data.md) owns the two
+  Advanced Settings actions and three exact outcomes: atomic configured-
+  default engine-settings reset, joined profile clear while preserving every
+  registered payload, and joined profile clear with unchecked-by-default
+  metainfo-exact payload deletion. Its Android service journal must survive
+  process death, preserve unrelated root content, surface partial failures,
+  and release grants only after torrent work joins.
 - Tracker HTTPS authentication is intentionally absent from ordinary React
   and Compose settings. The advanced typed `disabled` override exists for
   compatibility/debug use and remains visibly unauthenticated in tracker

@@ -15,6 +15,15 @@ at `25e4b701433fd815398ba89526546f5e4f072e3f`. Re-audit both products before a
 replacement candidate because this topic records a moving product boundary,
 not permanent parity with that one revision.
 
+Ready Tactical
+[`207`](../tactical/207-android-safe-reset-and-clear-data.md) re-opened the
+reset, clear, exact deletion, removal-completion, settings, SAF-root, pairing,
+metrics, and preference owners against RSTorrent
+`c36f3a7c2e5e1adc64a4e3da3942269d4239b62a`, clean JSTorrent sibling revision
+`0cad4dacf540f5be42ee53c4f1e1da27aa1b3685`, and pinned libtorrent `2.0.13` at
+`7d7fc38fac61177fa5e02148f791b2f65250b09d`. Its source-first record owns the
+exact paths, adopted behavior, deliberate differences, and validation matrix.
+
 ## Scope And Ownership
 
 This topic owns:
@@ -241,7 +250,7 @@ blocker for an independent RSTorrent beta.
 | Search and plugins | JSTorrent has search UI plus installed/recommended URL-fetched JavaScript plugins in an Android WebView sandbox. RSTorrent has no search/plugin product capability. | Treat as a separate security and product campaign. Implement only with explicit network-code trust, sandbox, update, disclosure, and Play-review policy; otherwise retire/defer visibly. |
 | Native/progressive playback | Completed Tactical `202` gives RSTorrent Android native Media3 playback for typed completed and eligible incomplete video through the shared Rust HTTP capability, with audio focus, picture-in-picture, removal revocation, seek, publication handoff, and playback lifetime ownership proven on physical ChromeOS. | Treat native playback as implemented. Sidecar/external subtitles, codec breadth, resume/history, background-audio controls, and production-package qualification remain separate dispositions. |
 | Localization | JSTorrent currently ships system/app locale selection, base English, and 18 non-English locale directories. Completed Tactical [`204`](../tactical/204-cross-product-localization-foundation.md) gives RSTorrent complete checked English catalogs, system locale negotiation, formatting/plurals, and long-LTR/RTL pseudo evidence across React/Tauri, Android, and iOS. | Select and qualify a native-reviewed first real language cohort separately. Do not inherit or advertise JSTorrent's translations without provenance, review, lifecycle, layout, accessibility, and release-disclosure evidence. |
-| Reset, clear data, and support | JSTorrent exposes reset settings, clear all data with optional payload deletion, and a prefilled report-bug path. Its reset preserves some preferences and incompletely establishes live engine reapplication; its clear workflow does not join torrent removal before dropping roots. RSTorrent now has the exact external feedback handoff while Reset engine settings remains unavailable and clear-data is absent. | Completed Tactical [`206`](../tactical/206-android-jstorrent-feedback-handoff.md) implements only the current JSTorrent external feedback handoff. Safe settings reset, metadata/profile clear, and optional joined payload deletion remain separate unplanned operations. Never combine payload deletion with an implicit migration reset. |
+| Reset, clear data, and support | JSTorrent exposes reset settings, clear all data with optional payload deletion, and a prefilled report-bug path. Its reset preserves some preferences and incompletely establishes live engine reapplication; its clear workflow does not join torrent removal before dropping roots. RSTorrent now has the exact external feedback handoff while Reset engine settings remains unavailable and clear-data is absent. | Completed Tactical [`206`](../tactical/206-android-jstorrent-feedback-handoff.md) implements the current JSTorrent external feedback handoff. Ready Tactical [`207`](../tactical/207-android-safe-reset-and-clear-data.md) owns atomic engine-settings reset plus joined clear-with-keep and clear-with-exact-delete outcomes. Payload deletion remains explicit, unchecked by default, metainfo-exact, and unavailable to implicit migration reset. |
 | Add-time file selection | JSTorrent can show a file-selection step during add. | Implemented by Tactical [`203`](../tactical/203-jstorrent-shaped-add-time-file-selection.md). Shared React and Compose default to one application-owned pending step: checked is Normal, unchecked is Skip, All/None are logical, magnets fetch metadata without content, and one atomic confirmation starts the durable selection. BEP 53 intent, cancellation/duplicate safety, restart, bounded paging, external intake, API-35, and physical ChromeOS evidence pass. High remains post-add. |
 | Download manifest integration | JSTorrent can write a sidecar manifest for external playback integration. RSTorrent does not. | Confirm whether any supported integration consumes it; implement a safe final-path equivalent or retire it. |
 | Active-piece memory override | JSTorrent exposes an Android memory-budget override. RSTorrent uses bounded engine-owned resource policy without an equivalent user control. | Prefer measured automatic limits unless physical evidence justifies an advanced setting. Record this as a deliberate difference. |
@@ -320,8 +329,8 @@ defer-and-disclose decision.
 | Search and plugins | Recommended plugins, URL installation, enable/disable, and removal. | Disabled placeholder and no plugin product capability. | Missing by design pending a separate security/product decision. Do not treat arbitrary fetched code as an ordinary Settings addition. |
 | Download manifest | Can enable `.jstorrent.json` output for PlayVideo integration. | No equivalent. | Confirm a supported consumer before retaining it; otherwise retire and disclose. |
 | Report a bug | Opens `jstorrent.com/feedback.html` with app version, Android version, and device manufacturer/model; that page embeds a prefilled Google Form and separately links to a new GitHub issue. | Advanced Settings exposes **Report Bug / Send Feedback** and sends exactly the same four-field URL to one external browser intent. | Implemented by Tactical [`206`](../tactical/206-android-jstorrent-feedback-handoff.md) without a local export, backend, durable state, or automatic submission. Exact unit/AVD tests and a physical ChromeOS live-page check pass. |
-| Reset settings | Visible action. | Disabled Reset engine settings row. | Missing. The JSTorrent semantics are narrower and less atomic than its wording suggests; use the safety contract below. |
-| Clear all data | Visible confirmation with an unchecked-by-default Also delete downloaded files option. | No equivalent. | Missing. Metadata/profile clear and payload deletion need separate, explicit, joined outcomes. |
+| Reset settings | Visible action. | Disabled Reset engine settings row. | Missing; ready Tactical `207` will reset every global engine setting atomically from the configured fresh-profile authority while preserving torrents, roots, per-torrent settings, payload, Android preferences, appearance, pairing, and metrics. |
+| Clear all data | Visible confirmation with an unchecked-by-default Also delete downloaded files option. | No equivalent. | Missing; ready Tactical `207` will add one durable joined clear workflow with keep and exact registered-payload deletion outcomes, precise partial failure, unrelated-root-content preservation, and process-death recovery. |
 | Chromebook companion mode | Separate daemon mode with its own lifecycle settings. | No separate mode; Compose and the extension share one service/application/profile owner. | Deliberately inapplicable to RSTorrent's accepted architecture. |
 | Companion background/idle policy | Run-in-background toggle, configurable 5–120 minute idle close (default 30), prefer-standalone toggle, launch-standalone action, extension link, and Quit. | Ordinary background-download preference plus one fixed authenticated 60-second reconnect grace. | Tactical `200` deliberately selected a fixed grace and no prefer-standalone or user timer. Revisit only with product evidence. |
 
@@ -352,21 +361,26 @@ but their current implementation should not be copied literally:
   reset path preserves locale, theme, and notification-prompt state; other
   stores such as pairing are not part of this workflow.
 
-A future RSTorrent tactical must define one typed, atomic settings reset and a
-separate joined clear workflow. Metadata/profile clearing must be distinct
-from optional payload deletion; every removal must finish or report a precise
-partial failure before grants are released. The confirmation must state exact
-torrent, payload, root, pairing, metrics, appearance, locale, and permission
-outcomes. Payload deletion stays unchecked by default, and migration reset
-must never imply payload deletion.
+Ready Tactical
+[`207`](../tactical/207-android-safe-reset-and-clear-data.md) defines one typed,
+atomic engine-settings reset and a separate durable joined clear workflow.
+Metadata/profile clearing remains distinct from optional payload deletion;
+every removal must finish or report a precise partial failure before grants
+are released. Its outcome matrix states exact torrent, payload, root, pairing,
+metrics, appearance, locale, and permission behavior. Payload deletion stays
+unchecked by default, applies only to registered torrent files and exact
+engine-owned part artifacts, and can never be selected by migration reset.
 
 ### Settings Follow-Up Queue
 
 This comparison produces the following bounded candidates, in recommended
 order. It records priority, not implementation authorization:
 
-1. Separately implement safe settings reset, metadata/profile clear, and
-   optional joined payload deletion.
+1. Implement ready Tactical
+   [`207`](../tactical/207-android-safe-reset-and-clear-data.md): atomic engine-
+   settings reset, joined profile clear while keeping downloaded files, and
+   joined profile clear with unchecked-by-default exact registered-payload
+   deletion. Never recursively clean selected roots.
 2. Decide whether to retain a low-battery policy with charging, hysteresis,
    notification, preserved intent, restart, and joined-shutdown semantics.
 3. Treat SOCKS5 and a real VPN-only mode as separate source-first engine and
@@ -616,12 +630,14 @@ live run.
    [`204`](../tactical/204-cross-product-localization-foundation.md) as the
    cross-product localization-foundation gate, and completed Tactical
    [`206`](../tactical/206-android-jstorrent-feedback-handoff.md) as the exact
-   external-feedback regression gate. Select the first reviewed real language
-   cohort separately, and decide VPN, proxy, search/plugins, playback
-   follow-ups, reset/clear-data, and the remaining table rows individually.
-   Proxy and any engine/network privacy work follow the source-first engine
-   campaign; search/plugin and playback follow-ups remain separate security/
-   lifecycle campaigns.
+   external-feedback regression gate. Implement ready Tactical
+   [`207`](../tactical/207-android-safe-reset-and-clear-data.md) independently
+   for atomic reset, joined clear-with-keep, and joined exact registered-
+   payload deletion. Select the first reviewed real language cohort
+   separately, and decide VPN, proxy, search/plugins, playback follow-ups, and
+   the remaining table rows individually. Proxy and any engine/network
+   privacy work follow the source-first engine campaign; search/plugin and
+   playback follow-ups remain separate security/lifecycle campaigns.
 9. Run `JAR-010` only after the required gates and disposition ledger converge.
    Signing, store upload, staged rollout, production extension publication,
    and release promotion each remain explicitly authorized operations.

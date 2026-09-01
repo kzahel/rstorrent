@@ -856,6 +856,14 @@ successful mutation unreadable after upgrade.
 - Corrupt or unsupported durable state cannot establish verified metadata,
   have-pieces, storage publication, or seeding eligibility.
 
+Ready Tactical
+[`207`](../tactical/207-android-safe-reset-and-clear-data.md) distinguishes the
+automatic bounded schema reset above from an explicit user-confirmed Android
+clear. The latter journals its bounded phase outside the fixed product profile,
+joins exact per-torrent removal first, then resets only the validated private
+profile and restarts into an empty fresh schema. Crash recovery never broadens
+that reset to Android app data or a user-selected download root.
+
 ## Known Gaps And Open Decisions
 
 - When a future version is explicitly declared the first supported beta or

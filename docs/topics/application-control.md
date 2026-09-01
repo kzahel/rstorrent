@@ -516,6 +516,16 @@ bounds presentation diagnostics. Multi-remove similarly confirms one policy
 but dispatches durable removals individually, so it promises neither atomicity
 nor rollback of an earlier successful deletion.
 
+Ready Tactical
+[`207`](../tactical/207-android-safe-reset-and-clear-data.md) keeps Android
+clear-data orchestration above the same boundary while making it durable and
+joined. The Android service journals one bounded target set, serially observes
+the existing per-torrent removal jobs, and does not advance to private-profile
+reset or retained-grant release until those jobs reach authoritative terminal
+states. A separate value-free `ResetClientSettings` command installs the
+application configuration's complete fresh-profile setting set atomically;
+presentations do not reconstruct defaults.
+
 Tactical `088` extends the existing client-settings command rather than
 adding a gateway command surface. Restart applies the local-network listener
 and mapping policy, while the current generation publishes mapping progress
