@@ -16,6 +16,15 @@ native CLI. It uses `AddMagnet` or the existing torrent-byte intake, one
 Summary subscription, and a final snapshot; it adds no alternate engine
 command or generated client contract.
 
+Implementation-complete Tactical
+[`208`](../tactical/208-installation-metrics-and-feedback-parity.md) changes no
+public torrent command or response. Schema 26 appends one of two closed,
+profile-local product milestones in the same transaction as successful
+catalog creation or first ordinary downloaded completion. A single joined
+application drain applies and acknowledges them idempotently; failure or the
+1,024-row bound can degrade only derived product counters, never the
+authoritative command outcome, verified state, or torrent lifecycle.
+
 Completed Tactical
 [`188`](../tactical/188-existing-payload-adoption-and-recheck.md) makes
 existing-payload discovery a transparent consequence of starting a verified

@@ -902,13 +902,15 @@ campaign remain open qualification.
 
 Explicit user direction on 2026-09-01 also accepts JSTorrent-shaped
 installation metrics and feedback/uninstall behavior as product continuity,
-not obsolete implementation detail. Ready Tactical
+not obsolete implementation detail. Implementation-complete Tactical
 [`208`](../tactical/208-installation-metrics-and-feedback-parity.md) defines
 one native installation product-state owner, crash-safe semantic counters,
 desktop updater-ID adoption, previewed feedback context, an extension-local
 uninstall summary, and disclosed disable/reset controls. It adds no continuous
-analytics or generic event pipeline; implementation and all declared evidence
-remain open.
+analytics or generic event pipeline. Deterministic native/web/extension and
+Android build gates pass; richer query fields remain fail-closed until the
+corrected hosted source is deployed and publicly verified, and physical
+ChromeOS plus Apple compile qualification remain open.
 
 Tactical `152` closes the selected-root multifile defect exposed after those
 three tacticals. Exact-target coordination passes deterministic sibling-lease
@@ -929,6 +931,11 @@ exactly.
 
 ### Active
 
+- Finish release qualification for **Tactical `208`**. The closed native
+  store/outbox, desktop and Android presentation, updater migration, and MV3
+  uninstall owner are implemented. A separately authorized hosted deployment
+  and public verification must precede flipping the richer-context gates;
+  physical ChromeOS and Apple compile evidence also remain.
 - Finish qualification evidence for **Tactical `207`**. Atomic reset and the
   durable joined keep/delete clear workflow are implemented; full repository,
   Android dual-ABI, Compose, API 28/35 reset/keep/recovery, and controlled API
@@ -959,11 +966,6 @@ exactly.
 
 ### Ready
 
-- Implement **Tactical `208`**: add the installation-wide product-state owner,
-  exact addition/completion/session summary, disclosed statistics preference
-  and reset, previewed feedback context, desktop updater-ID adoption, and the
-  MV3 extension's bounded uninstall URL. Hosted privacy wording must be
-  truthful before richer transmission is enabled.
 - Declare the future first supported version and freeze its fresh application
   identities and persistence/API baseline only from that version forward.
   Complete changelog, privacy/support presentation, and the repeatable beta
@@ -1151,7 +1153,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Capability | State | Evidence | Highest-risk limit | Owner |
 | --- | --- | --- | --- | --- |
 | Durable semantic application control | Implemented | deterministic, persistence, runtime, interop, web, Tauri, Android build, physical | Archive, fenced keep/delete removal, metadata-only add, atomic v1 torrent-byte add, serialized live High/Normal/Skip file priority, retained checker pause/resume, atomic `Download now`, queue movement, automatic concurrent admission, and exact-or-synthesized magnet export are implemented. Tactical `203` adds schema-24 pending add-time selection with metadata-only acquisition, compact catalog-fenced confirm, validated cancel, restart/FIFO, and controlled browser/API-35/physical ChromeOS evidence. Stable public compatibility remains absent. | [`application-control`](application-control.md), [`203`](../tactical/203-jstorrent-shaped-add-time-file-selection.md) |
-| Installation metrics and feedback context | Ready; desktop updater ID and narrow Android feedback baseline implemented | deterministic desktop updater and Android feedback evidence; full persistence/privacy/platform evidence open | Desktop already creates and discloses one random resettable `cfu-id` for update counting, and Tactical `206` opens the strict four-field Android feedback URL. Tactical `208` preserves JSTorrent-shaped product behavior with one native `product.db`, crash-safe semantic additions/completions, intentional foreground sessions, previewed feedback statistics, disclosed disable/reset controls, and an extension-local bounded uninstall URL. Until it lands, there is no native product-state store, no usage-counter transmission, and no RSTorrent uninstall URL. Continuous analytics, torrent/peer/path data, Chrome sync, and a generic event API remain excluded. | [`product-state-and-feedback`](product-state-and-feedback.md), [`208`](../tactical/208-installation-metrics-and-feedback-parity.md), [`206`](../tactical/206-android-jstorrent-feedback-handoff.md) |
+| Installation metrics and feedback context | Implemented; richer feedback/uninstall queries release-gated | deterministic persistence/runtime/web/extension, desktop and Android build; public hosted, physical ChromeOS, and Apple compile qualification open | Tactical `208` adds one native `product.db`, a 1,024-row crash-safe semantic outbox, exact additions/completions, intentional foreground sessions, previewed feedback statistics, disclosed disable/reset controls, adopted desktop updater identity, and an extension-local bounded uninstall URL. Sibling hosted source is truthful, but no deployment occurred; UUID/age/counter feedback and uninstall query fields therefore remain fail-closed. The separately disclosed updater ID follows the acknowledged preference and retains only the valid legacy pre-acknowledgement exception. Tactical `206`'s Android environment URL remains the feedback baseline. Continuous analytics, torrent/peer/path data, Chrome sync, and a generic event API remain excluded. | [`product-state-and-feedback`](product-state-and-feedback.md), [`208`](../tactical/208-installation-metrics-and-feedback-parity.md), [`206`](../tactical/206-android-jstorrent-feedback-handoff.md) |
 | Ephemeral application state | Implemented | deterministic, runtime | Private bounded session and metrics SQLite stores preserve receipts, exact source, metadata, settings, views, DHT and speed state for one joined service lifetime, then disappear without profile files. One maximum source plus info fits the 256-MiB session cap and a second maximum import rolls back with a typed resource limit; payload storage remains external. | [`client-persistence`](client-persistence.md), [`application-control`](application-control.md) |
 | Stateless foreground downloader | Implemented | deterministic, runtime, interop, native macOS/Linux/Windows, Android/iOS regression | Tactical `193` composes one ephemeral in-memory-SQLite application owner rather than a second engine path, downloads all files except an explicit magnet BEP 53 `so` selection directly to final paths, conservatively rechecks prior payload, exits without seeding, and uses a cooperative same-user output-root lock plus transient auxiliary part storage. Controlled v1/pure-v2/hybrid, selection, interruption, crash, corruption, root-failure, and cleanup gates pass with 27,040 KiB peak RSS, a 33,792-byte maximum part artifact, and zero profile/workspace residue. Release native macOS ARM64, Linux ARM64, and Windows ARM64 cases pass; Android dual-ABI and iOS simulator/archive builds prove no mobile regression without claiming mobile CLI surfaces. Durable resume, multiple torrents, daemon/RPC behavior, packaging, and cross-product storage leasing are excluded. | [`193`](../tactical/193-stateless-foreground-downloader.md), [`direct-filesystem-storage`](direct-filesystem-storage.md), [`client-persistence`](client-persistence.md) |
 | Leased application view sets and delivery clients | Implemented | deterministic, runtime, interop, web, Tauri | Named summary, generation-scoped checker progress, piece, structured diagnostic, active-peer, registry-backed Swarm, paged file and tracker, separately leased derived media, global Disk, range-selected session Speed, and latest-value session DHT views have bounded replay/reset, independent lease expiry, fresh-snapshot recovery, diagnostic HTTP polling, acknowledged browser WebSocket streaming, and acknowledged in-process Tauri streaming. The retained observer matrices still expose Summary reset storms and trace/all-view serialization pressure; stable public compatibility remains unimplemented. | [`application-view-api`](application-view-api.md), [`application-connection-architecture`](application-connection-architecture.md) |

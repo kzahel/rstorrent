@@ -154,12 +154,13 @@ and cleanup pass. This does not select the production JSTorrent identity,
 publish a store artifact, or close notification/network/lifecycle gates.
 
 Explicit user direction on 2026-09-01 accepts JSTorrent-shaped installation
-metrics, feedback context, and extension-uninstall survey behavior in ready
+metrics, feedback context, and extension-uninstall survey behavior in
+implementation-complete
 Tactical
 [`208`](../tactical/208-installation-metrics-and-feedback-parity.md). The
 capability is not retroactively a blocker for an incubation package, but any
-build that enables its richer transmission must first satisfy the exact
-disclosure, privacy, disable/reset, and hosted-recipient gates below.
+build that enables its richer feedback/uninstall queries must first satisfy
+the exact disclosure, privacy, disable/reset, and hosted-recipient gates below.
 
 ## Scope And Release Definition
 
@@ -279,7 +280,10 @@ compatibility and rollback policy declared with that baseline.
   exact coarse statistics and recipients, query-string exposure, default-on
   choice, one-report override, durable disable, and reset behavior. The hosted
   feedback/uninstall pages must no longer claim that no usage data is
-  collected.
+  collected. Tactical `208` now supplies the in-product disclosure, controls,
+  exact preview, and corrected hosted source. REL-006 remains open because the
+  source has not been deployed or publicly verified and the richer-context
+  release gates deliberately remain off.
 
 ### CI and repository health
 
@@ -381,8 +385,8 @@ compatibility and rollback policy declared with that baseline.
   version/build identity, copyable bounded diagnostics, known-issues link, and
   a report path. Automatic crash or analytics upload is not required for beta.
   Tactical `208`'s optional previewed coarse context may improve the report
-  path, but it does not replace a user-visible diagnostics export or authorize
-  automatic submission.
+  path after its hosted release gate is qualified, but it does not replace a
+  user-visible diagnostics export or authorize automatic submission.
 - [ ] **QA-005 — Review dependencies, notices, and release artifacts.** Verify
   license provenance, dependency advisories, archive contents, absence of
   secrets/development endpoints, and published checksums. All public `0.1.0`

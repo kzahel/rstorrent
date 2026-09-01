@@ -1088,14 +1088,16 @@ with exact SAF cleanup.
   two-root profile also passes Keep, re-add/recheck, exact DeleteData,
   sentinel preservation, bounded descriptors, and recovery from a genuine
   mid-delete process death. Physical ChromeOS qualification remains active.
-  Ready Tactical
-  [`208`](../tactical/208-installation-metrics-and-feedback-parity.md) then
-  widens support presentation across shared React and Compose only after a
-  localized disclosure and exact confirmation preview. It adds a backed
-  statistics preference and identifier/counter reset, while the MV3 extension
-  separately maintains its own bounded uninstall-survey URL. Until it lands,
-  the four Android fields above and the desktop updater ID remain the only
-  implemented transmission behavior.
+  Implementation-complete Tactical
+  [`208`](../tactical/208-installation-metrics-and-feedback-parity.md) widens
+  support presentation across shared React and Compose with a localized first-
+  use disclosure, durable preference, identifier/counter reset, exact field
+  preview, privacy link, and confirmation. The MV3 extension separately owns
+  its strict local record and bounded uninstall-survey URL. Richer query
+  fields remain fail-closed until the corrected hosted source is deployed and
+  publicly verified, so Tactical `206`'s four Android environment fields and
+  the separately disclosed updater ID after acknowledgement (or its valid
+  adopted legacy exception) remain the only enabled stable-context behavior.
 - Tracker HTTPS authentication is intentionally absent from ordinary React
   and Compose settings. The advanced typed `disabled` override exists for
   compatibility/debug use and remains visibly unauthenticated in tracker

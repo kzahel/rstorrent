@@ -5,15 +5,19 @@ Topic: `client-persistence`
 Status: Completed Tacticals
 [`203`](../tactical/203-jstorrent-shaped-add-time-file-selection.md) and
 [`205`](../tactical/205-durable-dht-and-pex-controls.md) advance the disposable
-catalog through fresh schemas 24 and 25. Schema 24 adds pending add-time file
+catalog through fresh schemas 24 and 25; implementation-complete Tactical
+[`208`](../tactical/208-installation-metrics-and-feedback-parity.md) advances
+it to schema 26. Schema 24 adds pending add-time file
 selection and its default-on preference. Schema 25 adds constrained default-on
 `dht_enabled` and `peer_exchange_enabled` columns to the singleton client
-settings row. Recognized schemas `1..=24`
+settings row. Schema 26 adds only the bounded source epoch, next/acknowledged
+sequence, drop count, and at most 1,024 pending semantic product milestones.
+Recognized schemas `1..=25`
 reset only application-private database files and preserve external final
 files and unrelated root content. One session accumulator now checkpoints
 generation-fenced exact peer payload and nested monotonic activity timers in
 bounded 500-row transactions, including a synchronized clean-shutdown flush;
-schema 25 stores no derived rank, goal, admission, rate, or task state. Earlier
+schema 26 stores no derived rank, goal, admission, rate, or task state. Earlier
 schema history below remains historical.
 
 Completed Tactical
@@ -204,16 +208,14 @@ reopen; malformed or out-of-range durable values fail closed. Effective
 session clamps, allocator credit, waiters, counters, and application state
 remain non-durable runtime facts.
 
-The desktop updater's random application-config `cfu-id` is deliberately
-installation-wide and separate from profile/session SQLite. A future
-installation product-state store must adopt or explicitly migrate it; profile
-creation/deletion must not silently rotate it or create a second identity.
-Ready Tactical
-[`208`](../tactical/208-installation-metrics-and-feedback-parity.md) now owns
-that adoption plus the exact cross-database milestone contract: a sequenced
-profile-local outbox is committed with authoritative add/completion state and
-drained idempotently into installation-wide `product.db`. The tactical has not
-landed, so the current session schema and `cfu-id` behavior remain unchanged.
+The desktop updater's random application-config `cfu-id` was deliberately
+installation-wide and separate from profile/session SQLite. Tactical
+[`208`](../tactical/208-installation-metrics-and-feedback-parity.md)
+transactionally adopts a valid value into installation-wide `product.db`,
+then removes the legacy file and uses no second identity authority. Schema 26
+commits a sequenced profile-local outbox with authoritative add/completion
+state; one joined application drain applies it idempotently to `product.db`.
+Profile creation/deletion does not rotate the installation identity.
 
 ## Scope
 
@@ -753,6 +755,15 @@ patch independently, survive reopen, and retain only intent; DHT routing,
 transactions, peer values, PEX contacts, negotiation maps, effective state,
 and application outcomes remain bounded runtime facts rather than database
 state.
+Implementation-complete Tactical
+[`208`](../tactical/208-installation-metrics-and-feedback-parity.md) advances
+the disposable profile to schema 26 with one source epoch, contiguous
+milestone sequence, acknowledged watermark, saturating drop count, and a
+1,024-row outbox. Only successful catalog creation and first ordinary
+download completion can append its two closed milestone kinds. Recheck,
+complete-data adoption, replay, and duplicate add do not append. Product-
+state failure leaves torrent state authoritative and the bounded row pending
+or records a bounded drop at overflow.
 
 Tactical `007` should define the first exact schema and migrations. The
 continuing direction is:
@@ -891,13 +902,14 @@ sentinel-only root manifests. Physical ChromeOS qualification remains open.
 - The installation-level profile registry format, whether it shares
   `product.db`, and whether the first product exposes more than its
   automatically created profile.
-- Implement Tactical `208`'s closed `product.db`, bounded source-watermark and
-  profile-outbox semantics, legacy `cfu-id` adoption, corruption/reset policy,
-  and exact resource evidence without making derived counters torrent
-  authority.
-- Tactical `208` selects Android app-private backup exclusion for
-  `product.db`; implement and prove uninstall, OS clear-storage, explicit
-  Tactical `207` clear, and ordinary restart/update behavior.
+- Tactical `208`'s schema, bounded source watermarks/profile outbox, legacy
+  `cfu-id` adoption, reset policy, and native resource fixture are
+  implemented. Complete public hosted-page and physical/Apple qualification
+  without making derived counters torrent authority.
+- Android stores `product.db` under the app-private no-backup root. Ordinary
+  restart/update preserves it; Tactical `207` clear removes that fixed root,
+  while Reset engine settings preserves it. OS clear-storage/uninstall follow
+  the platform-owned fresh-install behavior and remain release qualification.
 - The bounded durability epochs from
   [`storage-throughput-architecture.md`](storage-throughput-architecture.md)
   are implemented. Tactical `054`'s strengthened 80 MiB forced-death profile

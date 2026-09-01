@@ -135,8 +135,8 @@ that falls through to raw keys or materially incomplete English.
 
 ## Evidence And Open Work
 
-The currently checked catalogs contain 1,234 React messages, 17 Tauri-native
-messages, 414 Android strings plus 7 quantities, 172 iOS product messages,
+The currently checked catalogs contain 1,261 React messages, 17 Tauri-native
+messages, 442 Android strings plus 7 quantities, 172 iOS product messages,
 and 6 iOS Info.plist messages. Tactical 204 records the foundation's exact
 FormatJS pins and licenses, artifact deltas, API 28/35 and iPhone/iPad pseudo
 matrices, archive evidence, and repository gates. Completed Tactical
@@ -154,6 +154,15 @@ The 421-resource checker, lint, all 20 Compose navigation cases on owned API
 controlled destructive gate also passes without changing the catalog. It does
 not select a production locale; physical ChromeOS qualification remains
 independent of this catalog evidence and open.
+
+Implementation-complete Tactical
+[`208`](../tactical/208-installation-metrics-and-feedback-parity.md) adds the
+English React and Android disclosure, pseudonymous-statistics controls, reset,
+field preview, recipient explanation, privacy link, and hosted-gate status
+copy through the existing catalogs. The 1,261/17/442/172 catalog checker,
+React tests/typecheck, Android lint/unit/instrumentation assembly, and dual-ABI
+generated build pass. It selects no production locale; physical ChromeOS and
+Apple compile qualification remain open.
 
 A separate tactical is required to choose and ship the first real
 non-English cohort. Android replacement localization remains open until that

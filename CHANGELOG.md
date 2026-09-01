@@ -6,6 +6,17 @@ three-component versions, and desktop release tags use
 
 ## [Unreleased]
 
+- Add a resettable pseudonymous installation identifier and exact local
+  addition, download-completion, and foreground-session counters. Desktop and
+  Android disclose the behavior, provide durable disable/reset controls, and
+  preview every feedback URL field before external navigation.
+- Migrate a valid desktop updater identifier into the single product-state
+  owner and add a bounded extension-local uninstall survey summary. No
+  continuous analytics, torrent/peer/path data, or telemetry SDK is added.
+- Keep new identifier, age, and aggregate-counter query fields disabled until
+  the corrected hosted privacy, feedback, and uninstall pages are deployed
+  and publicly verified.
+
 ## [0.1.3] - 2026-08-30
 
 - Add the owner-only remote-access preview for desktop, including Settings

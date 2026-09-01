@@ -94,12 +94,14 @@ daemon, a public remote API, or production-extension publication.
 
 Explicit user direction on 2026-09-01 further clarifies the succession goal:
 useful JSTorrent product behavior is not discarded merely because RSTorrent
-replaces its technical implementation. Ready Tactical
+replaces its technical implementation. Implementation-complete Tactical
 [`208`](../tactical/208-installation-metrics-and-feedback-parity.md) therefore
 preserves the resettable installation identity, coarse local counters,
 feedback context, and extension-uninstall survey as deliberately disclosed
-product capabilities. It does not import historical metric values, authorize
-continuous analytics, or make graduation current work.
+product capabilities. Optional richer query fields remain release-disabled
+pending deployed hosted-page verification. The work does not import
+historical metric values, authorize continuous analytics, or make graduation
+current work.
 
 ## Scope
 
@@ -487,9 +489,11 @@ Behavioral continuity is broader than database migration. Installation-level
 usage context, feedback entry points, uninstall survey behavior, update
 counting, privacy controls, and other small product journeys should be
 evaluated intentionally against the then-current JSTorrent product rather than
-silently disappearing in the rewrite. Tactical `208` accepts the first such
+silently disappearing in the rewrite. Tactical `208` implements the first such
 closed behavior set with a fresh RSTorrent identity and counters; it explicitly
-does not migrate JSTorrent's historical telemetry UUID or counter values.
+does not migrate JSTorrent's historical telemetry UUID or counter values. The
+desktop beta may adopt its own prior updater UUID because that is the same
+RSTorrent installation authority, not a JSTorrent migration.
 
 This general direction reserves the production identity; it does not place the
 JSTorrent updater private key in RSTorrent beta automation, authorize a

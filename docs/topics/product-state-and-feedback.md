@@ -2,26 +2,24 @@
 
 Topic: `product-state-and-feedback`
 
-Status: Direction accepted on 2026-08-03 and refined by explicit user
-direction on 2026-09-01. Installation-wide identity, coarse engagement
-counters, campaign-specific prompt state, and disclosed feedback/update/
-uninstall context belong together in a product-state boundary above any one
-profile. RSTorrent is intended to preserve this useful JSTorrent product
-behavior while replacing its technical implementation. It is not required to
-discard the behavior merely because the engine and state owners are new.
-No product-state store, prompt campaign, or general analytics service is
-implemented yet. Ready Tactical
-[`208`](../tactical/208-installation-metrics-and-feedback-parity.md) owns the
-first bounded implementation. Completed Tactical
+Status: Direction accepted on 2026-08-03 and the first bounded implementation
+landed on 2026-09-01 through Tactical
+[`208`](../tactical/208-installation-metrics-and-feedback-parity.md).
+Installation-wide identity, coarse engagement counters, and disclosed
+feedback/update/uninstall context now share one product-state boundary above
+every native profile; the extension retains its own installation-scoped local
+record. No general analytics service or prompt campaign exists. New optional
+feedback/uninstall identifier/counter query transmission remains release-
+disabled until the corrected hosted pages are deployed and publicly verified.
+The separately disclosed updater boundary follows the acknowledged durable
+preference. Completed Tactical
 [`206`](../tactical/206-android-jstorrent-feedback-handoff.md) adds the one
-narrow Android-only external feedback navigation described below. It creates
-no product-state owner. The desktop updater now
-creates one random UUID in the application-config `cfu-id` file through
-bounded atomic create/repair, sends it only as the `desktop-update-v1`
-`X-CFU-Id` header, and discloses that use in About & updates. It is resettable
-installation counting, not analytics identity or authorization. The eventual
-installation-wide `product.db` must adopt or explicitly migrate this value
-rather than creating a second identity. Tactical `162`'s versioned
+narrow Android-only external feedback navigation baseline described below.
+Tactical `208` widens the local preview and controls while its fail-closed
+hosted gate preserves that baseline URL. The desktop updater now reads its
+optional `desktop-update-v1` `X-CFU-Id` header from `product.db`; a valid
+legacy `cfu-id` is transactionally adopted and the old file removed only
+afterward, so no second identity authority remains. Tactical `162`'s versioned
 `desktop-shell.json` is a separate shell policy whose version 1 contains only
 **Run in Background**.
 Completed desktop-notification Tactical
@@ -274,9 +272,11 @@ manufacturer/model. Those fields are transmitted on navigation and may reach
 browser history, website logs/referrers, the embedded Google Form, and the
 page's existing analytics before form submission. No stable identifier,
 counter, error, runtime diagnostic, lifecycle fact, torrent/peer/storage fact,
-or user prose may enter that URL. Tactical `208` may widen it only to the
-accepted, previewed product summary after privacy presentation and controls
-land; until then Tactical `206`'s exact four-field URL remains authoritative.
+or user prose currently enters that URL. Tactical `208` has landed the
+accepted preview, privacy presentation, and controls, but its hosted gate
+keeps the richer product summary out of the URL until the corrected pages are
+deployed and publicly verified. Tactical `206`'s exact four-field URL remains
+the enabled authority meanwhile.
 
 ## JSTorrent Reference Evidence
 
@@ -335,19 +335,18 @@ than describing navigation as a private local preview.
 
 ## Known Gaps And Next Work
 
-- Implement Tactical `208`'s exact `product.db` schema, crash-safe semantic
-  milestone transfer, privacy preference, preview, reset, updater-ID adoption,
-  and extension-local uninstall summary. Until it lands, preserve Tactical
-  `206`'s four-field Android URL and the updater's existing `cfu-id` behavior.
-- Reconcile Tactical `207` clear-data semantics with the new store: Reset
-  engine settings preserves product metrics, while either clear-data outcome
-  resets the product identity and metrics without widening payload deletion.
-- Update the hosted JSTorrent privacy, feedback, and uninstall presentation
-  before enabling richer transmission. The current privacy page's claim that
-  no analytics or usage data is collected would be false after enablement.
-- Prove Tactical `208`'s selected backup/reinstall behavior and honest
-  cross-platform foreground-session boundaries; omit the counter on a platform
-  until its semantics are proven.
+- Deploy and publicly verify sibling website commit `af615ce5` through a
+  separately authorized website operation, then flip the three reviewed
+  hosted-context gates in one release-qualified change. Until then UUID, age,
+  and counters remain absent from new feedback/uninstall traffic.
+- Run Tactical `208`'s physical ChromeOS Android/extension campaign and Apple
+  simulator/archive compile. Deterministic desktop/Android foreground
+  boundaries and Android no-backup/clear-data behavior have landed; no iOS
+  presentation was added.
+- Preserve the implemented Tactical `207` reconciliation: Reset engine
+  settings leaves `product.db` intact, while either clear-data outcome removes
+  the fixed app-private no-backup product root without widening payload
+  deletion.
 - Design each review, feedback, extension, or migration prompt as an explicit
   campaign with its own eligibility, cooldown, and disposition behavior.
 - Decide whether sparse lifecycle/version facts need latest values or a bounded

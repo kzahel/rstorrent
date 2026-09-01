@@ -1,10 +1,13 @@
 # Tactical 208: Installation Metrics And Feedback Parity
 
-Status: **Ready as of 2026-09-01.** Explicit user direction accepts
-JSTorrent-shaped installation identity, coarse statistics, feedback context,
-and extension-uninstall survey behavior as product capabilities worth
-preserving while RSTorrent replaces the technical implementation. No
-implementation has landed yet.
+Status: **Implementation complete with release qualification pending as of
+2026-09-01.** Native desktop and Android product state, crash-safe semantic
+counters, disclosure/preferences/reset, previewed feedback, desktop updater
+identity migration, and extension-local uninstall metrics have landed. The
+hosted JSTorrent source is truthful, but it has not been deployed or publicly
+verified; optional identifier/counter query fields therefore remain disabled
+behind explicit fail-closed release constants. Physical ChromeOS and Apple
+compile qualification also remain open.
 
 Topics: `product-state-and-feedback`, `product-surfaces-and-migration`,
 `client-persistence`, `application-control`, `client-surfaces`,
@@ -20,10 +23,11 @@ lifecycle Tactical
 [`200`](200-android-product-background-lifecycle.md), completed localization
 Tactical [`204`](204-cross-product-localization-foundation.md), and completed
 Android feedback Tactical
-[`206`](206-android-jstorrent-feedback-handoff.md). Ready Android clear-data
-Tactical [`207`](207-android-safe-reset-and-clear-data.md) may proceed
-independently, but its application-metrics clear outcome and this tactical's
-Android settings edits must be reconciled if their implementations overlap.
+[`206`](206-android-jstorrent-feedback-handoff.md), and completed Android
+clear-data Tactical [`207`](207-android-safe-reset-and-clear-data.md). The
+implementation reconciles Tactical `207`: Reset engine settings preserves
+product state, while either clear-data outcome removes the fixed no-backup
+product-state root.
 
 ## Decision And Product Outcome
 
@@ -378,10 +382,14 @@ implementation:
 - `clients/extension/manifest.json` already declares `storage` but has no metrics
   record or uninstall URL.
 
-Before code changes, inspect the exact current functions and tests again and
-record any moved paths in this tactical. In particular, find every path that
-can mark a torrent complete and prove that recheck/import cannot emit a
-download-completion milestone.
+Implementation inspection followed the add transactions in
+`crates/rstorrent-session/src/store.rs` into the new typed outbox, and the
+ordinary verified-piece completion transition at that file's downloaded-
+completion branch. `downloaded_completion_emits_once_and_recheck_or_repair_cannot_reemit`
+proves that only the downloaded transition emits completion; complete-data
+adoption and `complete_recheck_generation` do not share that emission path.
+`crates/rstorrent-session/src/application.rs` owns the one joined drain and
+its final cancellation pass.
 
 ### JSTorrent product oracle
 
@@ -422,6 +430,43 @@ The official Chrome sources inspected on 2026-09-01 are:
 Treat store policy as a release gate. A privacy-policy edit alone is not a
 substitute for the in-product disclosure when Chrome requires prominent
 notice and affirmative continuation for the changed collection behavior.
+
+## Implementation Record
+
+The bounded slices landed on 2026-09-01:
+
+- `228bfe6f` adds the closed native `product.db` schema, UUID/time validation,
+  preference, reset, summary, and owner;
+- `3858ca13` adds the profile-local 1,024-row semantic milestone outbox and
+  `48ebb38a` joins its single idempotent drain to each application owner;
+- `537b7051` adopts a valid legacy desktop `cfu-id`, removes that file only
+  after committed adoption, and makes the product owner the updater's single
+  optional-header authority;
+- `57673f40` adds desktop lifecycle counting plus the shared React first-use
+  disclosure, settings, reset, exact feedback preview, privacy link, and
+  stale-preview-safe browser handoff;
+- `68b046ee` adds the strict versioned extension-local record, one serialized
+  uninstall-URL owner, popup disclosure/control/reset, and exact URL tests;
+- `a9c9c237` adds Android no-backup product state, process-foreground epochs,
+  generated Rust/Kotlin boundary, Compose disclosure/control/reset/preview,
+  strict browser confirmation, and Tactical `207` clear-data reconciliation;
+  and
+- `8d418b60` records the persistent native-store resource high-water fixture.
+
+Sibling JSTorrent website commit `af615ce5` corrects the privacy disclosure
+and makes feedback/uninstall query handling use the same closed allowlists and
+safe text presentation. That is source evidence only: no website was deployed
+and no form was submitted.
+
+The desktop and Android constants named `HOSTED_PRODUCT_CONTEXT_READY` and the
+extension's equivalent hosted gate remain `false`. Consequently the shipped
+code can collect and display local state, and base feedback retains only its
+already accepted environment fields, but no UUID, age, or aggregate counter
+can enter feedback or uninstall query strings until the public pages are
+deployed and verified. The desktop updater is the separate disclosed boundary:
+it may use the product ID after acknowledgement with statistics enabled, while
+the pre-acknowledgement exception is retained only for a valid adopted legacy
+`cfu-id`, exactly as IMF-003 requires.
 
 ## Edge-Case Checklist
 
@@ -520,6 +565,75 @@ contract.
 Record exact commands, versions, high-water marks, artifacts, and unavailable
 platform gates. Tests must inspect complete URLs/headers and assert every
 prohibited field is absent; a visual preview alone is not privacy evidence.
+
+## Implementation Evidence
+
+The 2026-09-01 implementation pass recorded these green gates:
+
+- `cargo fmt --all -- --check`, `cargo clippy --workspace -- -D warnings`, and
+  `cargo test --workspace` pass. The workspace includes 14 Android Rust tests,
+  44 desktop tests, and 345 session tests with two preexisting ignored
+  resource/live cases. Focused product-state, updater migration, semantic
+  outbox, completion-causality, replay, owner-shutdown, and fail-closed URL
+  cases all run in that matrix.
+- `npm run typecheck --prefix clients/web`, `npm run test --prefix
+  clients/web`, and `npm run build --prefix clients/web` pass: 381 tests pass,
+  two preexisting cases are skipped, and the production CSP scan finds no
+  eval, function constructor, or CommonJS `require` in 12 bundles.
+- `npm test --prefix clients/extension` passes all 21 service-worker,
+  product-record, uninstall-URL, and package-validator tests. Fresh and
+  malformed state register only `https://jstorrent.com/uninstall.html?v=0.4.0`
+  while the hosted gate is closed.
+- `node scripts/check-localization.mjs` validates 1,261 web, 17 desktop, 442
+  Android, and 172 iOS English product messages plus the locale policy.
+- `cargo test -p rstorrent-android --lib` passes all 14 tests and `cargo
+  clippy -p rstorrent-android -- -D warnings` passes. `clients/android/build.sh`
+  builds both release ABIs and regenerates the Kotlin boundary. From
+  `clients/android`, `ANDROID_HOME=/home/kgraehl/Android/Sdk ./gradlew
+  lintDebug testDebugUnitTest assembleDebugAndroidTest` completes all 63
+  tasks. The instrumentation APK was assembled but not installed or run on an
+  attached device.
+- `cargo check -p rstorrent-ios` passes on the current Linux host. Xcode,
+  simulator, generated Swift, and unsigned archive qualification are not
+  available on this host and remain open rather than being inferred from the
+  Rust check.
+- sibling JSTorrent website commit `af615ce5` passes its Prettier source
+  check. No production URL was changed, fetched as deployment evidence, or
+  submitted.
+
+The explicit resource fixture fills all 128 native source watermarks using
+128 deliberately separate product transactions. It observes 4 x 4,096-byte
+logical pages (16 KiB), a 4,096-byte live main database, and a 1,071,232-byte
+live WAL; regression ceilings are 64 KiB logical/main and 4 MiB WAL. The
+profile outbox admits at most 1,024 contiguous pending rows, and one product
+drain applies an entire available batch in one transaction. A semantic add or
+completion adds no separate profile write because its milestone shares the
+authoritative transaction. Disclosure, preference, reset, foreground epoch,
+startup, and clean shutdown each perform at most one product transaction per
+explicit transition. There is one drain task per application owner and one
+serialized extension mutation/URL owner; there is no metrics network task.
+The joined-drain shutdown test completes in 0.03 seconds (0.21 seconds for the
+complete warmed test command). Feedback URLs remain at most 2,048 bytes and
+extension uninstall URLs at most 1,023 bytes. All fixtures use task-owned
+temporary roots/storage and were removed by their harnesses.
+
+## Remaining Release Qualification
+
+The code slices are complete, but the tactical stopping condition remains
+open for three explicit gates:
+
+1. deploy sibling hosted commit `af615ce5` through a separately authorized
+   website operation, publicly verify privacy/feedback/uninstall recipients
+   and allowlists, then flip the desktop, Android, and extension hosted-context
+   constants in a reviewed release change;
+2. run the selected physical ChromeOS Android/extension disclosure,
+   preference, reset, feedback, and registered-uninstall-URL campaign without
+   removing the production extension or submitting a form; and
+3. run the iOS simulator/generated-Swift and unsigned archive compile on a
+   maintained macOS host, making no iOS presentation claim.
+
+Until all three pass, no release may claim the optional richer fields and the
+fail-closed constants must remain `false`.
 
 ## Non-Goals
 
