@@ -1068,6 +1068,12 @@ with exact SAF cleanup.
   default-on DHT and PEX switches here. Both apply live through the common
   engine owners, report application state, and cannot weaken private-torrent
   discovery exclusion.
+  Planned Tactical
+  [`206`](../tactical/206-android-jstorrent-feedback-handoff.md) selects one
+  Android-only Advanced Settings action that opens the existing JSTorrent
+  feedback page in the external browser with its exact four environment
+  fields. It adds no Rust/application contract, report backend, diagnostic
+  export, or client-owned browser surface.
 - Tracker HTTPS authentication is intentionally absent from ordinary React
   and Compose settings. The advanced typed `disabled` override exists for
   compatibility/debug use and remains visibly unauthenticated in tracker

@@ -6,14 +6,18 @@ Status: Direction accepted on 2026-08-03. Installation-wide local identity,
 coarse engagement counters, campaign-specific prompt state, and visible
 user-submitted diagnostic context belong together in a product-state boundary
 above any one profile. No store, feedback transport, prompt campaign, or
-remote analytics service is implemented yet. The desktop updater now creates
-one random UUID in the application-config `cfu-id` file through bounded atomic
-create/repair, sends it only as the `desktop-update-v1` `X-CFU-Id` header, and
-discloses that use in About & updates. It is resettable installation counting,
-not analytics identity or authorization. The eventual installation-wide
-`product.db` must adopt or explicitly migrate this value rather than creating
-a second identity. Tactical `162`'s versioned `desktop-shell.json` is a
-separate shell policy whose version 1 contains only **Run in Background**.
+remote analytics service is implemented yet. Planned Tactical
+[`206`](../tactical/206-android-jstorrent-feedback-handoff.md) selects one
+narrow Android-only external feedback navigation described below; it is not
+implemented yet and creates no product-state owner. The desktop updater now
+creates one random UUID in the application-config `cfu-id` file through
+bounded atomic create/repair, sends it only as the `desktop-update-v1`
+`X-CFU-Id` header, and discloses that use in About & updates. It is resettable
+installation counting, not analytics identity or authorization. The eventual
+installation-wide `product.db` must adopt or explicitly migrate this value
+rather than creating a second identity. Tactical `162`'s versioned
+`desktop-shell.json` is a separate shell policy whose version 1 contains only
+**Run in Background**.
 Completed desktop-notification Tactical
 [`164`](../tactical/164-desktop-completion-and-attention-notifications.md) adds
 an explicit version-2 migration that preserves that value while adding only
@@ -215,6 +219,19 @@ transmit the preview merely because an iframe or form loaded. Generate a fresh
 report ID and transmit the visible snapshot only after the user explicitly
 submits it.
 
+Maintainer direction on 2026-09-01 selects one closed replacement-parity
+exception in planned Tactical
+[`206`](../tactical/206-android-jstorrent-feedback-handoff.md). The Android
+Advanced Settings action will open the existing JSTorrent feedback page with
+exactly four current-JSTorrent environment fields in its query: literal
+platform `android`, application version name, Android release, and device
+manufacturer/model. Those fields are transmitted on navigation and may reach
+browser history, website logs/referrers, the embedded Google Form, and the
+page's existing analytics before form submission. No stable identifier,
+counter, error, runtime diagnostic, lifecycle fact, torrent/peer/storage fact,
+or user prose may enter that URL. This exception does not weaken the local
+preview and explicit-submit requirement for any future richer report.
+
 The installation ID is correlation, not diagnostic context, and is omitted by
 default. A future support flow that genuinely needs cross-report correlation
 must explain that purpose and offer an explicit visible choice. Continuous
@@ -280,8 +297,10 @@ explicit-submit boundary is an intentional difference.
 - Decide which platform/product lifecycle constitutes first use and a
   foreground session on desktop, Android, ChromeOS, and extension-controlled
   configurations.
-- Select the first concrete feedback surface and its reviewed visible context;
-  no transport or recipient is selected here.
+- Implement Tactical `206`'s selected Android-only navigation to the existing
+  JSTorrent feedback page. Any richer context, application-owned submission,
+  or other client surface still requires a separately reviewed recipient and
+  visible explicit-submit flow.
 - Design each review, feedback, extension, or migration prompt as an explicit
   campaign with its own eligibility, cooldown, and disposition behavior.
 - Decide whether sparse lifecycle/version facts need latest values or a bounded

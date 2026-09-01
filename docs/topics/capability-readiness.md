@@ -916,6 +916,13 @@ exactly.
   item for `JAR-008` and the unmetered portion of `AND-010`.
 ### Ready
 
+- Implement planned Tactical
+  [`206`](../tactical/206-android-jstorrent-feedback-handoff.md): add the exact
+  current JSTorrent Android external-browser feedback handoff to
+  `jstorrent.com/feedback.html` with only platform, app version, Android
+  release, and device manufacturer/model. The hosted page continues to own
+  its Google Form and GitHub choices; RSTorrent adds no report backend,
+  diagnostic export, identifier, telemetry, or automatic submission.
 - Declare the future first supported version and freeze its fresh application
   identities and persistence/API baseline only from that version forward.
   Complete changelog, privacy/support presentation, and the repeatable beta
