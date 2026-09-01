@@ -264,6 +264,7 @@ pub struct SessionStore {
     connection: Connection,
     profile_id: String,
     database_path: Option<PathBuf>,
+    reset_client_settings: ClientSettings,
     pending_reconciliations: Vec<PendingReconciliation>,
 }
 
@@ -512,6 +513,9 @@ impl SessionStore {
         initial_client_settings: &ClientSettings,
         durable_preparation: Option<(&Path, CatalogPreparation)>,
     ) -> Result<Self, StoreError> {
+        initial_client_settings.validate().map_err(|error| {
+            StoreError::Configuration(format!("initial client settings are invalid: {error}"))
+        })?;
         validate_identifier(
             profile_id,
             "profile ID",
@@ -566,6 +570,7 @@ impl SessionStore {
             connection,
             profile_id: profile_id.to_owned(),
             database_path,
+            reset_client_settings: initial_client_settings.clone(),
             pending_reconciliations: Vec::new(),
         };
         if ephemeral_maximum_bytes.is_some() {
@@ -1225,7 +1230,13 @@ impl SessionStore {
                 ),
             )
         } else {
-            apply_mutation(&transaction, request, current_revision, &self.profile_id)?
+            apply_mutation(
+                &transaction,
+                request,
+                current_revision,
+                &self.profile_id,
+                &self.reset_client_settings,
+            )?
         };
 
         let response_json = serde_json::to_string(&response)?;
@@ -3161,19 +3172,29 @@ fn apply_mutation(
     request: &RequestEnvelope,
     current_revision: u64,
     profile_id: &str,
+    reset_client_settings: &ClientSettings,
 ) -> Result<ResponseEnvelope, StoreError> {
-    if let Command::UpdateClientSettings { patch } = &request.command {
-        let current = read_client_settings(transaction)?;
-        let settings = match patch.apply_to(&current) {
-            Ok(settings) => settings,
-            Err(error) => {
-                return Ok(ResponseEnvelope::error(
-                    request.request_id.clone(),
-                    current_revision,
-                    ErrorCode::InvalidRequest,
-                    error.to_string(),
-                ));
+    if matches!(
+        &request.command,
+        Command::UpdateClientSettings { .. } | Command::ResetClientSettings
+    ) {
+        let settings = match &request.command {
+            Command::UpdateClientSettings { patch } => {
+                let current = read_client_settings(transaction)?;
+                match patch.apply_to(&current) {
+                    Ok(settings) => settings,
+                    Err(error) => {
+                        return Ok(ResponseEnvelope::error(
+                            request.request_id.clone(),
+                            current_revision,
+                            ErrorCode::InvalidRequest,
+                            error.to_string(),
+                        ));
+                    }
+                }
             }
+            Command::ResetClientSettings => reset_client_settings.clone(),
+            _ => unreachable!("matched settings command"),
         };
         let changed = replace_client_settings(transaction, &settings)?;
         let revision = if changed {
@@ -3282,7 +3303,7 @@ fn apply_mutation(
         Command::CancelPendingAdd { torrent_id } => {
             cancel_pending_add(transaction, torrent_id, current_revision)
         }
-        Command::UpdateClientSettings { .. } => {
+        Command::UpdateClientSettings { .. } | Command::ResetClientSettings => {
             unreachable!("settings are handled atomically above")
         }
         Command::UpdateTorrentSettings { torrent_id, patch } => {
@@ -6166,10 +6187,11 @@ mod tests {
     use crate::ClientSettings;
     use crate::have::{HaveState, MAX_DURABLE_HAVE_STATE_BYTES, MAX_DURABLE_PIECES};
     use crate::{
-        AddTorrentBytesRequest, CONTROL_VERSION, Command, ErrorCode, FileIndexRange, FilePriority,
-        FileSelectionIntent, ListenerPolicy, MagnetExportSource, RemovalDataPolicy, RemovalState,
-        RequestEnvelope, ResponseOutcome, StorageState, TorrentState, TorrentTransferLimits,
-        TransferRateLimit,
+        ActiveSeedLimit, AddTorrentBytesRequest, CONTROL_VERSION, Command, EncryptionPolicy,
+        ErrorCode, FileIndexRange, FilePriority, FileSelectionIntent,
+        HttpsServerAuthenticationPolicy, ListenerPolicy, MagnetExportSource, PortMappingPolicy,
+        RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseOutcome, StorageState,
+        TorrentState, TorrentTransferLimits, TransferRateLimit,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -9688,6 +9710,117 @@ mod tests {
             reopened.client_settings().expect("read retained settings"),
             ClientSettings::fresh_profile_default()
         );
+        drop(reopened);
+        fs::remove_dir_all(root).expect("remove profile");
+    }
+
+    #[test]
+    fn reset_client_settings_is_atomic_replayable_and_preserves_profile_state() {
+        let root = test_root("reset-client-settings");
+        let configured = configured_root(&root);
+        let reset_target = ClientSettings::fresh_profile_default();
+        let mut store = SessionStore::open_with_initial_client_settings(
+            &root,
+            "default",
+            std::slice::from_ref(&configured),
+            &reset_target,
+        )
+        .expect("open profile");
+        let added = store
+            .handle_durable(&add_hash_request("add-reset-settings-target", 8))
+            .expect("add torrent");
+        let torrent_id = added_torrent_id(&added);
+
+        let changed = ClientSettings {
+            listener: ListenerPolicy::FixedLoopback { port: 7_001 },
+            preferred_listen_port: 7_002,
+            port_mapping: PortMappingPolicy::Disabled,
+            peer_connection_limit: 321,
+            upload_slots: 4,
+            active_downloads: 4,
+            active_seeds: ActiveSeedLimit::Unlimited,
+            share_ratio_limit_percent: 101,
+            finished_download_ratio_limit_percent: 102,
+            finished_time_limit_seconds: 103,
+            upload_rate_limit: TransferRateLimit::Limited {
+                bytes_per_second: 4_096,
+            },
+            download_rate_limit: TransferRateLimit::Limited {
+                bytes_per_second: 8_192,
+            },
+            encryption: EncryptionPolicy::Required,
+            ipv6_enabled: false,
+            dht_enabled: false,
+            peer_exchange_enabled: false,
+            tracker_https_server_authentication: HttpsServerAuthenticationPolicy::Disabled,
+        };
+        let changed_response = store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "change-every-client-setting".to_owned(),
+                expected_revision: Some("1".to_owned()),
+                command: Command::UpdateClientSettings {
+                    patch: changed.clone().into(),
+                },
+            })
+            .expect("change settings");
+        assert_eq!(changed_response.revision, "2");
+        assert_eq!(store.client_settings().unwrap(), changed);
+
+        let reset = RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: "reset-every-client-setting".to_owned(),
+            expected_revision: Some("2".to_owned()),
+            command: Command::ResetClientSettings,
+        };
+        let reset_response = store.handle_durable(&reset).expect("reset settings");
+        assert_eq!(reset_response.revision, "3");
+        assert_eq!(store.client_settings().unwrap(), reset_target);
+        assert_eq!(store.handle_durable(&reset).unwrap(), reset_response);
+
+        let snapshot = store.snapshot().unwrap();
+        assert_eq!(snapshot.torrents.len(), 1);
+        assert_eq!(snapshot.torrents[0].torrent_id, torrent_id);
+        assert_eq!(snapshot.storage.roots.len(), 1);
+        assert_eq!(snapshot.storage.roots[0].root_id, configured.id);
+
+        let no_op = store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "reset-default-client-settings".to_owned(),
+                expected_revision: Some("3".to_owned()),
+                command: Command::ResetClientSettings,
+            })
+            .expect("reset settings no-op");
+        assert_eq!(no_op.revision, "3");
+        let stale = store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "stale-reset-client-settings".to_owned(),
+                expected_revision: Some("2".to_owned()),
+                command: Command::ResetClientSettings,
+            })
+            .expect("reject stale reset");
+        assert!(matches!(
+            stale.outcome,
+            ResponseOutcome::Error {
+                error: crate::ErrorResponse {
+                    code: ErrorCode::StaleRevision,
+                    ..
+                }
+            }
+        ));
+
+        drop(store);
+        let reopened = SessionStore::open_with_initial_client_settings(
+            &root,
+            "default",
+            &[configured],
+            &reset_target,
+        )
+        .expect("reopen reset profile");
+        assert_eq!(reopened.client_settings().unwrap(), reset_target);
+        assert_eq!(reopened.snapshot().unwrap().torrents.len(), 1);
         drop(reopened);
         fs::remove_dir_all(root).expect("remove profile");
     }

@@ -1990,7 +1990,7 @@ impl ApplicationService {
             | Command::SetShowAddOptions { .. }
             | Command::SetShowFileSelection { .. } => {}
             Command::MoveDownloadToTop { .. } | Command::MoveDownloadToBottom { .. } => {}
-            Command::UpdateClientSettings { .. } => {
+            Command::UpdateClientSettings { .. } | Command::ResetClientSettings => {
                 let settings = self.store_mut()?.snapshot()?.client_settings;
                 self.session_network_config.settings = settings.clone();
                 if let Some(session_network) = self.session_network.as_mut() {
@@ -11978,6 +11978,101 @@ mod tests {
             0
         );
         fs::remove_dir_all(root).expect("remove offline ephemeral test root");
+    }
+
+    #[tokio::test]
+    async fn reset_client_settings_converges_to_configured_defaults_live() {
+        let root = test_root("reset-client-settings-runtime");
+        let configuration = config(&root).with_fresh_profile_defaults();
+        let reset_target = configuration.initial_client_settings.clone();
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("open application");
+        let added = service
+            .dispatch(add_request("add-reset-runtime-target", &"ab".repeat(20)))
+            .await
+            .expect("add torrent before reset");
+        let torrent_id = match added.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("reset fixture add result"),
+        };
+        let changed = ClientSettings {
+            listener: ListenerPolicy::FixedLoopback { port: 7_101 },
+            preferred_listen_port: 7_102,
+            peer_connection_limit: 17,
+            upload_slots: 0,
+            active_downloads: 4,
+            active_seeds: crate::ActiveSeedLimit::Unlimited,
+            share_ratio_limit_percent: 101,
+            finished_download_ratio_limit_percent: 102,
+            finished_time_limit_seconds: 103,
+            upload_rate_limit: crate::TransferRateLimit::Limited {
+                bytes_per_second: 12 * 1_024,
+            },
+            download_rate_limit: crate::TransferRateLimit::Limited {
+                bytes_per_second: 48 * 1_024,
+            },
+            encryption: crate::EncryptionPolicy::Required,
+            ipv6_enabled: false,
+            dht_enabled: false,
+            peer_exchange_enabled: false,
+            tracker_https_server_authentication: crate::HttpsServerAuthenticationPolicy::Disabled,
+            ..ClientSettings::default()
+        };
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "change-runtime-before-reset".to_owned(),
+                expected_revision: Some("1".to_owned()),
+                command: Command::UpdateClientSettings {
+                    patch: changed.clone().into(),
+                },
+            })
+            .await
+            .expect("change client settings");
+        wait_for_client_settings(&service, |runtime| runtime.configured == changed).await;
+
+        let response = service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "reset-runtime-client-settings".to_owned(),
+                expected_revision: Some("2".to_owned()),
+                command: Command::ResetClientSettings,
+            })
+            .await
+            .expect("reset client settings");
+        let ResponseOutcome::Success { snapshot } = response.outcome else {
+            panic!("reset command must succeed");
+        };
+        assert_eq!(snapshot.client_settings, reset_target);
+        assert_eq!(snapshot.torrents.len(), 1);
+        assert_eq!(snapshot.torrents[0].torrent_id, torrent_id);
+        assert_eq!(snapshot.storage.roots.len(), 1);
+
+        let runtime = wait_for_client_settings(&service, |runtime| {
+            runtime.configured == reset_target
+                && runtime.transport_application == crate::ClientSettingsApplicationState::Applied
+                && runtime.port_mapping_application
+                    == crate::ClientSettingsApplicationState::Applied
+                && runtime.peer_connections_application
+                    == crate::ClientSettingsApplicationState::Applied
+                && runtime.upload_slots_application
+                    == crate::ClientSettingsApplicationState::Applied
+                && runtime.bandwidth_application == crate::ClientSettingsApplicationState::Applied
+                && runtime.encryption_application == crate::ClientSettingsApplicationState::Applied
+                && runtime.ipv6_application == crate::ClientSettingsApplicationState::Applied
+                && runtime.dht_application == crate::ClientSettingsApplicationState::Applied
+                && runtime.peer_exchange_application
+                    == crate::ClientSettingsApplicationState::Applied
+                && runtime.tracker_https_authentication_application
+                    == crate::ClientSettingsApplicationState::Applied
+        })
+        .await;
+        assert_eq!(runtime.configured, reset_target);
+
+        service.shutdown().await.expect("shutdown application");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove reset runtime root");
     }
 
     #[tokio::test]

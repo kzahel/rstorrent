@@ -2408,6 +2408,18 @@
         },
         {
           "properties": {
+            "type": {
+              "const": "reset_client_settings",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
             "patch": {
               "$ref": "#/$defs/TorrentSettingsPatch"
             },

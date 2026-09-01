@@ -150,6 +150,7 @@ pub enum Command {
     UpdateClientSettings {
         patch: ClientSettingsPatch,
     },
+    ResetClientSettings,
     UpdateTorrentSettings {
         #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
@@ -202,6 +203,7 @@ impl Command {
                 | Self::ConfirmPendingFileSelection { .. }
                 | Self::CancelPendingAdd { .. }
                 | Self::UpdateClientSettings { .. }
+                | Self::ResetClientSettings
                 | Self::UpdateTorrentSettings { .. }
                 | Self::RemoveStorageRoot { .. }
                 | Self::Pause { .. }
@@ -687,6 +689,7 @@ pub(crate) fn validate_request(request: &RequestEnvelope) -> Result<(), (ErrorCo
                 .validate()
                 .map_err(|error| (ErrorCode::InvalidRequest, error.to_string()))?;
         }
+        Command::ResetClientSettings => {}
         Command::SetShowAddOptions { .. } | Command::SetShowFileSelection { .. } => {}
         Command::Snapshot | Command::Shutdown => {}
     }
@@ -847,6 +850,17 @@ mod tests {
         assert_eq!(
             validate_request(&empty).map_err(|error| error.0),
             Err(ErrorCode::InvalidRequest)
+        );
+        let reset = RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: "reset-client-settings".to_owned(),
+            expected_revision: None,
+            command: Command::ResetClientSettings,
+        };
+        assert_eq!(validate_request(&reset), Ok(()));
+        assert_eq!(
+            serde_json::to_value(reset).unwrap()["command"],
+            serde_json::json!({ "type": "reset_client_settings" })
         );
         assert!(
             serde_json::from_str::<RequestEnvelope>(
