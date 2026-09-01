@@ -33,6 +33,7 @@ use crate::control::{
 use crate::download_queue::{self, QueueEdge};
 use crate::durable_state::{DerivedStateInput, VerificationState, derive_torrent_state};
 use crate::have::{HaveError, HaveState, MAX_DURABLE_HAVE_STATE_BYTES, MAX_DURABLE_PIECES};
+use crate::product_state::{ProductMilestone, ProductMilestoneKind};
 use crate::profile_reset::{
     CatalogPreparation, DATABASE_FILENAME, ProfileResetReport, finish_catalog_creation,
     prepare_catalog,
@@ -48,6 +49,7 @@ use crate::store_schema::{
 };
 
 const MAX_RECEIPTS: i64 = 1024;
+const MAX_PENDING_PRODUCT_MILESTONES: i64 = 1024;
 pub(crate) const EPHEMERAL_SESSION_MAX_BYTES: u64 = 256 * 1024 * 1024;
 pub const MAX_STORAGE_ROOTS: usize = 32;
 pub const MAX_STORAGE_ROOT_LOCATOR_LENGTH: usize = 4096;
@@ -531,7 +533,7 @@ impl SessionStore {
 
         if let Some(maximum_bytes) = ephemeral_maximum_bytes {
             configure_ephemeral_connection(&connection, maximum_bytes)?;
-            create_or_validate_schema_25(
+            create_or_validate_schema_26(
                 &mut connection,
                 profile_id,
                 initial_client_settings,
@@ -544,7 +546,7 @@ impl SessionStore {
             match preparation {
                 CatalogPreparation::Current => {
                     configure_durable_connection(&connection)?;
-                    create_or_validate_schema_25(
+                    create_or_validate_schema_26(
                         &mut connection,
                         profile_id,
                         initial_client_settings,
@@ -553,7 +555,7 @@ impl SessionStore {
                 }
                 CatalogPreparation::Create { reset_report } => {
                     connection.pragma_update(None, "synchronous", "FULL")?;
-                    create_or_validate_schema_25(
+                    create_or_validate_schema_26(
                         &mut connection,
                         profile_id,
                         initial_client_settings,
@@ -651,6 +653,92 @@ impl SessionStore {
             [],
         )?;
         Ok(())
+    }
+
+    pub fn pending_product_milestones(&self) -> Result<Vec<ProductMilestone>, StoreError> {
+        let source_epoch = read_product_source_epoch(&self.connection)?;
+        let mut statement = self.connection.prepare(
+            "SELECT sequence, kind
+             FROM product_milestones
+             ORDER BY sequence",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut milestones = Vec::new();
+        for row in rows {
+            let (sequence, kind) = row?;
+            milestones.push(ProductMilestone {
+                source_epoch,
+                sequence: u64::try_from(sequence).map_err(|_| {
+                    StoreError::DurableState("product milestone has an invalid sequence".to_owned())
+                })?,
+                kind: ProductMilestoneKind::parse(&kind)
+                    .map_err(|error| StoreError::DurableState(error.to_string()))?,
+            });
+        }
+        if milestones.len()
+            > usize::try_from(MAX_PENDING_PRODUCT_MILESTONES)
+                .expect("product milestone bound fits usize")
+        {
+            return Err(StoreError::DurableState(
+                "product milestone outbox exceeds its durable bound".to_owned(),
+            ));
+        }
+        Ok(milestones)
+    }
+
+    pub fn acknowledge_product_milestones(
+        &mut self,
+        source_epoch: [u8; 16],
+        through_sequence: u64,
+    ) -> Result<usize, StoreError> {
+        if source_epoch == [0; 16] {
+            return Err(StoreError::DurableState(
+                "product milestone acknowledgement has a zero source epoch".to_owned(),
+            ));
+        }
+        let transaction = self.connection.transaction()?;
+        let stored_epoch = read_product_source_epoch(&transaction)?;
+        if stored_epoch != source_epoch {
+            return Err(StoreError::DurableState(
+                "product milestone acknowledgement has the wrong source epoch".to_owned(),
+            ));
+        }
+        let next_sequence: i64 = transaction.query_row(
+            "SELECT next_sequence FROM product_milestone_state WHERE singleton = 1",
+            [],
+            |row| row.get(0),
+        )?;
+        let maximum_issued = u64::try_from(next_sequence - 1).map_err(|_| {
+            StoreError::DurableState("product milestone sequence state is invalid".to_owned())
+        })?;
+        if through_sequence > maximum_issued {
+            return Err(StoreError::DurableState(
+                "product milestone acknowledgement skips unissued sequence values".to_owned(),
+            ));
+        }
+        let through_sequence = i64::try_from(through_sequence).map_err(|_| {
+            StoreError::DurableState("product milestone acknowledgement overflows".to_owned())
+        })?;
+        let removed = transaction.execute(
+            "DELETE FROM product_milestones WHERE sequence <= ?1",
+            [through_sequence],
+        )?;
+        transaction.commit()?;
+        Ok(removed)
+    }
+
+    pub fn dropped_product_milestone_count(&self) -> Result<u64, StoreError> {
+        let value: i64 = self.connection.query_row(
+            "SELECT dropped_milestones
+             FROM product_milestone_state WHERE singleton = 1",
+            [],
+            |row| row.get(0),
+        )?;
+        u64::try_from(value).map_err(|_| {
+            StoreError::DurableState("product milestone drop count is invalid".to_owned())
+        })
     }
 
     pub fn snapshot(&self) -> Result<ServiceSnapshot, StoreError> {
@@ -1927,18 +2015,59 @@ impl SessionStore {
         let transaction = self.connection.transaction()?;
         let (piece_count, fingerprint, bytes) = read_have_columns(&transaction, &torrent_id)?;
         let mut have = HaveState::decode(&bytes, torrent_id, fingerprint, piece_count)?;
+        let (raw_info, completion_eligible, completion_counted) = transaction.query_row(
+            "SELECT raw_info, product_completion_eligible, product_completion_counted
+             FROM torrents WHERE torrent_id = ?1",
+            [torrent_id.as_bytes()],
+            |row| {
+                Ok((
+                    row.get::<_, Vec<u8>>(0)?,
+                    row.get::<_, bool>(1)?,
+                    row.get::<_, bool>(2)?,
+                ))
+            },
+        )?;
+        let skip_files = read_selection(&transaction, &torrent_id)?;
+        let metainfo_source = read_verbatim_metainfo_source(&transaction, &torrent_id)?;
+        let (_, complete_before) =
+            wanted_piece_evidence(&raw_info, metainfo_source.as_deref(), &skip_files, &have)?;
+        let mut newly_verified = false;
         for &piece_index in piece_indices {
+            let was_verified = have.pieces().get(piece_index).copied().unwrap_or(false);
             have.set(piece_index, true)?;
+            newly_verified |= !was_verified;
         }
+        let (has_wanted, complete_after) =
+            wanted_piece_evidence(&raw_info, metainfo_source.as_deref(), &skip_files, &have)?;
+        let downloaded_completion = newly_verified
+            && has_wanted
+            && !complete_before
+            && complete_after
+            && completion_eligible
+            && !completion_counted;
         let revision = increment_revision(&transaction)?;
         let revision_sql = sql_revision(revision)?;
         transaction.execute(
             "UPDATE torrents
              SET have_state = ?2,
-                 updated_revision = ?3
+                 updated_revision = ?3,
+                 download_queue_position = CASE WHEN ?4 THEN NULL
+                                                ELSE download_queue_position END,
+                 product_completion_eligible = CASE WHEN ?4 THEN 0
+                                                    ELSE product_completion_eligible END,
+                 product_completion_counted = CASE WHEN ?4 THEN 1
+                                                   ELSE product_completion_counted END
              WHERE torrent_id = ?1",
-            params![torrent_id.as_bytes(), have.encode(), revision_sql],
+            params![
+                torrent_id.as_bytes(),
+                have.encode(),
+                revision_sql,
+                downloaded_completion
+            ],
         )?;
+        if downloaded_completion {
+            append_product_milestone(&transaction, ProductMilestoneKind::DownloadCompleted)?;
+        }
         transaction.commit()?;
         Ok(revision)
     }
@@ -2158,7 +2287,7 @@ impl SessionStore {
         )?;
         let skip_files = read_selection(&transaction, &torrent_id)?;
         let metainfo_source = read_verbatim_metainfo_source(&transaction, &torrent_id)?;
-        let (_, all_wanted_verified) =
+        let (has_wanted, all_wanted_verified) =
             wanted_piece_evidence(&raw_info, metainfo_source.as_deref(), &skip_files, have)?;
         if desired_state == "running" && !all_wanted_verified && !archived && retained {
             download_queue::append(&transaction, &torrent_id)?;
@@ -2170,9 +2299,17 @@ impl SessionStore {
              SET have_state = ?2,
                  error = NULL, quarantine_reason = NULL,
                  verification_completed = verification_requested,
+                 product_completion_eligible = CASE
+                    WHEN ?4 AND product_completion_counted = 0 THEN 0
+                    ELSE product_completion_eligible END,
                  updated_revision = ?3
              WHERE torrent_id = ?1",
-            params![torrent_id.as_bytes(), have.encode(), revision_sql],
+            params![
+                torrent_id.as_bytes(),
+                have.encode(),
+                revision_sql,
+                has_wanted && all_wanted_verified
+            ],
         )?;
         transaction.commit()?;
         Ok(revision)
@@ -2737,7 +2874,71 @@ fn pragma_u64(connection: &Connection, pragma: &str) -> Result<u64, StoreError> 
     u64::try_from(value).map_err(|_| StoreError::DurableState(format!("negative SQLite {pragma}")))
 }
 
-fn create_or_validate_schema_25(
+fn read_product_source_epoch(connection: &Connection) -> Result<[u8; 16], StoreError> {
+    let bytes: Vec<u8> = connection.query_row(
+        "SELECT source_epoch FROM product_milestone_state WHERE singleton = 1",
+        [],
+        |row| row.get(0),
+    )?;
+    let source_epoch: [u8; 16] = bytes.try_into().map_err(|_| {
+        StoreError::DurableState("product milestone source epoch has invalid length".to_owned())
+    })?;
+    if source_epoch == [0; 16] {
+        return Err(StoreError::DurableState(
+            "product milestone source epoch is zero".to_owned(),
+        ));
+    }
+    Ok(source_epoch)
+}
+
+fn append_product_milestone(
+    transaction: &Transaction<'_>,
+    kind: ProductMilestoneKind,
+) -> Result<bool, StoreError> {
+    let (next_sequence, dropped): (i64, i64) = transaction.query_row(
+        "SELECT next_sequence, dropped_milestones
+         FROM product_milestone_state WHERE singleton = 1",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    if next_sequence < 1 || dropped < 0 {
+        return Err(StoreError::DurableState(
+            "product milestone state is invalid".to_owned(),
+        ));
+    }
+    let pending: i64 =
+        transaction.query_row("SELECT count(*) FROM product_milestones", [], |row| {
+            row.get(0)
+        })?;
+    if !(0..=MAX_PENDING_PRODUCT_MILESTONES).contains(&pending) {
+        return Err(StoreError::DurableState(
+            "product milestone outbox exceeds its durable bound".to_owned(),
+        ));
+    }
+    if pending == MAX_PENDING_PRODUCT_MILESTONES || next_sequence == i64::MAX {
+        transaction.execute(
+            "UPDATE product_milestone_state
+             SET dropped_milestones = CASE
+                WHEN dropped_milestones < 9223372036854775807
+                THEN dropped_milestones + 1
+                ELSE dropped_milestones END
+             WHERE singleton = 1",
+            [],
+        )?;
+        return Ok(false);
+    }
+    transaction.execute(
+        "INSERT INTO product_milestones(sequence, kind) VALUES (?1, ?2)",
+        params![next_sequence, kind.as_str()],
+    )?;
+    transaction.execute(
+        "UPDATE product_milestone_state SET next_sequence = ?1 WHERE singleton = 1",
+        [next_sequence + 1],
+    )?;
+    Ok(true)
+}
+
+fn create_or_validate_schema_26(
     connection: &mut Connection,
     profile_id: &str,
     initial_client_settings: &ClientSettings,
@@ -2745,7 +2946,7 @@ fn create_or_validate_schema_25(
 ) -> Result<(), StoreError> {
     let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version != 0 {
-        return validate_schema_25(connection, profile_id);
+        return validate_schema_26(connection, profile_id);
     }
     let transaction = connection.transaction()?;
     transaction.execute_batch(
@@ -2757,7 +2958,7 @@ fn create_or_validate_schema_25(
          CREATE TABLE profile_reset_report (
             singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
             previous_schema_version INTEGER NOT NULL CHECK (
-                previous_schema_version BETWEEN 1 AND 24
+                previous_schema_version BETWEEN 1 AND 25
             ),
             discarded_categories_json TEXT NOT NULL CHECK (
                 length(discarded_categories_json) BETWEEN 2 AND 1024
@@ -2850,6 +3051,13 @@ fn create_or_validate_schema_25(
             seeding_seconds INTEGER NOT NULL DEFAULT 0 CHECK (
                 seeding_seconds >= 0 AND seeding_seconds <= finished_seconds
             ),
+            product_completion_eligible INTEGER NOT NULL DEFAULT 1 CHECK (
+                product_completion_eligible IN (0, 1)
+            ),
+            product_completion_counted INTEGER NOT NULL DEFAULT 0 CHECK (
+                product_completion_counted IN (0, 1) AND
+                product_completion_eligible + product_completion_counted <= 1
+            ),
             tracker_complete INTEGER CHECK (
                 tracker_complete IS NULL OR
                 tracker_complete BETWEEN 0 AND 4294967295
@@ -2906,7 +3114,23 @@ fn create_or_validate_schema_25(
             request_json TEXT NOT NULL CHECK (length(request_json) <= 32768),
             response_json TEXT NOT NULL CHECK (length(response_json) <= 1048576),
             revision INTEGER NOT NULL CHECK (revision >= 0)
-         );",
+         );
+         CREATE TABLE product_milestone_state (
+            singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+            source_epoch BLOB NOT NULL CHECK (
+                length(source_epoch) = 16 AND source_epoch <> zeroblob(16)
+            ),
+            next_sequence INTEGER NOT NULL CHECK (next_sequence >= 1),
+            dropped_milestones INTEGER NOT NULL DEFAULT 0 CHECK (
+                dropped_milestones >= 0
+            )
+         );
+         CREATE TABLE product_milestones (
+            sequence INTEGER PRIMARY KEY CHECK (sequence >= 1),
+            kind TEXT NOT NULL CHECK (
+                kind IN ('torrent_added', 'download_completed')
+            )
+         ) WITHOUT ROWID;",
     )?;
     transaction.execute(
         "INSERT INTO profile_state(singleton, profile_id, revision)
@@ -2918,6 +3142,13 @@ fn create_or_validate_schema_25(
             singleton, default_root, show_add_options, show_file_selection
          ) VALUES (1, NULL, 1, 1)",
         [],
+    )?;
+    let source_epoch = *uuid::Uuid::new_v4().as_bytes();
+    transaction.execute(
+        "INSERT INTO product_milestone_state(
+            singleton, source_epoch, next_sequence, dropped_milestones
+         ) VALUES (1, ?1, 1, 0)",
+        [source_epoch.as_slice()],
     )?;
     if let Some(report) = reset_report {
         transaction.execute(
@@ -2940,10 +3171,10 @@ fn create_or_validate_schema_25(
     transaction.execute_batch(FILE_PRIORITIES_TABLE_SQL)?;
     transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     transaction.commit()?;
-    validate_schema_25(connection, profile_id)
+    validate_schema_26(connection, profile_id)
 }
 
-fn validate_schema_25(connection: &Connection, profile_id: &str) -> Result<(), StoreError> {
+fn validate_schema_26(connection: &Connection, profile_id: &str) -> Result<(), StoreError> {
     let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version != SCHEMA_VERSION {
         return Err(StoreError::UnsupportedSchema {
@@ -2982,6 +3213,60 @@ fn validate_schema_25(connection: &Connection, profile_id: &str) -> Result<(), S
         return Err(StoreError::DurableState(format!(
             "{invalid_identity_owners} torrent owners do not have one or two protocol identities"
         )));
+    }
+    read_product_source_epoch(connection)?;
+    let (next_sequence, dropped): (i64, i64) = connection.query_row(
+        "SELECT next_sequence, dropped_milestones
+         FROM product_milestone_state WHERE singleton = 1",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    if next_sequence < 1 || dropped < 0 {
+        return Err(StoreError::DurableState(
+            "product milestone state is invalid".to_owned(),
+        ));
+    }
+    let (pending, minimum, maximum): (i64, Option<i64>, Option<i64>) = connection.query_row(
+        "SELECT count(*), min(sequence), max(sequence) FROM product_milestones",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )?;
+    let non_contiguous = match (pending, minimum, maximum) {
+        (0, None, None) => false,
+        (count, Some(first), Some(last)) if count > 0 => {
+            Some(last) != next_sequence.checked_sub(1)
+                || last.checked_sub(first) != count.checked_sub(1)
+        }
+        _ => true,
+    };
+    if !(0..=MAX_PENDING_PRODUCT_MILESTONES).contains(&pending) || non_contiguous {
+        return Err(StoreError::DurableState(
+            "product milestone outbox is invalid or non-contiguous".to_owned(),
+        ));
+    }
+    let unknown_product_milestones: i64 = connection.query_row(
+        "SELECT count(*) FROM product_milestones
+         WHERE kind NOT IN ('torrent_added', 'download_completed')",
+        [],
+        |row| row.get(0),
+    )?;
+    if unknown_product_milestones != 0 {
+        return Err(StoreError::DurableState(
+            "product milestone outbox contains an unknown kind".to_owned(),
+        ));
+    }
+    let invalid_completion_state: i64 = connection.query_row(
+        "SELECT count(*) FROM torrents
+         WHERE product_completion_eligible NOT IN (0, 1)
+            OR product_completion_counted NOT IN (0, 1)
+            OR product_completion_eligible + product_completion_counted > 1",
+        [],
+        |row| row.get(0),
+    )?;
+    if invalid_completion_state != 0 {
+        return Err(StoreError::DurableState(
+            "catalog contains invalid product completion state".to_owned(),
+        ));
     }
     read_client_settings(connection)?;
     Ok(())
@@ -3528,6 +3813,8 @@ fn add_torrent_bytes(
             )
             .map_err(|error| AddTorrentBytesError::Store(StoreError::Sqlite(error)))?;
     }
+    append_product_milestone(transaction, ProductMilestoneKind::TorrentAdded)
+        .map_err(AddTorrentBytesError::Store)?;
     Ok((
         revision,
         add_result(
@@ -4104,6 +4391,8 @@ fn add_magnet(
     if let Some(selection) = &magnet.select_only {
         write_pending_ranges(transaction, &torrent_id, selection.ranges())?;
     }
+    append_product_milestone(transaction, ProductMilestoneKind::TorrentAdded)
+        .map_err(|error| internal_message(&error.to_string()))?;
     Ok((
         revision,
         add_result(
@@ -6180,9 +6469,10 @@ mod tests {
     use sha2::Sha256;
 
     use super::{
-        ConfiguredStorageRoot, MAX_ACCOUNTING_BATCH, PendingReconciliation, SCHEMA_VERSION,
-        SessionStore, StoreError, StoredTracker, StoredTrackerSource, StoredTrackerTransport,
-        TorrentAccounting, TorrentAccountingUpdate, synthesize_magnet_export,
+        ConfiguredStorageRoot, MAX_ACCOUNTING_BATCH, MAX_PENDING_PRODUCT_MILESTONES,
+        PendingReconciliation, SCHEMA_VERSION, SessionStore, StoreError, StoredTracker,
+        StoredTrackerSource, StoredTrackerTransport, TorrentAccounting, TorrentAccountingUpdate,
+        append_product_milestone, synthesize_magnet_export,
     };
     use crate::ClientSettings;
     use crate::have::{HaveState, MAX_DURABLE_HAVE_STATE_BYTES, MAX_DURABLE_PIECES};
@@ -6190,8 +6480,8 @@ mod tests {
         ActiveSeedLimit, AddTorrentBytesRequest, CONTROL_VERSION, Command, EncryptionPolicy,
         ErrorCode, FileIndexRange, FilePriority, FileSelectionIntent,
         HttpsServerAuthenticationPolicy, ListenerPolicy, MagnetExportSource, PortMappingPolicy,
-        RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseOutcome, StorageState,
-        TorrentState, TorrentTransferLimits, TransferRateLimit,
+        ProductMilestoneKind, RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseOutcome,
+        StorageState, TorrentState, TorrentTransferLimits, TransferRateLimit,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -7009,6 +7299,101 @@ mod tests {
 
     fn configured_root(root: &std::path::Path) -> ConfiguredStorageRoot {
         ConfiguredStorageRoot::path("downloads", root.join("payload"))
+    }
+
+    #[test]
+    fn product_milestone_outbox_is_ordered_durable_and_acknowledged_by_epoch() {
+        let root = test_root("product-outbox");
+        let configured = configured_root(&root);
+        let mut store =
+            SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
+
+        let first_request = add_hash_request("product-add-first", 0x31);
+        let first = store.handle_durable(&first_request).expect("add first");
+        assert!(matches!(first.outcome, ResponseOutcome::Success { .. }));
+        store
+            .handle_durable(&add_hash_request("product-add-duplicate", 0x31))
+            .expect("reject duplicate without a milestone");
+        store
+            .handle_durable(&first_request)
+            .expect("replay accepted receipt without a milestone");
+
+        let milestones = store
+            .pending_product_milestones()
+            .expect("read first milestone");
+        assert_eq!(milestones.len(), 1);
+        assert_eq!(milestones[0].sequence, 1);
+        assert_eq!(milestones[0].kind, ProductMilestoneKind::TorrentAdded);
+        let source_epoch = milestones[0].source_epoch;
+        assert!(matches!(
+            store.acknowledge_product_milestones([7; 16], 1),
+            Err(StoreError::DurableState(_))
+        ));
+        assert!(matches!(
+            store.acknowledge_product_milestones(source_epoch, 2),
+            Err(StoreError::DurableState(_))
+        ));
+        assert_eq!(
+            store
+                .acknowledge_product_milestones(source_epoch, 1)
+                .expect("acknowledge first milestone"),
+            1
+        );
+        assert!(
+            store
+                .pending_product_milestones()
+                .expect("empty outbox")
+                .is_empty()
+        );
+        drop(store);
+
+        let mut reopened =
+            SessionStore::open(&root, "default", &[configured]).expect("reopen product outbox");
+        reopened
+            .handle_durable(&add_hash_request("product-add-second", 0x32))
+            .expect("add second");
+        let milestones = reopened
+            .pending_product_milestones()
+            .expect("read second milestone");
+        assert_eq!(milestones.len(), 1);
+        assert_eq!(milestones[0].source_epoch, source_epoch);
+        assert_eq!(milestones[0].sequence, 2);
+        assert_eq!(milestones[0].kind, ProductMilestoneKind::TorrentAdded);
+
+        drop(reopened);
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
+    fn product_milestone_outbox_drops_only_derived_work_at_its_bound() {
+        let maximum = usize::try_from(MAX_PENDING_PRODUCT_MILESTONES).expect("bound fits usize");
+        let mut store = SessionStore::open_ephemeral("default", &[]).expect("open ephemeral");
+        let transaction = store.connection.transaction().expect("begin outbox fill");
+        for _ in 0..maximum {
+            assert!(
+                append_product_milestone(&transaction, ProductMilestoneKind::TorrentAdded)
+                    .expect("append bounded milestone")
+            );
+        }
+        assert!(
+            !append_product_milestone(&transaction, ProductMilestoneKind::DownloadCompleted)
+                .expect("drop over-bound milestone")
+        );
+        transaction.commit().expect("commit bounded outbox");
+
+        assert_eq!(
+            store
+                .pending_product_milestones()
+                .expect("read bounded outbox")
+                .len(),
+            maximum
+        );
+        assert_eq!(
+            store
+                .dropped_product_milestone_count()
+                .expect("read drop count"),
+            1
+        );
     }
 
     fn add_request(request_id: &str) -> RequestEnvelope {
@@ -9355,6 +9740,174 @@ mod tests {
     }
 
     #[test]
+    fn downloaded_completion_emits_once_and_recheck_or_repair_cannot_reemit() {
+        let root = test_root("product-completion");
+        let configured = configured_root(&root);
+        let mut store = SessionStore::open(&root, "default", &[configured]).expect("open");
+        let mut raw_info = b"d6:lengthi8e4:name6:metric12:piece lengthi4e6:pieces40:".to_vec();
+        raw_info.extend_from_slice(&[b'a'; 20]);
+        raw_info.extend_from_slice(&[b'b'; 20]);
+        raw_info.push(b'e');
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        let info_hash = crate::control::encode_info_hash(info_hash);
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "product-completion-add".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!("magnet:?xt=urn:btih:{info_hash}"),
+                    storage_root: "downloads".to_owned(),
+                    start_content: true,
+                    await_file_selection: false,
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("add completion source");
+        let torrent_id = only_torrent_id(&store);
+        let added = store
+            .pending_product_milestones()
+            .expect("read add milestone");
+        store
+            .acknowledge_product_milestones(added[0].source_epoch, added[0].sequence)
+            .expect("acknowledge add milestone");
+        store
+            .record_metadata(&torrent_id, &raw_info)
+            .expect("record metadata");
+
+        store
+            .record_piece(&torrent_id, 0)
+            .expect("record incomplete piece");
+        assert!(
+            store
+                .pending_product_milestones()
+                .expect("no early completion")
+                .is_empty()
+        );
+        store
+            .record_piece(&torrent_id, 1)
+            .expect("record downloaded completion");
+        let completed = store
+            .pending_product_milestones()
+            .expect("read completion milestone");
+        assert_eq!(completed.len(), 1);
+        assert_eq!(completed[0].kind, ProductMilestoneKind::DownloadCompleted);
+        assert!(
+            store
+                .load_resume(&torrent_id)
+                .expect("completed resume")
+                .download_queue_position
+                .is_none(),
+            "downloaded completion and queue removal must be one transaction"
+        );
+
+        store
+            .record_piece(&torrent_id, 1)
+            .expect("repeat complete evidence");
+        assert_eq!(
+            store
+                .pending_product_milestones()
+                .expect("still one completion")
+                .len(),
+            1
+        );
+        store
+            .acknowledge_product_milestones(completed[0].source_epoch, completed[0].sequence)
+            .expect("acknowledge completion");
+
+        store
+            .invalidate_pieces(&torrent_id, &[1])
+            .expect("invalidate completed piece");
+        store
+            .record_piece(&torrent_id, 1)
+            .expect("repair completed piece");
+        let (_, generation) = store
+            .begin_recheck_with_generation(&torrent_id)
+            .expect("begin completed recheck");
+        let complete = store
+            .load_resume(&torrent_id)
+            .expect("load complete recheck evidence")
+            .have
+            .expect("complete have state");
+        store
+            .complete_recheck_generation(&torrent_id, generation, &complete)
+            .expect("complete recheck");
+        assert!(
+            store
+                .pending_product_milestones()
+                .expect("no repair or recheck milestone")
+                .is_empty()
+        );
+
+        drop(store);
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
+    fn complete_existing_content_adoption_disables_later_completion_counting() {
+        let root = test_root("product-completion-adoption");
+        let configured = configured_root(&root);
+        let mut store = SessionStore::open(&root, "default", &[configured]).expect("open");
+        let raw_info =
+            b"d6:lengthi4e4:name4:test12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
+        let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
+        let info_hash = crate::control::encode_info_hash(info_hash);
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "product-adoption-add".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!("magnet:?xt=urn:btih:{info_hash}"),
+                    storage_root: "downloads".to_owned(),
+                    start_content: true,
+                    await_file_selection: false,
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("add adoption source");
+        let torrent_id = only_torrent_id(&store);
+        let added = store
+            .pending_product_milestones()
+            .expect("read add milestone");
+        store
+            .acknowledge_product_milestones(added[0].source_epoch, added[0].sequence)
+            .expect("acknowledge add milestone");
+        store
+            .record_metadata(&torrent_id, raw_info)
+            .expect("record metadata");
+        let (_, generation) = store
+            .begin_recheck_with_generation(&torrent_id)
+            .expect("begin adoption recheck");
+        let empty = store
+            .load_resume(&torrent_id)
+            .expect("load adoption identity")
+            .have
+            .expect("empty have state");
+        let complete =
+            HaveState::from_pieces(empty.torrent_id(), empty.content_fingerprint(), vec![true])
+                .expect("complete adopted have state");
+        store
+            .complete_recheck_generation(&torrent_id, generation, &complete)
+            .expect("adopt existing complete data");
+        store
+            .invalidate_pieces(&torrent_id, &[0])
+            .expect("invalidate adopted piece");
+        store
+            .record_piece(&torrent_id, 0)
+            .expect("repair adopted piece");
+        assert!(
+            store
+                .pending_product_milestones()
+                .expect("adoption never counts as a downloaded completion")
+                .is_empty()
+        );
+
+        drop(store);
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
     fn piece_checkpoint_preserves_direct_storage_state() {
         let root = test_root("direct-piece-checkpoint");
         let mut store =
@@ -9388,11 +9941,14 @@ mod tests {
 
         let resume = store.load_resume(&torrent_id).expect("load resume");
         assert_eq!(resume.storage_state, StorageState::Available);
-        assert!(resume.download_queue_position.is_some());
+        assert!(
+            resume.download_queue_position.is_none(),
+            "the durable piece checkpoint owns completion queue removal"
+        );
         assert_eq!(resume.have.expect("have state").pieces(), &[true]);
         store
             .mark_complete(&torrent_id)
-            .expect("confirm completion");
+            .expect("derived completion callback remains an idempotent no-op");
         assert!(
             store
                 .load_resume(&torrent_id)

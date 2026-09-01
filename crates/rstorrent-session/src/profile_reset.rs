@@ -19,7 +19,7 @@ const RESET_MARKER_MAGIC: &[u8; 8] = b"RSTRST19";
 const RESET_MARKER_LENGTH: usize = 8 + 8 + 32;
 const INSPECTION_TIMEOUT: Duration = Duration::from_secs(2);
 
-const DISCARDED_CATEGORIES: [&str; 8] = [
+const DISCARDED_CATEGORIES: [&str; 9] = [
     "torrents",
     "verified_piece_state",
     "sources_and_receipts",
@@ -28,6 +28,7 @@ const DISCARDED_CATEGORIES: [&str; 8] = [
     "dht_state",
     "pending_removals",
     "protocol_identity_aliases",
+    "product_milestone_outbox",
 ];
 
 const DATABASE_BASENAMES: [&str; 3] = [DATABASE_FILENAME, WAL_FILENAME, SHM_FILENAME];
