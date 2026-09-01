@@ -19,6 +19,7 @@ import org.rstorrent.session.uniffi.MediaItemView
 import org.rstorrent.session.uniffi.PeerView
 import org.rstorrent.session.uniffi.PeerFieldUpdate
 import org.rstorrent.session.uniffi.PeerRowUpdate
+import org.rstorrent.session.uniffi.ProductSummary
 import org.rstorrent.session.uniffi.SessionCurrentRatesView
 import org.rstorrent.session.uniffi.SpeedHistoryAppend
 import org.rstorrent.session.uniffi.SpeedHistoryView
@@ -149,6 +150,7 @@ data class ProductState(
     val network: ProductNetworkState = ProductNetworkState(),
     val notifications: ProductNotificationState = ProductNotificationState(),
     val dataReset: ProductDataResetState? = null,
+    val productSummary: ProductSummary? = null,
     val selectedTorrent: String? = null,
     val torrents: Map<String, TorrentView> = emptyMap(),
     val preparations: Map<String, TorrentPreparationView> = emptyMap(),

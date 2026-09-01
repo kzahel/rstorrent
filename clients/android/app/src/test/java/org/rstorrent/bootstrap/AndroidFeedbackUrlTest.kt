@@ -125,6 +125,25 @@ class AndroidFeedbackUrlTest {
         }
     }
 
+    @Test
+    fun reviewedNativeUrlMustRetainTheExactHttpsDestinationAndBound() {
+        val reviewed =
+            "https://jstorrent.com/feedback.html?platform=android&v=0.1" +
+                "&android=15&device=Google+Pixel+9"
+        assertEquals(reviewed, AndroidFeedbackUrl.validateReviewed(reviewed))
+        for (invalid in listOf(
+            "http://jstorrent.com/feedback.html",
+            "https://user@jstorrent.com/feedback.html",
+            "https://jstorrent.com/other.html",
+            "https://jstorrent.com/feedback.html#fragment",
+            "https://jstorrent.com.evil/feedback.html",
+        )) {
+            assertThrows(IllegalArgumentException::class.java) {
+                AndroidFeedbackUrl.validateReviewed(invalid)
+            }
+        }
+    }
+
     private fun queryFields(uri: URI): List<Pair<String, String>> =
         requireNotNull(uri.rawQuery).split('&').map { field ->
             val (key, value) = field.split('=', limit = 2)

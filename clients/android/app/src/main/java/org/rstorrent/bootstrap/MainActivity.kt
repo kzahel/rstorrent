@@ -11,6 +11,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.net.Uri
 import android.provider.Settings
 import android.widget.TextView
 import android.widget.Toast
@@ -18,6 +19,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.mutableStateOf
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import org.rstorrent.bootstrap.ui.ProductApp
 import org.rstorrent.bootstrap.ui.ProductThemeMode
 import org.rstorrent.session.uniffi.FileIndexRange
@@ -162,6 +165,7 @@ class MainActivity : ComponentActivity() {
                     service.cancelCompanionRootRequest(it)
                 }
                 productService.value = service
+                recordProductForegroundIfPending(service)
                 pendingProductMagnet?.let {
                     pendingProductMagnet = null
                     val policy = pendingProductTrackerPolicy
@@ -536,6 +540,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showProductSurface(command: Intent) {
+        ProductForegroundSessionEpoch.showProductSurface()
+        productService.value?.let(::recordProductForegroundIfPending)
         if (!ProductDataSyncQuotaFence.clearForUserVisibleStart(this)) {
             android.util.Log.w(
                 "RSTorrentProduct",
@@ -567,6 +573,7 @@ class MainActivity : ComponentActivity() {
                     onRequestNotifications = ::requestNotificationPermission,
                     onOpenNotificationSettings = ::openNotificationSettings,
                     onOpenFeedback = ::openFeedback,
+                    onOpenPrivacy = ::openPrivacy,
                     onBackgroundDownloads = ::setBackgroundDownloads,
                     notificationNavigation = notificationNavigation.value,
                     onNotificationNavigationConsumed = { sequence ->
@@ -843,7 +850,19 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun recordProductForegroundIfPending(service: ProductEngineService) {
+        if (ProductForegroundSessionEpoch.claimCurrent()) {
+            service.recordProductForegroundSession()
+        }
+    }
+
+    override fun onDestroy() {
+        if (isFinishing) ProductForegroundSessionEpoch.hideProductSurface()
+        super.onDestroy()
+    }
+
     private fun showDiagnosticSurface() {
+        ProductForegroundSessionEpoch.hideProductSurface()
         if (productMode) {
             productMode = false
             productStartRequested = false
@@ -1046,23 +1065,29 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun openFeedback() {
-        AndroidFeedbackLauncher.launch(
-            environment =
-                AndroidFeedbackEnvironment(
-                    applicationVersion = BuildConfig.VERSION_NAME,
-                    androidRelease = Build.VERSION.RELEASE,
-                    device = "${Build.MANUFACTURER} ${Build.MODEL}",
-                ),
-            startExternalActivity = ::startActivity,
-            onFailure = {
-                Toast.makeText(
-                    this,
-                    R.string.feedback_open_failed,
-                    Toast.LENGTH_LONG,
-                ).show()
-            },
-        )
+    private fun openFeedback(includeStatistics: Boolean, expectedUrl: String) {
+        val service = productService.value ?: return
+        lifecycleScope.launch {
+            runCatching {
+                service.confirmProductFeedback(includeStatistics, expectedUrl)
+            }.onSuccess { url ->
+                AndroidFeedbackLauncher.launchReviewed(
+                    url = url,
+                    startExternalActivity = ::startActivity,
+                    onFailure = ::showFeedbackFailure,
+                )
+            }.onFailure { showFeedbackFailure() }
+        }
+    }
+
+    private fun showFeedbackFailure() {
+        Toast.makeText(this, R.string.feedback_open_failed, Toast.LENGTH_LONG).show()
+    }
+
+    private fun openPrivacy() {
+        runCatching {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRODUCT_PRIVACY_URL)))
+        }.onFailure { showFeedbackFailure() }
     }
 
     private fun setThemeMode(mode: ProductThemeMode) {
@@ -1114,6 +1139,7 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        private const val PRODUCT_PRIVACY_URL = "https://jstorrent.com/privacy.html"
         private const val TREE_REQUEST = 51
         private const val PRODUCT_PREFERENCES = "product_ui"
         private const val PREFERENCE_THEME_MODE = "theme_mode"

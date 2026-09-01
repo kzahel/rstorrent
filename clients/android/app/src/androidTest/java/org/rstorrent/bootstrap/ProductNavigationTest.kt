@@ -122,7 +122,25 @@ class ProductNavigationTest {
                 notificationsGranted = true,
                 onRequestNotifications = {},
                 onOpenNotificationSettings = {},
-                onOpenFeedback = { feedbackCalls += 1 },
+                onOpenFeedback = { _, _ -> feedbackCalls += 1 },
+                onPreviewFeedback = {
+                    org.rstorrent.session.uniffi.ProductFeedbackPreview(
+                        destination = "https://jstorrent.com/feedback.html",
+                        url = "https://jstorrent.com/feedback.html?platform=android&v=0.1",
+                        fields =
+                            listOf(
+                                org.rstorrent.session.uniffi.ProductFeedbackField(
+                                    "platform",
+                                    "android",
+                                    false,
+                                ),
+                                org.rstorrent.session.uniffi.ProductFeedbackField("v", "0.1", false),
+                            ),
+                        statisticsAvailable = false,
+                        statisticsIncluded = false,
+                        hostedContextReady = false,
+                    )
+                },
                 themeMode = ProductThemeMode.LIGHT,
                 dynamicColor = false,
                 onThemeMode = {},
@@ -142,6 +160,8 @@ class ProductNavigationTest {
         compose
             .onNodeWithText("Report Bug / Send Feedback")
             .performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Review feedback context").assertIsDisplayed()
+        compose.onNodeWithText("Open feedback page").performSemanticsAction(SemanticsActions.OnClick)
 
         compose.runOnIdle { assertEquals(1, feedbackCalls) }
     }

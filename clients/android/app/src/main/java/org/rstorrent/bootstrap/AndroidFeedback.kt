@@ -51,6 +51,23 @@ internal object AndroidFeedbackUrl {
         return url
     }
 
+    fun validateReviewed(url: String): String {
+        require(url.length <= MAX_URL_BYTES) { "feedback URL exceeds the 2 KiB limit" }
+        val parsed =
+            try {
+                URI(url)
+            } catch (error: URISyntaxException) {
+                throw IllegalArgumentException("feedback URL is not a valid URI", error)
+            }
+        require(parsed.scheme == baseUri.scheme)
+        require(parsed.host == baseUri.host)
+        require(parsed.port == baseUri.port)
+        require(parsed.userInfo == null)
+        require(parsed.rawPath == baseUri.rawPath)
+        require(parsed.rawFragment == null)
+        return url
+    }
+
     private fun appendQueryValue(
         output: StringBuilder,
         prefix: String,
@@ -149,6 +166,21 @@ internal object AndroidFeedbackUrl {
 }
 
 internal object AndroidFeedbackLauncher {
+    fun launchReviewed(
+        url: String,
+        startExternalActivity: (Intent) -> Unit,
+        onFailure: () -> Unit,
+    ): Boolean {
+        val intent =
+            try {
+                Intent(Intent.ACTION_VIEW, Uri.parse(AndroidFeedbackUrl.validateReviewed(url)))
+            } catch (_: IllegalArgumentException) {
+                onFailure()
+                return false
+            }
+        return launchIntent(intent, startExternalActivity, onFailure)
+    }
+
     fun launch(
         environment: AndroidFeedbackEnvironment,
         startExternalActivity: (Intent) -> Unit,
@@ -162,7 +194,14 @@ internal object AndroidFeedbackLauncher {
                 return false
             }
 
-        return try {
+        return launchIntent(intent, startExternalActivity, onFailure)
+    }
+
+    private fun launchIntent(
+        intent: Intent,
+        startExternalActivity: (Intent) -> Unit,
+        onFailure: () -> Unit,
+    ): Boolean = try {
             startExternalActivity(intent)
             true
         } catch (_: ActivityNotFoundException) {
@@ -172,5 +211,4 @@ internal object AndroidFeedbackLauncher {
             onFailure()
             false
         }
-    }
 }

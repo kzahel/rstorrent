@@ -30,7 +30,6 @@
     <string name="action_move_bottom">Move to bottom</string>
     <string name="action_move_top">Move to top</string>
     <string name="action_next">Next</string>
-    <string name="action_open">Open</string>
     <string name="action_pause">Pause</string>
     <string name="action_pause_all">Pause All</string>
     <string name="action_play">Play</string>
@@ -420,6 +419,28 @@
     <string name="settings_report_bug_detail">Help us improve JSTorrent</string>
     <!-- Translator context: Brief nonfatal message when Android cannot open the external feedback website in a browser. -->
     <string name="feedback_open_failed">Feedback could not be opened in a browser.</string>
+    <string name="product_statistics_disclosure_title">Usage statistics and feedback</string>
+    <string name="product_statistics_disclosure_detail">RSTorrent keeps one random resettable installation identifier and coarse counts of added torrents, completed downloads, and foreground sessions. When enabled, the identifier may be used for update counting and these values may be offered with feedback. Torrent names, hashes, paths, peers, trackers, logs, and error text are never included.</string>
+    <string name="product_statistics_include">Include pseudonymous usage statistics</string>
+    <string name="product_statistics_preference_detail">Turning this off removes the stable identifier and counters from every later allowed request. Local counters may continue.</string>
+    <string name="product_statistics_summary">Local usage summary</string>
+    <string name="product_statistics_summary_values">%1$s days · %2$s added · %3$s completed · %4$s foreground sessions</string>
+    <string name="product_statistics_reset">Reset statistics and identifier</string>
+    <string name="product_statistics_reset_detail">Create a new random identifier and clear the coarse counters without changing torrents or payload files</string>
+    <string name="product_statistics_reset_title">Reset usage statistics and identifier?</string>
+    <string name="product_statistics_reset_warning">This does not remove torrents, payload files, settings, pairing, or records already received by a server.</string>
+    <string name="product_privacy_policy_detail">Read what is retained, when it may be sent, and how to disable or reset it</string>
+    <string name="feedback_preview_title">Review feedback context</string>
+    <string name="feedback_preview_loading">Preparing the exact external URL…</string>
+    <string name="feedback_preview_failed">Feedback context could not be prepared</string>
+    <string name="feedback_preview_destination">External destination: %1$s</string>
+    <string name="feedback_recipient_warning">Values in the feedback URL may appear in browser history and may reach website logs and referrers, the embedded Google Form, and the page’s Cloudflare analytics before you submit a form.</string>
+    <string name="feedback_include_statistics_once">Include pseudonymous usage statistics for this report</string>
+    <string name="feedback_hosted_context_pending">Pseudonymous statistics stay omitted until the hosted privacy and feedback pages have been deployed and verified.</string>
+    <string name="feedback_open_page">Open feedback page</string>
+    <string name="action_save_continue">Save and continue</string>
+    <string name="action_privacy_policy">Privacy policy</string>
+    <string name="action_open">Open</string>
     <string name="power_continue_background">Continue downloads in background</string>
     <string name="power_continue_effective">Uses a visible notification and stops when selected work completes.</string>
     <string name="power_continue_blocked">Configured, but Android notification settings currently block it.</string>

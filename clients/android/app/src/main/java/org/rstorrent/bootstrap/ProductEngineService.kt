@@ -188,6 +188,7 @@ class ProductEngineService : Service() {
     private lateinit var defaultNetworkObserver: AndroidDefaultNetworkObserver
     private val networkPreferenceMutation = Mutex()
     private val networkNativeMutation = Mutex()
+    private val productPrivacyMutation = Mutex()
     private val networkConvergenceWake = Channel<Unit>(Channel.CONFLATED)
     private var networkConvergenceJob: Job? = null
     private val externalIntakeController = ExternalIntakeController()
@@ -464,6 +465,8 @@ class ProductEngineService : Service() {
             withTimeout(PRODUCT_LIFETIME_STARTUP_MILLIS) {
                 AndroidApplicationClient.open(
                     AndroidApplicationConfig(
+                        File(noBackupFilesDir, PRODUCT_STATE_DIRECTORY).absolutePath,
+                        BuildConfig.VERSION_NAME,
                         profile.absolutePath,
                         "default",
                         "",
@@ -478,6 +481,7 @@ class ProductEngineService : Service() {
                     ),
                 )
             }
+        val productSummary = openedClient.productSummary()
         if (
             desiredNetworkPrerequisite(defaultNetworkObserver.snapshot()) ==
                 AndroidApplicationNetworkPrerequisite.WAITING_FOR_UNMETERED_NETWORK
@@ -486,6 +490,7 @@ class ProductEngineService : Service() {
         }
         client = openedClient
         clientOpen = true
+        mutableState.update { it.copy(productSummary = productSummary) }
         networkConvergenceJob =
             scope.launch {
                 for (ignored in networkConvergenceWake) {
@@ -560,6 +565,64 @@ class ProductEngineService : Service() {
             startChromeOsCompanionOwners()
         }
     }
+
+    fun acknowledgeProductDisclosure(statisticsEnabled: Boolean) {
+        mutateProductSummary {
+            client.acknowledgeProductDisclosure(statisticsEnabled)
+        }
+    }
+
+    fun setProductStatisticsEnabled(statisticsEnabled: Boolean) {
+        mutateProductSummary {
+            client.setProductStatisticsEnabled(statisticsEnabled)
+        }
+    }
+
+    fun resetProductStatistics() {
+        mutateProductSummary { client.resetProductStatistics() }
+    }
+
+    fun recordProductForegroundSession() {
+        mutateProductSummary { client.recordProductForegroundSession() }
+    }
+
+    private fun mutateProductSummary(mutation: () -> org.rstorrent.session.uniffi.ProductSummary) {
+        if (rejectMutationDuringDataReset()) return
+        scope.launch {
+            productPrivacyMutation.withLock {
+                runCatching {
+                    clientReady.await()
+                    mutation()
+                }.onSuccess { summary ->
+                    mutableState.update { it.copy(productSummary = summary, error = null) }
+                }.onFailure(::reportError)
+            }
+        }
+    }
+
+    suspend fun productFeedbackPreview(includeStatistics: Boolean) =
+        withContext(Dispatchers.IO) {
+            clientReady.await()
+            client.productFeedbackPreview(
+                Build.VERSION.RELEASE,
+                "${Build.MANUFACTURER} ${Build.MODEL}",
+                includeStatistics,
+            )
+        }
+
+    suspend fun confirmProductFeedback(
+        includeStatistics: Boolean,
+        expectedUrl: String,
+    ): String =
+        withContext(Dispatchers.IO) {
+            clientReady.await()
+            client.confirmProductFeedback(
+                Build.VERSION.RELEASE,
+                "${Build.MANUFACTURER} ${Build.MODEL}",
+                includeStatistics,
+                expectedUrl,
+            )
+        }
 
     override fun onBind(intent: Intent?): IBinder? =
         if (quotaExhaustedStartRejected) null else binder
@@ -3021,6 +3084,7 @@ class ProductEngineService : Service() {
                         check(!clientOpen) { "application client still owns the private profile" }
                         withContext(Dispatchers.IO) {
                             ProductPrivateProfileReset.reset(filesDir)
+                            ProductPrivateProductStateReset.reset(noBackupFilesDir)
                         }
                         journal =
                             persistDataReset(
@@ -4787,6 +4851,7 @@ class ProductEngineService : Service() {
         private const val SAF_PROVIDER_CONCURRENCY = 4
         private const val ANDROID_RATE_BYTES_PER_SECOND = 24 * 1024
         private const val PRODUCT_QUOTA_RESTART_DELAY_MILLIS = 3_000L
+        private const val PRODUCT_STATE_DIRECTORY = "product-state"
         private const val TAG = "RSTorrentProduct"
     }
 }

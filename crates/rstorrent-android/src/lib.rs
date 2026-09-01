@@ -28,15 +28,17 @@ use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo};
 use rstorrent_session::{
     AddTorrentBytesRequest, ApplicationConfig, ApplicationNetworkPrerequisite, ApplicationService,
     ConfiguredStorageRoot, MAX_STORAGE_ROOTS, MediaUrlResponse, NetworkPrerequisiteHandle,
-    PlatformRemovalPlan, RequestEnvelope, ResponseEnvelope, StorageRootSnapshot,
+    PlatformRemovalPlan, ProductFeedbackEnvironment, ProductFeedbackPreview, ProductStateOwner,
+    ProductSummary, RequestEnvelope, ResponseEnvelope, StorageRootSnapshot,
     StorageSettingsSnapshot, SubscriptionSpec, ViewSubscription, ViewUpdate,
+    build_product_feedback_preview,
 };
 use sha1::{Digest, Sha1};
 use tokio::sync::{Mutex as AsyncMutex, watch};
 use tokio::task::JoinHandle as TaskJoinHandle;
 use tokio_util::sync::CancellationToken;
 
-const INTERFACE_VERSION: &str = "rstorrent-android/0.4.0;uniffi/0.31.0";
+const INTERFACE_VERSION: &str = "rstorrent-android/0.5.0;uniffi/0.31.0";
 const MIN_PAYLOAD_BYTES: u64 = 16 * 1024;
 const MAX_PAYLOAD_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_TIMEOUT_SECONDS: u64 = 5 * 60;
@@ -45,6 +47,7 @@ const MAX_FILE_SELECTIONS: usize = 1_024;
 const MAX_STORAGE_WRITE_DELAY_MILLIS: u64 = 5_000;
 const DESCRIPTOR_HASH_BUFFER: usize = 16 * 1024;
 const MAX_ANDROID_PATH_BYTES: usize = 4 * 1024;
+const HOSTED_PRODUCT_CONTEXT_READY: bool = false;
 
 uniffi::setup_scaffolding!();
 
@@ -64,6 +67,8 @@ pub extern "system" fn Java_org_rstorrent_bootstrap_PlatformTrustBootstrap_initi
 
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct AndroidApplicationConfig {
+    pub product_data_root: String,
+    pub product_version: String,
     pub profile_root: String,
     pub profile_id: String,
     pub storage_root: String,
@@ -177,6 +182,8 @@ impl AndroidClientError {
 #[derive(Debug, uniffi::Object)]
 pub struct AndroidApplicationClient {
     service: Arc<AsyncMutex<ApplicationService>>,
+    product_state: ProductStateOwner,
+    product_version: String,
     network_prerequisite: NetworkPrerequisiteHandle,
     shutdown: AtomicBool,
     platform_storage: Arc<PlatformStorageBroker>,
@@ -220,6 +227,11 @@ impl AndroidCompanionConnectionSubscription {
 impl AndroidApplicationClient {
     #[uniffi::constructor]
     pub async fn open(config: AndroidApplicationConfig) -> Result<Arc<Self>, AndroidClientError> {
+        let product_data_root =
+            android_path(config.product_data_root.clone(), "product data root")?;
+        let product_version = config.product_version.clone();
+        let product_state = ProductStateOwner::open(&product_data_root, &product_version, None)
+            .map_err(|error| AndroidClientError::message(error.to_string()))?;
         let (platform_client, platform_storage) = platform_storage_channel();
         let platform_enabled = config.platform_storage;
         let companion_profile_id = config.profile_id.clone();
@@ -227,6 +239,7 @@ impl AndroidApplicationClient {
             .join(&config.profile_id)
             .join("companion.sqlite");
         let mut application_config = validate_application_config(config)?;
+        application_config.product_state = Some(product_state.clone());
         if platform_enabled {
             application_config.platform_storage_client = Some(platform_client);
         }
@@ -240,6 +253,8 @@ impl AndroidApplicationClient {
             .map_err(|error| AndroidClientError::message(error.to_string()))?;
         Ok(Arc::new(Self {
             service,
+            product_state,
+            product_version,
             network_prerequisite,
             shutdown: AtomicBool::new(false),
             platform_storage,
@@ -259,6 +274,80 @@ impl AndroidApplicationClient {
         } else {
             Ok(())
         }
+    }
+
+    pub fn product_summary(&self) -> Result<ProductSummary, AndroidClientError> {
+        self.ensure_running()?;
+        self.product_state
+            .summary()
+            .map_err(|error| AndroidClientError::message(error.to_string()))
+    }
+
+    pub fn acknowledge_product_disclosure(
+        &self,
+        statistics_enabled: bool,
+    ) -> Result<ProductSummary, AndroidClientError> {
+        self.ensure_running()?;
+        self.product_state
+            .acknowledge_disclosure(statistics_enabled)
+            .map_err(|error| AndroidClientError::message(error.to_string()))
+    }
+
+    pub fn set_product_statistics_enabled(
+        &self,
+        statistics_enabled: bool,
+    ) -> Result<ProductSummary, AndroidClientError> {
+        self.ensure_running()?;
+        self.product_state
+            .set_statistics_enabled(statistics_enabled)
+            .map_err(|error| AndroidClientError::message(error.to_string()))
+    }
+
+    pub fn reset_product_statistics(&self) -> Result<ProductSummary, AndroidClientError> {
+        self.ensure_running()?;
+        self.product_state
+            .reset_statistics()
+            .map_err(|error| AndroidClientError::message(error.to_string()))
+    }
+
+    pub fn record_product_foreground_session(&self) -> Result<ProductSummary, AndroidClientError> {
+        self.ensure_running()?;
+        self.product_state
+            .record_foreground_session()
+            .map_err(|error| AndroidClientError::message(error.to_string()))
+    }
+
+    pub fn product_feedback_preview(
+        &self,
+        android_release: String,
+        device: String,
+        include_statistics: bool,
+    ) -> Result<ProductFeedbackPreview, AndroidClientError> {
+        self.ensure_running()?;
+        let summary = self.product_summary()?;
+        build_product_feedback_preview(
+            &summary,
+            &ProductFeedbackEnvironment::android(&self.product_version, android_release, device),
+            include_statistics,
+            HOSTED_PRODUCT_CONTEXT_READY,
+        )
+        .map_err(|error| AndroidClientError::message(error.to_string()))
+    }
+
+    pub fn confirm_product_feedback(
+        &self,
+        android_release: String,
+        device: String,
+        include_statistics: bool,
+        expected_url: String,
+    ) -> Result<String, AndroidClientError> {
+        let preview = self.product_feedback_preview(android_release, device, include_statistics)?;
+        if preview.url != expected_url {
+            return Err(AndroidClientError::message(
+                "product feedback context changed; review the current preview before opening",
+            ));
+        }
+        Ok(preview.url)
     }
 
     pub async fn dispatch(
@@ -808,6 +897,10 @@ impl AndroidApplicationClient {
             .shutdown()
             .await
             .map_err(|error| AndroidClientError::message(error.to_string()));
+        let product_result = self
+            .product_state
+            .record_clean_shutdown()
+            .map_err(|error| AndroidClientError::message(error.to_string()));
         let media_result = match &mut media_server {
             Some(server) => server
                 .shutdown()
@@ -821,6 +914,9 @@ impl AndroidApplicationClient {
         }
         if let Err(error) = service_result {
             failures.push(format!("application shutdown: {error}"));
+        }
+        if let Err(error) = product_result {
+            failures.push(format!("product-state shutdown: {error}"));
         }
         if let Err(error) = media_result {
             failures.push(format!("media shutdown: {error}"));
@@ -955,21 +1051,6 @@ impl Drop for AndroidCompanionConnectionSubscription {
 fn validate_application_config(
     config: AndroidApplicationConfig,
 ) -> Result<ApplicationConfig, AndroidClientError> {
-    fn path(value: String, label: &str) -> Result<PathBuf, AndroidClientError> {
-        if value.is_empty() || value.len() > MAX_ANDROID_PATH_BYTES || value.as_bytes().contains(&0)
-        {
-            return Err(AndroidClientError::message(format!(
-                "{label} must be 1..={MAX_ANDROID_PATH_BYTES} bytes without NUL"
-            )));
-        }
-        let path = PathBuf::from(value);
-        if !path.is_absolute() {
-            return Err(AndroidClientError::message(format!(
-                "{label} must be absolute"
-            )));
-        }
-        Ok(path)
-    }
     if config.peer_connect_timeout_seconds == 0
         || config.peer_connect_timeout_seconds > MAX_TIMEOUT_SECONDS
     {
@@ -1010,7 +1091,7 @@ fn validate_application_config(
         }
         vec![ConfiguredStorageRoot::path(
             "downloads",
-            path(config.storage_root, "storage root")?,
+            android_path(config.storage_root, "storage root")?,
         )]
     };
     let network_policy = match config.network_policy {
@@ -1019,7 +1100,7 @@ fn validate_application_config(
         AndroidNetworkPolicy::Online => NetworkPolicy::Online,
     };
     let mut application = ApplicationConfig::new(
-        path(config.profile_root, "profile root")?,
+        android_path(config.profile_root, "profile root")?,
         config.profile_id,
         storage_roots,
         NetworkConfig::new(
@@ -1043,6 +1124,21 @@ fn validate_application_config(
     application.download_resource_limits = DownloadResourceLimits::ANDROID;
     application.active_download_cap = Some(2);
     Ok(application)
+}
+
+fn android_path(value: String, label: &str) -> Result<PathBuf, AndroidClientError> {
+    if value.is_empty() || value.len() > MAX_ANDROID_PATH_BYTES || value.as_bytes().contains(&0) {
+        return Err(AndroidClientError::message(format!(
+            "{label} must be 1..={MAX_ANDROID_PATH_BYTES} bytes without NUL"
+        )));
+    }
+    let path = PathBuf::from(value);
+    if !path.is_absolute() {
+        return Err(AndroidClientError::message(format!(
+            "{label} must be absolute"
+        )));
+    }
+    Ok(path)
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -2166,6 +2262,8 @@ mod tests {
     fn product_application_policy_maps_online_explicitly() {
         let root = test_path("application-network");
         let config = validate_application_config(AndroidApplicationConfig {
+            product_data_root: root.join("product").display().to_string(),
+            product_version: "0.1-test".to_owned(),
             profile_root: root.join("profile").display().to_string(),
             profile_id: "test".to_owned(),
             storage_root: String::new(),
@@ -2209,6 +2307,8 @@ mod tests {
         let content = root.join("content");
         fs::create_dir_all(&content).expect("create content root");
         let client = AndroidApplicationClient::open(AndroidApplicationConfig {
+            product_data_root: root.join("product").display().to_string(),
+            product_version: "0.1-test".to_owned(),
             profile_root: root.join("profile").display().to_string(),
             profile_id: "test".to_owned(),
             storage_root: content.display().to_string(),
@@ -2251,11 +2351,90 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn product_privacy_boundary_is_native_bounded_and_hosted_gated() {
+        let root = test_path("application-product-privacy");
+        let content = root.join("content");
+        fs::create_dir_all(&content).expect("create content root");
+        let client = AndroidApplicationClient::open(AndroidApplicationConfig {
+            product_data_root: root.join("product").display().to_string(),
+            product_version: "0.1-test".to_owned(),
+            profile_root: root.join("profile").display().to_string(),
+            profile_id: "test".to_owned(),
+            storage_root: content.display().to_string(),
+            platform_storage: false,
+            platform_storage_roots: Vec::new(),
+            network_policy: AndroidNetworkPolicy::Offline,
+            initial_network_prerequisite: AndroidApplicationNetworkPrerequisite::Allowed,
+            peer_connect_timeout_seconds: 15,
+            peer_io_timeout_seconds: 60,
+        })
+        .await
+        .expect("open product application");
+
+        assert_eq!(
+            client
+                .product_summary()
+                .expect("summary")
+                .disclosure_version,
+            0
+        );
+        let acknowledged = client
+            .acknowledge_product_disclosure(true)
+            .expect("acknowledge disclosure");
+        assert!(acknowledged.transmission_allowed);
+        assert_eq!(
+            client
+                .record_product_foreground_session()
+                .expect("record foreground")
+                .foreground_sessions,
+            "1"
+        );
+        let preview = client
+            .product_feedback_preview("15".to_owned(), "Google Pixel 9".to_owned(), true)
+            .expect("preview feedback");
+        assert!(!preview.hosted_context_ready);
+        assert!(!preview.statistics_included);
+        assert_eq!(
+            preview.url,
+            "https://jstorrent.com/feedback.html?platform=android&v=0.1-test&android=15&device=Google+Pixel+9"
+        );
+        assert_eq!(
+            client
+                .confirm_product_feedback(
+                    "15".to_owned(),
+                    "Google Pixel 9".to_owned(),
+                    true,
+                    preview.url.clone(),
+                )
+                .expect("confirm exact preview"),
+            preview.url
+        );
+        assert!(
+            client
+                .confirm_product_feedback(
+                    "15".to_owned(),
+                    "Google Pixel 9".to_owned(),
+                    true,
+                    "https://jstorrent.com/feedback.html".to_owned(),
+                )
+                .is_err()
+        );
+        client
+            .shutdown()
+            .await
+            .expect("shutdown product application");
+        drop(client);
+        fs::remove_dir_all(root).expect("remove product fixture");
+    }
+
+    #[tokio::test]
     async fn product_media_server_starts_once_on_demand_and_stops_with_application() {
         let root = test_path("application-media-server");
         let content = root.join("content");
         fs::create_dir_all(&content).expect("create content root");
         let client = AndroidApplicationClient::open(AndroidApplicationConfig {
+            product_data_root: root.join("product").display().to_string(),
+            product_version: "0.1-test".to_owned(),
             profile_root: root.join("profile").display().to_string(),
             profile_id: "test".to_owned(),
             storage_root: content.display().to_string(),
@@ -2332,6 +2511,8 @@ mod tests {
         let content = root.join("content");
         fs::create_dir_all(&content).expect("create content root");
         let client = AndroidApplicationClient::open(AndroidApplicationConfig {
+            product_data_root: root.join("product").display().to_string(),
+            product_version: "0.1-test".to_owned(),
             profile_root: profile.display().to_string(),
             profile_id: "test".to_owned(),
             storage_root: content.display().to_string(),
@@ -2381,6 +2562,8 @@ mod tests {
     async fn product_shutdown_cancels_probe_queued_without_a_provider() {
         let root = test_path("application-platform-shutdown");
         let client = AndroidApplicationClient::open(AndroidApplicationConfig {
+            product_data_root: root.join("product").display().to_string(),
+            product_version: "0.1-test".to_owned(),
             profile_root: root.join("profile").display().to_string(),
             profile_id: "test".to_owned(),
             storage_root: String::new(),
@@ -2419,6 +2602,8 @@ mod tests {
         let content = root.join("content");
         fs::create_dir_all(&content).expect("create content root");
         let client = AndroidApplicationClient::open(AndroidApplicationConfig {
+            product_data_root: root.join("product").display().to_string(),
+            product_version: "0.1-test".to_owned(),
             profile_root: root.join("profile").display().to_string(),
             profile_id: "test".to_owned(),
             storage_root: content.display().to_string(),

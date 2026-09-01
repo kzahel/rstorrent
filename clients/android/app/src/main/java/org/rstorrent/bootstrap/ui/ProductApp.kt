@@ -108,6 +108,7 @@ import org.rstorrent.session.uniffi.DiagnosticProfile
 import org.rstorrent.session.uniffi.DiagnosticSeverity
 import org.rstorrent.session.uniffi.ClientSettingsPatch
 import org.rstorrent.session.uniffi.FilePriority
+import org.rstorrent.session.uniffi.ProductFeedbackPreview
 import org.rstorrent.session.uniffi.RemovalDataPolicy
 import org.rstorrent.session.uniffi.StorageRootAvailability
 import org.rstorrent.session.uniffi.TorrentOperationalState
@@ -122,7 +123,9 @@ fun ProductApp(
     notificationsGranted: Boolean,
     onRequestNotifications: () -> Unit,
     onOpenNotificationSettings: () -> Unit,
-    onOpenFeedback: () -> Unit = {},
+    onOpenFeedback: (Boolean, String) -> Unit = { _, _ -> },
+    onPreviewFeedback: (suspend (Boolean) -> ProductFeedbackPreview?)? = null,
+    onOpenPrivacy: () -> Unit = {},
     themeMode: ProductThemeMode,
     dynamicColor: Boolean,
     onThemeMode: (ProductThemeMode) -> Unit,
@@ -192,6 +195,8 @@ fun ProductApp(
                     onRequestNotifications = onRequestNotifications,
                     onOpenNotificationSettings = onOpenNotificationSettings,
                     onOpenFeedback = onOpenFeedback,
+                    onPreviewFeedback = onPreviewFeedback,
+                    onOpenPrivacy = onOpenPrivacy,
                     notificationNavigation = notificationNavigation,
                     onNotificationNavigationConsumed = onNotificationNavigationConsumed,
                     onNotificationNavigationFallback = { message ->
@@ -253,6 +258,52 @@ fun ProductApp(
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
+        state.productSummary
+            ?.takeIf { it.disclosureVersion < 1U }
+            ?.let {
+                var statisticsEnabled by rememberSaveable { mutableStateOf(true) }
+                AlertDialog(
+                    onDismissRequest = {},
+                    title = { Text(stringResource(R.string.product_statistics_disclosure_title)) },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(stringResource(R.string.product_statistics_disclosure_detail))
+                            Text(
+                                stringResource(R.string.feedback_recipient_warning),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier =
+                                    Modifier.fillMaxWidth()
+                                        .clickable { statisticsEnabled = !statisticsEnabled }
+                                        .semantics(mergeDescendants = true) { role = Role.Checkbox },
+                            ) {
+                                Checkbox(
+                                    checked = statisticsEnabled,
+                                    onCheckedChange = { statisticsEnabled = it },
+                                )
+                                Text(stringResource(R.string.product_statistics_include))
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(
+                            enabled = service != null,
+                            onClick = {
+                                service?.acknowledgeProductDisclosure(statisticsEnabled)
+                            },
+                        ) {
+                            Text(stringResource(R.string.action_save_continue))
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = onOpenPrivacy) {
+                            Text(stringResource(R.string.action_privacy_policy))
+                        }
+                    },
+                )
+            }
         state.externalIntake
             ?.takeIf { pendingSelection == null && state.dataReset == null }
             ?.let { intake ->
@@ -607,7 +658,9 @@ private fun ProductNavHost(
     notificationsGranted: Boolean,
     onRequestNotifications: () -> Unit,
     onOpenNotificationSettings: () -> Unit,
-    onOpenFeedback: () -> Unit,
+    onOpenFeedback: (Boolean, String) -> Unit,
+    onPreviewFeedback: (suspend (Boolean) -> ProductFeedbackPreview?)?,
+    onOpenPrivacy: () -> Unit,
     notificationNavigation: ProductNotificationNavigation?,
     onNotificationNavigationConsumed: (Long) -> Unit,
     onNotificationNavigationFallback: (String) -> Unit,
@@ -633,6 +686,12 @@ private fun ProductNavHost(
     var confirmResetEngine by remember { mutableStateOf(false) }
     var confirmClearAllData by remember { mutableStateOf(false) }
     var deleteDownloadedFiles by remember { mutableStateOf(false) }
+    var confirmResetStatistics by remember { mutableStateOf(false) }
+    var feedbackPreview by remember { mutableStateOf<ProductFeedbackPreview?>(null) }
+    var feedbackIncludeStatistics by remember { mutableStateOf(false) }
+    var feedbackBusy by remember { mutableStateOf(false) }
+    var feedbackError by remember { mutableStateOf<String?>(null) }
+    val productPrivacyScope = rememberCoroutineScope()
     val torrentMissingMessage = stringResource(R.string.notification_torrent_missing)
     val folderMissingMessage = stringResource(R.string.notification_folder_missing)
     val backgroundDownloadsDescription =
@@ -1177,7 +1236,69 @@ private fun ProductNavHost(
                     },
                 )
                 HorizontalDivider()
-                FeedbackSetting(onOpenFeedback)
+                state.productSummary?.let { summary ->
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.product_statistics_include)) },
+                        supportingContent = { Text(stringResource(R.string.product_statistics_preference_detail)) },
+                        trailingContent = {
+                            Switch(
+                                checked = summary.statisticsEnabled,
+                                onCheckedChange = { service?.setProductStatisticsEnabled(it) },
+                                enabled = service != null,
+                            )
+                        },
+                    )
+                    ReadOnlySetting(
+                        stringResource(R.string.product_statistics_summary),
+                        stringResource(
+                            R.string.product_statistics_summary_values,
+                            summary.daysSinceFirstUse.toString(),
+                            summary.torrentsAdded,
+                            summary.downloadsCompleted,
+                            summary.foregroundSessions,
+                        ),
+                    )
+                    SettingAction(
+                        title = stringResource(R.string.product_statistics_reset),
+                        detail = stringResource(R.string.product_statistics_reset_detail),
+                        onClick = { confirmResetStatistics = true },
+                        action = stringResource(R.string.action_reset),
+                        enabled = service != null,
+                    )
+                }
+                FeedbackSetting {
+                    val include = state.productSummary?.statisticsEnabled == true
+                    feedbackIncludeStatistics = include
+                    feedbackBusy = true
+                    feedbackError = null
+                    productPrivacyScope.launch {
+                        runCatching {
+                            onPreviewFeedback?.invoke(include)
+                                ?: service?.productFeedbackPreview(include)
+                        }
+                            .onSuccess { feedbackPreview = it }
+                            .onFailure { feedbackError = it.message ?: it.toString() }
+                        feedbackBusy = false
+                    }
+                }
+                SettingAction(
+                    title = stringResource(R.string.action_privacy_policy),
+                    detail = stringResource(R.string.product_privacy_policy_detail),
+                    onClick = onOpenPrivacy,
+                    action = stringResource(R.string.action_open),
+                )
+                if (feedbackBusy) {
+                    ReadOnlySetting(
+                        stringResource(R.string.feedback_preview_title),
+                        stringResource(R.string.feedback_preview_loading),
+                    )
+                }
+                feedbackError?.let {
+                    ReadOnlySetting(
+                        stringResource(R.string.feedback_preview_failed),
+                        it,
+                    )
+                }
                 UnavailableSetting(stringResource(R.string.settings_search_plugins))
                 SettingAction(
                     title = stringResource(R.string.settings_reset_engine),
@@ -1198,6 +1319,114 @@ private fun ProductNavHost(
                 )
             }
         }
+    }
+    if (confirmResetStatistics) {
+        AlertDialog(
+            onDismissRequest = { confirmResetStatistics = false },
+            title = { Text(stringResource(R.string.product_statistics_reset_title)) },
+            text = { Text(stringResource(R.string.product_statistics_reset_warning)) },
+            confirmButton = {
+                TextButton(
+                    enabled = service != null,
+                    onClick = {
+                        confirmResetStatistics = false
+                        service?.resetProductStatistics()
+                    },
+                ) {
+                    Text(stringResource(R.string.action_reset))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmResetStatistics = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
+    feedbackPreview?.let { preview ->
+        AlertDialog(
+            onDismissRequest = { if (!feedbackBusy) feedbackPreview = null },
+            title = { Text(stringResource(R.string.feedback_preview_title)) },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                ) {
+                    Text(
+                        stringResource(R.string.feedback_preview_destination, preview.destination),
+                    )
+                    Text(
+                        stringResource(R.string.feedback_recipient_warning),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    preview.fields.forEach { field ->
+                        Text(
+                            "${field.name}: ${field.value}",
+                            fontFamily = FontFamily.Monospace,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier =
+                            Modifier.fillMaxWidth()
+                                .clickable(enabled = preview.statisticsAvailable) {
+                                    val include = !feedbackIncludeStatistics
+                                    feedbackIncludeStatistics = include
+                                    feedbackBusy = true
+                                    productPrivacyScope.launch {
+                                        runCatching {
+                                            onPreviewFeedback?.invoke(include)
+                                                ?: service?.productFeedbackPreview(include)
+                                        }
+                                            .onSuccess { feedbackPreview = it }
+                                            .onFailure {
+                                                feedbackError = it.message ?: it.toString()
+                                            }
+                                        feedbackBusy = false
+                                    }
+                                }.semantics(mergeDescendants = true) { role = Role.Checkbox },
+                    ) {
+                        Checkbox(
+                            checked = feedbackIncludeStatistics && preview.statisticsAvailable,
+                            onCheckedChange = null,
+                            enabled = preview.statisticsAvailable,
+                        )
+                        Text(stringResource(R.string.feedback_include_statistics_once))
+                    }
+                    if (!preview.hostedContextReady) {
+                        Text(
+                            stringResource(R.string.feedback_hosted_context_pending),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    feedbackError?.let {
+                        Text(it, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !feedbackBusy,
+                    onClick = {
+                        onOpenFeedback(feedbackIncludeStatistics, preview.url)
+                        feedbackPreview = null
+                    },
+                ) {
+                    Text(stringResource(R.string.feedback_open_page))
+                }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = onOpenPrivacy) {
+                        Text(stringResource(R.string.action_privacy_policy))
+                    }
+                    TextButton(onClick = { feedbackPreview = null }) {
+                        Text(stringResource(R.string.action_cancel))
+                    }
+                }
+            },
+        )
     }
     if (confirmResetEngine) {
         AlertDialog(

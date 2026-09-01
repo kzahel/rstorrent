@@ -320,3 +320,32 @@ internal object ProductPrivateProfileReset {
         }
     }
 }
+
+internal object ProductPrivateProductStateReset {
+    private const val DIRECTORY = "product-state"
+    private const val MAX_ENTRIES = 8
+
+    fun reset(noBackupDirectory: File) {
+        val root = noBackupDirectory.canonicalFile
+        val product = File(root, DIRECTORY).absoluteFile
+        require(product.name == DIRECTORY && product.parentFile?.canonicalFile == root) {
+            "product state is outside the no-backup directory"
+        }
+        val path = product.toPath()
+        require(!Files.isSymbolicLink(path)) { "product state is a symbolic link" }
+        if (!Files.exists(path)) return
+        val entries =
+            Files.walk(path).use { stream ->
+                stream.limit((MAX_ENTRIES + 1).toLong()).collect(Collectors.toList())
+            }
+        require(entries.size <= MAX_ENTRIES) { "product state exceeds its reset entry bound" }
+        entries
+            .sortedByDescending { it.nameCount }
+            .forEach { entry ->
+                require(entry.normalize().startsWith(path.normalize())) {
+                    "product state entry escaped its fixed root"
+                }
+                Files.deleteIfExists(entry)
+            }
+    }
+}

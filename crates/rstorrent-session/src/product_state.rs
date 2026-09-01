@@ -53,6 +53,7 @@ pub struct ProductMilestone {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 #[serde(rename_all = "camelCase")]
 pub struct ProductSummary {
     pub installation_id: String,
@@ -120,6 +121,7 @@ impl ProductFeedbackEnvironment {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 #[serde(rename_all = "camelCase")]
 pub struct ProductFeedbackField {
     pub name: String,
@@ -128,6 +130,7 @@ pub struct ProductFeedbackField {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 #[serde(rename_all = "camelCase")]
 pub struct ProductFeedbackPreview {
     pub destination: String,

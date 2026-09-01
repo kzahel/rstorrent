@@ -12,6 +12,21 @@ import org.junit.Test
 
 class ProductDataResetTest {
     @Test
+    fun productStateResetDeletesOnlyTheFixedNoBackupChild() {
+        val root = Files.createTempDirectory("rstorrent-product-state-reset").toFile()
+        val product = File(root, "product-state").apply { mkdirs() }
+        File(product, "product.db").writeText("database")
+        File(product, "product.db-wal").writeText("wal")
+        val unrelated = File(root, "unrelated").apply { writeText("keep") }
+
+        ProductPrivateProductStateReset.reset(root)
+
+        assertTrue(!product.exists())
+        assertEquals("keep", unrelated.readText())
+        root.deleteRecursively()
+    }
+
+    @Test
     fun journalAcceptsExactTargetAndRootBoundsAndRejectsOneMore() {
         val torrents =
             List(ProductDataResetJournal.MAX_TORRENTS) { index ->
