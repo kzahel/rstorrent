@@ -1,5 +1,6 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
@@ -86,6 +87,7 @@ pub enum ProductStateError {
         maximum: i64,
     },
     RequiredPragma(&'static str),
+    OwnerPoisoned,
     SourceLimit,
     SequenceGap {
         expected: u64,
@@ -109,6 +111,7 @@ impl fmt::Display for ProductStateError {
             Self::RequiredPragma(pragma) => {
                 write!(formatter, "product state could not enable {pragma}")
             }
+            Self::OwnerPoisoned => formatter.write_str("product-state owner lock is poisoned"),
             Self::SourceLimit => write!(
                 formatter,
                 "product state exceeds the {MAX_PRODUCT_SOURCES}-source watermark limit"
@@ -140,6 +143,92 @@ impl From<rusqlite::Error> for ProductStateError {
 pub struct ProductStateStore {
     connection: Connection,
     database_path: Option<PathBuf>,
+}
+
+#[derive(Clone)]
+pub struct ProductStateOwner {
+    store: Arc<Mutex<ProductStateStore>>,
+}
+
+impl fmt::Debug for ProductStateOwner {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ProductStateOwner")
+            .finish_non_exhaustive()
+    }
+}
+
+impl ProductStateOwner {
+    pub fn open(
+        application_data_root: &Path,
+        current_version: &str,
+        legacy_installation_id: Option<&str>,
+    ) -> Result<Self, ProductStateError> {
+        Ok(Self::from_store(ProductStateStore::open(
+            application_data_root,
+            current_version,
+            legacy_installation_id,
+        )?))
+    }
+
+    pub fn open_ephemeral(current_version: &str) -> Result<Self, ProductStateError> {
+        Ok(Self::from_store(ProductStateStore::open_ephemeral(
+            current_version,
+        )?))
+    }
+
+    pub fn from_store(store: ProductStateStore) -> Self {
+        Self {
+            store: Arc::new(Mutex::new(store)),
+        }
+    }
+
+    fn store(&self) -> Result<MutexGuard<'_, ProductStateStore>, ProductStateError> {
+        self.store
+            .lock()
+            .map_err(|_| ProductStateError::OwnerPoisoned)
+    }
+
+    pub fn summary(&self) -> Result<ProductSummary, ProductStateError> {
+        self.store()?.summary()
+    }
+
+    pub fn acknowledge_disclosure(
+        &self,
+        statistics_enabled: bool,
+    ) -> Result<ProductSummary, ProductStateError> {
+        self.store()?.acknowledge_disclosure(statistics_enabled)
+    }
+
+    pub fn set_statistics_enabled(
+        &self,
+        statistics_enabled: bool,
+    ) -> Result<ProductSummary, ProductStateError> {
+        self.store()?.set_statistics_enabled(statistics_enabled)
+    }
+
+    pub fn reset_statistics(&self) -> Result<ProductSummary, ProductStateError> {
+        self.store()?.reset_statistics()
+    }
+
+    pub fn record_foreground_session(&self) -> Result<ProductSummary, ProductStateError> {
+        self.store()?.record_foreground_session()
+    }
+
+    pub fn record_clean_shutdown(&self) -> Result<(), ProductStateError> {
+        self.store()?.record_clean_shutdown()
+    }
+
+    pub fn apply_milestones(
+        &self,
+        milestones: &[ProductMilestone],
+    ) -> Result<ProductSummary, ProductStateError> {
+        self.store()?.apply_milestones(milestones)
+    }
+
+    pub fn database_path(&self) -> Result<Option<PathBuf>, ProductStateError> {
+        Ok(self.store()?.database_path().map(Path::to_path_buf))
+    }
 }
 
 impl fmt::Debug for ProductStateStore {

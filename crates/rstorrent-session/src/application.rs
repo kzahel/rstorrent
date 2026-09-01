@@ -59,6 +59,7 @@ use crate::media::{
     MediaCapabilities, MediaFileAvailability, MediaOriginError, MediaRegistryError,
     MediaResolveError, MediaUrlResponse, VerifiedMediaSource,
 };
+use crate::product_state::ProductStateOwner;
 use crate::seed_policy::{
     AUTO_MANAGE_INTERVAL_SECONDS, HARD_ACTIVE_TORRENT_LIMIT, InactivityState, SeedGoalInput,
     SeedGoalLimits, SeedRankInput, assess_seed_goals, rate_is_inactive, seed_rank,
@@ -344,6 +345,9 @@ pub struct ApplicationConfig {
     pub checkpoint_stage_trace_for_testing: bool,
     #[doc(hidden)]
     pub platform_storage_client: Option<PlatformStorageClient>,
+    /// Optional platform-owned installation product state. Headless and
+    /// stateless configurations omit this owner.
+    pub product_state: Option<ProductStateOwner>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -440,6 +444,7 @@ impl ApplicationConfig {
             checkpoint_commit_delay_for_testing: Duration::ZERO,
             checkpoint_stage_trace_for_testing: false,
             platform_storage_client: None,
+            product_state: None,
         }
     }
 
@@ -559,6 +564,167 @@ pub struct ApplicationService {
     maintenance_cancellation: CancellationToken,
     maintenance_started: bool,
     maintenance_task: Option<JoinHandle<()>>,
+    product_milestone_drain: Option<ProductMilestoneDrain>,
+}
+
+#[derive(Debug)]
+struct ProductMilestoneDrain {
+    wake: Arc<Notify>,
+    cancellation: CancellationToken,
+    task: Option<JoinHandle<()>>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct ProductMilestoneDrainOutcome {
+    applied: usize,
+    dropped: u64,
+}
+
+impl ProductMilestoneDrain {
+    fn start(
+        store: Arc<Mutex<SessionStore>>,
+        product_state: ProductStateOwner,
+        views: ViewHub,
+    ) -> Self {
+        let wake = Arc::new(Notify::new());
+        let cancellation = CancellationToken::new();
+        let task_wake = wake.clone();
+        let task_cancellation = cancellation.clone();
+        let task = tokio::spawn(async move {
+            let mut reported_drops = 0_u64;
+            loop {
+                let stopping = tokio::select! {
+                    _ = task_cancellation.cancelled() => true,
+                    _ = task_wake.notified() => false,
+                };
+                let drain_store = store.clone();
+                let drain_product_state = product_state.clone();
+                match tokio::task::spawn_blocking(move || {
+                    drain_product_milestones(&drain_store, &drain_product_state)
+                })
+                .await
+                {
+                    Ok(Ok(outcome)) => {
+                        if outcome.applied > 0 {
+                            let applied = outcome.applied.to_string();
+                            let _ = views.record_diagnostic(
+                                DiagnosticSeverity::Debug,
+                                category::LIFECYCLE_SESSION,
+                                "product_milestones_applied",
+                                None,
+                                "Durable product milestones were applied and acknowledged",
+                                &[("applied", &applied)],
+                            );
+                        }
+                        if outcome.dropped > reported_drops {
+                            let dropped = outcome.dropped.to_string();
+                            let _ = views.record_diagnostic(
+                                DiagnosticSeverity::Warning,
+                                category::LIFECYCLE_SESSION,
+                                "product_milestone_dropped",
+                                None,
+                                "Product milestone outbox dropped derived counter work at its bound",
+                                &[("dropped", &dropped)],
+                            );
+                            reported_drops = outcome.dropped;
+                        }
+                    }
+                    Ok(Err(detail)) => {
+                        let _ = views.record_diagnostic(
+                            DiagnosticSeverity::Warning,
+                            category::LIFECYCLE_SESSION,
+                            "product_milestone_drain_failed",
+                            None,
+                            "Product milestone drain is degraded; torrent state remains authoritative",
+                            &[("detail", &detail)],
+                        );
+                    }
+                    Err(error) => {
+                        let detail = error.to_string();
+                        let _ = views.record_diagnostic(
+                            DiagnosticSeverity::Warning,
+                            category::LIFECYCLE_SESSION,
+                            "product_milestone_drain_join_failed",
+                            None,
+                            "Product milestone drain worker failed; torrent state remains authoritative",
+                            &[("detail", &detail)],
+                        );
+                    }
+                }
+                if stopping {
+                    break;
+                }
+            }
+        });
+        let drain = Self {
+            wake,
+            cancellation,
+            task: Some(task),
+        };
+        drain.notify();
+        drain
+    }
+
+    fn notify(&self) {
+        self.wake.notify_one();
+    }
+
+    async fn shutdown(&mut self) -> Result<(), String> {
+        self.cancellation.cancel();
+        self.wake.notify_waiters();
+        match self.task.take() {
+            Some(task) => task.await.map_err(|error| error.to_string()),
+            None => Ok(()),
+        }
+    }
+}
+
+impl Drop for ProductMilestoneDrain {
+    fn drop(&mut self) {
+        self.cancellation.cancel();
+        self.wake.notify_waiters();
+        if let Some(task) = self.task.take() {
+            task.abort();
+        }
+    }
+}
+
+fn drain_product_milestones(
+    store: &Arc<Mutex<SessionStore>>,
+    product_state: &ProductStateOwner,
+) -> Result<ProductMilestoneDrainOutcome, String> {
+    let (milestones, dropped) = {
+        let store = store
+            .lock()
+            .map_err(|_| "session store lock is poisoned".to_owned())?;
+        (
+            store
+                .pending_product_milestones()
+                .map_err(|error| error.to_string())?,
+            store
+                .dropped_product_milestone_count()
+                .map_err(|error| error.to_string())?,
+        )
+    };
+    let Some(last) = milestones.last() else {
+        return Ok(ProductMilestoneDrainOutcome {
+            applied: 0,
+            dropped,
+        });
+    };
+    product_state
+        .apply_milestones(&milestones)
+        .map_err(|error| error.to_string())?;
+    let mut store = store
+        .lock()
+        .map_err(|_| "session store lock is poisoned".to_owned())?;
+    store
+        .acknowledge_product_milestones(last.source_epoch, last.sequence)
+        .map_err(|error| error.to_string())?;
+    Ok(ProductMilestoneDrainOutcome {
+        applied: milestones.len(),
+        dropped,
+    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -795,8 +961,13 @@ impl ApplicationService {
                 torrent_runtimes.insert(torrent.torrent_id.clone(), runtime);
             }
         }
+        let store = Arc::new(Mutex::new(store));
+        let product_milestone_drain = config
+            .product_state
+            .clone()
+            .map(|owner| ProductMilestoneDrain::start(store.clone(), owner, views.clone()));
         let mut service = Self {
-            store: Arc::new(Mutex::new(store)),
+            store,
             storage_roots: Arc::new(storage_roots),
             network,
             network_prerequisite,
@@ -834,6 +1005,7 @@ impl ApplicationService {
             maintenance_cancellation: CancellationToken::new(),
             maintenance_started: false,
             maintenance_task: None,
+            product_milestone_drain,
         };
         service.views.record_diagnostic(
             DiagnosticSeverity::Info,
@@ -1662,6 +1834,11 @@ impl ApplicationService {
             let mut store = self.store_mut()?;
             store.handle_durable(&request)
         };
+        if durable_result.is_ok()
+            && let Some(drain) = &self.product_milestone_drain
+        {
+            drain.notify();
+        }
         let mut response = match durable_result {
             Ok(response) => response,
             Err(error) => {
@@ -2084,6 +2261,11 @@ impl ApplicationService {
         let durable_result = self
             .store_mut()?
             .handle_prepared_torrent_bytes(&request, &prepared);
+        if durable_result.is_ok()
+            && let Some(drain) = &self.product_milestone_drain
+        {
+            drain.notify();
+        }
         let mut response = match durable_result {
             Ok(response) => response,
             Err(error) => {
@@ -3396,6 +3578,12 @@ impl ApplicationService {
         {
             active_join_error = Some(format!("speed history: {error}"));
         }
+        if let Some(mut drain) = self.product_milestone_drain.take()
+            && let Err(error) = drain.shutdown().await
+            && active_join_error.is_none()
+        {
+            active_join_error = Some(format!("product milestone drain: {error}"));
+        }
         let _ = self.views.record_diagnostic(
             DiagnosticSeverity::Info,
             category::LIFECYCLE_TORRENT,
@@ -3907,6 +4095,10 @@ impl ApplicationService {
                 torrent_id: torrent_id.to_owned(),
                 views: self.views.clone(),
                 recheck_generation: Mutex::new(None),
+                product_milestone_wake: self
+                    .product_milestone_drain
+                    .as_ref()
+                    .map(|drain| drain.wake.clone()),
             });
             let (control, eta_generation) = self.download_control(torrent_id)?;
             let task_control = control.clone();
@@ -4038,6 +4230,10 @@ impl ApplicationService {
                 torrent_id: torrent_id.to_owned(),
                 views: self.views.clone(),
                 recheck_generation: Mutex::new(None),
+                product_milestone_wake: self
+                    .product_milestone_drain
+                    .as_ref()
+                    .map(|drain| drain.wake.clone()),
             });
             let (control, eta_generation) = self.download_control(torrent_id)?;
             let task_control = control.clone();
@@ -4113,6 +4309,10 @@ impl ApplicationService {
             torrent_id: torrent_id.to_owned(),
             views: self.views.clone(),
             recheck_generation: Mutex::new(None),
+            product_milestone_wake: self
+                .product_milestone_drain
+                .as_ref()
+                .map(|drain| drain.wake.clone()),
         });
         let (control, eta_generation) = self.download_control(torrent_id)?;
         let parsed_content = resume
@@ -5516,6 +5716,7 @@ struct StoreCheckpointSink {
     torrent_id: String,
     views: ViewHub,
     recheck_generation: Mutex<Option<u64>>,
+    product_milestone_wake: Option<Arc<Notify>>,
 }
 
 impl StoreCheckpointSink {
@@ -5728,6 +5929,9 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
                 Ok(revision)
             }
         })?;
+        if let Some(wake) = &self.product_milestone_wake {
+            wake.notify_one();
+        }
         self.views
             .record_pieces_durable(&self.torrent_id, &view_indices, revision)
             .map_err(|error| error.to_string())?;
@@ -7057,8 +7261,8 @@ mod tests {
 
     use super::{
         ApplicationConfig, ApplicationError, ApplicationService, DirectPayloadManifest,
-        PathRootStartupPolicy, PlatformRemovalPath, delete_path_artifacts, handle_task_outcome,
-        magnet_runtime_identity, runtime_identity,
+        PathRootStartupPolicy, PlatformRemovalPath, delete_path_artifacts,
+        drain_product_milestones, handle_task_outcome, magnet_runtime_identity, runtime_identity,
     };
     use crate::{
         AddTorrentBytesRequest, ApplicationCall, ApplicationCallResult, CONTROL_VERSION,
@@ -7067,12 +7271,13 @@ mod tests {
         EncryptionPolicy, FilePriority, HttpsServerAuthenticationPolicy, ListenerBindFailureReason,
         ListenerPolicy, ListenerStatus, MediaRangeError, MediaResolveError, MediaUrlOutcome,
         OpenViewSetOptions, OpenViewSetRequest, PeerDirection, PeerFlagView, PeerLifecycle,
-        PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressDisposition, ProgressReason,
-        RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseOutcome, SessionStore,
-        StorageState, StoreError, SubscriptionSpec, SwarmCatalogState, SwarmPeerState,
-        SwarmPeerView, TorrentState, TrackerConnectionFamilyView, TrackerSecurityView, TrackerView,
-        ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector, ViewSetError, ViewSetOwner,
-        ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdatePayload,
+        PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProductStateOwner,
+        ProgressDisposition, ProgressReason, RemovalDataPolicy, RemovalState, RequestEnvelope,
+        ResponseOutcome, SessionStore, StorageState, StoreError, SubscriptionSpec,
+        SwarmCatalogState, SwarmPeerState, SwarmPeerView, TorrentState,
+        TrackerConnectionFamilyView, TrackerSecurityView, TrackerView, ViewDeliveryPolicy,
+        ViewPatch, ViewProjection, ViewSelector, ViewSetError, ViewSetOwner, ViewSetUpdate,
+        ViewSnapshot, ViewSpec, ViewUpdatePayload,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -7137,6 +7342,132 @@ mod tests {
                 std::time::Duration::from_secs(5),
             ),
         )
+    }
+
+    #[test]
+    fn product_milestone_drain_replays_after_product_commit_and_preserves_gaps() {
+        let root = test_root("product-drain-replay");
+        let configured = ConfiguredStorageRoot::path("downloads", root.join("payload"));
+        let store = Arc::new(std::sync::Mutex::new(
+            SessionStore::open_ephemeral("test", std::slice::from_ref(&configured))
+                .expect("open profile"),
+        ));
+        store
+            .lock()
+            .expect("lock profile")
+            .handle_durable(&add_request(
+                "product-drain-first",
+                "1010101010101010101010101010101010101010",
+            ))
+            .expect("add first torrent");
+        let product_state = ProductStateOwner::open_ephemeral("0.1.0").expect("open product state");
+        let pending = store
+            .lock()
+            .expect("lock profile")
+            .pending_product_milestones()
+            .expect("read pending milestone");
+        product_state
+            .apply_milestones(&pending)
+            .expect("simulate product commit before profile acknowledgement");
+
+        let replay = drain_product_milestones(&store, &product_state).expect("replay drain");
+        assert_eq!(replay.applied, 1);
+        assert_eq!(
+            product_state
+                .summary()
+                .expect("read replayed summary")
+                .torrents_added,
+            "1"
+        );
+        assert!(
+            store
+                .lock()
+                .expect("lock profile")
+                .pending_product_milestones()
+                .expect("read acknowledged outbox")
+                .is_empty()
+        );
+
+        store
+            .lock()
+            .expect("lock profile")
+            .handle_durable(&add_request(
+                "product-drain-second",
+                "2020202020202020202020202020202020202020",
+            ))
+            .expect("add second torrent");
+        let fresh_product = ProductStateOwner::open_ephemeral("0.1.0").expect("fresh product");
+        let error = drain_product_milestones(&store, &fresh_product)
+            .expect_err("a lost product watermark must not guess across a gap");
+        assert!(error.contains("sequence gap"));
+        assert_eq!(
+            store
+                .lock()
+                .expect("lock profile")
+                .snapshot()
+                .expect("torrent state remains authoritative")
+                .torrents
+                .len(),
+            2
+        );
+        assert_eq!(
+            store
+                .lock()
+                .expect("lock profile")
+                .pending_product_milestones()
+                .expect("failed drain remains pending")
+                .len(),
+            1
+        );
+        assert_eq!(
+            fresh_product
+                .summary()
+                .expect("fresh product remains unchanged")
+                .torrents_added,
+            "0"
+        );
+    }
+
+    #[tokio::test]
+    async fn application_owns_and_joins_the_product_milestone_drain() {
+        let root = test_root("product-drain-owner");
+        let product_state = ProductStateOwner::open_ephemeral("0.1.0").expect("open product state");
+        let mut config = default_config(&root).with_initial_network_prerequisite(
+            ApplicationNetworkPrerequisite::WaitingForUnmeteredNetwork,
+        );
+        config.product_state = Some(product_state.clone());
+        let mut application = ApplicationService::open(config)
+            .await
+            .expect("open application");
+        application
+            .dispatch(add_request(
+                "product-owner-add",
+                "3030303030303030303030303030303030303030",
+            ))
+            .await
+            .expect("add through application");
+        application.shutdown().await.expect("join application");
+
+        let summary = product_state.summary().expect("read product summary");
+        assert_eq!(summary.torrents_added, "1");
+        let reopened = SessionStore::open(
+            &root.join("profile"),
+            "test",
+            &[ConfiguredStorageRoot::path(
+                "downloads",
+                root.join("payload"),
+            )],
+        )
+        .expect("reopen drained profile");
+        assert!(
+            reopened
+                .pending_product_milestones()
+                .expect("joined drain acknowledged outbox")
+                .is_empty()
+        );
+
+        drop(reopened);
+        fs::remove_dir_all(root).expect("remove test root");
     }
 
     #[test]
