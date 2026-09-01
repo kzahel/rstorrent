@@ -2,7 +2,7 @@
 
 Topic: `android-jstorrent-replacement`
 
-Status: **Active as of 2026-08-30.** This is the authoritative readiness and
+Status: **Active as of 2026-09-01.** This is the authoritative readiness and
 feature-disposition ledger for eventually shipping the first-party Rust
 Android product as a normal update to the current JSTorrent Android
 application. It does not authorize a Google Play release, signing-key use,
@@ -235,13 +235,13 @@ blocker for an independent RSTorrent beta.
 | VPN-only mode | JSTorrent suspends when the active default network is not reported as VPN. RSTorrent has no control. The legacy check does not prove socket binding or leak prevention. | Implement only with Android `Network` binding, fail-closed startup/handover, closure or rebinding of existing TCP/UDP sockets, and peer/tracker/DHT/DNS leakage evidence; otherwise retire and disclose it. |
 | SOCKS5 proxy | JSTorrent exposes host, port, optional credentials, and peer/HTTP-tracker/UDP-tracker routing choices. RSTorrent shows a disabled placeholder and has no engine proxy owner. | Use a source-first engine tactical covering DNS, authentication-secret storage, UDP ASSOCIATE or a truthful unsupported state, reconnect, bypass prevention, resource limits, and interoperability. |
 | DHT and PEX controls | Both RSTorrent engine capabilities exist, but Compose has no enable/disable controls. | Add backed settings or explicitly retain always-on public-torrent policy. Preserve private-torrent gating regardless. |
-| Seeding and queue policy | JSTorrent has an active-seed limit and stop/close versus keep-seeding choice. RSTorrent now has exact pinned-libtorrent global active-seed and ratio/time priority semantics, but deliberately does not reproduce stop/close-on-goal. | Tactical `200` selects default background closure and a separate keep-seeding-in-background opt-in. Completed Tactical `201` adds backed Compose settings and exact active/queued/goal truth. Its installed API-35 profile proves one active and two queued seeds across foreground reopening and opt-in background ownership. Reaching a goal does not hard-stop or rewrite torrent intent; whether that deliberate difference needs additional disclosure remains release work. |
+| Seeding and queue policy | JSTorrent has backing state for an active-seed limit, although its current native Settings screen does not render that control, plus a stop/close versus keep-seeding choice. RSTorrent now has exact pinned-libtorrent global active-seed and ratio/time priority semantics, but deliberately does not reproduce stop/close-on-goal. | Tactical `200` selects default background closure and a separate keep-seeding-in-background opt-in. Completed Tactical `201` adds backed Compose settings and exact active/queued/goal truth. Its installed API-35 profile proves one active and two queued seeds across foreground reopening and opt-in background ownership. Reaching a goal does not hard-stop or rewrite torrent intent; whether that deliberate difference needs additional disclosure remains release work. |
 | Low-battery shutdown | JSTorrent offers an opt-in 5–50% threshold. RSTorrent has only the active-work sleep setting and a disabled Battery policy row. | Decide whether Android replacement retains this safety valve. If implemented, define charging, threshold hysteresis, notification, intent preservation, and restart behavior. |
 | Companion idle/auto-close | JSTorrent can stop its separate legacy daemon after a configured disconnected interval. Tactical `194` instead owns one semantic service/application owner. | Tactical `200` selects a fixed 60-second authenticated-disconnect grace and no user-facing timer. A configurable idle policy remains deferred unless product evidence justifies it. |
 | Search and plugins | JSTorrent has search UI plus installed/recommended URL-fetched JavaScript plugins in an Android WebView sandbox. RSTorrent has no search/plugin product capability. | Treat as a separate security and product campaign. Implement only with explicit network-code trust, sandbox, update, disclosure, and Play-review policy; otherwise retire/defer visibly. |
 | Native/progressive playback | Completed Tactical `202` gives RSTorrent Android native Media3 playback for typed completed and eligible incomplete video through the shared Rust HTTP capability, with audio focus, picture-in-picture, removal revocation, seek, publication handoff, and playback lifetime ownership proven on physical ChromeOS. | Treat native playback as implemented. Sidecar/external subtitles, codec breadth, resume/history, background-audio controls, and production-package qualification remain separate dispositions. |
-| Localization | JSTorrent currently ships system/app locale selection and 19 translated Android resource directories. Completed Tactical [`204`](../tactical/204-cross-product-localization-foundation.md) gives RSTorrent complete checked English catalogs, system locale negotiation, formatting/plurals, and long-LTR/RTL pseudo evidence across React/Tauri, Android, and iOS. | Select and qualify a native-reviewed first real language cohort separately. Do not inherit or advertise JSTorrent's translations without provenance, review, lifecycle, layout, accessibility, and release-disclosure evidence. |
-| Reset, clear data, and support | JSTorrent exposes reset settings, clear all data with optional payload deletion, and a prefilled report-bug path. RSTorrent shows Reset engine settings as unavailable. | Add safe, separately worded metadata reset and payload deletion operations plus support/diagnostic handoff, or explicitly narrow them. Never combine payload deletion with an implicit migration reset. |
+| Localization | JSTorrent currently ships system/app locale selection, base English, and 18 non-English locale directories. Completed Tactical [`204`](../tactical/204-cross-product-localization-foundation.md) gives RSTorrent complete checked English catalogs, system locale negotiation, formatting/plurals, and long-LTR/RTL pseudo evidence across React/Tauri, Android, and iOS. | Select and qualify a native-reviewed first real language cohort separately. Do not inherit or advertise JSTorrent's translations without provenance, review, lifecycle, layout, accessibility, and release-disclosure evidence. |
+| Reset, clear data, and support | JSTorrent exposes reset settings, clear all data with optional payload deletion, and a prefilled report-bug path. Its reset preserves some preferences and incompletely establishes live engine reapplication; its clear workflow does not join torrent removal before dropping roots. RSTorrent shows Reset engine settings as unavailable. | Use the detailed settings ledger below to add safe, separately worded settings reset, metadata/profile clear, payload deletion, and support/diagnostic handoff operations, or explicitly narrow them. Never combine payload deletion with an implicit migration reset. |
 | Add-time file selection | JSTorrent can show a file-selection step during add. | Implemented by Tactical [`203`](../tactical/203-jstorrent-shaped-add-time-file-selection.md). Shared React and Compose default to one application-owned pending step: checked is Normal, unchecked is Skip, All/None are logical, magnets fetch metadata without content, and one atomic confirmation starts the durable selection. BEP 53 intent, cancellation/duplicate safety, restart, bounded paging, external intake, API-35, and physical ChromeOS evidence pass. High remains post-add. |
 | Download manifest integration | JSTorrent can write a sidecar manifest for external playback integration. RSTorrent does not. | Confirm whether any supported integration consumes it; implement a safe final-path equivalent or retire it. |
 | Active-piece memory override | JSTorrent exposes an Android memory-budget override. RSTorrent uses bounded engine-owned resource policy without an equivalent user control. | Prefer measured automatic limits unless physical evidence justifies an advanced setting. Record this as a deliberate difference. |
@@ -253,6 +253,133 @@ inspection, UPnP status, IPv6, transfer limits, queue actions, file priorities,
 and completed-file external open already have RSTorrent equivalents. Exact UI
 layout parity is not required where the replacement preserves the underlying
 user outcome truthfully.
+
+## Android Settings Parity Ledger
+
+This detailed native-settings comparison was refreshed against RSTorrent
+commit `3c6217285cb981fa9ee4fd6415684b11065a1f1e` and JSTorrent commit
+`25e4b701433fd815398ba89526546f5e4f072e3f`. It distinguishes controls that a
+user can actually reach from backing settings that exist only in code. A
+missing control is not automatically selected work: the capability table
+above and a bounded tactical still own the implement, retire, or
+defer-and-disclose decision.
+
+### Storage, Transfer, And Queue
+
+| Setting | JSTorrent Android | RSTorrent Android | Disposition |
+| --- | --- | --- | --- |
+| Download folders | Add, list, make default, open in a file manager, and remove roots. | Select/change, list, show the current root, disclose unavailable roots, and forget safe unused roots. | Broadly equivalent. RSTorrent deliberately refuses to forget the current or referenced root; JSTorrent alone has a direct Settings action to open a root externally. |
+| Multiple storage roots | Supported with a selected default. | Supported through retained SAF roots and a current/default future binding. | Equivalent user outcome, with stronger revocation and reference safety in RSTorrent. |
+| Add-time file selection | Default-on preference leads to a checked Normal/unchecked Skip step. | Default-on preference leads to the same Normal/Skip step, with durable pending intent and bounded paging. | Implemented by Tactical `203`; RSTorrent has the stronger restart and resource contract. |
+| Global download/upload limits | Presets from unlimited through 10 MB/s. | Exact numeric KiB/s values or unlimited. | Equivalent capability with different presentation. |
+| Per-torrent transfer limits | No native Settings control. | Available on torrent detail. | RSTorrent-only capability. |
+| Active downloads | Range 1–5, default 5. | Configured range 1–20, default 3; Android currently applies an effective cap of 2. | Both expose the policy. RSTorrent must keep configured versus effective truth visible. |
+| Peer limits | Separate global 50–1000 and per-torrent 5–100 controls. | One global session limit, range 1–2000. | Per-torrent peer limits are missing; add only if replacement evidence justifies another admission policy. |
+| Upload slots | Values 0, 2, 4, 8, and 16. | Range 0–50. | Equivalent capability with a wider RSTorrent range. |
+| Active seeds | Backing preference and setter exist, but the current native Settings screen does not render them. | Visible Unlimited or 0–500 setting with active/queued counts. | RSTorrent is stronger; do not describe the current JSTorrent UI as exposing this control. |
+| Seeding goals | No visible ratio/time goal controls. | Visible priority ratio, total seeding time, and idle seeding time goals. | RSTorrent-only capability implemented by Tactical `201`. |
+| Active-piece memory | Visible Default, 32, 48, or 64 MiB override. | Bounded automatic engine policy without a user override. | Deliberate RSTorrent difference; prefer measured automatic limits unless device evidence requires an advanced control. |
+| Pipeline depth | Backing preference and setter exist, but the current native Settings screen does not render them. | No user setting. | No current visible parity gap. Keep engine policy automatic unless evidence establishes a need. |
+
+### Network And Privacy
+
+| Setting | JSTorrent Android | RSTorrent Android | Disposition |
+| --- | --- | --- | --- |
+| Unmetered-only transfers | Labeled Wi-Fi only, but implemented from Android's unmetered-network fact. | Labeled Unmetered networks only, with live closure/restart and preserved torrent intent. | Equivalent product intent; RSTorrent has the more accurate label and stronger live-enforcement contract. |
+| VPN-only transfers | Suspends the engine when the default network is not reported as VPN. | Disabled placeholder. | Missing, but JSTorrent's observation does not prove socket binding, DNS confinement, or closure of existing TCP/UDP paths. Implement only as a separate fail-closed privacy feature. |
+| Peer encryption | Disabled, Allow, Prefer, and Required. | Disabled, Allow, Prefer, and Required. | Equivalent. |
+| DHT | Visible enable/disable toggle. | Capability is enabled by policy for eligible public torrents; detailed inspection exists, but no toggle. | Add a backed control or deliberately retain the current public-torrent policy. Private-torrent gating is unconditional. |
+| PEX | Visible enable/disable toggle. | Capability is enabled by policy with private-torrent gating, but no toggle. | Add a backed control or deliberately retain the current policy. |
+| DHT inspection | Link to a DHT view. | Separate detailed DHT screen. | Equivalent; RSTorrent presentation is stronger. |
+| UPnP | Visible toggle. | Visible toggle with typed status mapping. | Equivalent. |
+| Incoming listener | No separate visible control beyond incoming/UPnP behavior. | Explicit enable/disable control and status. | RSTorrent-only presentation. |
+| IPv6 | No visible native control. | Explicit enable/disable control. | RSTorrent-only presentation. |
+| SOCKS5 proxy | Host, port, optional username/password, and independent peer, HTTP-tracker, and UDP-tracker routing choices. | Disabled placeholder with no engine proxy owner. | Missing. JSTorrent's engine comments require restart, while its UI does not clearly disclose that. A RSTorrent implementation needs source-first DNS, secret storage, UDP, reconnect, and bypass-prevention work. |
+
+### Notifications And Power
+
+| Setting | JSTorrent Android | RSTorrent Android | Disposition |
+| --- | --- | --- | --- |
+| Notification permission and system management | Permission/status presentation and system-settings handoff. | Permission, application preference, channel truth, and system-settings handoff. | Equivalent core outcome; RSTorrent exposes more exact app/channel state. |
+| Completion notifications | No separate application preference in the current native Settings screen. | Default-on application preference. | RSTorrent-only control implemented by Tactical `198`. |
+| Repair/attention notifications | No separate application preference in the current native Settings screen. | Default-on application preference. | RSTorrent-only control implemented by Tactical `198`. |
+| Background downloads | Default off; enabling requires usable notifications. | Default off; enabling requires notification eligibility and is enforced through actual work admission and Android 15 finite-work quota. | Equivalent intent with a stronger RSTorrent lifecycle contract. |
+| Prevent sleep | Default off and editable only when background downloads are enabled. | Default on for active download/check work and independent of background permission. | Deliberate difference. RSTorrent ties the partial CPU wake lock to authoritative active work rather than one UI preference dependency. |
+| Keep seeding in background | Keep-seeding versus stop-and-close behavior. | Separate default-off opt-in that depends on background downloads. | Equivalent user choice with different engine semantics; RSTorrent does not rewrite torrent intent when lifetime closes. |
+| Low-battery shutdown | Optional 5–50% threshold, default 15%; it does not trigger while charging. | Disabled Battery policy placeholder. | Missing candidate. JSTorrent asynchronously pauses all torrents, waits 500 ms, then stops, so it is behavior evidence rather than a lifecycle template. |
+| Finite Android background disclosure | No equivalent explicit read-only explanation. | Visible read-only target-35 finite-background/quota disclosure. | RSTorrent-only transparency. |
+
+### Advanced, Support, And ChromeOS Companion
+
+| Setting | JSTorrent Android | RSTorrent Android | Disposition |
+| --- | --- | --- | --- |
+| Theme | System, Light, and Dark. | System, Light, and Dark. | Equivalent. |
+| Dynamic colors | No visible control. | Visible Android dynamic-color control. | RSTorrent-only capability. |
+| Language | System plus 18 non-English locale choices. | System-following English catalog; no language picker or qualified real translated cohort. | Missing first reviewed language cohort. Tactical `204` completed localization infrastructure, not translated-product readiness. |
+| Search and plugins | Recommended plugins, URL installation, enable/disable, and removal. | Disabled placeholder and no plugin product capability. | Missing by design pending a separate security/product decision. Do not treat arbitrary fetched code as an ordinary Settings addition. |
+| Download manifest | Can enable `.jstorrent.json` output for PlayVideo integration. | No equivalent. | Confirm a supported consumer before retaining it; otherwise retire and disclose. |
+| Report a bug | Opens a prefilled report containing app version, Android version, and device details. | No support/diagnostic handoff. | Missing and suitable to pair with a carefully redacted diagnostic export. |
+| Reset settings | Visible action. | Disabled Reset engine settings row. | Missing. The JSTorrent semantics are narrower and less atomic than its wording suggests; use the safety contract below. |
+| Clear all data | Visible confirmation with an unchecked-by-default Also delete downloaded files option. | No equivalent. | Missing. Metadata/profile clear and payload deletion need separate, explicit, joined outcomes. |
+| Chromebook companion mode | Separate daemon mode with its own lifecycle settings. | No separate mode; Compose and the extension share one service/application/profile owner. | Deliberately inapplicable to RSTorrent's accepted architecture. |
+| Companion background/idle policy | Run-in-background toggle, configurable 5–120 minute idle close (default 30), prefer-standalone toggle, launch-standalone action, extension link, and Quit. | Ordinary background-download preference plus one fixed authenticated 60-second reconnect grace. | Tactical `200` deliberately selected a fixed grace and no prefer-standalone or user timer. Revisit only with product evidence. |
+
+`preferredListenPort` and tracker HTTPS authentication exist in RSTorrent's
+application settings contract but are not currently rendered in Compose.
+They are backing-only controls, not Android-visible advantages.
+
+### Reset And Clear-Data Safety Contract
+
+JSTorrent's two destructive-looking actions are useful product references,
+but their current implementation should not be copied literally:
+
+- **Reset settings** clears `AndroidConfigHub` and `SettingsStore`, while
+  preserving the default root key, locale, theme, and notification-prompt
+  state. The dialog's all-settings wording does not disclose those
+  exceptions. It explicitly reapplies several live engine values, but does
+  not establish immediate reapplication for every cleared limit, proxy
+  field, proxy route, or active-work preference. Some changes may therefore
+  require a restart.
+- **Clear all data** enumerates torrents, calls the non-suspending torrent
+  removal method for each, resets settings, then removes every registered
+  root. A separate awaitable removal API exists, but this workflow does not
+  use it. The source therefore does not establish joined completion,
+  aggregate failure handling, or completion of optional payload deletion
+  before storage authority is dropped.
+- The operation is not equivalent to Android's clear-app-data or reinstall.
+  The implementation deliberately preserves installation metrics, while the
+  reset path preserves locale, theme, and notification-prompt state; other
+  stores such as pairing are not part of this workflow.
+
+A future RSTorrent tactical must define one typed, atomic settings reset and a
+separate joined clear workflow. Metadata/profile clearing must be distinct
+from optional payload deletion; every removal must finish or report a precise
+partial failure before grants are released. The confirmation must state exact
+torrent, payload, root, pairing, metrics, appearance, locale, and permission
+outcomes. Payload deletion stays unchecked by default, and migration reset
+must never imply payload deletion.
+
+### Settings Follow-Up Queue
+
+This comparison produces the following bounded candidates, in recommended
+order. It records priority, not implementation authorization:
+
+1. Implement safe settings reset, metadata/profile clear, optional joined
+   payload deletion, and a redacted support/diagnostic handoff.
+2. Decide and, if retained, expose DHT and PEX controls while preserving
+   unconditional private-torrent gating.
+3. Decide whether to retain a low-battery policy with charging, hysteresis,
+   notification, preserved intent, restart, and joined-shutdown semantics.
+4. Treat SOCKS5 and a real VPN-only mode as separate source-first engine and
+   privacy tacticals rather than UI-only settings work.
+5. Select and qualify the first native-reviewed non-English cohort under the
+   localization foundation.
+6. Make an explicit security/product decision on search and URL-fetched
+   plugins before any implementation.
+7. Retain download-manifest integration only if a supported consumer still
+   requires it.
+8. Add per-torrent peer limits or a manual active-piece-memory override only
+   if replacement or device evidence justifies the extra policy.
 
 ## Network And Privacy Decisions
 
@@ -372,9 +499,14 @@ The initial audit used:
   one sticky foreground-service/application owner, fixed `Online` startup
   policy, partial wake lock, and Stop-only notification;
 - `clients/android/app/src/main/java/org/rstorrent/bootstrap/ui/ProductApp.kt`:
-  current Notifications, Power, Advanced, and unavailable rows; and
+  current Notifications, Power, Advanced, and unavailable rows;
 - `clients/android/app/src/main/java/org/rstorrent/bootstrap/ui/ProductSettingsScreens.kt`:
-  backed network settings plus disabled VPN, metered, and proxy rows.
+  backed network settings plus disabled VPN, metered, and proxy rows;
+- `clients/android/app/src/main/java/org/rstorrent/bootstrap/{SettingsDraftModel,SettingsPatches}.kt`:
+  editable application settings, validation, and typed patch construction;
+  and
+- `clients/android/app/src/main/java/org/rstorrent/bootstrap/{ProductLifecyclePreferenceStore,ProductNotificationSettings}.kt`:
+  Android-owned background, seeding, notification, and sleep preferences.
 
 The implemented/evidence baseline comes from Tacticals `117`, `165`, `191`,
 and `194` plus the Android rows in `client-surfaces` and
@@ -398,9 +530,15 @@ The comparison inspected these paths at the revision recorded above:
   foreground status/actions plus completion and error attention;
 - `android/app/src/main/java/com/jstorrent/app/service/{ServiceLifecycleManager,ForegroundNotificationService}.kt`:
   foreground/background/idle ownership, wake locks, and low-battery handling;
-- `android/app/src/main/java/com/jstorrent/app/ui/screens/{NetworkSettingsScreen,PowerManagementSettingsScreen,AdvancedSettingsScreen,StorageSettingsScreen,SpeedConnectionLimitsSettingsScreen}.kt`:
+- `android/app/src/main/java/com/jstorrent/app/ui/screens/{NetworkSettingsScreen,PowerManagementSettingsScreen,AdvancedSettingsScreen,StorageSettingsScreen,SpeedConnectionLimitsSettingsScreen,NotificationsSettingsScreen}.kt`:
   proxy, DHT/PEX, power, localization, reset/support, file-selection, seeding,
-  and memory controls;
+  notification, and memory controls;
+- `android/app/src/main/java/com/jstorrent/app/viewmodel/SettingsViewModel.kt`,
+  `android/quickjs-engine/src/main/kotlin/com/jstorrent/quickjs/storage/AndroidConfigHub.kt`,
+  and
+  `android/quickjs-engine/src/main/kotlin/com/jstorrent/quickjs/EngineController.kt`:
+  reset preservation, live bridge reapplication, clear ordering, and the
+  non-suspending versus awaitable removal APIs;
 - `android/app/src/main/java/com/jstorrent/app/ui/screens/{SearchScreen,SearchPluginSettingsScreen}.kt`
   and `android/app/src/main/java/com/jstorrent/app/search/`: search/plugin
   product and sandbox boundaries; and
