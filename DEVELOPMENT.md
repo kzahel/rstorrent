@@ -572,6 +572,37 @@ $HOME/.local/bin/rstorrent-headless status
 journalctl --user -u com.jstorrent.rstorrent.headless.service
 ```
 
+### Optional local deploy after pushing `main`
+
+On a Linux checkout that owns the ordinary-user headless development service,
+install the tracked lightweight push hook with:
+
+```bash
+scripts/local-deploy/install-hook.sh
+```
+
+The hook records a `main` update and returns immediately. A detached worker
+waits until the remote branch reports the exact pushed commit, exports that
+commit into a temporary `git archive` snapshot, builds and validates the
+package, and runs the existing health-checked installer. It neither builds
+from mutable working-tree files nor maintains a sibling Git worktree.
+
+Inspect or cancel the finite local worker with:
+
+```bash
+scripts/local-deploy/deploy-after-main-push.sh --status
+scripts/local-deploy/deploy-after-main-push.sh --log
+scripts/local-deploy/deploy-after-main-push.sh --stop
+```
+
+State and bounded logs live below
+`.git/rstorrent-deploy-after-main-push/`. A scheduling or deployment failure
+is recorded there and never rejects the Git push. This local automation does
+not enable the service or change configuration, firewall, network, release,
+or update-channel state. See
+[`scripts/local-deploy/README.md`](scripts/local-deploy/README.md) and Tactical
+[`209`](docs/tactical/209-asynchronous-local-headless-deploy.md).
+
 After an exact `headless-v*` candidate and website bootstrap are separately
 published, the intended first-install route is the pinned-key
 `website/public/install-headless.sh`. It selects x86_64 or ARM64, downloads

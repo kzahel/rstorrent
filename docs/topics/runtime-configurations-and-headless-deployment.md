@@ -397,6 +397,19 @@ connection rather than define its security model.
 
 The repository now proves these parts of this direction:
 
+- Tactical [`209`](../tactical/209-asynchronous-local-headless-deploy.md)
+  supplies an optional checkout-local asynchronous deploy path for the
+  maintainer's ordinary-user Linux service. Its tracked `pre-push` hook only
+  records a `main` commit and wakes a finite detached worker. The worker waits
+  until the exact commit is the remote branch head, coalesces quick follow-up
+  pushes, exports the accepted commit into a temporary non-worktree snapshot,
+  builds and validates the ordinary package, and delegates replacement,
+  restart, health, and rollback to the existing installer. Git-local status,
+  completion, failure, bounded logs, one-worker locking, process-group stop,
+  and temporary cleanup keep that local automation observable. It changes no
+  release, service-enable, configuration, firewall, or public deployment
+  contract.
+
 - `rstorrent-gateway serve` runs the application service and production React
   UI without Tauri, accepts an exact socket address and browser origin, and can
   suppress browser opening;

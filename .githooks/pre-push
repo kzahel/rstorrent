@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -z "$repo_root" ]; then
+    exit 0
+fi
+
+hook="$repo_root/scripts/local-deploy/pre-push-hook.sh"
+if [ -x "$hook" ]; then
+    exec "$hook" "$@"
+fi
+
+exit 0
