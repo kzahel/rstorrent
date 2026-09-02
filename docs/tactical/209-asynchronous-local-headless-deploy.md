@@ -1,8 +1,8 @@
 # Tactical 209: Asynchronous Local Headless Deploy
 
-Status: **Active.** Maintainer direction on 2026-09-02 authorizes the local
-hook replacement, one commit, a push to `origin/main`, and monitoring through
-an exact healthy redeploy.
+Status: **Complete on 2026-09-02.** The tracked local hook, exact accepted-
+commit snapshot, finite detached worker, transactional package repair, and
+installed-service health proof pass.
 
 Topic: `runtime-configurations-and-headless-deployment`
 
@@ -179,5 +179,24 @@ PGID, and SID matched, recorded `waiting_remote`, and inherited no Git pipe
 descriptors. `--stop` terminated that process group, changed the summary to
 `stopped`, removed its lock, and left no source or install snapshot.
 
-The exact `origin/main` push, background package build, completion record, and
-installed healthy-service evidence remain pending.
+Commit `a509a9a97c19718d807a71ec7cdcefb681df138f` then exercised the complete
+path. `git push origin main` returned in 2.14 seconds after scheduling the
+worker, and local `HEAD`, `origin/main`, and GitHub all reported that exact
+commit before the build completed. The worker's stdin was `/dev/null`, its
+stdout/stderr were the Git-local deploy log, and its PID, PGID, and SID
+matched; no Git or YepAnywhere request retained it.
+
+The worker confirmed the remote commit, settled for five seconds, installed
+160 exact web packages in two seconds, and completed the locked release build
+in 86 seconds. The production web build and CSP scan passed. The deterministic
+package validator accepted version `0.1.1`, x86_64, 22 files, and 90,569,219
+expanded bytes. The existing installer performed the same-version repair,
+restored the previously running service, and passed every configured health
+probe. The completion record reports 102 total seconds from scheduling and 94
+deploy seconds.
+
+Final checks found no desired request, worker lock, worker process, source
+snapshot, or install extraction. The installed command reports
+`product=rstorrent-headless version=0.1.1 access_mode=trusted-network-none
+enabled=true active=true healthy=true`; systemd reports the service active and
+running with successful main-process status.

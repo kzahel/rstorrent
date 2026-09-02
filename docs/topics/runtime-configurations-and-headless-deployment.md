@@ -28,6 +28,10 @@ completed Tactical
 owner. It exits after verified selected completion without seeding, creates no
 profile or resume database, and remains distinct from a headless service,
 daemon, remote-control endpoint, or durable runtime configuration.
+Completed Tactical
+[`209`](../tactical/209-asynchronous-local-headless-deploy.md) independently
+makes the current-host source-push repair asynchronous: the accepted commit is
+built from a temporary non-worktree snapshot after the Git push returns.
 
 Tactical `192` now attaches its local-only validation owner beneath the actual
 desktop and configured-headless application lifecycles. Headless configuration

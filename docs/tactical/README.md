@@ -94,7 +94,7 @@ that scope and its cleanup or compatibility rules explicitly.
 ## Current Tacticals
 
 - [`209-asynchronous-local-headless-deploy.md`](209-asynchronous-local-headless-deploy.md):
-  active; replaces the current machine-local synchronous package/redeploy
+  complete; replaces the current machine-local synchronous package/redeploy
   `pre-push` hook with an immediate exact-commit scheduler and one observable
   finite worker. The worker confirms remote acceptance, builds from a
   temporary `git archive` snapshot without a persistent worktree, and reuses
