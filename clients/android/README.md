@@ -28,7 +28,7 @@ clients/android/build.sh
 
 The build uses Android Gradle Plugin `8.7.3`, Gradle `8.11.1`, Kotlin
 `2.0.21`, JNA Android AAR `5.17.0`, UniFFI `0.31.0`, NDK
-`27.0.12077973`, and API 28 Rust targets. It generates Kotlin from the host
+`28.2.13676358`, and API 28 Rust targets. It generates Kotlin from the host
 native library and packages independently cross-built `x86_64` and
 `arm64-v8a` libraries. Generated bindings, native libraries, reports, and APKs
 remain under ignored build directories.
@@ -265,3 +265,8 @@ process, verifies disabled persistence, and re-enables IPv6. A device without
 an eligible global-unicast address must report typed `Degraded` state with
 effective IPv6 disabled while IPv4 remains usable; that is an expected
 environment outcome rather than an application error.
+
+## Signed Canary Releases
+
+See [the Android release runbook](../../docs/android-release.md) for version
+bumps, tag-triggered CI, signing backups, APK/AAB downloads, and Play upload.

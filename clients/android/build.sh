@@ -1,18 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+build_mode="${1:-debug}"
+if [[ "$build_mode" != debug && "$build_mode" != release ]]; then
+    echo "Usage: $0 [debug|release]" >&2; exit 1
+fi
+if [[ "$build_mode" == release ]]; then
+    for name in UPLOAD_KEYSTORE_PATH UPLOAD_KEYSTORE_PASSWORD UPLOAD_KEY_ALIAS UPLOAD_KEY_PASSWORD; do
+        if [[ -z "${!name:-}" ]]; then echo "Missing signing variable: $name" >&2; exit 1; fi
+    done
+fi
+
 android_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(cd "$android_root/../.." && pwd)"
 android_sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}"
-ndk_root="$android_sdk/ndk/27.0.12077973"
+ndk_root="$android_sdk/ndk/28.2.13676358"
 generated_root="$android_root/app/build/generated"
 
-if [[ ! -d "$android_sdk/platforms/android-35" ]]; then
-    echo "Android platform 35 is unavailable under $android_sdk" >&2
+if [[ ! -d "$android_sdk/platforms/android-36" ]]; then
+    echo "Android platform 36 is unavailable under $android_sdk" >&2
     exit 1
 fi
 if [[ ! -d "$ndk_root" ]]; then
-    echo "Android NDK 27.0.12077973 is unavailable under $android_sdk" >&2
+    echo "Android NDK 28.2.13676358 is unavailable under $android_sdk" >&2
     exit 1
 fi
 for rust_target in x86_64-linux-android aarch64-linux-android; do
@@ -27,14 +37,16 @@ export ANDROID_NDK_HOME="$ndk_root"
 
 "$android_root/gradlew" -p "$android_root" clean
 
+cd "$repository_root"
+
 cargo ndk \
     -t x86_64 \
     -t arm64-v8a \
     -P 28 \
     -o "$generated_root/jniLibs" \
-    build --release -p rstorrent-android --lib
+    build --locked --release -p rstorrent-android --lib
 
-cargo build -p rstorrent-android --lib
+cargo build --locked -p rstorrent-android --lib
 case "$(uname -s)" in
     Darwin)
         bindgen_library="$repository_root/target/debug/librstorrent_android.dylib"
@@ -51,7 +63,7 @@ if [[ ! -f "$bindgen_library" ]]; then
     echo "UniFFI bindgen library is unavailable at $bindgen_library" >&2
     exit 1
 fi
-cargo run \
+cargo run --locked \
     -p rstorrent-android \
     --features bindgen \
     --bin rstorrent-uniffi-bindgen \
@@ -62,7 +74,7 @@ cargo run \
     --language kotlin \
     --out-dir "$generated_root/source/uniffi" \
     --no-format
-cargo run \
+cargo run --locked \
     -p rstorrent-android \
     --features bindgen \
     --bin rstorrent-uniffi-bindgen \
@@ -74,11 +86,20 @@ cargo run \
     --out-dir "$generated_root/source/uniffi" \
     --no-format
 
-"$android_root/gradlew" -p "$android_root" assembleDebug testDebugUnitTest
+if [[ "$build_mode" == release ]]; then
+    "$android_root/gradlew" -p "$android_root" assembleRelease bundleRelease testReleaseUnitTest lintRelease
+else
+    "$android_root/gradlew" -p "$android_root" assembleDebug testDebugUnitTest
+fi
 
-apk="$android_root/app/build/outputs/apk/debug/app-debug.apk"
+apk="$android_root/app/build/outputs/apk/$build_mode/app-$build_mode.apk"
 if [[ ! -f "$apk" ]]; then
-    echo "Android client APK was not created at $apk" >&2
+    echo "Android APK was not created at $apk" >&2
     exit 1
 fi
 echo "$apk"
+if [[ "$build_mode" == release ]]; then
+    bundle="$android_root/app/build/outputs/bundle/release/app-release.aab"
+    test -f "$bundle"
+    echo "$bundle"
+fi

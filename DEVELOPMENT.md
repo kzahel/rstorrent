@@ -1286,3 +1286,10 @@ reading. The ignored checkouts are not RSTorrent dependencies.
 Reference implementations do not determine RSTorrent architecture. Follow the
 policy in [`docs/references.md`](docs/references.md) before adapting source,
 fixtures, or test data.
+
+## Android Release Automation
+
+[`docs/android-release.md`](docs/android-release.md) owns the independent
+canary tag/version workflow, pinned Android toolchain, signing setup, and
+artifact checks. `clients/android/build.sh release` builds the signed APK/AAB
+and runs release JVM tests and lint when signing environment variables exist.

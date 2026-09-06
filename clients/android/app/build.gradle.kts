@@ -8,18 +8,31 @@ plugins {
 
 android {
     namespace = "org.rstorrent.bootstrap"
-    compileSdk = 35
+    compileSdk = 36
+    ndkVersion = "28.2.13676358"
 
     defaultConfig {
-        applicationId = "org.rstorrent.bootstrap"
+        applicationId = "com.jstorrent.rstorrent"
         minSdk = 28
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
-        versionName = "0.1"
+        versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
             abiFilters += listOf("x86_64", "arm64-v8a")
+        }
+    }
+
+    signingConfigs {
+        create("release") {
+            val keyPath = providers.environmentVariable("UPLOAD_KEYSTORE_PATH").orNull
+            if (keyPath != null) {
+                storeFile = file(keyPath)
+                storePassword = providers.environmentVariable("UPLOAD_KEYSTORE_PASSWORD").orNull
+                keyAlias = providers.environmentVariable("UPLOAD_KEY_ALIAS").orNull
+                keyPassword = providers.environmentVariable("UPLOAD_KEY_PASSWORD").orNull
+            }
         }
     }
 
@@ -29,6 +42,7 @@ android {
             isPseudoLocalesEnabled = true
         }
         release {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
@@ -49,6 +63,12 @@ android {
     buildFeatures {
         buildConfig = true
         compose = true
+    }
+}
+
+androidComponents {
+    onVariants(selector().withBuildType("debug")) { variant ->
+        variant.applicationId.set("org.rstorrent.bootstrap")
     }
 }
 
@@ -103,4 +123,20 @@ dependencies {
     androidTestImplementation("androidx.test:core-ktx:1.6.1")
     androidTestImplementation("androidx.test:rules:1.6.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
+}
+
+// AGP otherwise permits an unsigned release when no storeFile is configured.
+val requireReleaseSigning by tasks.registering {
+    doLast {
+        for (name in listOf("UPLOAD_KEYSTORE_PATH", "UPLOAD_KEYSTORE_PASSWORD", "UPLOAD_KEY_ALIAS", "UPLOAD_KEY_PASSWORD")) {
+            require(!providers.environmentVariable(name).orNull.isNullOrBlank()) {
+                "Release builds require $name; unsigned/debug-key fallback is disabled"
+            }
+        }
+    }
+}
+tasks.configureEach {
+    if (name == "preReleaseBuild") {
+        dependsOn(requireReleaseSigning)
+    }
 }

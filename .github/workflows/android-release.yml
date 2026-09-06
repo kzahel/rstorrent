@@ -1,0 +1,129 @@
+name: Android Release
+
+on:
+  push:
+    tags: ['android-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  build:
+    name: Signed Android APK and App Bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Validate release source
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_*android*.py'
+          if [[ "$REF_TYPE" == tag ]]; then
+            scripts/release-android.sh --check --tag "$RELEASE_TAG" > "$RUNNER_TEMP/release-notes.md"
+          else
+            scripts/release-android.sh --check > "$RUNNER_TEMP/release-notes.md"
+          fi
+
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: dtolnay/rust-toolchain@889fac408b4da0905346410f253f0c55fbcb6613 # 1.97.0
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+
+      - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7 # v2.9.2
+        with:
+          shared-key: android-release-ubuntu-24.04
+
+      - uses: gradle/actions/setup-gradle@f236b35da9d031e13b1005234ebe4392ed54c580 # v5.0.0
+
+      - name: Install pinned Android tooling
+        run: |
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+            'platforms;android-36' 'build-tools;35.0.0' 'ndk;28.2.13676358'
+          cargo install cargo-ndk --version 4.1.2 --locked
+          curl --fail --location --retry 3 \
+            https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar \
+            -o "$RUNNER_TEMP/bundletool.jar"
+          echo "a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29  $RUNNER_TEMP/bundletool.jar" | sha256sum --check
+
+      - name: Build signed release and run Android checks
+        env:
+          UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: |
+          for name in UPLOAD_KEYSTORE_BASE64 UPLOAD_KEYSTORE_PASSWORD UPLOAD_KEY_ALIAS UPLOAD_KEY_PASSWORD; do
+            if [[ -z "${!name}" ]]; then echo "::error::Missing $name"; exit 1; fi
+          done
+          umask 077
+          export UPLOAD_KEYSTORE_PATH="$RUNNER_TEMP/android-upload.keystore"
+          trap 'rm -f "$UPLOAD_KEYSTORE_PATH"' EXIT
+          printf '%s' "$UPLOAD_KEYSTORE_BASE64" | base64 --decode > "$UPLOAD_KEYSTORE_PATH"
+          clients/android/build.sh release
+
+      - name: Verify and stage release artifacts
+        run: |
+          python3 scripts/validate-android-release.py --bundletool "$RUNNER_TEMP/bundletool.jar"
+          VERSION=$(python3 -c 'import re; from pathlib import Path; print(re.search(r"versionName = \"([^\"]+)\"", Path("clients/android/app/build.gradle.kts").read_text())[1])')
+          mkdir -p "$RUNNER_TEMP/android-release"
+          cp clients/android/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/android-release/rstorrent-android-$VERSION.apk"
+          cp clients/android/app/build/outputs/bundle/release/app-release.aab "$RUNNER_TEMP/android-release/rstorrent-android-$VERSION.aab"
+          cp "$RUNNER_TEMP/release-notes.md" "$RUNNER_TEMP/android-release/RELEASE-NOTES.md"
+          cd "$RUNNER_TEMP/android-release"
+          sha256sum ./*.apk ./*.aab > SHA256SUMS
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-release-${{ github.run_id }}
+          path: ${{ runner.temp }}/android-release/
+          if-no-files-found: error
+          retention-days: 14
+          overwrite: true
+
+      - name: Retain failure reports
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-release-failure-${{ github.run_id }}
+          path: clients/android/app/build/reports/
+          retention-days: 7
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/android-v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: android-release-${{ github.run_id }}
+          path: release
+      - name: Publish downloadable canary prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: |
+          cd release
+          sha256sum --check SHA256SUMS
+          gh release create "$RELEASE_TAG" --verify-tag --prerelease --latest=false \
+            --title "RSTorrent Android ${RELEASE_TAG#android-v}" \
+            --notes-file RELEASE-NOTES.md ./*.apk ./*.aab SHA256SUMS

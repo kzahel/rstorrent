@@ -590,6 +590,19 @@ is still pending and is not the compatibility oracle.
 
 ## Android/ChromeOS Beta Checklist
 
+Tactical [`210`](../tactical/210-android-play-canary-setup.md) records the
+maintainer-authorized separate Play canary setup begun on 2026-09-06. The
+RSTorrent Canary app is created with `com.jstorrent.rstorrent`; nine of eleven
+setup tasks are complete. The adapted listing, reused icon/phone screenshots,
+and canary banner are saved ready to send for review. The maintainer subsequently reports completing the remaining console forms.
+The authorized release follow-up adds the tag/version workflow and dedicated
+upload signing identity, and locally verifies a signed API-36 dual-ABI APK/AAB
+with 16 KiB packaging. The [Android runbook](../android-release.md) owns the
+commands and signing backup procedure. Hosted workflow and installed Play
+qualification are recorded separately; no Play upload or rollout was performed
+by this follow-up. AND-002 through AND-005 retain their remaining qualification
+requirements.
+
 This checklist owns the independent RSTorrent Android beta lane. Updating the
 installed `com.jstorrent.app` product is a stronger and separately authorized
 operation; [`android-jstorrent-replacement.md`](android-jstorrent-replacement.md)

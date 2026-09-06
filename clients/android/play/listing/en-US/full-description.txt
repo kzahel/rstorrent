@@ -1,0 +1,10 @@
+RSTorrent Canary is an experimental BitTorrent client for Android and ChromeOS from the developer of JSTorrent. It previews a new Rust-based torrent engine in a separate app that can be installed alongside JSTorrent.
+
+Features:
+• Download torrents directly on your phone, tablet, or Chromebook
+• Add torrents via magnet links or .torrent files
+• Background downloading with progress notifications
+• Choose which files to download
+• Pause, resume, and manage your transfers
+
+This is an early canary release for testing and feedback. Features and saved app state may change between releases. It does not replace your existing JSTorrent installation or migrate its downloads.
