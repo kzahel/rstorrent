@@ -1,10 +1,11 @@
 # Tactical 210: Android Play Canary Setup
 
-Status: **Preparation in progress as of 2026-09-06.** The maintainer authorized
-a separate Play listing, browser work in the logged-in console, and reuse of
-JSTorrent assets/settings. The separate app is created and Play Console reports 9 of 11 setup tasks
-complete. The store listing is saved as ready to send for review. Content
-rating and Data safety remain incomplete; no release has been submitted.
+Status: **Release automation complete, verified 2026-09-07.** The separate
+Play listing exists, and the maintainer
+reports completing its remaining forms. A dedicated upload key is backed up
+locally and configured in GitHub. Signed APK/AAB checks pass locally, in
+the manual hosted rehearsal, and in the published `android-v0.1.0` release.
+No Play upload or rollout was performed here.
 
 Topic: `beta-release-readiness`
 
@@ -18,7 +19,9 @@ track, or record concrete external blockers without claiming publication.
 
 This does not replace `com.jstorrent.app`, migrate its state, publish an
 extension, change engine architecture, or imply supported-beta graduation.
-No commit, push, or tag is authorized by this setup request.
+The subsequent maintainer-approved release-automation follow-up authorizes
+implementation, CI setup, and the initial GitHub canary release. Play rollout
+remains outside this follow-up.
 
 ## Dependencies, Invariants, And Validation
 
@@ -30,7 +33,8 @@ client topics before implementation. Tactical 208 and
 
 - Keep JSTorrent's existing listing and production release unchanged.
 - Created listing name: **RSTorrent Canary**. Registered application ID:
-  `com.jstorrent.rstorrent`. The Android build still needs this release ID.
+  `com.jstorrent.rstorrent`. Release builds now use this ID; debug builds retain
+  `org.rstorrent.bootstrap` for the existing test harnesses.
 - Keep all signing secrets outside version control and public documentation.
 - Store declarations must describe the actual release. A copied answer is a
   comparison baseline, not evidence of RSTorrent's behavior.
@@ -106,7 +110,7 @@ maintainer's explicit confirmation:
   Automatic protection, countries, signing, and track settings remain to be
   compared when preparing the release.
 
-## Candidate Gaps And Restart Checkpoint
+## Initial Console-Setup Checkpoint (Superseded By Follow-up)
 
 - Content rating: contact and All Other App Types category are prepared.
   The separate IARC Terms of Use acceptance question remains pending; do not
@@ -203,6 +207,27 @@ Validation completed:
   scanning the full CI file; it finds no issue in the new Android workflow.
 
 No engine logic or shared application contract changed. Minification remains
-disabled deliberately for the canary. Hosted workflow evidence follows the
-implementation push; Play installation and 16 KiB runtime qualification remain
+disabled deliberately for the canary. The hosted rehearsal and tagged release
+both passed; Play installation and 16 KiB runtime qualification remain
 separate platform evidence.
+
+### Hosted Release Completion
+
+Verified on 2026-09-07:
+
+- [Manual rehearsal 34037979177](https://github.com/kzahel/rstorrent/actions/runs/34037979177)
+  completed successfully and uploaded the signed APK/AAB Actions artifact.
+- [Tagged run 34039237324](https://github.com/kzahel/rstorrent/actions/runs/34039237324)
+  passed both the signed-build job and publication job for `android-v0.1.0`.
+- [Android 0.1.0](https://github.com/kzahel/rstorrent/releases/tag/android-v0.1.0)
+  is a published GitHub prerelease with APK, AAB, and SHA256SUMS. Downloaded
+  release artifacts match their published checksums. This is GitHub
+  publication, not a Google Play rollout.
+- The portable local signing-backup ZIP was checked against all four source
+  files. The key directory is 0700; files and the ZIP are 0600. Private key
+  material and passwords remain outside version control.
+
+The approved release-automation stopping condition is met. Future Android
+versions use the release helper and changelog described in the runbook.
+Store installation, upgrade/coexistence qualification, and a Play rollout
+remain explicit subsequent release actions.

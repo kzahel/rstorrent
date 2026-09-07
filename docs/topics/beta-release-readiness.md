@@ -592,16 +592,20 @@ is still pending and is not the compatibility oracle.
 
 Tactical [`210`](../tactical/210-android-play-canary-setup.md) records the
 maintainer-authorized separate Play canary setup begun on 2026-09-06. The
-RSTorrent Canary app is created with `com.jstorrent.rstorrent`; nine of eleven
-setup tasks are complete. The adapted listing, reused icon/phone screenshots,
-and canary banner are saved ready to send for review. The maintainer subsequently reports completing the remaining console forms.
+RSTorrent Canary app is created with `com.jstorrent.rstorrent`; the initial
+console pass completed nine of eleven setup tasks, and the maintainer reports
+completing the remaining forms. The adapted listing, reused icon/screenshots,
+and canary banner are saved.
+
 The authorized release follow-up adds the tag/version workflow and dedicated
-upload signing identity, and locally verifies a signed API-36 dual-ABI APK/AAB
-with 16 KiB packaging. The [Android runbook](../android-release.md) owns the
-commands and signing backup procedure. Hosted workflow and installed Play
-qualification are recorded separately; no Play upload or rollout was performed
-by this follow-up. AND-002 through AND-005 retain their remaining qualification
-requirements.
+upload signing identity. Both the manual rehearsal and
+[tagged Android 0.1.0 workflow](https://github.com/kzahel/rstorrent/actions/runs/34039237324)
+passed; the signed API-36 dual-ABI APK/AAB is available in the
+[GitHub prerelease](https://github.com/kzahel/rstorrent/releases/tag/android-v0.1.0).
+Signatures, expected certificate, manifest, ABIs, and 16 KiB packaging were
+verified. The [Android runbook](../android-release.md) owns release commands
+and the local signing backup procedure. No Play upload, rollout, or installed
+qualification was performed by this follow-up.
 
 This checklist owns the independent RSTorrent Android beta lane. Updating the
 installed `com.jstorrent.app` product is a stronger and separately authorized
@@ -616,11 +620,13 @@ disposition of current JSTorrent Android features.
   `clients/android` without splitting these owners.
 - [ ] **AND-002 — Freeze application identity and upgrade semantics.** The beta
   is a distinct RSTorrent listing rather than an update/replacement for
-  `com.jstorrent.app`; select its durable package ID and exercise data/state
-  coexistence without silently claiming the existing identity.
-- [ ] **AND-003 — Create a signed release App Bundle.** Configure release
-  signing through protected CI/store credentials, version code/name checks,
-  minification/resource rules, mapping retention, and artifact inspection.
+  `com.jstorrent.app`. Its durable package is now `com.jstorrent.rstorrent`;
+  installed data/state coexistence still needs qualification.
+- [x] **AND-003 — Create a signed release App Bundle.** Tactical `210`
+  configures dedicated upload signing, protected CI secrets, version code/name
+  checks, and signed artifact inspection. Android `0.1.0` passes the hosted
+  release pipeline. Minification remains deliberately disabled for the canary,
+  so no mapping file is produced or implied.
 - [ ] **AND-004 — Qualify the closed-testing channel.** Install from the store
   on representative Android and ChromeOS devices, prove store replacement from
   a disposable older fixture without requiring state retention, complete the

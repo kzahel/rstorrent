@@ -7,6 +7,12 @@ The Android Release workflow builds both arm64-v8a and x86_64, runs release
 JVM tests and lint, and verifies signed APK/AAB artifacts before publication.
 Google Play upload and rollout remain manual.
 
+The first verified release is
+[Android 0.1.0](https://github.com/kzahel/rstorrent/releases/tag/android-v0.1.0)
+(versionCode 1). Its
+[tagged workflow](https://github.com/kzahel/rstorrent/actions/runs/34039237324)
+passed build, signature/packaging validation, and prerelease publication.
+
 ## Release A Version
 
 Add a nonempty `## [0.1.1]` section to `clients/android/CHANGELOG.md` and
@@ -61,7 +67,7 @@ A dedicated RSTorrent upload key is configured in these repository secrets:
 
 The maintainer's local backup contains `upload.keystore`, `signing.env`,
 `upload-certificate.pem`, and `README.txt`. Back up the entire directory to
-secure storage; `signing.env` contains the passwords. Keep it outside Git.
+secure storage; `signing.env` contains the passwords. Keep it outside Git. A portable backup ZIP contains the same four files.
 The setup handoff supplies its actual local path. Directory permissions are
 0700 and files 0600. CI decodes the key into its temporary directory and
 removes it when the signing step exits, including on ordinary failure.
