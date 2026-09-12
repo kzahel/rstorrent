@@ -2,6 +2,11 @@
 
 Topic: `localization`
 
+Tactical `216` adds thirteen English messages for the local support preview,
+copy/download and public-report guidance. Machine-readable report keys remain
+verbatim diagnostics. All web, desktop, Android and iOS catalog checks pass;
+no shipping locale or translation provenance changes.
+
 Status: **Foundation complete as of 2026-09-01.** Tactical
 [`204`](../tactical/204-cross-product-localization-foundation.md) completed
 English extraction and qualification across the shared React product, Tauri,

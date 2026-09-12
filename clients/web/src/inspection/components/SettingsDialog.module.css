@@ -121,6 +121,28 @@
   gap: var(--ui-space-lg);
 }
 
+.diagnosticsPreview {
+  display: grid;
+  min-width: 0;
+  gap: var(--ui-space-sm);
+  margin-top: var(--ui-space-md);
+}
+
+.diagnosticsPreview textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  resize: vertical;
+  border: 1px solid var(--border-soft);
+  border-radius: 0.5rem;
+  padding: var(--ui-space-sm);
+  color: var(--text-primary);
+  background: var(--surface-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--ui-font-small);
+  line-height: 1.45;
+}
+
 .releaseFacts {
   display: grid;
   gap: var(--ui-space-xs);

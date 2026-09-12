@@ -2,6 +2,12 @@
 
 Topic: `web-ui-design`
 
+Tactical [`216`](../tactical/216-local-support-diagnostics-and-release-baseline.md)
+adds the About support report with an explicit immutable preview, copy/manual
+fallback/download, and no-context issue links. The 320/1440-pixel light/dark
+matrix has no horizontal overflow or serious/critical Axe findings; users
+review exactly what they copy or download before public submission.
+
 Status: Product, presentation, application-view, and client-store direction
 accepted. Completed direct-storage Tactical
 [`191`](../tactical/191-direct-filesystem-storage.md) removes

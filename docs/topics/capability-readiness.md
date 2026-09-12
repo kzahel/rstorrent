@@ -2,6 +2,15 @@
 
 Topic: `capability-readiness`
 
+Completed local Tactical
+[`216`](../tactical/216-local-support-diagnostics-and-release-baseline.md)
+adds bounded local diagnostics preview/copy/download and support/privacy/
+recovery guidance. Web type/build/localization, 386 unit tests and four
+phone/wide light/dark browser cases pass. The supported-baseline proposal is
+prepared without selecting a version. Remaining campaign actions are explicit
+GLib source-maintenance direction, hosted confirmation after authorized push,
+platform notice closure and a repaired signed Windows candidate.
+
 Local Tactical [`214`](../tactical/214-release-dependency-and-artifact-review.md)
 adds compatible dependency repairs, an expiring warning inventory, all-five-
 target Rust/npm notices and installed/extracted package inspection. The real
@@ -965,11 +974,15 @@ exactly.
 
 ### Active
 
-- Confirm the hosted evidence for locally completed **Tactical `211`** after
-  an authorized push: companion diagnostic URL validation, deterministic
-  pure-v2 test reconciliation, independent web/extension/release-tool jobs,
-  and Cargo build timing artifacts. Local workspace and browser gates pass;
-  production engine behavior and platform semantics remain unchanged.
+- Confirm hosted evidence for locally completed **Tacticals `211`–`216`**
+  after an authorized push: companion/pure-v2 regressions, application
+  lifecycle and scheduled recovery matrix, owned Android runtime, native
+  session recovery, package notices and local diagnostics. Retain build timing
+  and bounded evidence. Local passes do not establish exact hosted success.
+- Resolve **Tactical `214`**'s explicit GTK3 source-maintenance decision using
+  the prepared negative/fixed optimized probe and patch. Complete native
+  platform notice coverage for the package lanes to be declared; the tagged
+  advisory gate remains closed while its blocker is unresolved.
 - Finish release qualification for **Tactical `208`**. The closed native
   store/outbox, desktop and Android presentation, updater migration, and MV3
   uninstall owner are implemented. A separately authorized hosted deployment
@@ -988,10 +1001,11 @@ exactly.
   payload. The current-host production verifier plus native Windows and Linux
   ARM64 builds pass. An independent-network selected pair and a real streaming
   save picker remain open.
-- Resume **Tactical `158`** and close the clean Windows and Linux x86_64
-  signed replacement/relaunch evidence plus Windows firewall-consent
-  characterization. Prove clean launch or bounded reset and payload safety,
-  not retention of disposable `0.1.x` application state.
+- Finish **Tactical `158`** with a repaired signed Windows automatic
+  old-catalog reset/relaunch and pre-update payload sentinel. Public Linux
+  x86_64 0.1.1 → 0.1.3 update/picker/relaunch/removal and Windows firewall
+  Cancel now pass. Visible GNOME tray presentation remains evidence-limited.
+  Prove payload safety without requiring disposable incubation-state retention.
 
 ### Blocked
 
@@ -1005,10 +1019,12 @@ exactly.
 
 ### Ready
 
-- Declare the future first supported version and freeze its fresh application
-  identities and persistence/API baseline only from that version forward.
-  Complete changelog, privacy/support presentation, and the repeatable beta
-  torrent cohort without migrating `0.1.x` state.
+- Explicitly select the future first supported version and freeze only its
+  fresh persistence/API baseline after the prepared candidate inventory and
+  compatibility matrix pass. Tactical `216` supplies local diagnostics and
+  support/recovery guidance; Tactical `212` supplies the controlled lifecycle
+  cohort. Public privacy deployment, platform qualification and broader beta
+  cohort coverage remain separate gates; no `0.1.x` migration is required.
 
 ### Later
 

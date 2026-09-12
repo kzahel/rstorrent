@@ -2,6 +2,13 @@
 
 Topic: `client-persistence`
 
+The [first-supported baseline proposal](../release-baseline.md), prepared by
+Tactical `216`, inventories candidate authorities and the required forward,
+rollback, interrupted reset, hostile catalog, root loss and payload matrix.
+It deliberately freezes no current schema or version. `0.1.x` remains
+unsupported and disposable; the explicit future declaration starts the
+compatibility obligation.
+
 Completed Tactical [`215`](../tactical/215-windows-incubation-reset-recovery.md)
 repairs Windows error 5 during recognized old-catalog reset. Unix retains its
 directory barrier; Windows retains flushed marker/SQLite process-recovery

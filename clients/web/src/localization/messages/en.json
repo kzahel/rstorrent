@@ -63,13 +63,13 @@
     "defaultMessage": "Checking for updates",
     "description": "Product copy in inspection/components/AboutUpdatesSettingsSection.tsx"
   },
-  "inspection.components.about.updates.settings.section.checks.include.a.random.resettable.installation.identifier": {
-    "defaultMessage": "Checks include a random resettable installation identifier used only to estimate active installations.",
-    "description": "Product copy in inspection/components/AboutUpdatesSettingsSection.tsx"
-  },
   "inspection.components.about.updates.settings.section.checks.follow.the.usage.statistics.preference": {
     "defaultMessage": "Checks include the random resettable installation identifier only when the usage statistics preference permits it.",
     "description": "Preference-controlled desktop update counting disclosure"
+  },
+  "inspection.components.about.updates.settings.section.checks.include.a.random.resettable.installation.identifier": {
+    "defaultMessage": "Checks include a random resettable installation identifier used only to estimate active installations.",
+    "description": "Product copy in inspection/components/AboutUpdatesSettingsSection.tsx"
   },
   "inspection.components.about.updates.settings.section.contacting.the.rstorrent.update.service": {
     "defaultMessage": "Contacting the RSTorrent update service.",
@@ -5042,5 +5042,57 @@
   "shell.remote.title": {
     "defaultMessage": "RSTorrent remote access",
     "description": "Remote product browser title"
+  },
+  "support.diagnostics.copied": {
+    "defaultMessage": "Diagnostics copied.",
+    "description": "Local support report and privacy guidance in About settings"
+  },
+  "support.diagnostics.copy": {
+    "defaultMessage": "Copy diagnostics",
+    "description": "Local support report and privacy guidance in About settings"
+  },
+  "support.diagnostics.description": {
+    "defaultMessage": "Prepare a small report with this build, package and update status. It excludes logs, torrent details, paths, peers and installation identifiers. Nothing is sent automatically.",
+    "description": "Local support report and privacy guidance in About settings"
+  },
+  "support.diagnostics.download": {
+    "defaultMessage": "Download diagnostics",
+    "description": "Local support report and privacy guidance in About settings"
+  },
+  "support.diagnostics.manual": {
+    "defaultMessage": "Clipboard access was unavailable. The report is selected; copy it manually or download it.",
+    "description": "Local support report and privacy guidance in About settings"
+  },
+  "support.diagnostics.prepare": {
+    "defaultMessage": "Prepare diagnostics",
+    "description": "Local support report and privacy guidance in About settings"
+  },
+  "support.diagnostics.preview": {
+    "defaultMessage": "Exact report to copy or download",
+    "description": "Local support report and privacy guidance in About settings"
+  },
+  "support.diagnostics.public.report": {
+    "defaultMessage": "GitHub reports are public. Review your description and attachments before submitting. Opening the report page sends none of these diagnostics.",
+    "description": "Local support report and privacy guidance in About settings"
+  },
+  "support.diagnostics.refresh": {
+    "defaultMessage": "Refresh diagnostics",
+    "description": "Local support report and privacy guidance in About settings"
+  },
+  "support.diagnostics.title": {
+    "defaultMessage": "Support diagnostics",
+    "description": "Local support report and privacy guidance in About settings"
+  },
+  "support.known.issues": {
+    "defaultMessage": "Known issues",
+    "description": "Local support report and privacy guidance in About settings"
+  },
+  "support.privacy.recovery": {
+    "defaultMessage": "Privacy and recovery guidance",
+    "description": "Local support report and privacy guidance in About settings"
+  },
+  "support.report.problem": {
+    "defaultMessage": "Report a problem",
+    "description": "Local support report and privacy guidance in About settings"
   }
 }

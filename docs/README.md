@@ -2,6 +2,12 @@
 
 Documentation is organized by role:
 
+- [`user-support.md`](user-support.md) explains the local diagnostics report,
+  public issue path, privacy and incubation recovery behavior.
+- [`release-baseline.md`](release-baseline.md) prepares the explicit first-
+  supported-version decision and required compatibility evidence without
+  selecting or freezing a version.
+
 - [`vision.md`](vision.md) records the likely long-term product identity and
   succession path from the current JSTorrent implementation.
 - [`engineering-principles.md`](engineering-principles.md) records durable

@@ -93,6 +93,10 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`216-local-support-diagnostics-and-release-baseline.md`](216-local-support-diagnostics-and-release-baseline.md):
+  complete locally; frozen local support export, privacy/recovery guidance
+  and the explicit future baseline proposal; no supported version selected.
+
 - [`214-release-dependency-and-artifact-review.md`](214-release-dependency-and-artifact-review.md):
   locally implemented advisory review, five-target dependency notices and
   package content gates; GLib source maintenance and native notices remain open.

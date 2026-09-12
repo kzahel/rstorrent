@@ -7725,5 +7725,83 @@
       "type": 0,
       "value": "RSTorrent remote access"
     }
+  ],
+  "support.diagnostics.copied": [
+    {
+      "type": 0,
+      "value": "Diagnostics copied."
+    }
+  ],
+  "support.diagnostics.copy": [
+    {
+      "type": 0,
+      "value": "Copy diagnostics"
+    }
+  ],
+  "support.diagnostics.description": [
+    {
+      "type": 0,
+      "value": "Prepare a small report with this build, package and update status. It excludes logs, torrent details, paths, peers and installation identifiers. Nothing is sent automatically."
+    }
+  ],
+  "support.diagnostics.download": [
+    {
+      "type": 0,
+      "value": "Download diagnostics"
+    }
+  ],
+  "support.diagnostics.manual": [
+    {
+      "type": 0,
+      "value": "Clipboard access was unavailable. The report is selected; copy it manually or download it."
+    }
+  ],
+  "support.diagnostics.prepare": [
+    {
+      "type": 0,
+      "value": "Prepare diagnostics"
+    }
+  ],
+  "support.diagnostics.preview": [
+    {
+      "type": 0,
+      "value": "Exact report to copy or download"
+    }
+  ],
+  "support.diagnostics.public.report": [
+    {
+      "type": 0,
+      "value": "GitHub reports are public. Review your description and attachments before submitting. Opening the report page sends none of these diagnostics."
+    }
+  ],
+  "support.diagnostics.refresh": [
+    {
+      "type": 0,
+      "value": "Refresh diagnostics"
+    }
+  ],
+  "support.diagnostics.title": [
+    {
+      "type": 0,
+      "value": "Support diagnostics"
+    }
+  ],
+  "support.known.issues": [
+    {
+      "type": 0,
+      "value": "Known issues"
+    }
+  ],
+  "support.privacy.recovery": [
+    {
+      "type": 0,
+      "value": "Privacy and recovery guidance"
+    }
+  ],
+  "support.report.problem": [
+    {
+      "type": 0,
+      "value": "Report a problem"
+    }
   ]
 }

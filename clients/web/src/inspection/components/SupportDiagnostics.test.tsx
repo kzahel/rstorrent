@@ -1,0 +1,62 @@
+// @vitest-environment jsdom
+import "@testing-library/jest-dom/vitest";
+import { act, cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { DesktopUpdaterSnapshot } from "../updater/types";
+import { SupportDiagnostics } from "./SupportDiagnostics";
+
+const source: DesktopUpdaterSnapshot = {
+  info: { version: "0.1.3", buildId: "abcdef1234567", arch: "aarch64",
+    target: "aarch64-apple-darwin", bundleType: "app" },
+  state: { phase: "error", operation: "check", message: "private token and path" },
+};
+
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+describe("support report preview", () => {
+  it("copies the frozen preview and refreshes only on request", async () => {
+    const user = userEvent.setup();
+    const write = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
+    const view = render(<SupportDiagnostics snapshot={source} />);
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Prepare diagnostics" }));
+    const preview = screen.getByRole("textbox") as HTMLTextAreaElement;
+    const original = preview.value;
+    view.rerender(<SupportDiagnostics snapshot={{ ...source, state: { phase: "checking", reason: "manual" } }} />);
+    expect(preview.value).toBe(original);
+    await user.click(screen.getByRole("button", { name: "Copy diagnostics" }));
+    expect(write).toHaveBeenCalledWith(original);
+    expect(original).not.toContain("private token");
+    await user.click(screen.getByRole("button", { name: "Refresh diagnostics" }));
+    expect(preview.value).not.toBe(original);
+    expect(screen.queryByText("Diagnostics copied.")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Report a problem" })).toHaveAttribute("href", "https://github.com/kzahel/rstorrent/issues/new");
+  });
+
+  it("selects the exact report after clipboard denial without revealing the exception", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(new Error("private clipboard detail"));
+    render(<SupportDiagnostics snapshot={source} />);
+    await user.click(screen.getByRole("button", { name: "Prepare diagnostics" }));
+    await user.click(screen.getByRole("button", { name: "Copy diagnostics" }));
+    const preview = screen.getByRole("textbox") as HTMLTextAreaElement;
+    expect(preview).toHaveFocus();
+    expect(preview.selectionStart).toBe(0);
+    expect(preview.selectionEnd).toBe(preview.value.length);
+    expect(screen.getByRole("status")).toHaveTextContent("copy it manually");
+    expect(screen.queryByText("private clipboard detail")).not.toBeInTheDocument();
+  });
+
+  it("does not mark a refreshed preview copied when an older write finishes", async () => {
+    const user = userEvent.setup();
+    let finish!: () => void;
+    vi.spyOn(navigator.clipboard, "writeText").mockReturnValue(new Promise<void>((resolve) => { finish = resolve; }));
+    render(<SupportDiagnostics snapshot={source} />);
+    await user.click(screen.getByRole("button", { name: "Prepare diagnostics" }));
+    await user.click(screen.getByRole("button", { name: "Copy diagnostics" }));
+    await user.click(screen.getByRole("button", { name: "Refresh diagnostics" }));
+    await act(async () => { finish(); });
+    expect(screen.queryByText("Diagnostics copied.")).not.toBeInTheDocument();
+  });
+});

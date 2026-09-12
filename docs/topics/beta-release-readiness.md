@@ -2,6 +2,16 @@
 
 Topic: `beta-release-readiness`
 
+Locally completed Tactical
+[`216`](../tactical/216-local-support-diagnostics-and-release-baseline.md)
+adds the previewed, bounded local support export and public issue/guidance
+links in desktop/shared-browser About. Hostile input, exact clipboard/download,
+phone/wide light/dark accessibility and full web gates pass. The
+[baseline proposal](../release-baseline.md) prepares the support decision and
+compatibility matrix without selecting a version. REL-005, hosted Tactical
+208 disclosure qualification, exact candidate packaging and publication remain
+open; no automatic upload or context-transmission gate was enabled.
+
 Tactical [`214`](../tactical/214-release-dependency-and-artifact-review.md)
 repairs compatible web advisories and the yanked ChaCha dependency, adds an
 expiring exact-warning review, generates attributable notices for all five
@@ -295,7 +305,9 @@ compatibility and rollback policy declared with that baseline.
   and application-owned formats. No `0.1.x` migration is required. Exercise
   fresh creation, recognized-incubation reset, interrupted reset,
   corrupt/ambiguous/busy/future state, root loss, payload preservation, and the
-  forward/rollback policy that begins with that release.
+  forward/rollback policy that begins with that release. The concrete
+  [candidate inventory and matrix](../release-baseline.md) are prepared; no
+  version or schema has been selected or frozen.
 - [ ] **REL-006 — Define support, privacy, and legal presentation.** Ship
   license/notices, a privacy statement for network behavior and any update
   installation ID, support/report instructions, and a safe diagnostics export
@@ -429,12 +441,16 @@ topology still needs a hosted run after an authorized push.
   settings, roots, selection, verification state, or updater identity; it must
   prove signed replacement, clean launch or bounded reset, and preservation of
   user-selected payload content.
-- [ ] **QA-004 — Establish a crash/support loop.** Users need an accessible
+- [x] **QA-004 — Establish a crash/support loop.** Users need an accessible
   version/build identity, copyable bounded diagnostics, known-issues link, and
   a report path. Automatic crash or analytics upload is not required for beta.
   Tactical `208`'s optional previewed coarse context may improve the report
   path after its hosted release gate is qualified, but it does not replace a
   user-visible diagnostics export or authorize automatic submission.
+  Tactical `216` now supplies the desktop/shared-browser local report and
+  public issue/guidance links with exact preview/copy/download, hostile-input
+  and responsive accessibility evidence. This is current source; public
+  `0.1.3` lacks the new export and candidate installation remains QA-003.
 - [ ] **QA-005 — Review dependencies, notices, and release artifacts.** Verify
   license provenance, dependency advisories, archive contents, absence of
   secrets/development endpoints, and published checksums. All public `0.1.0`
@@ -634,7 +650,10 @@ is still pending and is not the compatibility oracle.
   manual retry/download path, the absence of incubation rollback/state
   compatibility, statistics disable/reset behavior, anonymous checks when the
   disclosed preference is off, and behavior when an update, reset, or metadata
-  service fails.
+  service fails. Tactical `216` adds local support/privacy/recovery guidance
+  including the actual Windows reset failure and observed firewall behavior.
+  Corrected Tactical `208` public hosted pages remain unqualified, so the full
+  public update/privacy gate remains open.
 
 ## Android/ChromeOS Beta Checklist
 

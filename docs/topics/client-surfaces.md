@@ -2,6 +2,14 @@
 
 Topic: `client-surfaces`
 
+Completed local Tactical
+[`216`](../tactical/216-local-support-diagnostics-and-release-baseline.md)
+adds frozen-preview local diagnostics copy/download to desktop/headless About,
+with bounded allowlisted build/update facts and no raw errors, logs, paths or
+identifiers. Four phone/wide light/dark browser cases pass exact byte and
+accessibility checks. Native Android/iOS export remains a separate presentation
+decision; no application API or runtime semantics change.
+
 Locally completed Tactical
 [`213`](../tactical/213-owned-android-runtime-ci.md) promotes the real Android
 SAF selection/restart/recheck/removal cohort into an owned API 35 emulator CI

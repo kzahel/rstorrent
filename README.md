@@ -17,19 +17,14 @@ and [protocol support matrix](docs/topics/protocol-support.md).
   important capabilities and product behavior remain unfinished. The
   [capability readiness record](docs/topics/capability-readiness.md) is the
   authoritative checklist and work queue.
-- **Public incubation releases, not a supported beta.** Signed desktop `0.1.0`
-  and updater-validation `0.1.1` packages are public. Installed macOS arm64,
-  Linux arm64, and bounded Windows updater mechanics have passed, but
-  cross-platform clean-machine gates remain. The Windows fresh-profile defect
-  in those two packages is repaired on `main`; current unsigned Windows
-  x86_64 and Linux arm64 packages also pass the selected single-instance,
-  tray/background, updater-action, and joined-Quit lifecycle. The first signed
-  package carrying those repairs and its installed update proof remain open.
-  Installed external `magnet:`/`.torrent` intake now passes on macOS arm64,
-  Windows x86_64 applications, and Linux arm64 without taking over JSTorrent's
-  inherited macOS default handler.
-  See the
-  [beta release ledger](docs/topics/beta-release-readiness.md).
+- **Public incubation releases, not a supported beta.** Signed desktop
+  `0.1.3` is the current public package. Native Linux x86_64 passes the public
+  `0.1.1` → `0.1.3` update, picker, relaunch and payload-preserving removal.
+  Windows fresh signed startup and firewall Cancel pass, but its older-profile
+  update fails during catalog reset. The source repair passes native tests;
+  a repaired signed update remains unqualified. See the
+  [beta release ledger](docs/topics/beta-release-readiness.md) and
+  [support, privacy and recovery guidance](docs/user-support.md).
 - **Platforms are at different readiness levels.** Desktop/web is the leading
   product and inspection surface. Android is functional with native engine and
   durable storage integration but still has product gaps. A non-latest

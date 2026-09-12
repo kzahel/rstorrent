@@ -6,6 +6,7 @@ import type {
   UpdaterState,
 } from "../updater/types";
 import styles from "./SettingsDialog.module.css";
+import { SupportDiagnostics } from "./SupportDiagnostics";
 
 const RELEASES_URL = "https://github.com/kzahel/rstorrent/releases/latest";
 
@@ -92,13 +93,14 @@ export function AboutUpdatesSettingsSection({
             <a href={RELEASES_URL} rel="noreferrer" target="_blank">{localizedMessage("inspection.components.about.updates.settings.section.open.release.downloads")}</a>
           ) : null}
         </div>
-        <p className={styles.updatePrivacy}>{localizedMessage("inspection.components.about.updates.settings.section.rstorrent.checks.automatically.after.startup.and.about")}{info.checkPrivacy === "anonymous"
+        <p className={styles.updatePrivacy}>{localizedMessage("inspection.components.about.updates.settings.section.rstorrent.checks.automatically.after.startup.and.about")} {info.checkPrivacy === "anonymous"
             ? localizedMessage("inspection.components.about.updates.settings.section.headless.checks.include.no.installation.identifier")
             : info.checkPrivacy === "preference-controlled"
               ? localizedMessage("inspection.components.about.updates.settings.section.checks.follow.the.usage.statistics.preference")
               : localizedMessage("inspection.components.about.updates.settings.section.checks.include.a.random.resettable.installation.identifier")}
         </p>
       </fieldset>
+      <SupportDiagnostics snapshot={snapshot} />
     </div>
   );
 }

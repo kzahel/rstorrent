@@ -2,6 +2,11 @@
 
 Topic: `application-view-api`
 
+Tactical `216`'s local support export consumes only the existing client-side
+updater snapshot and emits its own bounded allowlist. It changes no generated
+application DTO, selector, leased-view delivery, acknowledgement or Rust/native
+ABI. Raw application/log values are not an export authority.
+
 Status: Direct-storage contract replacement completed on 2026-08-29 by
 Tactical [`191`](../tactical/191-direct-filesystem-storage.md). It removes
 publication-only states, progress, reasons, media availability, and

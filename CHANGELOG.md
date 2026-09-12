@@ -6,6 +6,10 @@ three-component versions, and desktop release tags use
 
 ## [Unreleased]
 
+- Add previewed local support diagnostics with exact copy/download, public
+  issue links and privacy/recovery guidance. No logs, paths, torrent data,
+  installation identifiers or automatic submission enter the report.
+
 - Repair Windows startup when resetting a recognized older incubation catalog,
   and run native session recovery tests on every desktop platform.
 - Verify complete download/restart/seeding/corruption-repair lifecycles and

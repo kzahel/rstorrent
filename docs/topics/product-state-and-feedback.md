@@ -2,6 +2,14 @@
 
 Topic: `product-state-and-feedback`
 
+Completed local Tactical `216` adds a separate desktop/shared-browser support
+report containing only allowlisted build/update facts. It exports no product
+identifier, counters or feedback fields, sends nothing automatically, and
+leaves the Tactical 208 hosted-context gates off. The frozen preview, generic
+clipboard-denial fallback and exact download bytes pass browser evidence.
+[User guidance](../user-support.md) explains local reporting versus network
+and updater behavior without claiming the corrected hosted pages are deployed.
+
 Status: Direction accepted on 2026-08-03 and the first bounded implementation
 landed on 2026-09-01 through Tactical
 [`208`](../tactical/208-installation-metrics-and-feedback-parity.md).
