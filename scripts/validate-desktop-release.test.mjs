@@ -302,3 +302,10 @@ function repositoryFixture() {
 function readJson(relativePath) {
   return JSON.parse(fs.readFileSync(path.join(root, relativePath), "utf8"));
 }
+
+
+test("rejects unreviewed package resources", () => {
+  const fixture = repositoryFixture();
+  fixture.tauri.bundle.resources = ["private.env"];
+  assert.throws(() => validateDesktopReleaseConfiguration(fixture), /unreviewed resources/);
+});

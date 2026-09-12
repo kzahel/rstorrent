@@ -1,0 +1,4 @@
+# Existing dependency license expressions, reviewed in Tactical 214.
+# Full upstream notices supplement generated standard texts.
+accepted = ["MIT", "Apache-2.0", "ISC", "BSD-3-Clause", "BSD-2-Clause", "0BSD", "Zlib", "MPL-2.0", "Unicode-3.0", "BSL-1.0", "CC0-1.0", "Unlicense", "OpenSSL", "Apache-2.0 WITH LLVM-exception", "CDLA-Permissive-2.0", "Unicode-DFS-2016"]
+ignore-dev-dependencies = true

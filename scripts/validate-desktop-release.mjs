@@ -74,8 +74,17 @@ export function validateDesktopReleaseConfiguration({
     fail("base config must leave updater artifacts disabled until release CI");
   }
   const expectedExternalBinary = ["binaries/rstorrent-native-host"];
+  const expectedResources = { "binaries/notices/": "notices/" };
+  if (tauri.bundle?.resources !== undefined) {
+    fail("base package must not add unreviewed resources");
+  }
+  for (const overlay of [packageTauri, releaseTauri]) {
+    if (JSON.stringify(overlay.bundle?.resources) !== JSON.stringify(expectedResources)) {
+      fail("package resources must contain only the reviewed dependency notices");
+    }
+  }
   const expectedBeforeBuild =
-    "node ../../scripts/prepare-native-host.mjs --release && npm --prefix ../web run build";
+    "node ../../scripts/prepare-native-host.mjs --release && npm --prefix ../web run build && node ../../scripts/prepare-release-notices.mjs";
   if (
     JSON.stringify(packageTauri.bundle?.externalBin) !==
       JSON.stringify(expectedExternalBinary) ||

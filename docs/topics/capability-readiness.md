@@ -2,6 +2,13 @@
 
 Topic: `capability-readiness`
 
+Local Tactical [`214`](../tactical/214-release-dependency-and-artifact-review.md)
+adds compatible dependency repairs, an expiring warning inventory, all-five-
+target Rust/npm notices and installed/extracted package inspection. The real
+macOS package passes. An optimized native GLib probe reproduces the remaining
+GTK3 advisory and validates a proposed two-line backport; adopting its source
+maintenance remains a decision, and native library notice clearance is open.
+
 Completed local Tactical [`215`](../tactical/215-windows-incubation-reset-recovery.md)
 repairs a Windows catalog-reset startup failure exposed by the actual public
 0.1.1 → 0.1.3 update. Native Windows session (345) and desktop (43) tests pass;

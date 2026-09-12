@@ -67,6 +67,22 @@ jobs:
             .github/scripts/validate-desktop-release.test.mjs \
             .github/scripts/write-release-checksums.test.mjs
 
+      - name: Verify dependency review tools
+        run: python3 -m unittest discover -s scripts -p test_distribution_review.py
+
+      - name: Audit tagged release dependencies
+        if: startsWith(github.ref, 'refs/tags/desktop-v')
+        shell: bash
+        run: |
+          cargo install cargo-audit --locked --version 0.22.2
+          cargo audit --json > "$RUNNER_TEMP/cargo-audit.json" || test "$?" -eq 1
+          npm audit --prefix clients/web --json > "$RUNNER_TEMP/npm-audit.json" || test "$?" -eq 1
+          python3 scripts/review-dependency-audit.py \
+            --cargo "$RUNNER_TEMP/cargo-audit.json" \
+            --npm "$RUNNER_TEMP/npm-audit.json" \
+            --output "$RUNNER_TEMP/dependency-review.json" \
+            --require-release-ready
+
       - name: Validate and package the JSTorrent Beta extension seed
         run: |
           npm test --prefix clients/extension
@@ -265,6 +281,9 @@ jobs:
             echo "__NOTES__"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Install pinned license notice generator
+        run: cargo install cargo-about --locked --version 0.9.2 --features cli
+
       - name: Build signed desktop packages
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
@@ -296,6 +315,7 @@ jobs:
           APP_PATH="target/${{ matrix.rust_target }}/release/bundle/macos/RSTorrent.app"
           test -d "$APP_PATH"
           node scripts/validate-desktop-package.mjs --mac-app "$APP_PATH"
+          python3 scripts/inspect-distribution.py --root "$APP_PATH" --output artifacts/distribution/macos.json
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
           spctl --assess --type execute --verbose=2 "$APP_PATH"
           xcrun stapler validate "$APP_PATH"
@@ -355,6 +375,10 @@ jobs:
               magnetUrlProtocol = $magnet.GetValue('URL Protocol')
               magnetCommand = $magnetCommand.GetValue('')
             } | ConvertTo-Json | Set-Content -LiteralPath "$env:RUNNER_TEMP\rstorrent-registry.json"
+            python scripts/inspect-distribution.py --root $installDirectory --output artifacts/distribution/windows.json
+            if ($LASTEXITCODE -ne 0) {
+              throw "Installed Windows distribution inspection failed"
+            }
             node scripts/validate-desktop-package.mjs --windows-registry-json "$env:RUNNER_TEMP\rstorrent-registry.json"
             if ($LASTEXITCODE -ne 0) {
               throw "Installed Windows activation registry validation failed"
@@ -398,7 +422,17 @@ jobs:
             test -n "$DESKTOP_FILE"
             desktop-file-validate "$DESKTOP_FILE"
             node scripts/validate-desktop-package.mjs --linux-desktop "$DESKTOP_FILE"
+            python3 scripts/inspect-distribution.py --root "$SEARCH_ROOT" --output "artifacts/distribution/linux-$kind.json"
           done
+
+      - name: Retain distribution inventories
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: distribution-${{ runner.os }}-${{ matrix.rust_target }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/distribution/*.json
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Retain manual rehearsal packages
         if: github.event_name == 'workflow_dispatch'

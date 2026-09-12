@@ -93,6 +93,10 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`214-release-dependency-and-artifact-review.md`](214-release-dependency-and-artifact-review.md):
+  locally implemented advisory review, five-target dependency notices and
+  package content gates; GLib source maintenance and native notices remain open.
+
 - [`215-windows-incubation-reset-recovery.md`](215-windows-incubation-reset-recovery.md):
   complete locally; Windows reset barrier, isolated native session tests and
   signed desktop qualification evidence. Repaired signed update remains open.

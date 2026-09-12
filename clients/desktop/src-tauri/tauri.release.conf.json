@@ -1,9 +1,14 @@
 {
   "build": {
-    "beforeBuildCommand": "node ../../scripts/prepare-native-host.mjs --release && npm --prefix ../web run build"
+    "beforeBuildCommand": "node ../../scripts/prepare-native-host.mjs --release && npm --prefix ../web run build && node ../../scripts/prepare-release-notices.mjs"
   },
   "bundle": {
     "createUpdaterArtifacts": true,
-    "externalBin": ["binaries/rstorrent-native-host"]
+    "externalBin": [
+      "binaries/rstorrent-native-host"
+    ],
+    "resources": {
+      "binaries/notices/": "notices/"
+    }
   }
 }

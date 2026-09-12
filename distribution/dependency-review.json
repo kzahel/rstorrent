@@ -1,0 +1,57 @@
+{
+  "schema": 1,
+  "reviewed_at": "2026-09-12",
+  "review_expires": "2026-10-12",
+  "warnings": [
+    {
+      "kind": "unmaintained",
+      "advisory": "RUSTSEC-2024-0370",
+      "package": "proc-macro-error",
+      "version": "1.0.4"
+    },
+    {
+      "kind": "unmaintained",
+      "advisory": "RUSTSEC-2025-0081",
+      "package": "unic-char-property",
+      "version": "0.9.0"
+    },
+    {
+      "kind": "unmaintained",
+      "advisory": "RUSTSEC-2025-0075",
+      "package": "unic-char-range",
+      "version": "0.9.0"
+    },
+    {
+      "kind": "unmaintained",
+      "advisory": "RUSTSEC-2025-0080",
+      "package": "unic-common",
+      "version": "0.9.0"
+    },
+    {
+      "kind": "unmaintained",
+      "advisory": "RUSTSEC-2025-0100",
+      "package": "unic-ucd-ident",
+      "version": "0.9.0"
+    },
+    {
+      "kind": "unmaintained",
+      "advisory": "RUSTSEC-2025-0098",
+      "package": "unic-ucd-version",
+      "version": "0.9.0"
+    },
+    {
+      "kind": "unsound",
+      "advisory": "RUSTSEC-2024-0429",
+      "package": "glib",
+      "version": "0.18.5"
+    }
+  ],
+  "release_blockers": [
+    {
+      "advisory": "RUSTSEC-2024-0429",
+      "package": "glib",
+      "version": "0.18.5",
+      "reason": "Tauri GTK3 dependencies retain the affected VariantStrIter implementation. No direct application use was found, but transitive unreachability is not established. A maintained upstream fix or an explicitly approved, validated backport is required before clearing this blocker."
+    }
+  ]
+}

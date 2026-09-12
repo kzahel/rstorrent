@@ -51,10 +51,10 @@ Notable distribution considerations in the current dependency graph include:
 - `keepawake` 0.6.1 is used only on macOS and Windows under its MIT license to
   hold and release the native user-idle/system execution assertion while
   download or verification work is active.
-- The optional default-off `direct-file-webrtc` build uses the `rtc` 0.20.4
+- The desktop default-enabled `direct-file-webrtc` feature uses the `rtc` 0.20.4
   crate family under its MIT OR Apache-2.0 terms and Ring 0.17.14 under Apache
-  2.0 AND ISC. It is not present in ordinary release graphs unless the feature
-  is selected.
+  2.0 AND ISC. It is present in ordinary desktop release graphs; non-desktop feature
+  defaults must be checked independently.
 - `net.java.dev.jna:jna:5.17.0` is used under its Apache-2.0 option.
 - Some Rust and npm packages are MPL-2.0 licensed.
 - Linux desktop packages may use WebKitGTK and GTK system libraries under
@@ -66,3 +66,22 @@ the Apache-2.0 text for JNA and other shipped Apache components, the license
 texts for shipped MPL-2.0 components, and any notices required by bundled
 platform libraries. A source checkout's root license and this notice are not
 by themselves a complete binary dependency notice bundle.
+
+
+Tactical `214` adds `scripts/prepare-release-notices.py` and the pinned
+cargo-about 0.9.2 generator. Desktop package/release overlays include its
+Rust/npm texts and lockfile-bound manifest in `notices/`; the package inspector
+verifies the embedded text checksum. `distribution/licenses/` contains exact
+upstream license documents with source revisions and checksums for crates
+whose published archives omit them. Those texts retain their upstream terms.
+CRC32C's additional Zlib-derived component attribution is included separately.
+Reviewed manifest-only grants are explicitly distinguished from original
+upstream notices; no copyright owner is invented.
+
+The generator covers the target's default-feature Rust graph (including
+build dependencies), web production dependencies and Ajv standalone code
+generation. It does not claim to inventory Android Maven/AAR dependencies or
+all native libraries bundled by AppImage tooling. Distribution review must
+reconcile those platform components against the saved package inventories
+before a supported release. See `distribution/dependency-review.json` for
+currently unresolved advisory blockers and its expiring review date.

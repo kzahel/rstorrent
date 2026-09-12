@@ -6,6 +6,15 @@ three-component versions, and desktop release tags use
 
 ## [Unreleased]
 
+- Repair Windows startup when resetting a recognized older incubation catalog,
+  and run native session recovery tests on every desktop platform.
+- Verify complete download/restart/seeding/corruption-repair lifecycles and
+  schedule broader storage recovery and owned Android SAF runtime coverage.
+- Repair completed oversized-file seed admission, paused recheck Resume
+  queue admission, and Android phone file-selection confirmation layout.
+- Update compatible dependency fixes, generate desktop dependency notices,
+  and gate package contents and expiring advisory review before release.
+
 - Add a resettable pseudonymous installation identifier and exact local
   addition, download-completion, and foreground-session counters. Desktop and
   Android disclose the behavior, provide durable disable/reset controls, and

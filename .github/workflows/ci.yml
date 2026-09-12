@@ -150,6 +150,9 @@ jobs:
             .github/scripts/validate-desktop-release.test.mjs \
             .github/scripts/write-release-checksums.test.mjs
 
+      - name: Verify dependency and distribution review tools
+        run: python3 -m unittest discover -s scripts -p test_distribution_review.py
+
       - name: Validate Crostini bootstrap release tools
         run: |
           bash scripts/test-crostini-installer.sh
@@ -320,6 +323,9 @@ jobs:
           windows_native_local_network_selection_returns_an_eligible_route
           --lib
 
+      - name: Install pinned license notice generator
+        run: cargo install cargo-about --locked --version 0.9.2 --features cli
+
       - name: Build one unsigned native package
         working-directory: clients/desktop
         shell: bash
@@ -346,6 +352,7 @@ jobs:
               "$APPIMAGE" --appimage-extract >/dev/null
               test -x squashfs-root/usr/bin/rstorrent-native-host
               node scripts/smoke-native-host.mjs squashfs-root/usr/bin/rstorrent-native-host
+              python3 scripts/inspect-distribution.py --root squashfs-root --output artifacts/distribution/linux.json
               rm -rf squashfs-root
               ;;
           esac
@@ -357,6 +364,7 @@ jobs:
           APP_PATH=$(find target/release/bundle/macos -maxdepth 1 -type d -name '*.app' -print -quit)
           test -n "$APP_PATH"
           node scripts/validate-desktop-package.mjs --mac-app "$APP_PATH"
+          python3 scripts/inspect-distribution.py --root "$APP_PATH" --output artifacts/distribution/macos.json
 
       - name: Verify installed Windows activation registry
         if: runner.os == 'Windows'
@@ -396,6 +404,10 @@ jobs:
               magnetUrlProtocol = $magnet.GetValue('URL Protocol')
               magnetCommand = $magnetCommand.GetValue('')
             } | ConvertTo-Json | Set-Content -LiteralPath "$env:RUNNER_TEMP\rstorrent-registry.json"
+            python scripts/inspect-distribution.py --root $installDirectory --output artifacts/distribution/windows.json
+            if ($LASTEXITCODE -ne 0) {
+              throw "Installed Windows distribution inspection failed"
+            }
             node scripts/validate-desktop-package.mjs --windows-registry-json "$env:RUNNER_TEMP\rstorrent-registry.json"
             if ($LASTEXITCODE -ne 0) {
               throw "Installed Windows activation registry validation failed"
@@ -421,6 +433,15 @@ jobs:
           test -n "$DESKTOP_FILE"
           desktop-file-validate "$DESKTOP_FILE"
           node scripts/validate-desktop-package.mjs --linux-desktop "$DESKTOP_FILE"
+
+      - name: Retain distribution inventories
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: distribution-${{ runner.os }}-${{ matrix.artifact-arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/distribution/*.json
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Retain Windows package for installed smoke
         if: github.event_name == 'workflow_dispatch' && runner.os == 'Windows'

@@ -1351,3 +1351,30 @@ fixtures, or test data.
 canary tag/version workflow, pinned Android toolchain, signing setup, and
 artifact checks. `clients/android/build.sh release` builds the signed APK/AAB
 and runs release JVM tests and lint when signing environment variables exist.
+
+
+## Dependency And Package Review
+
+Desktop package/release overlays require pinned `cargo-about` and generate
+Rust/npm attribution resources before packaging:
+
+```bash
+source ~/.profile
+cargo install cargo-about --locked --version 0.9.2 --features cli
+python3 scripts/prepare-release-notices.py --target aarch64-apple-darwin
+python3 -m unittest discover -s scripts -p test_distribution_review.py
+python3 scripts/inspect-distribution.py --root target/release/bundle/macos/RSTorrent.app --output artifacts/distribution/macos.json
+```
+
+Use the target actually being packaged; Tauri's before-build hook supplies it.
+Generation fails on missing/unreviewed license evidence. The resource manifest
+records lock hashes and the exact notice hash. Native platform libraries and
+Android Maven/AAR packages remain separate notice graphs.
+
+For advisory review, install `cargo-audit --locked --version 0.22.2`, collect
+`cargo audit --json` and `npm audit --prefix clients/web --json`, then pass
+those reports to `scripts/review-dependency-audit.py --cargo FILE --npm FILE
+--output FILE`. The weekly workflow rejects new vulnerabilities, changed
+warnings, stale databases and expired reviews. `--require-release-ready`
+also rejects the explicit blocker list and is required by tagged publication.
+The prepared GLib patch is a review proposal; it is not active Cargo source.

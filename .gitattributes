@@ -1,0 +1,4 @@
+# Preserve the exact upstream bytes validated by the notice source manifest.
+distribution/licenses/*.txt -text -whitespace
+# Unified diff context includes an intentional single-space blank line.
+distribution/patches/*.patch text eol=lf -whitespace

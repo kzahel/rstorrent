@@ -2,6 +2,16 @@
 
 Topic: `beta-release-readiness`
 
+Tactical [`214`](../tactical/214-release-dependency-and-artifact-review.md)
+repairs compatible web advisories and the yanked ChaCha dependency, adds an
+expiring exact-warning review, generates attributable notices for all five
+desktop targets, and validates a real macOS notice bundle. Package CI now
+inspects embedded notices and bounded artifact contents. QA-005 remains open:
+GLib's GTK3 unsoundness needs the prepared, optimized-probe-validated backport
+maintenance decision, and native platform notice coverage needs closure.
+Tagged publication fails while the advisory blocker remains. These are
+explicit release findings, not a zero-issues claim from the audit exit code.
+
 Current checkpoint (2026-09-12): public desktop `0.1.3` supersedes the
 historical `0.1.2` checkpoint below. Exact native x86_64 installed acceptance
 proves the Linux `0.1.1` → `0.1.3` update, native picker, retained default root,

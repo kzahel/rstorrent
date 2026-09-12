@@ -478,8 +478,10 @@ Tactical 215 repairs the subsequently reproduced Windows private catalog
 reset barrier and test fixture ownership/port isolation. Native Windows
 session (345) and desktop (43) tests pass alongside the installed default-port
 app; macOS and Android checks pass. Linux x86_64 public installed acceptance
-passes with the recorded tray limitation. Next: dependency/artifact review
-Tactical 214, bounded support export and the explicit future baseline proposal;
+passes with the recorded tray limitation. Tactical 214 now implements dependency/advisory review, five-target notices
+and package inventory gates, with an explicit GLib maintenance decision still
+open after its negative/fixed optimized probe. Next: bounded support export
+and the explicit future baseline proposal under Tactical 216;
 then authorized hosted qualification and a repaired signed Windows candidate.
 No push, hosted run, publication or supported-release declaration has occurred.
 
