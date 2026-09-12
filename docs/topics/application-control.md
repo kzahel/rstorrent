@@ -2,6 +2,13 @@
 
 Topic: `application-control`
 
+Active Tactical
+[`212`](../tactical/212-application-lifecycle-verification-gate.md) repairs the
+existing Resume contract: if checking a paused seed discovers missing wanted
+data, Resume atomically restores absent download-queue order with running
+intent. Complete seeds stay out of that queue, existing positions are stable,
+and exact replay/reopen pass. No command or generated type is added.
+
 Status: Direct-storage application-contract replacement completed on
 2026-08-29 by Tactical
 [`191`](../tactical/191-direct-filesystem-storage.md). It removes

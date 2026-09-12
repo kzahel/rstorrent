@@ -4855,14 +4855,23 @@ fn set_desired_state(
         ));
     }
     let desired = if running { "running" } else { "paused" };
-    if row.0 == desired {
-        return Ok(current_revision);
-    }
     if running && row.1.is_some() {
         return Err((
             ErrorCode::InvalidTorrentState,
             "torrent cannot resume while quarantined".to_owned(),
         ));
+    }
+    // Completion removes queue order. A paused recheck or selection change
+    // can subsequently expose missing content without making it runnable.
+    // Resume must restore a missing position atomically with running intent.
+    let append_missing = running
+        && download_queue::queue_position(transaction, &torrent_id)
+            .map_err(|error| internal_message(&error.to_string()))?
+            .is_none()
+        && needs_download_queue(transaction, &torrent_id)
+            .map_err(|error| internal_message(&error.to_string()))?;
+    if row.0 == desired && !append_missing {
+        return Ok(current_revision);
     }
     let revision = current_revision
         .checked_add(1)
@@ -4883,7 +4892,34 @@ fn set_desired_state(
             params![torrent_id.as_bytes(), desired, revision_sql],
         )
         .map_err(internal_error)?;
+    if append_missing {
+        download_queue::append(transaction, &torrent_id)
+            .map_err(|error| internal_message(&error.to_string()))?;
+    }
     Ok(revision)
+}
+
+fn needs_download_queue(
+    connection: &Connection,
+    torrent_id: &TorrentId,
+) -> Result<bool, StoreError> {
+    let (archived, raw_info) = connection.query_row(
+        "SELECT archived, raw_info FROM torrents WHERE torrent_id = ?1",
+        [torrent_id.as_bytes()],
+        |row| Ok((row.get::<_, bool>(0)?, row.get::<_, Option<Vec<u8>>>(1)?)),
+    )?;
+    if archived {
+        return Ok(false);
+    }
+    let Some(raw_info) = raw_info else {
+        return Ok(true);
+    };
+    let (piece_count, fingerprint, bytes) = read_have_columns(connection, torrent_id)?;
+    let have = HaveState::decode(&bytes, *torrent_id, fingerprint, piece_count)?;
+    let skip_files = read_selection(connection, torrent_id)?;
+    let source = read_verbatim_metainfo_source(connection, torrent_id)?;
+    let (_, complete) = wanted_piece_evidence(&raw_info, source.as_deref(), &skip_files, &have)?;
+    Ok(!complete)
 }
 
 fn set_archived(
@@ -9957,6 +9993,100 @@ mod tests {
                 .is_none()
         );
         drop(store);
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
+    fn resume_requeues_a_paused_seed_made_incomplete_by_recheck() {
+        let root = test_root("paused-recheck-resume-queue");
+        let mut store =
+            SessionStore::open(&root, "default", &[configured_root(&root)]).expect("open");
+        let raw_info =
+            b"d6:lengthi4e4:name4:test12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
+        let hash = crate::control::encode_info_hash(Sha1::digest(raw_info).into());
+        let mut add = add_hash_request("add-rechecked-seed", 1);
+        if let Command::AddMagnet { magnet, .. } = &mut add.command {
+            *magnet = format!("magnet:?xt=urn:btih:{hash}");
+        }
+        let id = added_torrent_id(&store.handle_durable(&add).expect("add"));
+        store.record_metadata(&id, raw_info).expect("metadata");
+        store.record_piece(&id, 0).expect("complete piece");
+        store.mark_complete(&id).expect("complete");
+        let request = |name: &str, command| RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: name.to_owned(),
+            expected_revision: None,
+            command,
+        };
+        store
+            .handle_durable(&request(
+                "pause-seed",
+                Command::Pause {
+                    torrent_id: id.clone(),
+                },
+            ))
+            .expect("pause");
+        // Resuming an intact seed must not insert it into the download queue.
+        store
+            .handle_durable(&request(
+                "resume-intact",
+                Command::Resume {
+                    torrent_id: id.clone(),
+                },
+            ))
+            .expect("resume intact");
+        assert!(queued_ids(&store).is_empty());
+        store
+            .handle_durable(&request(
+                "pause-recheck",
+                Command::Pause {
+                    torrent_id: id.clone(),
+                },
+            ))
+            .expect("pause before check");
+        let (_, generation) = store.begin_recheck_with_generation(&id).expect("begin");
+        let old = store.load_resume(&id).expect("resume").have.expect("have");
+        let missing =
+            HaveState::from_pieces(old.torrent_id(), old.content_fingerprint(), vec![false])
+                .expect("missing evidence");
+        store
+            .complete_recheck_generation(&id, generation, &missing)
+            .expect("check");
+        assert_eq!(
+            store.load_resume(&id).expect("paused result").state,
+            TorrentState::Paused
+        );
+        assert!(queued_ids(&store).is_empty());
+        let ahead = added_torrent_id(
+            &store
+                .handle_durable(&add_hash_request("add-ahead", 2))
+                .expect("add queued neighbor"),
+        );
+        let resume = request(
+            "resume-damaged",
+            Command::Resume {
+                torrent_id: id.clone(),
+            },
+        );
+        let response = store.handle_durable(&resume).expect("resume missing piece");
+        assert_eq!(queued_ids(&store), [ahead.clone(), id.clone()]);
+        assert_eq!(
+            store.handle_durable(&resume).expect("exact replay"),
+            response
+        );
+        store
+            .handle_durable(&request(
+                "resume-again",
+                Command::Resume {
+                    torrent_id: id.clone(),
+                },
+            ))
+            .expect("idempotent resume");
+        assert_eq!(queued_ids(&store), [ahead.clone(), id.clone()]);
+        drop(store);
+        let reopened = SessionStore::open(&root, "default", &[]).expect("reopen");
+        assert_eq!(queued_ids(&reopened), [ahead, id]);
+        drop(reopened);
         fs::remove_dir_all(root).expect("remove test profile");
     }
 

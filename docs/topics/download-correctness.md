@@ -2,6 +2,16 @@
 
 Topic: `download-correctness`
 
+Active Tactical
+[`212`](../tactical/212-application-lifecycle-verification-gate.md) adds the
+presubmit application lifecycle cohort and repairs missing queue admission
+when Resume follows a paused seed's corrupt-data recheck. Single-file and
+cross-file cases prove exact piece invalidation before restoring the source,
+one-piece repair, independent complete seeding before and after repair, and
+joined cleanup. The legacy oversized-file topology matrix currently repeats
+Checking rather than converging; this newly reproduced failure remains under
+investigation in the same verification campaign.
+
 Status: Direct-storage replacement accepted on 2026-08-29. Tactical
 [`191`](../tactical/191-direct-filesystem-storage.md) preserves verification,
 request ownership, synchronized have evidence, selective boundary handling,

@@ -332,20 +332,28 @@ topology still needs a hosted run after an authorized push.
   protected release job. The exact Xcode 26.6 hosted Apple leg passes generated
   drift, 25 unit tests, 2 UI tests, and the unsigned device archive.
 - [ ] **CI-006 — Add a bounded controlled interoperability smoke.** Choose a
-  short v1 magnet/torrent intake, transfer, publication, restart, and seeding
+  short v1 magnet/torrent intake, transfer, verified direct content, restart, and seeding
   path against pinned libtorrent. Keep the long matrix and public catalog out
   of ordinary PR latency. The hosted presubmit passes Tactical `159`'s locked
-  exact first-piece transfer and cleanup as the initial floor; intake,
-  publication, restart, and seeding in one broader application lifecycle
-  remain open.
-- [ ] **CI-007 — Repair scheduled performance CI.** The 2026-08-10 and
+  exact first-piece transfer and cleanup as the initial floor. Active Tactical
+  [`212`](../tactical/212-application-lifecycle-verification-gate.md) adds a
+  locally passing single/multifile application cohort with byte intake,
+  complete hashes, source-offline restart/seeding, paused corruption checking,
+  exact repair, keep-data removal, resource bounds, and joined cleanup. It
+  also repairs Resume failing to restore a missing download-queue position
+  after a paused seed recheck. Hosted confirmation remains open. The broader
+  legacy matrix exposed a repeated-checking failure with oversized existing
+  files; that failure must be resolved before its scheduled gate is qualified.
+- [x] **CI-007 — Repair scheduled performance CI.** The 2026-08-10 and
   2026-08-17 runs failed before tests because `astral-sh/setup-uv@v8` could not
   be resolved. The workflow now pins reviewed `setup-uv` `v8.3.2`; manual
   hosted run
   [`32568169955`](https://github.com/kzahel/rstorrent/actions/runs/32568169955)
   passes both smoke profiles and retains JSON artifact
-  `performance-32568169955-1`. The first successful weekly scheduled run is
-  still required before closing this gate.
+  `performance-32568169955-1`. Scheduled full run
+  [`34099890487`](https://github.com/kzahel/rstorrent/actions/runs/34099890487)
+  passed on 2026-09-07 at `9c6c00b`; its event and full-job conclusion were
+  independently checked on 2026-09-12, closing the weekly-run gate.
 - [x] **CI-008 — Decide release branch protection policy.** Maintainer
   direction on 2026-08-23 deliberately keeps direct `main` work available and
   does not make branch protection an incubation-beta gate. Tagged publication

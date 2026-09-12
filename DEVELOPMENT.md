@@ -80,6 +80,24 @@ uv run --project tests/interop --locked \
 
 ## Current Tactical State
 
+Active release-hardening Tactical
+[`212`](docs/tactical/212-application-lifecycle-verification-gate.md) adds a
+bounded complete application gate to presubmit. Run its independently authored
+single/multifile fixtures, source-offline restart and seeding, paused corruption
+check, exact repair, keep-data removal and joined cleanup with:
+
+```bash
+source ~/.profile
+cargo build --locked -p rstorrent-gateway
+uv run --project tests/interop --locked \
+  python tests/interop/application_lifecycle_smoke.py \
+  --binary target/debug/rstorrent-gateway
+```
+
+Optional `--output PATH` writes a bounded JSON report containing generated
+payload hashes and scalar resource evidence, without paths or peer identifiers.
+Each run owns and removes its temporary profile, payload and child processes.
+
 Multiple independent tacticals may be active concurrently; this section is a
 status summary, not a work-selection lock or required execution sequence.
 User-directed work does not need to pause or displace another active tactical.

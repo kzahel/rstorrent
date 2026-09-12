@@ -2,6 +2,15 @@
 
 Topic: `incoming-reachability-and-seeding`
 
+Active Tactical
+[`212`](../tactical/212-application-lifecycle-verification-gate.md) adds a
+complete application process cohort: after source-offline restart, single-file
+and cross-file torrents each seed two independently verified libtorrent copies
+around a paused corruption check and exact one-piece repair. Joined cleanup
+and resource bounds pass. The broader oversized-file topology currently
+cycles between completed-seed structural validation and Checking; disabling
+seed admission isolates the failure but is not an accepted workaround.
+
 Tactical [`211`](../tactical/211-presubmit-signal-and-build-measurements.md)
 strengthens the pure-v2 active-upload regression by forcing joined content-task
 termination before the test drives completed-seed admission. A persisted

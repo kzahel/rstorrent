@@ -2,6 +2,14 @@
 
 Topic: `client-persistence`
 
+Active Tactical
+[`212`](../tactical/212-application-lifecycle-verification-gate.md) repairs
+Resume after a paused completed torrent is found incomplete by rechecking.
+Running intent and a missing download-tail position now commit together;
+existing queue order, complete seeds, and receipt replay remain unchanged.
+The deterministic negative control, reopen test, common application repair
+cohort, Android dual-ABI build and generated Kotlin/JVM build pass locally.
+
 Status: Completed Tacticals
 [`203`](../tactical/203-jstorrent-shaped-add-time-file-selection.md) and
 [`205`](../tactical/205-durable-dht-and-pex-controls.md) advance the disposable

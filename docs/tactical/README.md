@@ -93,6 +93,11 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`212-application-lifecycle-verification-gate.md`](212-application-lifecycle-verification-gate.md):
+  active; adds the complete controlled application lifecycle gate and fixes
+  paused-recheck Resume queue admission. Local single/multifile integrity,
+  restart, seeding, repair, and cleanup pass. Broader oversized-file checking
+  and hosted qualification remain in flight.
 - [`211-presubmit-signal-and-build-measurements.md`](211-presubmit-signal-and-build-measurements.md):
   complete locally, hosted confirmation pending; repairs companion
   diagnostic-URL validation and the

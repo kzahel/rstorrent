@@ -462,6 +462,20 @@ reason to stop.
 
 ## Current Checkpoint
 
+Active Tactical
+[`212`](../tactical/212-application-lifecycle-verification-gate.md) is the
+user-directed release-hardening slice. The new gateway/libtorrent single-file
+and cross-file cases pass after fixing the store's missing Resume queue
+position. A negative deterministic control reproduced the absent position;
+the repair preserves existing order, intact seeds, receipt replay, and reopen.
+Both Android ABIs and the generated Kotlin/JVM build pass, as do full
+workspace fmt/clippy/tests and web contract/type/unit validation. Next: commit
+the substantial cohort/Resume repair, then fix the legacy oversized-file
+seed/check cycle before qualifying the scheduled broader gate. Setting only
+active seeds to zero makes that exact failing topology pass, isolating seed
+validation as the cause; do not retain that setting as a workaround. No
+push, publication, hosted run, or supported-release declaration has occurred.
+
 Tactical [`211`](../tactical/211-presubmit-signal-and-build-measurements.md)
 completes the bounded CI regression repair locally. The pure-v2 active-upload
 test now forces task termination before completed-seed reconciliation, then
