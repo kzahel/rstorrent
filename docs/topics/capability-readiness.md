@@ -2,13 +2,20 @@
 
 Topic: `capability-readiness`
 
+Authorized hosted qualification is underway on `release-readiness-ci`.
+Run `34682523287` passes web, extension, release tools, dependency review,
+extended application/storage recovery, the owned Android x86_64 runtime,
+iOS, and all three macOS/Linux package lanes. Windows exposed a recheck
+handoff test race; the controlled repair is locally validated and awaits
+hosted confirmation. [Exact evidence and remaining gates](../evidence/release-readiness-ci-2026-09-12.md).
+
 Completed local Tactical
 [`216`](../tactical/216-local-support-diagnostics-and-release-baseline.md)
 adds bounded local diagnostics preview/copy/download and support/privacy/
 recovery guidance. Web type/build/localization, 386 unit tests and four
 phone/wide light/dark browser cases pass. The supported-baseline proposal is
 prepared without selecting a version. Remaining campaign actions are explicit
-GLib source-maintenance direction, hosted confirmation after authorized push,
+GLib source-maintenance direction, complete hosted confirmation,
 platform notice closure and a repaired signed Windows candidate.
 
 Local Tactical [`214`](../tactical/214-release-dependency-and-artifact-review.md)

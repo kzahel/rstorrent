@@ -1,7 +1,15 @@
 # Tactical 213: Owned Android Runtime CI
 
-Status: **Complete locally (2026-09-12).** Authorized release-readiness campaign,
+Status: **Complete locally and on hosted x86_64 (2026-09-12).** Authorized release-readiness campaign,
 following Tactical 212's shared application verification gates.
+
+Run [`34682523287`](https://github.com/kzahel/rstorrent/actions/runs/34682523287)
+at `1599a0e67960c14562d08a0c6454b70024e546f6` passes both ABI builds/JVM
+tests, lint, instrumentation compilation and the owned API 35 x86_64 product
+SAF lifecycle. Image revision 9, exact APK hash, zero preconfirmation upload,
+3/40 storage-handle peak, exact removal and owned-AVD cleanup are recorded in
+[the hosted evidence](../evidence/release-readiness-ci-2026-09-12.md). This
+supersedes the pending-hosted statements in the local execution history below.
 
 Topics: `beta-release-readiness`, `capability-readiness`, `client-surfaces`,
 `android-saf-storage`

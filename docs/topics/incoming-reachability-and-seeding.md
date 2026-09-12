@@ -2,6 +2,16 @@
 
 Topic: `incoming-reachability-and-seeding`
 
+September 12 hosted run `34682523287` passes Tactical 212's four application
+lifecycle cases and three topology/three checkpoint-crash cohorts with exact
+repair and joined cleanup. Tactical 211 also repairs a Windows-exposed test
+handoff after force recheck: a directly owned service must join the terminated
+checker through application maintenance before expecting seed registration.
+The forced-order negative reproduces the timeout; the test-only repair passes
+20 concurrent-process repetitions and the complete local session suite.
+Corrected hosted Windows qualification remains pending; see
+[the run record](../evidence/release-readiness-ci-2026-09-12.md).
+
 Tactical `212` now also resolves completed-seed repeated checking for verified
 oversized files. A one-shot, nonpersistent exact-extent handoff follows joined
 successful content work into seed registration; ordinary startup validation

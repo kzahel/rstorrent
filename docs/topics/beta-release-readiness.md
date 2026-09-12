@@ -2,6 +2,13 @@
 
 Topic: `beta-release-readiness`
 
+Authorized hosted run `34682523287` qualifies the web/extension/tool gates,
+extended storage recovery, Android x86_64 runtime, iOS and macOS/Linux unsigned
+package inspection. Windows exposes a test-owned recheck/seed-admission race;
+its controlled repair is locally validated but not yet hosted-qualified.
+The passing advisory report correctly retains GLib's release blocker. See
+[the exact hosted record](../evidence/release-readiness-ci-2026-09-12.md).
+
 Locally completed Tactical
 [`216`](../tactical/216-local-support-diagnostics-and-release-baseline.md)
 adds the previewed, bounded local support export and public issue/guidance

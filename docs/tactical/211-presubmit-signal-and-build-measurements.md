@@ -63,6 +63,31 @@ CI diagnostic retention. No larger sleeps or retry-to-green policy.
 
 ## Execution Checkpoint
 
+### Hosted Windows Recheck Handoff Follow-up
+
+Run `34682523287` exposes a second completion/registration wait in
+`durable_complete_torrent_applies_slots_live_and_fences_lifecycle`: Windows
+passes 344 session tests but this test observes zero registrations after its
+seed lifecycle transitions. Investigate the force-recheck completion boundary
+against the existing source dossier and `reap_finished` ownership. A directly
+owned application without its maintenance task must drive an application
+command after checker termination; persisted Complete alone is insufficient.
+
+Force that ordering in the existing test, demonstrate the old read-only wait
+fails, then drive the ordinary command path and retain the existing five-second
+bounds, exact payload/accounting, zero-slot choke, generation continuity,
+archive/pause/removal and joined shutdown assertions. Stop after focused and
+full session validation plus the repaired hosted Windows/package gate pass.
+The controlled negative reproduces the exact timeout on macOS too. The
+test-only repair passes 20/20 forced-order repetitions across four processes,
+all 346 active session tests (two ignored), tests clippy with warnings denied
+and workspace formatting. The old Snapshot poll could observe Complete before
+task termination; the corrected test forces termination first, proves Complete
+with zero registrations, and then uses the same ordinary Snapshot command to
+join the checker and restore admission. No production runtime, protocol,
+Android contract or resource policy changes. Hosted repair confirmation is
+pending. [Exact run evidence](../evidence/release-readiness-ci-2026-09-12.md).
+
 September 12 hosted qualification uses `release-readiness-ci`: pushing `main`
 would also deploy the public website, which is outside the CI authorization.
 Manual CI calls the same storage-recovery and dependency-review workflows used

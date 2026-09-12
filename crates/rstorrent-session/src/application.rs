@@ -17793,6 +17793,33 @@ mod tests {
                 .expect("observe recheck close"),
             0
         );
+        // Force checker termination before any application maintenance. A
+        // persisted Complete snapshot can precede completed-seed admission.
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !second
+                .active_download_for(&torrent_id)
+                .expect("recheck generation awaits application maintenance")
+                .task
+                .is_finished()
+            {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("recheck generation termination deadline");
+        assert_eq!(
+            second
+                .store_mut()
+                .unwrap()
+                .load_resume(&torrent_id)
+                .unwrap()
+                .state,
+            TorrentState::Complete,
+        );
+        assert_eq!(second.incoming_peer_snapshot().unwrap().registrations, 0);
+        // This directly owned service has no background maintenance owner.
+        // Drive the ordinary command path after termination to join the
+        // checker and restore admission before observing its registration.
         wait_for_torrent_state(
             &mut second,
             &torrent_id,

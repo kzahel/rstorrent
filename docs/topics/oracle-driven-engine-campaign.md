@@ -462,6 +462,21 @@ reason to stop.
 
 ## Current Checkpoint
 
+September 12 push/CI authorization is now exercised on `release-readiness-ci`,
+avoiding `main`'s automatic website deployment. Hosted run `34682523287`
+passes the four application lifecycles, three topology cases and three
+checkpoint crash boundaries, plus the owned Android API 35 x86_64 lifecycle
+with 3/40 storage-handle high water and complete cleanup. Windows exposes a
+second directly owned test's missing maintenance after checker completion.
+Tactical 211 forces the failing ordering, reproduces the zero-registration
+timeout, then drives the ordinary Snapshot command after task termination.
+Its test-only repair passes 20 concurrent-process repetitions, all 346 active
+local session tests and tests clippy. Next: finish hosted qualification of
+the corrected revision and inspect Rust build timings. GLib maintenance,
+native-library notices and signed/public release decisions remain separate.
+The [hosted record](../evidence/release-readiness-ci-2026-09-12.md) supersedes
+the no-push and pending-hosted statements in the earlier checkpoint below.
+
 Tactical [`212`](../tactical/212-application-lifecycle-verification-gate.md)
 contains the user-directed application verification hardening. Slice one is
 committed as `7bb191f` and repairs missing Resume queue admission. Slice two
