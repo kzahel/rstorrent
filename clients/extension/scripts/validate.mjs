@@ -171,19 +171,19 @@ export function validateCompanionBuild(companionRoot) {
     fail("companion application omits the fixed ARC endpoint contract");
   }
   const remoteHosts = source.match(/(?:https?|wss?):\/\/[A-Za-z0-9.${}_-]+/gu) ?? [];
-  const allowedNonExecutableUrls = [
+  const allowedHosts = new Set([
+    "http://100.115.92.2",
+    "ws://100.115.92.2",
     "http://www.w3.org",
     "https://react.dev",
     "https://github.com",
-  ];
-  if (
-    remoteHosts.some(
-      (url) =>
-        !url.includes("100.115.92.2") &&
-        !allowedNonExecutableUrls.some((allowed) => url.startsWith(allowed)),
-    )
-  ) {
-    fail("companion application contains an unexpected remote URL");
+    // FormatJS embeds these documentation links in diagnostic strings.
+    // The manifest's exact ARC-only connect-src remains the network boundary.
+    "https://formatjs.github.io",
+  ]);
+  const unexpectedHosts = [...new Set(remoteHosts.filter((url) => !allowedHosts.has(url)))];
+  if (unexpectedHosts.length > 0) {
+    fail(`companion application contains an unexpected remote URL: ${unexpectedHosts.join(", ")}`);
   }
   for (const forbidden of ["content://", "documentId", "tree_uri", "tree-uri"]) {
     if (source.includes(forbidden)) {

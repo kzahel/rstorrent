@@ -93,6 +93,12 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`211-presubmit-signal-and-build-measurements.md`](211-presubmit-signal-and-build-measurements.md):
+  complete locally, hosted confirmation pending; repairs companion
+  diagnostic-URL validation and the
+  pure-v2 test's completed-seed reconciliation, separates extension/release
+  checks from web coverage, and captures Rust compilation timings without
+  changing optimization or cache policy.
 - [`209-asynchronous-local-headless-deploy.md`](209-asynchronous-local-headless-deploy.md):
   complete; replaces the current machine-local synchronous package/redeploy
   `pre-push` hook with an immediate exact-commit scheduler and one observable

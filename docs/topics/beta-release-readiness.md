@@ -16,7 +16,7 @@ desktop repairs and native bootstrap. Public ChromeOS Linux preview
 `crostini-v0.1.0` now passes native x86_64/ARM64 builds, independent signed
 asset validation, and exact website install/Launcher/relaunch evidence on the
 physical x86_64 Chromebook; Android and iOS remain unreleased alpha lanes.
-Credential-free eight-job cross-platform presubmit CI, a credentialed
+Credential-free cross-platform presubmit CI, a credentialed
 five-target signed
 desktop rehearsal, three tagged publications, production updater metadata, one
 installed macOS arm64 launch smoke, and exact macOS arm64 and Linux arm64
@@ -286,6 +286,16 @@ compatibility and rollback policy declared with that baseline.
   release gates deliberately remain off.
 
 ### CI and repository health
+
+Tactical [`211`](../tactical/211-presubmit-signal-and-build-measurements.md)
+repairs the companion FormatJS diagnostic-link rejection and a test-owned
+pure-v2 seed-reconciliation race. The workflow now has ten jobs: extension
+packaging and workflow/release-tool checks run independently of web contract,
+type, unit, build, and E2E coverage. Rust compilation and execution have separate
+steps, with seven-day Cargo timing artifacts. Local format/clippy, 1,499 Rust
+tests, loopback interop, contract drift, 381 web unit tests, 39 deterministic
+browser tests, extension packaging, and workflow lint pass; the new job
+topology still needs a hosted run after an authorized push.
 
 - [x] **CI-001 — Add ordinary presubmit CI.** Required checks run Rust
   formatting, workspace clippy with warnings denied, workspace tests,

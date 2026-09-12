@@ -11823,15 +11823,46 @@ mod tests {
         assert_eq!(active_snapshot.payload_bytes_sent, u64::from(piece_length));
 
         release_final.send(()).expect("release final pure-v2 piece");
-        wait_for_torrent_state(
-            &mut service,
-            &torrent_id,
-            TorrentState::Complete,
-            "pure-v2-active-complete",
-        )
-        .await;
+        // Observe completion without driving application maintenance. This
+        // forces the ordering where the final download snapshot precedes the
+        // old generation's termination and completed-seed reconciliation.
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !service
+                .active_download_for(&torrent_id)
+                .expect("completed content generation awaits application maintenance")
+                .task
+                .is_finished()
+            {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("active pure-v2 generation termination deadline");
         source_task.await.expect("active pure-v2 source task");
         wait_for_incoming_close(&mut active_peer, "pure-v2 completion").await;
+        assert_eq!(
+            service
+                .store_mut()
+                .unwrap()
+                .load_resume(&torrent_id)
+                .unwrap()
+                .state,
+            TorrentState::Complete,
+        );
+        assert_eq!(service.incoming_peer_snapshot().unwrap().registrations, 0);
+        // Real hosts run the maintenance owner. This directly owned test
+        // service must drive it through a command after the task terminates;
+        // merely polling incoming_peer_snapshot cannot install a new seed.
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "pure-v2-completed-seed-reconcile".to_owned(),
+                expected_revision: None,
+                command: Command::Snapshot,
+            })
+            .await
+            .expect("reap completed v2 generation and reconcile seed admission");
+        assert!(service.active_download_for(&torrent_id).is_none());
         wait_for_seed_registrations(&service, 1).await;
         let owner = torrent_id
             .parse::<TorrentId>()

@@ -931,6 +931,11 @@ exactly.
 
 ### Active
 
+- Confirm the hosted evidence for locally completed **Tactical `211`** after
+  an authorized push: companion diagnostic URL validation, deterministic
+  pure-v2 test reconciliation, independent web/extension/release-tool jobs,
+  and Cargo build timing artifacts. Local workspace and browser gates pass;
+  production engine behavior and platform semantics remain unchanged.
 - Finish release qualification for **Tactical `208`**. The closed native
   store/outbox, desktop and Android presentation, updater migration, and MV3
   uninstall owner are implemented. A separately authorized hosted deployment

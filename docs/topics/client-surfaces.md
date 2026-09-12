@@ -1136,3 +1136,9 @@ completion must not be described as full JSTorrent Android feature parity.
 Signed
 distribution, updating, CI, product identity, and beta MVP triage are tracked
 in [`beta-release-readiness.md`](beta-release-readiness.md).
+
+Tactical [`211`](../tactical/211-presubmit-signal-and-build-measurements.md)
+separates companion-extension packaging and release-tool checks from the shared
+web job so a packaging rejection cannot suppress contract/type/unit/E2E signal.
+Its companion validator admits reviewed FormatJS diagnostic links using exact
+host matching; the manifest permissions and exact ARC-only CSP are unchanged.

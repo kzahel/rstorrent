@@ -462,6 +462,18 @@ reason to stop.
 
 ## Current Checkpoint
 
+Tactical [`211`](../tactical/211-presubmit-signal-and-build-measurements.md)
+completes the bounded CI regression repair locally. The pure-v2 active-upload
+test now forces task termination before completed-seed reconciliation, then
+drives the ordinary application command path. Its negative control reproduces
+the hosted registration timeout; the repair passes 40 concurrent-process
+repetitions. Production engine state, protocol claims, Android semantics, and
+generated contracts are unchanged. Workspace format/clippy and 1,499 tests,
+the exact loopback interop smoke, contract drift, and browser gates pass.
+Local workspace test compilation takes 231.39s and execution 83.66s. Next
+action: inspect the ten hosted jobs and Cargo timing artifacts after an
+independently authorized push; local success does not prove that hosted gate.
+
 Campaign state: **Tactical `112` graduated; Tactical `113` closed evidence-
 limited with positive physical capability unknown on the current hardware;
 Tacticals `114` and `116` graduated; Tactical `120` completed; uTP Tacticals

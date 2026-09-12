@@ -345,6 +345,24 @@ cargo clippy --workspace -- -D warnings
 cargo test --workspace
 ```
 
+Presubmit runs shared-web validation, companion-extension packaging, and
+workflow/release-tool checks in independent jobs. A failed extension package
+does not suppress web contract drift, type, unit, production-build, or browser
+coverage. Native desktop, Android, and iOS jobs retain their separate gates.
+
+To distinguish Rust compilation from test execution using the CI commands:
+
+```bash
+cargo test --locked --workspace --no-run --timings
+cargo test --locked --workspace
+```
+
+Cargo writes HTML reports under `target/cargo-timings/`; CI retains these for
+seven days as `rust-build-timings-<run-id>-<attempt>`, including when a later
+step fails. Doctest compilation remains in the execution command. Tactical
+[`211`](docs/tactical/211-presubmit-signal-and-build-measurements.md) records
+the failure diagnoses, measurements, and hosted-evidence boundary.
+
 The ordinary dev and test profiles use optimized code with file-and-line
 backtraces, debug assertions, and overflow checks, but omit full debugger
 information and incremental compilation to keep macOS build artifacts

@@ -27,9 +27,6 @@ jobs:
       - name: Check out source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-      - name: Lint workflow definitions
-        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.9
-
       - name: Install Rust 1.97.0
         uses: dtolnay/rust-toolchain@889fac408b4da0905346410f253f0c55fbcb6613 # 1.97.0
         with:
@@ -75,8 +72,8 @@ jobs:
             --features \
               rstorrent-direct-file/experiment,rstorrent-headless/direct-file-webrtc,rstorrent-desktop/direct-file-webrtc \
             -- -D warnings
-          cargo test -p rstorrent-direct-file --features webrtc
-          cargo test -p rstorrent-remote-host --features direct-file-webrtc
+          cargo test --locked -p rstorrent-direct-file --features webrtc --timings
+          cargo test --locked -p rstorrent-remote-host --features direct-file-webrtc --timings
 
       - name: Keep the direct-file graph out of explicit feature-off products
         run: |
@@ -85,8 +82,11 @@ jobs:
           test -z "$(cargo tree -p rstorrent-headless --no-default-features | grep 'rtc v' || true)"
           test -z "$(cargo tree -p rstorrent-desktop --no-default-features | grep 'rtc v' || true)"
 
+      - name: Compile Rust workspace tests with build timings
+        run: cargo test --locked --workspace --no-run --timings
+
       - name: Test the Rust workspace
-        run: cargo test --workspace
+        run: cargo test --locked --workspace
 
       - name: Install the locked interoperability environment
         run: uv sync --project tests/interop --locked --python 3.12
@@ -95,6 +95,73 @@ jobs:
         run: >-
           uv run --project tests/interop --locked
           python tests/interop/first_verified_piece.py --runs 1
+
+      - name: Retain Rust compilation timings
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rust-build-timings-${{ github.run_id }}-${{ github.run_attempt }}
+          path: target/cargo-timings/*.html
+          if-no-files-found: ignore
+          retention-days: 7
+
+  release-tools:
+    name: Workflow and release tools
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Install Node.js 22
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+
+      - name: Lint workflow definitions
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.9
+
+      - name: Validate desktop release configuration and tools
+        run: |
+          node scripts/validate-desktop-release.mjs
+          node --test \
+            scripts/validate-desktop-package.test.mjs \
+            scripts/validate-desktop-release.test.mjs \
+            .github/scripts/validate-desktop-release.test.mjs \
+            .github/scripts/write-release-checksums.test.mjs
+
+      - name: Validate Crostini bootstrap release tools
+        run: |
+          bash scripts/test-crostini-installer.sh
+          node --test .github/scripts/write-crostini-release-manifest.test.mjs
+
+      - name: Validate headless bootstrap release tools
+        run: |
+          bash scripts/test-headless-installer.sh
+          node --test .github/scripts/write-headless-release-manifest.test.mjs
+
+  extension:
+    name: Extension tests and companion package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Install Node.js 22
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: clients/web/package-lock.json
+
+      - name: Install locked companion build dependencies
+        run: npm ci --prefix clients/web
+
+      - name: Validate and package the JSTorrent Beta extension seed
+        run: |
+          npm test --prefix clients/extension
+          npm run package --prefix clients/extension
 
   web:
     name: Web type, unit, build, and deterministic E2E
@@ -121,30 +188,6 @@ jobs:
 
       - name: Install locked web dependencies
         run: npm ci --prefix clients/web
-
-      - name: Validate desktop release configuration and tools
-        run: |
-          node scripts/validate-desktop-release.mjs
-          node --test \
-            scripts/validate-desktop-package.test.mjs \
-            scripts/validate-desktop-release.test.mjs \
-            .github/scripts/validate-desktop-release.test.mjs \
-            .github/scripts/write-release-checksums.test.mjs
-
-      - name: Validate Crostini bootstrap release tools
-        run: |
-          bash scripts/test-crostini-installer.sh
-          node --test .github/scripts/write-crostini-release-manifest.test.mjs
-
-      - name: Validate headless bootstrap release tools
-        run: |
-          bash scripts/test-headless-installer.sh
-          node --test .github/scripts/write-headless-release-manifest.test.mjs
-
-      - name: Validate and package the JSTorrent Beta extension seed
-        run: |
-          npm test --prefix clients/extension
-          npm run package --prefix clients/extension
 
       - name: Regenerate and verify the application contract
         run: |

@@ -2,6 +2,14 @@
 
 Topic: `incoming-reachability-and-seeding`
 
+Tactical [`211`](../tactical/211-presubmit-signal-and-build-measurements.md)
+strengthens the pure-v2 active-upload regression by forcing joined content-task
+termination before the test drives completed-seed admission. A persisted
+Complete state alone does not imply that the old generation has been reaped.
+The controlled negative case reproduces the hosted timeout, and the corrected
+test passes 40 concurrent-process repetitions. Production seeding and Android
+semantics are unchanged.
+
 Status: Tacticals
 [`078`](../tactical/078-local-single-peer-tcp-seeding.md) and
 [`082`](../tactical/082-bounded-multi-peer-upload-ownership.md) complete local
