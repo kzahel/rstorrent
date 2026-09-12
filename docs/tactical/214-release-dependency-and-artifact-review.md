@@ -2,7 +2,7 @@
 
 Status: **Implementation complete locally and hosted (2026-09-12); dependency source
 maintenance and native-library notice clearance remain open; native attribution
-follow-through is in progress.** Authorized
+follow-through is qualified on both architectures.** Authorized
 release-readiness campaign.
 
 Run `34684328524` passes advisory review, all notice/content tool checks and
@@ -143,7 +143,7 @@ source, build outputs and extracted public packages lived in the owned
 scratch directory, which was removed after successful validation. No owned
 guest, probe process or extracted package remains.
 
-### Native AppImage Attribution Follow-through (In Progress)
+### Native AppImage Attribution Follow-through (Qualified)
 
 The corrected hosted inventories expose a concrete gap: x86_64 contains 169
 regular shared-library files but only 10 distro copyright documents; ARM64
@@ -210,3 +210,20 @@ manifest SHA-256:
 `1b9f66c6ac1f73808a0210d12330f4c7337b31e4930a6d519bd9ad9f2c37b736`.
 The inspected linuxdeploy mirror SHA-256 is
 `e762bea85c8eb0d4b3508d46e5c1f037f717d0f9303ae3b4aafc8b04991fa1ef`.
+
+
+Hosted follow-through run
+[`34687692788`](https://github.com/kzahel/rstorrent/actions/runs/34687692788)
+passes all **12** jobs at `a83de080d27adb80932a03c972db96d026c91520`.
+The actual x86_64 AppImage contains 391 entries / 327,392,358 bytes and verifies
+174 selected components, 113 distro packages and 128 original/common notice
+files. Its native manifest SHA-256 is
+`578199fcc5fcecbf89ae7c0387ba89646d3d491bfd1736478a6c55d960ffa165`.
+ARM64 contains 487 entries / 340,990,858 bytes and verifies 173 components,
+112 packages and 127 notice files; its manifest is
+`ca3bbe76fdeb0ca8926b487f278adf770541202f6b74484ea3e41d18af8a3e6a`.
+Final artifact inspection passed independently after AppImage extraction.
+The owned Linux fixture and its output-plugin extraction cache were removed.
+Launcher/runtime and corresponding-source review remain explicit; Android
+Maven/AAR follow-through now has bounded Tactical 217. The GLib patch remains
+unapplied pending the source-maintenance decision.

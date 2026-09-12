@@ -8,6 +8,16 @@ includes the repaired Windows recheck test, four unsigned package lanes,
 owned Android runtime, iOS, web, Rust, advisory review and storage recovery.
 CI-004 and CI-006 are closed. [Exact evidence and remaining gates](../evidence/release-readiness-ci-2026-09-12.md).
 
+Active Tactical [`217`](../tactical/217-android-distribution-attribution.md)
+adds Android variant attribution assets and APK/AAB verification. Local
+83/79-artifact debug/release Maven graphs and the 205-package both-ABI Rust
+graph pass generation; the debug APK includes all six native libraries and
+verified notices. JVM/lint and negative integrity checks pass. Hosted Android
+qualification is next. Tactical 214's native AppImage follow-through now
+passes both architectures in the all-green 12-job run `34687692788` at
+`a83de080d27adb80932a03c972db96d026c91520`; launcher/runtime and source-delivery
+review remain open independently of the existing GLib decision.
+
 Completed local and hosted Tactical
 [`216`](../tactical/216-local-support-diagnostics-and-release-baseline.md)
 adds bounded local diagnostics preview/copy/download and support/privacy/

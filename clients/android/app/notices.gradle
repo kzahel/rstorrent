@@ -1,0 +1,90 @@
+// Build-only attribution. Each variant owns its assets and its resolved graph.
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+import groovy.xml.XmlSlurper
+import org.gradle.maven.MavenModule
+import org.gradle.maven.MavenPomArtifact
+import org.gradle.api.artifacts.result.ResolvedArtifactResult
+
+abstract class PrepareAndroidNotices extends DefaultTask {
+    @org.gradle.api.tasks.OutputDirectory
+    abstract org.gradle.api.file.DirectoryProperty getAssetsDirectory()
+}
+
+androidComponents.onVariants(androidComponents.selector().all()) { variant ->
+    def variantName = variant.name
+    def graphFile = layout.buildDirectory.file("intermediates/notices/${variantName}/graph.json")
+    def runtime = configurations.named("${variantName}RuntimeClasspath")
+    def prepare = tasks.register("prepare${variantName.capitalize()}Notices", PrepareAndroidNotices) {
+        inputs.files(runtime)
+        inputs.files(file('../../../Cargo.lock'), file('notices.gradle'),
+            file('../../../scripts/prepare-android-notices.py'),
+            file('../../../scripts/prepare-release-notices.py'))
+        inputs.dir(file('../../../distribution'))
+        // License/POM metadata may refresh independently of artifact bytes.
+        // Regenerate at packaging time instead of reusing stale declarations.
+        outputs.upToDateWhen { false }
+        doLast {
+            def queryPom = { group, name, version ->
+                def query = dependencies.createArtifactResolutionQuery()
+                    .forModule(group, name, version).withArtifacts(MavenModule, MavenPomArtifact)
+                    .execute()
+                def files = query.resolvedComponents.collectMany {
+                    it.getArtifacts(MavenPomArtifact).findResults { artifact ->
+                        artifact instanceof ResolvedArtifactResult ? artifact.file : null
+                    }
+                }
+                if (files.size() != 1) {
+                    throw new GradleException("Missing/ambiguous POM for ${group}:${name}:${version}")
+                }
+                files.get(0)
+            }
+            def pomChain
+            pomChain = { group, name, version, seen ->
+                def id = "${group}:${name}:${version}"
+                if (seen.size() >= 4 || seen.contains(id) || id.contains('$')) {
+                    throw new GradleException('Unresolved/cyclic or oversized parent POM chain')
+                }
+                def source = queryPom(group, name, version)
+                if (source.length() > 512 * 1024) throw new GradleException('Oversized POM')
+                def pom = new XmlSlurper(false, true).parse(source)
+                def result = [[component: id.toString(), file: source.absolutePath]]
+                if (pom.licenses.license.size() == 0 && pom.parent.size() != 0) {
+                    result += pomChain(pom.parent.groupId.text(), pom.parent.artifactId.text(),
+                        pom.parent.version.text(), seen + id)
+                }
+                result
+            }
+            def artifacts = runtime.get().incoming.artifacts.artifacts
+            if (artifacts.size() > 256) throw new GradleException('Runtime attribution graph exceeds bound')
+            def rows = artifacts.collect { artifact ->
+                def id = artifact.id.componentIdentifier
+                if (!(id instanceof org.gradle.api.artifacts.component.ModuleComponentIdentifier)) {
+                    throw new GradleException('Unreviewed non-module Android dependency')
+                }
+                [component: "${id.group}:${id.module}:${id.version}".toString(),
+                 file: artifact.file.absolutePath,
+                 poms: pomChain(id.group, id.module, id.version, [])]
+            }.unique { [it.component, it.file] }.sort { it.component }
+            def metadata = providers.exec {
+                workingDir(rootProject.projectDir)
+                commandLine('cargo', 'metadata', '--locked', '--format-version', '1',
+                    '--filter-platform', 'aarch64-linux-android', '--manifest-path',
+                    '../../crates/rstorrent-android/Cargo.toml')
+            }.standardOutput.asText.get()
+            def rustls = new JsonSlurper().parseText(metadata).packages.findAll {
+                it.name == 'rustls-platform-verifier-android'
+            }
+            if (rustls.size() != 1) throw new GradleException('Missing Cargo Rustls AAR provenance')
+            def graph = graphFile.get().asFile
+            graph.parentFile.mkdirs()
+            graph.text = JsonOutput.toJson([schema: 1, variant: variantName, artifacts: rows,
+                rustls: rustls.get(0)])
+            exec {
+                commandLine('python3', file('../../../scripts/prepare-android-notices.py'),
+                    '--graph', graph, '--output', assetsDirectory.get().asFile)
+            }
+        }
+    }
+    variant.sources.assets.addGeneratedSourceDirectory(prepare) { it.assetsDirectory }
+}

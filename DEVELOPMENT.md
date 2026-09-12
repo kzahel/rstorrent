@@ -1355,8 +1355,8 @@ and runs release JVM tests and lint when signing environment variables exist.
 
 ## Dependency And Package Review
 
-Desktop package/release overlays require pinned `cargo-about` and generate
-Rust/npm attribution resources before packaging:
+Desktop package/release overlays and Android builds require pinned
+`cargo-about` for dependency attribution before packaging:
 
 ```bash
 source ~/.profile
@@ -1369,7 +1369,25 @@ python3 scripts/inspect-distribution.py --root target/release/bundle/macos/RSTor
 Use the target actually being packaged; Tauri's before-build hook supplies it.
 Generation fails on missing/unreviewed license evidence. The resource manifest
 records lock hashes and the exact notice hash. Native platform libraries and
-Android Maven/AAR packages remain separate notice graphs.
+Android Maven/AAR packages have separate notice graphs. Tactical `217` adds
+variant-owned Android assets for the exact Maven/AAR and both-ABI Rust graphs.
+The public AGP generated-assets API owns their output locations; do not write
+to a guessed directory. `clients/android/build.sh` checks the generator version
+before native builds and verifies notices in its final APK. Direct Gradle
+packaging also runs generation. Source and parent POM changes require fresh
+attribution, so these small metadata tasks run each time they are requested.
+
+```bash
+clients/android/gradlew --project-dir clients/android :app:prepareReleaseNotices
+python3 -m unittest discover -s scripts -p 'test_*android*.py'
+python3 scripts/inspect-android-notices.py --archive clients/android/app/build/outputs/apk/debug/app-debug.apk --variant debug
+```
+
+Release asset generation needs no signing credentials; creating release APKs
+and AABs still requires the existing signing setup. Signed release inspection
+checks both archives' notices and native library inventory. Native input
+hashes identify the published AARs; AGP strips native files before packaging,
+so these are not claims of byte identity with final APK library contents.
 
 For advisory review, install `cargo-audit --locked --version 0.22.2`, collect
 `cargo audit --json` and `npm audit --prefix clients/web --json`, then pass

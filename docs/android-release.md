@@ -124,3 +124,23 @@ python3 scripts/validate-android-release.py --bundletool /path/to/bundletool.jar
 
 Update the example tag to the current version. Google documents native
 alignment requirements at https://developer.android.com/guide/practices/page-sizes.
+
+
+## Dependency Attribution
+
+Install `cargo install cargo-about --locked --version 0.9.2 --features cli` alongside the
+existing Android toolchain. Gradle generates variant-specific notice assets
+before packaging. Release construction includes its 79 resolved Maven
+artifacts and the union of both Android Rust targets; debug includes four
+additional tooling artifacts. These counts are evidence for the current
+graph, not hard-coded limits. The manifest records original artifact/POM
+hashes and source locators, inherited grants, original embedded notices and
+reviewed JNA/graphics native supplements. New native AARs or changed reviewed
+archives fail generation.
+
+`inspect-android-notices.py` checks a debug APK without signing credentials.
+The signed release validator requires notice integrity and the expected
+native-library attribution inventory in both APK and AAB outputs. A changed
+or missing notice, wrong variant or extra native library fails the gate.
+Do not treat the presence of this bundle as blanket legal clearance or a
+corresponding-source offer.

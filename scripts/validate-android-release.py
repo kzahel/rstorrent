@@ -16,6 +16,9 @@ ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location('release_android', ROOT / 'scripts/release-android.py')
 release = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(release)
+NOTICE_SPEC = importlib.util.spec_from_file_location('android_notices', ROOT / 'scripts/inspect-android-notices.py')
+notices = importlib.util.module_from_spec(NOTICE_SPEC)
+NOTICE_SPEC.loader.exec_module(notices)
 ANDROID = '{http://schemas.android.com/apk/res/android}'
 
 
@@ -81,6 +84,7 @@ def main():
     run('java', '-jar', args.bundletool, 'validate', f'--bundle={aab}')
     native = []
     for archive, prefix in ((apk, 'lib/'), (aab, 'base/lib/')):
+        notices.inspect(archive, 'release')
         with zipfile.ZipFile(archive) as z:
             libs = {n[len(prefix):]: z.read(n) for n in z.namelist() if n.startswith(prefix) and n.endswith('.so')}
             assert {n.split('/')[0] for n in libs} == {'arm64-v8a', 'x86_64'}, 'Unexpected packaged ABIs'

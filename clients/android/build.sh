@@ -32,6 +32,11 @@ for rust_target in x86_64-linux-android aarch64-linux-android; do
     fi
 done
 
+if [[ "$(cargo-about --version 2>/dev/null || true)" != "cargo-about 0.9.2" ]]; then
+    echo "Install the notice generator: cargo install cargo-about --locked --version 0.9.2 --features cli" >&2
+    exit 1
+fi
+
 export ANDROID_HOME="$android_sdk"
 export ANDROID_NDK_HOME="$ndk_root"
 
@@ -97,6 +102,7 @@ if [[ ! -f "$apk" ]]; then
     echo "Android APK was not created at $apk" >&2
     exit 1
 fi
+python3 "$repository_root/scripts/inspect-android-notices.py" --archive "$apk" --variant "$build_mode"
 echo "$apk"
 if [[ "$build_mode" == release ]]; then
     bundle="$android_root/app/build/outputs/bundle/release/app-release.aab"

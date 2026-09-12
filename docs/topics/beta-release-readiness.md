@@ -9,6 +9,14 @@ iOS, web, Rust, dependency review and extended storage recovery. CI-004 and
 CI-006 are closed. The advisory report retains GLib's release blocker. See
 [the exact hosted record](../evidence/release-readiness-ci-2026-09-12.md).
 
+Tactical [`217`](../tactical/217-android-distribution-attribution.md) now
+builds and verifies Android notice assets locally: 83 debug / 79 release Maven
+artifacts, 205 Rust packages and all six native libraries. Original grants,
+parent POMs, embedded notices and checksum-bound native supplements are
+preserved. APK inspection caught and now passes a generated-assets directory
+repair. JVM tests, lint, negative package checks and release asset generation
+pass; hosted qualification is next. No Android release was signed.
+
 Completed local and hosted Tactical
 [`216`](../tactical/216-local-support-diagnostics-and-release-baseline.md)
 adds the previewed, bounded local support export and public issue/guidance
@@ -28,10 +36,11 @@ GLib's GTK3 unsoundness needs the prepared, optimized-probe-validated backport
 maintenance decision, and native platform notice coverage needs closure.
 The native follow-through now adds a project-local AppImage output hook,
 exact distro package/source attribution, original copyright/common-license
-texts and final-artifact manifest verification. Local negative checks and a
-real Ubuntu x86_64 patchelf/provenance probe pass; full native AppImage CI is
-pending. Launcher/runtime and corresponding-source obligations remain explicit
-review items, as do Android Maven/AAR notices. Tagged publication fails while
+texts and final-artifact manifest verification. Run `34687692788` passes all 12 jobs at
+`a83de080d27adb80932a03c972db96d026c91520`; exact extracted AppImages verify
+174 components / 113 distro packages / 128 notice files on x86_64 and
+173 / 112 / 127 on ARM64. Launcher/runtime and corresponding-source obligations remain explicit
+review items; Tactical 217 owns Android Maven/AAR attribution. Tagged publication fails while
 the advisory blocker remains. These are
 explicit release findings, not a zero-issues claim from the audit exit code.
 

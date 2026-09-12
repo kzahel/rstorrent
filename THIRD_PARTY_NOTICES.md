@@ -80,8 +80,11 @@ upstream notices; no copyright owner is invented.
 
 The generator covers the target's default-feature Rust graph (including
 build dependencies), web production dependencies and Ajv standalone code
-generation. It does not claim to inventory Android Maven/AAR dependencies or
-all native libraries bundled by AppImage tooling. Distribution review must
+generation. Tactical `217` separately generates Android Maven/AAR and both-ABI Rust notices
+in variant assets, including original archive notices, parent-POM grants and
+reviewed native supplements. Tactical `214` now embeds original distro notices
+and a checked component manifest in native AppImages. Launcher/runtime and
+corresponding-source obligations remain separate review items. Distribution review must
 reconcile those platform components against the saved package inventories
 before a supported release. See `distribution/dependency-review.json` for
 currently unresolved advisory blockers and its expiring review date.

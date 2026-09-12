@@ -183,3 +183,21 @@ Sanitized JSON and timing artifacts are retained seven days; unsigned package
 artifacts follow their existing three-day retention. Local downloaded logs,
 timings, packages and negative-control fixtures are removed after recording
 these results. Subsequent evidence-document edits do not change tested code.
+
+
+## Native Attribution Follow-through
+
+Run [`34687692788`](https://github.com/kzahel/rstorrent/actions/runs/34687692788)
+passes all 12 jobs at `a83de080d27adb80932a03c972db96d026c91520`. This adds
+checked distro copyright/common-license attribution before AppImage creation
+and signing. Both final extracted product packages pass the new manifest gate:
+
+| Native package | Selected components | Distro packages | Notice files | Entries / uncompressed bytes |
+| --- | ---: | ---: | ---: | ---: |
+| Linux x86_64 | 174 | 113 | 128 | 391 / 327,392,358 |
+| Linux ARM64 | 173 | 112 | 127 | 487 / 340,990,858 |
+
+The manifest hashes and source/probe details live in Tactical 214. Launcher
+and outer runtime provenance, per-package corresponding-source obligations
+and GLib source maintenance remain explicit release review items. Tactical
+217 separately adds Android attribution; this run predates that slice.

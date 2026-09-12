@@ -128,6 +128,24 @@ def npm_notices():
     return sections, inventory
 
 
+def generate_rust_notices(targets, manifest_path):
+    version = subprocess.check_output(['cargo-about', '--version'], text=True).strip()
+    if version != 'cargo-about 0.9.2':
+        raise ValueError('install pinned cargo-about 0.9.2 with --locked --features cli')
+    with tempfile.TemporaryDirectory(prefix='rstorrent-notices-') as temporary:
+        temp = Path(temporary)
+        config = temp / 'about.toml'
+        config.write_text((ROOT / 'distribution/about.toml').read_text(encoding='utf-8') + 'targets = ' + json.dumps(targets) + '\n')
+        output = temp / 'licenses.json'
+        subprocess.run(['cargo-about', 'generate', '--locked', '--fail', '--manifest-path',
+                        str(manifest_path), '--config', str(config),
+                        '--format', 'json', '--output-file', str(output)], cwd=ROOT, check=True, timeout=600)
+        data = json.loads(output.read_text(encoding='utf-8'))
+    catalog = json.loads((ROOT / 'distribution/licenses/cargo-sources.json').read_text(encoding='utf-8'))
+    rust, rust_inventory = rust_notices(data, catalog)
+    return rust, rust_inventory, version
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--target', default=os.environ.get('TAURI_ENV_TARGET_TRIPLE'))
@@ -139,20 +157,7 @@ def main():
                       if line.startswith('host: '))
     if target not in TARGETS:
         raise ValueError('unreviewed desktop target')
-    version = subprocess.check_output(['cargo-about', '--version'], text=True).strip()
-    if version != 'cargo-about 0.9.2':
-        raise ValueError('install pinned cargo-about 0.9.2 with --locked --features cli')
-    with tempfile.TemporaryDirectory(prefix='rstorrent-notices-') as temporary:
-        temp = Path(temporary)
-        config = temp / 'about.toml'
-        config.write_text((ROOT / 'distribution/about.toml').read_text(encoding='utf-8') + f'targets = ["{target}"]\n')
-        output = temp / 'licenses.json'
-        subprocess.run(['cargo-about', 'generate', '--locked', '--fail', '--manifest-path',
-                        str(ROOT / 'clients/desktop/src-tauri/Cargo.toml'), '--config', str(config),
-                        '--format', 'json', '--output-file', str(output)], cwd=ROOT, check=True, timeout=600)
-        data = json.loads(output.read_text(encoding='utf-8'))
-    catalog = json.loads((ROOT / 'distribution/licenses/cargo-sources.json').read_text(encoding='utf-8'))
-    rust, rust_inventory = rust_notices(data, catalog)
+    rust, rust_inventory, version = generate_rust_notices([target], ROOT / 'clients/desktop/src-tauri/Cargo.toml')
     npm, npm_inventory = npm_notices()
     text = ('# RSTorrent third-party Rust and web notices\n\n'
             f'Target: {target}\nGenerator: {version}\n'

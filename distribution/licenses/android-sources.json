@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "texts": {
+    "apache-2.0": {
+      "file": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594.txt",
+      "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+      "license": "Apache-2.0",
+      "source": "https://github.com/java-native-access/jna/blob/695ae749e7bfd92f88324147c5d96b7129efec3e/AL2.0"
+    },
+    "jna-libffi": {
+      "file": "2c9c2acb9743e6b007b91350475308aee44691d96aa20eacef8e199988c8c388.txt",
+      "sha256": "2c9c2acb9743e6b007b91350475308aee44691d96aa20eacef8e199988c8c388",
+      "license": "MIT",
+      "source": "https://github.com/java-native-access/jna/blob/695ae749e7bfd92f88324147c5d96b7129efec3e/native/libffi/LICENSE"
+    },
+    "graphics-native": {
+      "file": "5c14df851e8cf27b93771821a7c9217563f42204198cc8ed6e40ae609e0d1e69.txt",
+      "sha256": "5c14df851e8cf27b93771821a7c9217563f42204198cc8ed6e40ae609e0d1e69",
+      "license": "Apache-2.0",
+      "source": [
+        "https://github.com/androidx/androidx/blob/794e3806700833665f48f56f7dd3581642a6057f/graphics/graphics-path/src/main/cpp/Conic.cpp",
+        "https://github.com/androidx/androidx/blob/794e3806700833665f48f56f7dd3581642a6057f/graphics/graphics-path/src/main/cpp/math/TVecHelpers.h",
+        "https://github.com/androidx/androidx/blob/794e3806700833665f48f56f7dd3581642a6057f/graphics/graphics-path/src/main/cpp/math/compiler.h",
+        "https://github.com/androidx/androidx/blob/794e3806700833665f48f56f7dd3581642a6057f/graphics/graphics-path/src/main/cpp/math/vec2.h"
+      ],
+      "extraction": "Distinct initial license comments only; no implementation source"
+    }
+  },
+  "native_artifacts": {
+    "androidx.graphics:graphics-path:1.0.1": "8ca4032b6d79b351f0b59ad4b580eddbb9423e1652f7c958830687f1eee2ec03",
+    "net.java.dev.jna:jna:5.17.0": "4dbeffffa665d97ad5aa7eee297531d3c841a86716ab7f774fd6956422b3cf38"
+  }
+}

@@ -140,3 +140,5 @@ tasks.configureEach {
         dependsOn(requireReleaseSigning)
     }
 }
+
+apply(from = "notices.gradle")
