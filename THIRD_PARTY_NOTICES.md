@@ -5,6 +5,19 @@ third-party material and release-distribution considerations. It does not
 replace the license information supplied by package managers or upstream
 projects.
 
+## GLib Rust Binding Backport
+
+`vendor/glib-0.18.5` contains the published gtk-rs GLib Rust binding under its
+original MIT license, retained in `vendor/glib-0.18.5/LICENSE`. RSTorrent
+modifies only two lines in `src/variant_iter.rs` to repair the mutable C
+out-pointer for RUSTSEC-2024-0429. The complete original source inventory,
+archive checksum, source revision and patch provenance are recorded in
+`distribution/patches/glib-0.18.5-source.json`. Linux binary notices include
+the original license and exact modification; other platform graphs omit this
+Linux desktop dependency.
+
+Source: <https://static.crates.io/crates/glib/glib-0.18.5.crate>
+
 ## Gradle Wrapper
 
 The Android experiments include the official Gradle 8.11.1 wrapper scripts

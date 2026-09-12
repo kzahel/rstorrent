@@ -75,7 +75,7 @@ jobs:
         shell: bash
         run: |
           cargo install cargo-audit --locked --version 0.22.2
-          cargo audit --json > "$RUNNER_TEMP/cargo-audit.json" || test "$?" -eq 1
+          python3 scripts/audit-cargo-dependencies.py --output "$RUNNER_TEMP/cargo-audit.json"
           npm audit --prefix clients/web --json > "$RUNNER_TEMP/npm-audit.json" || test "$?" -eq 1
           python3 scripts/review-dependency-audit.py \
             --cargo "$RUNNER_TEMP/cargo-audit.json" \
@@ -187,6 +187,9 @@ jobs:
         with:
           shared-key: desktop-release-${{ matrix.runner }}-${{ matrix.rust_target || 'host' }}
 
+      - name: Verify the approved GLib source override
+        run: python3 scripts/glib_backport.py
+
       - name: Install Linux packaging dependencies
         if: runner.os == 'Linux'
         run: |
@@ -199,6 +202,12 @@ jobs:
             libwebkit2gtk-4.1-dev \
             patchelf \
             xdg-utils
+
+      - name: Exercise the GLib backport with release optimization
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p clients/web/dist
+          cargo test --locked --release -p rstorrent-desktop --test glib_backport
 
       - name: Set up macOS code-signing keychain
         if: runner.os == 'macOS'

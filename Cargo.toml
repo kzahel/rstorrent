@@ -20,6 +20,7 @@ members = [
     "crates/rstorrent-remote-wasm",
     "crates/rstorrent-session",
 ]
+exclude = ["vendor/glib-0.18.5"]
 resolver = "3"
 
 [workspace.package]
@@ -86,3 +87,7 @@ incremental = false
 inherits = "dev"
 opt-level = 0
 debug = "full"
+
+# Approved RUSTSEC-2024-0429 backport; provenance and retirement in Tactical 218.
+[patch.crates-io]
+glib = { path = "vendor/glib-0.18.5" }

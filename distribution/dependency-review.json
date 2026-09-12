@@ -51,7 +51,15 @@
       "advisory": "RUSTSEC-2024-0429",
       "package": "glib",
       "version": "0.18.5",
-      "reason": "Tauri GTK3 dependencies retain the affected VariantStrIter implementation. No direct application use was found, but transitive unreachability is not established. A maintained upstream fix or an explicitly approved, validated backport is required before clearing this blocker."
+      "reason": "The approved exact backport is source-verified; optimized native x86_64/ARM64 and packaged desktop qualification are pending in Tactical 218."
+    }
+  ],
+  "backports": [
+    {
+      "package": "glib",
+      "version": "0.18.5",
+      "advisory": "RUSTSEC-2024-0429",
+      "source_manifest_sha256": "b4c7d59e738c7999884177232c056720ddeb15b1e83568594cc60ba4b7e7fa0b"
     }
   ]
 }

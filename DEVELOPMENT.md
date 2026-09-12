@@ -1390,9 +1390,20 @@ hashes identify the published AARs; AGP strips native files before packaging,
 so these are not claims of byte identity with final APK library contents.
 
 For advisory review, install `cargo-audit --locked --version 0.22.2`, collect
-`cargo audit --json` and `npm audit --prefix clients/web --json`, then pass
+`python3 scripts/audit-cargo-dependencies.py --output FILE` and
+`npm audit --prefix clients/web --json`, then pass
 those reports to `scripts/review-dependency-audit.py --cargo FILE --npm FILE
 --output FILE`. The weekly workflow rejects new vulnerabilities, changed
 warnings, stale databases and expired reviews. `--require-release-ready`
 also rejects the explicit blocker list and is required by tagged publication.
-The prepared GLib patch is a review proposal; it is not active Cargo source.
+The approved GLib 0.18.5 backport is active Cargo source. Check its exact
+published-source provenance and two-line delta with
+`python3 scripts/glib_backport.py`; run negative integrity/attribution cases
+with `python3 -m unittest discover -s scripts -p test_glib_backport.py`.
+On native Linux, run
+`cargo test --locked --release -p rstorrent-desktop --test glib_backport`.
+Both native Linux package lanes require that optimized regression. Do not
+modify the vendored crate without updating and reviewing its provenance.
+The audit collector restores the original GLib registry identity only in an
+in-memory audit projection, retaining detection of future advisories. Review
+requires that projection to match the current lock and verified backport.

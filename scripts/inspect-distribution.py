@@ -3,6 +3,10 @@
 import argparse
 import hashlib
 import json
+
+import glib_backport
+
+ROOT = glib_backport.ROOT
 import os
 from pathlib import Path
 import re
@@ -74,6 +78,10 @@ def inspect(root, require_notices=True, require_native=False):
                 raise ValueError('missing or oversized notices')
             if hashlib.sha256(notices.read_bytes()).hexdigest() != manifest['notices_sha256']:
                 raise ValueError('notice content differs from dependency manifest')
+            if manifest.get('target', '').endswith('-unknown-linux-gnu'):
+                glib = [p for p in manifest.get('rust', []) if p.get('name') == 'glib']
+                if len(glib) != 1 or glib[0].get('backport') != glib_backport.verify(ROOT):
+                    raise ValueError('Linux package must attribute the exact verified GLib backport')
             if manifest.get('schema') != 1 or not manifest.get('rust') or not manifest.get('npm'):
                 raise ValueError('incomplete dependency manifest')
             notice_manifests.append({'path': name, 'target': manifest['target'],

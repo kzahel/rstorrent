@@ -6,10 +6,12 @@ import hashlib
 import json
 from pathlib import Path
 
+import glib_backport
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def review(cargo, npm, policy, today):
+def review(cargo, npm, policy, today, backports=()):
     if cargo.get('vulnerabilities', {}).get('count') != 0:
         raise ValueError('Cargo vulnerability report is missing or has vulnerabilities')
     if npm.get('metadata', {}).get('vulnerabilities', {}).get('total') != 0:
@@ -29,6 +31,13 @@ def review(cargo, npm, policy, today):
                         entry['package']['name'], entry['package']['version']))
     if actual != expected:
         raise ValueError('dependency warning inventory changed; review additions and removals')
+    identity = ('package', 'version', 'advisory', 'source_manifest_sha256')
+    expected_backports = {tuple(p[k] for k in identity) for p in policy.get('backports', [])}
+    actual_backports = {tuple(p[k] for k in identity) for p in backports
+                       if p.get('status') == 'source-verified-backport'}
+    if (actual_backports != expected_backports or len(actual_backports) != len(backports)
+            or len(expected_backports) != len(policy.get('backports', []))):
+        raise ValueError('reviewed backports require exact independently verified source')
     return {
         'schema': 1,
         'reviewed_at': today.isoformat(),
@@ -36,6 +45,7 @@ def review(cargo, npm, policy, today):
         'cargo_vulnerabilities': 0,
         'npm_vulnerabilities': 0,
         'reviewed_warnings': sorted([list(r) for r in actual]),
+        'source_verified_backports': list(backports),
         'release_blockers': policy['release_blockers'],
         'release_ready': not policy['release_blockers'],
     }
@@ -49,8 +59,12 @@ def main():
     parser.add_argument('--require-release-ready', action='store_true')
     args = parser.parse_args()
     policy = json.loads((ROOT / 'distribution/dependency-review.json').read_text(encoding='utf-8'))
-    result = review(json.loads(args.cargo.read_text(encoding='utf-8')), json.loads(args.npm.read_text(encoding='utf-8')),
-                    policy, datetime.now(timezone.utc).date())
+    cargo = json.loads(args.cargo.read_text(encoding='utf-8'))
+    _, provenance = glib_backport.audit_lock(ROOT)
+    if cargo.get('rstorrent_source_review') != provenance:
+        raise ValueError('Cargo report must audit the exact original backport registry identity')
+    result = review(cargo, json.loads(args.npm.read_text(encoding='utf-8')),
+                    policy, datetime.now(timezone.utc).date(), [glib_backport.verify(ROOT)])
     result['lockfiles'] = {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
                            for name in ('Cargo.lock', 'clients/web/package-lock.json')}
     args.output.parent.mkdir(parents=True, exist_ok=True)

@@ -8,6 +8,8 @@ from pathlib import Path
 import subprocess
 import tempfile
 
+import glib_backport
+
 ROOT = Path(__file__).resolve().parents[1]
 LIMIT = 512 * 1024
 TARGETS = {'aarch64-apple-darwin', 'x86_64-apple-darwin',
@@ -70,9 +72,20 @@ def rust_notices(data, catalog):
     sections, inventory = [], []
     for item in sorted(data['crates'], key=lambda p: (p['package']['name'], p['package']['version'])):
         package = item['package']
-        if not package['source']:
-            continue
         root = Path(package['manifest_path']).parent
+        backport = None
+        if not package['source']:
+            if package['name'] == 'glib':
+                backport = glib_backport.verify(ROOT)
+                if (root.resolve() != (ROOT / 'vendor/glib-0.18.5').resolve()
+                        or package['version'] != backport['version']
+                        or package['license'] != backport['license']):
+                    raise ValueError('unreviewed local GLib notice source')
+            elif (package['name'].startswith('rstorrent-') and
+                  any(root.resolve().is_relative_to(ROOT / folder) for folder in ('crates', 'clients'))):
+                continue
+            else:
+                raise ValueError('unreviewed local third-party notice source')
         key = f"{package['name']}@{package['version']}"
         files = license_files(root)
         texts = [f"Published file: {p.relative_to(root).as_posix()}\n\n{read_text(p)}" for p in files]
@@ -86,8 +99,17 @@ def rust_notices(data, catalog):
                 raise ValueError('CRC32C supplementary attribution changed')
             texts.append('Additional Zlib-derived component notice (upstream src/combine.rs):\n' + header)
         source = f"https://crates.io/api/v1/crates/{package['name']}/{package['version']}/download"
-        inventory.append({'name': package['name'], 'version': package['version'],
-                          'license': package['license'], 'source': source})
+        entry = {'name': package['name'], 'version': package['version'],
+                 'license': package['license'], 'source': source}
+        if backport:
+            source = backport['upstream_archive']
+            entry['source'] = source
+            entry['backport'] = backport
+            texts.append('Local modification: approved RUSTSEC-2024-0429 backport.\n'
+                         f"Published archive SHA-256: {backport['upstream_archive_sha256']}\n"
+                         f"Patch SHA-256: {backport['patch_sha256']}\n\n"
+                         + read_text(ROOT / backport['patch']))
+        inventory.append(entry)
         sections.append(f"## {key}\nDeclared license: {package['license']}\n"
                         f"Source package: {source}\n\n" + '\n\n'.join(texts))
     for license in data['licenses']:
@@ -143,6 +165,10 @@ def generate_rust_notices(targets, manifest_path):
         data = json.loads(output.read_text(encoding='utf-8'))
     catalog = json.loads((ROOT / 'distribution/licenses/cargo-sources.json').read_text(encoding='utf-8'))
     rust, rust_inventory = rust_notices(data, catalog)
+    if (manifest_path.resolve() == (ROOT / 'clients/desktop/src-tauri/Cargo.toml').resolve()
+            and any(t.endswith('-unknown-linux-gnu') for t in targets)
+            and len([p for p in rust_inventory if p['name'] == 'glib' and p.get('backport')]) != 1):
+        raise ValueError('Linux desktop notices must include the verified GLib backport')
     return rust, rust_inventory, version
 
 
@@ -165,7 +191,7 @@ def main():
             'web production dependencies and Ajv standalone code generation.\n'
             'Native system libraries require the platform package inventory separately.\n\n'
             'MPL-covered source is available from the exact source-package URLs below.\n'
-            'These dependencies are redistributed without source modifications.\n\n'
+            'Dependencies are unmodified except where a package explicitly records a backport.\n\n'
             + '\n\n'.join(rust + npm) + '\n')
     if len(text.encode()) > 16 * 1024 * 1024:
         raise ValueError('notice bundle exceeds 16 MiB')

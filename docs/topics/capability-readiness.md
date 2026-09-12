@@ -2,6 +2,14 @@
 
 Topic: `capability-readiness`
 
+Active Tactical [`218`](../tactical/218-glib-variant-iterator-backport.md)
+adopts the explicitly approved two-line GLib 0.18.5 backport. The exact
+published source is vendored with its original MIT license and a checked
+file/patch inventory. Cargo selection, advisory review and Linux package
+notices independently require the repaired source. Optimized native Linux
+x86_64/ARM64 and packaged desktop qualification remain in progress; the
+release blocker is retained until those gates pass.
+
 Latest hosted qualification on `release-readiness-ci` is complete: run
 `34689662485` passes all 12 jobs at
 `f7e50a753e03896ffbce56648543ec04c1af90be`. It

@@ -7,7 +7,11 @@ on:
   workflow_call:
   pull_request:
     paths:
+      - Cargo.toml
       - Cargo.lock
+      - vendor/**
+      - scripts/glib_backport.py
+      - scripts/audit-cargo-dependencies.py
       - clients/web/package-lock.json
       - distribution/**
       - scripts/review-dependency-audit.py
@@ -32,7 +36,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p artifacts/dependencies
-          cargo audit --json > "$RUNNER_TEMP/cargo-audit.json" || test "$?" -eq 1
+          python3 scripts/audit-cargo-dependencies.py --output "$RUNNER_TEMP/cargo-audit.json"
           npm audit --prefix clients/web --json > "$RUNNER_TEMP/npm-audit.json" || test "$?" -eq 1
       - name: Enforce reviewed warnings and report release blockers
         run: >-

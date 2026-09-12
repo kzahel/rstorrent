@@ -53,3 +53,7 @@ winreg = "=0.55.0"
 rcgen = "0.14.8"
 rusqlite = { workspace = true }
 rstorrent-remote-relay = { path = "../../../crates/rstorrent-remote-relay" }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+# Regression uses the same source-selected binding as the product GTK stack.
+glib = "=0.18.5"
