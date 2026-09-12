@@ -1,6 +1,7 @@
 # Tactical 217: Android Distribution Attribution
 
-Status: **Active (2026-09-12).** Release-readiness campaign follow-through.
+Status: **Complete locally and hosted (2026-09-12).**
+All 12 jobs pass at the implementation revision recorded below.
 
 Topics: `beta-release-readiness`, `capability-readiness`
 
@@ -117,5 +118,41 @@ No release APK/AAB was signed or published.
 
 A read-only OSV query on 2026-09-12 returns no advisory matches for all 79
 release Maven coordinates. This is a dated registry query, not universal
-security clearance or a substitute for Cargo/npm review. Hosted Android
-runtime and package qualification remain the next gate for this slice.
+security clearance or a substitute for Cargo/npm review. The hosted Android
+runtime and package gate subsequently passed as recorded below.
+
+## Hosted Android Qualification
+
+The Android job in run
+[`34689662485`](https://github.com/kzahel/rstorrent/actions/runs/34689662485)
+passes at `f7e50a753e03896ffbce56648543ec04c1af90be`: build/JVM/lint checks,
+22 Python release-tool tests, final APK notice inspection and the owned API 35
+x86_64 revision-9 SAF lifecycle. Both notice assets are exported from the
+verified APK itself and retained with the structured inspection report.
+The hosted manifest is byte-identical to the local one:
+`f6b132e23a2524b0a39fdfb26ff2bf78f4f9f276eca48b3ec1b412d5ca951ff3`.
+The hosted APK SHA-256 is
+`8057196c711d9c289ce90a68de3abfee60bb8afd96a90008a774c3eb5e804049`.
+Preconfirmation upload is zero, skipped files remain absent, force recheck
+passes, cancellation joins while retaining payload, removal is exact, and
+storage handles peak at **3/40**. The owned AVD is removed and cleanup passes.
+
+An additional archive audit found Emoji2's `libs/repackaged.jar` with 49
+relocated FlatBuffers classes and the `FLATBUFFERS_1_12_0` API marker. Neither
+that embedded JAR nor the original FlatBuffers Java 1.12.0 JAR contains a
+standalone license/notice file. The original Maven POM declares Apache 2.0,
+whose standard text is already included; its SHA-256 is
+`cb226baf546260770f21e8152a6aa88ba15230d739f750df480f2a668d43e0eb`.
+A separate dated OSV query for that Java coordinate also returns no matches.
+These are inspected archive/metadata facts, not a claim that relocation is a
+byte-identical rebuild of upstream. The Emoji2 AAR's full hash already binds
+its embedded bytes in the manifest.
+
+Pinned cargo-about 0.9.2 is installed in the local Cargo toolchain so ordinary
+Android builds can run the new required hook after scratch cleanup.
+
+The complete workflow finishes successfully at 2026-09-12 11:19:29 UTC:
+all 12 jobs pass, including both Linux AppImages, Windows/macOS packaging,
+Rust/interop, web, iOS and the extended verification/advisory workflows.
+This closes the tactical stopping condition; signed release qualification
+and the campaign's GLib/source-maintenance decision remain separate.

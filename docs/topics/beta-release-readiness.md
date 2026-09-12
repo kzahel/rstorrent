@@ -2,20 +2,23 @@
 
 Topic: `beta-release-readiness`
 
-Hosted run `34684328524` passes all 12 jobs at
-`8f31f98a48313c57c3e3ba16e5b8907b02d63135`, including the repaired Windows
+Latest hosted run `34689662485` passes all 12 jobs at
+`f7e50a753e03896ffbce56648543ec04c1af90be`, including the repaired Windows
 recheck test, all four unsigned desktop package lanes, owned Android runtime,
 iOS, web, Rust, dependency review and extended storage recovery. CI-004 and
 CI-006 are closed. The advisory report retains GLib's release blocker. See
 [the exact hosted record](../evidence/release-readiness-ci-2026-09-12.md).
 
-Tactical [`217`](../tactical/217-android-distribution-attribution.md) now
-builds and verifies Android notice assets locally: 83 debug / 79 release Maven
-artifacts, 205 Rust packages and all six native libraries. Original grants,
+Completed local and hosted Tactical
+[`217`](../tactical/217-android-distribution-attribution.md) builds and verifies
+Android notice assets: 83 debug / 79 release Maven artifacts, 205 Rust
+packages and all six native libraries. Original grants,
 parent POMs, embedded notices and checksum-bound native supplements are
 preserved. APK inspection caught and now passes a generated-assets directory
 repair. JVM tests, lint, negative package checks and release asset generation
-pass; hosted qualification is next. No Android release was signed.
+pass. The hosted APK has a byte-identical notice manifest and passes the
+owned API 35 runtime cohort with 3/40 storage handles and full cleanup.
+No Android release was signed.
 
 Completed local and hosted Tactical
 [`216`](../tactical/216-local-support-diagnostics-and-release-baseline.md)

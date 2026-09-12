@@ -2,19 +2,22 @@
 
 Topic: `capability-readiness`
 
-Hosted qualification on `release-readiness-ci` is complete: run `34684328524`
-passes all 12 jobs at `8f31f98a48313c57c3e3ba16e5b8907b02d63135`. It
+Latest hosted qualification on `release-readiness-ci` is complete: run
+`34689662485` passes all 12 jobs at
+`f7e50a753e03896ffbce56648543ec04c1af90be`. It
 includes the repaired Windows recheck test, four unsigned package lanes,
 owned Android runtime, iOS, web, Rust, advisory review and storage recovery.
 CI-004 and CI-006 are closed. [Exact evidence and remaining gates](../evidence/release-readiness-ci-2026-09-12.md).
 
-Active Tactical [`217`](../tactical/217-android-distribution-attribution.md)
-adds Android variant attribution assets and APK/AAB verification. Local
+Completed local and hosted Tactical
+[`217`](../tactical/217-android-distribution-attribution.md) adds Android
+variant attribution assets and APK/AAB verification. Local
 83/79-artifact debug/release Maven graphs and the 205-package both-ABI Rust
 graph pass generation; the debug APK includes all six native libraries and
-verified notices. JVM/lint and negative integrity checks pass. Hosted Android
-qualification is next. Tactical 214's native AppImage follow-through now
-passes both architectures in the all-green 12-job run `34687692788` at
+verified notices. JVM/lint and negative integrity checks pass. The hosted
+Android APK has a byte-identical manifest; its owned API 35 runtime passes
+with 3/40 storage handles and full cleanup. Tactical 214's native AppImage
+follow-through now passes both architectures in the all-green 12-job run `34687692788` at
 `a83de080d27adb80932a03c972db96d026c91520`; launcher/runtime and source-delivery
 review remain open independently of the existing GLib decision.
 

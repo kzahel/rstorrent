@@ -225,5 +225,6 @@ ARM64 contains 487 entries / 340,990,858 bytes and verifies 173 components,
 Final artifact inspection passed independently after AppImage extraction.
 The owned Linux fixture and its output-plugin extraction cache were removed.
 Launcher/runtime and corresponding-source review remain explicit; Android
-Maven/AAR follow-through now has bounded Tactical 217. The GLib patch remains
-unapplied pending the source-maintenance decision.
+Maven/AAR follow-through is complete in Tactical 217, with byte-identical
+local/hosted notice manifests and all 12 jobs passing in run `34689662485`.
+The GLib patch remains unapplied pending the source-maintenance decision.

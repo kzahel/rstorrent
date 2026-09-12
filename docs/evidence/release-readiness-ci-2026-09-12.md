@@ -201,3 +201,24 @@ The manifest hashes and source/probe details live in Tactical 214. Launcher
 and outer runtime provenance, per-package corresponding-source obligations
 and GLib source maintenance remain explicit release review items. Tactical
 217 separately adds Android attribution; this run predates that slice.
+
+## Android Attribution Follow-through
+
+At `f7e50a753e03896ffbce56648543ec04c1af90be`, run
+[`34689662485`](https://github.com/kzahel/rstorrent/actions/runs/34689662485)
+passes the Android dual-ABI/JVM/lint, notice-integrity and owned API 35 runtime
+job. Its verified APK contains 83 Maven and 205 Rust attributions, accounting
+for all six native libraries. The original notice assets exported from that
+APK are retained with `android-notices-34689662485-1`. Their manifest is
+byte-identical to the local record in Tactical 217. The runtime report records
+APK SHA-256 `8057196c711d9c289ce90a68de3abfee60bb8afd96a90008a774c3eb5e804049`,
+3/40 storage handles, no preconfirmation upload, exact recheck/removal, joined
+cancellation, successful cleanup and removal of the owned AVD.
+
+The complete workflow finishes **successfully at 2026-09-12 11:19:29 UTC**.
+All **12 jobs pass** at that exact implementation revision, including four
+unsigned desktop package lanes, Rust/loopback interop, web, iOS, extension,
+workflow tools, extended storage recovery and dependency review. The Android
+attribution slice is complete. The advisory inventory still explicitly
+retains GLib as a release blocker; this run does not qualify a repaired signed
+Windows update, publish the disclosure pages, or declare a supported release.
