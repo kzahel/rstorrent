@@ -2,13 +2,14 @@
 
 Topic: `capability-readiness`
 
-Active release-hardening Tactical
+Locally completed release-hardening Tactical
 [`212`](../tactical/212-application-lifecycle-verification-gate.md) adds a
 controlled complete application lifecycle gate. Its first two local cases
 exposed and now pass a durable Resume queue-admission repair after paused
 corruption checking; exact hashes, restart, independent seeding, repair,
-keep-data removal, and joined resource cleanup pass. The broader existing
-oversized-file matrix and hosted qualification remain open. CI-007's weekly
+keep-data removal, and joined resource cleanup pass. The broader topology/checkpoint matrix and oversized restart/seeding cohort
+now pass after a one-shot exact-extent handoff repairs repeated checking.
+Hosted qualification remains open. CI-007's weekly
 performance requirement is satisfied by scheduled full run `34099890487`.
 
 Work-selection policy: the former single-**Now** convention is retired as of

@@ -342,8 +342,9 @@ topology still needs a hosted run after an authorized push.
   exact repair, keep-data removal, resource bounds, and joined cleanup. It
   also repairs Resume failing to restore a missing download-queue position
   after a paused seed recheck. Hosted confirmation remains open. The broader
-  legacy matrix exposed a repeated-checking failure with oversized existing
-  files; that failure must be resolved before its scheduled gate is qualified.
+  topology/checkpoint matrix and oversized restart/seeding cohort now pass
+  after repairing repeated checking with an exact verified-extent handoff.
+  A bounded weekly workflow is prepared; hosted execution remains unclaimed.
 - [x] **CI-007 — Repair scheduled performance CI.** The 2026-08-10 and
   2026-08-17 runs failed before tests because `astral-sh/setup-uv@v8` could not
   be resolved. The workflow now pins reviewed `setup-uv` `v8.3.2`; manual

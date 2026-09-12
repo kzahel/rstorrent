@@ -47,6 +47,35 @@ pub struct FastResumeValidation {
     pub hash_jobs: usize,
 }
 
+/// One-shot, in-memory physical extents from a completed content generation.
+/// Construction stays in the storage owner after verification and durability.
+#[derive(Debug)]
+pub struct CompletedStorageEvidence {
+    identity: TorrentArtifactIdentity,
+    info_hashes: rstorrent_protocol::identity::InfoHashes,
+    oversized: Vec<(usize, u64)>,
+}
+
+impl CompletedStorageEvidence {
+    pub fn matches(&self, identity: TorrentArtifactIdentity) -> bool {
+        self.identity == identity
+    }
+
+    pub(crate) fn torrent_id(&self) -> TorrentId {
+        self.identity.torrent_id
+    }
+
+    pub(crate) fn matches_content(&self, torrent_id: TorrentId, content: &TorrentContent) -> bool {
+        self.torrent_id() == torrent_id && self.info_hashes == content.info_hashes()
+    }
+
+    pub(crate) fn expected_length(&self, file_index: usize, logical_length: u64) -> u64 {
+        self.oversized
+            .binary_search_by_key(&file_index, |entry| entry.0)
+            .map_or(logical_length, |index| self.oversized[index].1)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct StorageDiscoverySummary {
     pub expected_files: usize,
@@ -627,7 +656,7 @@ enum RetainedFileSource {
 enum RetainedSourceObservation {
     Exact,
     Missing,
-    WrongLength,
+    WrongLength(Option<u64>),
     WrongKind,
 }
 
@@ -637,12 +666,7 @@ impl RetainedFileSource {
         expected_length: u64,
     ) -> Result<RetainedSourceObservation, SelectiveStorageError> {
         match self {
-            Self::Dynamic {
-                reference,
-                expected_length: retained_expected,
-                ..
-            } => {
-                debug_assert_eq!(*retained_expected, expected_length);
+            Self::Dynamic { reference, .. } => {
                 let observation =
                     reference
                         .observe()
@@ -660,7 +684,7 @@ impl RetainedFileSource {
                 Ok(if observation.length == Some(expected_length) {
                     RetainedSourceObservation::Exact
                 } else {
-                    RetainedSourceObservation::WrongLength
+                    RetainedSourceObservation::WrongLength(observation.length)
                 })
             }
             Self::Fixed(file) => {
@@ -675,7 +699,7 @@ impl RetainedFileSource {
                 Ok(if actual == expected_length {
                     RetainedSourceObservation::Exact
                 } else {
-                    RetainedSourceObservation::WrongLength
+                    RetainedSourceObservation::WrongLength(Some(actual))
                 })
             }
         }
@@ -2131,6 +2155,24 @@ impl SelectiveStorage {
         &mut self,
         resumed: ResumedStorage,
     ) -> Result<FastResumeValidation, SelectiveStorageError> {
+        self.validate_resume_extents(resumed, None).await
+    }
+
+    async fn validate_resume_extents(
+        &mut self,
+        resumed: ResumedStorage,
+        completed: Option<&CompletedStorageEvidence>,
+    ) -> Result<FastResumeValidation, SelectiveStorageError> {
+        if completed.is_some_and(|proof| {
+            !proof.matches(TorrentArtifactIdentity {
+                torrent_id: self.identity.torrent_id,
+                content_fingerprint: self.identity.content_fingerprint,
+            })
+        }) {
+            return Err(SelectiveStorageError::InvalidStorageOperation(
+                "completed storage evidence has a different identity",
+            ));
+        }
         let committed_pieces = self.verified.iter().filter(|verified| **verified).count();
         let mut validation = FastResumeValidation {
             evidence: ResumeStorageEvidence::Matches,
@@ -2201,7 +2243,10 @@ impl SelectiveStorage {
             let observation = match source {
                 Some(source) => {
                     validation.artifact_observations += 1;
-                    source.observe_exact(metainfo_file.length).await?
+                    let physical_length = completed.map_or(metainfo_file.length, |proof| {
+                        proof.expected_length(file_index, metainfo_file.length)
+                    });
+                    source.observe_exact(physical_length).await?
                 }
                 None => RetainedSourceObservation::Missing,
             };
@@ -2211,7 +2256,7 @@ impl SelectiveStorage {
                     validation.evidence = ResumeStorageEvidence::NeedsRepair;
                     return Ok(validation);
                 }
-                RetainedSourceObservation::WrongLength => {
+                RetainedSourceObservation::WrongLength(_) => {
                     validation.evidence = ResumeStorageEvidence::ContentMismatch(
                         ResumeValidationRejectReason::UnexpectedPayloadLength,
                     );
@@ -3024,6 +3069,45 @@ impl SelectiveStorage {
     }
 
     /// Finalize direct content without changing its path.
+    pub(crate) async fn completed_storage_evidence(
+        &self,
+    ) -> Result<Option<CompletedStorageEvidence>, SelectiveStorageError> {
+        if self.verified.iter().any(|verified| !verified) {
+            return Ok(None);
+        }
+        let Some(content) = &self.content else {
+            return Ok(None);
+        };
+        let mut oversized = Vec::new();
+        for (index, file) in self.layout.files().iter().enumerate() {
+            if file.padding || file.length == 0 {
+                continue;
+            }
+            let source = self.files[index]
+                .as_ref()
+                .map(|file| &file.source)
+                .or(self.skipped_sources[index].as_ref());
+            let Some(source) = source else {
+                return Ok(None);
+            };
+            match source.observe_exact(file.length).await? {
+                RetainedSourceObservation::Exact => {}
+                RetainedSourceObservation::WrongLength(Some(length)) if length > file.length => {
+                    oversized.push((index, length));
+                }
+                _ => return Ok(None),
+            }
+        }
+        Ok((!oversized.is_empty()).then_some(CompletedStorageEvidence {
+            identity: TorrentArtifactIdentity {
+                torrent_id: self.identity.torrent_id,
+                content_fingerprint: self.identity.content_fingerprint,
+            },
+            info_hashes: content.info_hashes(),
+            oversized,
+        }))
+    }
+
     pub async fn finish_content(&mut self) -> Result<(), SelectiveStorageError> {
         self.ensure_complete_selection()?;
         for (file_index, metainfo_file) in self.layout.files().iter().enumerate() {
@@ -3612,6 +3696,27 @@ pub async fn validate_direct_fast_resume_content_with_path(
     skipped: &[usize],
     pool: StorageFilePool,
 ) -> Result<FastResumeValidation, SelectiveStorageError> {
+    validate_direct_completed_content_with_path(
+        storage_root,
+        artifact_identity,
+        content,
+        verified,
+        skipped,
+        pool,
+        None,
+    )
+    .await
+}
+
+pub async fn validate_direct_completed_content_with_path(
+    storage_root: &Path,
+    artifact_identity: TorrentArtifactIdentity,
+    content: Arc<TorrentContent>,
+    verified: &[bool],
+    skipped: &[usize],
+    pool: StorageFilePool,
+    completed: Option<&CompletedStorageEvidence>,
+) -> Result<FastResumeValidation, SelectiveStorageError> {
     let layout = ContentLayout::from_content(&content);
     let selection = FileSelection::new_content(&layout, skipped)?;
     let paths = torrent_storage_paths_with_shape(
@@ -3630,7 +3735,7 @@ pub async fn validate_direct_fast_resume_content_with_path(
     )
     .await?;
     storage.content = Some(content);
-    storage.validate_fast_resume(resumed).await
+    storage.validate_resume_extents(resumed, completed).await
 }
 
 pub async fn validate_direct_fast_resume_with_platform(
@@ -3661,6 +3766,25 @@ pub async fn validate_direct_fast_resume_content_with_platform(
     verified: &[bool],
     skipped: &[usize],
 ) -> Result<FastResumeValidation, SelectiveStorageError> {
+    validate_direct_completed_content_with_platform(
+        spec,
+        artifact_identity,
+        content,
+        verified,
+        skipped,
+        None,
+    )
+    .await
+}
+
+pub async fn validate_direct_completed_content_with_platform(
+    spec: PlatformStorageSpec,
+    artifact_identity: TorrentArtifactIdentity,
+    content: Arc<TorrentContent>,
+    verified: &[bool],
+    skipped: &[usize],
+    completed: Option<&CompletedStorageEvidence>,
+) -> Result<FastResumeValidation, SelectiveStorageError> {
     let (mut storage, resumed) = SelectiveStorage::create_content_with_platform(
         spec,
         artifact_identity,
@@ -3669,7 +3793,7 @@ pub async fn validate_direct_fast_resume_content_with_platform(
         verified.to_vec(),
     )
     .await?;
-    storage.validate_fast_resume(resumed).await
+    storage.validate_resume_extents(resumed, completed).await
 }
 
 fn collect_descriptors(
@@ -5571,6 +5695,113 @@ mod tests {
         drop(resumed);
         drop(spec);
 
+        // The Android provider route carries the same bounded completion
+        // evidence and rejects a subsequent extent change before serving it.
+        let mut oversized_meta = single_file_fixture();
+        let oversized_bytes = vec![0x5a; oversized_meta.total_length as usize];
+        oversized_meta.piece_hashes = oversized_bytes
+            .chunks(oversized_meta.piece_length as usize)
+            .map(|chunk| <[u8; 20]>::from(Sha1::digest(chunk)))
+            .collect();
+        let oversized_content = Arc::new(TorrentContent::from_v1_metainfo(oversized_meta.clone()));
+        let oversized_path = root.join(&oversized_meta.name);
+        tokio::fs::write(
+            &oversized_path,
+            [oversized_bytes.as_slice(), b"suffix"].concat(),
+        )
+        .await
+        .unwrap();
+        let oversized_identity = TorrentArtifactIdentity {
+            torrent_id: TorrentId::new([0x62; 16]).unwrap(),
+            content_fingerprint: test_artifact_identity().content_fingerprint,
+        };
+        let oversized_spec = PlatformStorageSpec {
+            pool: pool.clone(),
+            root_id: "downloads".to_owned(),
+            storage_id: oversized_identity.torrent_id.to_string(),
+            content_shape: ContentShape::File,
+            content_name: oversized_meta.name.clone(),
+            storage_generation: 0,
+        };
+        let (mut checked, _) = SelectiveStorage::create_content_with_platform(
+            oversized_spec.clone(),
+            oversized_identity,
+            oversized_content.clone(),
+            &[],
+            vec![false; 2],
+        )
+        .await
+        .unwrap();
+        for piece in 0..2 {
+            assert_eq!(
+                checked.hash_piece(piece).await.unwrap(),
+                oversized_meta.piece_hashes[piece as usize]
+            );
+            checked.record_verified(piece as usize).unwrap();
+        }
+        checked.finish_content().await.unwrap();
+        let evidence = checked.completed_storage_evidence().await.unwrap().unwrap();
+        assert_eq!(
+            super::validate_direct_completed_content_with_platform(
+                oversized_spec.clone(),
+                oversized_identity,
+                oversized_content.clone(),
+                &[true; 2],
+                &[],
+                Some(&evidence),
+            )
+            .await
+            .unwrap()
+            .evidence,
+            ResumeStorageEvidence::Matches
+        );
+        let seed = crate::SeedContent::open_completed_content_with_platform(
+            &oversized_spec,
+            &oversized_content,
+            &[true; 2],
+            &[],
+            Some(&evidence),
+        )
+        .await
+        .unwrap();
+        assert_eq!(seed.availability(), vec![true; 2]);
+        let request = BlockRequest {
+            index: 0,
+            begin: 0,
+            length: 4,
+        };
+        assert_eq!(
+            seed.read_block(request).await.unwrap(),
+            oversized_bytes[..4]
+        );
+        tokio::fs::write(
+            &oversized_path,
+            [oversized_bytes.as_slice(), b"changed suffix"].concat(),
+        )
+        .await
+        .unwrap();
+        assert!(seed.read_block(request).await.is_err());
+        assert_eq!(
+            super::validate_direct_completed_content_with_platform(
+                oversized_spec.clone(),
+                oversized_identity,
+                oversized_content,
+                &[true; 2],
+                &[],
+                Some(&evidence),
+            )
+            .await
+            .unwrap()
+            .evidence,
+            ResumeStorageEvidence::ContentMismatch(
+                ResumeValidationRejectReason::UnexpectedPayloadLength
+            )
+        );
+        drop(seed);
+        drop(checked);
+        pool.invalidate_storage(&oversized_spec.storage_id);
+        drop(oversized_spec);
+
         let v2_skipped = vec![0x31; 9];
         let v2_selected = (0..40_000)
             .map(|index| (index % 251) as u8)
@@ -6116,6 +6347,160 @@ mod tests {
             [bytes.as_slice(), b"ignored suffix"].concat()
         );
         tokio::fs::remove_dir_all(root).await.expect("remove root");
+    }
+
+    #[tokio::test]
+    async fn completed_extents_allow_only_the_verified_size_and_identity() {
+        let root = test_path("completed-extents");
+        tokio::fs::create_dir(&root).await.unwrap();
+        let mut metainfo = single_file_fixture();
+        let payload = vec![0x5a; metainfo.total_length as usize];
+        metainfo.piece_hashes = payload
+            .chunks(metainfo.piece_length as usize)
+            .map(|chunk| <[u8; 20]>::from(Sha1::digest(chunk)))
+            .collect();
+        let content = Arc::new(TorrentContent::from_v1_metainfo(metainfo.clone()));
+        let paths =
+            torrent_storage_paths_for_metainfo(&root, &metainfo, test_torrent_id()).unwrap();
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let selection = FileSelection::new(&layout, &[]).unwrap();
+        tokio::fs::write(&paths.content, [payload.as_slice(), b"suffix"].concat())
+            .await
+            .unwrap();
+        let (mut storage, resumed) = SelectiveStorage::resume_with_paths(
+            paths.clone(),
+            test_artifact_identity(),
+            layout.clone(),
+            selection,
+            vec![false; layout.piece_count()],
+        )
+        .await
+        .unwrap();
+        storage.content = Some(content.clone());
+        assert!(
+            storage
+                .completed_storage_evidence()
+                .await
+                .unwrap()
+                .is_none()
+        );
+        for piece in 0..layout.piece_count() {
+            let hash = storage.hash_piece(piece as u32).await.unwrap();
+            assert_eq!(hash, metainfo.piece_hashes[piece]);
+            storage.record_verified(piece).unwrap();
+        }
+        storage.finish_content().await.unwrap();
+        let evidence = storage.completed_storage_evidence().await.unwrap().unwrap();
+        assert_eq!(
+            storage
+                .validate_fast_resume(resumed)
+                .await
+                .unwrap()
+                .evidence,
+            ResumeStorageEvidence::ContentMismatch(
+                ResumeValidationRejectReason::UnexpectedPayloadLength
+            )
+        );
+        assert_eq!(
+            storage
+                .validate_resume_extents(resumed, Some(&evidence))
+                .await
+                .unwrap()
+                .evidence,
+            ResumeStorageEvidence::Matches
+        );
+        let pool = StorageFilePool::new(DEFAULT_STORAGE_FILE_LIMIT, None).unwrap();
+        let seed = crate::SeedContent::open_completed_content_with_pool(
+            &root,
+            test_torrent_id(),
+            &content,
+            &vec![true; layout.piece_count()],
+            &[],
+            pool.clone(),
+            Some(&evidence),
+        )
+        .await
+        .unwrap();
+        let request = BlockRequest {
+            index: 0,
+            begin: 0,
+            length: 4,
+        };
+        assert_eq!(seed.read_block(request).await.unwrap(), payload[..4]);
+        let invalid = BlockRequest {
+            index: 0,
+            begin: metainfo.total_length as u32,
+            length: 1,
+        };
+        assert!(seed.read_block(invalid).await.is_err());
+        assert!(
+            crate::SeedContent::open_completed_content_with_pool(
+                &root,
+                TorrentId::new([0x99; 16]).unwrap(),
+                &content,
+                &vec![true; layout.piece_count()],
+                &[],
+                pool.clone(),
+                Some(&evidence),
+            )
+            .await
+            .is_err()
+        );
+        let mut wrong = test_artifact_identity();
+        wrong.content_fingerprint = ContentFingerprint::from_digest([0x99; 32]);
+        assert!(
+            super::validate_direct_completed_content_with_path(
+                &root,
+                wrong,
+                content.clone(),
+                &vec![true; layout.piece_count()],
+                &[],
+                pool.clone(),
+                Some(&evidence),
+            )
+            .await
+            .is_err()
+        );
+        tokio::fs::write(
+            &paths.content,
+            [payload.as_slice(), b"longer suffix"].concat(),
+        )
+        .await
+        .unwrap();
+        assert!(seed.read_block(request).await.is_err());
+        assert_eq!(
+            storage
+                .validate_resume_extents(resumed, Some(&evidence))
+                .await
+                .unwrap()
+                .evidence,
+            ResumeStorageEvidence::ContentMismatch(
+                ResumeValidationRejectReason::UnexpectedPayloadLength
+            )
+        );
+        assert!(
+            crate::SeedContent::open_completed_content_with_pool(
+                &root,
+                test_torrent_id(),
+                &content,
+                &vec![true; layout.piece_count()],
+                &[],
+                pool,
+                Some(&evidence),
+            )
+            .await
+            .unwrap()
+            .availability()
+            .iter()
+            .all(|available| !available)
+        );
+        let control = crate::DownloadControl::default();
+        control.set_completed_storage_evidence(Some(evidence));
+        control.cancel();
+        assert!(control.take_completed_storage_evidence().is_none());
+        drop(seed);
+        drop(storage);
+        tokio::fs::remove_dir_all(root).await.unwrap();
     }
 
     #[tokio::test]

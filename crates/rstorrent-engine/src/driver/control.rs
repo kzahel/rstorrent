@@ -30,7 +30,7 @@ use crate::peer::{PeerRegistry, PeerSelectionContext};
 use crate::peer_runtime::PeerConnectionObservation;
 use crate::piece_picker::PieceActivationPolicy;
 use crate::resume_validation::ResumeValidationRejectReason;
-use crate::selective_storage::{PathPartLocation, PlatformStorageSpec};
+use crate::selective_storage::{CompletedStorageEvidence, PathPartLocation, PlatformStorageSpec};
 use crate::session_resources::{
     SessionExecutionPermit, SessionSemaphorePermit, SessionTorrentResources,
 };
@@ -533,6 +533,7 @@ struct DownloadControlInner {
     incoming_peers: Mutex<Option<IncomingPeerHandle>>,
     utp: Mutex<Option<UtpHandle>>,
     incoming_content_routable: AtomicBool,
+    completed_storage: Mutex<Option<CompletedStorageEvidence>>,
     incoming_route_wake: Mutex<Option<Arc<Notify>>>,
     session_resources: Mutex<Option<SessionTorrentResources>>,
     selection_updates: watch::Sender<Option<FileSelectionUpdate>>,
@@ -910,6 +911,7 @@ impl DownloadControl {
                 incoming_peers: Mutex::new(None),
                 utp: Mutex::new(None),
                 incoming_content_routable: AtomicBool::new(false),
+                completed_storage: Mutex::new(None),
                 incoming_route_wake: Mutex::new(None),
                 session_resources: Mutex::new(None),
                 selection_updates,
@@ -1026,6 +1028,27 @@ impl DownloadControl {
     #[must_use]
     pub fn incoming_content_routable(&self) -> bool {
         self.inner.incoming_content_routable.load(Ordering::Acquire)
+    }
+
+    pub fn take_completed_storage_evidence(&self) -> Option<CompletedStorageEvidence> {
+        let evidence = self
+            .inner
+            .completed_storage
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take();
+        if self.is_cancelled() { None } else { evidence }
+    }
+
+    pub(crate) fn set_completed_storage_evidence(
+        &self,
+        evidence: Option<CompletedStorageEvidence>,
+    ) {
+        *self
+            .inner
+            .completed_storage
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = evidence;
     }
 
     pub(super) fn set_incoming_content_routable(&self, routable: bool) {

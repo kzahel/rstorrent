@@ -1,0 +1,74 @@
+name: Verification matrix
+
+on:
+  schedule:
+    - cron: "23 4 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verification-matrix-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  storage:
+    name: Storage topology and checkpoint crash recovery
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Install Rust 1.97.0
+        uses: dtolnay/rust-toolchain@889fac408b4da0905346410f253f0c55fbcb6613 # 1.97.0
+
+      - name: Cache Rust builds
+        uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7 # v2.9.2
+        with:
+          shared-key: verification-ubuntu-24.04
+
+      - name: Install locked Python interoperability environment
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: "0.12.5"
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: tests/interop/uv.lock
+
+      - name: Install test dependencies and build diagnostics
+        run: |
+          uv sync --project tests/interop --locked --python 3.12
+          cargo build --locked -p rstorrent-session --bin rstorrent-session
+          cargo build --locked -p rstorrent-gateway
+          mkdir -p artifacts/verification
+
+      - name: Verify application lifecycle
+        timeout-minutes: 10
+        run: >-
+          uv run --project tests/interop --locked
+          python tests/interop/application_lifecycle_smoke.py --extended
+          --binary target/debug/rstorrent-gateway
+          --output artifacts/verification/application-lifecycle.json
+
+      - name: Verify storage geometry and exact checkpoint crash boundaries
+        timeout-minutes: 15
+        run: >-
+          uv run --project tests/interop --locked
+          python tests/interop/unified_resume_recheck.py
+          --binary target/debug/rstorrent-session --phase all
+          > artifacts/verification/storage-checkpoint.json
+
+      - name: Retain bounded verification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: verification-matrix-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/verification/*.json
+          if-no-files-found: ignore
+          retention-days: 7

@@ -6,9 +6,9 @@ use std::time::{Duration, Instant};
 
 use rstorrent_engine::peer::PeerRegistrySnapshot;
 use rstorrent_engine::{
-    DownloadControl, PeerConnectionDirection, PeerConnectionObservation, SeedRegistrationToken,
-    StorageFilePool, TorrentBandwidth, TorrentIdentityContext, TorrentPeerActivitySink,
-    TorrentPeerError, TorrentPeerHandle, TrackerCounters,
+    CompletedStorageEvidence, DownloadControl, PeerConnectionDirection, PeerConnectionObservation,
+    SeedRegistrationToken, StorageFilePool, TorrentBandwidth, TorrentIdentityContext,
+    TorrentPeerActivitySink, TorrentPeerError, TorrentPeerHandle, TrackerCounters,
 };
 use tokio::task::JoinHandle;
 
@@ -94,6 +94,7 @@ pub(crate) struct ActiveDownload {
 struct SeedRegistrationState {
     transition_generation: u64,
     tokens: Vec<SeedRegistrationToken>,
+    completed_storage: Option<CompletedStorageEvidence>,
 }
 
 #[derive(Clone, Debug)]
@@ -129,6 +130,11 @@ impl TorrentRuntimeHandle {
         storage_file_pool: &StorageFilePool,
     ) -> Result<Option<SeedReconcileOutcome>, TorrentRuntimeError> {
         let (generation, current) = self.begin_seed_transition()?;
+        let completed_storage = if !active_download && catalog_eligible {
+            self.seed_state().completed_storage.take()
+        } else {
+            None
+        };
         let result = incoming
             .reconcile(SeedReconcileInput {
                 resume,
@@ -139,6 +145,7 @@ impl TorrentRuntimeHandle {
                 torrent_peers: self.peers.clone(),
                 byte_metric_sink: self.accounting_metric_sink(None),
                 storage_file_pool,
+                completed_storage,
             })
             .await;
         match result {
@@ -154,6 +161,13 @@ impl TorrentRuntimeHandle {
         }
     }
 
+    pub(crate) fn set_completed_storage_evidence(
+        &self,
+        evidence: Option<CompletedStorageEvidence>,
+    ) {
+        self.seed_state().completed_storage = evidence;
+    }
+
     pub(crate) async fn unregister_seed(
         &self,
         incoming: &IncomingSeeding,
@@ -164,6 +178,7 @@ impl TorrentRuntimeHandle {
                 .transition_generation
                 .checked_add(1)
                 .ok_or(TorrentRuntimeError::RegistrationGenerationExhausted)?;
+            state.completed_storage = None;
             std::mem::take(&mut state.tokens)
         };
         incoming.unregister_all(tokens).await?;
@@ -201,6 +216,7 @@ impl TorrentRuntimeHandle {
             .checked_add(1)
             .ok_or(TorrentRuntimeError::RegistrationGenerationExhausted)?;
         state.tokens.clear();
+        state.completed_storage = None;
         Ok(())
     }
 

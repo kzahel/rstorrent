@@ -7,13 +7,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use rstorrent_engine::{
-    ByteMetricSink, ContentShape, FastResumeValidation, IncomingPeerError, IncomingPeerHandle,
-    PlatformStorageFailureKind, PlatformStorageSpec, ResumeAdmissionOutcome,
-    ResumeValidationIntent, ResumeValidationRejectReason, SeedContent, SeedContentError,
-    SeedRegistration, SeedRegistrationToken, SelectiveStorageError, StorageFilePool,
-    TorrentArtifactIdentity, TorrentPeerHandle, decide_resume_admission,
-    validate_direct_fast_resume_content_with_path,
-    validate_direct_fast_resume_content_with_platform,
+    ByteMetricSink, CompletedStorageEvidence, ContentShape, FastResumeValidation,
+    IncomingPeerError, IncomingPeerHandle, PlatformStorageFailureKind, PlatformStorageSpec,
+    ResumeAdmissionOutcome, ResumeValidationIntent, ResumeValidationRejectReason, SeedContent,
+    SeedContentError, SeedRegistration, SeedRegistrationToken, SelectiveStorageError,
+    StorageFilePool, TorrentArtifactIdentity, TorrentPeerHandle, decide_resume_admission,
+    validate_direct_completed_content_with_path, validate_direct_completed_content_with_platform,
 };
 use rstorrent_protocol::content::{TorrentContent, TorrentContentProjection};
 use rstorrent_protocol::metainfo::{DURABLE_METAINFO_LIMITS, Metainfo, MetainfoError};
@@ -55,6 +54,7 @@ pub(crate) struct SeedReconcileInput<'a> {
     pub(crate) torrent_peers: TorrentPeerHandle,
     pub(crate) byte_metric_sink: Arc<dyn ByteMetricSink>,
     pub(crate) storage_file_pool: &'a StorageFilePool,
+    pub(crate) completed_storage: Option<CompletedStorageEvidence>,
 }
 
 #[derive(Clone, Debug)]
@@ -84,6 +84,7 @@ impl IncomingSeeding {
             torrent_peers,
             byte_metric_sink,
             storage_file_pool,
+            completed_storage,
         } = input;
         if !self.enabled.load(Ordering::Acquire) {
             return Ok(SeedReconcileResult {
@@ -167,23 +168,25 @@ impl IncomingSeeding {
         let validation_started = Instant::now();
         let validation = match root {
             StorageRootLocation::Path(root) => {
-                validate_direct_fast_resume_content_with_path(
+                validate_direct_completed_content_with_path(
                     root,
                     artifact_identity,
                     content.clone(),
                     have.pieces(),
                     &skipped,
                     storage_file_pool.clone(),
+                    completed_storage.as_ref(),
                 )
                 .await
             }
             StorageRootLocation::PlatformCapability => {
-                validate_direct_fast_resume_content_with_platform(
+                validate_direct_completed_content_with_platform(
                     platform_spec(resume, &content, storage_file_pool),
                     artifact_identity,
                     content.clone(),
                     have.pieces(),
                     &skipped,
+                    completed_storage.as_ref(),
                 )
                 .await
             }
@@ -230,22 +233,24 @@ impl IncomingSeeding {
         }
         let opened = match root {
             StorageRootLocation::Path(root) => {
-                SeedContent::open_verified_content_with_pool(
+                SeedContent::open_completed_content_with_pool(
                     root,
                     resume.torrent_id,
                     &content,
                     have.pieces(),
                     &skipped,
                     storage_file_pool.clone(),
+                    completed_storage.as_ref(),
                 )
                 .await
             }
             StorageRootLocation::PlatformCapability => {
-                SeedContent::open_verified_content_with_platform(
+                SeedContent::open_completed_content_with_platform(
                     &platform_spec(resume, &content, storage_file_pool),
                     &content,
                     have.pieces(),
                     &skipped,
+                    completed_storage.as_ref(),
                 )
                 .await
             }

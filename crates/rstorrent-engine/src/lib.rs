@@ -152,22 +152,23 @@ pub use seed_content::{
     MAX_VERIFIED_FILE_READ_BYTES, SeedContent, SeedContentError, SeedContentSnapshot,
     VerifiedFileError, VerifiedFileReader, VerifiedFileSnapshot,
 };
+pub use selective_storage::{
+    CompletedStorageEvidence, FastResumeValidation, MAX_ACTIVE_FILE_READ_BYTES,
+    MAX_UPLOAD_READ_SEGMENTS, PathPartLocation, PlatformStorageSpec, ResumedStorage,
+    SelectionReconcileReport, SelectiveFileReadPlan, SelectiveStorage, SelectiveStorageError,
+    SelectiveUploadReadPlan, SelectiveWriteStats, TorrentArtifactIdentity, TorrentStoragePaths,
+    remove_selective_part_if_present, selective_part_path, torrent_storage_paths,
+    torrent_storage_paths_for_metainfo, torrent_storage_paths_with_shape, validate_content_name,
+    validate_direct_completed_content_with_path, validate_direct_completed_content_with_platform,
+    validate_direct_fast_resume_content_with_path,
+    validate_direct_fast_resume_content_with_platform, validate_direct_fast_resume_with_path,
+    validate_direct_fast_resume_with_platform,
+};
 #[cfg(feature = "descriptor-storage-diagnostics")]
 #[doc(hidden)]
 pub use selective_storage::{
     DescriptorFile, DescriptorFileRole, DescriptorStorage, DescriptorStoragePlan,
     DescriptorStoragePlanFile, plan_descriptor_storage,
-};
-pub use selective_storage::{
-    FastResumeValidation, MAX_ACTIVE_FILE_READ_BYTES, MAX_UPLOAD_READ_SEGMENTS, PathPartLocation,
-    PlatformStorageSpec, ResumedStorage, SelectionReconcileReport, SelectiveFileReadPlan,
-    SelectiveStorage, SelectiveStorageError, SelectiveUploadReadPlan, SelectiveWriteStats,
-    TorrentArtifactIdentity, TorrentStoragePaths, remove_selective_part_if_present,
-    selective_part_path, torrent_storage_paths, torrent_storage_paths_for_metainfo,
-    torrent_storage_paths_with_shape, validate_content_name,
-    validate_direct_fast_resume_content_with_path,
-    validate_direct_fast_resume_content_with_platform, validate_direct_fast_resume_with_path,
-    validate_direct_fast_resume_with_platform,
 };
 pub use session_resources::{
     SessionDownloadResourceSnapshot, SessionDownloadResources, SessionStorageRootResourceSnapshot,

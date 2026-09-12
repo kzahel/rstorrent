@@ -9687,6 +9687,14 @@ async fn run_selective_download(
         .finish_content()
         .await
         .map_err(DownloadError::SelectiveStorage)?;
+    if resume.is_some() {
+        control.set_completed_storage_evidence(
+            storage
+                .completed_storage_evidence()
+                .await
+                .map_err(DownloadError::SelectiveStorage)?,
+        );
+    }
     let part_slots = storage.part_slots();
     let part_reopened = storage.has_part_file();
     if content.v1().is_some() {

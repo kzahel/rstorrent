@@ -1,7 +1,7 @@
 # Tactical 212: Application Lifecycle Verification Gate
 
-Status: **Active (2026-09-12).** User-authorized release-hardening campaign,
-implemented and committed in substantial validated slices.
+Status: **Complete locally (2026-09-12).** Implemented in substantial
+validated slices; hosted execution remains an explicit release-readiness gate.
 
 Topics: `beta-release-readiness`, `capability-readiness`,
 `oracle-driven-engine-campaign`, `download-correctness`, `client-persistence`,
@@ -149,11 +149,104 @@ seed setting as a test workaround. The new scheduled workflow is prepared
 locally but remains outside the first commit until this real failure is fixed
 and the complete matrix passes.
 
-Next executable action: commit the validated lifecycle/Resume slice, then
-resolve the oversized-file seed/check cycle with a generation-safe proof and
-unchanged fast-resume integrity. Keep this tactical active through broader
-matrix qualification. Continue the authorized campaign with Android emulator,
+First slice checkpoint: committed the validated lifecycle/Resume slice as
+`7bb191f`; the second-slice evidence below supersedes the oversized-file
+investigation checkpoint. Continue the authorized campaign with Android emulator,
 installed desktop, artifact/dependency, diagnostics/privacy, and supported
 baseline preparation afterward. No push, publication or support declaration
 has occurred; machine-control doctors found the desktop guests powered off,
 and no testbed has yet been mutated.
+
+### Second Slice: Exact Verified Extent Handoff
+
+First slice committed as `7bb191f`. The seed/check cycle comes from two exact
+length gates: completed-seed fast-resume validation rejects the intentionally
+preserved suffix, and `SeedContent` independently refuses the same file.
+Hashing it again cannot change either observation. The original full-check
+storage path correctly hashes only the declared prefix and preserves the tail.
+
+Keep ordinary startup validation unchanged. A successfully completed content
+generation may instead hand its runtime owner a bounded, nonpersistent record
+of the exact physical extents it just verified. Only oversized extents need
+entries, in file-index order; metadata identity and complete piece authority
+must match. This record cannot be constructed by application input or restored
+from SQLite. Collect it only after successful full-content verification and
+durability, transfer it through the existing DownloadControl after joined
+success, and consume it once when preparing completed-seed registration.
+
+The seeding validator and reader must still observe exact physical lengths,
+file kinds and safe paths, using the recorded extent only for the matching
+file. Peer ranges remain bounded by metainfo, so suffix bytes are never
+advertised or uploaded. A later append, truncation, wrong-kind replacement,
+root change, pause/recheck/removal, failed/cancelled generation, or restart
+cannot reuse the handoff; ordinary mismatch then returns to the full checker.
+The existing seed registration owns the resulting read authority until joined
+revocation. No new task or persistence field is introduced.
+
+Resource bound: at most one `(file_index, physical_length)` entry per accepted
+metainfo file and one pending handoff per torrent runtime. Empty records are
+discarded so ordinary exact-length transfers gain no retained allocation.
+Driver/control -> session runtime -> incoming reader is the dependency and
+ownership direction. Android uses the same path through its platform storage
+observations and generated adapter, with proportional platform evidence.
+
+Required evidence: independently reproduce the cycle; exact oversized
+single/tree recheck, restart and real seeding; changed-extent and wrong-identity
+negative controls; disposal on cancellation/pause; existing strict
+fast-resume tests; full topology/checkpoint matrix; common Rust baseline and
+Android build. Only then commit the prepared scheduled verification workflow.
+
+### Second-Slice Evidence
+
+The repaired `unified_resume_recheck.py --phase all` passes all three
+topologies against pinned libtorrent 2.0.13. Single-file and one-entry tree
+repairs each transfer exactly 32,768 bytes and retain their 24-byte suffix;
+the deleted middle file invalidates two cross-file pieces and transfers
+exactly 65,536 bytes. All final declared hashes match. The three exact crash
+boundaries (`pre_sync`, `post_sync_pre_commit`, `post_commit`) recover all
+256 valid pieces without any restart payload upload; durable piece counts
+are respectively 0, 0, and 256. Each reports successful cleanup.
+
+`application_lifecycle_smoke.py --extended` passes four cases in 7.756,
+7.256, 7.289, and 7.285 seconds. The added single-file and one-entry-tree cases
+append the suffix while the application is stopped, require source-offline
+restart/full verification and real seeding, then pause, corrupt, recheck,
+repair exactly 32,768 bytes, seed again, and remove while preserving content.
+Eight complete independent copies verify exact declared lengths and hashes.
+The fixture suffix is preserved but never uploaded. Maximum storage handles
+are three, incoming connections/reads one, and read bytes 16,384; every owned
+application and temporary directory joins/removes successfully.
+
+The old gateway binary independently reproduces the repeated-checking state
+at revision 46,516 with no successful upload. The rebuilt gateway
+SHA-256 `3d7cb67c9f2d780aa8952ddf136d238cdfeefa69a26725cc0a7d65e89877003c`
+passes the same cases. The gate does not retry failed connections or disable
+seed admission.
+
+`completed_extents_allow_only_the_verified_size_and_identity` verifies no
+handoff before complete piece authority, ordinary strict startup rejection,
+matching-extent admission, wrong-owner/fingerprint rejection, logical-range
+bounds, later-size rejection both at open and read, and cancellation disposal.
+The existing dynamic-platform storage test now runs the same real hash,
+completion, reader, and later-extent rejection through the asynchronous
+Android provider broker, with its four-handle budget unchanged.
+
+The weekly Tuesday `verification-matrix.yml` runs the four-case lifecycle
+cohort and complete topology/checkpoint matrix with pinned dependencies,
+bounded step/job deadlines and seven-day JSON artifacts. Hosted execution is
+still unclaimed until the reviewed source is pushed with authorization.
+
+Second-slice baseline: `cargo fmt --all -- --check`,
+`cargo clippy --workspace -- -D warnings`, and
+`cargo test --locked --workspace` pass. `clients/android/build.sh` passes both
+release ABIs, generated Kotlin, debug APK and JVM tests; existing platform and
+Android deprecation warnings remain visible. No application DTO/schema changed.
+`go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.9`, Python compilation
+and `git diff --check` pass. The previously validated web contract/type/unit
+baseline remains applicable; this slice changes no web code or generated type.
+
+Next executable action: commit this complete oversized-file handoff and
+scheduled verification gate, then execute Tactical 213's owned Android runtime
+CI campaign. Keep Tactical 211/212 hosted confirmation and the remaining
+installed release, advisory/artifact, diagnostics/privacy and supported-baseline
+work explicit until evidenced. No publication or support claim is implied.

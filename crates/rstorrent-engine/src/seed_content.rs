@@ -17,7 +17,8 @@ use crate::direct_content_layout::{ContentShape, DirectContentLayout, DirectCont
 use crate::identity::TorrentId;
 use crate::positional_io::read_exact_at;
 use crate::selective_storage::{
-    PlatformStorageSpec, SelectiveStorageError, torrent_storage_paths_with_shape,
+    CompletedStorageEvidence, PlatformStorageSpec, SelectiveStorageError,
+    torrent_storage_paths_with_shape,
 };
 use crate::storage_file_pool::{
     DEFAULT_STORAGE_FILE_LIMIT, PlatformStorageTarget, StorageFileAccess, StorageFileKey,
@@ -463,7 +464,32 @@ impl SeedContent {
         skipped: &[usize],
         pool: StorageFilePool,
     ) -> Result<Self, SeedContentError> {
-        let layout = ContentLayout::from_content(content);
+        Self::open_completed_content_with_pool(
+            storage_root,
+            torrent_id,
+            content,
+            verified,
+            skipped,
+            pool,
+            None,
+        )
+        .await
+    }
+
+    pub async fn open_completed_content_with_pool(
+        storage_root: &Path,
+        torrent_id: TorrentId,
+        content: &TorrentContent,
+        verified: &[bool],
+        skipped: &[usize],
+        pool: StorageFilePool,
+        completed: Option<&CompletedStorageEvidence>,
+    ) -> Result<Self, SeedContentError> {
+        if completed.is_some_and(|proof| !proof.matches_content(torrent_id, content)) {
+            return Err(SeedContentError::UnexpectedArtifact(
+                "completed storage identity".to_owned(),
+            ));
+        }
         let paths = torrent_storage_paths_with_shape(
             storage_root,
             content.name(),
@@ -506,10 +532,10 @@ impl SeedContent {
             content,
             verified,
             skipped,
-            layout,
             artifact,
             content_root_reference,
             references,
+            completed,
         )
         .await
     }
@@ -530,12 +556,29 @@ impl SeedContent {
         verified: &[bool],
         skipped: &[usize],
     ) -> Result<Self, SeedContentError> {
+        Self::open_completed_content_with_platform(spec, content, verified, skipped, None).await
+    }
+
+    pub async fn open_completed_content_with_platform(
+        spec: &PlatformStorageSpec,
+        content: &TorrentContent,
+        verified: &[bool],
+        skipped: &[usize],
+        completed: Option<&CompletedStorageEvidence>,
+    ) -> Result<Self, SeedContentError> {
+        if completed.is_some_and(|proof| {
+            proof.torrent_id().to_string() != spec.storage_id
+                || !proof.matches_content(proof.torrent_id(), content)
+        }) {
+            return Err(SeedContentError::UnexpectedArtifact(
+                "completed storage identity".to_owned(),
+            ));
+        }
         if spec.content_name != content.name()
             || spec.content_shape != ContentShape::from_content(content)
         {
             return Err(SeedContentError::InvalidPlatformContentRoot);
         }
-        let layout = ContentLayout::from_content(content);
         let artifact =
             DirectContentLayout::from_content(content).map_err(SeedContentError::ArtifactLayout)?;
         let target = |role, path| PlatformStorageTarget {
@@ -574,10 +617,10 @@ impl SeedContent {
             content,
             verified,
             skipped,
-            layout,
             artifact,
             content_root_reference,
             references,
+            completed,
         )
         .await
     }
@@ -586,11 +629,12 @@ impl SeedContent {
         content: &TorrentContent,
         verified: &[bool],
         skipped: &[usize],
-        layout: ContentLayout,
         artifact: DirectContentLayout,
         content_root_reference: StorageFileReference,
         references: Vec<StorageFileReference>,
+        completed: Option<&CompletedStorageEvidence>,
     ) -> Result<Self, SeedContentError> {
+        let layout = ContentLayout::from_content(content);
         if verified.len() != layout.piece_count() {
             return Err(SeedContentError::InvalidHaveLength {
                 actual: verified.len(),
@@ -626,11 +670,14 @@ impl SeedContent {
                 continue;
             }
             let label = format!("payload file {}", logical.file_index);
+            let physical_length = completed.map_or(file.length, |proof| {
+                proof.expected_length(logical.file_index, file.length)
+            });
             let observation = reference.observe().await;
             let readable = observation.is_ok_and(|observation| {
                 observation.exists
                     && observation.kind == Some(StorageObjectKind::File)
-                    && observation.length == Some(file.length)
+                    && observation.length == Some(physical_length)
             });
             if !readable {
                 files.push(None);
@@ -647,7 +694,7 @@ impl SeedContent {
                 .collect::<Result<Vec<_>, _>>()?;
             files.push(Some(SeedFile {
                 label,
-                expected_length: file.length,
+                expected_length: physical_length,
                 reference,
                 pieces,
             }));

@@ -94,6 +94,13 @@ uv run --project tests/interop --locked \
   --binary target/debug/rstorrent-gateway
 ```
 
+Add `--extended` for the source-offline oversized single-file and one-entry
+folder restart/seeding cases. The weekly `Verification matrix` workflow runs
+this extended cohort and `unified_resume_recheck.py --phase all`, including
+all three exact checkpoint crash boundaries. It retains bounded JSON for seven
+days; public swarms and performance thresholds are outside this gate.
+
+
 Optional `--output PATH` writes a bounded JSON report containing generated
 payload hashes and scalar resource evidence, without paths or peer identifiers.
 Each run owns and removes its temporary profile, payload and child processes.

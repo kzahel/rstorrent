@@ -2,6 +2,14 @@
 
 Topic: `download-correctness`
 
+Tactical `212` now also resolves completed-seed repeated checking for verified
+oversized files. A one-shot, nonpersistent exact-extent handoff follows joined
+successful content work into seed registration; ordinary startup validation
+remains strict and peer reads remain bounded by metainfo. Native and Android
+provider negative cases pass, as do the complete topology/checkpoint matrix
+and four-case application restart/seeding/repair cohort. Hosted qualification
+remains open; see the tactical for exact evidence and validation.
+
 Active Tactical
 [`212`](../tactical/212-application-lifecycle-verification-gate.md) adds the
 presubmit application lifecycle cohort and repairs missing queue admission

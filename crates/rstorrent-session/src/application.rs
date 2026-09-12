@@ -4610,7 +4610,14 @@ impl ApplicationService {
                 .expect("finished active task exists");
             let eta_generation = active.eta_generation;
             let result = match active.task.await {
-                Ok(Ok(())) => Ok(()),
+                Ok(Ok(())) => {
+                    if let Some(runtime) = self.torrent_runtimes.get(&torrent_id) {
+                        runtime.handle().set_completed_storage_evidence(
+                            active.control.take_completed_storage_evidence(),
+                        );
+                    }
+                    Ok(())
+                }
                 Ok(Err(error)) => Err(ApplicationError::Join(error)),
                 Err(error) if error.is_cancelled() => Ok(()),
                 Err(error) => Err(ApplicationError::Join(error.to_string())),

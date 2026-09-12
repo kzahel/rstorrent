@@ -29,7 +29,7 @@ from incoming_seeding import (
     create_outbound_only_session, gateway_json,
 )
 from unified_resume_recheck import (
-    PIECE_SIZE, REFERENCE_REVISION, create_fixture, final_file, sha256_file, verify_final,
+    OVERSIZED_SUFFIX, PIECE_SIZE, REFERENCE_REVISION, create_fixture, final_file, sha256_file, verify_final,
 )
 
 TRANSITION_SECONDS = 30
@@ -166,7 +166,7 @@ def seed_copy(app: Application, torrent_id: str, fixture, output: Path) -> None:
         views.close()
 
 
-def run_case(binary: Path, shape: str) -> dict:
+def run_case(binary: Path, shape: str, oversized: bool = False) -> dict:
     started = time.monotonic()
     stage = "intake"
     app = None
@@ -203,6 +203,9 @@ def run_case(binary: Path, shape: str) -> dict:
             # Stop the source before restart: restored seeding cannot borrow its data.
             seed_handle.pause()
             resources.append(app.stop())
+            if oversized:
+                with final_file(storage, fixture, fixture.files[0]).open("ab") as payload:
+                    payload.write(OVERSIZED_SUFFIX)
             app = Application(binary, root / "profile", storage)
             stage = "restored completion"
             app.complete(torrent_id, pieces)
@@ -231,7 +234,7 @@ def run_case(binary: Path, shape: str) -> dict:
             app.command("resume", torrent_id=torrent_id)
             stage = "repair completion"
             app.complete(torrent_id, pieces)
-            verify_final(storage, fixture)
+            verify_final(storage, fixture, preserve_oversized_suffix=oversized)
             repair_bytes = seed_handle.status().total_payload_upload - before_repair
             if repair_bytes != PIECE_SIZE:
                 raise ScenarioFailure(f"repair transferred {repair_bytes}, expected {PIECE_SIZE}")
@@ -240,7 +243,7 @@ def run_case(binary: Path, shape: str) -> dict:
             app.command("remove_torrent", torrent_id=torrent_id, data="keep")
             if app.command("snapshot")["snapshot"]["torrents"]:
                 raise ScenarioFailure("keep-data removal retained the application row")
-            verify_final(storage, fixture)
+            verify_final(storage, fixture, preserve_oversized_suffix=oversized)
             if sentinel.read_bytes() != b"unrelated user content\n":
                 raise ScenarioFailure("lifecycle modified unrelated content")
             resources.append(app.stop())
@@ -266,7 +269,7 @@ def run_case(binary: Path, shape: str) -> dict:
             gc.collect()
     if Path(temporary).exists():
         raise ScenarioFailure("fixture directory survived cleanup")
-    return {"case": shape, "pieces": pieces, "payload_sha1": hashes,
+    return {"case": shape, "oversized": oversized, "pieces": pieces, "payload_sha1": hashes,
             "repair_bytes": repair_bytes, "seeded_copies": 2,
             "resources": resources, "cleanup": True,
             "elapsed_seconds": round(time.monotonic() - started, 3)}
@@ -276,6 +279,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--extended", action="store_true", help="also verify oversized restart and seeding")
     args = parser.parse_args()
     result = {"schema_version": 1, "result": "fail", "cases": [],
               "libtorrent_version": lt.__version__, "reference_revision": REFERENCE_REVISION}
@@ -284,6 +288,9 @@ def main() -> int:
         result["binary_sha256"] = sha256_file(binary)
         for shape in ("length", "cross_file"):
             result["cases"].append(run_case(binary, shape))
+        if args.extended:
+            for shape in ("length", "one_entry_files"):
+                result["cases"].append(run_case(binary, shape, oversized=True))
         result["result"] = "pass"
     except (ScenarioFailure, OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
         # Raw failures stay in transient console output; retained JSON is allowlisted.
