@@ -126,6 +126,11 @@ internal fun PendingFileSelectionDialog(
             (files?.state == FileCatalogState.AVAILABLE || pages.isNotEmpty())
     val summary = draft.summary(torrent)
     val overrideLimitError = stringResource(R.string.file_selection_override_limit)
+    fun toggleFile(file: FileView) {
+        val next = draft.toggle(file)
+        draftError = if (next == null) overrideLimitError else null
+        if (next != null) draft = next
+    }
     Dialog(
         onDismissRequest = {},
         properties =
@@ -206,7 +211,7 @@ internal fun PendingFileSelectionDialog(
                     }
                     LazyColumn(
                         state = listState,
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
+                        modifier = Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(max = 420.dp),
                     ) {
                         items(rows.size, key = { rows[it].fileId }) { index ->
                             val file = rows[index]
@@ -214,27 +219,13 @@ internal fun PendingFileSelectionDialog(
                             Row(
                                 modifier =
                                     Modifier.fillMaxWidth().clickable {
-                                        val next = draft.toggle(file)
-                                        if (next == null) {
-                                            draftError = overrideLimitError
-                                        } else {
-                                            draft = next
-                                            draftError = overrideLimitError
-                                        }
+                                        toggleFile(file)
                                     }.padding(vertical = 7.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Checkbox(
                                     checked = checked,
-                                    onCheckedChange = {
-                                        val next = draft.toggle(file)
-                                        if (next == null) {
-                                            draftError = null
-                                        } else {
-                                            draft = next
-                                            draftError = null
-                                        }
-                                    },
+                                    onCheckedChange = { toggleFile(file) },
                                 )
                                 Column(Modifier.weight(1f)) {
                                     Text(

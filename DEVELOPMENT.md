@@ -1240,6 +1240,21 @@ uv run --project tests/interop --locked \
   --output /tmp/rstorrent-rate-policy.json
 ```
 
+The presubmit Android runtime gate creates and removes a private API 35 AVD,
+then runs the existing product SAF file-selection/restart/recheck/removal
+cohort. Install `system-images;android-35;google_apis;arm64-v8a` on ARM64 or
+`system-images;android-35;google_apis;x86_64` on x86_64, configure `ANDROID_HOME`
+or `ANDROID_SDK_ROOT`, and build the debug APK first:
+
+```bash
+uv run --project tests/interop --locked \
+  python scripts/android-runtime-smoke.py --output /tmp/android-runtime.json
+```
+
+It owns the emulator process group, enforces a ten-minute runtime and four-MiB
+console bound, and writes only an allowlisted outcome/resource report. It
+never selects a user's existing AVD or physical device. Linux CI requires KVM.
+
 The Android product concurrency profile uses the same generated application
 contract and Android session limits. It applies a 24 KiB/s peer download
 limit before adding torrents and requires an explicit target, two active

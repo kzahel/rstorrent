@@ -2,6 +2,14 @@
 
 Topic: `capability-readiness`
 
+Locally completed Tactical
+[`213`](../tactical/213-owned-android-runtime-ci.md) promotes the real Android
+SAF selection/restart/recheck/removal cohort into an owned API 35 emulator CI
+gate. Phone evidence exposed and repairs clipped confirmation buttons and
+incorrect selection-limit errors; a resumed-activity fence repairs the
+harness's picker handoff. Two ARM64 runs pass with 3/40 storage handles and
+complete emulator/AVD cleanup. Hosted x86_64 execution remains open.
+
 Locally completed release-hardening Tactical
 [`212`](../tactical/212-application-lifecycle-verification-gate.md) adds a
 controlled complete application lifecycle gate. Its first two local cases

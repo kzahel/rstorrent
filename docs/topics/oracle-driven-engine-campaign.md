@@ -471,8 +471,10 @@ strict; native and Android-provider changed-extent/identity/cancellation
 negative cases pass. All three topology repairs, all three checkpoint crash
 boundaries, and four complete application lifecycle cases pass. The full
 Rust fmt/clippy/workspace tests and Android dual-ABI/generated/JVM build pass.
-Commit the scheduled matrix with this repair, then execute Tactical 213 for
-owned Android runtime CI and continue the release-readiness campaign.
+The repair and scheduled matrix are committed as `65c95f6`. Tactical 213's
+owned Android runtime gate also passes two ARM64 phone campaigns with exact
+SAF selection/restart/recheck/removal and cleanup; commit that slice and
+continue the installed-desktop and remaining release-readiness campaign.
 No push, hosted run, publication or supported-release declaration has occurred.
 
 Tactical [`211`](../tactical/211-presubmit-signal-and-build-measurements.md)

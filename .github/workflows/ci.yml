@@ -438,7 +438,7 @@ jobs:
           retention-days: 3
 
   android:
-    name: Android dual ABI, lint, and tests
+    name: Android dual ABI, lint, tests, and owned runtime
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -470,6 +470,22 @@ jobs:
           'platforms;android-36'
           'build-tools;35.0.0'
           'ndk;28.2.13676358'
+          'emulator'
+          'system-images;android-35;google_apis;x86_64'
+
+      - name: Install locked Python interoperability environment
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: "0.12.5"
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: tests/interop/uv.lock
+
+      - name: Prepare owned emulator runtime
+        run: |
+          test -c /dev/kvm
+          sudo chmod a+rw /dev/kvm
+          uv sync --project tests/interop --locked --python 3.12
 
       - name: Install cargo-ndk 4.1.2
         run: cargo install cargo-ndk --version 4.1.2 --locked
@@ -490,6 +506,22 @@ jobs:
         run: |
           test -f clients/android/app/build/outputs/apk/debug/app-debug.apk
           test -f clients/android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+
+      - name: Run owned API 35 product SAF lifecycle
+        timeout-minutes: 12
+        run: >-
+          uv run --project tests/interop --locked
+          python scripts/android-runtime-smoke.py
+          --output artifacts/verification/android-runtime.json
+
+      - name: Retain bounded Android runtime evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-runtime-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/verification/android-runtime.json
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Retain Android failure reports
         if: failure()

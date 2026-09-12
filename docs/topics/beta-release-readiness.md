@@ -325,7 +325,12 @@ topology still needs a hosted run after an authorized push.
   Physical-device and ChromeOS evidence remains a release-candidate campaign,
   not an unattended presubmit mutation. Hosted presubmit now passes both Rust
   ABIs, generated Kotlin, lint/JVM tests, debug app APK, and instrumentation
-  APK compilation; a signed release AAB and emulator run remain open.
+  APK compilation. Tactical 210's signed canary AAB passes. Locally complete
+  Tactical [`213`](../tactical/213-owned-android-runtime-ci.md) now runs the
+  real SAF selection/restart/recheck/removal cohort on a uniquely owned API 35
+  phone emulator and adds its bounded seven-day report to presubmit. Two
+  ARM64 runs pass after fixing clipped confirmation controls and harness
+  picker handoff. Hosted x86_64 runtime confirmation remains open.
 - [x] **CI-005 — Add iOS gates.** Generate bindings/project, build the device
   Rust library, run simulator unit/UI tests, and create an unsigned release
   archive on a pinned macOS/Xcode runner. Signed TestFlight work remains a

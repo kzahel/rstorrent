@@ -93,6 +93,10 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`213-owned-android-runtime-ci.md`](213-owned-android-runtime-ci.md):
+  locally complete owned API 35 product SAF CI cohort, bounded sanitized
+  evidence, resumed picker handoff, and phone confirmation/selection repair;
+  hosted x86_64 execution remains open.
 - [`212-application-lifecycle-verification-gate.md`](212-application-lifecycle-verification-gate.md):
   active; adds the complete controlled application lifecycle gate and fixes
   paused-recheck Resume queue admission. Local single/multifile integrity,

@@ -2157,7 +2157,10 @@ def launch_product_lifecycle_evidence(target: Any, mode: str) -> dict[str, str]:
         if rows:
             return dict(re.findall(r"([a-z_]+)=([^ ]+)", rows[-1]))
         time.sleep(0.1)
-    raise BootstrapFailure(f"timed out waiting for lifecycle mode {mode}\n{logs}")
+    raise BootstrapFailure(
+        f"timed out waiting for lifecycle mode {mode}: "
+        f"launch={result.stdout!r} stderr={result.stderr!r}\n{logs}"
+    )
 
 
 def product_service_state(target: Any) -> tuple[bool, bool]:
@@ -3155,6 +3158,22 @@ def prepare_product_saf(target: Any, probe: ModuleType, grant_storage: str) -> N
             # before MainActivity's service binding has completed. Fence that
             # binding before sending the next product intent so it cannot be
             # lost behind the still-finishing picker handoff.
+            # The provider can persist its grant before DocumentsUI has
+            # handed the activity back. Sending am start in that interval
+            # can acknowledge delivery without reaching the product instance.
+            resumed_deadline = time.monotonic() + 15
+            while time.monotonic() < resumed_deadline:
+                activities = target.shell(
+                    ["dumpsys", "activity", "activities"], timeout=10,
+                ).stdout
+                if any(
+                    "ResumedActivity" in line and ACTIVITY in line
+                    for line in activities.splitlines()
+                ):
+                    break
+                time.sleep(0.1)
+            else:
+                raise BootstrapFailure("SAF picker did not return to the resumed product activity")
             launch_product_lifecycle_evidence(target, "observe")
             return
         time.sleep(0.2)
@@ -7246,7 +7265,10 @@ def run_product_file_selection_profile(
 
         wait_and_click_product_text(target, probe, "None")
         wait_and_click_product_text(target, probe, "wanted/start.bin")
-        wait_and_click_product_text(target, probe, "tail.bin")
+        wait_and_click_product_text(target, probe, "tail.bin", scroll=True)
+        if any("change at most" in node.attrib.get("text", "")
+               for node in probe.ui_nodes(target)):
+            raise BootstrapFailure("valid file selection displayed an override-limit error")
         wait_product_text(target, probe, "2 of 6 selected")
         wait_and_click_product_text(target, probe, "Download")
         wait_pending_file_selection(
@@ -7908,9 +7930,11 @@ def wait_and_click_product_text(
     label: str,
     *,
     timeout: float = 15,
+    scroll: bool = False,
 ) -> None:
     deadline = time.monotonic() + timeout
     visible: list[str] = []
+    scrolls = 0
     while time.monotonic() < deadline:
         nodes = probe.ui_nodes(target)
         visible = [
@@ -7924,6 +7948,19 @@ def wait_and_click_product_text(
         ]
         if probe.click_from_nodes(target, nodes, [label]):
             return
+        if scroll and scrolls < 8:
+            for node in nodes:
+                if node.attrib.get("scrollable") != "true":
+                    continue
+                bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+                if bounds:
+                    left, top, right, bottom = map(int, bounds.groups())
+                    x = (left + right) // 2
+                    inset = max(1, (bottom - top) // 5)
+                    target.shell(["input", "swipe", str(x), str(bottom - inset),
+                                  str(x), str(top + inset), "300"])
+                    scrolls += 1
+                    break
         time.sleep(0.2)
     raise BootstrapFailure(
         f"could not click product UI action {label!r}; visible={visible!r}\n"
