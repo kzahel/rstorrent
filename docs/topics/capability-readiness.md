@@ -2,15 +2,18 @@
 
 Topic: `capability-readiness`
 
-Active Tactical [`218`](../tactical/218-glib-variant-iterator-backport.md)
-adopts the explicitly approved two-line GLib 0.18.5 backport. The exact
-published source is vendored with its original MIT license and a checked
-file/patch inventory. Cargo selection, advisory review and Linux package
-notices independently require the repaired source. Optimized native Linux
-x86_64/ARM64 and packaged desktop qualification remain in progress; the
-release blocker is retained until those gates pass.
+Tactical [`218`](../tactical/218-glib-variant-iterator-backport.md) adopts and
+qualifies the explicitly approved two-line GLib 0.18.5 backport. Exact source
+and patch inventories, original MIT attribution, optimized native Linux
+x86_64/ARM64 tests and packaged notice gates pass. The exact ARM64 AppImage
+also passes native picker Cancel/selection, visible GNOME indicator,
+background/Show, joined Quit and default-root/payload persistence. Only this
+dependency blocker is cleared. Audit review retains all seven original
+warnings, checks the backport independently and preserves future GLib advisory
+detection through an audit-only registry projection. Full corrected-source CI
+run `34693467376` remains in progress.
 
-Latest hosted qualification on `release-readiness-ci` is complete: run
+Prior hosted qualification on `release-readiness-ci` is complete: run
 `34689662485` passes all 12 jobs at
 `f7e50a753e03896ffbce56648543ec04c1af90be`. It
 includes the repaired Windows recheck test, four unsigned package lanes,
@@ -27,24 +30,25 @@ Android APK has a byte-identical manifest; its owned API 35 runtime passes
 with 3/40 storage handles and full cleanup. Tactical 214's native AppImage
 follow-through now passes both architectures in the all-green 12-job run `34687692788` at
 `a83de080d27adb80932a03c972db96d026c91520`; launcher/runtime and source-delivery
-review remain open independently of the existing GLib decision.
+review remain open independently of the qualified GLib backport.
 
 Completed local and hosted Tactical
 [`216`](../tactical/216-local-support-diagnostics-and-release-baseline.md)
 adds bounded local diagnostics preview/copy/download and support/privacy/
 recovery guidance. Web type/build/localization, 386 unit tests and four
 phone/wide light/dark browser cases pass. The supported-baseline proposal is
-prepared without selecting a version. Remaining campaign actions are explicit
-GLib source-maintenance direction, platform notice closure and a repaired
+prepared without selecting a version. Remaining campaign actions are
+platform notice/source-delivery closure and a repaired
 signed Windows candidate. Public disclosure and support declaration remain
 separate release decisions.
 
 Tactical [`214`](../tactical/214-release-dependency-and-artifact-review.md)
 adds compatible dependency repairs, an expiring warning inventory, all-five-
 target Rust/npm notices and installed/extracted package inspection. The real
-macOS package and all four hosted package lanes pass. An optimized native GLib probe reproduces the remaining
-GTK3 advisory and validates a proposed two-line backport; adopting its source
-maintenance remains a decision, and native library notice clearance is open.
+macOS package and all four hosted package lanes pass. Tactical 218 adopts
+and qualifies the approved GLib backport with optimized tests, exact source
+and notice proof, and native package behavior. Native library notice
+clearance remains open.
 
 Completed local and hosted Tactical [`215`](../tactical/215-windows-incubation-reset-recovery.md)
 repairs a Windows catalog-reset startup failure exposed by the actual public
@@ -1004,10 +1008,10 @@ exactly.
 
 ### Active
 
-- Resolve **Tactical `214`**'s explicit GTK3 source-maintenance decision using
-  the prepared negative/fixed optimized probe and patch. Complete native
-  platform notice coverage for the package lanes to be declared; the tagged
-  advisory gate remains closed while its blocker is unresolved.
+- Complete **Tactical `214`**'s native platform notice and source-delivery
+  review for the package lanes to be declared. Tactical `218` adopts and
+  qualifies the approved GLib backport; fresh advisory and exact source
+  verification remain mandatory for tagged releases.
 - Finish release qualification for **Tactical `208`**. The closed native
   store/outbox, desktop and Android presentation, updater migration, and MV3
   uninstall owner are implemented. A separately authorized hosted deployment

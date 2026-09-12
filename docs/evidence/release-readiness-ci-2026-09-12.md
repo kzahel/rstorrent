@@ -1,5 +1,9 @@
 # Release Readiness Hosted Qualification, 2026-09-12
 
+The execution record is chronological. The GLib backport qualification at
+the end supersedes earlier pending-source-decision and dependency-blocker
+statements; other signed-release and publication limits remain in force.
+
 ## Source And Execution
 
 Initial manual CI run
@@ -222,3 +226,73 @@ workflow tools, extended storage recovery and dependency review. The Android
 attribution slice is complete. The advisory inventory still explicitly
 retains GLib as a release blocker; this run does not qualify a repaired signed
 Windows update, publish the disclosure pages, or declare a supported release.
+
+## GLib Backport Qualification
+
+Tactical [218](../tactical/218-glib-variant-iterator-backport.md) adopts the
+explicitly approved two-line `glib 0.18.5` repair. Implementation commit
+`aa056ff6e4ac1ada4ffe31d1872a2f8699efbe2b` preserves all 121 published source
+files and original MIT grants with exact patch/manifest verification. Cargo
+selection, audit provenance and packaged notices independently enforce it.
+The original registry warning remains visible through a checked audit-only
+lock projection, including detection of future GLib advisories.
+
+First run
+[`34691933241`](https://github.com/kzahel/rstorrent/actions/runs/34691933241)
+has ten successful jobs and two failures. Windows rejects Git's CRLF
+conversion of the checksum-bound provenance JSON before build. Commit
+`e535a5ffeb6cc9885a5e8f47196890d386960e35` adds the explicit LF rule and a real
+Git checkout fixture with `core.autocrlf=true`; ten backport tests pass.
+The independent iOS failure is an unchanged mirrored-layout UI test waiting
+for the Add sheet. Its xcresult records 33 passed / one failed, with the
+failure hierarchy still on Library. No iOS assertion or product code changes.
+That first full workflow remains failed.
+
+Corrected-source full run
+[`34693467376`](https://github.com/kzahel/rstorrent/actions/runs/34693467376)
+is in progress at `e535a5ffeb6cc9885a5e8f47196890d386960e35`. The accidental
+immediate redispatch `34693425198` resolved the previous branch head and was
+canceled; it is not qualification evidence. The corrected run's iOS job now
+passes all 30 unit / four UI tests and the unsigned archive, including the
+previous failure, without retrying individual tests or weakening assertions.
+
+Both first-run Linux jobs pass 44 desktop tests, three independent GLib
+iterator cases in both dev and release profiles, and 346 session tests
+(two ignored). Their actual unsigned AppImages pass source, native-host,
+activation, embedded backport notice and native-library inventory gates.
+The native manifests inventory x86_64 174 components / 113 distro packages /
+128 notices, ARM64 173 / 112 / 127. Exact inventory and source hashes live
+in Tactical 218. Both corrected-run Linux jobs repeat those passes. Their
+entire extracted inventories are identical to the first run, including all
+file hashes, notice manifests and native components. The first-run ARM64
+package exercised below therefore has the same packaged product bytes as
+the corrected-source build.
+
+The first-run ARM64 AppImage is independently hashed after transfer and
+exercised in an owned disposable Ubuntu 24.04 ARM64 GNOME 46 Wayland VM:
+
+- Native GTK picker Cancel leaves zero roots; selection adds the exact sole
+  default root and renders its path in Downloads settings.
+- The GNOME indicator is visible. With background mode checked, native close
+  hides the window, and the exported native tray Show handler restores it.
+- Native tray Quit releases the single-instance bus name and exits status 0.
+  Relaunch and a second native Quit also pass; read-only catalog inspection
+  confirms the same default root and the payload sentinel hash is unchanged.
+- Both launch units end inactive with successful result. Machine Control
+  shutdown/release discards the overlay; subsequent checks report zero
+  temporary workspaces, an available claim and the baseline powered off.
+
+This is current-source unsigned ARM64 package evidence. It does not substitute
+for a repaired signed Windows update or change the older signed x86_64 tray
+record. No host input, installed primary browser or public swarm is used.
+
+Local checks pass: workspace fmt/clippy/tests (1,501 passed, 18 ignored on
+macOS), ten backport integrity/audit/notice tests, 16 distribution review
+tests, 23 desktop release-tool tests, 22 Android release/notice-tool tests,
+changed-workflow actionlint and Linux/macOS notice generation. Fresh Cargo
+and npm reports pass `review-dependency-audit.py --require-release-ready`
+against RustSec `b50980aad8b8f14f77e25a97b32dd94bf008b0af`. All seven original
+warnings and the October 12 expiry remain. Only the qualified GLib blocker
+is removed; mandatory exact-source verification remains. Dependency readiness
+does not close native notice/source-delivery review, the repaired signed
+Windows update, public disclosure qualification or support declaration.

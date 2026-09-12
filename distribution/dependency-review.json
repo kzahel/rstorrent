@@ -46,14 +46,7 @@
       "version": "0.18.5"
     }
   ],
-  "release_blockers": [
-    {
-      "advisory": "RUSTSEC-2024-0429",
-      "package": "glib",
-      "version": "0.18.5",
-      "reason": "The approved exact backport is source-verified; optimized native x86_64/ARM64 and packaged desktop qualification are pending in Tactical 218."
-    }
-  ],
+  "release_blockers": [],
   "backports": [
     {
       "package": "glib",

@@ -2,6 +2,11 @@
 
 Status: **Active (2026-09-12).** Explicitly approved narrow backport.
 
+Native source/package qualification below is complete and clears this
+dependency blocker with mandatory source proof. The final corrected-source
+full CI run and hosted policy confirmation are the remaining execution gates.
+The earlier pending-qualification paragraphs record intermediate results.
+
 Topics: `beta-release-readiness`, `capability-readiness`
 
 ## Scope And Stopping Condition
@@ -133,3 +138,45 @@ The ARM64 AppImage SHA-256 is
 The hosted advisory artifact retains all seven original registry warnings and
 separately records the exact source-verified GLib repair. It still reports
 release-ready false while the installed-package gate remains pending.
+
+### Native Packaged ARM64 Qualification
+
+The exact unsigned ARM64 AppImage above is independently hashed after
+transfer and exercised in a disposable Ubuntu 24.04 ARM64 GNOME 46 Wayland
+workspace. System GLib is `2.80.0-6ubuntu3.8`; WebKitGTK is
+`2.52.3-0ubuntu0.24.04.1`. The packaged product starts with private HOME and
+XDG state without WebKit environment workarounds. The rendered Settings
+view, native GTK folder chooser and visible GNOME indicator are observed.
+
+Picker Cancel leaves zero storage roots. Selecting an owned folder reports
+that it was added and records exactly one default root with its exact path.
+With Run in Background checked, native Alt+F4 removes the showing window
+while the application and registered StatusNotifierItem remain. Invoking
+the exported native tray menu's Show handler restores a visible, showing
+RSTorrent window. Invoking its Quit handler releases the single-instance
+bus name and ends the launch unit with `Result=success`, `ExecMainStatus=0`
+and `ActiveState=inactive`.
+
+A second launch with the same private profile reaches Settings and again
+quits through the native tray handler with status zero. Independent read-only
+SQLite inspection after that launch confirms the same sole default root.
+The selected folder's payload sentinel is unchanged through both lifecycles,
+SHA-256 `86f5de79a0d28549a5aea52b7117202ef7e8ea9ab2c7fee14a470092a676a481`.
+The VM is shut down and its disposable overlay discarded through Machine
+Control, removing the owned package, state and payload. The baseline remains
+off. No host UI input or primary browser is used.
+
+This qualifies the actual current-source ARM64 package's picker, native tray
+handlers, background lifecycle and persistence. It does not turn the older
+signed x86_64 GNOME indicator gap into evidence for that older package or
+claim a repaired signed update. Ordinary VM rendering emits EGL/DRI and
+optional canberra-module warnings; the observed product behavior and both
+clean exits pass.
+
+The corrected run's Linux package jobs also pass. Their entire extracted
+inventories are identical to the first run: 487 ARM64 / 391 x86_64 entries,
+including every file hash, notice manifest and native inventory. Thus the
+installed ARM64 evidence exercises the same packaged product bytes as the
+corrected source build. ARM64 desktop executable SHA-256 is
+`d5bd3b7a6c44d59fbef92be21e9d5bdecb186110989e49fb3460b7dd8072d9a2`;
+x86_64 is `277d9ae6b627fb97e42b63e6780455522c287a44a773f14998c937ac5ea5cd05`.

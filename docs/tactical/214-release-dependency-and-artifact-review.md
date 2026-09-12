@@ -1,9 +1,19 @@
 # Tactical 214: Release Dependency And Artifact Review
 
-Status: **Implementation complete locally and hosted (2026-09-12); dependency source
-maintenance and native-library notice clearance remain open; native attribution
-follow-through is qualified on both architectures.** Authorized
+Status: **Implementation complete locally and hosted (2026-09-12); native-library
+notice clearance remains open; native attribution follow-through is qualified
+on both architectures.** Authorized
 release-readiness campaign.
+
+Tactical [`218`](218-glib-variant-iterator-backport.md) supersedes this record's
+pending GLib decision: the two-line backport is explicitly approved, adopted
+and qualified with exact source provenance, optimized tests on both native
+Linux architectures, package notices and native ARM64 picker/tray lifecycle
+evidence. Its audit-only registry projection preserves the original warning
+and future advisory detection. Only this source-remediated dependency blocker
+is cleared; native notice/source-delivery and signed-release gates remain.
+The historical release-ready-false and unapplied-patch statements below
+describe the pre-backport executions.
 
 Run `34684328524` passes advisory review, all notice/content tool checks and
 all four unsigned native package lanes at `8f31f98a48313c57c3e3ba16e5b8907b02d63135`.

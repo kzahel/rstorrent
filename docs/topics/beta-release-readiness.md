@@ -2,19 +2,22 @@
 
 Topic: `beta-release-readiness`
 
-Active Tactical [`218`](../tactical/218-glib-variant-iterator-backport.md)
-adopts the explicitly approved two-line GLib 0.18.5 backport. The exact
-published source is vendored with its original MIT license and a checked
-file/patch inventory. Cargo selection, advisory review and Linux package
-notices independently require the repaired source. Optimized native Linux
-x86_64/ARM64 and packaged desktop qualification remain in progress; the
-release blocker is retained until those gates pass.
+Tactical [`218`](../tactical/218-glib-variant-iterator-backport.md) adopts and
+qualifies the explicitly approved two-line GLib 0.18.5 backport. Exact source
+and patch inventories, original MIT attribution, optimized native Linux
+x86_64/ARM64 tests and packaged notice gates pass. The exact ARM64 AppImage
+also passes native picker Cancel/selection, visible GNOME indicator,
+background/Show, joined Quit and default-root/payload persistence. Only this
+dependency blocker is cleared. Audit review retains all seven original
+warnings, checks the backport independently and preserves future GLib advisory
+detection through an audit-only registry projection. Full corrected-source CI
+run `34693467376` remains in progress.
 
-Latest hosted run `34689662485` passes all 12 jobs at
+The prior hosted run `34689662485` passes all 12 jobs at
 `f7e50a753e03896ffbce56648543ec04c1af90be`, including the repaired Windows
 recheck test, all four unsigned desktop package lanes, owned Android runtime,
 iOS, web, Rust, dependency review and extended storage recovery. CI-004 and
-CI-006 are closed. The advisory report retains GLib's release blocker. See
+CI-006 are closed. That run predates the approved GLib backport. See
 [the exact hosted record](../evidence/release-readiness-ci-2026-09-12.md).
 
 Completed local and hosted Tactical
@@ -43,16 +46,17 @@ repairs compatible web advisories and the yanked ChaCha dependency, adds an
 expiring exact-warning review, generates attributable notices for all five
 desktop targets, and validates a real macOS notice bundle. Package CI now
 inspects embedded notices and bounded artifact contents. QA-005 remains open:
-GLib's GTK3 unsoundness needs the prepared, optimized-probe-validated backport
-maintenance decision, and native platform notice coverage needs closure.
+native platform notice coverage and source-delivery review need closure.
+Tactical 218 resolves the GLib source-maintenance decision and qualifies its
+approved backport.
 The native follow-through now adds a project-local AppImage output hook,
 exact distro package/source attribution, original copyright/common-license
 texts and final-artifact manifest verification. Run `34687692788` passes all 12 jobs at
 `a83de080d27adb80932a03c972db96d026c91520`; exact extracted AppImages verify
 174 components / 113 distro packages / 128 notice files on x86_64 and
 173 / 112 / 127 on ARM64. Launcher/runtime and corresponding-source obligations remain explicit
-review items; Tactical 217 owns Android Maven/AAR attribution. Tagged publication fails while
-the advisory blocker remains. These are
+review items; Tactical 217 owns Android Maven/AAR attribution. Tagged
+publication continues to enforce fresh advisory and source review. These are
 explicit release findings, not a zero-issues claim from the audit exit code.
 
 Current checkpoint (2026-09-12): public desktop `0.1.3` supersedes the
@@ -502,8 +506,10 @@ attached to `main` pushes. See the
   exact arm64 DMG also independently matched `SHA256SUMS` before the installed
   spot check. Current Rust/npm notices, the expiring advisory inventory and
   all four unsigned package-content gates pass in hosted run `34684328524`.
-  GLib source maintenance and native-platform notice clearance remain open;
-  the passing advisory job explicitly reports release-ready false.
+  Tactical 218 now qualifies the approved GLib backport and clears that
+  dependency blocker with mandatory source proof. Native-platform notice
+  clearance and source-delivery review remain open; dependency review alone
+  does not close QA-005.
 
 ## Desktop Beta Checklist
 
