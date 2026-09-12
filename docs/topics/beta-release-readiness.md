@@ -331,7 +331,11 @@ type, unit, build, and E2E coverage. Rust compilation and execution have separat
 steps, with seven-day Cargo timing artifacts. Local format/clippy, 1,499 Rust
 tests, loopback interop, contract drift, 381 web unit tests, 39 deterministic
 browser tests, extension packaging, and workflow lint pass; the new job
-topology still needs a hosted run after an authorized push.
+topology is undergoing authorized hosted qualification on
+`release-readiness-ci`. Manual CI also calls the weekly storage-recovery and
+dependency-review definitions at the same commit; ordinary presubmit coverage
+is unchanged. Using the qualification branch avoids the automatic public
+website deployment attached to `main` pushes.
 
 - [x] **CI-001 — Add ordinary presubmit CI.** Required checks run Rust
   formatting, workspace clippy with warnings denied, workspace tests,

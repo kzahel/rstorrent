@@ -975,8 +975,8 @@ exactly.
 ### Active
 
 - Confirm hosted evidence for locally completed **Tacticals `211`–`216`**
-  after an authorized push: companion/pure-v2 regressions, application
-  lifecycle and scheduled recovery matrix, owned Android runtime, native
+  on the authorized `release-readiness-ci` branch: companion/pure-v2 regressions,
+  application   lifecycle and scheduled recovery matrix, owned Android runtime, native
   session recovery, package notices and local diagnostics. Retain build timing
   and bounded evidence. Local passes do not establish exact hosted success.
 - Resolve **Tactical `214`**'s explicit GTK3 source-maintenance decision using

@@ -1,7 +1,8 @@
 # Tactical 211: Presubmit Signal And Build Measurements
 
 Status: **Complete locally (2026-09-08); hosted confirmation pending.**
-User-authorized first CI improvement slice. No push or dispatch is authorized.
+User-authorized first CI improvement slice. Push and nonpublishing hosted CI
+qualification were authorized on September 12.
 
 Topics: `beta-release-readiness`, `capability-readiness`, `client-surfaces`,
 `oracle-driven-engine-campaign`, `incoming-reachability-and-seeding`
@@ -61,6 +62,14 @@ CI diagnostic retention. No larger sleeps or retry-to-green policy.
   inapplicable, not claimed from host tests.
 
 ## Execution Checkpoint
+
+September 12 hosted qualification uses `release-readiness-ci`: pushing `main`
+would also deploy the public website, which is outside the CI authorization.
+Manual CI calls the same storage-recovery and dependency-review workflows used
+by their schedules. This also qualifies newly added workflows before they are
+present on the default branch, where GitHub otherwise rejects their individual
+dispatches. Ordinary push/PR coverage and all existing time/resource bounds
+remain unchanged; the additional jobs run only on manual CI dispatch.
 
 Initial source is `9c6c00b`. Hosted run `34084340378` fails companion packaging
 and the pure-v2 test's incoming registration wait. Runs `34037979895`,

@@ -4,6 +4,7 @@ on:
   schedule:
     - cron: "31 5 * * 3"
   workflow_dispatch:
+  workflow_call:
   pull_request:
     paths:
       - Cargo.lock
