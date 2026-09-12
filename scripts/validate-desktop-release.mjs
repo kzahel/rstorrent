@@ -79,6 +79,10 @@ export function validateDesktopReleaseConfiguration({
     fail("base package must not add unreviewed resources");
   }
   for (const overlay of [packageTauri, releaseTauri]) {
+    if (overlay.bundle?.useLocalToolsDir !== true ||
+        overlay.build?.beforeBundleCommand !== "node ../../scripts/prepare-appimage-notices.mjs") {
+      fail("package overlays must preserve the project-local native notice hook");
+    }
     if (JSON.stringify(overlay.bundle?.resources) !== JSON.stringify(expectedResources)) {
       fail("package resources must contain only the reviewed dependency notices");
     }

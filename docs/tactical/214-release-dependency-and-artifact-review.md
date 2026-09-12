@@ -1,7 +1,8 @@
 # Tactical 214: Release Dependency And Artifact Review
 
 Status: **Implementation complete locally and hosted (2026-09-12); dependency source
-maintenance and native-library notice clearance remain open.** Authorized
+maintenance and native-library notice clearance remain open; native attribution
+follow-through is in progress.** Authorized
 release-readiness campaign.
 
 Run `34684328524` passes advisory review, all notice/content tool checks and
@@ -141,3 +142,71 @@ product validation remain prerequisites to clearing the blocker. All probe
 source, build outputs and extracted public packages lived in the owned
 scratch directory, which was removed after successful validation. No owned
 guest, probe process or extracted package remains.
+
+### Native AppImage Attribution Follow-through (In Progress)
+
+The corrected hosted inventories expose a concrete gap: x86_64 contains 169
+regular shared-library files but only 10 distro copyright documents; ARM64
+contains 168 and 108 respectively. Both also bundle `xdg-mime` without its
+package copyright. Library counts include multiple copied names for the same
+binary and are not counts of unique upstream projects.
+
+This bounded follow-through maps every selected distro ELF and the copied
+`xdg-mime` helper to installed package/source versions and original copyright
+texts. Include referenced distro common-license texts. Record bundled and
+original hashes, use retained GNU build IDs to identify patchelf-modified
+libraries, reject absent/ambiguous mappings, and independently verify the
+manifest against the final extracted artifact. Build IDs identify the trusted
+builder's package provenance; they are not a cryptographic proof of unchanged
+machine code. First-party binaries retain their existing Rust/npm coverage.
+AppImage launcher/runtime provenance remains explicit separate review scope;
+this work does not assert universal license or source-offer clearance.
+
+Use linuxdeploy's output-plugin API to add notices to the fully selected
+AppDir before AppImage construction and Tauri updater signing. Keep tools in
+the Cargo target directory, pin the delegated output-plugin download by hash,
+and leave library selection and runtime behavior unchanged. The hook owns
+bounded synchronous subprocesses and temporary downloads, terminates them on
+failure, and does not change global Tauri caches. Missing notices fail builds.
+No engine/application dependency, vendored GLib, or generated API changes.
+
+Source inspection: npm pins Tauri CLI `2.11.4`, upstream commit
+`8909f221d1515955fc843808032bdc5d62209c96`. Its
+`crates/tauri-bundler/src/bundle/linux/appimage/linuxdeploy.rs` owns tool
+selection and AppDir assembly; `crates/tauri-cli/src/interface/mod.rs` maps
+`useLocalToolsDir` to Cargo's target directory, and
+`crates/tauri-cli/src/bundle.rs` signs only after bundling returns. The public
+linuxdeploy plugin API version 0 gives output plugins the prepared `--appdir`.
+The delegated output plugin is revision
+`536b068787179ea901964bd7dabc7bf61e4941c3`; `src/main.cpp` passes that directory
+and `OUTPUT` to appimagetool. Reference implementation source is inspected,
+not imported. Preserve original distro license files byte-for-byte.
+
+Validation/stopping condition: deterministic missing/ambiguous provenance,
+modified/omitted/extra binary, notice corruption, symlink and bounds cases;
+workflow/package-validator checks; actual unsigned native x86_64 and ARM64
+AppImages with matching embedded manifests. Record exact source and CI
+artifacts, reconcile the owning topic, and commit the substantial slice.
+
+Local follow-through evidence: **16** distribution-review tests and **12**
+desktop release-validator tests pass; the checked-in configuration validator,
+actionlint on both changed workflows, and diff whitespace checks pass. No
+Rust/application source or generated boundary changed, so those suites were
+not repeated for this build-tool slice.
+
+A native Ubuntu 24.04 x86_64 fixture preserves six selected components,
+identifies patchelf-modified GLib/GTK/OpenSSL plus copied xdg-mime, and embeds
+14 original/common license files for four distro packages. Running Tauri's
+actual x86_64 linuxdeploy mirror with the pinned output-plugin delegate then
+expands the fixture's native dependencies, embeds notices for **53** distro
+packages, and successfully constructs an unsigned AppImage. This is a
+packaging fixture, not product launch or signed-release evidence. The exact
+full-product x86_64/ARM64 hosted build remains the next gate.
+
+Independent extraction of that fixture passes **60** selected components,
+**53** distro packages and **65** notice files. AppImage SHA-256:
+`bddae80321fdb8baefc5732839f37d7dc75f29b032f896861f97f1d94ac72c1d`;
+manifest SHA-256:
+`1b9f66c6ac1f73808a0210d12330f4c7337b31e4930a6d519bd9ad9f2c37b736`.
+The inspected linuxdeploy mirror SHA-256 is
+`e762bea85c8eb0d4b3508d46e5c1f037f717d0f9303ae3b4aafc8b04991fa1ef`.

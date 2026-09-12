@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 import re
 
+from native_notices import verify as verify_native_notices
+
 FORBIDDEN_NAMES = {'.git', 'node_modules', '.env', '.env.local', 'id_rsa', 'id_ed25519',
                    'Cargo.lock', 'package-lock.json', 'test-results', 'playwright-report'}
 FORBIDDEN_SUFFIXES = {'.p12', '.pfx', '.p8', '.key', '.map', '.log', '.sqlite', '.db'}
@@ -28,7 +30,7 @@ def bounded_paths(root):
                 yield Path(entry.path)
 
 
-def inspect(root, require_notices=True):
+def inspect(root, require_notices=True, require_native=False):
     root = root.resolve(strict=True)
     files, notice_manifests = [], []
     total = 0
@@ -79,7 +81,8 @@ def inspect(root, require_notices=True):
                                      'npm_lock_sha256': manifest['npm_lock_sha256']})
     if require_notices and len(notice_manifests) != 1:
         raise ValueError('distribution must contain exactly one dependency notice bundle')
-    return {'schema': 1, 'files': sorted(files, key=lambda f: f['path']), 'total_bytes': total,
+    native = verify_native_notices(root) if require_native or (require_notices and (root / 'AppRun').exists()) else None
+    return {'schema': 1, 'native_notices': native, 'files': sorted(files, key=lambda f: f['path']), 'total_bytes': total,
             'notice_manifests': notice_manifests,
             'scope': 'file inventory, bounded text signatures and Rust/npm notice integrity; '
                      'not a complete secret scanner or native-library license clearance'}
@@ -89,10 +92,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--require-native-notices', action='store_true',
+                        help='require the AppImage native manifest even if its launcher is missing')
     parser.add_argument('--historical-without-notices', action='store_true',
                         help='inventory old public packages; never use for a new release gate')
     args = parser.parse_args()
-    result = inspect(args.root, not args.historical_without_notices)
+    result = inspect(args.root, not args.historical_without_notices, args.require_native_notices)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2) + '\n')
     print(f"Inspected {len(result['files'])} package entries; {len(result['notice_manifests'])} notice bundles")

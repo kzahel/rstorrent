@@ -309,3 +309,13 @@ test("rejects unreviewed package resources", () => {
   fixture.tauri.bundle.resources = ["private.env"];
   assert.throws(() => validateDesktopReleaseConfiguration(fixture), /unreviewed resources/);
 });
+
+
+test("rejects a disabled native notice hook or shared tool cache", () => {
+  const fixture = repositoryFixture();
+  fixture.packageTauri.bundle.useLocalToolsDir = false;
+  assert.throws(() => validateDesktopReleaseConfiguration(fixture), /native notice hook/);
+  const release = repositoryFixture();
+  release.releaseTauri.build.beforeBundleCommand = "true";
+  assert.throws(() => validateDesktopReleaseConfiguration(release), /native notice hook/);
+});

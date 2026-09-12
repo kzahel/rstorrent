@@ -26,7 +26,13 @@ desktop targets, and validates a real macOS notice bundle. Package CI now
 inspects embedded notices and bounded artifact contents. QA-005 remains open:
 GLib's GTK3 unsoundness needs the prepared, optimized-probe-validated backport
 maintenance decision, and native platform notice coverage needs closure.
-Tagged publication fails while the advisory blocker remains. These are
+The native follow-through now adds a project-local AppImage output hook,
+exact distro package/source attribution, original copyright/common-license
+texts and final-artifact manifest verification. Local negative checks and a
+real Ubuntu x86_64 patchelf/provenance probe pass; full native AppImage CI is
+pending. Launcher/runtime and corresponding-source obligations remain explicit
+review items, as do Android Maven/AAR notices. Tagged publication fails while
+the advisory blocker remains. These are
 explicit release findings, not a zero-issues claim from the audit exit code.
 
 Current checkpoint (2026-09-12): public desktop `0.1.3` supersedes the

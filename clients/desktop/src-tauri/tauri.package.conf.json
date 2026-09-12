@@ -1,6 +1,7 @@
 {
   "build": {
-    "beforeBuildCommand": "node ../../scripts/prepare-native-host.mjs --release && npm --prefix ../web run build && node ../../scripts/prepare-release-notices.mjs"
+    "beforeBuildCommand": "node ../../scripts/prepare-native-host.mjs --release && npm --prefix ../web run build && node ../../scripts/prepare-release-notices.mjs",
+    "beforeBundleCommand": "node ../../scripts/prepare-appimage-notices.mjs"
   },
   "bundle": {
     "externalBin": [
@@ -8,6 +9,7 @@
     ],
     "resources": {
       "binaries/notices/": "notices/"
-    }
+    },
+    "useLocalToolsDir": true
   }
 }

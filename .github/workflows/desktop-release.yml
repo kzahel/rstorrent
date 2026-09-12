@@ -400,8 +400,10 @@ jobs:
           for kind in appimage deb rpm; do
             EXTRACT_DIR="$RUNNER_TEMP/rstorrent-$kind"
             mkdir -p "$EXTRACT_DIR"
+            NATIVE_NOTICE_ARGS=()
             case "$kind" in
               appimage)
+                NATIVE_NOTICE_ARGS=(--require-native-notices)
                 PACKAGE=$(find target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage' -print -quit)
                 PACKAGE=$(realpath "$PACKAGE")
                 (cd "$EXTRACT_DIR" && "$PACKAGE" --appimage-extract >/dev/null)
@@ -422,7 +424,7 @@ jobs:
             test -n "$DESKTOP_FILE"
             desktop-file-validate "$DESKTOP_FILE"
             node scripts/validate-desktop-package.mjs --linux-desktop "$DESKTOP_FILE"
-            python3 scripts/inspect-distribution.py --root "$SEARCH_ROOT" --output "artifacts/distribution/linux-$kind.json"
+            python3 scripts/inspect-distribution.py --root "$SEARCH_ROOT" "${NATIVE_NOTICE_ARGS[@]}" --output "artifacts/distribution/linux-$kind.json"
           done
 
       - name: Retain distribution inventories

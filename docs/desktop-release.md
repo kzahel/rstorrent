@@ -126,3 +126,26 @@ After publishing, verify at least one exact current-version key and all five
 older-version keys. Do not treat metadata checks as installed-update evidence:
 the beta gate also requires an older installed signed build to download,
 install, relaunch, and report the new version/build on each supported target.
+
+## Native AppImage Notices
+
+Package/release overlays enable Tauri's project-local tool cache and run
+`prepare-appimage-notices.mjs` before bundling. On the native Ubuntu builders,
+the hook installs an output-plugin wrapper in Cargo's `target/.tauri` and
+verifies its delegated upstream plugin against reviewed SHA-256 pins. A moved
+upstream asset or changed Tauri CLI requires source review and a pin update;
+the build must not silently fall back to an unchecked plugin. Other desktop
+platforms skip the Linux hook.
+
+After linuxdeploy selects libraries, the wrapper copies original distro
+copyright files and referenced common-license texts to
+`usr/share/rstorrent/native-notices/` inside the AppImage. Its manifest maps
+selected ELF files and copied xdg helpers to package/source versions, retained
+GNU build IDs, original and bundled hashes. Final package inspection requires
+that manifest and rejects changed, missing or unattributed native components.
+Tauri creates updater signatures only after this packaging step completes.
+
+This is attribution evidence, not blanket redistribution clearance. Launcher
+and outer runtime provenance, per-package corresponding-source obligations,
+and Android Maven/AAR attribution remain release review items in Tactical 214.
+The source locators in the manifest are not a corresponding-source offer.

@@ -115,5 +115,127 @@ class DistributionTests(unittest.TestCase):
             notices.supplemental(p, self.root, catalog)
 
 
+class NativeNoticeTests(unittest.TestCase):
+    def setUp(self):
+        import native_notices
+        self.native = native_notices
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve() / 'AppDir'
+        self.root.mkdir()
+        for name in native_notices.FIRST_PARTY | {'usr/lib/libexample.so.1', 'usr/bin/xdg-mime'}:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'#!/bin/sh\n' if name.endswith('xdg-mime') else b'\x7fELFexample')
+        self.copyright = self.root.parent / 'copyright'
+        self.copyright.write_bytes(b'Original holder\nSee /usr/share/common-licenses/MIT\n')
+        self.common = self.root.parent / 'MIT'
+        self.common.write_bytes(b'Original common license\n')
+        test = self
+
+        class Provenance:
+            def identify(self, path, digest):
+                return {'package': 'example:amd64', 'version': '1.2-1',
+                        'source_package': 'example', 'source_version': '1.2-1',
+                        'original_path': '/usr/lib/libexample.so.1.2',
+                        'original_sha256': digest, 'build_id': 'abcdef'}
+
+            def copyright(self, package):
+                return test.copyright
+
+            def common_license(self, name):
+                return test.common
+
+        self.provenance = Provenance()
+
+    def test_selected_components_and_original_license_bytes_round_trip(self):
+        result = self.native.collect(self.root, self.provenance)
+        self.assertEqual(len(result['components']), 4)
+        self.assertEqual(len(result['packages']), 1)
+        self.assertEqual(len(result['notices']), 2)
+        copyright_path = self.root / result['packages'][0]['copyright']
+        self.assertEqual(copyright_path.read_bytes(), self.copyright.read_bytes())
+        self.assertEqual(self.native.verify(self.root)['distro_packages'], 1)
+        self.assertNotIn(str(self.root.parent), json.dumps(result))
+        self.assertTrue(result['remaining_review'])
+
+    def test_missing_or_changed_component_is_rejected(self):
+        self.native.collect(self.root, self.provenance)
+        path = self.root / 'usr/lib/libexample.so.1'
+        original = path.read_bytes()
+        for changed in (b'\x7fELFmodified', None):
+            with self.subTest(changed=changed):
+                if changed is None:
+                    path.unlink()
+                else:
+                    path.write_bytes(changed)
+                with self.assertRaisesRegex(ValueError, 'inventory differs'):
+                    self.native.verify(self.root)
+                path.write_bytes(original)
+        (self.root / 'usr/lib/unattributed').write_bytes(b'\x7fELFnew')
+        with self.assertRaisesRegex(ValueError, 'inventory differs'):
+            self.native.verify(self.root)
+
+    def test_corrupted_notice_and_first_party_exemption_are_rejected(self):
+        result = self.native.collect(self.root, self.provenance)
+        path = self.root / result['packages'][0]['copyright']
+        path.write_bytes(b'changed')
+        with self.assertRaisesRegex(ValueError, 'differs'):
+            self.native.verify(self.root)
+        path.write_bytes(self.copyright.read_bytes())
+        next(item for item in result['components'] if item['path'].endswith('libexample.so.1'))['kind'] = 'first-party'
+        (self.root / self.native.MANIFEST).write_text(json.dumps(result))
+        with self.assertRaisesRegex(ValueError, 'exemption'):
+            self.native.verify(self.root)
+
+    def test_external_symlink_and_oversized_notice_are_rejected(self):
+        (self.root / 'escape').symlink_to(self.root.parent)
+        with self.assertRaisesRegex(ValueError, 'escapes'):
+            self.native.collect(self.root, self.provenance)
+        (self.root / 'escape').unlink()
+        from unittest.mock import patch
+        with patch.object(self.native, 'MAX_FILE', 2):
+            with self.assertRaisesRegex(ValueError, 'bounds'):
+                self.native.collect(self.root, self.provenance)
+
+    def test_unmapped_distro_binary_fails_before_packaging(self):
+        from unittest.mock import patch
+        with patch.object(self.provenance, 'identify', side_effect=ValueError('no distro provenance')):
+            with self.assertRaisesRegex(ValueError, 'no distro provenance'):
+                self.native.collect(self.root, self.provenance)
+
+    def test_dpkg_matches_runtime_owner_and_rejects_ambiguity(self):
+        from unittest.mock import patch
+        source = self.root.parent / 'libexample.so.1'
+        source.write_bytes(b'\x7fELFsource')
+        calls = []
+
+        def command(args, accepted=(0,)):
+            calls.append(args)
+            if args[0] == 'readelf':
+                return 'Build ID: abcdef\n'
+            if '--show' in args:
+                return 'example:amd64\t1.2-1\texample\t1.2-1'
+            return f'example:amd64: {source}\n'
+
+        with patch.object(self.native, 'command', side_effect=command):
+            result = self.native.DpkgProvenance().identify(source, self.native.sha(source))
+        self.assertEqual(result['package'], 'example:amd64')
+        self.assertEqual(result['build_id'], 'abcdef')
+        self.assertTrue(any(a[-1] == str(source) for a in calls if '--search' in a))
+        def ambiguous(args, accepted=(0,)):
+            output = command(args, accepted)
+            if '--search' in args:
+                output += f'another:amd64: {source}\n'
+            return output
+        with patch.object(self.native, 'command', side_effect=ambiguous):
+            with self.assertRaisesRegex(ValueError, 'ambiguous distro'):
+                self.native.DpkgProvenance().identify(source, self.native.sha(source))
+
+    def test_explicit_appimage_gate_cannot_be_bypassed_by_missing_apprun(self):
+        with self.assertRaises(FileNotFoundError):
+            package.inspect(self.root, require_notices=False, require_native=True)
+
+
 if __name__ == '__main__':
     unittest.main()

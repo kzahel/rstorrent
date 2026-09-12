@@ -360,7 +360,7 @@ jobs:
               "$APPIMAGE" --appimage-extract >/dev/null
               test -x squashfs-root/usr/bin/rstorrent-native-host
               node scripts/smoke-native-host.mjs squashfs-root/usr/bin/rstorrent-native-host
-              python3 scripts/inspect-distribution.py --root squashfs-root --output artifacts/distribution/linux.json
+              python3 scripts/inspect-distribution.py --root squashfs-root --require-native-notices --output artifacts/distribution/linux.json
               rm -rf squashfs-root
               ;;
           esac
