@@ -250,7 +250,8 @@ That first full workflow remains failed.
 
 Corrected-source full run
 [`34693467376`](https://github.com/kzahel/rstorrent/actions/runs/34693467376)
-is in progress at `e535a5ffeb6cc9885a5e8f47196890d386960e35`. The accidental
+passes all 12 jobs at `e535a5ffeb6cc9885a5e8f47196890d386960e35`, completing
+at 2026-09-12 12:53:29 UTC. The accidental
 immediate redispatch `34693425198` resolved the previous branch head and was
 canceled; it is not qualification evidence. The corrected run's iOS job now
 passes all 30 unit / four UI tests and the unsigned archive, including the
@@ -296,3 +297,32 @@ warnings and the October 12 expiry remain. Only the qualified GLib blocker
 is removed; mandatory exact-source verification remains. Dependency readiness
 does not close native notice/source-delivery review, the repaired signed
 Windows update, public disclosure qualification or support declaration.
+
+Policy/evidence commit `1f506441edfb738da1be472a2280219cdbe1917f` is pushed to
+`release-readiness-ci`. Its strict local review exactly matches the hosted
+advisory artifact's database revision, seven warnings, both lockfile hashes
+and verified source record; only the qualified blocker/readiness fields
+change. A standalone advisory dispatch is unavailable (GitHub 404) while
+that new workflow is absent from the default branch. The full CI caller
+already exercises the same advisory code at its exact revision. There is no
+separate hosted policy-only run, default-branch push or publication.
+
+The corrected Rust job passes 1,507 workspace tests with 18 ignored across
+70 test/doc-test suites, the deterministic libtorrent transfer and both
+ordinary application lifecycle/corruption cases with cleanup. Android passes
+dual-ABI/JVM/lint and the owned API 35 x86_64 runtime with 3/40 storage handles,
+zero preconfirmation upload, exact recheck/removal and joined cancellation.
+Its APK SHA-256 is
+`c726f218ea453c520eae40a2fd34678cba41142384b87feca8f3c7565324e907`;
+owned runtime and AVD cleanup pass.
+
+Windows passes the LF-protected source gate, 43 desktop and 345 session tests
+(two ignored), native local-address selection, unsigned NSIS packaging,
+silent installation, activation registry and native-host checks. Its final
+inventory contains five files / 56,880,177 bytes; installed desktop executable
+SHA-256 is `d4ff19b495fe502847d59706ad715ac387f4d2b6ceccc3d6fb6178a06ee5bb3e`.
+Both notice lockfile hashes independently match the exact CRLF checkout
+bytes. All 12 jobs finish successfully; the first failed run remains failed.
+The subsequent policy/evidence changes do not alter the tested implementation.
+Local downloaded logs, captures, packages and investigation fixtures are
+removed after recording these results.

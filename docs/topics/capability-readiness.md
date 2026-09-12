@@ -10,15 +10,15 @@ also passes native picker Cancel/selection, visible GNOME indicator,
 background/Show, joined Quit and default-root/payload persistence. Only this
 dependency blocker is cleared. Audit review retains all seven original
 warnings, checks the backport independently and preserves future GLib advisory
-detection through an audit-only registry projection. Full corrected-source CI
-run `34693467376` remains in progress.
+detection through an audit-only registry projection. Corrected-source CI
+run `34693467376` passes all 12 jobs at
+`e535a5ffeb6cc9885a5e8f47196890d386960e35`. The subsequent policy-only closure
+passes strict local review with source/audit inputs matching hosted evidence.
 
-Prior hosted qualification on `release-readiness-ci` is complete: run
-`34689662485` passes all 12 jobs at
-`f7e50a753e03896ffbce56648543ec04c1af90be`. It
-includes the repaired Windows recheck test, four unsigned package lanes,
-owned Android runtime, iOS, web, Rust, advisory review and storage recovery.
-CI-004 and CI-006 are closed. [Exact evidence and remaining gates](../evidence/release-readiness-ci-2026-09-12.md).
+The full hosted result includes four unsigned desktop package lanes,
+Windows native installation, owned Android runtime, iOS, web, Rust,
+dependency review and extended storage recovery. CI-004 and CI-006 remain
+closed. [Exact hosted evidence and remaining release gates](../evidence/release-readiness-ci-2026-09-12.md).
 
 Completed local and hosted Tactical
 [`217`](../tactical/217-android-distribution-attribution.md) adds Android

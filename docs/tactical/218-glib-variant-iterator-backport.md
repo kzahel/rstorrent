@@ -1,11 +1,14 @@
 # Tactical 218: GLib Variant Iterator Backport
 
-Status: **Active (2026-09-12).** Explicitly approved narrow backport.
+Status: **Complete locally and hosted (2026-09-12).** Explicitly approved
+narrow backport.
 
 Native source/package qualification below is complete and clears this
-dependency blocker with mandatory source proof. The final corrected-source
-full CI run and hosted policy confirmation are the remaining execution gates.
-The earlier pending-qualification paragraphs record intermediate results.
+dependency blocker with mandatory source proof. Corrected-source run
+`34693467376` passes all 12 jobs at `e535a5ffeb6cc9885a5e8f47196890d386960e35`.
+The policy-only closure passes strict local review with audit inputs matching
+the hosted source evidence. The earlier pending-qualification paragraphs
+record intermediate results.
 
 Topics: `beta-release-readiness`, `capability-readiness`
 
@@ -180,3 +183,37 @@ installed ARM64 evidence exercises the same packaged product bytes as the
 corrected source build. ARM64 desktop executable SHA-256 is
 `d5bd3b7a6c44d59fbef92be21e9d5bdecb186110989e49fb3460b7dd8072d9a2`;
 x86_64 is `277d9ae6b627fb97e42b63e6780455522c287a44a773f14998c937ac5ea5cd05`.
+
+### Dependency Policy Closure
+
+Commit `1f506441edfb738da1be472a2280219cdbe1917f` records native qualification
+and removes only the GLib entry from `release_blockers`. Fresh Cargo/npm
+collection and `review-dependency-audit.py --require-release-ready` pass.
+The resulting database revision, all seven warnings, both lockfile hashes
+and source-verified backport record exactly match the corrected full run's
+hosted advisory artifact; only the qualified blocker and readiness fields
+change. Ten backport tests and 16 distribution tests pass again.
+
+An attempted separate `dependency-review.yml` dispatch returns GitHub 404
+because that new workflow is not on the default branch. The established
+manual CI workflow already invokes it at the tested caller revision. This
+policy-only closure is therefore validated locally against matching hosted
+inputs; it is not represented as a separate hosted policy run. No default
+branch push or publication is used to register the workflow.
+
+### Final Hosted Result
+
+Run <https://github.com/kzahel/rstorrent/actions/runs/34693467376> completes
+successfully at 2026-09-12 12:53:29 UTC with all 12 jobs passing. Windows
+passes the corrected LF source gate, 43 desktop / 345 session tests (two
+ignored), local-address selection, unsigned NSIS installation, activation
+registry, native-host and artifact inspection. Rust passes 1,507 workspace
+tests with 18 ignored plus deterministic transfer and lifecycle gates.
+Android's owned runtime, iOS unit/UI/archive, web, extension, release tools,
+extended storage recovery and all four native package lanes pass.
+
+The final policy/evidence commit changes no tested implementation. No
+signed update, default-branch push, tag, release or support declaration is
+part of this tactical. Native notice/source-delivery review and the other
+campaign release gates remain explicit. Owned VM/claim cleanup is verified;
+downloaded logs, captures, packages and investigation fixtures are removed.
