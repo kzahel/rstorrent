@@ -1,6 +1,6 @@
 # Tactical 211: Presubmit Signal And Build Measurements
 
-Status: **Complete locally (2026-09-08); hosted confirmation pending.**
+Status: **Complete locally and hosted (2026-09-12).**
 User-authorized first CI improvement slice. Push and nonpublishing hosted CI
 qualification were authorized on September 12.
 
@@ -17,10 +17,10 @@ Rust compilation before recommending a different CI profile or cache policy.
 Stop when the reproduced failures have bounded regression evidence, independent
 jobs preserve existing coverage and workflow invariants, appropriate local
 checks pass, and build measurements plus remaining hosted evidence are recorded.
-A new hosted run is pending an independently authorized push; local validation
-does not establish hosted success. No push, branch protection, publication,
-automatic retry, platform breadth, dependency addition, or public-swarm work is
-included. Job filtering and new integration/emulator suites are later slices.
+Hosted qualification was subsequently authorized and is recorded below.
+Local validation alone does not establish hosted success. Branch protection,
+publication, automatic retry, dependency additions and public-swarm work
+remain outside this slice. Job filtering and new integration/emulator suites are later slices.
 
 ## Dependencies And Invariants
 
@@ -85,8 +85,11 @@ and workspace formatting. The old Snapshot poll could observe Complete before
 task termination; the corrected test forces termination first, proves Complete
 with zero registrations, and then uses the same ordinary Snapshot command to
 join the checker and restore admission. No production runtime, protocol,
-Android contract or resource policy changes. Hosted repair confirmation is
-pending. [Exact run evidence](../evidence/release-readiness-ci-2026-09-12.md).
+Android contract or resource policy changes. Corrected run `34684328524`
+passes all 12 jobs at `8f31f98a48313c57c3e3ba16e5b8907b02d63135`, including
+all 345 active Windows session tests and installed NSIS/notice checks.
+The Rust gate passes 1,504 workspace tests (18 ignored), both interop smokes
+and retained timings. [Exact run evidence](../evidence/release-readiness-ci-2026-09-12.md).
 
 September 12 hosted qualification uses `release-readiness-ci`: pushing `main`
 would also deploy the public website, which is outside the CI authorization.
@@ -101,8 +104,8 @@ and the pure-v2 test's incoming registration wait. Runs `34037979895`,
 `33586149709`, and `33475869664` also fail companion packaging before any web
 contract/type/unit/E2E step. Local companion packaging reproduces the same
 unexpected-remote-URL rejection. Both repairs and local validation now pass;
-the next executable action is to inspect all ten jobs and the timing artifacts
-after a separately authorized push triggers the hosted workflow.
+the September 12 qualification above now closes the hosted gate with all
+12 jobs and retained timing artifacts.
 
 ### Diagnosis And Source Review
 
@@ -228,15 +231,14 @@ Completed on macOS arm64, Rust 1.97.0, Node 25.8.2 (hosted Node remains 22):
 - `git diff --check` plus a before/after step inventory confirming no existing
   check step was removed.
 
-The unchanged Crostini/headless shell integrity suites
-require Linux and were syntax-checked, not executed, on this Mac. Native
-package/mobile builds were not repeated because neither production code nor
-generated boundaries changed. The new hosted topology and timing upload need
-the next authorized GitHub run; no push or workflow dispatch is performed.
+At the local checkpoint, the unchanged Crostini/headless shell integrity suites
+were syntax-checked on this Mac rather than executed; the subsequent hosted
+release-tools job runs and passes them on Linux. Native package/mobile builds
+were not repeated during that test-only local repair. Hosted run `34684328524`
+now supplies the complete 12-job platform/package/runtime qualification and
+seven-day timing/evidence uploads recorded above.
 
-The local stopping condition is satisfied. Temporary test roots, logs,
-browser output, generated ZIP, and local timing reports are removed after
-recording these results. Hosted job outcomes, Linux-only installer execution
-under the moved job, and seven-day artifact upload remain unclaimed until
-the next run. Job selection, new integration/emulator suites, profile/cache
-changes, and readiness-ledger cleanup beyond this slice remain separate work.
+The local and hosted stopping conditions are satisfied. Temporary test roots,
+logs, browser output, generated ZIP and downloaded timing/package artifacts
+are removed after recording results. Profiles and cache policy remain unchanged;
+new tuning requires a bounded comparison using the recorded measurements.

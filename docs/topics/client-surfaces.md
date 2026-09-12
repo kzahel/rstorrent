@@ -7,16 +7,19 @@ Completed local Tactical
 adds frozen-preview local diagnostics copy/download to desktop/headless About,
 with bounded allowlisted build/update facts and no raw errors, logs, paths or
 identifiers. Four phone/wide light/dark browser cases pass exact byte and
-accessibility checks. Native Android/iOS export remains a separate presentation
+accessibility checks locally and in both hosted 43-test browser runs. Native Android/iOS export remains a separate presentation
 decision; no application API or runtime semantics change.
 
-Locally completed Tactical
+Completed local and hosted Tactical
 [`213`](../tactical/213-owned-android-runtime-ci.md) promotes the real Android
 SAF selection/restart/recheck/removal cohort into an owned API 35 emulator CI
 gate. Phone evidence exposed and repairs clipped confirmation buttons and
 incorrect selection-limit errors; a resumed-activity fence repairs the
 harness's picker handoff. Two ARM64 runs pass with 3/40 storage handles and
-complete emulator/AVD cleanup. Hosted x86_64 execution remains open.
+complete emulator/AVD cleanup. Hosted runs `34682523287` and `34684328524`
+now pass the API 35 x86_64 cohort with the same 3/40 handle peak, exact removal
+and owned-AVD cleanup. See the
+[exact hosted record](../evidence/release-readiness-ci-2026-09-12.md).
 
 Status: Direct-storage presentation replacement completed on 2026-08-29 by
 Tactical [`191`](../tactical/191-direct-filesystem-storage.md). It removes

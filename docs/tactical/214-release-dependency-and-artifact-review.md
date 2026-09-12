@@ -1,8 +1,17 @@
 # Tactical 214: Release Dependency And Artifact Review
 
-Status: **Implementation complete locally (2026-09-12); dependency source
+Status: **Implementation complete locally and hosted (2026-09-12); dependency source
 maintenance and native-library notice clearance remain open.** Authorized
 release-readiness campaign.
+
+Run `34684328524` passes advisory review, all notice/content tool checks and
+all four unsigned native package lanes at `8f31f98a48313c57c3e3ba16e5b8907b02d63135`.
+Windows additionally passes silent NSIS installation, activation registry and
+native-host inspection. Its lockfile digests exactly match CRLF checkout bytes;
+the protected upstream license bytes retain their recorded hashes. The
+advisory report remains release-ready false. See the
+[exact hosted record](../evidence/release-readiness-ci-2026-09-12.md); this
+supersedes pending-push statements in the local execution history below.
 
 Topics: `beta-release-readiness`, `capability-readiness`
 

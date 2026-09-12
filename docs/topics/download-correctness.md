@@ -7,18 +7,19 @@ oversized files. A one-shot, nonpersistent exact-extent handoff follows joined
 successful content work into seed registration; ordinary startup validation
 remains strict and peer reads remain bounded by metainfo. Native and Android
 provider negative cases pass, as do the complete topology/checkpoint matrix
-and four-case application restart/seeding/repair cohort. Hosted qualification
-remains open; see the tactical for exact evidence and validation.
+and four-case application restart/seeding/repair cohort. The ordinary
+presubmit and extended/recovery workflows now pass on hosted Linux; see
+[the exact record](../evidence/release-readiness-ci-2026-09-12.md).
 
-Active Tactical
+Completed Tactical
 [`212`](../tactical/212-application-lifecycle-verification-gate.md) adds the
 presubmit application lifecycle cohort and repairs missing queue admission
 when Resume follows a paused seed's corrupt-data recheck. Single-file and
 cross-file cases prove exact piece invalidation before restoring the source,
 one-piece repair, independent complete seeding before and after repair, and
-joined cleanup. The legacy oversized-file topology matrix currently repeats
-Checking rather than converging; this newly reproduced failure remains under
-investigation in the same verification campaign.
+joined cleanup. The previously repeated Checking transition for oversized
+files is repaired by the one-shot verified-extent handoff above; both hosted
+extended runs now converge and seed the exact logical content.
 
 Status: Direct-storage replacement accepted on 2026-08-29. Tactical
 [`191`](../tactical/191-direct-filesystem-storage.md) preserves verification,

@@ -13,18 +13,21 @@ Completed Tactical [`215`](../tactical/215-windows-incubation-reset-recovery.md)
 repairs Windows error 5 during recognized old-catalog reset. Unix retains its
 directory barrier; Windows retains flushed marker/SQLite process-recovery
 semantics without claiming portable directory fsync or arbitrary power-loss
-safety. All 345 native Windows session tests pass, and CI now runs them on
-every desktop platform. Public signed 0.1.3 still contains the defect.
+safety. All 345 native Windows session tests pass locally and in hosted run
+`34684328524`, followed by unsigned NSIS installation/inspection. CI also
+passes session tests on macOS and both Linux architectures. Public signed
+0.1.3 still contains the defect; a repaired signed update remains required.
 
 Tactical `212` now also resolves completed-seed repeated checking for verified
 oversized files. A one-shot, nonpersistent exact-extent handoff follows joined
 successful content work into seed registration; ordinary startup validation
 remains strict and peer reads remain bounded by metainfo. Native and Android
 provider negative cases pass, as do the complete topology/checkpoint matrix
-and four-case application restart/seeding/repair cohort. Hosted qualification
-remains open; see the tactical for exact evidence and validation.
+and four-case application restart/seeding/repair cohort. The ordinary
+presubmit and extended/recovery workflows now pass on hosted Linux; see
+[the exact record](../evidence/release-readiness-ci-2026-09-12.md).
 
-Active Tactical
+Completed Tactical
 [`212`](../tactical/212-application-lifecycle-verification-gate.md) repairs
 Resume after a paused completed torrent is found incomplete by rechecking.
 Running intent and a missing download-tail position now commit together;

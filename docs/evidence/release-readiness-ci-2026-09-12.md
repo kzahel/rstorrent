@@ -2,7 +2,7 @@
 
 ## Source And Execution
 
-Manual CI run
+Initial manual CI run
 [`34682523287`](https://github.com/kzahel/rstorrent/actions/runs/34682523287)
 qualifies commit `1599a0e67960c14562d08a0c6454b70024e546f6` on
 `release-readiness-ci`. The branch avoids the public website deployment
@@ -91,11 +91,95 @@ code and generated platform contracts are unchanged.
 
 The forced ordering passes 20/20 repetitions across four concurrent processes;
 the complete local session suite passes 346 tests with two ignored. Session
-tests clippy with warnings denied and workspace formatting pass. Corrected
-hosted Windows/package qualification is pending.
+tests clippy with warnings denied and workspace formatting pass. The corrected
+hosted Windows/package qualification below subsequently passes.
 
-## Remaining Run Evidence
+## Rust Gate And Build Measurements
 
-Workspace test results are still pending. Update this record from actual
-completed jobs and uploaded evidence; do not claim
-complete hosted qualification until the repaired source passes.
+The first run finishes **11 successful jobs / 1 failed Windows job**. Rust
+formatting, workspace/default-WebRTC/feature-disabled clippy, feature-specific
+tests, all workspace tests, deterministic libtorrent transfer and the ordinary
+two-case application lifecycle pass. Workspace results total **1,504 passed /
+18 ignored**, including binary/integration/doc test result lines. The separate
+feature-specific tests add 16 passes and one ignored test.
+
+| Rust job step | Hosted wall time |
+| --- | ---: |
+| Workspace clippy | 189 s |
+| Default direct-file graph lint/tests | 466 s |
+| Explicit feature-disabled product checks | 118 s |
+| Compile workspace tests | 1,176 s |
+| Execute workspace tests, including doctests | 187 s |
+| Deterministic libtorrent smoke, including its build | 89 s |
+| Build application diagnostic | 164 s |
+| Application lifecycle and corruption repair | 15 s |
+
+The Rust cache step reports no Rust cache found. Four Cargo timing HTML files
+are uploaded, including the latest-report alias. Workspace compilation is
+dominated by application/runtime units: desktop library 407.08 s, desktop
+tests 283.90 s, headless tests 283.51 s, gateway tests 258.20 s, remote-host
+end-to-end test 257.60 s, session tests 224.15 s and engine tests 166.86 s.
+These units overlap; their times are not additive or a controlled profile
+comparison. Compilation remains the main latency target. Retain `opt-level=2`
+and current cache policy until a bounded comparison justifies changing them;
+test retries or shorter test coverage would not solve this measured cost.
+
+## Corrected Revision
+
+Commit `8f31f98a48313c57c3e3ba16e5b8907b02d63135` contains the forced-order
+repair and first-run evidence. Manual run
+[`34684328524`](https://github.com/kzahel/rstorrent/actions/runs/34684328524)
+passes **all 12 jobs** at that exact revision. The first run remains failed;
+the corrected source earns its own complete hosted result.
+
+The corrected revision passes web, extension, release tools, advisory
+review, extended storage recovery, Android runtime and all macOS/Linux package
+lanes. Its extended gateway SHA-256 is
+`272493c70e3250f39e55cbb55c28f19be1f9250b1bba2e08ebd1820791eccdd8`;
+session SHA-256 is
+`f7900f0de9f22176ed6e43ad360b0fa79f1de3942001d61d435e0dca2da49ec4`.
+The second API 35 x86_64 runtime retains the same image revision 9 and 3/40
+handle high water, with all assertions and owned cleanup passing. APK SHA-256:
+`0dd0a4b755e0ed1e4fec92cc3da08ccb2c7555b9ab1a9e127c190433f940cc8a`.
+The corrected Linux x86_64 package has 262 entries / 324,981,915 bytes;
+ARM64 remains 359 / 338,646,246 and macOS 6 / 59,105,464. All three notice
+inventories match the reviewed lockfiles. iOS archive and the full Rust job
+also pass. Windows passes 43 desktop tests, 345 session tests (two ignored),
+the native local-address test, unsigned NSIS packaging, silent installation,
+activation registry validation, native-host smoke and notice inspection.
+
+The installed Windows inventory contains five files / 56,880,162 bytes and
+notices for 469 Rust plus 28 npm packages. Its checked-out lockfiles use CRLF;
+their hashes exactly match the repository files after only LF-to-CRLF
+conversion: Cargo `f1bef12e13b287c8ff53a4c0e696d218bbde96add90a166ff9ef6a3a51c089e8`,
+npm `4245715975c319223338f92b6293029a2e8c8fdf2174c995e2c1f574a349c623`.
+These are input-byte digests, not different dependency resolutions. The exact
+upstream license files remain protected from checkout newline conversion.
+
+The unsigned `RSTorrent_0.1.3_x64-setup.exe` is 14,125,162 bytes, SHA-256
+`de8e8abee0430392661625e317c34fbcb4793da4e1bf166968ebe577c41520cd`.
+Installed desktop executable SHA-256:
+`a24a6f7d77619e09b9bf516d952d551a1012eb40c23dee36358c8aaadd0ea5b6`.
+This is an unsigned CI artifact, not a replacement for the separate signed
+older-to-newer update qualification. Windows native desktop/session/address
+steps, including compilation, take 1,083/430/267 s; installing the notice tool
+takes 195 s and packaging 1,032 s. The installed registry/inspection step
+takes four seconds. These measurements preserve the existing 60-minute bound.
+
+The corrected Rust job again passes 1,504 workspace tests with 18 ignored and
+both ordinary application lifecycle cases with cleanup. It restores roughly
+1,492 MB of Rust cache; workspace clippy takes 46 s, workspace-test compilation
+940 s, test execution including doctests 184 s, and the application cohort
+16 s. The changed source and cache state prevent treating this as a controlled
+compiler-profile experiment. No profile, cache policy or timeout was changed.
+
+## Release Limits And Evidence Retention
+
+CI-004 and CI-006 now have hosted evidence. The GLib source-maintenance choice,
+native-library notice clearance, repaired signed Windows update, public
+Tactical 208 disclosure qualification and explicit supported-release version
+remain open. No release-ready claim follows from the green CI result.
+Sanitized JSON and timing artifacts are retained seven days; unsigned package
+artifacts follow their existing three-day retention. Local downloaded logs,
+timings, packages and negative-control fixtures are removed after recording
+these results. Subsequent evidence-document edits do not change tested code.

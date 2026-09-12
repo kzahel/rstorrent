@@ -2,30 +2,30 @@
 
 Topic: `capability-readiness`
 
-Authorized hosted qualification is underway on `release-readiness-ci`.
-Run `34682523287` passes web, extension, release tools, dependency review,
-extended application/storage recovery, the owned Android x86_64 runtime,
-iOS, and all three macOS/Linux package lanes. Windows exposed a recheck
-handoff test race; the controlled repair is locally validated and awaits
-hosted confirmation. [Exact evidence and remaining gates](../evidence/release-readiness-ci-2026-09-12.md).
+Hosted qualification on `release-readiness-ci` is complete: run `34684328524`
+passes all 12 jobs at `8f31f98a48313c57c3e3ba16e5b8907b02d63135`. It
+includes the repaired Windows recheck test, four unsigned package lanes,
+owned Android runtime, iOS, web, Rust, advisory review and storage recovery.
+CI-004 and CI-006 are closed. [Exact evidence and remaining gates](../evidence/release-readiness-ci-2026-09-12.md).
 
-Completed local Tactical
+Completed local and hosted Tactical
 [`216`](../tactical/216-local-support-diagnostics-and-release-baseline.md)
 adds bounded local diagnostics preview/copy/download and support/privacy/
 recovery guidance. Web type/build/localization, 386 unit tests and four
 phone/wide light/dark browser cases pass. The supported-baseline proposal is
 prepared without selecting a version. Remaining campaign actions are explicit
-GLib source-maintenance direction, complete hosted confirmation,
-platform notice closure and a repaired signed Windows candidate.
+GLib source-maintenance direction, platform notice closure and a repaired
+signed Windows candidate. Public disclosure and support declaration remain
+separate release decisions.
 
-Local Tactical [`214`](../tactical/214-release-dependency-and-artifact-review.md)
+Tactical [`214`](../tactical/214-release-dependency-and-artifact-review.md)
 adds compatible dependency repairs, an expiring warning inventory, all-five-
 target Rust/npm notices and installed/extracted package inspection. The real
-macOS package passes. An optimized native GLib probe reproduces the remaining
+macOS package and all four hosted package lanes pass. An optimized native GLib probe reproduces the remaining
 GTK3 advisory and validates a proposed two-line backport; adopting its source
 maintenance remains a decision, and native library notice clearance is open.
 
-Completed local Tactical [`215`](../tactical/215-windows-incubation-reset-recovery.md)
+Completed local and hosted Tactical [`215`](../tactical/215-windows-incubation-reset-recovery.md)
 repairs a Windows catalog-reset startup failure exposed by the actual public
 0.1.1 → 0.1.3 update. Native Windows session (345) and desktop (43) tests pass;
 CI now includes native session recovery. The repaired signed update remains
@@ -34,22 +34,24 @@ joined Quit and payload-preserving removal; visible GNOME tray support remains
 unproved. [Exact evidence](../evidence/desktop-v0.1.1-to-v0.1.3-x86_64.md)
 also qualifies Windows firewall Cancel and fresh signed 0.1.3 startup.
 
-Locally completed Tactical
+Completed local and hosted Tactical
 [`213`](../tactical/213-owned-android-runtime-ci.md) promotes the real Android
 SAF selection/restart/recheck/removal cohort into an owned API 35 emulator CI
 gate. Phone evidence exposed and repairs clipped confirmation buttons and
 incorrect selection-limit errors; a resumed-activity fence repairs the
 harness's picker handoff. Two ARM64 runs pass with 3/40 storage handles and
-complete emulator/AVD cleanup. Hosted x86_64 execution remains open.
+complete emulator/AVD cleanup. Two hosted x86_64 API 35 runs now pass the same
+cohort, resource limit and owned cleanup; CI-004 is closed.
 
-Locally completed release-hardening Tactical
+Completed local and hosted release-hardening Tactical
 [`212`](../tactical/212-application-lifecycle-verification-gate.md) adds a
 controlled complete application lifecycle gate. Its first two local cases
 exposed and now pass a durable Resume queue-admission repair after paused
 corruption checking; exact hashes, restart, independent seeding, repair,
 keep-data removal, and joined resource cleanup pass. The broader topology/checkpoint matrix and oversized restart/seeding cohort
 now pass after a one-shot exact-extent handoff repairs repeated checking.
-Hosted qualification remains open. CI-007's weekly
+The ordinary presubmit and extended/recovery workflows now pass on hosted
+Linux, closing CI-006. CI-007's weekly
 performance requirement is satisfied by scheduled full run `34099890487`.
 
 Work-selection policy: the former single-**Now** convention is retired as of
@@ -981,11 +983,6 @@ exactly.
 
 ### Active
 
-- Confirm hosted evidence for locally completed **Tacticals `211`–`216`**
-  on the authorized `release-readiness-ci` branch: companion/pure-v2 regressions,
-  application   lifecycle and scheduled recovery matrix, owned Android runtime, native
-  session recovery, package notices and local diagnostics. Retain build timing
-  and bounded evidence. Local passes do not establish exact hosted success.
 - Resolve **Tactical `214`**'s explicit GTK3 source-maintenance decision using
   the prepared negative/fixed optimized probe and patch. Complete native
   platform notice coverage for the package lanes to be declared; the tagged

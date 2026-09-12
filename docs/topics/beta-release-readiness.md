@@ -2,21 +2,21 @@
 
 Topic: `beta-release-readiness`
 
-Authorized hosted run `34682523287` qualifies the web/extension/tool gates,
-extended storage recovery, Android x86_64 runtime, iOS and macOS/Linux unsigned
-package inspection. Windows exposes a test-owned recheck/seed-admission race;
-its controlled repair is locally validated but not yet hosted-qualified.
-The passing advisory report correctly retains GLib's release blocker. See
+Hosted run `34684328524` passes all 12 jobs at
+`8f31f98a48313c57c3e3ba16e5b8907b02d63135`, including the repaired Windows
+recheck test, all four unsigned desktop package lanes, owned Android runtime,
+iOS, web, Rust, dependency review and extended storage recovery. CI-004 and
+CI-006 are closed. The advisory report retains GLib's release blocker. See
 [the exact hosted record](../evidence/release-readiness-ci-2026-09-12.md).
 
-Locally completed Tactical
+Completed local and hosted Tactical
 [`216`](../tactical/216-local-support-diagnostics-and-release-baseline.md)
 adds the previewed, bounded local support export and public issue/guidance
 links in desktop/shared-browser About. Hostile input, exact clipboard/download,
 phone/wide light/dark accessibility and full web gates pass. The
 [baseline proposal](../release-baseline.md) prepares the support decision and
 compatibility matrix without selecting a version. REL-005, hosted Tactical
-208 disclosure qualification, exact candidate packaging and publication remain
+208 disclosure qualification, repaired signed-candidate qualification and publication remain
 open; no automatic upload or context-transmission gate was enabled.
 
 Tactical [`214`](../tactical/214-release-dependency-and-artifact-review.md)
@@ -331,18 +331,19 @@ compatibility and rollback policy declared with that baseline.
 ### CI and repository health
 
 Tactical [`211`](../tactical/211-presubmit-signal-and-build-measurements.md)
-repairs the companion FormatJS diagnostic-link rejection and a test-owned
-pure-v2 seed-reconciliation race. The workflow now has ten jobs: extension
-packaging and workflow/release-tool checks run independently of web contract,
-type, unit, build, and E2E coverage. Rust compilation and execution have separate
-steps, with seven-day Cargo timing artifacts. Local format/clippy, 1,499 Rust
-tests, loopback interop, contract drift, 381 web unit tests, 39 deterministic
-browser tests, extension packaging, and workflow lint pass; the new job
-topology is undergoing authorized hosted qualification on
-`release-readiness-ci`. Manual CI also calls the weekly storage-recovery and
-dependency-review definitions at the same commit; ordinary presubmit coverage
-is unchanged. Using the qualification branch avoids the automatic public
-website deployment attached to `main` pushes.
+repairs the companion FormatJS diagnostic-link rejection and two test-owned
+completion/recheck seed-reconciliation waits. Ten ordinary jobs keep extension
+packaging and release-tool checks independent of web contract/type/unit/E2E
+coverage. Manual CI additionally calls the scheduled storage-recovery and
+advisory workflows at the same source revision. Run `34684328524` passes all
+12 jobs: 1,504 workspace tests, 386 web unit tests, 43 browser tests, native
+platform/package checks, Android runtime, iOS and controlled recovery. Existing
+opt-in skips remain explicit in the evidence. Compilation and execution have
+separate timings and seven-day artifacts; the measured compilation cost does
+not justify changing profiles or cache policy without a controlled comparison.
+The qualification branch avoids the automatic public website deployment
+attached to `main` pushes. See the
+[exact run record](../evidence/release-readiness-ci-2026-09-12.md).
 
 - [x] **CI-001 — Add ordinary presubmit CI.** Required checks run Rust
   formatting, workspace clippy with warnings denied, workspace tests,
@@ -367,36 +368,41 @@ website deployment attached to `main` pushes.
   Windows x86_64 with the complete intended package matrix. Clean install and
   installed update evidence remain separately open under `QA-003` and
   `UPD-005`.
-- [ ] **CI-004 — Add Android gates.** Build both Rust ABIs, lint, unit test,
+- [x] **CI-004 — Add Android gates.** Build both Rust ABIs, lint, unit test,
   assemble a release bundle, and run a bounded owned-emulator product smoke.
   Physical-device and ChromeOS evidence remains a release-candidate campaign,
   not an unattended presubmit mutation. Hosted presubmit now passes both Rust
   ABIs, generated Kotlin, lint/JVM tests, debug app APK, and instrumentation
-  APK compilation. Tactical 210's signed canary AAB passes. Locally complete
+  APK compilation. Tactical 210's signed canary AAB passes. Completed
   Tactical [`213`](../tactical/213-owned-android-runtime-ci.md) now runs the
   real SAF selection/restart/recheck/removal cohort on a uniquely owned API 35
   phone emulator and adds its bounded seven-day report to presubmit. Two
   ARM64 runs pass after fixing clipped confirmation controls and harness
-  picker handoff. Hosted x86_64 runtime confirmation remains open.
+  picker handoff. Hosted x86_64 runs `34682523287` and `34684328524` pass
+  the real API 35 cohort with exact removal, 3/40 storage-handle high water
+  and owned-AVD cleanup; see the [exact evidence](../evidence/release-readiness-ci-2026-09-12.md).
 - [x] **CI-005 — Add iOS gates.** Generate bindings/project, build the device
   Rust library, run simulator unit/UI tests, and create an unsigned release
   archive on a pinned macOS/Xcode runner. Signed TestFlight work remains a
   protected release job. The exact Xcode 26.6 hosted Apple leg passes generated
   drift, 25 unit tests, 2 UI tests, and the unsigned device archive.
-- [ ] **CI-006 — Add a bounded controlled interoperability smoke.** Choose a
+- [x] **CI-006 — Add a bounded controlled interoperability smoke.** Choose a
   short v1 magnet/torrent intake, transfer, verified direct content, restart, and seeding
   path against pinned libtorrent. Keep the long matrix and public catalog out
   of ordinary PR latency. The hosted presubmit passes Tactical `159`'s locked
-  exact first-piece transfer and cleanup as the initial floor. Active Tactical
+  exact first-piece transfer and cleanup as the initial floor. Completed Tactical
   [`212`](../tactical/212-application-lifecycle-verification-gate.md) adds a
-  locally passing single/multifile application cohort with byte intake,
+  hosted single/multifile application cohort with byte intake,
   complete hashes, source-offline restart/seeding, paused corruption checking,
   exact repair, keep-data removal, resource bounds, and joined cleanup. It
   also repairs Resume failing to restore a missing download-queue position
-  after a paused seed recheck. Hosted confirmation remains open. The broader
-  topology/checkpoint matrix and oversized restart/seeding cohort now pass
+  after a paused seed recheck. Run `34682523287` passes the ordinary two-case
+  presubmit and the four-case extended cohort. Both that run and corrected
+  run `34684328524` pass the broader topology/checkpoint matrix and
+  oversized restart/seeding cohort
   after repairing repeated checking with an exact verified-extent handoff.
-  A bounded weekly workflow is prepared; hosted execution remains unclaimed.
+  The bounded weekly workflow is also callable by manual CI; both hosted
+  executions pass all three topology and three checkpoint crash cases.
 - [x] **CI-007 — Repair scheduled performance CI.** The 2026-08-10 and
   2026-08-17 runs failed before tests because `astral-sh/setup-uv@v8` could not
   be resolved. The workflow now pins reviewed `setup-uv` `v8.3.2`; manual
@@ -468,8 +474,10 @@ website deployment attached to `main` pushes.
   assets passed `SHA256SUMS`, manifest, target, signature, and immutable-URL
   checks. Public `0.1.2` passed the complete signed workflow and finalizer; its
   exact arm64 DMG also independently matched `SHA256SUMS` before the installed
-  spot check. Dependency/notices review and reviewed archive-content policy
-  remain open.
+  spot check. Current Rust/npm notices, the expiring advisory inventory and
+  all four unsigned package-content gates pass in hosted run `34684328524`.
+  GLib source maintenance and native-platform notice clearance remain open;
+  the passing advisory job explicitly reports release-ready false.
 
 ## Desktop Beta Checklist
 

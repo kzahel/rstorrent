@@ -462,20 +462,24 @@ reason to stop.
 
 ## Current Checkpoint
 
-September 12 push/CI authorization is now exercised on `release-readiness-ci`,
-avoiding `main`'s automatic website deployment. Hosted run `34682523287`
-passes the four application lifecycles, three topology cases and three
-checkpoint crash boundaries, plus the owned Android API 35 x86_64 lifecycle
-with 3/40 storage-handle high water and complete cleanup. Windows exposes a
-second directly owned test's missing maintenance after checker completion.
-Tactical 211 forces the failing ordering, reproduces the zero-registration
-timeout, then drives the ordinary Snapshot command after task termination.
-Its test-only repair passes 20 concurrent-process repetitions, all 346 active
-local session tests and tests clippy. Next: finish hosted qualification of
-the corrected revision and inspect Rust build timings. GLib maintenance,
-native-library notices and signed/public release decisions remain separate.
-The [hosted record](../evidence/release-readiness-ci-2026-09-12.md) supersedes
-the no-push and pending-hosted statements in the earlier checkpoint below.
+September 12 hosted qualification is complete on `release-readiness-ci`,
+avoiding `main`'s automatic website deployment. Run `34684328524` passes all
+12 jobs at `8f31f98a48313c57c3e3ba16e5b8907b02d63135`: four application
+lifecycles, three topology and three checkpoint crash cases, the owned Android
+API 35 x86_64 lifecycle with 3/40 storage-handle high water, all desktop
+package lanes, iOS, web and Rust. Tactical 211's forced-order test repair
+passes the full native Windows session suite and installed package checks.
+The first run's reproduced recheck/seed-admission timeout remains a recorded
+negative; no runtime behavior or timeout changed to repair that test.
+
+Rust timing artifacts confirm compilation dominates execution: workspace-test
+compilation takes 1,176 s without the Rust cache and 940 s with restored cache,
+versus 187/184 s executing tests including doctests. This is not a controlled
+profile comparison. Keep existing profiles and cache policy until a bounded
+experiment justifies changing them. Next campaign decisions are GLib source
+maintenance, native-library notice closure and signed/public release direction.
+The [hosted record](../evidence/release-readiness-ci-2026-09-12.md) owns exact
+source, package hashes, resource observations and remaining release limits.
 
 Tactical [`212`](../tactical/212-application-lifecycle-verification-gate.md)
 contains the user-directed application verification hardening. Slice one is
@@ -499,23 +503,22 @@ and package inventory gates, with an explicit GLib maintenance decision still
 open after its negative/fixed optimized probe. Tactical 214 is committed as
 `4a1a1db7`; Tactical 216 now completes the bounded local support export and
 explicit future baseline proposal, with 386 web tests and four browser
-copy/download/accessibility cases passing. Next: obtain the explicit GLib
-source-maintenance and push direction needed for
-hosted qualification. Platform notice closure, corrected public privacy pages
-and a repaired signed Windows candidate remain distinct release prerequisites.
-No push, hosted run, publication or supported-release declaration has occurred.
+copy/download/accessibility cases passing. Hosted qualification is now complete.
+GLib source-maintenance direction, platform notice closure, corrected public
+privacy pages and a repaired signed Windows candidate remain release
+prerequisites. No publication or supported-release declaration has occurred.
 
 Tactical [`211`](../tactical/211-presubmit-signal-and-build-measurements.md)
-completes the bounded CI regression repair locally. The pure-v2 active-upload
+completes the bounded CI regression repair locally and hosted. The pure-v2 active-upload
 test now forces task termination before completed-seed reconciliation, then
 drives the ordinary application command path. Its negative control reproduces
 the hosted registration timeout; the repair passes 40 concurrent-process
 repetitions. Production engine state, protocol claims, Android semantics, and
 generated contracts are unchanged. Workspace format/clippy and 1,499 tests,
 the exact loopback interop smoke, contract drift, and browser gates pass.
-Local workspace test compilation takes 231.39s and execution 83.66s. Next
-action: inspect the ten hosted jobs and Cargo timing artifacts after an
-independently authorized push; local success does not prove that hosted gate.
+Local workspace test compilation takes 231.39s and execution 83.66s. The
+September 12 hosted record above now supplies exact native results and Cargo
+compilation measurements; local and hosted observations remain distinct.
 
 Campaign state: **Tactical `112` graduated; Tactical `113` closed evidence-
 limited with positive physical capability unknown on the current hardware;

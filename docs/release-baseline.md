@@ -63,9 +63,13 @@ not justify claims beyond the filesystem and test evidence either.
 
 1. Run presubmit at the exact committed candidate, including native Windows
    session recovery, generated contracts, web type/unit/build/accessibility,
-   both Android ABIs and the owned runtime cohort. Tactical 211/212/213 hosted
-   confirmation still requires an authorized push; local passes are recorded
-   separately. Weekly performance run `34099890487` already satisfies CI-007.
+   both Android ABIs and the owned runtime cohort. September 12 hosted
+   qualification now supplies Tactical 212/213 lifecycle/recovery and owned
+   Android runtime evidence, plus the corrected Tactical 211 Windows native
+   session gate. Preserve the exact source distinction in the
+   [CI record](evidence/release-readiness-ci-2026-09-12.md); qualify again when
+   the future candidate changes. Weekly performance run `34099890487` already
+   satisfies CI-007.
 2. Run the complete application lifecycle and scheduled topology/checkpoint
    cohorts with independent content hashes, seeding verification, corruption
    repair and zero-residue resource reports. Retain bounded, sanitized evidence.

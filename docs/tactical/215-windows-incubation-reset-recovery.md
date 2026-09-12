@@ -1,8 +1,15 @@
 # Tactical 215: Windows Incubation Reset Recovery
 
-Status: **Complete locally (2026-09-12); hosted and repaired signed-package
-qualification remain open.** Discovered during Tactical 158 installed
+Status: **Complete locally and hosted (2026-09-12); repaired signed-package
+qualification remains open.** Discovered during Tactical 158 installed
 signed 0.1.1-to-0.1.3 acceptance on native Windows x86_64.
+
+Hosted run `34684328524` passes 43 desktop, 345 session and the native address
+test on Windows, then builds/installs/inspects the unsigned NSIS package.
+Tactical 211 repairs a test-only recheck/seed-admission wait exposed by the
+first hosted run. The [exact evidence](../evidence/release-readiness-ci-2026-09-12.md)
+supersedes pending-hosted statements below; it does not close the separate
+signed older-to-newer update requirement.
 
 Topics: `client-persistence`, `beta-release-readiness`, `capability-readiness`,
 `oracle-driven-engine-campaign`

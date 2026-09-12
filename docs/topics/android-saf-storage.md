@@ -2,13 +2,16 @@
 
 Topic: `android-saf-storage`
 
-Locally completed Tactical
+Completed local and hosted Tactical
 [`213`](../tactical/213-owned-android-runtime-ci.md) promotes the real Android
 SAF selection/restart/recheck/removal cohort into an owned API 35 emulator CI
 gate. Phone evidence exposed and repairs clipped confirmation buttons and
 incorrect selection-limit errors; a resumed-activity fence repairs the
 harness's picker handoff. Two ARM64 runs pass with 3/40 storage handles and
-complete emulator/AVD cleanup. Hosted x86_64 execution remains open.
+complete emulator/AVD cleanup. Hosted runs `34682523287` and `34684328524`
+now pass the API 35 x86_64 cohort with the same 3/40 handle peak, exact removal
+and owned-AVD cleanup. See the
+[exact hosted record](../evidence/release-readiness-ci-2026-09-12.md).
 
 Status: Direct-final-document replacement completed on 2026-08-29 by Tactical
 [`191`](../tactical/191-direct-filesystem-storage.md). SAF retains root

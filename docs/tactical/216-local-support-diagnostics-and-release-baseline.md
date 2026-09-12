@@ -1,7 +1,13 @@
 # Tactical 216: Local Support Diagnostics And Release Baseline
 
-Status: **Complete locally (2026-09-12); hosted/package qualification and
-explicit support declaration remain separate.** Authorized release-readiness campaign.
+Status: **Complete locally and hosted (2026-09-12); explicit supported-release
+declaration remains separate.** Authorized release-readiness campaign.
+
+Run `34684328524` passes web type/build, 386 unit tests (two skipped), all
+43 active browser tests (14 opt-in skips), all four unsigned desktop package
+lanes, Android runtime and iOS archive. The four support-report browser cases
+retain exact copy/download bytes and accessibility assertions. See the
+[exact hosted record](../evidence/release-readiness-ci-2026-09-12.md).
 
 Topics: `beta-release-readiness`, `client-surfaces`, `web-ui-design`,
 `application-view-api`, `localization`, `client-persistence`,

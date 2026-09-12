@@ -1,7 +1,15 @@
 # Tactical 212: Application Lifecycle Verification Gate
 
-Status: **Complete locally (2026-09-12).** Implemented in substantial
-validated slices; hosted execution remains an explicit release-readiness gate.
+Status: **Complete locally and in hosted verification (2026-09-12).**
+Implemented in substantial validated slices.
+
+Hosted run `34682523287` passes the ordinary two-case application presubmit,
+all four extended lifecycles, all three storage topology cases and all three
+checkpoint crash boundaries. Corrected run `34684328524` also passes the
+extended/recovery matrix and owned Android runtime. Every lifecycle joins its
+owners and every cohort reports cleanup; binary hashes and resource high-water
+values are in [the exact record](../evidence/release-readiness-ci-2026-09-12.md).
+This supersedes pending-hosted statements in the local execution history.
 
 Topics: `beta-release-readiness`, `capability-readiness`,
 `oracle-driven-engine-campaign`, `download-correctness`, `client-persistence`,
