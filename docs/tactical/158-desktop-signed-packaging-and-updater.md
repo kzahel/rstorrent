@@ -1,5 +1,16 @@
 # Tactical 158: Desktop Signed Packaging And Updater
 
+Current checkpoint (2026-09-12): the actual production destination is signed
+`desktop-v0.1.3`, commit `5e9d5441d12d72812dc438e6638eca972e43408e`, not the
+older candidate discussed below. [Native installed evidence](../evidence/desktop-v0.1.1-to-v0.1.3-x86_64.md)
+now passes Linux x86_64 update/picker/relaunch/Quit/removal with payload safety
+and an explicit visible-tray limitation. Windows fresh signed default startup
+and firewall Cancel pass; automatic old-profile reset fails with error 5.
+Completed local Tactical `215` repairs that boundary and passes native Windows
+session/desktop tests, but repaired signed reset/relaunch acceptance remains
+open. No public package or updater route was changed during qualification.
+
+
 Status: **Active.** Implementation resumed on 2026-08-29 after durable High
 file-priority Tactical
 [`176`](176-durable-high-file-priority.md) completed. Tagged

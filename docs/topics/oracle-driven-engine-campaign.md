@@ -473,8 +473,14 @@ boundaries, and four complete application lifecycle cases pass. The full
 Rust fmt/clippy/workspace tests and Android dual-ABI/generated/JVM build pass.
 The repair and scheduled matrix are committed as `65c95f6`. Tactical 213's
 owned Android runtime gate also passes two ARM64 phone campaigns with exact
-SAF selection/restart/recheck/removal and cleanup; commit that slice and
-continue the installed-desktop and remaining release-readiness campaign.
+SAF selection/restart/recheck/removal and cleanup, committed as `3ec3fed`.
+Tactical 215 repairs the subsequently reproduced Windows private catalog
+reset barrier and test fixture ownership/port isolation. Native Windows
+session (345) and desktop (43) tests pass alongside the installed default-port
+app; macOS and Android checks pass. Linux x86_64 public installed acceptance
+passes with the recorded tray limitation. Next: dependency/artifact review
+Tactical 214, bounded support export and the explicit future baseline proposal;
+then authorized hosted qualification and a repaired signed Windows candidate.
 No push, hosted run, publication or supported-release declaration has occurred.
 
 Tactical [`211`](../tactical/211-presubmit-signal-and-build-measurements.md)

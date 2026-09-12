@@ -310,6 +310,9 @@ jobs:
       - name: Run desktop native tests
         run: cargo test -p rstorrent-desktop
 
+      - name: Verify native session lifecycle and catalog recovery
+        run: cargo test --locked -p rstorrent-session --lib
+
       - name: Exercise native Windows local-address selection
         if: runner.os == 'Windows'
         run: >-

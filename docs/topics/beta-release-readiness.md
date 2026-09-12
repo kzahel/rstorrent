@@ -2,6 +2,20 @@
 
 Topic: `beta-release-readiness`
 
+Current checkpoint (2026-09-12): public desktop `0.1.3` supersedes the
+historical `0.1.2` checkpoint below. Exact native x86_64 installed acceptance
+proves the Linux `0.1.1` → `0.1.3` update, native picker, retained default root,
+joined Quit and payload-preserving removal. GNOME's inactive indicator leaves
+visible tray presentation unproved. Windows signed replacement succeeds but
+old-profile reset exits with error 5; Tactical `215` repairs current source
+and passes 345 native session and 43 native desktop tests. Fresh signed
+`0.1.3` startup, native picker and root relaunch pass after an explicit private
+profile reset. Windows firewall Cancel produces only scoped inbound Public
+block rules. A repaired signed automatic update remains a release gate.
+See [the exact package and acceptance record](../evidence/desktop-v0.1.1-to-v0.1.3-x86_64.md).
+The older campaign narrative below is historical where this checkpoint
+supersedes its package versions or open platform evidence.
+
 Work-selection policy: release tacticals may be active alongside unrelated
 engine, client, platform, or product tacticals. **Active**, **Ready**, and
 **Later** are planning states rather than a lock or required sequence. The
@@ -468,20 +482,20 @@ topology still needs a hosted run after an authorized push.
   semantics; hosted Linux x86_64 AppImage testing proves the packaged picker
   dependency and build. Installed Linux desktop/portal behavior remains open,
   so the cross-platform gate is deliberately not checked.
-- [ ] **DESK-006 — Fix fresh-default Windows listener startup.** The public
+- [x] **DESK-006 — Fix fresh-default Windows listener startup.** The public
   `0.1.0` and `0.1.1` Windows builds select `127.0.0.1` from the multicast
   source-route probe, reject it for local-network listening, fall back to
   `0.0.0.0`, and then fail application validation. Tactical `160` repairs the
-  selector and wildcard fallback; public `0.1.2` contains that repair. Prove
-  the signed package on a clean installed profile before calling the Windows
-  lane runnable.
-- [ ] **DESK-007 — Qualify Windows firewall consent.** First launch of the
-  unsigned fresh-profile listener build displayed Windows Security Allow/
-  Cancel consent. Choosing Cancel granted no broader firewall access and left
-  the app plus root picker usable. The signed `0.1.2` installed campaign must
-  record whether the prompt appears, define the supported private/public-
-  network choice, and document incoming-reachability consequences. Automation
-  must not silently grant a firewall rule.
+  selector and wildcard fallback. Fresh signed `0.1.3` now passes native
+  x86_64 default startup, root selection and relaunch. The separate old-
+  catalog reset failure remains tracked by Tactical `215`.
+- [x] **DESK-007 — Qualify Windows firewall consent.** Actual signed native
+  x86_64 first launch displays Windows Security. Cancel leaves only exact-app
+  inbound Public block rules and the product, picker and outbound updater
+  usable. Incoming peers may remain blocked. A user may explicitly allow the
+  exact app on a trusted private network; this campaign grants no Allow rule
+  and does not claim public incoming reachability. See the September 12
+  installed evidence and support guidance above.
 - [x] **DESK-008 — Handle external magnets and torrent files.** Tactical
   `163` now registers the current RSTorrent packages for `magnet:` and
   local `.torrent` activation, forwards cold and warm input through the

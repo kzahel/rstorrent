@@ -2,6 +2,13 @@
 
 Topic: `client-persistence`
 
+Completed Tactical [`215`](../tactical/215-windows-incubation-reset-recovery.md)
+repairs Windows error 5 during recognized old-catalog reset. Unix retains its
+directory barrier; Windows retains flushed marker/SQLite process-recovery
+semantics without claiming portable directory fsync or arbitrary power-loss
+safety. All 345 native Windows session tests pass, and CI now runs them on
+every desktop platform. Public signed 0.1.3 still contains the defect.
+
 Tactical `212` now also resolves completed-seed repeated checking for verified
 oversized files. A one-shot, nonpersistent exact-extent handoff follows joined
 successful content work into seed registration; ordinary startup validation

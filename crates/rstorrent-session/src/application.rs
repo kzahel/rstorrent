@@ -7474,6 +7474,7 @@ mod tests {
         );
 
         drop(reopened);
+        drop(application);
         fs::remove_dir_all(root).expect("remove test root");
     }
 
@@ -7676,6 +7677,7 @@ mod tests {
         );
 
         application.shutdown().await.expect("shutdown application");
+        drop(application);
         fs::remove_dir_all(root).expect("remove test root");
     }
 
@@ -7722,6 +7724,7 @@ mod tests {
 
         service.shutdown().await.expect("shutdown application");
         assert!(!payload.exists());
+        drop(service);
         fs::remove_dir_all(root).expect("remove test root");
     }
 
@@ -11340,6 +11343,7 @@ mod tests {
             .shutdown()
             .await
             .expect("shutdown hybrid reconciliation application");
+        drop(service);
         fs::remove_dir_all(root).expect("remove hybrid reconciliation root");
     }
 
@@ -17297,12 +17301,21 @@ mod tests {
         let raw_info = single_file_info("seed.bin", payload, 4);
         let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
         let info_hash_hex = crate::control::encode_info_hash(info_hash);
+        // Keep the preferred port occupied so automatic selection uses a fresh
+        // OS-assigned port, isolated from installed clients on the public default.
+        let preferred_blocker = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("reserve preferred listener port");
+        let preferred_port = preferred_blocker
+            .local_addr()
+            .expect("preferred address")
+            .port();
         let configuration = config(&root);
         persist_client_settings(
             &configuration,
             ClientSettings {
                 listener: ListenerPolicy::AutomaticLoopback,
-                preferred_listen_port: 6_881,
+                preferred_listen_port: preferred_port,
                 port_mapping: crate::PortMappingPolicy::Disabled,
                 peer_connection_limit: 1,
                 upload_slots: 1,
@@ -17514,7 +17527,7 @@ mod tests {
             listener: ListenerPolicy::FixedLoopback {
                 port: handover_port,
             },
-            preferred_listen_port: 6_881,
+            preferred_listen_port: preferred_port,
             port_mapping: crate::PortMappingPolicy::Disabled,
             peer_connection_limit: 1,
             upload_slots: 1,
@@ -18033,7 +18046,7 @@ mod tests {
 
         let repaired = ClientSettings {
             listener: ListenerPolicy::AutomaticLoopback,
-            preferred_listen_port: 6_881,
+            preferred_listen_port: port,
             port_mapping: crate::PortMappingPolicy::Disabled,
             peer_connection_limit: 321,
             upload_slots: 0,

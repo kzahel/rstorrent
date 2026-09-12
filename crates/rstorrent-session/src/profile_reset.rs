@@ -353,10 +353,22 @@ fn remove_fixed_file(path: &Path, basename: &'static str) -> Result<(), StoreErr
     fs::remove_file(path).map_err(|source| io_error("remove reset database file", source))
 }
 
+#[cfg(unix)]
 fn sync_directory(profile_root: &Path) -> Result<(), StoreError> {
     File::open(profile_root)
         .and_then(|directory| directory.sync_all())
         .map_err(|source| io_error("sync profile directory", source))
+}
+
+#[cfg(windows)]
+fn sync_directory(_profile_root: &Path) -> Result<(), StoreError> {
+    // Windows does not offer a portable unprivileged directory-fsync
+    // operation. Opening a directory as a regular File fails with access
+    // denied. The reset marker is flushed before removing the old catalog,
+    // and SQLite commits the replacement before the marker is removed.
+    // Those steps support process-interruption recovery; they do not promise
+    // Unix directory-barrier durability across arbitrary power loss.
+    Ok(())
 }
 
 fn profile_sqlite_error(error: rusqlite::Error) -> StoreError {

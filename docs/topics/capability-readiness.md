@@ -2,6 +2,15 @@
 
 Topic: `capability-readiness`
 
+Completed local Tactical [`215`](../tactical/215-windows-incubation-reset-recovery.md)
+repairs a Windows catalog-reset startup failure exposed by the actual public
+0.1.1 → 0.1.3 update. Native Windows session (345) and desktop (43) tests pass;
+CI now includes native session recovery. The repaired signed update remains
+open. Linux x86_64 passes that public update, picker, default-root relaunch,
+joined Quit and payload-preserving removal; visible GNOME tray support remains
+unproved. [Exact evidence](../evidence/desktop-v0.1.1-to-v0.1.3-x86_64.md)
+also qualifies Windows firewall Cancel and fresh signed 0.1.3 startup.
+
 Locally completed Tactical
 [`213`](../tactical/213-owned-android-runtime-ci.md) promotes the real Android
 SAF selection/restart/recheck/removal cohort into an owned API 35 emulator CI

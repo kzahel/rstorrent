@@ -93,6 +93,10 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`215-windows-incubation-reset-recovery.md`](215-windows-incubation-reset-recovery.md):
+  complete locally; Windows reset barrier, isolated native session tests and
+  signed desktop qualification evidence. Repaired signed update remains open.
+
 - [`213-owned-android-runtime-ci.md`](213-owned-android-runtime-ci.md):
   locally complete owned API 35 product SAF CI cohort, bounded sanitized
   evidence, resumed picker handoff, and phone confirmation/selection repair;
