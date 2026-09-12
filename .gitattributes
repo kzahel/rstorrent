@@ -5,3 +5,4 @@ distribution/patches/*.patch text eol=lf -whitespace
 
 # Preserve published vendored source and its checksum inventory on all hosts.
 vendor/glib-0.18.5/** -text -whitespace
+distribution/patches/*-source.json text eol=lf

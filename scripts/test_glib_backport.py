@@ -49,6 +49,22 @@ class BackportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'symlink'):
             glib_backport.verify(self.root)
 
+    def test_windows_style_checkout_preserves_verified_source_bytes(self):
+        import subprocess
+        # A tiny owned repository exercises actual Git checkout conversion.
+        # Preserve fixture bytes on import, then enable Windows autocrlf.
+        shutil.copyfile(glib_backport.ROOT / '.gitattributes', self.root / '.gitattributes')
+        def git(*args):
+            return subprocess.run(['git', *args], cwd=self.root, check=True,
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        git('init', '--quiet')
+        git('-c', 'core.autocrlf=false', 'add', '.')
+        checkout = self.root / 'checkout'
+        git('-c', 'core.autocrlf=true', 'checkout-index', '--all', '--prefix=checkout/')
+        self.assertIn(b'\r\n', (checkout / 'Cargo.lock').read_bytes())
+        self.assertNotIn(b'\r\n', (checkout / glib_backport.MANIFEST).read_bytes())
+        self.assertEqual(glib_backport.verify(checkout), glib_backport.verify(self.root))
+
     def test_audit_projection_keeps_registry_identity_and_original_lock(self):
         import tomllib
         path = self.root / 'Cargo.lock'
@@ -100,6 +116,11 @@ class BackportTests(unittest.TestCase):
         result = audit.review(cargo, npm, policy, date(2026, 9, 12), [proof])
         self.assertTrue(result['release_ready'])
         self.assertEqual(result['source_verified_backports'], [proof])
+        future = copy.deepcopy(cargo)
+        future['warnings'] = {'unsound': [{'advisory': {'id': 'RUSTSEC-future-glib'},
+                                          'package': {'name': 'glib', 'version': '0.18.5'}}]}
+        with self.assertRaisesRegex(ValueError, 'inventory changed'):
+            audit.review(future, npm, policy, date(2026, 9, 12), [proof])
         changed = copy.deepcopy(proof)
         changed['source_manifest_sha256'] = 'wrong'
         with self.assertRaisesRegex(ValueError, 'verified source'):
@@ -124,17 +145,25 @@ class BackportTests(unittest.TestCase):
         text = b'original notice text'
         (output / 'THIRD_PARTY_NOTICES.txt').write_bytes(text)
         manifest = {'schema': 1, 'target': 'x86_64-unknown-linux-gnu',
-                    'rust': [{'name': 'glib', 'backport': glib_backport.verify(self.root)}],
+                    'rust': [{'name': 'glib', 'version': '0.18.5', 'license': 'MIT',
+                              'source': glib_backport.verify(self.root)['upstream_archive'],
+                              'backport': glib_backport.verify(self.root)}],
                     'npm': [{}], 'cargo_lock_sha256': 'test', 'npm_lock_sha256': 'test',
                     'notices_sha256': notices.digest(text)}
         path = output / 'dependency-manifest.json'
         path.write_text(json.dumps(manifest))
         package.inspect(output)
-        for rust in [[{'name': 'glib'}], [{'name': 'other'}]]:
+        incorrect_version = copy.deepcopy(manifest['rust'])
+        incorrect_version[0]['version'] = '0.20.0'
+        for rust in [[{'name': 'glib'}], [{'name': 'other'}], incorrect_version]:
             manifest['rust'] = rust
             path.write_text(json.dumps(manifest))
             with self.assertRaisesRegex(ValueError, 'exact verified GLib'):
                 package.inspect(output)
+        manifest['target'] = 'aarch64-apple-darwin'
+        path.write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(ValueError, 'reviewed Linux target'):
+            package.inspect(output, require_native=True)
 
 
 if __name__ == '__main__':

@@ -4,14 +4,14 @@ import argparse
 import hashlib
 import json
 
-import glib_backport
-
-ROOT = glib_backport.ROOT
 import os
 from pathlib import Path
 import re
 
+import glib_backport
 from native_notices import verify as verify_native_notices
+
+ROOT = glib_backport.ROOT
 
 FORBIDDEN_NAMES = {'.git', 'node_modules', '.env', '.env.local', 'id_rsa', 'id_ed25519',
                    'Cargo.lock', 'package-lock.json', 'test-results', 'playwright-report'}
@@ -36,6 +36,7 @@ def bounded_paths(root):
 
 def inspect(root, require_notices=True, require_native=False):
     root = root.resolve(strict=True)
+    native_expected = require_native or (require_notices and (root / 'AppRun').exists())
     files, notice_manifests = [], []
     total = 0
     for entry in bounded_paths(root):
@@ -78,9 +79,17 @@ def inspect(root, require_notices=True, require_native=False):
                 raise ValueError('missing or oversized notices')
             if hashlib.sha256(notices.read_bytes()).hexdigest() != manifest['notices_sha256']:
                 raise ValueError('notice content differs from dependency manifest')
-            if manifest.get('target', '').endswith('-unknown-linux-gnu'):
+            linux_target = manifest.get('target') in {
+                'x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu'}
+            if native_expected and not linux_target:
+                raise ValueError('Linux package must identify its reviewed Linux target')
+            if linux_target:
                 glib = [p for p in manifest.get('rust', []) if p.get('name') == 'glib']
-                if len(glib) != 1 or glib[0].get('backport') != glib_backport.verify(ROOT):
+                proof = glib_backport.verify(ROOT)
+                if (len(glib) != 1 or glib[0].get('backport') != proof
+                        or glib[0].get('version') != proof['version']
+                        or glib[0].get('license') != proof['license']
+                        or glib[0].get('source') != proof['upstream_archive']):
                     raise ValueError('Linux package must attribute the exact verified GLib backport')
             if manifest.get('schema') != 1 or not manifest.get('rust') or not manifest.get('npm'):
                 raise ValueError('incomplete dependency manifest')
@@ -89,7 +98,7 @@ def inspect(root, require_notices=True, require_native=False):
                                      'npm_lock_sha256': manifest['npm_lock_sha256']})
     if require_notices and len(notice_manifests) != 1:
         raise ValueError('distribution must contain exactly one dependency notice bundle')
-    native = verify_native_notices(root) if require_native or (require_notices and (root / 'AppRun').exists()) else None
+    native = verify_native_notices(root) if native_expected else None
     return {'schema': 1, 'native_notices': native, 'files': sorted(files, key=lambda f: f['path']), 'total_bytes': total,
             'notice_manifests': notice_manifests,
             'scope': 'file inventory, bounded text signatures and Rust/npm notice integrity; '

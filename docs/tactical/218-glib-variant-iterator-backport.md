@@ -99,3 +99,37 @@ workflow actionlint, source verification, nine backport tests and 16 existing
 distribution tests pass. Both Linux notice generations retain the GLib entry;
 macOS generation still excludes that Linux-only dependency. Full native Linux
 optimized and packaged qualification is the next execution gate.
+
+### Hosted Checkout Correction
+
+The first implementation is `aa056ff6e4ac1ada4ffe31d1872a2f8699efbe2b`, run
+<https://github.com/kzahel/rstorrent/actions/runs/34691933241>. The Windows
+source gate correctly rejects a CRLF-converted provenance JSON before build;
+vendored source bytes themselves remain intact. Add an explicit LF attribute
+for the checksum-bound manifest. A real Git checkout-index fixture with
+`core.autocrlf=true` proves that ordinary Cargo.lock uses CRLF while the
+manifest and original source retain their exact hashes. All ten backport
+checks pass, including future-GLib-advisory rejection and an AppImage target
+mislabeling attempt. The initial workflow remains a failure even if its
+other platform jobs pass; the corrected source requires another hosted run.
+
+### First Hosted Native Results
+
+Run `34691933241` finishes with ten successful jobs and two failures: the
+Windows manifest newline gate above and an unchanged iOS mirrored-layout UI
+test waiting five seconds for the Add dialog's `magnet-input`. Its saved
+xcresult records 33 passed / one failed; the failure hierarchy remains on the
+library screen. GLib is absent from that platform graph. No iOS assertion is
+weakened or product change inferred; the corrected full run repeats the test.
+
+Both native Linux jobs pass **44 desktop tests**, the **three independent
+iterator cases in both dev and release profiles**, and **346 session tests**
+(two ignored). Actual unsigned AppImages pass source, embedded backport notice,
+native-host and activation checks. x86_64 inventories 327,422,713 bytes,
+174 native components, 113 distro packages and 128 notice files; ARM64
+inventories 340,992,541 bytes, 173 components, 112 packages and 127 notices.
+The ARM64 AppImage SHA-256 is
+`163cca989a62dfdea44be0764f13379773034f98e2bc6abd852aead0c450b538`.
+The hosted advisory artifact retains all seven original registry warnings and
+separately records the exact source-verified GLib repair. It still reports
+release-ready false while the installed-package gate remains pending.
