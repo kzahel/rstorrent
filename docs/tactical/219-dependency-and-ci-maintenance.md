@@ -1,6 +1,7 @@
 # Tactical 219: Dependency And CI Maintenance
 
-Status: **Active (2026-09-26).** User-authorized maintenance and push.
+Status: **Active (2026-09-26).** User-authorized maintenance and push;
+follow-up hosted qualification pending.
 
 Topics: `beta-release-readiness`, `capability-readiness`
 
@@ -14,9 +15,9 @@ CI. Stop when current audits and relevant product checks pass, automation is
 observable, and no release is published by this tactical.
 
 The September 22 storage recovery failure receives bounded triage and better
-failure evidence here; it is not an advisory finding. Signed Windows update qualification, a
-supported beta declaration, broad major-version migrations, and historical
-package remediation are outside this slice.
+failure evidence here; it is not an advisory finding. Signed Windows update
+qualification, a supported beta declaration, broad major-version migrations,
+and historical package remediation are outside this slice.
 
 ## Invariants And Direction
 
@@ -81,3 +82,32 @@ source revision. The cause of the one failure remains unproven. The exact
 upload assertion stays strict; a future failure will also report durable,
 valid and missing piece counts and excess upload bytes. No engine state or
 protocol claim changes on this evidence.
+
+## Hosted And Automation Checkpoint, 2026-09-26
+
+Source commit `62fc537a` is on `main`. Website run `36232402740` builds and
+deploys successfully. Manual advisory run `36232441484` collects all three
+lockfile reports and passes with `release_ready=True`. GitHub's vulnerability
+alerts GET returns 204, automated security fixes report enabled and unpaused,
+and the open Dependabot alert list is empty at this checkpoint. The first
+version-update scans created Cargo, web, website and Actions PRs, proving the
+ecosystem paths are recognized. No PR is auto-merged.
+
+The first scan also showed that two routine PRs per ecosystem start a large
+cross-platform queue. Website TypeScript 7 PR `#1` fails `npm ci` because
+`@astrojs/check 0.9.10` requires TypeScript 5 or 6. The follow-up config
+reduces the routine limit to one PR per ecosystem and allows only patch/minor
+version updates; GitHub documents `allow.update-types` as version-only, so
+security updates remain eligible. Major migrations stay separately reviewed.
+Ordinary cross-platform CI and the exact-source storage matrix are still in
+flight at this checkpoint.
+
+The first main CI run `36232402842` exposed a gateway test race during
+workspace tests: the HTTP view-set shutdown test accepted a normal 200 update
+from its unthrottled live torrent-list subscription before the shutdown close
+could wake the poll with 410. The test now uses the supported 60-second
+delivery interval, longer than its 20-second wait, so ordinary patches stay
+pending while it exercises gateway shutdown. This changes only test setup;
+the view-set and gateway runtime behavior remain unchanged. The focused case
+passes 20/20 local repetitions, the full gateway suite passes 45/45, and
+workspace formatting passes. A new hosted run must qualify this correction.

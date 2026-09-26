@@ -9,11 +9,17 @@ extends weekly and tagged-release review to the website lockfile, and prepares
 bounded weekly dependency-update PRs. Exact local Cargo/web/website review
 reports zero vulnerabilities and retains all seven reviewed GLib/unmaintained
 warnings. The two September 16/23 scheduled advisory failures preceded this
-repair. Hosted qualification and GitHub alert/update settings remain open at
-this checkpoint. The September 22 storage checkpoint run failed its
+repair. Hosted website deployment and three-lockfile advisory review pass at
+`62fc537a`, and GitHub Dependabot alerts/security updates are enabled.
+Cross-platform CI remains in flight. The September 22 storage checkpoint run failed its
 post-commit upload expectation. Five local repeats and fresh hosted full
 verification run `36231952351` pass; the isolated failure remains unexplained
 and the strict assertion retains better state counts for the next recurrence.
+The first source run `36232402842` then exposed a separate gateway test race:
+an unthrottled view-set update returned 200 before shutdown closed the poll.
+Tactical `219` makes that test's delivery interval longer than its poll wait;
+20 focused local repetitions and the complete gateway suite pass. The
+corrected hosted run remains open.
 
 Tactical [`218`](../tactical/218-glib-variant-iterator-backport.md) adopts and
 qualifies the explicitly approved two-line GLib 0.18.5 backport. Exact source

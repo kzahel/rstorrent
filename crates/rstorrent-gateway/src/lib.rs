@@ -3817,7 +3817,9 @@ mod tests {
             "views": [{
                 "type": "torrent_list",
                 "view_id": "library",
-                "delivery": { "min_interval_millis": 0 }
+                // Keep ordinary background patches pending while the long
+                // poll proves that gateway shutdown wakes it with 410.
+                "delivery": { "min_interval_millis": 60_000 }
             }],
             "options": {}
         })
