@@ -6,6 +6,14 @@ three-component versions, and desktop release tags use
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-09-26
+
+- Add durable seeding goals, add-time file selection, and live DHT/PEX controls
+  to the first-party application experience.
+- Prepare the shared desktop interface for localization with a checked English
+  catalog and native fallback; no translated locale ships in this release.
+- Add bounded completed-file direct-save support to the owner remote-access
+  preview while retaining its explicit incubation status.
 - Add previewed local support diagnostics with exact copy/download, public
   issue links and privacy/recovery guidance. No logs, paths, torrent data,
   installation identifiers or automatic submission enter the report.
