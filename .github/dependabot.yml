@@ -1,7 +1,8 @@
 version: 2
 
 # Security updates remain independent of these version-update PR limits and
-# SemVer allow rules. Major version migrations need their own tactical review.
+# SemVer allow rules. Keep routine proposals per dependency so each has a
+# reviewable scope. Major version migrations need their own tactical review.
 updates:
   - package-ecosystem: cargo
     directory: /
@@ -14,11 +15,6 @@ updates:
     allow:
       - dependency-name: "*"
         update-types: ["version-update:semver-patch", "version-update:semver-minor"]
-    groups:
-      cargo-patches:
-        patterns: ["*"]
-        update-types: [patch]
-
   - package-ecosystem: npm
     directory: /clients/web
     schedule:
@@ -30,11 +26,6 @@ updates:
     allow:
       - dependency-name: "*"
         update-types: ["version-update:semver-patch", "version-update:semver-minor"]
-    groups:
-      web-patches:
-        patterns: ["*"]
-        update-types: [patch]
-
   - package-ecosystem: npm
     directory: /website
     schedule:
@@ -46,11 +37,6 @@ updates:
     allow:
       - dependency-name: "*"
         update-types: ["version-update:semver-patch", "version-update:semver-minor"]
-    groups:
-      website-patches:
-        patterns: ["*"]
-        update-types: [patch]
-
   - package-ecosystem: gradle
     directory: /clients/android
     schedule:
@@ -62,11 +48,6 @@ updates:
     allow:
       - dependency-name: "*"
         update-types: ["version-update:semver-patch", "version-update:semver-minor"]
-    groups:
-      android-patches:
-        patterns: ["*"]
-        update-types: [patch]
-
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -78,7 +59,3 @@ updates:
     allow:
       - dependency-name: "*"
         update-types: ["version-update:semver-patch", "version-update:semver-minor"]
-    groups:
-      actions-patches:
-        patterns: ["*"]
-        update-types: [patch]
