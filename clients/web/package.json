@@ -26,24 +26,24 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@formatjs/icu-messageformat-parser": "3.5.17",
+    "@formatjs/icu-messageformat-parser": "3.5.20",
     "@tauri-apps/api": "2.11.1",
     "@tauri-apps/plugin-updater": "2.10.1",
     "react": "19.2.8",
     "react-aria-components": "1.20.0",
     "react-dom": "19.2.8",
     "react-intl": "10.1.25",
-    "zustand": "5.0.14"
+    "zustand": "5.0.15"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.12.1",
-    "@babel/parser": "8.0.4",
-    "@formatjs/cli": "6.16.22",
+    "@babel/parser": "8.0.6",
+    "@formatjs/cli": "6.16.31",
     "@playwright/test": "1.62.1",
-    "@tauri-apps/cli": "2.11.4",
-    "@testing-library/jest-dom": "7.0.0",
-    "@testing-library/react": "16.3.2",
-    "@testing-library/user-event": "14.6.1",
+    "@tauri-apps/cli": "2.11.5",
+    "@testing-library/jest-dom": "7.0.1",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "14.6.7",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
     "@types/ws": "8.18.1",
@@ -52,6 +52,6 @@
     "typescript": "7.0.2",
     "vite": "8.1.5",
     "vitest": "4.1.11",
-    "ws": "8.21.1"
+    "ws": "8.21.3"
   }
 }
