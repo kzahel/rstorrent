@@ -10,6 +10,16 @@ Completed local Tactical `215` repairs that boundary and passes native Windows
 session/desktop tests, but repaired signed reset/relaunch acceptance remains
 open. No public package or updater route was changed during qualification.
 
+Restart checkpoint (2026-09-26): the Linux x86_64 installed gate is already
+closed by the exact public `0.1.1`-to-`0.1.3` evidence above. Main CI run
+`36244800483` passes all ten jobs at `7d1114ab`, including native Windows
+session and desktop tests with Tactical `215`'s repair. Public `0.1.3` still
+lacks that repair, so no existing published version can prove the remaining
+fresh-default Windows automatic reset/relaunch. A newer versioned, signed
+public candidate and an exact production-route installed run are required.
+Tagging `desktop-v*` automatically publishes after its release gates; prepare
+and review a bounded candidate before taking that explicit release action.
+
 
 Status: **Active.** Implementation resumed on 2026-08-29 after durable High
 file-priority Tactical
@@ -18,9 +28,10 @@ file-priority Tactical
 bootstrap at exact commit `788e953d1ed578c238beccbbc224907b0d9dc95c`.
 Its source gate, five signed package jobs, and publication finalizer pass, and
 the exact public arm64 DMG passes a bounded macOS launch/native-host spot
-check. Clean signed Windows update evidence and installed Linux x86_64
-remain open, so this tactical is not complete.
-Those gates remain intact.
+check. At this historical `0.1.2` checkpoint, clean signed Windows update
+evidence and installed Linux x86_64 were open. The current checkpoint above
+supersedes the Linux status; Windows remains open, so this tactical is not
+complete.
 Cross-platform sleep-inhibition Tactical
 [`165`](165-cross-platform-active-download-sleep-inhibition.md) is complete,
 as is desktop-notification Tactical
@@ -41,7 +52,8 @@ continuity pass under the supported automatic-loopback profile, but a fresh
 default profile exposed a local-network listener-selection startup blocker.
 Completed Tactical `160` repairs that defect on `main` and adds a passing
 native Windows x86_64 regression; public `0.1.2` now contains that repair.
-Clean default-profile update proof and Linux x86_64 remain open. Completed
+At that historical checkpoint, clean default-profile update proof and Linux
+x86_64 were open; only the Windows signed update remains open now. Completed
 Tactical `161` closes the native Windows
 folder-picker blocker, makes the packaged Linux picker self-contained, passes
 the hosted desktop matrix, and proves installed Windows

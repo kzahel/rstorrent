@@ -981,14 +981,14 @@ that scope and its cleanup or compatibility rules explicitly.
   active release work; its Tauri-only
   `desktop-update-v1` UI/state boundary, per-app identity/key/route, hosted
   signed five-target package rehearsal, public `desktop-v0.1.0` through
-  `desktop-v0.1.2` finalization, one installed macOS arm64 launch smoke, and
+  `desktop-v0.1.3` finalization, one installed macOS arm64 launch smoke, and
   exact macOS arm64 plus Linux arm64 `0.1.0`-to-`0.1.1` replacement/relaunch
   pass. Windows x86_64 replacement also passes under an automatic-loopback
-  profile. Public `0.1.2` carries the completed Tacticals `160`--`166` repairs
-  and integrations; its full signed matrix and bounded macOS arm64
-  launch/native-host spot check pass. Clean Windows update/firewall-consent
-  characterization and Linux x86_64 remain open; installed Intel macOS testing
-  is a deliberate omission.
+  profile. Native Linux x86_64 passes the public `0.1.1`-to-`0.1.3` AppImage
+  update, picker, relaunch, and payload-preserving removal. Windows signed
+  replacement reaches `0.1.3` but old-catalog reset fails; Tactical `215`
+  repairs source and a newer signed candidate remains necessary. Installed
+  Intel macOS testing is a deliberate omission.
 - [`159-cross-platform-presubmit-ci.md`](159-cross-platform-presubmit-ci.md):
   complete; installs credential-free Rust, web, deterministic browser E2E,
   native desktop, Android, iOS, and short controlled-interoperability checks

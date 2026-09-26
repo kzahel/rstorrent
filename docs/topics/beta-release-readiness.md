@@ -510,14 +510,14 @@ attached to `main` pushes. See the
   initialization, and graceful-quit smoke. An isolated macOS arm64 appliance
   also installed that exact public build and updated through production to
   `0.1.1` with replacement, relaunch, and retained private updater identity.
-  Linux arm64 now passes the same exact public AppImage replacement/relaunch
-  and updater-ID continuity check. Windows x86_64 passes replacement/relaunch
-  only after selecting automatic-loopback because its fresh default listener
-  profile fails startup in `0.1.0` and `0.1.1`. Public `0.1.2` now contains the
-  completed repair and passes a bounded exact-DMG macOS arm64 launch/native-
-  host spot check, but it has not run the signed Windows older-to-newer
-  campaign. Linux x86_64, the common cohort, reboot/relaunch, and full
-  uninstall policy remain open. A separate
+  Linux arm64 passes the same exact public AppImage replacement/relaunch and
+  updater-ID continuity check. Native Linux x86_64 also passes the public
+  `0.1.1`-to-`0.1.3` AppImage update, relaunch, native picker, default-root
+  retention, and payload-preserving removal. Windows x86_64 passes signed
+  replacement from `0.1.1` to `0.1.3`, but automatic relaunch fails during
+  old-catalog reset; Tactical `215` repairs the source, and a newer signed
+  candidate must repeat the installed update. The common cohort,
+  reboot/relaunch, and full uninstall policy remain open. A separate
   unsigned x86_64 NSIS campaign under Windows 11 arm64 x64 emulation now passes
   installed cold/visible/hidden magnet and file activation, cancellation,
   bounded failures, duplicate handling, tray Quit, uninstall, and exact
@@ -561,9 +561,12 @@ attached to `main` pushes. See the
   and Linux arm64 appliances. Windows x86_64 replacement/relaunch also passes
   under an automatic-loopback profile. Public `0.1.2` now contains the
   fresh-default and native root setup/repair changes and passes signed package
-  validation, but its clean Windows installed update does not yet. Linux x86_64,
-  uninstall, reset safety, and broader clean-machine evidence remain
-  required; Intel Mac installed testing is deliberately omitted.
+  validation. Public `0.1.3` now passes the native Linux x86_64 AppImage
+  update, picker, relaunch, and payload-preserving removal. Its Windows
+  replacement succeeds but old-catalog reset fails; the repaired source
+  needs a newer signed candidate. Reset safety and broader clean-machine
+  evidence remain required; Intel Mac installed testing is deliberately
+  omitted.
 - [x] **DESK-002 — Sign and notarize tagged builds.** Use the existing shared
   publisher Developer ID/notarization and Windows Azure signing setup. Missing
   credentials must fail a tagged build before publication; untagged CI must
@@ -729,11 +732,16 @@ is still pending and is not the compatibility oracle.
   arm64 now pass updater mechanics from exact
   public `0.1.0` to `0.1.1`, including explicit approval, replacement,
   relaunch, current-version checking, and private installation-ID continuity.
-  Windows x86_64 proves the same updater mechanics and Authenticode continuity
-  under an automatic-loopback profile, but must repeat from a fresh default
-  profile after `DESK-006`. Linux x86_64 remains open. Intel macOS installed
-  testing is deliberately omitted by maintainer direction; source and metadata
-  tests alone are the only x86_64 macOS claim.
+  Native Linux x86_64 passes the public `0.1.1`-to-`0.1.3` AppImage update,
+  exact destination hash, relaunch, picker/default-root retention, and
+  payload-sentinel preservation. Windows x86_64 proves Authenticode-valid
+  `0.1.1`-to-`0.1.3` replacement from a fresh default profile, but automatic
+  relaunch exits during old-catalog reset with Windows error 5. Fresh signed
+  `0.1.3` starts only after an explicit private-profile reset. Tactical `215`
+  repairs current source; a newer signed public candidate must prove its
+  automatic reset/relaunch and pre-update payload preservation through the
+  production route. Intel macOS installed testing is deliberately omitted by
+  maintainer direction; source and metadata tests alone are its claim.
 - [ ] **UPD-006 — Document update privacy and recovery.** Explain the random
   resettable installation ID, private server logging, automatic schedule,
   manual retry/download path, the absence of incubation rollback/state
@@ -970,9 +978,11 @@ concurrently when directed, without demoting other active work.
    setup; completed Tacticals `163`--`165` add external intake, notifications,
    and active-work sleep inhibition. Public `0.1.2` now carries those repairs,
    and its signed package matrix plus bounded macOS arm64 launch/native-host
-   spot check pass. Repeat clean Windows from the default under the revised
-   disposable-state `UPD-005` contract, characterize firewall consent, and
-   run Linux x86_64. Intel
+   spot check pass. Later exact public `0.1.1`-to-`0.1.3` evidence closes the
+   Linux x86_64 AppImage update and characterizes Windows firewall Cancel.
+   Repeat clean Windows from the default with a signed build containing
+   Tactical `215`'s reset repair under the disposable-state `UPD-005`
+   contract. Intel
    macOS installed testing is deliberately omitted. Explicit maintainer
     direction temporarily yielded this item to now-complete Tacticals `169`,
     `170`, `171`, and now `179`. Its open gates remain unchanged.
