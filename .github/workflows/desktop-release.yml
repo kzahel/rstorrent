@@ -184,6 +184,12 @@ jobs:
         with:
           targets: ${{ matrix.rust_target }}
 
+      - name: Install Python 3.12 for Linux release checks
+        if: runner.os == 'Linux'
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+
       - name: Cache desktop Rust builds
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
