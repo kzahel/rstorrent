@@ -13,20 +13,32 @@ repair. Hosted website deployment and three-lockfile advisory review pass at
 `62fc537a`, and GitHub Dependabot alerts/security updates are enabled.
 GitHub shows one medium GLib 0.18.5 alert because its version-based view
 cannot verify the locally patched source qualified in Tactical `218`; the
-alert remains visible. Five routine update PRs await separate review, while
-four first-scan major-version PRs were closed.
-Cross-platform CI remains in flight. The September 22 storage checkpoint run failed its
+alert remains visible. Routine update PRs await separate review; the broad
+patch groups were closed and future proposals use one dependency per PR.
+Four first-scan major-version PRs were closed. Main CI `36235256275` passes
+all ten required jobs at `39b4a127`; the website, advisory, and storage
+workflow runs also pass.
+The September 22 storage checkpoint run failed its
 post-commit upload expectation. Five local repeats and fresh hosted full
 verification run `36231952351` pass; the isolated failure remains unexplained
 and the strict assertion retains better state counts for the next recurrence.
+The exact-source storage matrix `36232442627` also passes.
 The first source run `36232402842` then exposed a separate gateway test race:
 an unthrottled view-set update returned 200 before shutdown closed the poll.
 Tactical `219` makes that test's delivery interval longer than its poll wait;
 20 focused local repetitions and the complete gateway suite pass. The
 next hosted run found a stale GLib backport test call after the website audit
 argument was added. Its test fixture now supplies all three reports; local
-backport, distribution and desktop release-tool tests pass. Exact-source
-hosted qualification remains open.
+backport, distribution and desktop release-tool tests pass. The corrected
+release-tools job and all other jobs pass in main CI run `36235256275`.
+The later ungrouped-Dependabot configuration run `36238069794` passed nine
+jobs and found a separate automatic listener test assumption: another process
+claimed the probed preferred port, so the valid successor port failed an
+exact-port assertion. The test now checks the actual coordinated TCP/UDP pair,
+DHT source, and TCP acceptance. Its focused case passes 20 local repetitions
+and the full session library passes 346 tests; exact-source hosted
+qualification passes all ten jobs in main CI run `36239731206` at
+`e1536fa8`.
 
 Tactical [`218`](../tactical/218-glib-variant-iterator-backport.md) adopts and
 qualifies the explicitly approved two-line GLib 0.18.5 backport. Exact source

@@ -1,7 +1,7 @@
 # Tactical 219: Dependency And CI Maintenance
 
-Status: **Active (2026-09-26).** User-authorized maintenance and push;
-follow-up hosted qualification pending.
+Status: **Complete (2026-09-26).** Dependency, review automation and hosted
+qualification landed on `main`; no release was published.
 
 Topics: `beta-release-readiness`, `capability-readiness`
 
@@ -109,7 +109,7 @@ reduces the routine limit to one PR per ecosystem and allows only patch/minor
 version updates; GitHub documents `allow.update-types` as version-only, so
 security updates remain eligible. Major migrations stay separately reviewed.
 Four first-scan major PRs (`#1`, `#5`, `#7`, `#9`) were closed without merging;
-five routine PRs (`#2`, `#3`, `#4`, `#6`, `#8`) remain for their own review.
+five routine PRs (`#2`, `#3`, `#4`, `#6`, `#8`) were open at that checkpoint.
 The web patch group in `#4` includes Tauri CLI 2.11.5; its Linux ARM64
 packaging check stops at the deliberate exact-version guard in
 `prepare-appimage-notices.py`. Review the AppImage notice hook against that
@@ -120,6 +120,17 @@ qualification; rerun the relevant checks before considering any of those PRs.
 Ordinary cross-platform CI and the exact-source storage matrix are still in
 flight at this checkpoint.
 
+A later Dependabot refresh replaced the first Cargo/web patch PRs with
+oversized groups: `#10` held 14 website changes, `#11` held 44 web changes,
+and `#12` held 100 Cargo changes. These were closed without merging. Commit
+`7b9ec29c` removes broad patch grouping while retaining one open routine PR
+per ecosystem and the patch/minor version-update allow rule. New individual
+proposals need their own CI confirmation before review. All five refreshed
+Dependabot scans pass. The observed open set is one individual proposal in
+each ecosystem: Cargo `#3`, web `#13`, website `#14`, Android `#8`, and
+Actions `#6`. The new PRs' broad CI runs were cancelled to prioritize main;
+rerun those checks before merging.
+
 The first main CI run `36232402842` exposed a gateway test race during
 workspace tests: the HTTP view-set shutdown test accepted a normal 200 update
 from its unthrottled live torrent-list subscription before the shutdown close
@@ -128,7 +139,8 @@ delivery interval, longer than its 20-second wait, so ordinary patches stay
 pending while it exercises gateway shutdown. This changes only test setup;
 the view-set and gateway runtime behavior remain unchanged. The focused case
 passes 20/20 local repetitions, the full gateway suite passes 45/45, and
-workspace formatting passes. A new hosted run must qualify this correction.
+workspace formatting passes. The later main run `36235256275` qualifies this
+correction.
 
 The next main run `36234599395` reached the workflow/release-tools job and
 found an existing GLib backport test still calling `audit.review` with two
@@ -137,5 +149,39 @@ now pass a zero-finding website fixture. Local GLib source verification,
 10 backport tests, 17 distribution-review tests, desktop release validation,
 23 desktop tool tests, and both three-case release-manifest suites pass.
 The Crostini and headless shell integrity suites require Linux and remain
-covered by the hosted release-tools job. A new exact-source hosted run must
-qualify the corrected test call.
+covered by the hosted release-tools job. Main run `36235256275` qualifies the
+corrected test call.
+
+The exact-source storage verification run `36232442627` passes its complete
+Linux matrix after the dependency and audit changes. The corrected
+release-tools job passes in main CI run `36235256275`, including the Linux-only
+bootstrap integrity suites.
+
+## Completion And Next Boundary
+
+Main CI run `36235256275` passes all ten required jobs at `39b4a127`:
+Rust/loopback, web, extension, release tools, Android, iOS, and desktop on
+Windows, macOS, Linux x86_64 and Linux ARM64. The separately dispatched
+website, three-lockfile advisory, and exact-source storage runs pass at
+`62fc537a`, before the later test/config/documentation corrections. Those
+later commits did not change the audited dependency graphs or storage runtime.
+The final source run `36239731206` again passes all ten required jobs at
+`e1536fa8`, after the ungrouped Dependabot config and both CI test fixes.
+
+The original dependency and hosted qualification gates are met. Routine
+Dependabot PRs remain unmerged for review; rerun their checks before merging.
+Any individual Tauri CLI update must pass the AppImage notice-hook review
+identified by closed group `#4`. GitHub's one GLib alert remains visible
+alongside the verified local backport. A future weekly storage result may
+help diagnose the isolated September 22 failure, but its cause is not claimed
+solved by this slice.
+
+The configuration-only main run `36238069794` passed nine required jobs and
+failed the Rust job on a session integration test that assumed a probed
+preferred port stayed free until application startup. Its automatic listener
+legitimately selected the next port, with TCP and UDP still coordinated.
+Commit `e1536fa8` removes only that preferred-port assertion; it retains the
+live TCP/UDP pairing, DHT source, and TCP acceptance checks. The focused test
+passes 20 local repetitions, the session library passes 346 tests with two
+ignored, and workspace formatting passes. Exact-source hosted main CI run
+`36239731206` passes all ten required jobs.

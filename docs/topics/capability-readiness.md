@@ -1004,15 +1004,20 @@ run reached 1,055/1,055, Published/Seeding, opened the available MP4 in one tap,
 advanced system playback from 1:46 to 2:10, and removed the selected-root tree
 exactly.
 
+Completed Tactical [`219`](../tactical/219-dependency-and-ci-maintenance.md)
+repairs the rustls and website advisories, extends advisory review to all
+three lockfiles, and enables bounded Dependabot updates and security alerts.
+Hosted advisory, website, and storage runs pass. The final source main CI run
+`36239731206` passes all ten jobs at `e1536fa8`. GitHub's single GLib alert
+remains visible for the separately source-verified local
+backport; routine single-dependency update PRs still require review. The one
+September 22 storage failure remains unexplained after passing local and
+hosted repeats.
+
 ## Current Work
 
 ### Active
 
-- Complete Tactical [`219`](../tactical/219-dependency-and-ci-maintenance.md)
-  dependency and CI maintenance: locally patched rustls/website findings,
-  bounded three-lockfile advisory evidence, hosted qualification, and GitHub
-  Dependabot activation. Investigate the independent September 22 storage
-  checkpoint failure before treating weekly verification as green.
 - Complete **Tactical `214`**'s native platform notice and source-delivery
   review for the package lanes to be declared. Tactical `218` adopts and
   qualifies the approved GLib backport; fresh advisory and exact source
