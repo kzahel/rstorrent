@@ -112,19 +112,19 @@ class BackportTests(unittest.TestCase):
                  'database': {'last-commit': 'test', 'last-updated': '2026-09-12T00:00:00+00:00'}}
         npm = {'metadata': {'vulnerabilities': {'total': 0}}}
         with self.assertRaisesRegex(ValueError, 'verified source'):
-            audit.review(cargo, npm, policy, date(2026, 9, 12))
-        result = audit.review(cargo, npm, policy, date(2026, 9, 12), [proof])
+            audit.review(cargo, npm, npm, policy, date(2026, 9, 12))
+        result = audit.review(cargo, npm, npm, policy, date(2026, 9, 12), [proof])
         self.assertTrue(result['release_ready'])
         self.assertEqual(result['source_verified_backports'], [proof])
         future = copy.deepcopy(cargo)
         future['warnings'] = {'unsound': [{'advisory': {'id': 'RUSTSEC-future-glib'},
                                           'package': {'name': 'glib', 'version': '0.18.5'}}]}
         with self.assertRaisesRegex(ValueError, 'inventory changed'):
-            audit.review(future, npm, policy, date(2026, 9, 12), [proof])
+            audit.review(future, npm, npm, policy, date(2026, 9, 12), [proof])
         changed = copy.deepcopy(proof)
         changed['source_manifest_sha256'] = 'wrong'
         with self.assertRaisesRegex(ValueError, 'verified source'):
-            audit.review(cargo, npm, policy, date(2026, 9, 12), [changed])
+            audit.review(cargo, npm, npm, policy, date(2026, 9, 12), [changed])
 
     def test_local_glib_keeps_original_license_and_patch_in_notices(self):
         data = {'crates': [{'package': {'name': 'glib', 'version': '0.18.5',
