@@ -26,13 +26,14 @@ class AdvisoryReviewTests(unittest.TestCase):
                       'warnings': {'unsound': [{'advisory': {'id': 'RUSTSEC-test'},
                                                'package': {'name': 'example', 'version': '1.0'}}]}}
         self.npm = {'metadata': {'vulnerabilities': {'total': 0}}}
+        self.website_npm = {'metadata': {'vulnerabilities': {'total': 0}}}
         self.policy = {'review_expires': '2026-10-12',
                        'warnings': [{'kind': 'unsound', 'advisory': 'RUSTSEC-test',
                                      'package': 'example', 'version': '1.0'}],
                        'release_blockers': ['unresolved unsound implementation']}
 
     def test_review_never_turns_known_blocker_into_release_clearance(self):
-        result = audit.review(self.cargo, self.npm, self.policy, date(2026, 9, 12))
+        result = audit.review(self.cargo, self.npm, self.website_npm, self.policy, date(2026, 9, 12))
         self.assertFalse(result['release_ready'])
         self.assertEqual(len(result['reviewed_warnings']), 1)
 
@@ -40,24 +41,37 @@ class AdvisoryReviewTests(unittest.TestCase):
         changed = copy.deepcopy(self.cargo)
         changed['warnings'] = {}
         with self.assertRaisesRegex(ValueError, 'inventory changed'):
-            audit.review(changed, self.npm, self.policy, date(2026, 9, 12))
+            audit.review(changed, self.npm, self.website_npm, self.policy, date(2026, 9, 12))
         changed['warnings'] = {'yanked': [{'package': {'name': 'new', 'version': '1'}}]}
         with self.assertRaisesRegex(ValueError, 'inventory changed'):
-            audit.review(changed, self.npm, self.policy, date(2026, 9, 12))
+            audit.review(changed, self.npm, self.website_npm, self.policy, date(2026, 9, 12))
 
     def test_expired_review_stale_database_and_vulnerabilities_fail(self):
         with self.assertRaisesRegex(ValueError, '30 days'):
-            audit.review(self.cargo, self.npm, self.policy, date(2026, 10, 13))
+            audit.review(self.cargo, self.npm, self.website_npm, self.policy, date(2026, 10, 13))
         self.cargo['database']['last-updated'] = '2026-10-12T00:00:00+00:00'
         with self.assertRaisesRegex(ValueError, 'expired'):
-            audit.review(self.cargo, self.npm, self.policy, date(2026, 10, 13))
+            audit.review(self.cargo, self.npm, self.website_npm, self.policy, date(2026, 10, 13))
         self.cargo['vulnerabilities']['count'] = 1
         with self.assertRaisesRegex(ValueError, 'vulnerabilities'):
-            audit.review(self.cargo, self.npm, self.policy, date(2026, 9, 12))
+            audit.review(self.cargo, self.npm, self.website_npm, self.policy, date(2026, 9, 12))
         self.cargo['vulnerabilities']['count'] = 0
         self.npm['metadata']['vulnerabilities']['total'] = 1
         with self.assertRaisesRegex(ValueError, 'npm'):
-            audit.review(self.cargo, self.npm, self.policy, date(2026, 9, 12))
+            audit.review(self.cargo, self.npm, self.website_npm, self.policy, date(2026, 9, 12))
+
+    def test_website_findings_fail_and_summary_is_bounded(self):
+        self.website_npm['metadata']['vulnerabilities']['total'] = 1
+        self.website_npm['vulnerabilities'] = {
+            'astro': {'severity': 'critical', 'via': ['unreviewed details']}}
+        with self.assertRaisesRegex(ValueError, 'website npm'):
+            audit.review(self.cargo, self.npm, self.website_npm, self.policy, date(2026, 9, 12))
+        result = audit.failure_summary(self.cargo, self.npm, self.website_npm,
+                                       'website npm vulnerability report is missing or has vulnerabilities')
+        self.assertEqual(result['npm_vulnerability_counts']['website'], 1)
+        self.assertEqual(result['npm_findings']['website'],
+                         [{'package': 'astro', 'severity': 'critical'}])
+        self.assertNotIn('unreviewed details', json.dumps(result))
 
 
 class DistributionTests(unittest.TestCase):

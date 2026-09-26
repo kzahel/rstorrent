@@ -1008,6 +1008,11 @@ exactly.
 
 ### Active
 
+- Complete Tactical [`219`](../tactical/219-dependency-and-ci-maintenance.md)
+  dependency and CI maintenance: locally patched rustls/website findings,
+  bounded three-lockfile advisory evidence, hosted qualification, and GitHub
+  Dependabot activation. Investigate the independent September 22 storage
+  checkpoint failure before treating weekly verification as green.
 - Complete **Tactical `214`**'s native platform notice and source-delivery
   review for the package lanes to be declared. Tactical `218` adopts and
   qualifies the approved GLib backport; fresh advisory and exact source

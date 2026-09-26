@@ -1391,8 +1391,9 @@ so these are not claims of byte identity with final APK library contents.
 
 For advisory review, install `cargo-audit --locked --version 0.22.2`, collect
 `python3 scripts/audit-cargo-dependencies.py --output FILE` and
-`npm audit --prefix clients/web --json`, then pass
-those reports to `scripts/review-dependency-audit.py --cargo FILE --npm FILE
+`npm audit --prefix clients/web --json` and
+`npm audit --prefix website --json`, then pass those reports to
+`scripts/review-dependency-audit.py --cargo FILE --npm FILE --website-npm FILE
 --output FILE`. The weekly workflow rejects new vulnerabilities, changed
 warnings, stale databases and expired reviews. `--require-release-ready`
 also rejects the explicit blocker list and is required by tagged publication.

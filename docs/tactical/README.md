@@ -93,6 +93,10 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`219-dependency-and-ci-maintenance.md`](219-dependency-and-ci-maintenance.md):
+  patched Cargo and website advisories, three-lockfile review and bounded
+  Dependabot version updates; hosted and GitHub setting qualification pending.
+
 - [`216-local-support-diagnostics-and-release-baseline.md`](216-local-support-diagnostics-and-release-baseline.md):
   complete locally; frozen local support export, privacy/recovery guidance
   and the explicit future baseline proposal; no supported version selected.

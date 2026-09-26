@@ -8,11 +8,15 @@ on:
   pull_request:
     paths:
       - Cargo.toml
+      - "**/Cargo.toml"
       - Cargo.lock
       - vendor/**
       - scripts/glib_backport.py
       - scripts/audit-cargo-dependencies.py
+      - clients/web/package.json
       - clients/web/package-lock.json
+      - website/package.json
+      - website/package-lock.json
       - distribution/**
       - scripts/review-dependency-audit.py
       - .github/workflows/dependency-review.yml
@@ -38,11 +42,13 @@ jobs:
           mkdir -p artifacts/dependencies
           python3 scripts/audit-cargo-dependencies.py --output "$RUNNER_TEMP/cargo-audit.json"
           npm audit --prefix clients/web --json > "$RUNNER_TEMP/npm-audit.json" || test "$?" -eq 1
+          npm audit --prefix website --json > "$RUNNER_TEMP/website-npm-audit.json" || test "$?" -eq 1
       - name: Enforce reviewed warnings and report release blockers
         run: >-
           python3 scripts/review-dependency-audit.py
           --cargo "${{ runner.temp }}/cargo-audit.json"
           --npm "${{ runner.temp }}/npm-audit.json"
+          --website-npm "${{ runner.temp }}/website-npm-audit.json"
           --output artifacts/dependencies/review.json
       - name: Retain bounded dependency review
         if: always()

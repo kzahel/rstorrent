@@ -2,6 +2,19 @@
 
 Topic: `beta-release-readiness`
 
+Maintenance checkpoint (2026-09-26): Tactical
+[`219`](../tactical/219-dependency-and-ci-maintenance.md) repairs the newly
+reported rustls advisory and seven website npm package findings locally,
+extends weekly and tagged-release review to the website lockfile, and prepares
+bounded weekly dependency-update PRs. Exact local Cargo/web/website review
+reports zero vulnerabilities and retains all seven reviewed GLib/unmaintained
+warnings. The two September 16/23 scheduled advisory failures preceded this
+repair. Hosted qualification and GitHub alert/update settings remain open at
+this checkpoint. The September 22 storage checkpoint run failed its
+post-commit upload expectation. Five local repeats and fresh hosted full
+verification run `36231952351` pass; the isolated failure remains unexplained
+and the strict assertion retains better state counts for the next recurrence.
+
 Tactical [`218`](../tactical/218-glib-variant-iterator-backport.md) adopts and
 qualifies the explicitly approved two-line GLib 0.18.5 backport. Exact source
 and patch inventories, original MIT attribution, optimized native Linux

@@ -77,9 +77,11 @@ jobs:
           cargo install cargo-audit --locked --version 0.22.2
           python3 scripts/audit-cargo-dependencies.py --output "$RUNNER_TEMP/cargo-audit.json"
           npm audit --prefix clients/web --json > "$RUNNER_TEMP/npm-audit.json" || test "$?" -eq 1
+          npm audit --prefix website --json > "$RUNNER_TEMP/website-npm-audit.json" || test "$?" -eq 1
           python3 scripts/review-dependency-audit.py \
             --cargo "$RUNNER_TEMP/cargo-audit.json" \
             --npm "$RUNNER_TEMP/npm-audit.json" \
+            --website-npm "$RUNNER_TEMP/website-npm-audit.json" \
             --output "$RUNNER_TEMP/dependency-review.json" \
             --require-release-ready
 

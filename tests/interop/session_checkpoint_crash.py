@@ -388,7 +388,11 @@ def run_once(binary: Path, scenario: CrashScenario) -> CrashResult:
         if restart_payload_upload != expected_restart_upload:
             raise ScenarioFailure(
                 f"{scenario.name} restart uploaded {restart_payload_upload} bytes; "
-                f"expected {expected_restart_upload}"
+                f"expected {expected_restart_upload}; "
+                f"durable_pieces={len(durable_indices)} "
+                f"valid_pieces_after_crash={len(valid_after_crash)} "
+                f"missing_pieces={PIECE_COUNT - len(valid_after_crash)} "
+                f"extra_upload_bytes={restart_payload_upload - expected_restart_upload}"
             )
         false_negative_pieces = set(valid_after_crash) - durable_indices
         if not scenario.expect_durable and not false_negative_pieces:
