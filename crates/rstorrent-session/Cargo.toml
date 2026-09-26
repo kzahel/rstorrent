@@ -24,7 +24,7 @@ sha2 = { workspace = true }
 tokio = { workspace = true, features = ["io-std", "io-util", "macros", "rt", "signal", "sync", "time"] }
 tokio-util = { workspace = true, features = ["rt"] }
 ts-rs = { workspace = true }
-uniffi = { version = "=0.31.0", default-features = false, optional = true }
+uniffi = { version = "=0.31.2", default-features = false, optional = true }
 url = { workspace = true }
 uuid = { workspace = true }
 

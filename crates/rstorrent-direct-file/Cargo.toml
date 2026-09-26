@@ -21,7 +21,7 @@ experiment = [
 [dependencies]
 axum = { workspace = true, optional = true }
 bytes = { version = "1.12.1", optional = true }
-rtc = { version = "=0.20.4", default-features = false, features = ["ring"], optional = true }
+rtc = { version = "=0.20.5", default-features = false, features = ["ring"], optional = true }
 rstorrent-session = { path = "../rstorrent-session" }
 serde = { workspace = true, features = ["derive"], optional = true }
 serde_json = { workspace = true, optional = true }

@@ -24,4 +24,4 @@ rstorrent-session = { path = "../rstorrent-session", features = ["uniffi"] }
 rustix.workspace = true
 sha1.workspace = true
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "sync", "time"] }
-uniffi = { version = "=0.31.0", default-features = false, features = ["tokio"] }
+uniffi = { version = "=0.31.2", default-features = false, features = ["tokio"] }
