@@ -322,6 +322,7 @@ jobs:
           retryAttempts: ${{ runner.os == 'macOS' && '1' || '0' }}
           args: >-
             ${{ matrix.args }}
+            ${{ runner.os == 'Linux' && '--verbose' || '' }}
             --config src-tauri/tauri.release.conf.json
             ${{ runner.os == 'Windows' && '--config ''{"bundle":{"windows":{"signCommand":"trusted-signing-cli -e https://eus.codesigning.azure.net -a kylegraehl -c jstorrent-profile %1"}}}''' || '' }}
 
