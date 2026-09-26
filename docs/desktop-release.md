@@ -94,6 +94,15 @@ are recorded in [`desktop-v0.1.2`](evidence/desktop-v0.1.2.md). This release
 record does not claim the still-open installed `0.1.1`-to-`0.1.2` update
 campaign.
 
+The latest published release is
+[`desktop-v0.1.4`](https://github.com/kzahel/rstorrent/releases/tag/desktop-v0.1.4).
+Its [signed workflow](https://github.com/kzahel/rstorrent/actions/runs/36262994983)
+passed the source gate, five package jobs, and finalizer. The
+[release evidence](evidence/desktop-v0.1.4.md) records public checksums,
+five-route updater responses, and a native Windows x86_64 fresh-default
+`0.1.1`-to-`0.1.4` update with automatic reset and relaunch. This is still a
+disposable incubation release; no supported persistence baseline is selected.
+
 ## Update Service
 
 The application checks

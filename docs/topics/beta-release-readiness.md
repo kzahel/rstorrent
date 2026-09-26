@@ -97,7 +97,19 @@ review items; Tactical 217 owns Android Maven/AAR attribution. Tagged
 publication continues to enforce fresh advisory and source review. These are
 explicit release findings, not a zero-issues claim from the audit exit code.
 
-Current checkpoint (2026-09-12): public desktop `0.1.3` supersedes the
+Current checkpoint (2026-09-26): public signed desktop `0.1.4` passed its
+source, five package, and publication jobs. All five production routes offer
+signed `0.1.4` metadata to `0.1.1` clients. Native Windows 11 x86_64
+fresh-default `0.1.1` NSIS updated through the app's production route,
+automatically reset and relaunched into exact build `691143b6db1c`, retained
+expected Authenticode trust, and left an unrelated pre-update Documents
+sentinel unchanged. The old folder picker could not select that sentinel as
+a root, so selected-root preservation remains unproved by this run. The
+common installed cohort, macOS arm64/Linux arm64 pre-update payload checks,
+native notice/source-delivery clearance, and first supported persistence
+baseline remain open. See [the exact package and acceptance record](../evidence/desktop-v0.1.4.md).
+
+Earlier checkpoint (2026-09-12): public desktop `0.1.3` supersedes the
 historical `0.1.2` checkpoint below. Exact native x86_64 installed acceptance
 proves the Linux `0.1.1` → `0.1.3` update, native picker, retained default root,
 joined Quit and payload-preserving removal. GNOME's inactive indicator leaves
@@ -394,7 +406,11 @@ compatibility and rollback policy declared with that baseline.
   collected. Tactical `208` now supplies the in-product disclosure, controls,
   exact preview, and corrected hosted source. REL-006 remains open because the
   source has not been deployed or publicly verified and the richer-context
-  release gates deliberately remain off.
+  release gates deliberately remain off. A public check on 2026-09-26 still
+  finds the linked [privacy page](https://jstorrent.com/privacy.html) claiming
+  no analytics or usage-data transmission, while the `0.1.4` app presents a
+  default-on pseudonymous-statistics choice. Reconcile the hosted statement
+  and verify the live recipient pages before inviting outside testers.
 
 ### CI and repository health
 
@@ -514,10 +530,12 @@ attached to `main` pushes. See the
   updater-ID continuity check. Native Linux x86_64 also passes the public
   `0.1.1`-to-`0.1.3` AppImage update, relaunch, native picker, default-root
   retention, and payload-preserving removal. Windows x86_64 passes signed
-  replacement from `0.1.1` to `0.1.3`, but automatic relaunch fails during
-  old-catalog reset; Tactical `215` repairs the source, and a newer signed
-  candidate must repeat the installed update. The common cohort,
-  reboot/relaunch, and full uninstall policy remain open. A separate
+  replacement from `0.1.1` to `0.1.3`, but automatic relaunch failed during
+  old-catalog reset. Public `0.1.4` now passes native Windows x86_64
+  `0.1.1`-to-`0.1.4` replacement, bounded reset, automatic relaunch, exact
+  build and package-trust checks, and preservation of an unrelated Documents
+  sentinel. Its old build could not select the sentinel as a root. The common
+  cohort, reboot/relaunch, and full uninstall policy remain open. A separate
   unsigned x86_64 NSIS campaign under Windows 11 arm64 x64 emulation now passes
   installed cold/visible/hidden magnet and file activation, cancellation,
   bounded failures, duplicate handling, tray Quit, uninstall, and exact
@@ -562,9 +580,10 @@ attached to `main` pushes. See the
   under an automatic-loopback profile. Public `0.1.2` now contains the
   fresh-default and native root setup/repair changes and passes signed package
   validation. Public `0.1.3` now passes the native Linux x86_64 AppImage
-  update, picker, relaunch, and payload-preserving removal. Its Windows
-  replacement succeeds but old-catalog reset fails; the repaired source
-  needs a newer signed candidate. Reset safety and broader clean-machine
+  update, picker, relaunch, and payload-preserving removal. Public `0.1.4`
+  passes a native Windows x86_64 fresh-default `0.1.1` update with automatic
+  reset/relaunch, exact build and package trust, and an unchanged unrelated
+  Documents sentinel. Selected-root preservation and broader clean-machine
   evidence remain required; Intel Mac installed testing is deliberately
   omitted.
 - [x] **DESK-002 — Sign and notarize tagged builds.** Use the existing shared
@@ -735,12 +754,14 @@ is still pending and is not the compatibility oracle.
   Native Linux x86_64 passes the public `0.1.1`-to-`0.1.3` AppImage update,
   exact destination hash, relaunch, picker/default-root retention, and
   payload-sentinel preservation. Windows x86_64 proves Authenticode-valid
-  `0.1.1`-to-`0.1.3` replacement from a fresh default profile, but automatic
-  relaunch exits during old-catalog reset with Windows error 5. Fresh signed
-  `0.1.3` starts only after an explicit private-profile reset. Tactical `215`
-  repairs current source; a newer signed public candidate must prove its
-  automatic reset/relaunch and pre-update payload preservation through the
-  production route. Intel macOS installed testing is deliberately omitted by
+  `0.1.1`-to-`0.1.3` replacement from a fresh default profile; that build's
+  old-catalog reset exited with Windows error 5. Public `0.1.4` now passes
+  native Windows x86_64 fresh-default `0.1.1` replacement and automatic
+  reset/relaunch through the production route, with exact build and package
+  trust. An unrelated pre-update Documents sentinel is unchanged, but the old
+  build could not select it as a root. macOS arm64 and Linux arm64 pre-update
+  payload checks and the broader installed cohort remain open. Intel macOS
+  installed testing is deliberately omitted by
   maintainer direction; source and metadata tests alone are its claim.
 - [ ] **UPD-006 — Document update privacy and recovery.** Explain the random
   resettable installation ID, private server logging, automatic schedule,

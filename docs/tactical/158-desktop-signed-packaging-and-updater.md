@@ -1,6 +1,20 @@
 # Tactical 158: Desktop Signed Packaging And Updater
 
-Current checkpoint (2026-09-12): the actual production destination is signed
+Current checkpoint (2026-09-26): signed
+[`desktop-v0.1.4`](../evidence/desktop-v0.1.4.md) is public after all source,
+five package, and finalizer jobs passed. All five production updater routes
+offer signed `0.1.4` metadata to `0.1.1` clients and return 204 to current
+clients. A native Windows 11 x86_64 fresh-default `0.1.1` NSIS install
+explicitly updated through that route, automatically reset and relaunched
+into exact build `691143b6db1c`, retained expected Authenticode trust, and
+left an unrelated pre-update Documents sentinel unchanged. The old build's
+folder picker could not select that sentinel as a root, so selected-root
+preservation is not established by this Windows run. The wider installed
+cohort, macOS arm64/Linux arm64 pre-update payload checks, native
+notice/source-delivery review, and first supported persistence baseline
+remain open. Intel macOS installed testing remains deliberately omitted.
+
+Earlier checkpoint (2026-09-12): the actual production destination was signed
 `desktop-v0.1.3`, commit `5e9d5441d12d72812dc438e6638eca972e43408e`, not the
 older candidate discussed below. [Native installed evidence](../evidence/desktop-v0.1.1-to-v0.1.3-x86_64.md)
 now passes Linux x86_64 update/picker/relaunch/Quit/removal with payload safety
@@ -10,8 +24,9 @@ Completed local Tactical `215` repairs that boundary and passes native Windows
 session/desktop tests, but repaired signed reset/relaunch acceptance remains
 open. No public package or updater route was changed during qualification.
 
-Restart checkpoint (2026-09-26): the Linux x86_64 installed gate is already
-closed by the exact public `0.1.1`-to-`0.1.3` evidence above. Main CI run
+Restart checkpoint before `0.1.4` (2026-09-26): the Linux x86_64 installed
+gate was already closed by the exact public `0.1.1`-to-`0.1.3` evidence above.
+Main CI run
 `36244800483` passes all ten jobs at `7d1114ab`, including native Windows
 session and desktop tests with Tactical `215`'s repair. Public `0.1.3` still
 lacks that repair, so no existing published version can prove the remaining
@@ -30,8 +45,8 @@ Its source gate, five signed package jobs, and publication finalizer pass, and
 the exact public arm64 DMG passes a bounded macOS launch/native-host spot
 check. At this historical `0.1.2` checkpoint, clean signed Windows update
 evidence and installed Linux x86_64 were open. The current checkpoint above
-supersedes the Linux status; Windows remains open, so this tactical is not
-complete.
+supersedes the Linux status. The current checkpoint supersedes the Windows
+status; the broader stopping condition keeps this tactical active.
 Cross-platform sleep-inhibition Tactical
 [`165`](165-cross-platform-active-download-sleep-inhibition.md) is complete,
 as is desktop-notification Tactical
@@ -53,7 +68,7 @@ default profile exposed a local-network listener-selection startup blocker.
 Completed Tactical `160` repairs that defect on `main` and adds a passing
 native Windows x86_64 regression; public `0.1.2` now contains that repair.
 At that historical checkpoint, clean default-profile update proof and Linux
-x86_64 were open; only the Windows signed update remains open now. Completed
+x86_64 were open at that point. Completed
 Tactical `161` closes the native Windows
 folder-picker blocker, makes the packaged Linux picker self-contained, passes
 the hosted desktop matrix, and proves installed Windows
