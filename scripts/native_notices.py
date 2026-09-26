@@ -18,6 +18,10 @@ APPRUN = {
 }
 MAX_FILE = 16 * 1024**2
 MAX_TOTAL = 64 * 1024**2
+COMMON_LICENSE_ROOT = Path('/usr/share/common-licenses')
+# Ubuntu base-files names for SPDX-style paths found in package copyrights.
+COMMON_LICENSE_ALIASES = {'GPL-2.0': 'GPL-2', 'GPL-3.0': 'GPL-3',
+                          'LGPL-2.0': 'LGPL-2', 'LGPL-3.0': 'LGPL-3'}
 
 
 def sha(path):
@@ -163,8 +167,11 @@ class DpkgProvenance:
         return path
 
     def common_license(self, name):
-        path = Path('/usr/share/common-licenses') / name
-        if not path.resolve(strict=True).is_relative_to('/usr/share/common-licenses'):
+        root = COMMON_LICENSE_ROOT
+        path = root / name
+        if not path.exists() and name in COMMON_LICENSE_ALIASES:
+            path = root / COMMON_LICENSE_ALIASES[name]
+        if not path.resolve(strict=True).is_relative_to(root.resolve(strict=True)):
             raise ValueError('common license escapes documentation root')
         return path
 

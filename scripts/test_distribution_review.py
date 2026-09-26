@@ -173,6 +173,21 @@ class NativeNoticeTests(unittest.TestCase):
         self.assertNotIn(str(self.root.parent), json.dumps(result))
         self.assertTrue(result['remaining_review'])
 
+    def test_spdx_common_license_name_uses_ubuntu_canonical_text(self):
+        from unittest.mock import patch
+        root = self.root.parent / 'common-licenses'
+        root.mkdir()
+        canonical = root / 'GPL-2'
+        canonical.write_bytes(b'GNU GPL version 2 text')
+        (root / 'GPL-3').symlink_to(self.copyright)
+        with patch.object(self.native, 'COMMON_LICENSE_ROOT', root):
+            provenance = self.native.DpkgProvenance()
+            self.assertEqual(provenance.common_license('GPL-2.0'), canonical)
+            with self.assertRaises(FileNotFoundError):
+                provenance.common_license('unreviewed-license')
+            with self.assertRaisesRegex(ValueError, 'escapes'):
+                provenance.common_license('GPL-3.0')
+
     def test_missing_or_changed_component_is_rejected(self):
         self.native.collect(self.root, self.provenance)
         path = self.root / 'usr/lib/libexample.so.1'
