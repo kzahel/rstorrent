@@ -37,7 +37,7 @@ jobs:
           components: clippy, rustfmt
 
       - name: Cache Rust builds
-        uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7 # v2.9.2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: headless-release-source-ubuntu-22.04
 
@@ -108,7 +108,7 @@ jobs:
         uses: dtolnay/rust-toolchain@889fac408b4da0905346410f253f0c55fbcb6613 # 1.97.0
 
       - name: Cache headless builds
-        uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7 # v2.9.2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: headless-release-${{ matrix.runner }}
 
