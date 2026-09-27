@@ -13,6 +13,9 @@ responsive media-first detail for an explicitly opened source, backed by a
 derived video/episode catalog and authoritative file progress. Thumbnails,
 external metadata, playback presentation, persistence, and Library-wide media
 aggregation remain absent.
+Tactical [`223`](../tactical/223-remove-library-capability-notices.md)
+keeps those boundaries in product documentation while removing their
+implementation-status notices from the Library sidebar and empty state.
 
 ## Purpose And Scope
 

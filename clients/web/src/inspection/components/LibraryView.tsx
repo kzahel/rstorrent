@@ -446,7 +446,6 @@ function LibraryEmpty({ message }: { readonly message: string }) {
     <div className={styles.empty}>
       <span aria-hidden="true">◇</span>
       <strong>{message}</strong>
-      <p>{localizedMessage("inspection.components.library.view.artwork.playback.and.library.wide.media.grouping")}</p>
     </div>
   );
 }

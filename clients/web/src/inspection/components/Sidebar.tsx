@@ -104,7 +104,6 @@ export function Sidebar() {
             />
           ))}
         </ul>
-        <p className={styles.note}>{localizedMessage("inspection.components.sidebar.playback.and.library.wide.media.grouping.are")}</p>
       </nav>
     );
   }

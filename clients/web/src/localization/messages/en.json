@@ -2243,10 +2243,6 @@
     "defaultMessage": "Archived",
     "description": "Product copy in inspection/components/LibraryView.tsx"
   },
-  "inspection.components.library.view.artwork.playback.and.library.wide.media.grouping": {
-    "defaultMessage": "Artwork, playback, and Library-wide media grouping remain separate capabilities.",
-    "description": "Product copy in inspection/components/LibraryView.tsx"
-  },
   "inspection.components.library.view.available.offline": {
     "defaultMessage": "Available offline",
     "description": "Product copy in inspection/components/LibraryView.tsx"
@@ -3405,10 +3401,6 @@
   },
   "inspection.components.sidebar.paused": {
     "defaultMessage": "Paused",
-    "description": "Product copy in inspection/components/Sidebar.tsx"
-  },
-  "inspection.components.sidebar.playback.and.library.wide.media.grouping.are": {
-    "defaultMessage": "Playback and Library-wide media grouping are not connected yet.",
     "description": "Product copy in inspection/components/Sidebar.tsx"
   },
   "inspection.components.sidebar.recently.added": {

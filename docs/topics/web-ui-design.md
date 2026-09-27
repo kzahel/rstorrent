@@ -122,6 +122,9 @@ Library owner. Wide layout places source summary beside a virtual list;
 compact and phone layouts stack and use smaller generated placeholders without
 claiming artwork. Thumbnails, playback, and Library-wide aggregation remain
 separate decisions.
+Tactical [`223`](../tactical/223-remove-library-capability-notices.md)
+removes capability-status copy from the Library sidebar and empty state while
+retaining the functional filters and result message.
 Tactical `058` replaces persistent torrent checkboxes with a discoverable
 selection mode, separates the current torrent from batch command targets, and
 applies the same interaction locally to Files. It initially staged disabled

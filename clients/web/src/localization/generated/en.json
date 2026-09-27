@@ -3522,12 +3522,6 @@
       "value": "Archived"
     }
   ],
-  "inspection.components.library.view.artwork.playback.and.library.wide.media.grouping": [
-    {
-      "type": 0,
-      "value": "Artwork, playback, and Library-wide media grouping remain separate capabilities."
-    }
-  ],
   "inspection.components.library.view.available.offline": [
     {
       "type": 0,
@@ -5266,12 +5260,6 @@
     {
       "type": 0,
       "value": "Paused"
-    }
-  ],
-  "inspection.components.sidebar.playback.and.library.wide.media.grouping.are": [
-    {
-      "type": 0,
-      "value": "Playback and Library-wide media grouping are not connected yet."
     }
   ],
   "inspection.components.sidebar.recently.added": [
