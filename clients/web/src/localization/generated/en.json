@@ -1944,6 +1944,126 @@
       "value": "Under"
     }
   ],
+  "inspection.components.data.reset.app.data.cleared": [
+    {
+      "type": 0,
+      "value": "App data cleared."
+    }
+  ],
+  "inspection.components.data.reset.cancel": [
+    {
+      "type": 0,
+      "value": "Cancel"
+    }
+  ],
+  "inspection.components.data.reset.category": [
+    {
+      "type": 0,
+      "value": "Data & reset"
+    }
+  ],
+  "inspection.components.data.reset.clear.action": [
+    {
+      "type": 0,
+      "value": "Clear app data"
+    }
+  ],
+  "inspection.components.data.reset.clear.confirm": [
+    {
+      "type": 0,
+      "value": "Clear app data?"
+    }
+  ],
+  "inspection.components.data.reset.clear.description": [
+    {
+      "type": 0,
+      "value": "Remove all torrents and download folder registrations, then restore preferences. Downloaded files are kept unless you explicitly choose to delete them."
+    }
+  ],
+  "inspection.components.data.reset.clear.open": [
+    {
+      "type": 0,
+      "value": "Clear app data…"
+    }
+  ],
+  "inspection.components.data.reset.clear.title": [
+    {
+      "type": 0,
+      "value": "Clear app data"
+    }
+  ],
+  "inspection.components.data.reset.clear.warning": [
+    {
+      "type": 0,
+      "value": "All torrents and download folder registrations will be removed. This cannot be undone."
+    }
+  ],
+  "inspection.components.data.reset.delete.files": [
+    {
+      "type": 0,
+      "value": "Also delete downloaded files registered to these torrents"
+    }
+  ],
+  "inspection.components.data.reset.delete.scope": [
+    {
+      "type": 0,
+      "value": "Only exact registered files and engine part files are eligible. Download folders and unrelated files are never deleted."
+    }
+  ],
+  "inspection.components.data.reset.delete.unavailable": [
+    {
+      "type": 0,
+      "value": "File deletion is unavailable for one or more torrents. Downloaded files will be kept."
+    }
+  ],
+  "inspection.components.data.reset.preferences.restored": [
+    {
+      "type": 0,
+      "value": "Default preferences restored."
+    }
+  ],
+  "inspection.components.data.reset.restore.action": [
+    {
+      "type": 0,
+      "value": "Restore defaults"
+    }
+  ],
+  "inspection.components.data.reset.restore.confirm": [
+    {
+      "type": 0,
+      "value": "Restore default preferences?"
+    }
+  ],
+  "inspection.components.data.reset.restore.description": [
+    {
+      "type": 0,
+      "value": "Reset appearance, download prompts, connection and seeding settings, and desktop notification and power preferences. Torrents, download folders, downloaded files, access, and privacy choices stay in place."
+    }
+  ],
+  "inspection.components.data.reset.restore.open": [
+    {
+      "type": 0,
+      "value": "Restore defaults…"
+    }
+  ],
+  "inspection.components.data.reset.restore.title": [
+    {
+      "type": 0,
+      "value": "Restore default preferences"
+    }
+  ],
+  "inspection.components.data.reset.restore.warning": [
+    {
+      "type": 0,
+      "value": "Your torrents, folders, files, access, and privacy choices will be kept."
+    }
+  ],
+  "inspection.components.data.reset.working": [
+    {
+      "type": 0,
+      "value": "Working…"
+    }
+  ],
   "inspection.components.detail.pane.absent": [
     {
       "type": 0,

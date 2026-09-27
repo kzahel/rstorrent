@@ -5,4 +5,6 @@ export interface DesktopPowerSettings {
 export interface DesktopPower {
   readonly getSnapshot: () => DesktopPowerSettings;
   save(settings: DesktopPowerSettings): Promise<DesktopPowerSettings>;
+  resetAllShellSettings?(): Promise<void>;
+  restartApplication?(): Promise<void>;
 }

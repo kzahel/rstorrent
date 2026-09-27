@@ -316,8 +316,10 @@ export class LiveApplication implements InspectionApplication {
       command.type !== "confirm_pending_file_selection" &&
       command.type !== "cancel_pending_add" &&
       command.type !== "update_client_settings" &&
+      command.type !== "reset_client_settings" &&
       command.type !== "update_torrent_settings" &&
       command.type !== "remove_download_root" &&
+      command.type !== "clear_app_data" &&
       command.type !== "export_magnet" &&
       command.type !== "pause" &&
       command.type !== "resume" &&
@@ -398,6 +400,8 @@ export class LiveApplication implements InspectionApplication {
                 }
               : command.type === "update_client_settings"
                 ? { type: "update_client_settings", patch: command.patch }
+              : command.type === "reset_client_settings"
+                ? { type: "reset_client_settings" }
               : command.type === "update_torrent_settings"
                 ? {
                     type: "update_torrent_settings",
@@ -409,6 +413,8 @@ export class LiveApplication implements InspectionApplication {
                     type: "remove_storage_root",
                     storage_root: command.rootId,
                   }
+                : command.type === "clear_app_data"
+                  ? { type: "clear_app_data" }
                 : command.type === "export_magnet"
                   ? {
                       type: "export_magnet",
@@ -492,10 +498,14 @@ export class LiveApplication implements InspectionApplication {
                     ? "Pending torrent cancelled"
               : command.type === "update_client_settings"
                 ? "Connection and seeding settings saved"
+              : command.type === "reset_client_settings"
+                ? "Connection and seeding settings restored"
               : command.type === "update_torrent_settings"
                 ? "Torrent transfer limits saved"
               : command.type === "remove_download_root"
                 ? "Download folder removed"
+              : command.type === "clear_app_data"
+                ? "Application profile cleared"
                 : command.type === "pause"
                   ? "Torrent paused"
                   : command.type === "resume"

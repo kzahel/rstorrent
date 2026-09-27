@@ -116,6 +116,67 @@
   padding: var(--ui-space-lg) var(--ui-space-md);
 }
 
+.dataReset {
+  display: grid;
+  gap: var(--ui-space-lg);
+}
+
+.dataReset h3,
+.dataReset h4,
+.dataReset p {
+  margin: 0;
+}
+
+.dataReset section {
+  display: grid;
+  justify-items: start;
+  gap: var(--ui-space-sm);
+  border-bottom: 1px solid var(--border-soft);
+  padding-bottom: var(--ui-space-lg);
+}
+
+.dataReset p {
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.dataReset button {
+  min-height: var(--ui-control-height);
+  border: 1px solid var(--border-strong);
+  border-radius: 0.5rem;
+  padding: 0 var(--ui-space-md);
+  color: var(--text-primary);
+  background: var(--surface-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.dataReset button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.resetConfirmation {
+  display: grid;
+  gap: var(--ui-space-sm);
+  border: 1px solid var(--border-strong);
+  border-radius: 0.6rem;
+  padding: var(--ui-space-md);
+  background: var(--surface-secondary);
+}
+
+.resetConfirmation label {
+  display: flex;
+  align-items: start;
+  gap: var(--ui-space-sm);
+}
+
+.resetActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-space-sm);
+}
+
 .aboutUpdates {
   display: grid;
   gap: var(--ui-space-lg);

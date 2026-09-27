@@ -43,6 +43,10 @@ class TauriProductPrivacy implements ProductPrivacyController {
     await this.update("desktop_product_reset_statistics");
   };
 
+  readonly clearAppData = async (): Promise<void> => {
+    await this.update("desktop_product_clear_app_data");
+  };
+
   readonly feedbackPreview = (includeStatistics: boolean) =>
     invoke<ProductFeedbackPreview>("desktop_product_feedback_preview", {
       includeStatistics,

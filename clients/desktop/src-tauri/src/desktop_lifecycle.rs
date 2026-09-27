@@ -126,6 +126,12 @@ pub(crate) fn persist_power_settings(
     Ok(next)
 }
 
+pub(crate) fn reset_desktop_shell_settings(path: &Path) -> Result<DesktopShellSettings, String> {
+    let defaults = DesktopShellSettings::default();
+    write_desktop_shell_settings(path, defaults)?;
+    Ok(defaults)
+}
+
 fn repair_with_defaults(path: PathBuf, reason: &str) -> LoadedDesktopShellSettings {
     let settings = DesktopShellSettings::default();
     let diagnostic = match write_desktop_shell_settings(&path, settings) {
@@ -260,6 +266,7 @@ mod tests {
         CloseAction, DesktopNotificationSettings, DesktopPowerSettings, DesktopShellSettings,
         ShutdownGate, ShutdownPhase, close_action, load_desktop_shell_settings,
         persist_notification_settings, persist_power_settings, persist_run_in_background,
+        reset_desktop_shell_settings,
     };
 
     #[test]
@@ -281,6 +288,40 @@ mod tests {
         let reopened = load_desktop_shell_settings(temporary.path());
         assert_eq!(reopened.settings, disabled);
         assert!(reopened.diagnostic.is_none());
+    }
+
+    #[test]
+    fn shell_reset_restores_every_desktop_preference() {
+        let temporary = tempfile::tempdir().expect("temporary settings directory");
+        let loaded = load_desktop_shell_settings(temporary.path());
+        let changed = persist_run_in_background(&loaded.path, loaded.settings, false)
+            .expect("disable background operation");
+        let changed = persist_notification_settings(
+            &loaded.path,
+            changed,
+            DesktopNotificationSettings {
+                notify_download_complete: false,
+                notify_needs_attention: false,
+                notify_while_focused: false,
+            },
+        )
+        .expect("disable notifications");
+        persist_power_settings(
+            &loaded.path,
+            changed,
+            DesktopPowerSettings {
+                prevent_sleep_during_active_downloads: false,
+            },
+        )
+        .expect("disable power preference");
+        assert_eq!(
+            reset_desktop_shell_settings(&loaded.path).expect("reset shell"),
+            DesktopShellSettings::default()
+        );
+        assert_eq!(
+            load_desktop_shell_settings(temporary.path()).settings,
+            DesktopShellSettings::default()
+        );
     }
 
     #[test]

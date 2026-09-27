@@ -241,6 +241,17 @@ impl WebAuthStore {
         Ok(())
     }
 
+    pub fn clear_access(&mut self) -> Result<(), WebAuthError> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        transaction.execute("DELETE FROM web_auth_sessions", [])?;
+        transaction.execute("DELETE FROM web_auth_pairing_ticket", [])?;
+        set_policy(&transaction, WebAccessPolicy::LocalOpen)?;
+        transaction.commit()?;
+        Ok(())
+    }
+
     pub fn issue_session(
         &mut self,
         label: &str,
@@ -697,6 +708,30 @@ mod tests {
                 .label,
             "Persistent browser"
         );
+    }
+
+    #[test]
+    fn clear_access_forgets_sessions_and_pairing_ticket() {
+        let mut store = WebAuthStore::in_memory().expect("store");
+        let first = store
+            .commit_initial_paired("First browser", 100)
+            .expect("paired");
+        let second = store.issue_session("Second browser", 101).expect("session");
+        let ticket = store.create_pairing_ticket(102).expect("ticket");
+        store.clear_access().expect("clear access");
+        assert_eq!(store.policy().expect("policy"), WebAccessPolicy::LocalOpen);
+        assert!(matches!(
+            store.authenticate(&first.token, 103),
+            Err(WebAuthError::InvalidSession)
+        ));
+        assert!(matches!(
+            store.authenticate(&second.token, 103),
+            Err(WebAuthError::InvalidSession)
+        ));
+        assert!(matches!(
+            store.redeem_pairing_ticket(&ticket.code, "Another browser", 103),
+            Err(WebAuthError::NoPairingTicket)
+        ));
     }
 
     #[test]

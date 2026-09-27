@@ -9,8 +9,14 @@ import {
   type PointerEvent,
 } from "react";
 
-import { applyAppearancePreferences } from "../appearance";
-import { useInspectionCommand, useInspectionStore } from "../context";
+import {
+  applyAppearancePreferences,
+  DEFAULT_COLOR_THEME,
+  DEFAULT_DATA_UNITS,
+  DEFAULT_INTERFACE_SIZE,
+} from "../appearance";
+import { useInspectionCommand, useInspectionController, useInspectionStore } from "../context";
+import type { InspectionController } from "../controller";
 import {
   APPLICATION_TITLE,
   DocumentTitleThrottle,
@@ -58,6 +64,38 @@ const DESTINATIONS: readonly {
   { id: "transfers", label: localizedMessage("inspection.components.app.transfers"), icon: "transfers" },
   { id: "workbench", label: localizedMessage("inspection.components.app.workbench"), icon: "workbench" },
 ];
+
+function waitForTorrentRemoval(
+  controller: InspectionController,
+  torrentId: string,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const inspect = () => {
+      const row = controller.store.getState().torrents[torrentId];
+      if (row === undefined) return "complete";
+      if (row.removalState === "failed") return "failed";
+      return "pending";
+    };
+    const initial = inspect();
+    if (initial === "complete") return resolve();
+    if (initial === "failed") return reject(new Error("Torrent removal failed."));
+    let unsubscribe = () => {};
+    const timeout = window.setTimeout(() => {
+      unsubscribe();
+      reject(new Error("Torrent removal is still pending. Check the torrent and retry."));
+    }, 300_000);
+    const check = () => {
+      const state = inspect();
+      if (state === "pending") return;
+      window.clearTimeout(timeout);
+      unsubscribe();
+      if (state === "complete") resolve();
+      else reject(new Error("Torrent removal failed. Check the torrent and retry."));
+    };
+    unsubscribe = controller.store.subscribe(check);
+    check();
+  });
+}
 
 export interface AppProps {
   readonly oneCurrentRoot?: boolean | undefined;
@@ -119,6 +157,7 @@ function AppContent({
   const storage = useInspectionStore((state) => state.storage);
   const clientSettings = useInspectionStore((state) => state.clientSettings);
   const execute = useInspectionCommand();
+  const controller = useInspectionController();
   const destination = useInspectionStore(
     (state) => state.presentation.destination,
   );
@@ -537,6 +576,99 @@ function AppContent({
           onClientSettingsSave={(patch) =>
             execute({ type: "update_client_settings", patch })
           }
+          deleteDataSupported={Object.values(controller.store.getState().torrents).every(
+            (torrent) => torrent.deleteDataSupported,
+          )}
+          onRestoreDefaults={async () => {
+            if (remoteAccess?.scope === "remote") {
+              throw new Error("Preferences can be restored only on this device.");
+            }
+            if (updater?.selectChannel !== undefined) {
+              await updater.selectChannel("stable");
+              if (updater.getSnapshot().channel !== "stable") {
+                throw new Error("The default update channel could not be restored.");
+              }
+            }
+            await execute({ type: "reset_client_settings" });
+            await execute({ type: "set_show_add_options", show: true });
+            await execute({ type: "set_show_file_selection", show: true });
+            await power?.resetAllShellSettings?.();
+            if (notifications !== undefined) {
+              await notifications.save({
+                notify_download_complete: true,
+                notify_needs_attention: true,
+                notify_while_focused: true,
+              });
+            }
+            if (power !== undefined) {
+              await power.save({ prevent_sleep_during_active_downloads: true });
+            }
+            setColorTheme(DEFAULT_COLOR_THEME);
+            setInterfaceSize(DEFAULT_INTERFACE_SIZE);
+            setDataUnits(DEFAULT_DATA_UNITS);
+          }}
+          onClearAppData={async (deleteData) => {
+            if (remoteAccess?.scope === "remote") {
+              throw new Error("Clear app data is available only on this device.");
+            }
+            if (productPrivacy !== undefined && productPrivacy.clearAppData === undefined) {
+              throw new Error("This client cannot clear product privacy choices.");
+            }
+            if (updater?.selectChannel !== undefined) {
+              await updater.selectChannel("stable");
+              if (updater.getSnapshot().channel !== "stable") {
+                throw new Error("The default update channel could not be restored.");
+              }
+            }
+            if (webAuth !== undefined) {
+              if (!["127.0.0.1", "localhost", "[::1]"].includes(window.location.hostname)) {
+                throw new Error("Clear app data is available only from this computer.");
+              }
+              const access = await webAuth.status();
+              if (access.policy_fixed !== false) {
+                throw new Error("This server fixes its web access policy; clear it from the server owner.");
+              }
+            }
+            if (remoteAccess !== undefined) {
+              const current = await remoteAccess.state();
+              if (current.security?.enabled) await remoteAccess.disable();
+              await remoteAccess.clearHistory();
+            }
+            const targets = Object.values(controller.store.getState().torrents);
+            for (const target of targets) {
+              await execute({ type: "remove", torrentId: target.id, deleteData });
+              await waitForTorrentRemoval(controller, target.id);
+            }
+            await execute({ type: "clear_app_data" });
+            await power?.resetAllShellSettings?.();
+            if (productPrivacy !== undefined) {
+              await productPrivacy.clearAppData!();
+            }
+            if (webAuth !== undefined) {
+              await webAuth.clearAccess();
+            }
+            if (notifications !== undefined) {
+              await notifications.save({
+                notify_download_complete: true,
+                notify_needs_attention: true,
+                notify_while_focused: true,
+              });
+            }
+            if (power !== undefined) {
+              await power.save({ prevent_sleep_during_active_downloads: true });
+            }
+            for (const key of Object.keys(window.localStorage)) {
+              if (key.startsWith("rstorrent.")) window.localStorage.removeItem(key);
+            }
+            setColorTheme(DEFAULT_COLOR_THEME);
+            setInterfaceSize(DEFAULT_INTERFACE_SIZE);
+            setDataUnits(DEFAULT_DATA_UNITS);
+            if (power?.restartApplication !== undefined) {
+              await power.restartApplication();
+            } else {
+              window.location.reload();
+            }
+          }}
           onWebAuthSignedOut={() => window.location.reload()}
           onClose={() => setSettingsOpen(false)}
         />

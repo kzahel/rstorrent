@@ -159,6 +159,7 @@ pub enum Command {
     RemoveStorageRoot {
         storage_root: String,
     },
+    ClearAppData,
     ExportMagnet {
         #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
@@ -206,6 +207,7 @@ impl Command {
                 | Self::ResetClientSettings
                 | Self::UpdateTorrentSettings { .. }
                 | Self::RemoveStorageRoot { .. }
+                | Self::ClearAppData
                 | Self::Pause { .. }
                 | Self::Resume { .. }
                 | Self::ForceRecheck { .. }
@@ -689,7 +691,7 @@ pub(crate) fn validate_request(request: &RequestEnvelope) -> Result<(), (ErrorCo
                 .validate()
                 .map_err(|error| (ErrorCode::InvalidRequest, error.to_string()))?;
         }
-        Command::ResetClientSettings => {}
+        Command::ResetClientSettings | Command::ClearAppData => {}
         Command::SetShowAddOptions { .. } | Command::SetShowFileSelection { .. } => {}
         Command::Snapshot | Command::Shutdown => {}
     }

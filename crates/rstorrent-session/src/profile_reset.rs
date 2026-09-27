@@ -13,6 +13,7 @@ use crate::store::StoreError;
 use crate::store_schema::SCHEMA_VERSION;
 
 pub(crate) const DATABASE_FILENAME: &str = "session.db";
+const METRICS_DATABASE_FILENAME: &str = "metrics.db";
 const WAL_FILENAME: &str = "session.db-wal";
 const SHM_FILENAME: &str = "session.db-shm";
 const RESET_MARKER_MAGIC: &[u8; 8] = b"RSTRST19";
@@ -32,6 +33,43 @@ const DISCARDED_CATEGORIES: [&str; 9] = [
 ];
 
 const DATABASE_BASENAMES: [&str; 3] = [DATABASE_FILENAME, WAL_FILENAME, SHM_FILENAME];
+
+const USER_CLEAR_FILES: [&str; 6] = [
+    "session.db-wal",
+    "session.db-shm",
+    DATABASE_FILENAME,
+    "metrics.db-wal",
+    "metrics.db-shm",
+    METRICS_DATABASE_FILENAME,
+];
+
+pub(crate) fn preflight_private_profile_clear(profile_root: &Path) -> Result<(), StoreError> {
+    let metadata = fs::symlink_metadata(profile_root)
+        .map_err(|source| io_error("inspect profile directory", source))?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err(StoreError::UnsafeProfileFile {
+            basename: "profile",
+            reason: "profile root is not a real directory".to_owned(),
+        });
+    }
+    for basename in USER_CLEAR_FILES {
+        validate_fixed_file(&profile_root.join(basename), basename)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn clear_private_profile(profile_root: &Path) -> Result<(), StoreError> {
+    preflight_private_profile_clear(profile_root)?;
+    for basename in USER_CLEAR_FILES {
+        let path = profile_root.join(basename);
+        match fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(source) => return Err(io_error("clear private profile file", source)),
+        }
+    }
+    sync_directory(profile_root)
+}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ProfileResetReport {
@@ -396,10 +434,28 @@ fn io_error(operation: &'static str, source: std::io::Error) -> StoreError {
 mod tests {
     use super::{
         CatalogPreparation, DATABASE_FILENAME, RESET_MARKER_LENGTH, SHM_FILENAME,
-        finish_catalog_creation, prepare_catalog, write_reset_marker,
+        clear_private_profile, finish_catalog_creation, prepare_catalog, write_reset_marker,
     };
     use crate::SessionStore;
     use crate::store::StoreError;
+
+    #[cfg(unix)]
+    #[test]
+    fn clear_private_profile_rejects_a_link_before_removing_any_file() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().expect("temporary profile");
+        let profile = root.path().join("profile");
+        std::fs::create_dir(&profile).expect("create profile");
+        let session = profile.join(DATABASE_FILENAME);
+        std::fs::write(&session, b"session").expect("write session sentinel");
+        let outside = root.path().join("outside");
+        std::fs::write(&outside, b"external").expect("write outside sentinel");
+        symlink(&outside, profile.join("metrics.db")).expect("link metrics file");
+        assert!(clear_private_profile(&profile).is_err());
+        assert_eq!(std::fs::read(session).unwrap(), b"session");
+        assert_eq!(std::fs::read(outside).unwrap(), b"external");
+    }
     use rusqlite::Connection;
     use std::fs;
     use std::path::{Path, PathBuf};

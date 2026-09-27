@@ -15,6 +15,7 @@ import { AppearanceSettingsSection } from "./AppearanceSettingsSection";
 import { AboutUpdatesSettingsSection } from "./AboutUpdatesSettingsSection";
 import { ConnectionSeedingSettingsSection } from "./ConnectionSeedingSettingsSection";
 import { DownloadSettingsSection } from "./DownloadSettingsSection";
+import { DataResetSettingsSection } from "./DataResetSettingsSection";
 import { Icon } from "./Icon";
 import { NotificationsSettingsSection } from "./NotificationsSettingsSection";
 import { PowerSettingsSection } from "./PowerSettingsSection";
@@ -38,6 +39,7 @@ export type SettingsCategory =
   | "remote-access"
   | "web-access"
   | "privacy"
+  | "data-reset"
   | "updates";
 
 export interface SettingsDialogProps {
@@ -70,6 +72,9 @@ export interface SettingsDialogProps {
   readonly onShowFileSelectionChange: (show: boolean) => Promise<void>;
   readonly onRemoveRoot: (rootId: string) => Promise<void>;
   readonly onClientSettingsSave: (patch: ClientSettingsPatch) => Promise<CommandResult>;
+  readonly onRestoreDefaults?: () => Promise<void>;
+  readonly onClearAppData?: (deleteData: boolean) => Promise<void>;
+  readonly deleteDataSupported?: boolean;
   readonly onWebAuthSignedOut: () => void;
   readonly onClose: () => void;
 }
@@ -102,12 +107,16 @@ export function SettingsDialog({
   onShowFileSelectionChange,
   onRemoveRoot,
   onClientSettingsSave,
+  onRestoreDefaults,
+  onClearAppData,
+  deleteDataSupported = false,
   onWebAuthSignedOut,
   onClose,
 }: SettingsDialogProps) {
   const dialogRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const [category, setCategory] = useState<SettingsCategory>(initialCategory);
+  const [resetBusy, setResetBusy] = useState(false);
   const categories: readonly {
     readonly id: SettingsCategory;
     readonly label: string;
@@ -131,6 +140,9 @@ export function SettingsDialog({
     ...(updater === undefined || updaterSnapshot === undefined
       ? []
       : [{ id: "updates" as const, label: localizedMessage("inspection.components.settings.dialog.about.updates") }]),
+    ...(onRestoreDefaults === undefined || onClearAppData === undefined
+      ? []
+      : [{ id: "data-reset" as const, label: localizedMessage("inspection.components.data.reset.category") }]),
   ];
 
   useEffect(() => {
@@ -139,7 +151,7 @@ export function SettingsDialog({
   }, [returnFocus]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    if (event.key === "Escape") {
+    if (event.key === "Escape" && !resetBusy) {
       event.preventDefault();
       onClose();
       return;
@@ -163,7 +175,7 @@ export function SettingsDialog({
   };
 
   const closeFromBackdrop = (event: MouseEvent<HTMLDivElement>) => {
-    if (event.target === event.currentTarget) onClose();
+    if (event.target === event.currentTarget && !resetBusy) onClose();
   };
 
   const moveCategory = (
@@ -211,6 +223,7 @@ export function SettingsDialog({
             ref={closeRef}
             className={styles.close}
             type="button"
+            disabled={resetBusy}
             aria-label={localizedMessage("inspection.components.settings.dialog.close.settings")}
             onClick={onClose}
           >
@@ -229,6 +242,7 @@ export function SettingsDialog({
                 id={`settings-tab-${item.id}`}
                 key={item.id}
                 type="button"
+                disabled={resetBusy}
                 role="tab"
                 aria-selected={category === item.id}
                 aria-controls={`settings-panel-${item.id}`}
@@ -350,6 +364,22 @@ export function SettingsDialog({
                 hidden={category !== "privacy"}
               >
                 <ProductPrivacySettingsSection productPrivacy={productPrivacy} />
+              </div>
+            )}
+            {onRestoreDefaults === undefined || onClearAppData === undefined ? null : (
+              <div
+                id="settings-panel-data-reset"
+                role="tabpanel"
+                aria-labelledby="settings-tab-data-reset"
+                hidden={category !== "data-reset"}
+              >
+                <DataResetSettingsSection
+                  manageable={downloadsManageable && remoteAccess?.scope !== "remote"}
+                  deleteDataSupported={deleteDataSupported}
+                  onRestoreDefaults={onRestoreDefaults}
+                  onClearAppData={onClearAppData}
+                  onBusyChange={setResetBusy}
+                />
               </div>
             )}
           </div>

@@ -226,6 +226,7 @@ export class DemoApplication implements InspectionApplication {
       case "confirm_pending_file_selection":
       case "cancel_pending_add":
       case "remove_download_root":
+      case "clear_app_data":
         return rejected("Download folder management is unavailable in demo scenarios");
       case "update_client_settings":
         this.clientSettings = {
@@ -243,6 +244,8 @@ export class DemoApplication implements InspectionApplication {
           requestId: `demo-${this.revision}`,
           resultingRevision: String(this.revision),
         };
+      case "reset_client_settings":
+        return rejected("Settings reset is unavailable in demo scenarios");
     }
   }
 

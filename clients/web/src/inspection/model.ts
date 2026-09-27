@@ -714,12 +714,14 @@ export type InspectionCommand =
     }
   | { readonly type: "cancel_pending_add"; readonly torrentId: string }
   | { readonly type: "update_client_settings"; readonly patch: ClientSettingsPatch }
+  | { readonly type: "reset_client_settings" }
   | {
       readonly type: "update_torrent_settings";
       readonly torrentId: string;
       readonly patch: TorrentSettingsPatch;
     }
   | { readonly type: "remove_download_root"; readonly rootId: string }
+  | { readonly type: "clear_app_data" }
   | { readonly type: "export_magnet"; readonly torrentId: string }
   | { readonly type: "pause"; readonly torrentId: string }
   | { readonly type: "resume"; readonly torrentId: string }

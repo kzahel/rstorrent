@@ -387,6 +387,10 @@ impl ProductStateOwner {
         self.store()?.reset_statistics()
     }
 
+    pub fn clear_app_data(&self) -> Result<ProductSummary, ProductStateError> {
+        self.store()?.clear_app_data()
+    }
+
     pub fn record_foreground_session(&self) -> Result<ProductSummary, ProductStateError> {
         self.store()?.record_foreground_session()
     }
@@ -523,6 +527,35 @@ impl ProductStateStore {
 
     pub fn reset_statistics(&mut self) -> Result<ProductSummary, ProductStateError> {
         self.reset_statistics_at(now_millis()?)
+    }
+
+    pub fn clear_app_data(&mut self) -> Result<ProductSummary, ProductStateError> {
+        let now_millis = now_millis()?;
+        let transaction = self.connection.transaction()?;
+        transaction.execute(
+            "UPDATE product_state
+             SET installation_id = ?1,
+                 created_at_millis = ?2,
+                 first_version = current_version,
+                 disclosure_version = 0,
+                 statistics_enabled = 1,
+                 torrents_added = '0',
+                 downloads_completed = '0',
+                 foreground_sessions = '0',
+                 reset_generation = ?3,
+                 last_start_millis = ?2,
+                 last_clean_shutdown_millis = NULL,
+                 legacy_updater_id_permitted = 0
+             WHERE singleton = 1",
+            params![
+                Uuid::new_v4().to_string(),
+                encode_u64(now_millis),
+                Uuid::new_v4().to_string(),
+            ],
+        )?;
+        transaction.execute("DELETE FROM product_source_watermarks", [])?;
+        transaction.commit()?;
+        self.summary_at(now_millis)
     }
 
     fn reset_statistics_at(
@@ -1223,6 +1256,32 @@ mod tests {
         assert!(!reset.statistics_enabled);
         assert!(!reset.transmission_allowed);
         assert_eq!(store.updater_installation_id().unwrap(), None);
+    }
+
+    #[test]
+    fn clear_app_data_forgets_identity_statistics_and_disclosure() {
+        let root = tempfile::tempdir().expect("temporary product root");
+        let mut store = ProductStateStore::open_at(root.path(), "1", None, START).unwrap();
+        let before = store.acknowledge_disclosure(true).unwrap();
+        assert!(before.transmission_allowed);
+        let cleared = store.clear_app_data().unwrap();
+        assert_ne!(cleared.installation_id, before.installation_id);
+        assert_eq!(cleared.disclosure_version, 0);
+        assert!(!cleared.transmission_allowed);
+        assert_eq!(cleared.torrents_added, "0");
+        assert_eq!(cleared.downloads_completed, "0");
+        assert_eq!(cleared.foreground_sessions, "0");
+        assert_eq!(store.updater_installation_id().unwrap(), None);
+        drop(store);
+        let reopened = ProductStateStore::open_at(root.path(), "2", None, START + 1).unwrap();
+        assert_eq!(
+            reopened.summary_at(START + 1).unwrap().installation_id,
+            cleared.installation_id
+        );
+        assert_eq!(
+            reopened.summary_at(START + 1).unwrap().disclosure_version,
+            0
+        );
     }
 
     #[test]

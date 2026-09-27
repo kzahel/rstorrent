@@ -1010,6 +1010,10 @@ impl GatewayServer {
                 axum::routing::delete(web_auth_http::revoke_session),
             )
             .route("/api/v1/web-auth/logout", post(web_auth_http::logout))
+            .route(
+                "/api/v1/web-auth/clear-access",
+                post(web_auth_http::clear_access),
+            )
             .layer(axum::extract::DefaultBodyLimit::max(
                 MAX_INCOMING_MESSAGE_BYTES,
             ))
@@ -4381,6 +4385,39 @@ mod tests {
             .await
             .0,
             200
+        );
+        assert_eq!(
+            web_auth_request(
+                address,
+                "POST",
+                "/api/v1/web-auth/clear-access",
+                None,
+                Some(&recovered_cookie),
+                None,
+            )
+            .await
+            .0,
+            403
+        );
+        assert_eq!(
+            web_auth_request(
+                address,
+                "POST",
+                "/api/v1/web-auth/clear-access",
+                Some(origin),
+                Some(&recovered_cookie),
+                None,
+            )
+            .await
+            .0,
+            204
+        );
+        let (_, _, status_body) =
+            web_auth_request(address, "GET", "/api/v1/web-auth/status", None, None, None).await;
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&status_body).expect("cleared status JSON")
+                ["state"],
+            "local_open"
         );
 
         shutdown.cancel();

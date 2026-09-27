@@ -1,8 +1,9 @@
+use std::net::SocketAddr;
 use std::sync::MutexGuard;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{ConnectInfo, Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
@@ -79,6 +80,7 @@ impl WebAuthRuntime {
 struct AuthStatusResponse {
     available: bool,
     state: &'static str,
+    policy_fixed: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     remaining_seconds: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -162,6 +164,7 @@ pub(crate) async fn status(State(state): State<GatewayState>, headers: HeaderMap
             &AuthStatusResponse {
                 available: false,
                 state: "unavailable",
+                policy_fixed: false,
                 remaining_seconds: None,
                 current_session: None,
             },
@@ -194,6 +197,7 @@ pub(crate) async fn status(State(state): State<GatewayState>, headers: HeaderMap
         &AuthStatusResponse {
             available: true,
             state: state_name,
+            policy_fixed: runtime.policy_override.is_some(),
             remaining_seconds: remaining,
             current_session: current.map(|session| session_response(session, true)),
         },
@@ -441,6 +445,43 @@ pub(crate) async fn logout(State(state): State<GatewayState>, headers: HeaderMap
     };
     match runtime.store.revoke_session(&current.id) {
         Ok(_) => expire_cookie(StatusCode::NO_CONTENT.into_response()),
+        Err(error) => auth_error(error),
+    }
+}
+
+pub(crate) async fn clear_access(
+    State(state): State<GatewayState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+) -> Response {
+    if !peer.ip().is_loopback() || !origin_matches(&state, &headers) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let Some(runtime) = &state.web_auth else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let mut runtime = match runtime.lock() {
+        Ok(runtime) => runtime,
+        Err(_) => return internal_error(),
+    };
+    if runtime.policy_override.is_some() {
+        return api_error(
+            StatusCode::CONFLICT,
+            ApiErrorCode::InvalidRequest,
+            "web access policy is fixed by the command line",
+        );
+    }
+    let policy = match runtime.policy() {
+        Ok(policy) => policy,
+        Err(_) => return internal_error(),
+    };
+    if policy == WebAccessPolicy::Paired
+        && optional_session(&mut runtime, &headers, unix_seconds()).is_none()
+    {
+        return unauthorized();
+    }
+    match runtime.store.clear_access() {
+        Ok(()) => expire_cookie(StatusCode::NO_CONTENT.into_response()),
         Err(error) => auth_error(error),
     }
 }

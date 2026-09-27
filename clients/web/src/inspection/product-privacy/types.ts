@@ -44,6 +44,7 @@ export interface ProductPrivacyController {
   readonly acknowledgeDisclosure: (enabled: boolean) => Promise<void>;
   readonly setStatisticsEnabled: (enabled: boolean) => Promise<void>;
   readonly resetStatistics: () => Promise<void>;
+  readonly clearAppData?: () => Promise<void>;
   readonly feedbackPreview: (
     includeStatistics: boolean,
   ) => Promise<ProductFeedbackPreview>;

@@ -2,6 +2,12 @@
 
 Topic: `web-ui-design`
 
+Tactical [`229`](../tactical/229-web-desktop-data-reset.md) adds a Data & reset
+Settings category with separate confirmations for restoring default preferences
+and clearing local app data. Downloaded files stay by default; an unchecked
+opt-in uses the existing exact per-torrent delete path. Failure keeps the
+confirmation available for retry.
+
 Tactical [`216`](../tactical/216-local-support-diagnostics-and-release-baseline.md)
 adds the About support report with an explicit immutable preview, copy/manual
 fallback/download, and no-context issue links. The 320/1440-pixel light/dark

@@ -763,6 +763,18 @@ describe("LiveApplication", () => {
     await application.close();
   });
 
+  it("routes settings reset and profile clear as distinct semantic commands", async () => {
+    const client = new FakeLiveClient();
+    const application = await LiveApplication.open(client);
+    await application.dispatch({ type: "reset_client_settings" });
+    await application.dispatch({ type: "clear_app_data" });
+    expect(client.requests.map((request) => request.command)).toEqual([
+      { type: "reset_client_settings" },
+      { type: "clear_app_data" },
+    ]);
+    await application.close();
+  });
+
   it("maps active peer state and evicts obsolete responsive views", async () => {
     const client = new FakeLiveClient();
     const application = await LiveApplication.open(client, {

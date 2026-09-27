@@ -56,6 +56,7 @@ export type UpdaterState =
 export interface DesktopUpdaterSnapshot {
   readonly info: DesktopReleaseInfo;
   readonly state: UpdaterState;
+  readonly channel?: "stable" | "latest";
 }
 
 export interface DesktopUpdater {
@@ -64,6 +65,7 @@ export interface DesktopUpdater {
   check(reason?: CheckReason): Promise<void>;
   install(): Promise<void>;
   dismiss(): void;
+  selectChannel?(channel: "stable" | "latest"): Promise<void>;
   close(): void;
 }
 

@@ -19,6 +19,7 @@ export interface WebSession {
 export interface WebAuthStatus {
   readonly available: boolean;
   readonly state: WebAuthState;
+  readonly policy_fixed?: boolean;
   readonly remaining_seconds?: number;
   readonly current_session?: WebSession;
 }
@@ -118,6 +119,15 @@ export class WebAuthClient {
     );
   }
 
+  public async clearAccess(): Promise<void> {
+    await this.request(
+      "POST",
+      "/api/v1/web-auth/clear-access",
+      undefined,
+      isNoContent,
+    );
+  }
+
   private async request<T>(
     method: string,
     path: string,
@@ -167,6 +177,7 @@ function isStatus(value: unknown): value is WebAuthStatus {
     return false;
   }
   return (
+    (value.policy_fixed === undefined || typeof value.policy_fixed === "boolean") &&
     (value.remaining_seconds === undefined ||
       isNonnegativeInteger(value.remaining_seconds)) &&
     (value.current_session === undefined || isSession(value.current_session, false))

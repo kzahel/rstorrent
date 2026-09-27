@@ -2,6 +2,15 @@
 
 Topic: `client-persistence`
 
+Tactical [`229`](../tactical/229-web-desktop-data-reset.md) adds explicit
+local browser and desktop profile clearing. After all torrent removals join,
+the application closes the durable session and removes only validated fixed
+session and metrics database files, then reopens with no registered roots.
+External payload and unrelated profile files remain; exact torrent-file
+deletion is a separate user opt-in handled before profile clearing. An offline
+placeholder permits retry if profile replacement fails. Cross-owner clear
+steps do not yet have one durable crash-recovery phase record.
+
 The [first-supported baseline proposal](../release-baseline.md), prepared by
 Tactical `216`, inventories candidate authorities and the required forward,
 rollback, interrupted reset, hostile catalog, root loss and payload matrix.

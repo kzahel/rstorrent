@@ -3459,6 +3459,14 @@ fn apply_mutation(
     profile_id: &str,
     reset_client_settings: &ClientSettings,
 ) -> Result<ResponseEnvelope, StoreError> {
+    if matches!(&request.command, Command::ClearAppData) {
+        return Ok(ResponseEnvelope::error(
+            request.request_id.clone(),
+            current_revision,
+            ErrorCode::InvalidRequest,
+            "app data clear requires the application owner".to_owned(),
+        ));
+    }
     if matches!(
         &request.command,
         Command::UpdateClientSettings { .. } | Command::ResetClientSettings
@@ -3597,6 +3605,7 @@ fn apply_mutation(
         Command::RemoveStorageRoot { storage_root } => {
             remove_storage_root(transaction, storage_root, current_revision)
         }
+        Command::ClearAppData => unreachable!("application service owns profile reset"),
         Command::Pause { torrent_id } => {
             set_desired_state(transaction, torrent_id, false, current_revision)
         }

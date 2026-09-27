@@ -2,6 +2,13 @@
 
 Topic: `client-surfaces`
 
+Tactical [`229`](../tactical/229-web-desktop-data-reset.md) brings the reset
+and clear choices to shared React Settings for local browser and desktop
+clients. React owns confirmation and awaits the existing torrent-removal jobs;
+the session, desktop shell, access, privacy, and browser owners clear their own
+state before the client reloads. Remote clients and demo scenarios cannot clear
+the host profile.
+
 Completed local Tactical
 [`216`](../tactical/216-local-support-diagnostics-and-release-baseline.md)
 adds frozen-preview local diagnostics copy/download to desktop/headless About,

@@ -46,7 +46,7 @@ use crate::auto_manager::{
 use crate::control::{
     AddTorrentBytesRequest, AddTorrentDisposition, Command, CommandResult, ErrorCode, FilePriority,
     RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseEnvelope, ResponseOutcome,
-    StorageState, TorrentState,
+    StorageState, TorrentState, parse_revision, validate_request,
 };
 use crate::diagnostics::{
     DiagnosticCategory, DiagnosticDraft, DiagnosticField, DiagnosticSeverity, DiagnosticSubject,
@@ -526,6 +526,8 @@ pub struct CompletedMediaCapability {
 
 #[derive(Debug)]
 pub struct ApplicationService {
+    reset_config: ApplicationConfig,
+    reset_incomplete: bool,
     store: Arc<Mutex<SessionStore>>,
     storage_roots: Arc<BTreeMap<String, StorageRootLocation>>,
     network: NetworkConfig,
@@ -743,6 +745,7 @@ struct AdmissionInactivityState {
 
 impl ApplicationService {
     pub async fn open(config: ApplicationConfig) -> Result<Self, ApplicationError> {
+        let reset_config = config.clone();
         if config.network.peer_connect_timeout.is_zero() {
             return Err(ApplicationError::Configuration(
                 "peer connect timeout must be nonzero".to_owned(),
@@ -967,6 +970,8 @@ impl ApplicationService {
             .clone()
             .map(|owner| ProductMilestoneDrain::start(store.clone(), owner, views.clone()));
         let mut service = Self {
+            reset_config,
+            reset_incomplete: false,
             store,
             storage_roots: Arc::new(storage_roots),
             network,
@@ -1678,6 +1683,65 @@ impl ApplicationService {
         request: RequestEnvelope,
     ) -> Result<ResponseEnvelope, ApplicationError> {
         self.reap_finished().await?;
+        if self.reset_incomplete && !matches!(&request.command, Command::ClearAppData) {
+            return Ok(ResponseEnvelope::error(
+                request.request_id,
+                self.store_mut()?.revision()?,
+                ErrorCode::InvalidRequest,
+                "app data clear is incomplete; retry the clear action".to_owned(),
+            ));
+        }
+        if matches!(&request.command, Command::ClearAppData) {
+            if let Err((code, message)) = validate_request(&request) {
+                return Ok(ResponseEnvelope::error(
+                    request.request_id,
+                    self.store_mut()?.revision()?,
+                    code,
+                    message,
+                ));
+            }
+            let revision = self.store_mut()?.revision()?;
+            if request
+                .expected_revision
+                .as_deref()
+                .map(parse_revision)
+                .transpose()
+                .expect("validated revision")
+                .is_some_and(|expected| expected != revision)
+            {
+                return Ok(ResponseEnvelope::error(
+                    request.request_id,
+                    revision,
+                    ErrorCode::StaleRevision,
+                    "app data changed before clear".to_owned(),
+                ));
+            }
+            let snapshot = self.store_mut()?.snapshot()?;
+            if !snapshot.torrents.is_empty() {
+                return Ok(ResponseEnvelope::error(
+                    request.request_id,
+                    self.store_mut()?.revision()?,
+                    ErrorCode::InvalidTorrentState,
+                    "remove every torrent before clearing app data".to_owned(),
+                ));
+            }
+            if self.reset_config.platform_storage_client.is_some() {
+                return Ok(ResponseEnvelope::error(
+                    request.request_id,
+                    self.store_mut()?.revision()?,
+                    ErrorCode::InvalidRequest,
+                    "platform storage must use its platform-owned clear workflow".to_owned(),
+                ));
+            }
+            self.clear_private_profile().await?;
+            let (revision, snapshot) = {
+                let store = self.store_mut()?;
+                (store.revision()?, store.snapshot()?)
+            };
+            let mut response = ResponseEnvelope::success(request.request_id, revision, snapshot);
+            self.apply_runtime_storage_to_response(&mut response);
+            return Ok(response);
+        }
         let command = request.command.clone();
         let file_priority_changed = match &command {
             Command::SetFilePriority {
@@ -2199,6 +2263,7 @@ impl ApplicationService {
             Command::Shutdown => {
                 self.shutdown().await?;
             }
+            Command::ClearAppData => unreachable!("app data clear returned before store mutation"),
             Command::ExportMagnet { .. } | Command::Snapshot => {}
         }
         if !shutting_down {
@@ -2213,6 +2278,11 @@ impl ApplicationService {
         request: AddTorrentBytesRequest,
         source: Vec<u8>,
     ) -> Result<ResponseEnvelope, ApplicationError> {
+        if self.reset_incomplete {
+            return Err(ApplicationError::Configuration(
+                "app data clear is incomplete; retry the clear action".to_owned(),
+            ));
+        }
         self.reap_finished().await?;
         let prepare_request = request.clone();
         let prepared = match tokio::task::spawn_blocking(move || {
@@ -2934,6 +3004,11 @@ impl ApplicationService {
         &mut self,
         selected_path: &Path,
     ) -> Result<StorageRootSnapshot, ApplicationError> {
+        if self.reset_incomplete {
+            return Err(ApplicationError::Configuration(
+                "app data clear is incomplete; retry the clear action".to_owned(),
+            ));
+        }
         let path = validate_selected_directory(selected_path)?;
         let label = storage_root_label(&path);
         let root_id = self.allocate_storage_root_id()?;
@@ -3605,6 +3680,44 @@ impl ApplicationService {
         if let Some(error) = active_join_error {
             return Err(ApplicationError::Join(error));
         }
+        Ok(())
+    }
+
+    async fn clear_private_profile(&mut self) -> Result<(), ApplicationError> {
+        let mut config = self.reset_config.clone();
+        let profile_root = config
+            .durable_profile_root()
+            .ok_or_else(|| {
+                ApplicationError::Configuration(
+                    "app data clear requires a durable profile".to_owned(),
+                )
+            })?
+            .to_path_buf();
+        crate::profile_reset::preflight_private_profile_clear(&profile_root)?;
+        config.storage_roots.clear();
+        let placeholder_config = ApplicationConfig::ephemeral(
+            "reset-placeholder".to_owned(),
+            Vec::new(),
+            NetworkConfig::new(
+                NetworkPolicy::Offline,
+                Duration::from_secs(15),
+                Duration::from_secs(60),
+            ),
+        );
+        let placeholder = Self::open(placeholder_config).await?;
+        if let Err(error) = self.shutdown().await {
+            let mut placeholder = placeholder;
+            let _ = placeholder.shutdown().await;
+            return Err(error);
+        }
+        let old = std::mem::replace(self, placeholder);
+        drop(old);
+        self.reset_config = config.clone();
+        self.reset_incomplete = true;
+        crate::profile_reset::clear_private_profile(&profile_root)?;
+        let fresh = Self::open(config).await?;
+        let mut placeholder = std::mem::replace(self, fresh);
+        placeholder.shutdown().await?;
         Ok(())
     }
 
@@ -12446,6 +12559,100 @@ mod tests {
         service.shutdown().await.expect("shutdown application");
         drop(service);
         fs::remove_dir_all(root).expect("remove reset runtime root");
+    }
+
+    #[tokio::test]
+    async fn clear_app_data_reopens_empty_profile_and_preserves_external_files() {
+        let root = test_root("clear-app-data");
+        let payload = root.join("payload");
+        fs::create_dir_all(&payload).expect("create payload root");
+        let external_file = payload.join("unrelated.txt");
+        fs::write(&external_file, b"keep").expect("write unrelated file");
+        let mut configuration = config(&root);
+        configuration.storage_roots.clear();
+        let mut service = ApplicationService::open(configuration.clone())
+            .await
+            .expect("open application");
+        service
+            .install_path_storage_root(&payload)
+            .expect("register selected root");
+        let profile_root = root.join("profile");
+        let private_sentinel = profile_root.join("unrelated-private.txt");
+        fs::write(&private_sentinel, b"keep").expect("write private sentinel");
+        let invalid = service
+            .dispatch(RequestEnvelope {
+                version: 0,
+                request_id: "clear-invalid-version".to_owned(),
+                expected_revision: None,
+                command: Command::ClearAppData,
+            })
+            .await
+            .expect("invalid version response");
+        assert!(matches!(invalid.outcome, ResponseOutcome::Error { .. }));
+        assert_eq!(service.storage_snapshot().unwrap().roots.len(), 1);
+        let response = service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "clear-empty-app-data".to_owned(),
+                expected_revision: None,
+                command: Command::ClearAppData,
+            })
+            .await
+            .expect("clear app data");
+        assert!(matches!(response.outcome, ResponseOutcome::Success { .. }));
+        assert!(service.storage_snapshot().unwrap().roots.is_empty());
+        assert_eq!(service.revision().unwrap(), 0);
+        assert_eq!(fs::read(&external_file).unwrap(), b"keep");
+        assert_eq!(fs::read(&private_sentinel).unwrap(), b"keep");
+        service.shutdown().await.expect("shutdown cleared service");
+        drop(service);
+        let mut reopened = ApplicationService::open(configuration)
+            .await
+            .expect("reopen cleared profile");
+        assert!(reopened.storage_snapshot().unwrap().roots.is_empty());
+        reopened
+            .shutdown()
+            .await
+            .expect("shutdown reopened service");
+        drop(reopened);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn clear_app_data_rejects_retained_torrents_without_mutation() {
+        let root = test_root("clear-app-data-retained");
+        let mut service = ApplicationService::open(config(&root))
+            .await
+            .expect("open application");
+        let added = service
+            .dispatch(add_request("clear-retained-add", &"ac".repeat(20)))
+            .await
+            .expect("add torrent");
+        assert!(matches!(added.outcome, ResponseOutcome::Success { .. }));
+        let refused = service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "clear-retained-refused".to_owned(),
+                expected_revision: None,
+                command: Command::ClearAppData,
+            })
+            .await
+            .expect("clear response");
+        assert!(matches!(refused.outcome, ResponseOutcome::Error { .. }));
+        assert_eq!(service.storage_snapshot().unwrap().roots.len(), 1);
+        assert_eq!(
+            service
+                .store_mut()
+                .unwrap()
+                .snapshot()
+                .unwrap()
+                .torrents
+                .len(),
+            1
+        );
+        service.shutdown().await.expect("shutdown application");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
     }
 
     #[tokio::test]

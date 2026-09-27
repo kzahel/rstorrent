@@ -16,5 +16,10 @@ export async function createTauriDesktopPower(): Promise<DesktopPower> {
       );
       return snapshot;
     },
+    async resetAllShellSettings() {
+      await invoke<void>("desktop_reset_shell_settings");
+      snapshot = await invoke<DesktopPowerSettings>("desktop_power_settings");
+    },
+    restartApplication: () => invoke<void>("application_restart"),
   };
 }

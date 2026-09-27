@@ -50,6 +50,7 @@ use desktop_lifecycle::{
     CloseAction, DesktopNotificationSettings, DesktopPowerSettings, DesktopShellSettings,
     ShutdownGate, ShutdownPhase, close_action, load_desktop_shell_settings,
     persist_notification_settings, persist_power_settings, persist_run_in_background,
+    reset_desktop_shell_settings,
 };
 use desktop_notifications::{
     DesktopNotification, DesktopNotificationKind, DesktopNotificationPolicy,
@@ -374,6 +375,16 @@ fn desktop_product_reset_statistics(
 }
 
 #[tauri::command]
+fn desktop_product_clear_app_data(
+    state: State<'_, DesktopState>,
+) -> Result<ProductSummary, String> {
+    state
+        .product_state
+        .clear_app_data()
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn desktop_product_feedback_preview(
     state: State<'_, DesktopState>,
     include_statistics: bool,
@@ -616,6 +627,23 @@ fn desktop_set_power_settings(
         .power_preference
         .send_replace(settings.prevent_sleep_during_active_downloads);
     Ok(next.power)
+}
+
+#[tauri::command]
+fn desktop_reset_shell_settings(state: State<'_, DesktopState>) -> Result<(), String> {
+    let defaults = reset_desktop_shell_settings(&state.shell_settings_path)?;
+    *state
+        .shell_settings
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = defaults;
+    state
+        .power_preference
+        .send_replace(defaults.power.prevent_sleep_during_active_downloads);
+    state
+        .background_menu_item
+        .set_checked(defaults.run_in_background)
+        .map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -2189,6 +2217,7 @@ pub fn run() {
             desktop_set_notification_settings,
             desktop_power_settings,
             desktop_set_power_settings,
+            desktop_reset_shell_settings,
             choose_download_root,
             application_view_hello,
             application_view_open,
@@ -2206,6 +2235,7 @@ pub fn run() {
             desktop_release_info,
             desktop_updater_installation_id,
             desktop_product_summary,
+            desktop_product_clear_app_data,
             desktop_product_acknowledge_disclosure,
             desktop_product_set_statistics_enabled,
             desktop_product_reset_statistics,
