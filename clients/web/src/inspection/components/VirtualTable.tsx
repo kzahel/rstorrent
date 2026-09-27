@@ -461,6 +461,7 @@ export function VirtualTable<Row>({
   const activateBackground = () => {
     selection?.onChange([], null);
     onClearCurrent?.();
+    viewportRef.current?.focus({ preventScroll: true });
   };
 
   const collapseSelectionToCurrent = () => {
@@ -713,6 +714,7 @@ export function VirtualTable<Row>({
         data-table-id={tableId}
         className={styles.viewport}
         role="grid"
+        tabIndex={-1}
         aria-label={label}
         aria-rowcount={sortedRows.length + 1}
         aria-colcount={visibleColumns.length + (selectionAvailable ? 1 : 0)}
@@ -743,10 +745,10 @@ export function VirtualTable<Row>({
             event.key.toLowerCase() === "a" &&
             (event.metaKey || event.ctrlKey) &&
             !event.altKey &&
-            selection !== undefined &&
-            sortedRows.length > 0
+            selection !== undefined
           ) {
             event.preventDefault();
+            if (sortedRows.length === 0) return;
             const current = sortedRows.find(
               (row) => getRowId(row) === currentRowId,
             );

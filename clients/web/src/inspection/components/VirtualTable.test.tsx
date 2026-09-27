@@ -78,6 +78,56 @@ afterEach(() => {
 });
 
 describe("VirtualTable", () => {
+  it("keeps table shortcuts on the grid after clearing selection in empty space", () => {
+    function Table() {
+      const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(
+        new Set(),
+      );
+      const [currentRowId, setCurrentRowId] = useState<string | null>(null);
+      return (
+        <VirtualTable
+          tableId="background-focus-test"
+          label="Torrent library"
+          rows={[
+            { id: "one", value: "1" },
+            { id: "two", value: "2" },
+          ]}
+          getRowId={(row) => row.id}
+          columns={COLUMNS}
+          interfaceSize="standard"
+          currentRowId={currentRowId}
+          emptyMessage="empty"
+          selection={{
+            selectedIds,
+            getRowLabel: (row) => row.id,
+            onChange: (nextSelectedIds, nextCurrentId) => {
+              setSelectedIds(new Set(nextSelectedIds));
+              setCurrentRowId(nextCurrentId);
+            },
+          }}
+        />
+      );
+    }
+
+    render(<Table />);
+    const grid = screen.getByRole("grid", { name: "Torrent library" });
+    fireEvent.click(grid);
+    expect(grid).toHaveFocus();
+
+    expect(fireEvent.keyDown(document.activeElement!, {
+      key: "a",
+      metaKey: true,
+    })).toBe(false);
+    expect(checkedRowNames()).toEqual(["all rows", "one", "two"]);
+    expect(screen.getByText("2 selected for actions")).toBeVisible();
+
+    fireEvent.click(grid);
+    expect(grid).toHaveFocus();
+    expect(checkedRowNames()).toEqual([]);
+    fireEvent.keyDown(document.activeElement!, { key: "a", ctrlKey: true });
+    expect(checkedRowNames()).toEqual(["all rows", "one", "two"]);
+  });
+
   it("sorts decimal u64 strings exactly and keeps null last in both directions", () => {
     const { container } = render(
       <VirtualTable

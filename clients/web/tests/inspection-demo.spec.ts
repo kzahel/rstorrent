@@ -424,6 +424,25 @@ test("phone destinations and contextual filters remain reachable", async ({
   expect(violations).toEqual([]);
 });
 
+test("Workbench empty-space focus keeps Select All on torrents", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/?demo=healthy-download&at=42000&autoplay=0");
+  await page
+    .getByRole("navigation", { name: "Primary" })
+    .getByRole("button", { name: "Workbench" })
+    .click();
+  const grid = page.getByRole("grid", { name: "Torrent library" });
+  const bounds = await grid.boundingBox();
+  expect(bounds).not.toBeNull();
+  await grid.click({ position: { x: 12, y: bounds!.height - 8 } });
+  await expect(grid).toBeFocused();
+  await expect(grid.getByRole("checkbox", { checked: true })).toHaveCount(0);
+
+  await page.keyboard.press("Meta+a");
+  await expect(grid.getByRole("checkbox", { checked: true })).toHaveCount(4);
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("");
+});
+
 test("wide inspection surface is accessible and drivable", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openScenario(page, "healthy-download", 42_000);

@@ -120,6 +120,11 @@ user-agent inference. Select-all must not override native text selection in an
 input, textarea, editable surface, dialog, menu, resize control, or other
 nested control.
 
+Activating empty table space moves focus to the grid as it clears selection.
+The focused grid handles Command/Control+A even when no row is currently
+selected. An actionable grid with no rows consumes that shortcut without
+selecting page text.
+
 If a table has rows but no current row when row navigation receives focus, the
 focused row becomes the singleton selection. Empty tables ignore selection
 shortcuts.
