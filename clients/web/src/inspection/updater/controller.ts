@@ -6,6 +6,7 @@ import type {
   DesktopUpdateBackend,
   DesktopUpdater,
   DesktopUpdaterSnapshot,
+  UpdateChannel,
   UpdateCandidate,
   UpdaterState,
 } from "./types";
@@ -24,23 +25,26 @@ export class DesktopUpdaterController implements DesktopUpdater {
   private readonly listeners = new Set<() => void>();
   private candidate: UpdateCandidate | null = null;
   private activeCheck: Promise<void> | null = null;
-  private readonly disposeSchedule: () => void;
+  private disposeSchedule: () => void;
+  private generation = 0;
   private closed = false;
 
   constructor(
     private readonly backend: DesktopUpdateBackend,
     info: DesktopReleaseInfo,
-    timers: UpdaterTimers = globalThis,
+    private readonly timers: UpdaterTimers = globalThis,
+    channel: UpdateChannel = "stable",
   ) {
-    this.snapshot = { info, state: { phase: "idle" } };
+    this.snapshot = { info, state: { phase: "idle" }, channel, selectingChannel: false };
     this.disposeSchedule = scheduleAutomaticChecks(
       (reason) => void this.check(reason),
       timers,
+      channel,
     );
   }
 
   async check(reason: CheckReason = "manual"): Promise<void> {
-    if (this.closed) return;
+    if (this.closed || this.snapshot.selectingChannel || this.isInstalling()) return;
     if (this.activeCheck !== null) {
       await this.activeCheck;
       return;
@@ -103,20 +107,46 @@ export class DesktopUpdaterController implements DesktopUpdater {
   }
 
   dismiss(): void {
-    if (this.closed) return;
+    if (this.closed || this.isInstalling()) return;
+    this.generation += 1;
+    this.activeCheck = null;
     this.closeCandidate();
     this.setState({ phase: "idle" });
+  }
+
+  async selectChannel(channel: UpdateChannel): Promise<void> {
+    if (this.closed || this.isInstalling() || this.snapshot.selectingChannel || !this.backend.selectChannel || channel === this.snapshot.channel) return;
+    const generation = ++this.generation;
+    this.activeCheck = null;
+    this.closeCandidate();
+    this.snapshot = { ...this.snapshot, selectingChannel: true, state: { phase: "idle" } };
+    this.emit();
+    try {
+      await this.backend.selectChannel(channel);
+      if (this.closed || generation !== this.generation) return;
+      this.disposeSchedule();
+      this.disposeSchedule = scheduleAutomaticChecks((reason) => void this.check(reason), this.timers, channel);
+      this.snapshot = { ...this.snapshot, channel, selectingChannel: false };
+      this.emit();
+      await this.check("manual");
+    } catch (error) {
+      if (this.closed || generation !== this.generation) return;
+      this.snapshot = { ...this.snapshot, selectingChannel: false };
+      this.setState({ phase: "error", operation: "check", message: errorMessage(error) });
+    }
   }
 
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    this.generation += 1;
     this.disposeSchedule();
     this.closeCandidate();
     this.listeners.clear();
   }
 
   private async performCheck(reason: CheckReason): Promise<void> {
+    const generation = ++this.generation;
     const policy = installPolicy(this.snapshot.info.bundleType);
     if (!policy.canCheck) {
       if (reason === "manual") {
@@ -136,8 +166,12 @@ export class DesktopUpdaterController implements DesktopUpdater {
         reason,
         UPDATE_CHECK_TIMEOUT_MS,
       );
-      if (this.closed) {
-        if (candidate !== null) void candidate.close().catch(console.error);
+      if (this.closed || generation !== this.generation) {
+        if (candidate !== null && !("waitingForStable" in candidate)) void candidate.close().catch(console.error);
+        return;
+      }
+      if (candidate !== null && "waitingForStable" in candidate) {
+        this.setState({ phase: "waiting-for-stable" });
         return;
       }
       if (candidate === null) {
@@ -161,6 +195,7 @@ export class DesktopUpdaterController implements DesktopUpdater {
         reason,
       });
     } catch (error) {
+      if (this.closed || generation !== this.generation) return;
       if (reason === "manual") {
         this.setState({
           phase: "error",
@@ -182,7 +217,15 @@ export class DesktopUpdaterController implements DesktopUpdater {
   private setState(state: UpdaterState): void {
     if (this.closed) return;
     this.snapshot = { ...this.snapshot, state };
+    this.emit();
+  }
+
+  private emit(): void {
     for (const listener of this.listeners) listener();
+  }
+
+  private isInstalling(): boolean {
+    return this.snapshot.state.phase === "downloading" || this.snapshot.state.phase === "installing";
   }
 }
 

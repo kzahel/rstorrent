@@ -54,6 +54,16 @@ describe("About and updates settings", () => {
     ).toHaveAttribute("href", "https://github.com/kzahel/rstorrent/releases/latest");
   });
 
+  it("lets desktop users select Latest and explains the Stable catch-up state", async () => {
+    const user = userEvent.setup();
+    const updater = fakeUpdater();
+    const view = render(<AboutUpdatesSettingsSection updater={updater} snapshot={{ ...snapshot({ phase: "waiting-for-stable" }), channel: "stable" }} />);
+    expect(within(view.container).getByText("Waiting for Stable to catch up")).toBeVisible();
+    expect(within(view.container).getByText("Update channel")).toBeVisible();
+    await user.selectOptions(within(view.container).getByRole("combobox"), "latest");
+    expect(updater.selectChannel).toHaveBeenCalledWith("latest");
+  });
+
   it("shows the headless apply command without a browser install action", () => {
     const updater = fakeUpdater();
     const view = render(
@@ -125,6 +135,7 @@ function fakeUpdater(): DesktopUpdater {
     check: vi.fn(async () => undefined),
     install: vi.fn(async () => undefined),
     dismiss: vi.fn(),
+    selectChannel: vi.fn(async () => undefined),
     close: vi.fn(),
   };
 }

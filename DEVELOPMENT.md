@@ -535,6 +535,10 @@ Signed packaging, updater rehearsals, version bumps, and tagged publication
 use the exact commands and validation gates in
 [`docs/desktop-release.md`](docs/desktop-release.md).
 
+The same runbook now documents the source-wired Stable/Latest desktop
+channels, nightly verified-source selection, and the pending hosted and
+installed acceptance gates for Tactical `230`.
+
 Validate desktop activation wiring and generated package metadata with:
 
 ```bash

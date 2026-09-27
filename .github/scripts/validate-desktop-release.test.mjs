@@ -12,6 +12,17 @@ test("accepts a complete five-target draft", () => {
   assert.equal(validateDesktopRelease({ ...fixture(), tag, repository }).version, version);
 });
 
+test("accepts the same complete draft matrix for Latest", () => {
+  const latestTag = `desktop-latest-v${version}`;
+  const data = fixture();
+  data.release.tagName = latestTag;
+  data.release.isPrerelease = true;
+  for (const metadata of Object.values(data.latest.platforms)) {
+    metadata.url = metadata.url.replace(`/download/${tag}/`, `/download/${latestTag}/`);
+  }
+  assert.equal(validateDesktopRelease({ ...data, tag: latestTag, repository }).version, version);
+});
+
 test("rejects missing platform coverage and external updater URLs", () => {
   const missing = fixture();
   delete missing.latest.platforms["linux-aarch64"];
@@ -44,6 +55,12 @@ test("rejects public or unsigned release input", () => {
   );
 });
 
+test("rejects release kind drift across channels", () => {
+  const data = fixture();
+  data.release.isPrerelease = true;
+  assert.throws(() => validateDesktopRelease({ ...data, tag, repository }), /prerelease kind/);
+});
+
 function fixture() {
   const updaterAssets = {
     "darwin-aarch64": "RSTorrent_aarch64.app.tar.gz",
@@ -73,6 +90,7 @@ function fixture() {
     release: {
       tagName: tag,
       isDraft: true,
+      isPrerelease: false,
       assets: [...names].map((name) => ({ name, digest })),
     },
     latest: {

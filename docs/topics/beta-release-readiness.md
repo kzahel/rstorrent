@@ -2,6 +2,16 @@
 
 Topic: `beta-release-readiness`
 
+Desktop channel source checkpoint (2026-09-27): Tactical
+[`230`](../tactical/230-desktop-stable-latest-update-channels.md) adds a
+Stable/Latest product registry, native-owned selection and candidate lifecycle,
+React choice, and verified-source nightly release path using the existing
+signed five-target workflow. Local channel and release-tool tests pass; hosted
+signed Latest publication, production update-service deployment, and installed
+old-to-new channel acceptance remain pending. Stable remains the default for
+old clients and requests without a channel. This source change does not itself
+publish a release or alter the production route.
+
 Maintenance checkpoint (2026-09-26): Tactical
 [`219`](../tactical/219-dependency-and-ci-maintenance.md) repairs the newly
 reported rustls advisory and seven website npm package findings locally,

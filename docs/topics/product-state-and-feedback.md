@@ -2,6 +2,12 @@
 
 Topic: `product-state-and-feedback`
 
+Tactical [`230`](../tactical/230-desktop-stable-latest-update-channels.md)
+keeps update check identity under native `product.db` preference authority
+while adding a selectable desktop channel. The native candidate removes
+check-only headers before the public installer download, preserving the
+existing disclosure boundary across both channels.
+
 Completed local Tactical `216` adds a separate desktop/shared-browser support
 report containing only allowlisted build/update facts. It exports no product
 identifier, counters or feedback fields, sends nothing automatically, and

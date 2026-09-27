@@ -9,6 +9,13 @@ the session, desktop shell, access, privacy, and browser owners clear their own
 state before the client reloads. Remote clients and demo scenarios cannot clear
 the host profile.
 
+Tactical [`230`](../tactical/230-desktop-stable-latest-update-channels.md)
+adds desktop Stable/Latest source wiring. The native desktop client owns the
+saved selection and signed candidate; shared React exposes the choice only
+for app, NSIS, and AppImage installations. Hosted release and installed
+channel evidence remain open. Android, iOS, headless, and Crostini retain
+their existing distribution policies.
+
 Completed local Tactical
 [`216`](../tactical/216-local-support-diagnostics-and-release-baseline.md)
 adds frozen-preview local diagnostics copy/download to desktop/headless About,

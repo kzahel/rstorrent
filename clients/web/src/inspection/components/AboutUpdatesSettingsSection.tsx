@@ -46,6 +46,23 @@ export function AboutUpdatesSettingsSection({
 
       <fieldset className={styles.section}>
         <legend>{localizedMessage("inspection.components.about.updates.settings.section.updates")}</legend>
+        {updater.selectChannel !== undefined && ["app", "nsis", "appimage"].includes(info.bundleType) ? (
+          <div className={styles.updateChannel}>
+            <label htmlFor="desktop-update-channel">{localizedMessage("inspection.components.about.updates.settings.section.channel")}</label>
+            <select
+              id="desktop-update-channel"
+              value={snapshot.channel ?? "stable"}
+              disabled={snapshot.selectingChannel === true || state.phase === "checking" || isInstalling(state)}
+              onChange={(event) => void updater.selectChannel?.(event.target.value as "stable" | "latest")}
+            >
+              <option value="stable">{localizedMessage("inspection.components.about.updates.settings.section.stable")}</option>
+              <option value="latest">{localizedMessage("inspection.components.about.updates.settings.section.latest")}</option>
+            </select>
+            <p>{snapshot.channel === "latest"
+              ? localizedMessage("inspection.components.about.updates.settings.section.latest.description")
+              : localizedMessage("inspection.components.about.updates.settings.section.stable.description")}</p>
+          </div>
+        ) : null}
         <div className={styles.updateStatus} aria-live="polite">
           <strong>{statusTitle(state)}</strong>
           <span>{statusDetail(state, info.version)}</span>
@@ -75,7 +92,7 @@ export function AboutUpdatesSettingsSection({
         <div className={styles.updateActions}>
           <button
             type="button"
-            disabled={state.phase === "checking" || isInstalling(state)}
+            disabled={snapshot.selectingChannel === true || state.phase === "checking" || isInstalling(state)}
             onClick={() => void updater.check("manual")}
           >
             {state.phase === "checking" ? localizedMessage("inspection.components.about.updates.settings.section.checking") : localizedMessage("inspection.components.about.updates.settings.section.check.for.updates")}
@@ -93,7 +110,9 @@ export function AboutUpdatesSettingsSection({
             <a href={RELEASES_URL} rel="noreferrer" target="_blank">{localizedMessage("inspection.components.about.updates.settings.section.open.release.downloads")}</a>
           ) : null}
         </div>
-        <p className={styles.updatePrivacy}>{localizedMessage("inspection.components.about.updates.settings.section.rstorrent.checks.automatically.after.startup.and.about")} {info.checkPrivacy === "anonymous"
+        <p className={styles.updatePrivacy}>{snapshot.channel === "latest"
+          ? localizedMessage("inspection.components.about.updates.settings.section.checks.latest.schedule")
+          : localizedMessage("inspection.components.about.updates.settings.section.rstorrent.checks.automatically.after.startup.and.about")} {info.checkPrivacy === "anonymous"
             ? localizedMessage("inspection.components.about.updates.settings.section.headless.checks.include.no.installation.identifier")
             : info.checkPrivacy === "preference-controlled"
               ? localizedMessage("inspection.components.about.updates.settings.section.checks.follow.the.usage.statistics.preference")
@@ -113,6 +132,8 @@ function statusTitle(state: UpdaterState): string {
       return localizedMessage("inspection.components.about.updates.settings.section.checking.for.updates");
     case "up-to-date":
       return localizedMessage("inspection.components.about.updates.settings.section.rstorrent.is.up.to.date");
+    case "waiting-for-stable":
+      return localizedMessage("inspection.components.about.updates.settings.section.waiting.for.stable");
     case "available":
       return `RSTorrent ${state.version} is available`;
     case "manual-install":
@@ -136,6 +157,8 @@ function statusDetail(state: UpdaterState, currentVersion: string): string {
       return localizedMessage("inspection.components.about.updates.settings.section.contacting.the.rstorrent.update.service");
     case "up-to-date":
       return `Version ${currentVersion} is the newest compatible release.`;
+    case "waiting-for-stable":
+      return localizedMessage("inspection.components.about.updates.settings.section.waiting.for.stable.description");
     case "available":
       return state.manualApply === undefined
         ? "Installation happens only after you approve it."

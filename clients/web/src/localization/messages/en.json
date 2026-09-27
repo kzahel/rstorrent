@@ -71,6 +71,10 @@
     "defaultMessage": "Build",
     "description": "Product copy in inspection/components/AboutUpdatesSettingsSection.tsx"
   },
+  "inspection.components.about.updates.settings.section.channel": {
+    "defaultMessage": "Update channel",
+    "description": "Desktop update track selector"
+  },
   "inspection.components.about.updates.settings.section.check.for.updates": {
     "defaultMessage": "Check for updates",
     "description": "Product copy in inspection/components/AboutUpdatesSettingsSection.tsx"
@@ -82,6 +86,10 @@
   "inspection.components.about.updates.settings.section.checking.for.updates": {
     "defaultMessage": "Checking for updates",
     "description": "Product copy in inspection/components/AboutUpdatesSettingsSection.tsx"
+  },
+  "inspection.components.about.updates.settings.section.checks.latest.schedule": {
+    "defaultMessage": "RSTorrent checks for Latest updates after startup and every 30 minutes.",
+    "description": "Latest channel automatic check schedule"
   },
   "inspection.components.about.updates.settings.section.checks.follow.the.usage.statistics.preference": {
     "defaultMessage": "Checks include the random resettable installation identifier only when the usage statistics preference permits it.",
@@ -106,6 +114,14 @@
   "inspection.components.about.updates.settings.section.install.and.restart": {
     "defaultMessage": "Install and restart",
     "description": "Product copy in inspection/components/AboutUpdatesSettingsSection.tsx"
+  },
+  "inspection.components.about.updates.settings.section.latest": {
+    "defaultMessage": "Latest",
+    "description": "Latest desktop update channel"
+  },
+  "inspection.components.about.updates.settings.section.latest.description": {
+    "defaultMessage": "Latest offers signed builds from verified main changes. Installation always needs your approval.",
+    "description": "Latest desktop update channel guidance"
   },
   "inspection.components.about.updates.settings.section.linux.appimage": {
     "defaultMessage": "Linux AppImage",
@@ -159,6 +175,14 @@
     "defaultMessage": "RSTorrent will relaunch after installation succeeds.",
     "description": "Product copy in inspection/components/AboutUpdatesSettingsSection.tsx"
   },
+  "inspection.components.about.updates.settings.section.stable": {
+    "defaultMessage": "Stable",
+    "description": "Stable desktop update channel"
+  },
+  "inspection.components.about.updates.settings.section.stable.description": {
+    "defaultMessage": "Stable offers deliberate RSTorrent desktop incubation releases.",
+    "description": "Stable desktop update channel guidance"
+  },
   "inspection.components.about.updates.settings.section.target": {
     "defaultMessage": "Target",
     "description": "Product copy in inspection/components/AboutUpdatesSettingsSection.tsx"
@@ -170,6 +194,14 @@
   "inspection.components.about.updates.settings.section.updates": {
     "defaultMessage": "Updates",
     "description": "Product copy in inspection/components/AboutUpdatesSettingsSection.tsx"
+  },
+  "inspection.components.about.updates.settings.section.waiting.for.stable": {
+    "defaultMessage": "Waiting for Stable to catch up",
+    "description": "A newer Latest build remains installed after selecting Stable"
+  },
+  "inspection.components.about.updates.settings.section.waiting.for.stable.description": {
+    "defaultMessage": "This installed build is newer than Stable. RSTorrent will keep it until a newer Stable release is available.",
+    "description": "No automatic downgrade after switching from Latest to Stable"
   },
   "inspection.components.about.updates.settings.section.version": {
     "defaultMessage": "Version",

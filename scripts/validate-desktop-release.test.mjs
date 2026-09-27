@@ -11,11 +11,13 @@ import {
 const root = path.resolve(import.meta.dirname, "..");
 
 test("accepts the checked-in desktop release configuration", () => {
-  assert.equal(validateDesktopReleaseRepository(root).version, "0.1.4");
+  const version = JSON.parse(fs.readFileSync(path.join(root, "clients/desktop/src-tauri/tauri.conf.json"), "utf8")).version;
+  assert.equal(validateDesktopReleaseRepository(root).version, version);
   assert.equal(
-    validateDesktopReleaseRepository(root, "desktop-v0.1.4").version,
-    "0.1.4",
+    validateDesktopReleaseRepository(root, `desktop-v${version}`).version,
+    version,
   );
+  assert.equal(validateDesktopReleaseRepository(root, `desktop-latest-v${version}`).version, version);
 });
 
 test("rejects identifier and version drift", () => {

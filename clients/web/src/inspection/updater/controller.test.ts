@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DesktopUpdaterController, UPDATE_CHECK_TIMEOUT_MS } from "./controller";
 import {
+  LATEST_CHECK_INTERVAL_MS,
   PERIODIC_CHECK_INTERVAL_MS,
   STARTUP_CHECK_DELAY_MS,
 } from "./schedule";
@@ -113,6 +114,51 @@ describe("desktop updater controller", () => {
     });
     error.mockRestore();
   });
+
+  it("invalidates an in-flight Stable candidate when Latest is selected", async () => {
+    let finishStable: ((value: UpdateCandidate | null) => void) | undefined;
+    const stale = new RecordingCandidate("0.1.5");
+    const latest = new RecordingCandidate("0.2.101");
+    const backend: DesktopUpdateBackend = {
+      check: vi.fn()
+        .mockImplementationOnce(() => new Promise((resolve) => { finishStable = resolve; }))
+        .mockResolvedValueOnce(latest),
+      selectChannel: vi.fn(async () => undefined),
+      relaunch: vi.fn(async () => undefined),
+    };
+    const controller = createController(backend);
+    const pending = controller.check("manual");
+    await controller.selectChannel("latest");
+    finishStable?.(stale);
+    await pending;
+    expect(stale.closes).toBe(1);
+    expect(controller.getSnapshot().channel).toBe("latest");
+    expect(controller.getSnapshot().state).toMatchObject({ phase: "available", version: "0.2.101" });
+  });
+
+  it("reports waiting for Stable without offering a downgrade", async () => {
+    const backend: DesktopUpdateBackend = {
+      check: vi.fn().mockResolvedValue({ waitingForStable: true }),
+      selectChannel: vi.fn(async () => undefined),
+      relaunch: vi.fn(async () => undefined),
+    };
+    const controller = createController(backend);
+    await controller.selectChannel("latest");
+    await controller.selectChannel("stable");
+    expect(controller.getSnapshot().state.phase).toBe("waiting-for-stable");
+    await controller.install();
+    expect(backend.relaunch).not.toHaveBeenCalled();
+  });
+
+  it("uses the shorter automatic check interval after selecting Latest", async () => {
+    vi.useFakeTimers();
+    const backend = new RecordingBackend();
+    const controller = createController(backend);
+    await controller.selectChannel("latest");
+    const before = backend.checks.length;
+    await vi.advanceTimersByTimeAsync(LATEST_CHECK_INTERVAL_MS);
+    expect(backend.checks.slice(before).some((check) => check.reason === "periodic")).toBe(true);
+  });
 });
 
 function createController(
@@ -139,6 +185,10 @@ class RecordingBackend implements DesktopUpdateBackend {
 
   async relaunch() {
     this.relaunches += 1;
+  }
+
+  async selectChannel() {
+    return;
   }
 }
 

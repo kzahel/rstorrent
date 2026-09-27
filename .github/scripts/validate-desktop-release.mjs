@@ -20,14 +20,17 @@ function requireMatchingAsset(assetNames, pattern, label) {
 }
 
 export function validateDesktopRelease({ release, latest, tag, repository }) {
-  if (!/^desktop-v\d+\.\d+\.\d+$/.test(tag)) {
+  if (!/^desktop-(?:latest-)?v\d+\.\d+\.\d+$/.test(tag)) {
     fail(`unexpected desktop tag: ${tag}`);
   }
-  const version = tag.slice("desktop-v".length);
+  const version = tag.slice(tag.lastIndexOf("-v") + 2);
   if (release.tagName !== tag) {
     fail(`release tag ${release.tagName} does not match ${tag}`);
   }
   if (!release.isDraft) fail("release must remain a draft until validation succeeds");
+  if (release.isPrerelease !== tag.startsWith("desktop-latest-v")) {
+    fail("release prerelease kind does not match its update channel");
+  }
   if (!Array.isArray(release.assets)) fail("release assets are missing");
 
   const assetNames = new Set();

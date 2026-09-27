@@ -1,11 +1,6 @@
 import { getBundleType } from "@tauri-apps/api/app";
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import {
-  check as checkForTauriUpdate,
-  type DownloadEvent,
-  type Update,
-} from "@tauri-apps/plugin-updater";
 
 import { DesktopUpdaterController } from "./inspection/updater/controller";
 import { createNativeUpdateCheckHandler } from "./inspection/updater/native-check";
@@ -16,6 +11,7 @@ import type {
   DesktopUpdateBackend,
   DesktopUpdater,
   UpdateCandidate,
+  UpdateChannel,
   UpdateDownloadEvent,
 } from "./inspection/updater/types";
 
@@ -27,22 +23,26 @@ interface NativeDesktopReleaseInfo {
 }
 
 const UPDATE_CHECK_EVENT = "rstorrent://check-for-updates";
-const DESKTOP_UPDATE_DOWNLOAD_OPTIONS = { headers: {} } as const;
 
-export function desktopUpdateCheckHeaders(
-  reason: CheckReason,
-  installationId: string | null,
-): Readonly<Record<string, string>> {
-  return {
-    "X-Check-Reason": reason,
-    ...(installationId === null ? {} : { "X-CFU-Id": installationId }),
-  };
+interface NativeCheckResult {
+  readonly channel: UpdateChannel;
+  readonly generation: number;
+  readonly version: string | null;
+  readonly notes: string | null;
+  readonly waitingForStable: boolean;
+}
+
+interface NativeProgress {
+  readonly downloadedBytes: number;
+  readonly totalBytes: number | null;
+  readonly installing: boolean;
 }
 
 export async function createTauriDesktopUpdater(): Promise<DesktopUpdater> {
-  const [nativeInfo, bundleType] = await Promise.all([
+  const [nativeInfo, bundleType, channel] = await Promise.all([
     invoke<NativeDesktopReleaseInfo>("desktop_release_info"),
     getBundleType().catch(() => null),
+    invoke<UpdateChannel>("desktop_update_channel"),
   ]);
   const info: DesktopReleaseInfo = {
     ...nativeInfo,
@@ -50,19 +50,19 @@ export async function createTauriDesktopUpdater(): Promise<DesktopUpdater> {
     checkPrivacy: "preference-controlled",
   };
   const backend: DesktopUpdateBackend = {
-    async check(reason, timeoutMs) {
-      const installationId = await invoke<string | null>(
-        "desktop_updater_installation_id",
-      );
-      const update = await checkForTauriUpdate({
-        headers: desktopUpdateCheckHeaders(reason, installationId),
-        timeout: timeoutMs,
+    async check(reason, _timeoutMs) {
+      const result = await invoke<NativeCheckResult>("desktop_check_update", {
+        reason,
       });
-      return update === null ? null : new TauriUpdateCandidate(update);
+      if (result.waitingForStable) return { waitingForStable: true };
+      return result.version === null
+        ? null
+        : new TauriUpdateCandidate(result.generation, result.version, result.notes);
     },
+    selectChannel: (selected) => invoke("desktop_select_update_channel", { channel: selected }),
     relaunch: () => invoke("application_restart"),
   };
-  const controller = new DesktopUpdaterController(backend, info);
+  const controller = new DesktopUpdaterController(backend, info, globalThis, channel);
   const handleUpdateCheck = createNativeUpdateCheckHandler(() => {
     void controller.check("manual");
   });
@@ -103,6 +103,10 @@ class TauriDesktopUpdater implements DesktopUpdater {
     this.controller.dismiss();
   }
 
+  selectChannel(channel: UpdateChannel): Promise<void> {
+    return this.controller.selectChannel(channel);
+  }
+
   close(): void {
     if (this.closed) return;
     this.closed = true;
@@ -115,38 +119,35 @@ class TauriUpdateCandidate implements UpdateCandidate {
   readonly version: string;
   readonly notes?: string;
 
-  constructor(private readonly update: Update) {
-    this.version = update.version;
-    if (update.body !== undefined) this.notes = update.body;
+  constructor(private readonly generation: number, version: string, notes: string | null) {
+    this.version = version;
+    if (notes !== null) this.notes = notes;
   }
 
   async downloadAndInstall(
     onEvent: (event: UpdateDownloadEvent) => void,
   ): Promise<void> {
-    await this.update.downloadAndInstall(
-      (event) => onEvent(mapEvent(event)),
-      DESKTOP_UPDATE_DOWNLOAD_OPTIONS,
-    );
+    let downloadedBytes = 0;
+    let started = false;
+    const progress = new Channel<NativeProgress>();
+    progress.onmessage = (event) => {
+      if (event.installing) {
+        onEvent({ type: "finished" });
+      } else {
+        if (!started) {
+          started = true;
+          onEvent({ type: "started", ...(event.totalBytes === null ? {} : { contentLength: event.totalBytes }) });
+        }
+        const chunkLength = Math.max(0, event.downloadedBytes - downloadedBytes);
+        downloadedBytes = event.downloadedBytes;
+        onEvent({ type: "progress", chunkLength });
+      }
+    };
+    await invoke("desktop_install_update", { generation: this.generation, progress });
   }
 
   async close(): Promise<void> {
-    await this.update.close();
-  }
-}
-
-function mapEvent(event: DownloadEvent): UpdateDownloadEvent {
-  switch (event.event) {
-    case "Started":
-      return {
-        type: "started",
-        ...(event.data.contentLength === undefined
-          ? {}
-          : { contentLength: event.data.contentLength }),
-      };
-    case "Progress":
-      return { type: "progress", chunkLength: event.data.chunkLength };
-    case "Finished":
-      return { type: "finished" };
+    await invoke("desktop_clear_update_candidate", { generation: this.generation });
   }
 }
 

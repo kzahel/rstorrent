@@ -43,6 +43,7 @@ mod desktop_notifications;
 mod desktop_power;
 mod external_intake;
 mod native_host_registration;
+mod update_channels;
 mod updater;
 mod view_delivery;
 
@@ -61,6 +62,10 @@ use external_intake::{
     read_torrent_source,
 };
 use native_host_registration::repair_native_host_registration;
+use update_channels::{
+    ChannelUpdates, desktop_check_update, desktop_clear_update_candidate, desktop_install_update,
+    desktop_select_update_channel, desktop_update_channel,
+};
 use updater::{desktop_release_info, open_desktop_product_state};
 use view_delivery::{
     DesktopViewResources, application_view_close, application_view_hello, application_view_open,
@@ -304,16 +309,6 @@ async fn desktop_remote_access_clear_history(
     remote_access_owner(&state)?
         .clear_history()
         .await
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-fn desktop_updater_installation_id(
-    state: State<'_, DesktopState>,
-) -> Result<Option<String>, String> {
-    state
-        .product_state
-        .updater_installation_id()
         .map_err(|error| error.to_string())
 }
 
@@ -2073,6 +2068,7 @@ pub fn run() {
             let product_state = open_desktop_product_state(&config_dir, env!("CARGO_PKG_VERSION"))?;
             let updater = tauri_plugin_updater::Builder::new().build();
             app.handle().plugin(updater)?;
+            app.manage(StdMutex::new(ChannelUpdates::open(&config_dir)));
             let app_data = app
                 .path()
                 .app_data_dir()
@@ -2232,8 +2228,12 @@ pub fn run() {
             application_shutdown,
             application_restart,
             desktop_update_check_generation,
+            desktop_update_channel,
+            desktop_select_update_channel,
+            desktop_check_update,
+            desktop_clear_update_candidate,
+            desktop_install_update,
             desktop_release_info,
-            desktop_updater_installation_id,
             desktop_product_summary,
             desktop_product_clear_app_data,
             desktop_product_acknowledge_disclosure,

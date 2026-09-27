@@ -5,6 +5,34 @@ RSTorrent desktop releases use the `desktop-v<version>` tag family and the
 workflow builds signed updater packages and ordinary installers for macOS
 arm64/x86_64, Windows x86_64, and Linux x86_64/arm64.
 
+## Stable and Latest channels
+
+Stable keeps the deliberate `desktop-vX.Y.Z` tag and remains the default for
+existing installations and requests without a channel. The
+[`Nightly Desktop`](../.github/workflows/nightly-desktop.yml) workflow checks
+for a successful `main` CI commit each night at 02:47 UTC. It skips unchanged
+packaged source unless manually forced, then calls the same signed desktop
+workflow to publish `desktop-latest-vX.Y.Z` as a Latest prerelease. The source
+commit is checked out explicitly for every package leg. Both channels retain
+the RSTorrent identifier, updater key, signature checks, complete five-target
+draft validation, and explicit user-approved installation.
+
+Latest uses a numeric package train above the current Stable minor version:
+Stable `0.1.4` is followed by Latest `0.2.S`, where `S` is the nightly workflow
+run number times 100 plus its attempt. A later Stable release must be greater
+than every published Latest package, for example `0.3.0` after `0.2.S`.
+Returning from Latest to Stable keeps the installed build until Stable catches
+up; it never downgrades. The selector is offered for macOS app, Windows NSIS,
+and Linux AppImage installations. MSI, DEB, and RPM continue through their
+package managers. The update service must deploy the channel registry from
+[`update-server/rstorrent.json`](../update-server/rstorrent.json) before Latest
+checks can succeed. The native client discovers the registry and verifies the
+selected channel in the response, while old clients continue to use Stable.
+
+The first Latest release still requires signed hosted evidence and installed
+old-to-new acceptance. Source checks do not establish that production route or
+installed-package behavior.
+
 ## Rehearse Without Publishing
 
 Run the protected workflow from `main`:
@@ -62,9 +90,9 @@ The tagged workflow creates a draft while its five serialized build legs add
 assets to one `latest.json`. The finalizer refuses incomplete or unsigned
 assets, validates same-release URLs and all five updater keys, adds
 `SHA256SUMS`, and only then publishes the release. A failed build remains a
-draft. The GitHub release is non-prerelease because the shared update server
-intentionally ignores prerelease entries; the `0.x` version and release notes
-carry the incubation-beta status.
+draft. The Stable GitHub release is non-prerelease because the Stable update
+rule excludes prerelease entries; the `0.x` version and release notes carry
+the incubation-beta status.
 
 The first published release is
 [`desktop-v0.1.0`](https://github.com/kzahel/rstorrent/releases/tag/desktop-v0.1.0).

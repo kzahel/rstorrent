@@ -695,6 +695,7 @@ function presentsManualUpdateResult(state: UpdaterState): boolean {
     case "error":
       return state.operation === "check";
     case "idle":
+    case "waiting-for-stable":
     case "downloading":
     case "installing":
       return false;

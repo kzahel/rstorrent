@@ -238,6 +238,12 @@
       "value": "Build"
     }
   ],
+  "inspection.components.about.updates.settings.section.channel": [
+    {
+      "type": 0,
+      "value": "Update channel"
+    }
+  ],
   "inspection.components.about.updates.settings.section.check.for.updates": [
     {
       "type": 0,
@@ -268,6 +274,12 @@
       "value": "Checks include a random resettable installation identifier used only to estimate active installations."
     }
   ],
+  "inspection.components.about.updates.settings.section.checks.latest.schedule": [
+    {
+      "type": 0,
+      "value": "RSTorrent checks for Latest updates after startup and every 30 minutes."
+    }
+  ],
   "inspection.components.about.updates.settings.section.contacting.the.rstorrent.update.service": [
     {
       "type": 0,
@@ -290,6 +302,18 @@
     {
       "type": 0,
       "value": "Install and restart"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.latest": [
+    {
+      "type": 0,
+      "value": "Latest"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.latest.description": [
+    {
+      "type": 0,
+      "value": "Latest offers signed builds from verified main changes. Installation always needs your approval."
     }
   ],
   "inspection.components.about.updates.settings.section.linux.appimage": [
@@ -370,6 +394,18 @@
       "value": "RSTorrent will relaunch after installation succeeds."
     }
   ],
+  "inspection.components.about.updates.settings.section.stable": [
+    {
+      "type": 0,
+      "value": "Stable"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.stable.description": [
+    {
+      "type": 0,
+      "value": "Stable offers deliberate RSTorrent desktop incubation releases."
+    }
+  ],
   "inspection.components.about.updates.settings.section.target": [
     {
       "type": 0,
@@ -392,6 +428,18 @@
     {
       "type": 0,
       "value": "Version"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.waiting.for.stable": [
+    {
+      "type": 0,
+      "value": "Waiting for Stable to catch up"
+    }
+  ],
+  "inspection.components.about.updates.settings.section.waiting.for.stable.description": [
+    {
+      "type": 0,
+      "value": "This installed build is newer than Stable. RSTorrent will keep it until a newer Stable release is available."
     }
   ],
   "inspection.components.about.updates.settings.section.windows.msi": [

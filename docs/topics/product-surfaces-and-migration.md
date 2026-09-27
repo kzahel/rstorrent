@@ -2,6 +2,11 @@
 
 Topic: `product-surfaces-and-migration`
 
+Tactical [`230`](../tactical/230-desktop-stable-latest-update-channels.md)
+keeps RSTorrent's incubation app identity and updater trust root while adding
+two desktop update channels. It does not change the eventual JSTorrent
+graduation identity, route, or key.
+
 Status: The backend/presentation model, ChromeOS choices, and desktop extension
 direction were accepted in product discussion on 2026-08-02. This topic
 records graduation direction, not standing authorization for production

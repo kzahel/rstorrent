@@ -161,7 +161,10 @@ jobs:
             scripts/validate-desktop-package.test.mjs \
             scripts/validate-desktop-release.test.mjs \
             .github/scripts/validate-desktop-release.test.mjs \
-            .github/scripts/write-release-checksums.test.mjs
+            .github/scripts/write-release-checksums.test.mjs \
+            scripts/nightly-desktop-release.test.mjs \
+            scripts/desktop-release-input.test.mjs \
+            scripts/apply-desktop-nightly-version.test.mjs
 
       - name: Verify dependency and distribution review tools
         run: python3 -m unittest discover -s scripts -p test_distribution_review.py

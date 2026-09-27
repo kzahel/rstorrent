@@ -55,7 +55,7 @@ export function validateDesktopReleaseConfiguration({
   if (!/^\d+\.\d+\.\d+$/.test(version)) {
     fail(`desktop version is not stable semver: ${version}`);
   }
-  if (tag !== undefined && tag !== `desktop-v${version}`) {
+  if (tag !== undefined && tag !== `desktop-v${version}` && tag !== `desktop-latest-v${version}`) {
     fail(`desktop tag ${tag} does not match version ${version}`);
   }
   if (!changelog.includes(`## [${version}]`)) {
@@ -332,6 +332,18 @@ export function validateDesktopReleaseConfiguration({
     githubRepo: "kzahel/rstorrent",
     tagPrefix: "desktop-v",
     tauriUpdates: true,
+    channels: {
+      stable: {
+        displayName: "Stable",
+        tagPrefix: "desktop-v",
+        releaseKind: "release",
+      },
+      latest: {
+        displayName: "Latest",
+        tagPrefix: "desktop-latest-v",
+        releaseKind: "prerelease",
+      },
+    },
   };
   if (JSON.stringify(product) !== JSON.stringify(expectedProduct)) {
     fail(`unexpected updater product config: ${JSON.stringify(product)}`);

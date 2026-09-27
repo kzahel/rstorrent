@@ -1,4 +1,5 @@
 export type CheckReason = "startup" | "periodic" | "manual";
+export type UpdateChannel = "stable" | "latest";
 
 export type DesktopBundleType =
   | "app"
@@ -31,6 +32,7 @@ export type UpdaterState =
   | { readonly phase: "idle"; readonly lastReason?: CheckReason }
   | { readonly phase: "checking"; readonly reason: CheckReason }
   | { readonly phase: "up-to-date"; readonly reason: "manual" }
+  | { readonly phase: "waiting-for-stable" }
   | {
       readonly phase: "available";
       readonly version: string;
@@ -56,7 +58,8 @@ export type UpdaterState =
 export interface DesktopUpdaterSnapshot {
   readonly info: DesktopReleaseInfo;
   readonly state: UpdaterState;
-  readonly channel?: "stable" | "latest";
+  readonly channel?: UpdateChannel;
+  readonly selectingChannel?: boolean;
 }
 
 export interface DesktopUpdater {
@@ -65,7 +68,7 @@ export interface DesktopUpdater {
   check(reason?: CheckReason): Promise<void>;
   install(): Promise<void>;
   dismiss(): void;
-  selectChannel?(channel: "stable" | "latest"): Promise<void>;
+  selectChannel?(channel: UpdateChannel): Promise<void>;
   close(): void;
 }
 
@@ -85,6 +88,7 @@ export interface UpdateCandidate {
 }
 
 export interface DesktopUpdateBackend {
-  check(reason: CheckReason, timeoutMs: number): Promise<UpdateCandidate | null>;
+  check(reason: CheckReason, timeoutMs: number): Promise<UpdateCandidate | null | { waitingForStable: true }>;
+  selectChannel?(channel: UpdateChannel): Promise<void>;
   relaunch(): Promise<void>;
 }

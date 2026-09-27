@@ -8,6 +8,11 @@ and clearing local app data. Downloaded files stay by default; an unchecked
 opt-in uses the existing exact per-torrent delete path. Failure keeps the
 confirmation available for retry.
 
+Tactical [`230`](../tactical/230-desktop-stable-latest-update-channels.md)
+adds a Stable/Latest selector to desktop About and Updates. It explains check
+cadence and shows when Stable must catch up after a newer Latest installation.
+The control is absent on browser/headless and package-manager surfaces.
+
 Tactical [`216`](../tactical/216-local-support-diagnostics-and-release-baseline.md)
 adds the About support report with an explicit immutable preview, copy/manual
 fallback/download, and no-context issue links. The 320/1440-pixel light/dark

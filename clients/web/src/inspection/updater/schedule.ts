@@ -1,7 +1,8 @@
-import type { CheckReason } from "./types";
+import type { CheckReason, UpdateChannel } from "./types";
 
 export const STARTUP_CHECK_DELAY_MS = 5_000;
 export const PERIODIC_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1_000;
+export const LATEST_CHECK_INTERVAL_MS = 30 * 60 * 1_000;
 
 type TimerHandle = ReturnType<typeof globalThis.setTimeout>;
 
@@ -15,6 +16,7 @@ export interface UpdaterTimers {
 export function scheduleAutomaticChecks(
   check: (reason: Extract<CheckReason, "startup" | "periodic">) => void,
   timers: UpdaterTimers = globalThis,
+  channel: UpdateChannel = "stable",
 ): () => void {
   const startup = timers.setTimeout(
     () => check("startup"),
@@ -22,7 +24,7 @@ export function scheduleAutomaticChecks(
   );
   const periodic = timers.setInterval(
     () => check("periodic"),
-    PERIODIC_CHECK_INTERVAL_MS,
+    channel === "latest" ? LATEST_CHECK_INTERVAL_MS : PERIODIC_CHECK_INTERVAL_MS,
   );
   return () => {
     timers.clearTimeout(startup);

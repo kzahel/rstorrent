@@ -5,17 +5,62 @@ on:
     tags:
       - "desktop-v*"
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      source_sha:
+        required: true
+        type: string
+      release_version:
+        required: true
+        type: string
+      release_tag:
+        required: true
+        type: string
 
 permissions:
   contents: write
+
+concurrency:
+  group: desktop-release-publisher
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
+  release-input:
+    runs-on: ubuntu-24.04
+    outputs:
+      source_sha: ${{ steps.identity.outputs.sourceSha }}
+      version: ${{ steps.identity.outputs.version }}
+      tag: ${{ steps.identity.outputs.tag }}
+      channel: ${{ steps.identity.outputs.channel }}
+      publish: ${{ steps.identity.outputs.publish }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+      - id: identity
+        env:
+          INPUT_SOURCE_SHA: ${{ inputs.source_sha }}
+          INPUT_RELEASE_VERSION: ${{ inputs.release_version }}
+          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
+        run: node scripts/desktop-release-input.mjs
+      - name: Refuse to overwrite a published release
+        if: steps.identity.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.identity.outputs.tag }}
+        run: |
+          if gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft > "$RUNNER_TEMP/draft" 2>/dev/null; then
+            test "$(cat "$RUNNER_TEMP/draft")" = true || { echo "::error::Published releases are immutable"; exit 1; }
+          fi
+
   source-checks:
     name: Release source checks
+    needs: release-input
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -23,6 +68,7 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
+          ref: ${{ needs.release-input.outputs.source_sha }}
 
       - name: Install Node.js 22
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
@@ -53,11 +99,20 @@ jobs:
       - name: Install locked web dependencies
         run: npm ci --prefix clients/web
 
+      - name: Apply verified Latest package identity
+        if: needs.release-input.outputs.channel == 'latest'
+        env:
+          RELEASE_VERSION: ${{ needs.release-input.outputs.version }}
+        run: node scripts/apply-desktop-nightly-version.mjs "$RELEASE_VERSION"
+
+      - name: Verify the locked package identity
+        run: cargo metadata --locked --no-deps --format-version 1 > /dev/null
+
       - name: Validate release configuration and tools
         shell: bash
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/desktop-v* ]]; then
-            node scripts/validate-desktop-release.mjs --tag "$GITHUB_REF_NAME"
+          if [[ "${{ needs.release-input.outputs.publish }}" == true ]]; then
+            node scripts/validate-desktop-release.mjs --tag "${{ needs.release-input.outputs.tag }}"
           else
             node scripts/validate-desktop-release.mjs
           fi
@@ -65,13 +120,16 @@ jobs:
             scripts/validate-desktop-package.test.mjs \
             scripts/validate-desktop-release.test.mjs \
             .github/scripts/validate-desktop-release.test.mjs \
-            .github/scripts/write-release-checksums.test.mjs
+            .github/scripts/write-release-checksums.test.mjs \
+            scripts/nightly-desktop-release.test.mjs \
+            scripts/desktop-release-input.test.mjs \
+            scripts/apply-desktop-nightly-version.test.mjs
 
       - name: Verify dependency review tools
         run: python3 -m unittest discover -s scripts -p test_distribution_review.py
 
       - name: Audit tagged release dependencies
-        if: startsWith(github.ref, 'refs/tags/desktop-v')
+        if: needs.release-input.outputs.publish == 'true'
         shell: bash
         run: |
           cargo install cargo-audit --locked --version 0.22.2
@@ -112,7 +170,7 @@ jobs:
 
   build-desktop:
     name: Signed ${{ matrix.name }} packages
-    needs: source-checks
+    needs: [release-input, source-checks]
     strategy:
       fail-fast: false
       # tauri-action merges each leg into one latest.json in the draft release.
@@ -148,13 +206,14 @@ jobs:
       HAS_MACOS_SIGNING: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 != '' && secrets.MACOS_CERTIFICATE_PASSWORD != '' && secrets.MACOS_KEYCHAIN_PASSWORD != '' }}
       HAS_MACOS_NOTARIZATION: ${{ secrets.ASC_API_KEY_P8_BASE64 != '' && secrets.ASC_API_KEY_ID != '' && secrets.ASC_API_ISSUER_ID != '' }}
       HAS_WINDOWS_SIGNING: ${{ secrets.AZURE_CLIENT_ID != '' && secrets.AZURE_TENANT_ID != '' && secrets.AZURE_CLIENT_SECRET != '' }}
-      RSTORRENT_BUILD_ID: ${{ github.sha }}
+      RSTORRENT_BUILD_ID: ${{ needs.release-input.outputs.source_sha }}
       RSTORRENT_NATIVE_HOST_TARGET: ${{ matrix.rust_target }}
     steps:
       - name: Check out source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
+          ref: ${{ needs.release-input.outputs.source_sha }}
 
       - name: Require release credentials
         shell: bash
@@ -285,13 +344,20 @@ jobs:
       - name: Install locked web dependencies
         run: npm ci --prefix clients/web
 
+      - name: Apply verified Latest package identity
+        if: needs.release-input.outputs.channel == 'latest'
+        env:
+          RELEASE_VERSION: ${{ needs.release-input.outputs.version }}
+        run: node scripts/apply-desktop-nightly-version.mjs "$RELEASE_VERSION"
+
       - name: Extract release notes
         id: changelog
-        if: startsWith(github.ref, 'refs/tags/desktop-v')
+        if: needs.release-input.outputs.publish == 'true'
         shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.release-input.outputs.version }}
         run: |
-          VERSION="${GITHUB_REF_NAME#desktop-v}"
-          NOTES=$(awk "/^## \[$VERSION\]/{found=1; next} /^## \[/{found=0} found" CHANGELOG.md)
+          NOTES=$(awk "/^## \[$RELEASE_VERSION\]/{found=1; next} /^## \[/{found=0} found" CHANGELOG.md)
           {
             echo "notes<<__NOTES__"
             echo "$NOTES"
@@ -311,12 +377,13 @@ jobs:
         with:
           projectPath: clients/desktop
           tauriScript: ../web/node_modules/.bin/tauri
-          tagName: ${{ startsWith(github.ref, 'refs/tags/') && 'desktop-v__VERSION__' || '' }}
+          tagName: ${{ needs.release-input.outputs.publish == 'true' && needs.release-input.outputs.tag || '' }}
+          releaseCommitish: ${{ needs.release-input.outputs.source_sha }}
           releaseName: "RSTorrent Desktop v__VERSION__"
           releaseBody: ${{ steps.changelog.outputs.notes || 'Signed RSTorrent desktop release rehearsal.' }}
           releaseDraft: true
-          prerelease: false
-          includeUpdaterJson: ${{ startsWith(github.ref, 'refs/tags/') }}
+          prerelease: ${{ needs.release-input.outputs.channel == 'latest' }}
+          includeUpdaterJson: ${{ needs.release-input.outputs.publish == 'true' }}
           updaterJsonPreferNsis: true
           updaterJsonKeepUniversal: true
           retryAttempts: ${{ runner.os == 'macOS' && '1' || '0' }}
@@ -471,10 +538,15 @@ jobs:
 
   finalize-release:
     name: Validate and publish tagged release
-    if: always() && startsWith(github.ref, 'refs/tags/desktop-v')
-    needs: [source-checks, build-desktop]
+    if: always() && needs.release-input.result == 'success' && needs.release-input.outputs.publish == 'true'
+    needs: [release-input, source-checks, build-desktop]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      RELEASE_TAG: ${{ needs.release-input.outputs.tag }}
+      RELEASE_VERSION: ${{ needs.release-input.outputs.version }}
+      RELEASE_CHANNEL: ${{ needs.release-input.outputs.channel }}
+      SOURCE_SHA: ${{ needs.release-input.outputs.source_sha }}
     steps:
       - name: Check out source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -484,9 +556,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release edit "$GITHUB_REF_NAME" --draft
-            echo "::error::Required jobs failed; $GITHUB_REF_NAME remains a draft"
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" --draft
+            echo "::error::Required jobs failed; $RELEASE_TAG remains a draft"
           else
             echo "::error::Required jobs failed; no release was created"
           fi
@@ -499,26 +571,26 @@ jobs:
         run: |
           RELEASE_DIR="$RUNNER_TEMP/desktop-release"
           mkdir -p "$RELEASE_DIR"
-          gh release view "$GITHUB_REF_NAME" --json tagName,isDraft,assets > "$RELEASE_DIR/release.json"
-          gh release download "$GITHUB_REF_NAME" --pattern latest.json --dir "$RELEASE_DIR"
+          gh release view "$RELEASE_TAG" --json tagName,isDraft,isPrerelease,assets > "$RELEASE_DIR/release.json"
+          gh release download "$RELEASE_TAG" --pattern latest.json --dir "$RELEASE_DIR"
           node .github/scripts/validate-desktop-release.mjs \
             --release "$RELEASE_DIR/release.json" \
             --latest "$RELEASE_DIR/latest.json" \
-            --tag "$GITHUB_REF_NAME" \
+            --tag "$RELEASE_TAG" \
             --repository "$GITHUB_REPOSITORY"
           node .github/scripts/write-release-checksums.mjs \
             "$RELEASE_DIR/release.json" "$RELEASE_DIR/SHA256SUMS"
-          gh release upload "$GITHUB_REF_NAME" "$RELEASE_DIR/SHA256SUMS" --clobber
+          gh release upload "$RELEASE_TAG" "$RELEASE_DIR/SHA256SUMS" --clobber
 
       - name: Remove redundant detached signatures
         if: needs.source-checks.result == 'success' && needs.build-desktop.result == 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release view "$GITHUB_REF_NAME" --json assets \
+          gh release view "$RELEASE_TAG" --json assets \
             --jq '.assets[].name | select(endswith(".sig"))' |
           while read -r name; do
-            if [ -n "$name" ]; then gh release delete-asset "$GITHUB_REF_NAME" "$name" --yes; fi
+            if [ -n "$name" ]; then gh release delete-asset "$RELEASE_TAG" "$name" --yes; fi
           done
 
       - name: Write release evidence
@@ -527,8 +599,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#desktop-v}"
-          CHANGELOG=$(awk "/^## \[$VERSION\]/{found=1; next} /^## \[/{found=0} found" CHANGELOG.md)
+          if [ "$RELEASE_CHANNEL" = latest ]; then
+            CHANGELOG="Signed Latest build from verified main source."
+          else
+            CHANGELOG=$(awk "/^## \[$RELEASE_VERSION\]/{found=1; next} /^## \[/{found=0} found" CHANGELOG.md)
+          fi
           {
             echo "$CHANGELOG"
             echo
@@ -539,15 +614,20 @@ jobs:
             echo "- Authenticode signatures validated for Windows NSIS and MSI."
             echo "- Linux AppImage, DEB, and RPM packages validated for x86_64 and ARM64."
             echo "- Workflow: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-            echo "- Commit: \`${GITHUB_SHA}\`"
-            echo "- Exact hashes: https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/SHA256SUMS"
+            echo "- Commit: \`${SOURCE_SHA}\`"
+            echo "- Exact hashes: https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/SHA256SUMS"
             echo
             echo "Installed old-to-new testbed evidence is recorded separately and is not implied by CI."
           } > "$RUNNER_TEMP/release-notes.md"
-          gh release edit "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/release-notes.md"
+          gh release edit "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
 
       - name: Publish validated release
         if: needs.source-checks.result == 'success' && needs.build-desktop.result == 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+        run: |
+          if [ "$RELEASE_CHANNEL" = latest ]; then
+            gh release edit "$RELEASE_TAG" --draft=false --prerelease --latest=false
+          else
+            gh release edit "$RELEASE_TAG" --draft=false --prerelease=false --latest
+          fi
