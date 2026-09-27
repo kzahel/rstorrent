@@ -48,10 +48,12 @@ gh run watch RUN_ID --exit-status
 ```
 
 This uses the real updater, Developer ID/App Store Connect, and Azure signing
-credentials. It uploads five private Actions artifacts retained for 14 days;
-it does not create a tag or GitHub Release. Check the job assertions for both
-macOS notarization/stapling and Windows Authenticode validation before using a
-rehearsal package.
+credentials. Five independent package jobs run in parallel and upload private
+Actions artifacts retained for 14 days. One collect job assembles and checks
+the same complete updater manifest used for publication, retaining private
+manifest evidence. A rehearsal creates no tag or GitHub Release. Check the job
+assertions for both macOS notarization/stapling and Windows Authenticode
+validation before using a rehearsal package.
 
 The latest proven rehearsal is GitHub Actions run
 [`32627436936`](https://github.com/kzahel/rstorrent/actions/runs/32627436936)
@@ -90,13 +92,16 @@ both Linux legs passed the AppImage/DEB/RPM matrix.
    git push origin desktop-vX.Y.Z
    ```
 
-The tagged workflow creates a draft while its five serialized build legs add
-assets to one `latest.json`. The finalizer refuses incomplete or unsigned
-assets, validates same-release URLs and all five updater keys, adds
-`SHA256SUMS`, and only then publishes the release. A failed build remains a
-draft. The Stable GitHub release is non-prerelease because the Stable update
-rule excludes prerelease entries; the `0.x` version and release notes carry
-the incubation-beta status.
+The five signed package jobs run in parallel and never write to a GitHub
+Release. Each retains an exact package/signature set with source, run, version,
+and SHA-256 evidence. The sole finalizer checks all five sets, creates the
+15-key `latest.json`, and validates the complete manifest before creating a
+private draft. It uploads those exact assets, checks their GitHub digests,
+validates same-release URLs and signatures, adds `SHA256SUMS`, and only then
+publishes. Failed builds create no release; a failure after draft creation
+leaves it private. The Stable GitHub release is non-prerelease because the
+Stable update rule excludes prerelease entries; the `0.x` version and release
+notes carry the incubation-beta status.
 
 The first published release is
 [`desktop-v0.1.0`](https://github.com/kzahel/rstorrent/releases/tag/desktop-v0.1.0).

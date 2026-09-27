@@ -160,6 +160,7 @@ jobs:
           node --test \
             scripts/validate-desktop-package.test.mjs \
             scripts/validate-desktop-release.test.mjs \
+            .github/scripts/desktop-release-artifacts.test.mjs \
             .github/scripts/validate-desktop-release.test.mjs \
             .github/scripts/write-release-checksums.test.mjs \
             scripts/nightly-desktop-release.test.mjs \

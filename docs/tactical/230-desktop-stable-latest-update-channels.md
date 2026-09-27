@@ -51,6 +51,27 @@ tests.
 - Signing, notarization, Authenticode, five updater targets, checksums, and
   exact release validation remain mandatory for both channels.
 
+## Parallel release follow-through
+
+The first Latest publication exposed a release workflow bottleneck: all five
+package jobs were serialized because `tauri-action` read and rewrote the same
+draft `latest.json`. Change only the release pipeline. After one source gate,
+run the five signed platform jobs independently with no GitHub Release write.
+Each job checks its native packages and stages an exact, flat package/signature
+set with version, source SHA, run identity, and SHA-256 digests. A sole
+finalizer collects the five private CI artifacts, rejects missing, duplicate,
+stale, or mismatched legs, assembles the 15-key updater manifest, validates the
+complete release locally, and only then creates a private draft. For publishing,
+it uploads the exact assembled set, compares GitHub digests to local bytes,
+revalidates the draft, writes checksums, and publishes. Any failure leaves no
+public release. Manual rehearsal runs the same collect/validation path without
+creating a tag or GitHub Release.
+
+Stopping condition for this follow-through: deterministic negative tests and
+workflow lint pass, followed by one hosted credentialed rehearsal proving five
+overlapping package jobs and successful collect/validation without publication.
+Installed cross-channel acceptance remains separate.
+
 ## Ownership and evidence
 
 The desktop native adapter owns the persisted choice, endpoint selection, and

@@ -66,16 +66,29 @@ export function validateDesktopRelease({ release, latest, tag, repository }) {
   if (!latest.platforms || typeof latest.platforms !== "object") {
     fail("latest.json platforms are missing");
   }
-  const requiredPlatforms = [
-    "darwin-aarch64",
-    "darwin-x86_64",
-    "linux-aarch64",
-    "linux-x86_64",
-    "windows-x86_64",
-  ];
+  const requiredPlatforms = {
+    "darwin-aarch64": ".app.tar.gz",
+    "darwin-aarch64-app": ".app.tar.gz",
+    "darwin-x86_64": ".app.tar.gz",
+    "darwin-x86_64-app": ".app.tar.gz",
+    "linux-aarch64": ".AppImage",
+    "linux-aarch64-appimage": ".AppImage",
+    "linux-aarch64-deb": ".deb",
+    "linux-aarch64-rpm": ".rpm",
+    "linux-x86_64": ".AppImage",
+    "linux-x86_64-appimage": ".AppImage",
+    "linux-x86_64-deb": ".deb",
+    "linux-x86_64-rpm": ".rpm",
+    "windows-x86_64": "-setup.exe",
+    "windows-x86_64-nsis": "-setup.exe",
+    "windows-x86_64-msi": ".msi",
+  };
+  if (JSON.stringify(Object.keys(latest.platforms).sort()) !== JSON.stringify(Object.keys(requiredPlatforms).sort())) {
+    fail("latest.json must contain exactly the 15 desktop updater keys");
+  }
   const expectedUrlPrefix =
     `https://github.com/${repository}/releases/download/${tag}/`;
-  for (const platform of requiredPlatforms) {
+  for (const [platform, expectedSuffix] of Object.entries(requiredPlatforms)) {
     const metadata = latest.platforms[platform];
     if (!metadata) fail(`latest.json is missing platform ${platform}`);
     if (typeof metadata.signature !== "string" || metadata.signature.length < 32) {
@@ -90,16 +103,22 @@ export function validateDesktopRelease({ release, latest, tag, repository }) {
     const assetName = decodeURIComponent(metadata.url.slice(expectedUrlPrefix.length));
     requireAsset(assetNames, assetName);
     requireAsset(assetNames, `${assetName}.sig`);
-    const expectedSuffix = platform.startsWith("darwin-")
-      ? ".app.tar.gz"
-      : platform.startsWith("linux-")
-        ? ".AppImage"
-        : "-setup.exe";
     if (!assetName.endsWith(expectedSuffix)) {
       fail(`updater for ${platform} must use ${expectedSuffix}: ${assetName}`);
     }
   }
-  return { version, platforms: requiredPlatforms };
+  for (const [defaultKey, packageKey] of [
+    ["darwin-aarch64", "darwin-aarch64-app"],
+    ["darwin-x86_64", "darwin-x86_64-app"],
+    ["linux-aarch64", "linux-aarch64-appimage"],
+    ["linux-x86_64", "linux-x86_64-appimage"],
+    ["windows-x86_64", "windows-x86_64-nsis"],
+  ]) {
+    if (JSON.stringify(latest.platforms[defaultKey]) !== JSON.stringify(latest.platforms[packageKey])) {
+      fail(`default and package-specific updater entries disagree: ${defaultKey}`);
+    }
+  }
+  return { version, platforms: Object.keys(requiredPlatforms) };
 }
 
 function readJson(filePath) {
