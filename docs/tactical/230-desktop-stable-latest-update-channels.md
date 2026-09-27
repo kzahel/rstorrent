@@ -1,7 +1,7 @@
 # Tactical 230: Desktop Stable and Latest Update Channels
 
-Status: Active. Source and production channel registry are deployed; signed
-Latest publication and installed acceptance remain open.
+Status: Active. Source, production channel registry, and the first signed
+Latest release are deployed; installed acceptance remains open.
 
 Topics: `beta-release-readiness`, `client-surfaces`, `product-state-and-feedback`,
 `product-surfaces-and-migration`, `web-ui-design`.
@@ -64,8 +64,10 @@ authorized publication.
 
 ## Stopping condition
 
-Source behavior and local gates pass; the release and server changes are
-reviewable with explicit pending hosted and installed acceptance evidence.
+Source behavior and local gates pass; the production registry, first signed
+Latest release, and all five update routes are proven. Installed
+Stable-to-Latest selection, replacement/relaunch, and return-to-Stable without
+downgrade remain the final acceptance gate.
 
 ## Source evidence and remaining gates
 
@@ -90,8 +92,17 @@ reviewable with explicit pending hosted and installed acceptance evidence.
 - On 2026-09-27, commit `1b13a550` was pushed and fast-forwarded into Remy's
   clean RSTorrent checkout. The product-owned descriptor remains symlinked from
   `simple-app-update-server/products.d`; the service was restarted and active.
-  Public `/rstorrent/channels` now returns Stable and Latest (HTTP 200), while
-  `/rstorrent/version?channel=stable` still returns `0.1.4` with channel
-  confirmation. Latest currently returns HTTP 500 because no published
-  `desktop-latest-v*` release exists. Signed Latest publication, its updater
-  response, and installed cross-channel acceptance remain open.
+  Public `/rstorrent/channels` returns Stable and Latest (HTTP 200).
+- The first two signed publication attempts remained private after release
+  workflow failures. The corrected source commit `30523da4` passed main CI
+  [`36329145890`](https://github.com/kzahel/rstorrent/actions/runs/36329145890).
+  Nightly run
+  [`36331465234`](https://github.com/kzahel/rstorrent/actions/runs/36331465234)
+  passed its source gate, five signed package jobs, and sole finalizer. It
+  published prerelease `desktop-latest-v0.2.301` from that exact commit.
+- Independent public release and production route checks found all 15 updater
+  platform keys, 13 checksummed assets, HTTP 200 Latest `0.2.301` metadata on
+  all five Tauri targets, HTTP 204 for current `0.2.301`, and continued Stable
+  `0.1.4` behavior with and without a channel query. See
+  [`desktop-latest-v0.2.301`](../evidence/desktop-latest-v0.2.301.md).
+  Installed cross-channel acceptance remains open.

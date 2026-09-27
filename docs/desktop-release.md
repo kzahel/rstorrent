@@ -29,12 +29,13 @@ package managers. The update service must deploy the channel registry from
 checks can succeed. The native client discovers the registry and verifies the
 selected channel in the response, while old clients continue to use Stable.
 Remy's registry was deployed on 2026-09-27 and publicly advertises both
-channels. Latest version checks return HTTP 500 until the first signed Latest
-release is published.
+channels. The first signed Latest release, `desktop-latest-v0.2.301`, is
+published and production Latest version checks return `0.2.301`.
 
-The first Latest release still requires signed hosted evidence and installed
-old-to-new acceptance. Source checks do not establish that production route or
-installed-package behavior.
+The [first Latest release evidence](evidence/desktop-latest-v0.2.301.md)
+records the signed hosted workflow and all five production routes. Installed
+old-to-new acceptance remains open; hosted checks do not establish installed
+package behavior.
 
 ## Rehearse Without Publishing
 

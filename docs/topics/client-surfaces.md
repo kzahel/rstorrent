@@ -12,8 +12,9 @@ the host profile.
 Tactical [`230`](../tactical/230-desktop-stable-latest-update-channels.md)
 adds desktop Stable/Latest source wiring. The native desktop client owns the
 saved selection and signed candidate; shared React exposes the choice only
-for app, NSIS, and AppImage installations. Hosted release and installed
-channel evidence remain open. Android, iOS, headless, and Crostini retain
+for app, NSIS, and AppImage installations. The signed five-target Latest
+release and production update routes pass; installed cross-channel evidence
+remains open. Android, iOS, headless, and Crostini retain
 their existing distribution policies.
 
 Completed local Tactical
