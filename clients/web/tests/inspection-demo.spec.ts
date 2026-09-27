@@ -1736,6 +1736,33 @@ test("phone navigation opens a full detail surface", async ({ page }) => {
   await expect(library).toBeVisible();
 });
 
+test("Workbench detail has a return path at the layout breakpoint", async ({ page }) => {
+  await page.setViewportSize({ width: 760, height: 844 });
+  await openScenario(page, "healthy-download", 42_000);
+  const library = page.getByRole("grid", { name: "Torrent library" });
+  const backButton = page.getByRole("button", { name: "Torrents", exact: true });
+
+  for (const width of [700, 701, 730, 760]) {
+    await page.setViewportSize({ width, height: 844 });
+    await expect(library).toBeVisible();
+    await library.getByRole("row").filter({ hasText: "Big Buck Bunny" }).click();
+    await expect(library).toBeHidden();
+    await expect(backButton).toBeVisible();
+
+    if (width === 760) {
+      await page.setViewportSize({ width: 761, height: 844 });
+      await expect(library).toBeVisible();
+      await expect(backButton).toBeHidden();
+      await page.setViewportSize({ width: 760, height: 844 });
+      await expect(library).toBeHidden();
+      await expect(backButton).toBeVisible();
+    }
+
+    await backButton.click();
+    await expect(library).toBeVisible();
+  }
+});
+
 test("large collections retain a bounded virtual DOM", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.addInitScript(() => {

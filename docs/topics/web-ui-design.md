@@ -465,6 +465,9 @@ torrent list and detail inspector may stop sharing the viewport. At phone
 widths, selecting a torrent navigates to a full-size detail view with a clear
 back action. Returning to the list preserves useful context such as category,
 filter, sort, selection, and scroll position.
+Tactical [`224`](../tactical/224-workbench-detail-back-breakpoint.md) aligns
+that back control with the 760 px width where Workbench hides the list, so
+the 701–760 px range retains the return path.
 
 The same torrent and detail components should serve docked and focused modes.
 Navigation state must remain understandable and restorable rather than being

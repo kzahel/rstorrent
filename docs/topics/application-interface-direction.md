@@ -215,6 +215,9 @@ collapse to recognizable icons, the sidebar may become a horizontal filter row
 or drawer, and Workbench may stack the torrent table above its detail surface.
 The destination model remains the same rather than becoming a separate mobile
 web application.
+Tactical [`224`](../tactical/224-workbench-detail-back-breakpoint.md) keeps
+the return-to-list control available at every width where Workbench detail
+replaces the torrent list.
 
 This direction applies to the shared desktop/browser presentation. It does not
 require the Android Compose client to adopt the same primary navigation,
