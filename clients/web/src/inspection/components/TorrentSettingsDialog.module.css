@@ -1,0 +1,121 @@
+.backdrop {
+  position: fixed;
+  z-index: 100;
+  display: grid;
+  inset: 0;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(9 20 33 / 52%);
+}
+
+.dialog {
+  display: grid;
+  gap: var(--ui-space-md);
+  width: min(32rem, 100%);
+  max-height: min(42rem, calc(100vh - 2rem));
+  overflow: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.65rem;
+  padding: var(--ui-space-lg);
+  color: var(--text-primary);
+  background: var(--surface-primary);
+  box-shadow: 0 1.2rem 3rem rgb(8 20 34 / 35%);
+}
+
+.dialog h2,
+.dialog h3,
+.dialog p {
+  margin: 0;
+}
+
+.dialog h2 {
+  font-size: var(--ui-font-heading);
+}
+
+.dialog h3 {
+  font-size: var(--ui-font-body);
+}
+
+.dialog p {
+  color: var(--text-secondary);
+  font-size: var(--ui-font-small);
+  line-height: 1.45;
+}
+
+.dialog .torrentName {
+  color: var(--text-primary);
+  font-weight: 650;
+}
+
+.rateLimitField {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.35rem;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+}
+
+.rateLimitField legend {
+  padding: 0;
+  font-weight: 650;
+}
+
+.rateLimitField input[type="number"] {
+  min-width: 0;
+  width: 100%;
+}
+
+.rateLimitField label:first-of-type {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.rateLimitField label[for] {
+  color: var(--text-secondary);
+  font-size: var(--ui-font-small);
+}
+
+.rateLimitField small {
+  color: var(--danger);
+}
+
+.rateLimitActions {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-md);
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.rateLimitActions output {
+  flex-basis: 100%;
+  order: -1;
+}
+
+.rateLimitActions button {
+  min-height: var(--ui-control-height);
+  border: 1px solid var(--border-strong);
+  border-radius: 0.4rem;
+  padding: 0 0.75rem;
+  color: var(--text-primary);
+  background: var(--surface-secondary);
+  font: inherit;
+  font-size: var(--ui-font-small);
+  font-weight: 650;
+}
+
+.rateLimitActions button[type="submit"] {
+  border-color: var(--accent);
+  color: #fff;
+  background: var(--accent);
+}
+
+.rateLimitActions button:disabled {
+  opacity: 0.55;
+}
+
+.rateLimitActions button:focus-visible {
+  outline: 2px solid var(--focus);
+}

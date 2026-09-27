@@ -16,7 +16,10 @@ import {
 } from "../context";
 import { useDesktopExternalIntake } from "../desktop-external-intake-context";
 import type { DownloadRoot } from "../model";
-import type { TestTorrentShortcut } from "../testTorrents";
+import {
+  WEBTORRENT_TEST_TORRENTS,
+  type TestTorrentShortcut,
+} from "../testTorrents";
 import {
   readTorrentFile,
   torrentFileSizeError,
@@ -45,7 +48,12 @@ interface PendingExternalAdd {
   readonly activation: DesktopExternalActivation;
 }
 
-type PendingAdd = PendingMagnetAdd | PendingTorrentFileAdd | PendingExternalAdd;
+interface PendingTestTorrentBatchAdd {
+  readonly type: "test_torrent_batch";
+}
+
+type SinglePendingAdd = PendingMagnetAdd | PendingTorrentFileAdd | PendingExternalAdd;
+type PendingAdd = SinglePendingAdd | PendingTestTorrentBatchAdd;
 
 interface TorrentActionsProps {
   readonly showCrostiniStorageHelp: boolean;
@@ -88,9 +96,11 @@ export function TorrentActions({
   const {
     status,
     pendingAction,
+    sampleBatchRunning,
     selectedTargetIds,
     actionsFor,
     setStatus,
+    runSampleBatch,
     runAction,
   } = useTorrentActions();
   const [torrentInput, setTorrentInput] = useState("");
@@ -111,7 +121,7 @@ export function TorrentActions({
   );
 
   const beginAdd = async (source: string, clearInputOnSuccess: boolean) => {
-    if (addingRef.current) return false;
+    if (addingRef.current || sampleBatchRunning) return false;
     const validated = validateTorrentInput(source);
     if (!validated.accepted) {
       setInputInvalid(true);
@@ -147,12 +157,12 @@ export function TorrentActions({
   };
 
   const addToRoot = async (
-    source: PendingAdd,
+    source: SinglePendingAdd,
     storageRoot: string,
     startContent = true,
     awaitFileSelection = false,
   ) => {
-    if (addingRef.current) return false;
+    if (addingRef.current || sampleBatchRunning) return false;
     addingRef.current = true;
     setAdding(true);
     try {
@@ -178,7 +188,7 @@ export function TorrentActions({
   };
 
   const executePendingAdd = async (
-    source: PendingAdd,
+    source: SinglePendingAdd,
     storageRoot: string,
     startContent: boolean,
     awaitFileSelection: boolean,
@@ -217,7 +227,7 @@ export function TorrentActions({
 
   const addTorrent = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (addingRef.current) return;
+    if (addingRef.current || sampleBatchRunning) return;
     if (torrentInput.trim().length === 0) {
       fileInputRef.current?.click();
       return;
@@ -226,7 +236,7 @@ export function TorrentActions({
   };
 
   const selectTorrentFile = (file: File) => {
-    if (addingRef.current) return;
+    if (addingRef.current || sampleBatchRunning) return;
     const sizeError = torrentFileSizeError(file.size);
     if (sizeError !== null) {
       setStatus(sizeError);
@@ -257,6 +267,32 @@ export function TorrentActions({
     await beginAdd(torrent.magnet, false);
   };
 
+  const addAllTestTorrents = async () => {
+    if (addingRef.current || sampleBatchRunning || pendingAdd !== null) return;
+    const defaultRoot = storage.roots.find(
+      (root) =>
+        root.id === storage.defaultRoot && root.availability === "available",
+    );
+    if ((!oneCurrentRoot && storage.showAddOptions) || defaultRoot === undefined) {
+      setPendingAdd({ type: "test_torrent_batch" });
+      return;
+    }
+    addingRef.current = true;
+    setAdding(true);
+    try {
+      await runSampleBatch(
+        defaultRoot.id,
+        true,
+        storage.showFileSelection === true,
+      );
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      addingRef.current = false;
+      setAdding(false);
+    }
+  };
+
   const chooseFolder = async (
     repairRoot?: string,
   ): Promise<DownloadRoot | null> => {
@@ -278,6 +314,27 @@ export function TorrentActions({
     setAdding(true);
     try {
       const fileSelectionEnabled = storage.showFileSelection === true;
+      if (pendingAdd.type === "test_torrent_batch") {
+        let message = await runSampleBatch(
+          rootId,
+          fileSelectionEnabled ? true : startContent,
+          fileSelectionEnabled,
+        );
+        if (dontShowAgain) {
+          try {
+            const preference = await execute({
+              type: "set_show_add_options",
+              show: false,
+            });
+            message = `${message} ${preference.message}`;
+          } catch (error) {
+            message = `${message}; ${error instanceof Error ? error.message : String(error)}`;
+          }
+        }
+        setPendingAdd(null);
+        setStatus(message);
+        return;
+      }
       const result = await executePendingAdd(
         pendingAdd,
         rootId,
@@ -357,7 +414,7 @@ export function TorrentActions({
   }, [externalIntake, externalSnapshot, setStatus]);
 
   useEffect(() => {
-    if (externalIntake === null || demo !== null) return;
+    if (externalIntake === null || demo !== null || sampleBatchRunning) return;
     if (pendingAdd?.type === "external") {
       const stillPending = externalSnapshot.pending.some(
         ({ id }) => id === pendingAdd.activation.id,
@@ -405,6 +462,7 @@ export function TorrentActions({
     storage.roots,
     storage.showAddOptions,
     storage.showFileSelection,
+    sampleBatchRunning,
   ]);
 
   useEffect(() => {
@@ -455,9 +513,9 @@ export function TorrentActions({
             <button
               className={styles.addButton}
               type="submit"
-              disabled={adding}
+              disabled={adding || sampleBatchRunning}
             >
-              {adding ? localizedMessage("inspection.components.torrent.actions.adding") : localizedMessage("inspection.components.torrent.actions.add")}
+              {adding || sampleBatchRunning ? localizedMessage("inspection.components.torrent.actions.adding") : localizedMessage("inspection.components.torrent.actions.add")}
             </button>
           </form>
         ) : (
@@ -483,7 +541,7 @@ export function TorrentActions({
             <button
               key={action.id}
               type="button"
-              disabled={adding || action.disabled}
+              disabled={adding || sampleBatchRunning || action.disabled}
               title={action.disabledReason}
               onClick={() => void runAction(action.id)}
             >
@@ -492,12 +550,16 @@ export function TorrentActions({
           ))}
         {demo === null || selectedTargetIds.length > 0 ? (
           <MoreActionsMenu
-            disabled={adding}
+            disabled={adding || sampleBatchRunning}
             actions={overflowActions}
             showTestTorrents={demo === null}
             addTestDisabled={pendingAction !== null}
-            onAction={(actionId) => void runAction(actionId)}
+            onAction={(actionId, trigger) => void runAction(actionId, undefined, {
+              type: "toolbar",
+              element: trigger,
+            })}
             onAddTestTorrent={addTestTorrent}
+            onAddAllTestTorrents={addAllTestTorrents}
           />
         ) : null}
         {directActions
@@ -507,7 +569,7 @@ export function TorrentActions({
               key={action.id}
               ref={removeButtonRef}
               type="button"
-              disabled={adding || action.disabled}
+              disabled={adding || sampleBatchRunning || action.disabled}
               title={action.disabledReason}
               onClick={() =>
                 void runAction(action.id, undefined, {
@@ -534,6 +596,9 @@ export function TorrentActions({
               ? pendingAdd.activation.kind
               : undefined
           }
+          {...(pendingAdd.type === "test_torrent_batch"
+            ? { batchCount: WEBTORRENT_TEST_TORRENTS.length }
+            : {})}
           showCrostiniStorageHelp={showCrostiniStorageHelp}
           fileSelectionEnabled={storage.showFileSelection === true}
           onChooseFolder={chooseFolder}

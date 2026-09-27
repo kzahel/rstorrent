@@ -273,16 +273,18 @@ test("torrent and file rows expose exact accessible context actions", async ({
   await sintelRow.click({ button: "right", position: { x: 300, y: 18 } });
   let menu = page.getByRole("menu", { name: "Torrent actions" });
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole("menuitem")).toHaveCount(9);
+  await expect(menu.getByRole("menuitem")).toHaveCount(10);
+  await expect(menu.getByRole("menuitem", { name: "Torrent settings" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Move to top" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Move to bottom" })).toBeVisible();
   await expect(
     menu.getByRole("menuitem", { name: "Copy magnet link" }),
   ).toBeVisible();
-  await expect(menu.getByRole("group", { name: "Transfer" })).toBeVisible();
-  await expect(menu.getByRole("group", { name: "Sharing" })).toBeVisible();
-  await expect(menu.getByRole("group", { name: "Organization" })).toBeVisible();
-  await expect(menu.getByRole("group", { name: "Destructive" })).toBeVisible();
+  await expect(menu.getByRole("separator")).toHaveCount(3);
+  for (const heading of ["Transfer", "Sharing", "Organization", "Destructive"]) {
+    await expect(menu.getByText(heading, { exact: true })).toHaveCount(0);
+  }
+  await capture(page, "rstorrent-torrent-context-dividers.png");
   await page.keyboard.press("Escape");
   await expect(
     transferGrid.getByRole("checkbox", {
@@ -362,6 +364,9 @@ test("torrent and file rows expose exact accessible context actions", async ({
     fileMenu.getByRole("menuitem", { name: "Normal" }),
   ).toBeDisabled();
   await expect(fileMenu.getByRole("menuitem", { name: "Skip" })).toBeDisabled();
+  await expect(fileMenu.getByRole("separator")).toHaveCount(1);
+  await expect(fileMenu.getByText("Priority", { exact: true })).toHaveCount(0);
+  await capture(page, "rstorrent-file-context-dividers.png");
   expect(await files.getByRole("row").count()).toBeLessThanOrEqual(100);
   const fileViolations = (
     await new AxeBuilder({ page }).include('[role="menu"]').analyze()
@@ -904,24 +909,31 @@ test("seeding priority settings stay truthful across responsive layouts", async 
   await capture(page, "rstorrent-seeding-settings-phone.png");
 });
 
-test("peer transfer limits stay operable across responsive layouts", async ({
+test("torrent settings dialog stays operable across responsive layouts", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openScenario(page, "healthy-download", 42_000, true);
   await page.getByRole("tab", { name: "General" }).click();
-
   const details = page.getByRole("region", { name: "Torrent details" });
-  const uploadUnlimited = details.getByRole("checkbox", {
+  await expect(details.getByRole("spinbutton", {
+    name: "Torrent upload limit in KiB per second",
+  })).toHaveCount(0);
+  const more = page.getByRole("button", { name: /^More/ });
+  await more.click();
+  await page.getByRole("menuitem", { name: "Torrent settings" }).click();
+  const dialog = page.getByRole("dialog", { name: "Torrent settings" });
+  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+  const uploadUnlimited = dialog.getByRole("checkbox", {
     name: "Torrent upload limit unlimited",
   });
-  const upload = details.getByRole("spinbutton", {
+  const upload = dialog.getByRole("spinbutton", {
     name: "Torrent upload limit in KiB per second",
   });
-  const downloadUnlimited = details.getByRole("checkbox", {
+  const downloadUnlimited = dialog.getByRole("checkbox", {
     name: "Torrent download limit unlimited",
   });
-  const download = details.getByRole("spinbutton", {
+  const download = dialog.getByRole("spinbutton", {
     name: "Torrent download limit in KiB per second",
   });
 
@@ -934,31 +946,44 @@ test("peer transfer limits stay operable across responsive layouts", async ({
   await page.waitForTimeout(1_250);
   await expect(downloadUnlimited).not.toBeChecked();
   await expect(download).toHaveValue("160");
-  await details.getByRole("button", { name: "Save torrent limits" }).click();
+  await dialog.getByRole("button", { name: "Save torrent limits" }).click();
   await expect(
-    details.getByText("Torrent peer transfer limits saved."),
+    dialog.getByText("Torrent peer transfer limits saved."),
   ).toBeVisible();
 
   await page.setViewportSize({ width: 920, height: 720 });
-  await expect(details.getByText("Only this torrent")).toBeVisible();
+  await expect(dialog).toBeVisible();
   await expect(upload).toHaveValue("48");
   await expect(download).toHaveValue("160");
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page
-    .getByRole("grid", { name: "Torrent library" })
-    .getByRole("row")
-    .filter({ hasText: "Big Buck Bunny" })
-    .click();
-  await expect(
-    page.getByRole("button", { name: "Torrents", exact: true }),
-  ).toBeVisible();
+  await expect(dialog).toBeVisible();
   await uploadUnlimited.focus();
   await page.keyboard.press("Space");
   await expect(upload).toBeDisabled();
   await page.keyboard.press("Space");
   await expect(upload).toBeEnabled();
   await expect(upload).toHaveValue("48");
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(more).toBeFocused();
+  const torrentRow = page.getByRole("grid", { name: "Torrent library" })
+    .getByRole("row")
+    .filter({ hasText: "Big Buck Bunny" });
+  await torrentRow.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Torrent settings" }).click();
+  await expect(dialog).toBeVisible();
+  const dialogViolations = (
+    await new AxeBuilder({ page }).analyze()
+  ).violations.filter(
+    (violation) =>
+      violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(dialogViolations).toEqual([]);
+  await capture(page, "rstorrent-torrent-settings-phone.png");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(torrentRow).toBeFocused();
 
   const violations = (
     await new AxeBuilder({ page }).analyze()
@@ -967,7 +992,6 @@ test("peer transfer limits stay operable across responsive layouts", async ({
       violation.impact === "serious" || violation.impact === "critical",
   );
   expect(violations).toEqual([]);
-  await capture(page, "rstorrent-transfer-limits-phone.png");
 });
 
 test("global settings draft survives complete autoplay publications", async ({

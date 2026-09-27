@@ -1,18 +1,12 @@
-import { TORRENT_ACTION_GROUPS, type TorrentActionGroup, type TorrentActionId } from "../torrent-actions";
+import { Fragment } from "react";
+
+import { TORRENT_ACTION_GROUPS, type TorrentActionId } from "../torrent-actions";
 import { Icon } from "./Icon";
 import type { ResolvedTorrentAction } from "./TorrentActionContext";
 import {
   ActionMenuItem,
-  ActionMenuSection,
   ActionMenuSeparator,
 } from "./overlays/AnchoredOverlay";
-
-const GROUP_LABELS: Readonly<Record<TorrentActionGroup, string>> = {
-  transfer: "Transfer",
-  sharing: "Sharing",
-  organization: "Organization",
-  destructive: "Destructive",
-};
 
 export function TorrentActionMenuItems({
   actions,
@@ -27,7 +21,7 @@ export function TorrentActionMenuItems({
   })).filter(({ actions: groupActions }) => groupActions.length > 0);
 
   return groups.map(({ group, actions: groupActions }, index) => (
-    <ActionMenuSection key={group} label={GROUP_LABELS[group]}>
+    <Fragment key={group}>
       {index === 0 ? null : <ActionMenuSeparator />}
       {groupActions.map((action) => (
         <ActionMenuItem
@@ -40,6 +34,6 @@ export function TorrentActionMenuItems({
           <span>{action.resolvedLabel}</span>
         </ActionMenuItem>
       ))}
-    </ActionMenuSection>
+    </Fragment>
   ));
 }

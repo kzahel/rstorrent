@@ -24,6 +24,7 @@ describe("torrent selection actions", () => {
       ["transfer", "move_to_top"],
       ["transfer", "move_to_bottom"],
       ["sharing", "copy_magnet"],
+      ["organization", "settings"],
       ["organization", "archive"],
       ["organization", "restore"],
       ["destructive", "remove"],
@@ -74,6 +75,20 @@ describe("torrent selection actions", () => {
     expect(torrentActionAvailability("copy_magnet", targets).disabled).toBe(false);
     expect(torrentActionAvailability("pause", targets).disabled).toBe(true);
     expect(torrentActionAvailability("remove", targets).disabled).toBe(true);
+  });
+
+  it("opens settings for one torrent only", () => {
+    expect(torrentActionAvailability("settings", [])).toEqual({
+      disabled: true,
+      reason: "Select a torrent to use this action.",
+    });
+    expect(torrentActionAvailability("settings", [row("a")])).toEqual({
+      disabled: false,
+    });
+    expect(torrentActionAvailability("settings", [row("a"), row("b")])).toEqual({
+      disabled: true,
+      reason: "Select one torrent to edit its settings.",
+    });
   });
 });
 

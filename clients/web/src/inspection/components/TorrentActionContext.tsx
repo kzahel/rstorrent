@@ -16,6 +16,7 @@ import {
   useInspectionStore,
 } from "../context";
 import type { InspectionCommand, TorrentRow } from "../model";
+import { WEBTORRENT_TEST_TORRENTS } from "../testTorrents";
 import {
   TORRENT_ACTIONS,
   orderedSelectedTorrentRows,
@@ -24,6 +25,7 @@ import {
   type TorrentActionId,
 } from "../torrent-actions";
 import { RemoveTorrentDialog } from "./RemoveTorrentDialog";
+import { TorrentSettingsDialog } from "./TorrentSettingsDialog";
 
 const MAX_FAILURE_DETAILS = 5;
 
@@ -46,12 +48,22 @@ interface RemoveRequest {
   readonly origin: TorrentActionOrigin;
 }
 
+interface SettingsRequest {
+  readonly torrentId: string;
+}
+
 interface TorrentActionContextValue {
   readonly status: string;
   readonly pendingAction: TorrentActionId | null;
+  readonly sampleBatchRunning: boolean;
   readonly selectedTargetIds: readonly string[];
   readonly actionsFor: (targetIds?: readonly string[]) => readonly ResolvedTorrentAction[];
   readonly setStatus: (status: string) => void;
+  readonly runSampleBatch: (
+    storageRoot: string,
+    startContent: boolean,
+    awaitFileSelection: boolean,
+  ) => Promise<string>;
   readonly runAction: (
     actionId: TorrentActionId,
     targetIds?: readonly string[],
@@ -71,16 +83,30 @@ export function TorrentActionProvider({ children }: { readonly children: ReactNo
   );
   const dispatch = useInspectionDispatch();
   const execute = useInspectionCommand();
+  const revealTorrent = useInspectionStore((state) => state.revealTorrent);
   const [status, setStatusState] = useState("");
+  const [sampleBatchRunning, setSampleBatchRunning] = useState(false);
+  const sampleBatchRef = useRef(false);
   const [pendingAction, setPendingAction] = useState<TorrentActionId | null>(
     null,
   );
   const [removeRequest, setRemoveRequest] = useState<RemoveRequest | null>(null);
+  const [settingsRequest, setSettingsRequest] = useState<SettingsRequest | null>(null);
   const removeOriginRef = useRef<TorrentActionOrigin>({
     type: "toolbar",
     element: null,
   });
+  const settingsOriginRef = useRef<TorrentActionOrigin>({
+    type: "toolbar",
+    element: null,
+  });
   const mountedRef = useRef(true);
+
+  useEffect(() => {
+    if (settingsRequest !== null && torrents[settingsRequest.torrentId] === undefined) {
+      setSettingsRequest(null);
+    }
+  }, [settingsRequest, torrents]);
 
   useEffect(
     () => () => {
@@ -104,7 +130,7 @@ export function TorrentActionProvider({ children }: { readonly children: ReactNo
       const targets = targetRows(requestedIds);
       return TORRENT_ACTIONS.map((action): ResolvedTorrentAction => {
         const availability = torrentActionAvailability(action.id, targets);
-        const busy = pendingAction !== null;
+        const busy = pendingAction !== null || sampleBatchRunning;
         return {
           ...action,
           resolvedLabel: action.label(targets.length),
@@ -117,12 +143,66 @@ export function TorrentActionProvider({ children }: { readonly children: ReactNo
         };
       });
     },
-    [pendingAction, selectedTargetIds, targetRows],
+    [pendingAction, sampleBatchRunning, selectedTargetIds, targetRows],
   );
+
+  const runSampleBatch = useCallback(async (
+    storageRoot: string,
+    startContent: boolean,
+    awaitFileSelection: boolean,
+  ) => {
+    if (sampleBatchRef.current || pendingAction !== null) {
+      throw new Error("Another torrent action is still in progress");
+    }
+    sampleBatchRef.current = true;
+    setSampleBatchRunning(true);
+    let added = 0;
+    let alreadyPresent = 0;
+    const failures: string[] = [];
+    try {
+      for (const [index, torrent] of WEBTORRENT_TEST_TORRENTS.entries()) {
+        if (!mountedRef.current) break;
+        setStatusState(localizedMessage("inspection.components.torrent.actions.adding.sample.torrents", {
+          current: index + 1,
+          total: WEBTORRENT_TEST_TORRENTS.length,
+        }));
+        try {
+          const result = await execute({
+            type: "add_magnet",
+            magnet: torrent.magnet,
+            storageRoot,
+            startContent,
+            ...(awaitFileSelection ? { awaitFileSelection: true } : {}),
+          });
+          if (mountedRef.current && result.torrentId !== undefined) {
+            revealTorrent(result.torrentId);
+          }
+          if (result.addDisposition?.type === "already_present") alreadyPresent += 1;
+          else added += 1;
+        } catch (error) {
+          const detail = errorText(error);
+          failures.push(`${torrent.menuLabel}: ${detail.slice(0, 160)}`);
+        }
+      }
+      const summary = localizedMessage("inspection.components.torrent.actions.sample.torrents.result", {
+        added,
+        alreadyPresent,
+        failed: failures.length,
+      });
+      const message = failures.length === 0
+        ? summary
+        : `${summary} ${failures.join("; ")}`;
+      if (mountedRef.current) setStatusState(message);
+      return message;
+    } finally {
+      sampleBatchRef.current = false;
+      if (mountedRef.current) setSampleBatchRunning(false);
+    }
+  }, [execute, pendingAction, revealTorrent]);
 
   const runSequential = useCallback(
     async (
-      actionId: Exclude<TorrentActionId, "copy_magnet" | "remove">,
+      actionId: Exclude<TorrentActionId, "copy_magnet" | "remove" | "settings">,
       targets: readonly TorrentRow[],
     ) => {
       setPendingAction(actionId);
@@ -237,7 +317,7 @@ export function TorrentActionProvider({ children }: { readonly children: ReactNo
         return;
       }
       const availability = torrentActionAvailability(actionId, targets);
-      if (pendingAction !== null) {
+      if (pendingAction !== null || sampleBatchRef.current) {
         setStatus(localizedMessage("inspection.components.torrent.action.context.another.torrent.action.is.still.in.progress"));
         return;
       }
@@ -247,6 +327,9 @@ export function TorrentActionProvider({ children }: { readonly children: ReactNo
       }
       if (actionId === "copy_magnet") {
         await copyMagnets(targets);
+      } else if (actionId === "settings") {
+        settingsOriginRef.current = origin;
+        setSettingsRequest({ torrentId: targets[0]!.id });
       } else if (actionId === "remove") {
         removeOriginRef.current = origin;
         setRemoveRequest({ targets, origin });
@@ -318,16 +401,23 @@ export function TorrentActionProvider({ children }: { readonly children: ReactNo
     () => ({
       status,
       pendingAction,
+      sampleBatchRunning,
       selectedTargetIds,
       actionsFor,
       setStatus,
+      runSampleBatch,
       runAction,
     }),
-    [actionsFor, pendingAction, runAction, selectedTargetIds, setStatus, status],
+    [actionsFor, pendingAction, runAction, runSampleBatch, sampleBatchRunning, selectedTargetIds, setStatus, status],
   );
 
   const returnRemoveFocus = useCallback(
     () => focusOrigin(removeOriginRef.current),
+    [],
+  );
+
+  const returnSettingsFocus = useCallback(
+    () => focusOrigin(settingsOriginRef.current),
     [],
   );
 
@@ -345,6 +435,13 @@ export function TorrentActionProvider({ children }: { readonly children: ReactNo
           onConfirm={removeTargets}
         />
       )}
+      {settingsRequest === null || torrents[settingsRequest.torrentId] === undefined ? null : (
+        <TorrentSettingsDialog
+          torrent={torrents[settingsRequest.torrentId]!}
+          returnFocus={returnSettingsFocus}
+          onClose={() => setSettingsRequest(null)}
+        />
+      )}
     </TorrentActionContext.Provider>
   );
 }
@@ -356,7 +453,7 @@ export function useTorrentActions(): TorrentActionContextValue {
 }
 
 function commandFor(
-  actionId: Exclude<TorrentActionId, "copy_magnet" | "remove">,
+  actionId: Exclude<TorrentActionId, "copy_magnet" | "remove" | "settings">,
   torrentId: string,
 ): InspectionCommand {
   switch (actionId) {
@@ -378,7 +475,7 @@ function commandFor(
 }
 
 function resultMessage(
-  actionId: Exclude<TorrentActionId, "copy_magnet" | "remove">,
+  actionId: Exclude<TorrentActionId, "copy_magnet" | "remove" | "settings">,
   targets: readonly TorrentRow[],
   completed: number,
   failureCount: number,
@@ -397,7 +494,7 @@ function resultMessage(
 }
 
 function resultVerb(
-  actionId: Exclude<TorrentActionId, "copy_magnet" | "remove">,
+  actionId: Exclude<TorrentActionId, "copy_magnet" | "remove" | "settings">,
 ): string {
   switch (actionId) {
     case "start":

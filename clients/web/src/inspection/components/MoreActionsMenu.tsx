@@ -1,5 +1,5 @@
 import { message as localizedMessage } from "../../localization/runtime";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   WEBTORRENT_TEST_TORRENTS,
@@ -24,8 +24,9 @@ export interface MoreActionsMenuProps {
   readonly actions: readonly ResolvedTorrentAction[];
   readonly showTestTorrents: boolean;
   readonly addTestDisabled: boolean;
-  readonly onAction: (actionId: TorrentActionId) => void;
+  readonly onAction: (actionId: TorrentActionId, trigger: HTMLElement | null) => void;
   readonly onAddTestTorrent: (torrent: TestTorrentShortcut) => Promise<void>;
+  readonly onAddAllTestTorrents: () => Promise<void>;
 }
 
 export function MoreActionsMenu({
@@ -35,8 +36,10 @@ export function MoreActionsMenu({
   addTestDisabled,
   onAction,
   onAddTestTorrent,
+  onAddAllTestTorrents,
 }: MoreActionsMenuProps) {
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (disabled) setOpen(false);
@@ -48,10 +51,10 @@ export function MoreActionsMenu({
       isOpen={open}
       onOpenChange={setOpen}
     >
-      <OverlayButton className={styles.trigger!} isDisabled={disabled}>{localizedMessage("inspection.components.more.actions.menu.more")}{" "}<Icon name="chevronDown" />
+      <OverlayButton ref={triggerRef} className={styles.trigger!} isDisabled={disabled}>{localizedMessage("inspection.components.more.actions.menu.more")}{" "}<Icon name="chevronDown" />
       </OverlayButton>
       <ActionMenuPopover>
-        <TorrentActionMenuItems actions={actions} onAction={onAction} />
+        <TorrentActionMenuItems actions={actions} onAction={(actionId) => onAction(actionId, triggerRef.current)} />
         {showTestTorrents ? (
           <>
             {actions.length === 0 ? null : <ActionMenuSeparator />}
@@ -64,6 +67,10 @@ export function MoreActionsMenu({
                 </>
               }
             >
+              <ActionMenuItem onAction={() => void onAddAllTestTorrents()}>
+                {localizedMessage("inspection.components.more.actions.menu.add.all.sample.torrents")}
+              </ActionMenuItem>
+              <ActionMenuSeparator />
               {WEBTORRENT_TEST_TORRENTS.map((torrent) => (
                 <ActionMenuItem
                   key={torrent.id}

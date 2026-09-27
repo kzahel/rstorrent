@@ -9,6 +9,7 @@ export type TorrentActionId =
   | "move_to_bottom"
   | "force_recheck"
   | "copy_magnet"
+  | "settings"
   | "archive"
   | "restore"
   | "remove";
@@ -95,6 +96,15 @@ export const TORRENT_ACTIONS: readonly TorrentActionDefinition[] = [
     destructive: false,
   },
   {
+    id: "settings",
+    label: label(localizedMessage("inspection.components.torrent.settings.dialog.title")),
+    pendingLabel: "Opening torrent settings",
+    icon: "settings",
+    group: "organization",
+    placement: "overflow",
+    destructive: false,
+  },
+  {
     id: "archive",
     label: label("Archive"),
     pendingLabel: "Archiving",
@@ -157,6 +167,10 @@ export function torrentActionAvailability(
 
   if (actionId === "copy_magnet") return { disabled: false };
 
+  if (actionId === "settings" && targets.length !== 1) {
+    return { disabled: true, reason: localizedMessage("inspection.torrent.actions.select.one.torrent.to.edit.settings") };
+  }
+
   const activeRemovalCount = targets.filter(
     (row) => row.removalState === "pending" || row.removalState === "awaiting_platform",
   ).length;
@@ -182,6 +196,7 @@ export function torrentActionAvailability(
     case "start":
     case "pause":
     case "remove":
+    case "settings":
       return { disabled: false };
     case "force_recheck": {
       const unavailable = targets.filter((row) => !row.forceRecheckAvailable).length;

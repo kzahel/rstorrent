@@ -38,7 +38,11 @@ browser launcher. Tactical `037` adds accessible, responsive magnet intake to
 the live toolbar and routes it through the semantic application command while
 retaining the permanent demo adapter. Tactical `038` adds a keyboard, pointer,
 touch, and phone-safe More > Add test torrent submenu backed by the recorded
-WebTorrent catalog and the same add path. Tactical `040` adds live archive and
+WebTorrent catalog and the same add path. Tactical `220` adds an explicit
+**Add all sample torrents** item to that submenu. It submits the five catalog
+magnets sequentially with one shared download-options choice, keeps the batch
+busy across Transfers and Workbench navigation, and reports added, already
+present, and failed counts. Tactical `040` adds live archive and
 an accessible removal dialog whose managed-data option is unchecked by
 default. The docked detail inspector is now bounded and resizable by pointer,
 touch, or keyboard. Tactical `041` adds the first live Files surface, exact
@@ -196,7 +200,9 @@ Transfers and Workbench expose full-selection Start, Pause, Force recheck,
 Copy magnet links, Archive, Restore, and coordinated Remove; Files exposes the
 same Normal/Skip policy from More and its row context menu. One application-
 lifetime torrent owner keeps sequential progress and multi-remove state alive
-across destination changes.
+across destination changes. Tactical `221` removes visible category headings
+from those action menus and keeps subtle dividers only between nonempty
+groups, retaining their order and availability.
 Completed Tactical
 [`101`](../tactical/101-first-run-web-authentication.md) graduates the narrow
 single-column Settings sheet into one adaptive modal workspace with Appearance,
@@ -263,14 +269,22 @@ in Compose and iOS deliberately presents no equivalent control.
 
 Completed Tactical
 [`134`](../tactical/134-hierarchical-transfer-rate-enforcement.md) adds All
-torrents peer upload/download controls to Connection & seeding and an atomic
-per-torrent pair to General detail. Both reuse one semantic Unlimited-or-KiB/s
+torrents peer upload/download controls to Connection & seeding and a
+per-torrent pair, now presented in the Torrent settings dialog by Tactical
+[`222`](../tactical/222-torrent-settings-dialog.md). Both reuse one semantic Unlimited-or-KiB/s
 field, retain the last valid finite value across toggles, state the counted
 peer-traffic scope, and wait for authoritative command/view updates. Component
 tests cover bounds, exact bytes-per-second conversion, effective state, and
 error handling; headless Chrome proves wide, compact, and phone interaction,
 keyboard toggling, retained input, save feedback, and zero serious/critical
 Axe violations.
+
+Tactical [`222`](../tactical/222-torrent-settings-dialog.md) moves the
+per-torrent editor out of Workbench General detail. The shared Torrent
+settings action opens one dialog from a torrent row context menu or the More
+menu. It requires exactly one selected torrent, keeps the existing sparse
+settings draft and command behavior, and returns focus to the invoking
+control on dismissal.
 
 Completed Tactical
 [`180`](../tactical/180-typed-settings-patches-and-draft-convergence.md)

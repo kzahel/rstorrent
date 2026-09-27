@@ -247,6 +247,14 @@ hidden-selection preservation, stale context closure, focus return, grouped
 toolbar/context action parity, and the 4,096-file virtualization bound. Its
 complete deterministic browser gate passed 29 cases with seven live opt-in
 cases skipped and no serious or critical Axe findings.
+Tactical [`221`](../tactical/221-context-menu-dividers.md) keeps that action
+order and parity while displaying only dividers between nonempty groups; row
+context and More menus no longer show category headings.
+
+Tactical [`222`](../tactical/222-torrent-settings-dialog.md) adds Torrent
+settings to the shared torrent action set. It opens a dialog for exactly one
+target; a multi-selection retains its scope and disables the setting action.
+Dismissal returns focus to the invoking row or More control.
 
 The Peers table uses only the singular current-row portion of this model,
 keyed by the active connection generation. It has no checkbox column or

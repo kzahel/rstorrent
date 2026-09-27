@@ -5,6 +5,7 @@ import "../../src/inspection/global.css";
 import {
   ActionMenuItem,
   ActionMenuPopover,
+  ActionMenuSeparator,
   ActionMenuTrigger,
   ActionSubmenu,
   OverlayButton,
@@ -38,6 +39,8 @@ function Harness() {
             <ActionMenuPopover>
               <ActionMenuItem>Copy address</ActionMenuItem>
               <ActionSubmenu trigger="Add test torrent">
+                <ActionMenuItem>Add all sample torrents</ActionMenuItem>
+                <ActionMenuSeparator />
                 <ActionMenuItem>Big Buck Bunny</ActionMenuItem>
                 <ActionMenuItem>Cosmos Laundromat</ActionMenuItem>
                 <ActionMenuItem>Sintel</ActionMenuItem>

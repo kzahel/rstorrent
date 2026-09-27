@@ -532,6 +532,20 @@
       "value": "RSTorrent will load metadata without downloading content, then show a Normal/Skip checklist."
     }
   ],
+  "inspection.components.add.torrent.dialog.sample.batch.description": [
+    {
+      "type": 0,
+      "value": "These "
+    },
+    {
+      "type": 1,
+      "value": "count"
+    },
+    {
+      "type": 0,
+      "value": " sample torrents will use the same download options."
+    }
+  ],
   "inspection.components.add.torrent.dialog.start.downloading.files.when.metadata.is.available": [
     {
       "type": 0,
@@ -2068,12 +2082,6 @@
       "value": "not eligible to seed"
     }
   ],
-  "inspection.components.detail.pane.only.this.torrent": [
-    {
-      "type": 0,
-      "value": "Only this torrent"
-    }
-  ],
   "inspection.components.detail.pane.peer.transfer.limits": [
     {
       "type": 0,
@@ -3010,24 +3018,6 @@
       "value": "Unavailable — repair required"
     }
   ],
-  "inspection.components.file.action.menu.items.download": [
-    {
-      "type": 0,
-      "value": "Download"
-    }
-  ],
-  "inspection.components.file.action.menu.items.open": [
-    {
-      "type": 0,
-      "value": "Open"
-    }
-  ],
-  "inspection.components.file.action.menu.items.priority": [
-    {
-      "type": 0,
-      "value": "Priority"
-    }
-  ],
   "inspection.components.file.action.menu.items.save.file": [
     {
       "type": 0,
@@ -3896,6 +3886,12 @@
     {
       "type": 0,
       "value": "Warnings and errors"
+    }
+  ],
+  "inspection.components.more.actions.menu.add.all.sample.torrents": [
+    {
+      "type": 0,
+      "value": "Add all sample torrents"
     }
   ],
   "inspection.components.more.actions.menu.add.test.torrent": [
@@ -5788,6 +5784,28 @@
       "value": "Adding…"
     }
   ],
+  "inspection.components.torrent.actions.adding.sample.torrents": [
+    {
+      "type": 0,
+      "value": "Adding sample torrents ("
+    },
+    {
+      "type": 1,
+      "value": "current"
+    },
+    {
+      "type": 0,
+      "value": "/"
+    },
+    {
+      "type": 1,
+      "value": "total"
+    },
+    {
+      "type": 0,
+      "value": ")…"
+    }
+  ],
   "inspection.components.torrent.actions.magnet.link.or.torrent.url": [
     {
       "type": 0,
@@ -5800,10 +5818,52 @@
       "value": "Magnet link or URL"
     }
   ],
+  "inspection.components.torrent.actions.sample.torrents.result": [
+    {
+      "type": 0,
+      "value": "Sample torrents: "
+    },
+    {
+      "type": 1,
+      "value": "added"
+    },
+    {
+      "type": 0,
+      "value": " added, "
+    },
+    {
+      "type": 1,
+      "value": "alreadyPresent"
+    },
+    {
+      "type": 0,
+      "value": " already present, "
+    },
+    {
+      "type": 1,
+      "value": "failed"
+    },
+    {
+      "type": 0,
+      "value": " failed."
+    }
+  ],
   "inspection.components.torrent.context.menu.torrent.actions": [
     {
       "type": 0,
       "value": "Torrent actions"
+    }
+  ],
+  "inspection.components.torrent.settings.dialog.cancel": [
+    {
+      "type": 0,
+      "value": "Cancel"
+    }
+  ],
+  "inspection.components.torrent.settings.dialog.title": [
+    {
+      "type": 0,
+      "value": "Torrent settings"
     }
   ],
   "inspection.components.torrent.table.done": [
@@ -7334,6 +7394,12 @@
     {
       "type": 0,
       "value": "Select a torrent to use this action."
+    }
+  ],
+  "inspection.torrent.actions.select.one.torrent.to.edit.settings": [
+    {
+      "type": 0,
+      "value": "Select one torrent to edit its settings."
     }
   ],
   "inspection.torrent.file.torrent.files.are.limited.to.64.mib": [

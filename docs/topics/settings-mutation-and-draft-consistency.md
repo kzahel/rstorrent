@@ -58,6 +58,10 @@ component state. Unchecking a limit briefly changed the local draft, then the
 next unrelated update restored the old checked value before the user could
 save it. With the active update source stopped, the same edit remained dirty.
 
+Tactical [`222`](../tactical/222-torrent-settings-dialog.md) relocates the
+per-torrent editor to a Torrent settings dialog without changing this draft
+or authoritative-view convergence contract.
+
 The global client-settings form has the same ownership hazard: it synchronizes
 a complete local settings value from a live configured/runtime value. The
 specific publication cadence differs, but the correctness rule is identical.

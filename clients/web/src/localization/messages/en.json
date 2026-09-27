@@ -171,6 +171,10 @@
     "defaultMessage": "Add torrent",
     "description": "Product copy in inspection/components/AddTorrentDialog.tsx"
   },
+  "inspection.components.add.torrent.dialog.sample.batch.description": {
+    "defaultMessage": "These {count} sample torrents will use the same download options.",
+    "description": "Shared options for the Add all sample torrents action"
+  },
   "inspection.components.add.torrent.dialog.adding": {
     "defaultMessage": "Adding…",
     "description": "Product copy in inspection/components/AddTorrentDialog.tsx"
@@ -1271,13 +1275,9 @@
     "defaultMessage": "not eligible to seed",
     "description": "Product copy in inspection/components/DetailPane.tsx"
   },
-  "inspection.components.detail.pane.only.this.torrent": {
-    "defaultMessage": "Only this torrent",
-    "description": "Product copy in inspection/components/DetailPane.tsx"
-  },
   "inspection.components.detail.pane.peer.transfer.limits": {
     "defaultMessage": "Peer transfer limits",
-    "description": "Product copy in inspection/components/DetailPane.tsx"
+    "description": "Transfer limit section in inspection/components/TorrentSettingsDialog.tsx"
   },
   "inspection.components.detail.pane.pieces.checked": {
     "defaultMessage": "Pieces checked",
@@ -1289,7 +1289,7 @@
   },
   "inspection.components.detail.pane.save.torrent.limits": {
     "defaultMessage": "Save torrent limits",
-    "description": "Product copy in inspection/components/DetailPane.tsx"
+    "description": "Save action in inspection/components/TorrentSettingsDialog.tsx"
   },
   "inspection.components.detail.pane.saved.waiting.for.the.live.view": {
     "defaultMessage": "Saved; waiting for the live view…",
@@ -1366,6 +1366,14 @@
   "inspection.components.detail.pane.torrents": {
     "defaultMessage": "Torrents",
     "description": "Product copy in inspection/components/DetailPane.tsx"
+  },
+  "inspection.components.torrent.settings.dialog.cancel": {
+    "defaultMessage": "Cancel",
+    "description": "Dismiss the per-torrent settings dialog"
+  },
+  "inspection.components.torrent.settings.dialog.title": {
+    "defaultMessage": "Torrent settings",
+    "description": "Per-torrent settings dialog and action label"
   },
   "inspection.components.detail.pane.unlimited": {
     "defaultMessage": "Unlimited",
@@ -1898,18 +1906,6 @@
   "inspection.components.download.settings.section.unavailable.repair.required": {
     "defaultMessage": "Unavailable — repair required",
     "description": "Product copy in inspection/components/DownloadSettingsSection.tsx"
-  },
-  "inspection.components.file.action.menu.items.download": {
-    "defaultMessage": "Download",
-    "description": "Product copy in inspection/components/FileActionMenuItems.tsx"
-  },
-  "inspection.components.file.action.menu.items.open": {
-    "defaultMessage": "Open",
-    "description": "Product copy in inspection/components/FileActionMenuItems.tsx"
-  },
-  "inspection.components.file.action.menu.items.priority": {
-    "defaultMessage": "Priority",
-    "description": "Product copy in inspection/components/FileActionMenuItems.tsx"
   },
   "inspection.components.file.action.menu.items.save.file": {
     "defaultMessage": "Save file…",
@@ -2494,6 +2490,10 @@
   "inspection.components.more.actions.menu.add.test.torrent": {
     "defaultMessage": "Add test torrent",
     "description": "Product copy in inspection/components/MoreActionsMenu.tsx"
+  },
+  "inspection.components.more.actions.menu.add.all.sample.torrents": {
+    "defaultMessage": "Add all sample torrents",
+    "description": "Action in the Add test torrent submenu"
   },
   "inspection.components.more.actions.menu.more": {
     "defaultMessage": "More",
@@ -3751,6 +3751,14 @@
     "defaultMessage": "Adding…",
     "description": "Product copy in inspection/components/TorrentActions.tsx"
   },
+  "inspection.components.torrent.actions.adding.sample.torrents": {
+    "defaultMessage": "Adding sample torrents ({current}/{total})…",
+    "description": "Progress for the Add all sample torrents action"
+  },
+  "inspection.components.torrent.actions.sample.torrents.result": {
+    "defaultMessage": "Sample torrents: {added} added, {alreadyPresent} already present, {failed} failed.",
+    "description": "Result of the Add all sample torrents action"
+  },
   "inspection.components.torrent.actions.magnet.link.or.torrent.url": {
     "defaultMessage": "Magnet link or torrent URL",
     "description": "Product copy in inspection/components/TorrentActions.tsx"
@@ -4782,6 +4790,10 @@
   "inspection.torrent.actions.select.a.torrent.to.use.this.action": {
     "defaultMessage": "Select a torrent to use this action.",
     "description": "Product copy in inspection/torrent-actions.ts"
+  },
+  "inspection.torrent.actions.select.one.torrent.to.edit.settings": {
+    "defaultMessage": "Select one torrent to edit its settings.",
+    "description": "Reason torrent settings is unavailable for multiple selected torrents"
   },
   "inspection.torrent.file.torrent.files.are.limited.to.64.mib": {
     "defaultMessage": "Torrent files are limited to 64 MiB.",

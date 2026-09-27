@@ -80,6 +80,7 @@ test("nested menus stay inside phone edges and Escape unwinds one level", async 
   await expect(submenuTrigger).toBeFocused();
   await page.keyboard.press("ArrowRight");
   const submenu = page.getByRole("menu", { name: "Add test torrent" });
+  await expect(submenu.getByRole("menuitem", { name: "Add all sample torrents" })).toBeFocused();
   await expect(submenu.getByText("Big Buck Bunny", { exact: true })).toBeVisible();
   await expect
     .poll(() => root.locator("..").locator("..").evaluate(layerIndex))

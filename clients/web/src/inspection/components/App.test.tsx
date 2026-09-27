@@ -293,29 +293,38 @@ describe("inspection application", () => {
     await user.click(screen.getByRole("button", { name: "Workbench" }));
     await user.click(screen.getByRole("tab", { name: "General" }));
     const detail = screen.getByRole("region", { name: "Torrent details" });
+    expect(within(detail).queryByRole("spinbutton", {
+      name: "Torrent upload limit in KiB per second",
+    })).not.toBeInTheDocument();
+    const grid = screen.getByRole("grid", { name: "Torrent library" });
+    const torrentRow = within(grid).getByRole("row", { name: /Big Buck Bunny 1080p surround/ });
+    fireEvent.contextMenu(torrentRow);
+    await user.click(await screen.findByRole("menuitem", { name: "Torrent settings" }));
+    const settings = screen.getByRole("dialog", { name: "Torrent settings" });
+    expect(within(settings).getByRole("button", { name: "Cancel" })).toHaveFocus();
 
     await user.click(
-      within(detail).getByRole("checkbox", {
+      within(settings).getByRole("checkbox", {
         name: "Torrent upload limit unlimited",
       }),
     );
-    const upload = within(detail).getByRole("spinbutton", {
+    const upload = within(settings).getByRole("spinbutton", {
       name: "Torrent upload limit in KiB per second",
     });
     await user.clear(upload);
     await user.type(upload, "32");
     await user.click(
-      within(detail).getByRole("checkbox", {
+      within(settings).getByRole("checkbox", {
         name: "Torrent download limit unlimited",
       }),
     );
-    const download = within(detail).getByRole("spinbutton", {
+    const download = within(settings).getByRole("spinbutton", {
       name: "Torrent download limit in KiB per second",
     });
     await user.clear(download);
     await user.type(download, "96");
     await user.click(
-      within(detail).getByRole("button", { name: "Save torrent limits" }),
+      within(settings).getByRole("button", { name: "Save torrent limits" }),
     );
 
     await waitFor(() =>
@@ -354,8 +363,10 @@ describe("inspection application", () => {
     renderApplication(application);
     await user.click(screen.getByRole("button", { name: "Workbench" }));
     await user.click(screen.getByRole("tab", { name: "General" }));
-    const detail = screen.getByRole("region", { name: "Torrent details" });
-    const downloadUnlimited = within(detail).getByRole("checkbox", {
+    await user.click(screen.getByRole("button", { name: /^More/ }));
+    await user.click(await screen.findByRole("menuitem", { name: "Torrent settings" }));
+    const settings = screen.getByRole("dialog", { name: "Torrent settings" });
+    const downloadUnlimited = within(settings).getByRole("checkbox", {
       name: "Torrent download limit unlimited",
     });
 
@@ -380,7 +391,7 @@ describe("inspection application", () => {
     expect(downloadUnlimited).toBeChecked();
 
     await user.click(
-      within(detail).getByRole("button", { name: "Save torrent limits" }),
+      within(settings).getByRole("button", { name: "Save torrent limits" }),
     );
     await waitFor(() =>
       expect(application.commands.at(-1)).toEqual({
@@ -1192,7 +1203,9 @@ describe("inspection application", () => {
     const files = screen.getByRole("grid", { name: "Torrent files" });
     await user.click(within(files).getByText(skippedFile.name));
     await user.click(screen.getByRole("button", { name: "More file actions" }));
-    expect(screen.getByRole("group", { name: "Download" })).toBeVisible();
+    const fileActions = screen.getByRole("menu", { name: "More file actions" });
+    expect(within(fileActions).getAllByRole("separator")).toHaveLength(1);
+    expect(within(fileActions).queryByText("Download", { exact: true })).not.toBeInTheDocument();
     await user.click(screen.getByRole("menuitem", { name: "Download now" }));
 
     await waitFor(() =>
@@ -1255,9 +1268,8 @@ describe("inspection application", () => {
     const firstRow = within(grid).getAllByRole("row")[1]!;
     fireEvent.contextMenu(firstRow, { clientX: 120, clientY: 160 });
     const contextMenu = await screen.findByRole("menu");
-    expect(
-      within(contextMenu).getByRole("group", { name: "Priority" }),
-    ).toBeVisible();
+    expect(within(contextMenu).queryByText("Priority", { exact: true })).not.toBeInTheDocument();
+    expect(within(contextMenu).getAllByRole("separator")).toHaveLength(1);
     await user.click(
       within(contextMenu).getByRole("menuitem", { name: "Skip" }),
     );
@@ -1526,21 +1538,28 @@ describe("inspection application", () => {
       "Move to top",
       "Move to bottom",
       "Copy magnet link",
+      "Torrent settings",
       "Archive",
       "Restore",
       "Remove",
     ]);
-    for (const group of [
+    expect(within(singletonMenu).getAllByRole("separator")).toHaveLength(3);
+    for (const heading of [
       "Transfer",
       "Sharing",
       "Organization",
       "Destructive",
     ]) {
       expect(
-        within(singletonMenu).getByRole("group", { name: group }),
-      ).toBeVisible();
+        within(singletonMenu).queryByText(heading, { exact: true }),
+      ).not.toBeInTheDocument();
     }
+    await user.click(within(singletonMenu).getByRole("menuitem", { name: "Torrent settings" }));
+    const settings = screen.getByRole("dialog", { name: "Torrent settings" });
+    expect(within(settings).getByText("Sintel 4K open movie")).toBeVisible();
     await user.keyboard("{Escape}");
+    expect(settings).not.toBeInTheDocument();
+    expect(sintelRow).toHaveFocus();
     expect(
       within(grid).getByRole("checkbox", {
         name: "Deselect Sintel 4K open movie",
@@ -1556,6 +1575,9 @@ describe("inspection application", () => {
     expect(
       await screen.findByRole("menuitem", { name: "Copy magnet links" }),
     ).toBeVisible();
+    expect(screen.getByRole("menuitem", { name: "Torrent settings" })).toHaveAttribute(
+      "aria-disabled", "true",
+    );
     await user.click(screen.getByRole("menuitem", { name: "Remove" }));
     const dialog = screen.getByRole("dialog", { name: "Remove 2 torrents?" });
     expect(
@@ -3332,10 +3354,10 @@ describe("inspection application", () => {
 
     await user.keyboard("{ArrowRight}");
     const submenu = screen.getByRole("menu", { name: "Add test torrent" });
-    const bunny = within(submenu).getByRole("menuitem", {
-      name: "Big Buck Bunny",
+    const addAll = within(submenu).getByRole("menuitem", {
+      name: "Add all sample torrents",
     });
-    expect(bunny).toHaveAttribute("data-focused");
+    expect(addAll).toHaveAttribute("data-focused");
     await user.keyboard("{End}");
     const wired = within(submenu).getByRole("menuitem", { name: "WIRED CD" });
     expect(wired).toHaveAttribute("data-focused");
@@ -3369,7 +3391,7 @@ describe("inspection application", () => {
     expect(clickedSubmenu).toBeVisible();
     await waitFor(() =>
       expect(
-        screen.getByRole("menuitem", { name: "Big Buck Bunny" }),
+        screen.getByRole("menuitem", { name: "Add all sample torrents" }),
       ).toHaveFocus(),
     );
     await user.keyboard("{Escape}");
@@ -3391,6 +3413,123 @@ describe("inspection application", () => {
     expect(
       screen.queryByRole("menu", { name: "More" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("adds every sample in catalog order and reports duplicates and failures", async () => {
+    const user = userEvent.setup();
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot: liveSnapshot({
+        roots: [downloadRoot("root_a", "Downloads")],
+        defaultRoot: "root_a",
+        showAddOptions: false,
+      }),
+    });
+    const dispatch = application.dispatch.bind(application);
+    let releaseFirst!: () => void;
+    const firstAdd = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    vi.spyOn(application, "dispatch").mockImplementation(async (command) => {
+      const result = await dispatch(command);
+      if (command.type !== "add_magnet") return result;
+      if (command.magnet === WEBTORRENT_TEST_TORRENTS[0]!.magnet) {
+        await firstAdd;
+      }
+      if (command.magnet === WEBTORRENT_TEST_TORRENTS[1]!.magnet) {
+        return {
+          accepted: true,
+          message: "Already in your session",
+          addDisposition: { type: "already_present" },
+        };
+      }
+      if (command.magnet === WEBTORRENT_TEST_TORRENTS[2]!.magnet) {
+        return { accepted: false, message: "tracker unavailable" };
+      }
+      return result;
+    });
+    renderApplication(application);
+    const draft = screen.getByRole("textbox", {
+      name: "Magnet link or torrent URL",
+    });
+    await user.type(draft, "unfinished draft");
+    await user.click(screen.getByRole("button", { name: "More" }));
+    await user.click(screen.getByRole("menuitem", { name: "Add test torrent" }));
+    await user.click(screen.getByRole("menuitem", {
+      name: "Add all sample torrents",
+    }));
+
+    await waitFor(() => expect(application.commands).toHaveLength(1));
+    expect(screen.getByRole("button", { name: "More" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Adding…" })).toBeDisabled();
+    expect(draft).toHaveValue("unfinished draft");
+    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    expect(screen.getByRole("button", { name: "More" })).toBeDisabled();
+    releaseFirst();
+    await waitFor(() => expect(application.commands).toHaveLength(5));
+    expect(application.commands).toEqual(
+      WEBTORRENT_TEST_TORRENTS.map((torrent) => ({
+        type: "add_magnet",
+        magnet: torrent.magnet,
+        storageRoot: "root_a",
+        startContent: true,
+      })),
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Sample torrents: 3 added, 1 already present, 1 failed. Sintel: tracker unavailable",
+    );
+  });
+
+  it("applies one options choice to all samples and cancels before submission", async () => {
+    const user = userEvent.setup();
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot: liveSnapshot({
+        roots: [
+          downloadRoot("root_a", "Downloads"),
+          downloadRoot("root_b", "Other folder"),
+        ],
+        defaultRoot: "root_a",
+        showAddOptions: true,
+      }),
+    });
+    renderApplication(application);
+    const openBatch = async () => {
+      await user.click(screen.getByRole("button", { name: "More" }));
+      await user.click(screen.getByRole("menuitem", { name: "Add test torrent" }));
+      await user.click(screen.getByRole("menuitem", {
+        name: "Add all sample torrents",
+      }));
+      return screen.getByRole("dialog", { name: "Choose download options" });
+    };
+
+    let dialog = await openBatch();
+    expect(dialog).toHaveTextContent("These 5 sample torrents will use the same download options.");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(application.commands).toEqual([]);
+
+    dialog = await openBatch();
+    await user.click(within(dialog).getByRole("radio", { name: /Other folder/ }));
+    await user.click(within(dialog).getByRole("checkbox", {
+      name: /Start downloading files when metadata is available/,
+    }));
+    await user.click(within(dialog).getByRole("checkbox", {
+      name: /show these options again/,
+    }));
+    await user.click(within(dialog).getByRole("button", {
+      name: "Add all sample torrents",
+    }));
+    await waitFor(() => expect(application.commands).toHaveLength(6));
+    expect(application.commands).toEqual([
+      ...WEBTORRENT_TEST_TORRENTS.map((torrent) => ({
+        type: "add_magnet",
+        magnet: torrent.magnet,
+        storageRoot: "root_b",
+        startContent: false,
+      })),
+      { type: "set_show_add_options", show: false },
+    ]);
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Sample torrents: 5 added, 0 already present, 0 failed.",
+    );
   });
 });
 
