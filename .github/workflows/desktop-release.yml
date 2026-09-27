@@ -101,6 +101,7 @@ jobs:
 
       - name: Apply verified Latest package identity
         if: needs.release-input.outputs.channel == 'latest'
+        shell: bash
         env:
           RELEASE_VERSION: ${{ needs.release-input.outputs.version }}
         run: node scripts/apply-desktop-nightly-version.mjs "$RELEASE_VERSION"
@@ -346,6 +347,7 @@ jobs:
 
       - name: Apply verified Latest package identity
         if: needs.release-input.outputs.channel == 'latest'
+        shell: bash
         env:
           RELEASE_VERSION: ${{ needs.release-input.outputs.version }}
         run: node scripts/apply-desktop-nightly-version.mjs "$RELEASE_VERSION"
