@@ -10,7 +10,10 @@ signed five-target workflow. Remy's product-owned descriptor advertises both
 channels. The first signed Latest prerelease
 [`desktop-latest-v0.2.301`](../evidence/desktop-latest-v0.2.301.md) passed
 exact-source main CI, source/build/finalizer gates, and all five production
-updater routes. Latest now resolves `0.2.301`; Stable remains `0.1.4` for
+updater routes. The parallel release pipeline then published
+[`desktop-latest-v0.2.401`](../evidence/desktop-parallel-release-2026-09-27.md)
+after five overlapping signed builds and one collector. Latest now resolves
+`0.2.401`; Stable remains `0.1.4` for
 explicit and old channel-less requests. Installed old-to-new selection,
 replacement/relaunch, and return-to-Stable behavior remain open.
 

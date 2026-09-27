@@ -127,3 +127,21 @@ downgrade remain the final acceptance gate.
   `0.1.4` behavior with and without a channel query. See
   [`desktop-latest-v0.2.301`](../evidence/desktop-latest-v0.2.301.md).
   Installed cross-channel acceptance remains open.
+- Parallel release follow-through passed local `actionlint` and 37 focused
+  release tests at `80b04468`. Main CI
+  [`36341427435`](https://github.com/kzahel/rstorrent/actions/runs/36341427435)
+  passed. Credentialed rehearsal
+  [`36341433008`](https://github.com/kzahel/rstorrent/actions/runs/36341433008)
+  passed the source gate, all five overlapping signed package jobs, and the
+  sole collector. Its private artifacts contain five exact package legs, a
+  23-asset inventory, and a 15-key updater manifest; it created no release.
+  See [`parallel release evidence`](../evidence/desktop-parallel-release-2026-09-27.md).
+- Forced Nightly run
+  [`36344554527`](https://github.com/kzahel/rstorrent/actions/runs/36344554527)
+  selected that successful main CI commit, passed the release source gate,
+  five overlapping signed jobs, and the sole publication collector. Its public
+  prerelease `desktop-latest-v0.2.401` has 15 updater keys and 13 assets whose
+  checksums match GitHub digests. Production Latest routes return signed
+  `0.2.401` metadata for all five targets, current-version checks return 204,
+  and explicit/default Stable still returns `0.1.4`. Installed cross-channel
+  acceptance remains open.

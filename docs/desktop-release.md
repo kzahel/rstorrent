@@ -29,13 +29,17 @@ package managers. The update service must deploy the channel registry from
 checks can succeed. The native client discovers the registry and verifies the
 selected channel in the response, while old clients continue to use Stable.
 Remy's registry was deployed on 2026-09-27 and publicly advertises both
-channels. The first signed Latest release, `desktop-latest-v0.2.301`, is
-published and production Latest version checks return `0.2.301`.
+channels. The first signed Latest release was `desktop-latest-v0.2.301`.
+The parallel-pipeline publication is `desktop-latest-v0.2.401`, and production
+Latest version checks return `0.2.401`.
 
 The [first Latest release evidence](evidence/desktop-latest-v0.2.301.md)
 records the signed hosted workflow and all five production routes. Installed
 old-to-new acceptance remains open; hosted checks do not establish installed
-package behavior.
+package behavior. The
+[parallel release evidence](evidence/desktop-parallel-release-2026-09-27.md)
+records overlapping signed builds, collector validation, publication, and
+production route checks.
 
 ## Rehearse Without Publishing
 
@@ -56,13 +60,13 @@ assertions for both macOS notarization/stapling and Windows Authenticode
 validation before using a rehearsal package.
 
 The latest proven rehearsal is GitHub Actions run
-[`32627436936`](https://github.com/kzahel/rstorrent/actions/runs/32627436936)
-at commit `f34961c1cbd34508e2f62edc68d1c2a321d78767`. Its source gate and all five
-release legs passed on 2026-08-23. It retained separate private artifacts for
-macOS arm64/x86_64, Linux arm64/x86_64, and Windows x86_64. Both macOS legs
-passed Developer ID, Gatekeeper, notarization/stapling, and updater-artifact
-checks; both Windows installers passed expected-publisher Authenticode checks;
-both Linux legs passed the AppImage/DEB/RPM matrix.
+[`36341433008`](https://github.com/kzahel/rstorrent/actions/runs/36341433008)
+at commit `80b0446860909eb7a754c1319631fc288127560a`. Its source gate and all
+five signed release legs passed on 2026-09-27. The five package jobs overlapped,
+and the sole collector retained a private 23-asset inventory and 15-key updater
+manifest. It created no tag or GitHub Release. The platform checks include
+macOS Developer ID, Gatekeeper and notarization/stapling, Windows installer
+Authenticode, and Linux AppImage/DEB/RPM packages.
 
 ## Cut A Release
 
