@@ -28,6 +28,9 @@ package managers. The update service must deploy the channel registry from
 [`update-server/rstorrent.json`](../update-server/rstorrent.json) before Latest
 checks can succeed. The native client discovers the registry and verifies the
 selected channel in the response, while old clients continue to use Stable.
+Remy's registry was deployed on 2026-09-27 and publicly advertises both
+channels. Latest version checks return HTTP 500 until the first signed Latest
+release is published.
 
 The first Latest release still requires signed hosted evidence and installed
 old-to-new acceptance. Source checks do not establish that production route or

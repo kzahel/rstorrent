@@ -1,7 +1,7 @@
 # Tactical 230: Desktop Stable and Latest Update Channels
 
-Status: Active. Source implementation is complete; hosted and installed
-acceptance remains open.
+Status: Active. Source and production channel registry are deployed; signed
+Latest publication and installed acceptance remain open.
 
 Topics: `beta-release-readiness`, `client-surfaces`, `product-state-and-feedback`,
 `product-surfaces-and-migration`, `web-ui-design`.
@@ -87,6 +87,11 @@ reviewable with explicit pending hosted and installed acceptance evidence.
   and `cargo test -p rstorrent-desktop --no-default-features` pass in the
   current shared tree (50 desktop library tests). Full workspace Rust gates
   remain outside this focused source check.
-- The RSTorrent update-service descriptor is checked in but is not deployed.
-  No signed Latest release, production route check, or installed cross-channel
-  campaign has run. Those operational gates remain open.
+- On 2026-09-27, commit `1b13a550` was pushed and fast-forwarded into Remy's
+  clean RSTorrent checkout. The product-owned descriptor remains symlinked from
+  `simple-app-update-server/products.d`; the service was restarted and active.
+  Public `/rstorrent/channels` now returns Stable and Latest (HTTP 200), while
+  `/rstorrent/version?channel=stable` still returns `0.1.4` with channel
+  confirmation. Latest currently returns HTTP 500 because no published
+  `desktop-latest-v*` release exists. Signed Latest publication, its updater
+  response, and installed cross-channel acceptance remain open.

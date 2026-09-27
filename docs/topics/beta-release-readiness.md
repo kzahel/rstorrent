@@ -6,11 +6,12 @@ Desktop channel source checkpoint (2026-09-27): Tactical
 [`230`](../tactical/230-desktop-stable-latest-update-channels.md) adds a
 Stable/Latest product registry, native-owned selection and candidate lifecycle,
 React choice, and verified-source nightly release path using the existing
-signed five-target workflow. Local channel and release-tool tests pass; hosted
-signed Latest publication, production update-service deployment, and installed
-old-to-new channel acceptance remain pending. Stable remains the default for
-old clients and requests without a channel. This source change does not itself
-publish a release or alter the production route.
+signed five-target workflow. Local channel and release-tool tests pass. On
+2026-09-27, Remy's product-owned descriptor was updated and the restarted
+service publicly advertised both channels; Stable still resolved `0.1.4`.
+Signed Latest publication and installed old-to-new channel acceptance remain
+pending. Until the first Latest release, that version route returns HTTP 500.
+Stable remains the default for old clients and requests without a channel.
 
 Maintenance checkpoint (2026-09-26): Tactical
 [`219`](../tactical/219-dependency-and-ci-maintenance.md) repairs the newly

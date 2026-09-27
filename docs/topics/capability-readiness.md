@@ -9,9 +9,10 @@ pass; installed-desktop and interactive browser acceptance remain open.
 
 Desktop Stable/Latest Tactical
 [`230`](../tactical/230-desktop-stable-latest-update-channels.md) has source
-implementation and focused local checks, with signed hosted publication,
-production route deployment, and installed cross-channel acceptance still
-open. The current public desktop release remains on the existing Stable route.
+implementation and focused local checks. Remy's channel registry is deployed
+and publicly advertises Stable and Latest; signed Latest publication and
+installed cross-channel acceptance remain open. The current public desktop
+release remains on the existing Stable route.
 
 Tactical [`218`](../tactical/218-glib-variant-iterator-backport.md) adopts and
 qualifies the explicitly approved two-line GLib 0.18.5 backport. Exact source
