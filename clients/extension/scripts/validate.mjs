@@ -71,7 +71,10 @@ export function validateSource() {
   ) {
     fail("optional host permission must contain only the exact ARC host");
   }
-  for (const forbidden of ["host_permissions", "content_scripts", "web_accessible_resources"]) {
+  if (JSON.stringify(manifest.host_permissions) !== JSON.stringify(["http://127.0.0.1/*"])) {
+    fail("desktop control requires only the exact loopback host permission");
+  }
+  for (const forbidden of ["content_scripts", "web_accessible_resources"]) {
     if (manifest[forbidden] !== undefined) {
       fail(`manifest must not declare ${forbidden}`);
     }
@@ -99,7 +102,7 @@ export function validateSource() {
           (port) => `${scheme}://100.115.92.2:${port}`,
         ),
       )
-      .join(" ");
+      .join(" ") + " ws://127.0.0.1:*";
   if (manifest.content_security_policy?.extension_pages !== expectedCsp) {
     fail("extension-page CSP must contain only local scripts and the five exact ARC endpoints");
   }
@@ -172,6 +175,8 @@ export function validateCompanionBuild(companionRoot) {
   }
   const remoteHosts = source.match(/(?:https?|wss?):\/\/[A-Za-z0-9.${}_-]+/gu) ?? [];
   const allowedHosts = new Set([
+    "http://127.0.0.1",
+    "ws://127.0.0.1",
     "http://100.115.92.2",
     "ws://100.115.92.2",
     "http://www.w3.org",

@@ -1,0 +1,79 @@
+import { message } from "./localization/runtime";
+import type { ApplicationViewClient } from "./api/client";
+import type { ApiHello } from "./api/generated/v1";
+import { WebSocketApplicationViewClient } from "./websocket-view-client";
+
+interface Ready {
+  kind: "ready";
+  endpoint: string;
+  credential: string;
+  instanceId: string;
+  profileId: string;
+}
+interface BootstrapResponse {
+  ok: boolean;
+  result?: unknown;
+  error?: { message?: string };
+}
+interface ChromeRuntime {
+  sendMessage(message: unknown): Promise<BootstrapResponse>;
+}
+
+export function desktopRuntime(): ChromeRuntime {
+  const runtime = (globalThis as unknown as { chrome?: { runtime?: ChromeRuntime } }).chrome?.runtime;
+  if (!runtime) throw new Error(message("desktop.companion.extension-only"));
+  return runtime;
+}
+
+export function validateDesktopReady(value: unknown): Ready {
+  const ready = value as Partial<Ready> | null;
+  if (!ready || ready.kind !== "ready" || typeof ready.endpoint !== "string" ||
+      !/^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/.test(ready.endpoint) ||
+      Number(new URL(ready.endpoint).port) > 65535 ||
+      typeof ready.credential !== "string" || !/^[0-9a-f]{64}$/.test(ready.credential) ||
+      typeof ready.instanceId !== "string" || !/^[0-9a-f]{32}$/.test(ready.instanceId) ||
+      ready.profileId !== "default") {
+    throw new Error(message("desktop.companion.incompatible"));
+  }
+  return ready as Ready;
+}
+
+export async function connectDesktopCompanion(signal: AbortSignal): Promise<{
+  client: ApplicationViewClient; hello: ApiHello; disconnected: Promise<void>;
+}> {
+  // Always attach-only. Only the separate user Open/Start action can launch.
+  const response = await desktopRuntime().sendMessage({ type: "nativeBootstrap", op: "attach_control" });
+  if (signal.aborted) throw signal.reason;
+  if (!response.ok) throw new Error(response.error?.message ?? message("desktop.companion.stopped"));
+  const ready = validateDesktopReady(response.result);
+  let wasConnected = false;
+  let disconnected!: () => void;
+  const closed = new Promise<void>((resolve) => { disconnected = resolve; });
+  const socket = new WebSocketApplicationViewClient(ready.endpoint, ready.credential, undefined, undefined, {
+    platformClient: {
+      async chooseDownloadRoot() { throw new Error(message("desktop.companion.native-folder")); },
+      async close() {},
+    },
+    onConnectionState(active) {
+      if (active) wasConnected = true;
+      else if (wasConnected) disconnected();
+    },
+  });
+  // Deliberately omit media/open-file authority until its desktop extension gate.
+  const client: ApplicationViewClient = {
+    hello: socket.hello.bind(socket), dispatch: socket.dispatch.bind(socket),
+    addTorrentBytes: socket.addTorrentBytes.bind(socket),
+    chooseDownloadRoot: socket.chooseDownloadRoot.bind(socket),
+    openViewSet: socket.openViewSet.bind(socket), updateViewSet: socket.updateViewSet.bind(socket),
+    streamUpdates: socket.streamUpdates.bind(socket), closeViewSet: socket.closeViewSet.bind(socket),
+    close: socket.close.bind(socket),
+  };
+  try {
+    const hello = await client.hello(signal);
+    if (hello.backend?.kind !== "desktop" || hello.backend.instance_id !== ready.instanceId ||
+        hello.backend.profile_id !== ready.profileId || !hello.backend.capability_profile.includes("desktop_control_v1")) {
+      throw new Error(message("desktop.companion.identity-changed"));
+    }
+    return { client, hello, disconnected: closed };
+  } catch (error) { await client.close(); throw error; }
+}

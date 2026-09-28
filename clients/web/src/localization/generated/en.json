@@ -214,6 +214,78 @@
       "pluralType": "cardinal"
     }
   ],
+  "desktop.companion.connecting": [
+    {
+      "type": 0,
+      "value": "Connecting to RSTorrent Desktop…"
+    }
+  ],
+  "desktop.companion.disconnected": [
+    {
+      "type": 0,
+      "value": "Desktop disconnected. Reconnecting if it is running…"
+    }
+  ],
+  "desktop.companion.extension-only": [
+    {
+      "type": 0,
+      "value": "Open this page from the JSTorrent Beta extension."
+    }
+  ],
+  "desktop.companion.identity-changed": [
+    {
+      "type": 0,
+      "value": "The desktop identity changed. Select Start to reconnect."
+    }
+  ],
+  "desktop.companion.incompatible": [
+    {
+      "type": 0,
+      "value": "RSTorrent returned an incompatible desktop connection."
+    }
+  ],
+  "desktop.companion.native-folder": [
+    {
+      "type": 0,
+      "value": "Open the desktop window to choose or repair a download folder."
+    }
+  ],
+  "desktop.companion.open-window": [
+    {
+      "type": 0,
+      "value": "Open desktop window"
+    }
+  ],
+  "desktop.companion.start": [
+    {
+      "type": 0,
+      "value": "Start"
+    }
+  ],
+  "desktop.companion.start-failed": [
+    {
+      "type": 0,
+      "value": "Desktop could not start."
+    }
+  ],
+  "desktop.companion.stopped": [
+    {
+      "type": 0,
+      "value": "Desktop is stopped. Select Start to open it."
+    }
+  ],
+  "desktop.companion.title": [
+    {
+      "type": 0,
+      "value": "RSTorrent Desktop"
+    }
+  ],
+  "desktop.companion.unavailable": [
+    {
+      "type": 0,
+      "value": "Desktop is unavailable."
+    }
+  ],
   "inspection.components.about.updates.settings.section.application": [
     {
       "type": 0,

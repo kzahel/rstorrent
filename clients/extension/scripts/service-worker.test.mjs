@@ -17,6 +17,7 @@ let uninstallUrl;
 
 globalThis.chrome = {
   runtime: {
+    id: "gcgoepclopkgijmclmlheafaglmbjlcc",
     lastError: undefined,
     onMessage: {
       addListener(callback) {
@@ -128,7 +129,7 @@ beforeEach(() => {
 
 function sendInternal(message) {
   return new Promise((resolve) => {
-    const keepAlive = internalListener(message, {}, resolve);
+    const keepAlive = internalListener(message, { id: chrome.runtime.id, url: chrome.runtime.getURL("popup/popup.html") }, resolve);
     assert.equal(keepAlive, true);
   });
 }
@@ -294,4 +295,33 @@ test("product metric messages serialize disclosure session and reset state", asy
   const reset = await sendInternal({ type: "productMetrics", op: "reset" });
   assert.equal(reset.state.sessions, "0");
   assert.notEqual(reset.state.installationId, first.state.installationId);
+});
+
+
+test("desktop clicks coalesce, reuse a tab and never return credentials", async () => {
+  let starts = 0;
+  nativeResponse = (request) => {
+    assert.equal(request.op, "start_control");
+    starts++;
+    return { id: request.id, ok: true, protocolVersion: 1, result: { kind: "ready", credential: "secret" } };
+  };
+  const replies = await Promise.all(Array.from({ length: 8 }, () => sendInternal({ type: "desktopBootstrap", op: "open" })));
+  assert.equal(starts, 1);
+  assert.equal(tabs.size, 1);
+  assert.match([...tabs.values()][0].url, /backend=desktop$/u);
+  assert.ok(replies.every((reply) => !JSON.stringify(reply).includes("secret")));
+  await sendInternal({ type: "desktopBootstrap", op: "open" });
+  assert.equal(tabs.size, 1);
+});
+
+test("foreign content sender cannot bootstrap or start desktop", () => {
+  assert.equal(internalListener({ type: "nativeBootstrap", op: "start_control" }, { id: chrome.runtime.id, url: "https://example.com" }, () => assert.fail()), false);
+  assert.equal(nativeRequest, undefined);
+});
+
+test("automatic attachment forwards only attach intent", async () => {
+  nativeResponse = (request) => ({ id: request.id, ok: false, error: { code: "control_unavailable" } });
+  await sendInternal({ type: "nativeBootstrap", op: "attach_control" });
+  assert.equal(nativeRequest.request.op, "attach_control");
+  assert.equal(tabs.size, 0);
 });

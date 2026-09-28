@@ -8,6 +8,8 @@ const CROSTINI_LAUNCH_URL = `${CROSTINI_ORIGIN}/launch-chromeos`;
 const CROSTINI_TAB_KEY = "crostiniUiTabId";
 const ANDROID_LAUNCH_URL = "rstorrent://chromeos-companion";
 const ANDROID_PAGE = "companion/companion.html";
+const DESKTOP_TAB_KEY = "desktopUiTabId";
+let desktopOpen;
 const ANDROID_TAB_KEY = "androidUiTabId";
 const productMetrics = new ProductMetricsOwner(chrome, chrome.runtime.getManifest().version);
 productMetrics.start();
@@ -20,7 +22,9 @@ function sendNativeOperation(op) {
   };
 
   return new Promise((resolve) => {
+    const timeout = setTimeout(() => resolve({ ok: false, error: { code: "bootstrap_timeout", message: "Desktop did not respond in time. Try Start again." } }), 15_000);
     chrome.runtime.sendNativeMessage(NATIVE_HOST, request, (response) => {
+      clearTimeout(timeout);
       const runtimeError = chrome.runtime.lastError;
       if (runtimeError) {
         resolve({
@@ -33,7 +37,7 @@ function sendNativeOperation(op) {
         });
         return;
       }
-      if (!response || response.id !== request.id) {
+      if (!response || response.id !== request.id || response.protocolVersion !== PROTOCOL_VERSION) {
         resolve({
           ok: false,
           error: {
@@ -48,7 +52,9 @@ function sendNativeOperation(op) {
   });
 }
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (sender?.id !== chrome.runtime.id ||
+      (sender.url && !sender.url.startsWith(chrome.runtime.getURL("")))) return false;
   if (message?.type === "productMetrics") {
     const operation = productMetricsOperation(message);
     if (operation === null) return false;
@@ -58,8 +64,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     );
     return true;
   }
-  if (message?.type === "nativeBootstrap" && ["hello", "launch"].includes(message.op)) {
+  if (message?.type === "nativeBootstrap" && ["hello", "launch", "start_control", "attach_control"].includes(message.op)) {
     sendNativeOperation(message.op).then(sendResponse);
+    return true;
+  }
+  if (message?.type === "desktopBootstrap" && message.op === "open") {
+    desktopOpen ??= (async () => {
+      const response = await sendNativeOperation("start_control");
+      // The page obtains its own ephemeral credential through attach-only bootstrap.
+      await focusOrOpenExtensionTab(DESKTOP_TAB_KEY, `${ANDROID_PAGE}?backend=desktop`);
+      return { ok: response.ok, error: response.error, result: { kind: "desktop_ui" } };
+    })().finally(() => { desktopOpen = undefined; });
+    desktopOpen.then(sendResponse);
     return true;
   }
   if (message?.type === "crostiniBootstrap" && message.op === "open") {
@@ -135,6 +151,8 @@ async function focusOrOpenExtensionTab(key, relativeUrl) {
   const remembered = await readRememberedTab(key);
   if (remembered !== null) {
     try {
+      const existing = await chrome.tabs.get(remembered);
+      if (existing.url !== chrome.runtime.getURL(relativeUrl)) throw new Error("page changed");
       await activateTab(remembered);
       return "focused";
     } catch {

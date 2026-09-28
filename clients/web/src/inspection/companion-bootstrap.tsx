@@ -10,21 +10,23 @@ import "./global.css";
 
 export async function startCompanionInspection(
   client: ApplicationViewClient,
+  oneCurrentRoot = true,
 ): Promise<() => Promise<void>> {
   const application = await LiveApplication.open(client, {
-    storagePolicy: "one_current_root",
+    storagePolicy: oneCurrentRoot ? "one_current_root" : "portable",
   });
   application.installBrowserWakeHints(window, document);
   const controller = new InspectionController(application);
   controller.start();
   const rootElement = document.querySelector<HTMLElement>("#app");
   if (rootElement === null) throw new Error("missing application root");
-  createRoot(rootElement).render(
+  const root = createRoot(rootElement);
+  root.render(
     <LocalizationProvider>
       <InspectionProvider controller={controller}>
-        <App oneCurrentRoot />
+        <App oneCurrentRoot={oneCurrentRoot} />
       </InspectionProvider>
     </LocalizationProvider>,
   );
-  return () => controller.close();
+  return async () => { root.unmount(); await controller.close(); };
 }

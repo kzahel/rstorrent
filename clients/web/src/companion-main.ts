@@ -1,9 +1,13 @@
+import { startDesktopCompanion } from "./desktop-companion-main";
 import { connectAndroidCompanion } from "./android-companion-client";
 import { startCompanionInspection } from "./inspection/companion-bootstrap";
 import { localizeDocumentShell, message } from "./localization/runtime";
 
 localizeDocumentShell();
 
+if (new URL(window.location.href).searchParams.get("backend") === "desktop") {
+  void startDesktopCompanion();
+} else {
 const abort = new AbortController();
 const status = requiredElement("companion-status");
 const cancel = requiredButton("companion-cancel");
@@ -56,6 +60,8 @@ void connectAndroidCompanion(
     cancel.disabled = false;
     cancelAction = () => window.close();
   });
+
+}
 
 function requiredElement(id: string): HTMLElement {
   const element = document.getElementById(id);

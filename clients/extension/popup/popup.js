@@ -63,14 +63,14 @@ launchButton.addEventListener("click", async () => {
   launchButton.disabled = true;
   setStatus("checking", "Opening RSTorrent…", "Sending a launch request to the desktop app.");
   try {
-    const response = await request("launch");
-    if (!response?.ok || response.result?.status !== "requested") {
+    const response = await chrome.runtime.sendMessage({ type: "desktopBootstrap", op: "open" });
+    if (!response?.ok || response.result?.kind !== "desktop_ui") {
       throw new Error(response?.error?.message || "RSTorrent could not be opened.");
     }
     setStatus(
       "ready",
       "Launch requested",
-      "The desktop app should open or focus shortly.",
+      "Your desktop library is open in the browser.",
     );
   } catch (error) {
     setStatus(
@@ -153,6 +153,7 @@ async function initializePresentation() {
   });
   if (presentation.desktop) {
     await checkDesktop();
+    if (!launchButton.disabled) launchButton.click();
   }
 }
 

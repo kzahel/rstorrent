@@ -373,3 +373,20 @@ four-client ceiling, library projection and zero active connections after join);
 Native-host negative cases include insecure/symlink/non-socket rendezvous,
 live-owner refusal, stale-socket recovery and bootstrap cleanup. The existing
 vendored GLib emits compiler warnings; no vendor source was changed.
+
+### Shared presentation checkpoint
+
+The packaged companion entry now selects desktop explicitly and retains Android
+as its default. Desktop uses portable multi-root presentation, an ephemeral
+validated bootstrap, the existing WebSocket client, and shared React mount with
+proper unmount/close. Folder/media actions remain native-only and the desktop
+page offers Open desktop window. Worker clicks coalesce; foreign sender URLs
+cannot request bootstrap; credentials never enter remembered-tab storage.
+
+Builder: `npm run typecheck --prefix clients/web`, `npm run test --prefix
+clients/web` (403 pass, two skipped), `npm test --prefix clients/extension`
+(32 pass), `npm run package --prefix clients/extension`, and
+`node scripts/check-localization.mjs` pass. Packaging retains exact beta identity
+and permits only exact loopback plus existing ARC network scopes. Installed
+Chrome for Testing 151 in the claimed Linux guest reaches the desktop library;
+full launch/lifecycle/command matrix is still in progress.
