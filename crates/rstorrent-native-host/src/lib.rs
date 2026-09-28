@@ -319,7 +319,11 @@ fn dispatch<L: DesktopLauncher>(
                 minimum_protocol_version: MINIMUM_PROTOCOL_VERSION,
                 current_protocol_version: PROTOCOL_VERSION,
                 caller_origin: caller_origin.to_owned(),
-                capabilities: vec!["launch_desktop", "desktop_control_v1"],
+                capabilities: if cfg!(unix) {
+                    vec!["launch_desktop", "desktop_control_v1"]
+                } else {
+                    vec!["launch_desktop"]
+                },
             },
         ),
         "start_control" | "attach_control" if caller_origin == control::BETA_ORIGIN => {

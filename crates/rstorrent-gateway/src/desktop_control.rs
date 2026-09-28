@@ -80,16 +80,40 @@ impl DesktopControlServer {
         let router = Router::new()
             .route("/api/v1/connect", get(upgrade))
             .with_state(self.state);
-        let result = axum::serve(
-            self.listener,
-            router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
-        )
-        .with_graceful_shutdown(async move {
-            shutdown.cancelled().await;
-            gateway_shutdown.cancel();
-        })
-        .await
-        .map_err(GatewayError::Serve);
+        let mut requests = tokio::task::JoinSet::new();
+        let result = loop {
+            tokio::select! {
+                biased;
+                () = shutdown.cancelled() => break Ok(()),
+                _ = requests.join_next(), if !requests.is_empty() => {},
+                accepted = self.listener.accept() => {
+                    let (stream, peer) = match accepted {
+                        Ok(value) => value,
+                        Err(error) => break Err(GatewayError::Serve(error)),
+                    };
+                    if requests.len() >= 8 {
+                        // Refuse before allocating a parser or spawning a task.
+                        drop(stream);
+                        continue;
+                    }
+                    let service = hyper_util::service::TowerToHyperService::new(
+                        router.clone().layer(axum::Extension(ConnectInfo(peer))),
+                    );
+                    requests.spawn(async move {
+                        let mut http = hyper::server::conn::http1::Builder::new();
+                        http.max_headers(32).max_buf_size(16 * 1024);
+                        let connection = http.serve_connection(
+                            hyper_util::rt::TokioIo::new(stream), service,
+                        ).with_upgrades();
+                        // Bounds slow headers and peers that never read a refusal.
+                        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), connection).await;
+                    });
+                }
+            }
+        };
+        gateway_shutdown.cancel();
+        requests.abort_all();
+        while requests.join_next().await.is_some() {}
         // Axum upgrades outlive HTTP requests. Wait for their pumps/writers too.
         let _joined = connections.acquire_many(4).await;
         result
@@ -178,6 +202,49 @@ mod tests {
             bad.headers_mut().insert(header, value.parse().unwrap());
             assert!(connect_async(bad).await.is_err());
         }
+        // Before authentication, idle HTTP peers are bounded independently of
+        // the four upgraded application clients.
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let mut idle = Vec::new();
+        for _ in 0..8 {
+            idle.push(tokio::net::TcpStream::connect(address).await.unwrap());
+        }
+        let mut overflow = tokio::net::TcpStream::connect(address).await.unwrap();
+        let mut byte = [0];
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), overflow.read(&mut byte))
+                .await
+                .unwrap()
+                .unwrap(),
+            0
+        );
+        // Slow headers cannot retain their slots indefinitely.
+        for peer in &mut idle {
+            assert_eq!(
+                tokio::time::timeout(Duration::from_secs(6), peer.read(&mut byte))
+                    .await
+                    .unwrap()
+                    .unwrap(),
+                0
+            );
+        }
+        let mut oversized = tokio::net::TcpStream::connect(address).await.unwrap();
+        oversized
+            .write_all(
+                format!(
+                    "GET /api/v1/connect HTTP/1.1\r\nHost: {address}\r\nX-Large: {}\r\n\r\n",
+                    "x".repeat(32 * 1024)
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+        let mut refusal = [0; 1024];
+        let size = tokio::time::timeout(Duration::from_secs(1), oversized.read(&mut refusal))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(String::from_utf8_lossy(&refusal[..size]).contains("431"));
         let hello = |credential: &str, id: usize| json!({"type":"connect", "api_version":1, "encoding":"json", "client_instance_id":format!("{id:032x}"), "token":credential});
         let (mut bad, _) = connect_async(request()).await.unwrap();
         bad.send(Message::Text(hello("wrong", 1).to_string().into()))
@@ -214,6 +281,7 @@ mod tests {
             clients.push(client);
         }
         assert!(connect_async(request()).await.is_err());
+        let _idle_at_quit = tokio::net::TcpStream::connect(address).await.unwrap();
         cancel.cancel();
         // Drain close frames so cooperative writer shutdown is exercised.
         for mut client in clients {

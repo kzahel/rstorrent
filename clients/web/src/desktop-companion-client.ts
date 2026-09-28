@@ -1,5 +1,5 @@
 import { message } from "./localization/runtime";
-import type { ApplicationViewClient } from "./api/client";
+import { ApplicationViewError, type ApplicationViewClient } from "./api/client";
 import type { ApiHello } from "./api/generated/v1";
 import { WebSocketApplicationViewClient } from "./websocket-view-client";
 
@@ -33,7 +33,7 @@ export function validateDesktopReady(value: unknown): Ready {
       typeof ready.credential !== "string" || !/^[0-9a-f]{64}$/.test(ready.credential) ||
       typeof ready.instanceId !== "string" || !/^[0-9a-f]{32}$/.test(ready.instanceId) ||
       ready.profileId !== "default") {
-    throw new Error(message("desktop.companion.incompatible"));
+    throw new ApplicationViewError("invalid_version", message("desktop.companion.incompatible"));
   }
   return ready as Ready;
 }
@@ -72,7 +72,7 @@ export async function connectDesktopCompanion(signal: AbortSignal): Promise<{
     const hello = await client.hello(signal);
     if (hello.backend?.kind !== "desktop" || hello.backend.instance_id !== ready.instanceId ||
         hello.backend.profile_id !== ready.profileId || !hello.backend.capability_profile.includes("desktop_control_v1")) {
-      throw new Error(message("desktop.companion.identity-changed"));
+      throw new ApplicationViewError("authentication_failed", message("desktop.companion.identity-changed"));
     }
     return { client, hello, disconnected: closed };
   } catch (error) { await client.close(); throw error; }

@@ -390,3 +390,18 @@ clients/web` (403 pass, two skipped), `npm test --prefix clients/extension`
 and permits only exact loopback plus existing ARC network scopes. Installed
 Chrome for Testing 151 in the claimed Linux guest reaches the desktop library;
 full launch/lifecycle/command matrix is still in progress.
+
+Final resource review also bounds the HTTP phase before WebSocket admission:
+eight pending HTTP/1 connections, 32 headers, 16 KiB parser buffer,
+and a five-second total HTTP-connection lifetime before upgrade. A joined task set owns these sockets;
+Quit cancels it before waiting for application connections. This uses Hyper and
+hyper-util already pinned transitively by Axum, now as explicit dependencies.
+Reviewed the official [Hyper HTTP/1 Builder](https://docs.rs/hyper/1.11.0/hyper/server/conn/http1/struct.Builder.html)
+and [TowerToHyperService](https://docs.rs/hyper-util/0.1.20/hyper_util/service/struct.TowerToHyperService.html)
+documentation and pinned `hyper-1.11.0/src/server/conn/http1.rs` defaults; relying on Axum's default
+HTTP listener would leave pre-upgrade connection admission unbounded.
+
+Focused final checks pass: eight idle HTTP slots/ninth refusal, five-second
+expiry, oversized header refusal and joined Quit with an idle HTTP peer; four
+reconnect ownership tests; complete web suite (407 pass, two skipped), web
+typecheck/package, native-host tests, workspace Clippy and desktop build.
