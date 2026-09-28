@@ -70,6 +70,16 @@ fn install_for_platform(
     let stable_directory = app_config_dir.join(HOST_DIRECTORY);
     fs::create_dir_all(&stable_directory)
         .map_err(|error| format!("create native host directory: {error}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let metadata = fs::symlink_metadata(&stable_directory).map_err(|e| e.to_string())?;
+        if !metadata.is_dir() || metadata.uid() != rustix::process::getuid().as_raw() {
+            return Err("native host directory is not owned by the current user".to_owned());
+        }
+        fs::set_permissions(&stable_directory, fs::Permissions::from_mode(0o700))
+            .map_err(|e| e.to_string())?;
+    }
     let stable_host = install_versioned_host(bundled_host, &stable_directory)?;
 
     let launch_config = launch_config(platform, desktop_executable)?;

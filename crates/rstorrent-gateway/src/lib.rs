@@ -4,6 +4,7 @@
 
 mod application_websocket;
 mod chromeos_companion;
+pub mod desktop_control;
 mod web_auth;
 mod web_auth_http;
 

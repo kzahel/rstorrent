@@ -357,3 +357,19 @@ Validation sequence: native bootstrap negative/process tests and control socket
 admission/semantic tests; lifecycle tests and desktop build; web/extension tests
 and package; installed claimed Linux cold/warm/race/two-view/Quit matrix. Record
 exact commands, artifacts, peaks and cleanup below before closing the checkpoint.
+
+### Native implementation checkpoint
+
+Implemented protected Unix bootstrap, loopback-only semantic desktop adapter,
+optional webview startup, and control-before-service joined shutdown. The
+existing default library remains the sole owner. Windows control fails closed.
+
+Builder evidence so far: `cargo check -p rstorrent-desktop`;
+`cargo test -p rstorrent-native-host` (11 unit and 2 process tests);
+`cargo test -p rstorrent-native-host -p rstorrent-gateway desktop_control -- --nocapture`
+(one focused gateway integration: wrong Host/Origin/token, exact backend identity,
+four-client ceiling, library projection and zero active connections after join);
+`cargo test -p rstorrent-desktop --lib` (51 pass); desktop/native-host debug build.
+Native-host negative cases include insecure/symlink/non-socket rendezvous,
+live-owner refusal, stale-socket recovery and bootstrap cleanup. The existing
+vendored GLib emits compiler warnings; no vendor source was changed.

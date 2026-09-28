@@ -3,6 +3,11 @@ use std::io;
 use rstorrent_native_host::ConfiguredLauncher;
 
 fn main() {
+    // A browser-abandoned or partial stdin frame must not retain a host forever.
+    std::thread::spawn(|| {
+        std::thread::sleep(std::time::Duration::from_secs(20));
+        std::process::exit(1);
+    });
     if let Err(error) = run() {
         eprintln!("RSTorrent native host: {error}");
         std::process::exit(1);

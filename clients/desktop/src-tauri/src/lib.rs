@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+mod desktop_control;
+
 use std::collections::BTreeMap;
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
@@ -109,6 +111,7 @@ struct DesktopState {
     view_resources: Arc<DesktopViewResources>,
     torrent_uploads: Arc<Semaphore>,
     media_server: Mutex<Option<LoopbackMediaServer>>,
+    desktop_control: Mutex<Option<desktop_control::DesktopControlOwner>>,
     window_generation: AtomicU64,
     shell_settings_path: PathBuf,
     shell_settings: StdMutex<DesktopShellSettings>,
@@ -1501,6 +1504,10 @@ async fn wait_for_application_shutdown(state: &DesktopState) -> Result<(), Strin
 
 async fn perform_application_shutdown(app: AppHandle) {
     let state = app.state::<DesktopState>();
+    let control_result = match state.desktop_control.lock().await.take() {
+        Some(owner) => owner.shutdown().await,
+        None => Ok(()),
+    };
     if let Some(owner) = state.power_owner.lock().await.take() {
         stop_power_owner(owner).await;
     }
@@ -1541,6 +1548,9 @@ async fn perform_application_shutdown(app: AppHandle) {
         Ok(())
     };
     let mut failures = Vec::new();
+    if let Err(control) = control_result {
+        failures.push(control);
+    }
     if let Err(remote) = remote_result {
         failures.push(format!("remote access shutdown: {remote}"));
     }
@@ -2024,8 +2034,16 @@ pub fn run() {
                         .iter()
                         .filter(|argument| !is_magnet_argument(argument)),
                 );
-                if let Err(error) = restore_main_window(app) {
-                    eprintln!("failed to restore desktop window for second launch: {error}");
+                if !desktop_control::background_launch(arguments.iter().map(String::as_str)) {
+                    // D-Bus callbacks can arrive on a non-main thread.
+                    let handle = app.clone();
+                    let _ = app.run_on_main_thread(move || {
+                        if let Err(error) = restore_main_window(&handle) {
+                            eprintln!(
+                                "failed to restore desktop window for second launch: {error}"
+                            );
+                        }
+                    });
                 }
             },
         ))
@@ -2120,7 +2138,11 @@ pub fn run() {
                     .power
                     .prevent_sleep_during_active_downloads,
             );
+            let control_owner = tauri::async_runtime::block_on(
+                desktop_control::DesktopControlOwner::open(&config_dir, service.clone()),
+            )?;
             let state = DesktopState {
+                desktop_control: Mutex::new(Some(control_owner)),
                 service,
                 product_state,
                 remote_runtime,
@@ -2143,17 +2165,14 @@ pub fn run() {
                 update_check_generation: AtomicU64::new(0),
                 external_activations: StdMutex::new(external_activations),
             };
-            let service = state.service.clone();
-            let subscriptions = state.subscriptions.clone();
-            let view_resources = state.view_resources.clone();
-            let window = app
-                .get_webview_window(MAIN_WINDOW_LABEL)
-                .ok_or_else(|| "main webview window was not created".to_owned())?;
-            apply_platform_window_icon(&window)?;
-            observe_window_destruction(&window, service, subscriptions, view_resources, 1);
             app.manage(state);
-            if window.is_visible().unwrap_or(true) {
-                record_desktop_foreground_if_new(&app.state::<DesktopState>());
+            if !desktop_control::background_launch(
+                std::env::args()
+                    .collect::<Vec<_>>()
+                    .iter()
+                    .map(String::as_str),
+            ) {
+                restore_main_window(app.handle())?;
             }
             let external_handle = app.handle().clone();
             app.deep_link().on_open_url(move |event| {

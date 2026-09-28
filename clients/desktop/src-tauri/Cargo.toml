@@ -20,8 +20,10 @@ tauri-build = { version = "2.6.3", features = [] }
 [dependencies]
 rstorrent-session = { path = "../../../crates/rstorrent-session" }
 rstorrent-media = { path = "../../../crates/rstorrent-media" }
+rstorrent-gateway = { path = "../../../crates/rstorrent-gateway" }
 rstorrent-native-host = { path = "../../../crates/rstorrent-native-host" }
 rstorrent-remote-host = { path = "../../../crates/rstorrent-remote-host" }
+getrandom.workspace = true
 reqwest = { workspace = true }
 rustls = { workspace = true, features = ["ring"] }
 serde = { workspace = true }
@@ -39,6 +41,9 @@ tokio-util = { workspace = true }
 url = { workspace = true }
 uuid = { workspace = true }
 zeroize = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+rustix.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 futures-util = { workspace = true }

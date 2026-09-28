@@ -1,3 +1,5 @@
+pub mod control;
+
 use std::fmt;
 use std::fs;
 use std::io::{self, Read, Write};
@@ -79,6 +81,10 @@ impl LaunchConfig {
 
 pub trait DesktopLauncher {
     fn launch(&mut self) -> Result<(), String>;
+
+    fn control(&mut self, _start: bool) -> Result<control::ControlReady, String> {
+        Err("Desktop control is unavailable on this platform".to_owned())
+    }
 }
 
 #[derive(Debug)]
@@ -96,8 +102,8 @@ impl ConfiguredLauncher {
     }
 }
 
-impl DesktopLauncher for ConfiguredLauncher {
-    fn launch(&mut self) -> Result<(), String> {
+impl ConfiguredLauncher {
+    fn launch_with_intent(&mut self, background: bool) -> Result<(), String> {
         let config = LaunchConfig::read_from(&self.config_path)
             .map_err(|_| "RSTorrent launch configuration is unavailable".to_owned())?;
         if !config.path.exists() {
@@ -107,10 +113,24 @@ impl DesktopLauncher for ConfiguredLauncher {
             LaunchKind::Executable => Command::new(&config.path),
             LaunchKind::MacApp => {
                 let mut command = Command::new("/usr/bin/open");
+                if background {
+                    command.arg("-g");
+                }
                 command.arg("--").arg(&config.path);
+                if background {
+                    command.args(["--args", control::BACKGROUND_ARGUMENT]);
+                }
                 command
             }
         };
+        if background && config.kind == LaunchKind::Executable {
+            command.arg(control::BACKGROUND_ARGUMENT);
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+        }
         command
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -118,6 +138,41 @@ impl DesktopLauncher for ConfiguredLauncher {
             .spawn()
             .map(|_| ())
             .map_err(|_| "RSTorrent launch request could not be started".to_owned())
+    }
+}
+
+impl DesktopLauncher for ConfiguredLauncher {
+    fn launch(&mut self) -> Result<(), String> {
+        self.launch_with_intent(false)
+    }
+
+    fn control(&mut self, start: bool) -> Result<control::ControlReady, String> {
+        let directory = self
+            .config_path
+            .parent()
+            .ok_or("Desktop setup is unavailable")?;
+        let path = directory.join(control::SOCKET_NAME);
+        match control::read_ready(&path) {
+            Ok(ready) => return Ok(ready),
+            Err(error) if !control::is_stopped(&error) => {
+                return Err("Desktop bootstrap was refused".to_owned());
+            }
+            Err(_) if !start => {
+                return Err("Desktop is stopped. Select Start to open it.".to_owned());
+            }
+            Err(_) => {}
+        }
+        self.launch_with_intent(true)?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while std::time::Instant::now() < deadline {
+            match control::read_ready(&path) {
+                Ok(ready) => return Ok(ready),
+                Err(error) if control::is_stopped(&error) => {}
+                Err(_) => return Err("Desktop bootstrap was refused".to_owned()),
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        Err("Desktop did not become ready in time".to_owned())
     }
 }
 
@@ -165,7 +220,7 @@ struct Request {
     op: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Response {
     id: String,
@@ -177,7 +232,7 @@ struct Response {
     error: Option<ErrorBody>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum ResultBody {
     Hello {
@@ -190,7 +245,11 @@ enum ResultBody {
         current_protocol_version: u32,
         #[serde(rename = "callerOrigin")]
         caller_origin: String,
-        capabilities: [&'static str; 1],
+        capabilities: Vec<&'static str>,
+    },
+    Ready {
+        #[serde(flatten)]
+        ready: control::ControlReady,
     },
     Launch {
         status: &'static str,
@@ -260,9 +319,15 @@ fn dispatch<L: DesktopLauncher>(
                 minimum_protocol_version: MINIMUM_PROTOCOL_VERSION,
                 current_protocol_version: PROTOCOL_VERSION,
                 caller_origin: caller_origin.to_owned(),
-                capabilities: ["launch_desktop"],
+                capabilities: vec!["launch_desktop", "desktop_control_v1"],
             },
         ),
+        "start_control" | "attach_control" if caller_origin == control::BETA_ORIGIN => {
+            match launcher.control(request.op == "start_control") {
+                Ok(ready) => Response::success(&request.id, ResultBody::Ready { ready }),
+                Err(message) => Response::error(&request.id, "control_unavailable", message),
+            }
+        }
         "launch" => match launcher.launch() {
             Ok(()) => Response::success(
                 &request.id,

@@ -12,6 +12,7 @@
       {
         "title": "RSTorrent",
         "label": "main",
+        "create": false,
         "width": 1180,
         "height": 760,
         "minWidth": 760,

@@ -4517,17 +4517,20 @@ name = "rstorrent-desktop"
 version = "0.1.4"
 dependencies = [
  "futures-util",
+ "getrandom 0.3.4",
  "glib",
  "keepawake",
  "notify-rust",
  "rcgen",
  "reqwest",
+ "rstorrent-gateway",
  "rstorrent-media",
  "rstorrent-native-host",
  "rstorrent-remote-host",
  "rstorrent-remote-relay",
  "rstorrent-session",
  "rusqlite",
+ "rustix",
  "rustls",
  "serde",
  "serde_json",
@@ -4679,9 +4682,12 @@ dependencies = [
 name = "rstorrent-native-host"
 version = "0.1.1"
 dependencies = [
+ "rustix",
  "serde",
  "serde_json",
  "tempfile",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]

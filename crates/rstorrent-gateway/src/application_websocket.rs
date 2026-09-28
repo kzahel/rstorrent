@@ -597,6 +597,13 @@ impl ApplicationConnectionRegistry {
     }
 }
 
+fn desktop_control_without_media(state: &GatewayState) -> bool {
+    state
+        .hello_backend
+        .as_ref()
+        .is_some_and(|backend| backend.kind == "desktop")
+}
+
 pub(crate) fn application_hello(service: &ApplicationService) -> ApiHello {
     let mut hello = service.api_hello();
     if !hello.deliveries.contains(&DeliveryMode::Stream) {
@@ -818,7 +825,8 @@ async fn serve_application_connection(
     if matches!(
         state.authentication.as_ref(),
         GatewayAuthentication::ChromeOsCompanion(_)
-    ) {
+    ) || desktop_control_without_media(&state)
+    {
         hello
             .capabilities
             .retain(|capability| capability != "torrent_media");
@@ -1273,18 +1281,17 @@ async fn handle_client_frame(
                 .await;
                 return;
             }
-            if matches!(
-                (&operation, state.authentication.as_ref()),
-                (
-                    ApplicationCall::CreateMediaUrl { .. },
+            if matches!(operation, ApplicationCall::CreateMediaUrl { .. })
+                && (matches!(
+                    state.authentication.as_ref(),
                     GatewayAuthentication::ChromeOsCompanion(_)
-                )
-            ) {
+                ) || desktop_control_without_media(state))
+            {
                 send_call_error(
                     control,
                     call_id,
                     ApplicationConnectionErrorCode::InvalidCall,
-                    "media capabilities are unavailable on Android companion connections",
+                    "media capabilities are unavailable on this companion connection",
                 )
                 .await;
                 return;
