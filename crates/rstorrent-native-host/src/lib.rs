@@ -453,12 +453,47 @@ mod tests {
         bytes
     }
 
-    fn exchange(input: &[u8], origin: Option<&str>, launcher: &mut FakeLauncher) -> Value {
+    fn exchange(input: &[u8], origin: Option<&str>, launcher: &mut impl DesktopLauncher) -> Value {
         let mut output = Vec::new();
         run(&mut &input[..], &mut output, origin, launcher).expect("host exchange");
         let frames = decode_frames(&output).expect("decode output");
         assert_eq!(frames.len(), 1);
         frames.into_iter().next().unwrap()
+    }
+
+    #[test]
+    fn control_requires_exact_beta_origin_and_preserves_launch_intent() {
+        #[derive(Default)]
+        struct ControlLauncher(Vec<bool>);
+        impl DesktopLauncher for ControlLauncher {
+            fn launch(&mut self) -> Result<(), String> {
+                panic!("control must not use ordinary window launch");
+            }
+            fn control(&mut self, start: bool) -> Result<control::ControlReady, String> {
+                self.0.push(start);
+                Ok(control::ControlReady {
+                    endpoint: "http://127.0.0.1:1234".to_owned(),
+                    credential: "ab".repeat(32),
+                    instance_id: "cd".repeat(16),
+                    profile_id: "default".to_owned(),
+                })
+            }
+        }
+        let mut launcher = ControlLauncher::default();
+        for (operation, starts) in [("start_control", true), ("attach_control", false)] {
+            let request = framed(&format!(
+                r#"{{"id":"control","protocolVersion":1,"op":"{operation}"}}"#
+            ));
+            let denied = exchange(&request, Some(ORIGIN), &mut launcher);
+            assert_eq!(denied["ok"], false);
+            assert!(launcher.0.is_empty());
+            let ready = exchange(&request, Some(control::BETA_ORIGIN), &mut launcher);
+            assert_eq!(ready["ok"], true);
+            assert_eq!(ready["result"]["kind"], "ready");
+            assert_eq!(ready["result"]["profileId"], "default");
+            assert_eq!(launcher.0, [starts]);
+            launcher.0.clear();
+        }
     }
 
     #[test]

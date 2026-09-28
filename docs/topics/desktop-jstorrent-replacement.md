@@ -2,14 +2,13 @@
 
 Topic: `desktop-jstorrent-replacement`
 
-Status: **Active migration planning, 2026-09-28.** Maintainer direction selects
-desktop extension control as the first focus and familiar user journeys as the
-North Star. The working campaign tracker is Tactical
-[`231`](../tactical/231-jstorrent-migration-working-campaign.md); the first
-control slice is planned in Tactical
-[`232`](../tactical/232-desktop-extension-control.md). No importer, desktop
-control transport, production identity change or release is implemented by
-these plans. Exact transport and data-mapping proposals remain to be settled.
+Status: **First desktop control checkpoint implemented, 2026-09-28.**
+The working campaign is Tactical
+[`231`](../tactical/231-jstorrent-migration-working-campaign.md); Tactical
+[`232`](../tactical/232-desktop-extension-control.md) records the selected
+protected native bootstrap, authenticated semantic connection and Linux
+validation. Extension-driven picking, full installed cross-platform rehearsal,
+legacy importer, production identity and rollout remain separate open gates.
 
 ## Outcome And Scope
 

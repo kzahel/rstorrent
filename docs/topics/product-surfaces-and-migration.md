@@ -620,8 +620,9 @@ fixture, or wire contract from either sibling project.
 
 ## Recommended Next Work
 
-For the desktop migration campaign, start Tactical `232`'s desktop extension
-control checkpoint, tracked by Tactical `231` and
+For the desktop migration campaign, continue Tactical `232` from its first
+Linux control checkpoint to extension picker and full installed Rehearsal A,
+tracked by Tactical `231` and
 [`desktop-jstorrent-replacement.md`](desktop-jstorrent-replacement.md).
 Legacy source-fixture/import rehearsal follows the first working control path.
 Existing independent release and platform campaigns below continue under

@@ -2,6 +2,13 @@
 
 Topic: `runtime-configurations-and-headless-deployment`
 
+Tactical [`232`](../tactical/232-desktop-extension-control.md) adds an explicit
+`--extension-background` intent to the ordinary singleton desktop executable.
+It retains the desktop application service, default library and close/Quit
+policy while deferring webview creation until a native-window action. It is
+not a configured headless-service mode. The native host owns bootstrap only;
+closing an extension client does not transfer runtime ownership.
+
 Status: Configured Linux headless-service Tactical
 [`170`](../tactical/170-configured-linux-headless-service.md) and signed
 headless release/trusted-LAN Tactical

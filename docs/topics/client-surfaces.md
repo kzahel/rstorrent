@@ -2,6 +2,14 @@
 
 Topic: `client-surfaces`
 
+Tactical [`232`](../tactical/232-desktop-extension-control.md) implements the
+first desktop beta-extension client using the packaged shared React application.
+Native and extension views share one default library; explicit extension open
+starts the runtime without creating a native window, while ordinary desktop
+launch shows that window. Folder acquisition, media, updater and shell actions
+remain native at this checkpoint. Linux development-layout evidence and later
+platform/package gates are recorded in the tactical.
+
 Tactical [`229`](../tactical/229-web-desktop-data-reset.md) brings the reset
 and clear choices to shared React Settings for local browser and desktop
 clients. React owns confirmation and awaits the existing torrent-removal jobs;
@@ -376,10 +384,10 @@ Their transports differ:
   an explicitly selected loopback diagnostic comparison only; it is not a
   visible preference, automatic fallback or concurrent second lane.
 
-Transport reuse is not an end in itself. A local desktop product does not open
-a listener, allocate a port, serialize through a socket, or acquire network
-authentication machinery merely to resemble the remote path. Both transports
-adapt to the same semantic dispatcher and reactive-view contract.
+The native Tauri view stays in-process. Tactical `232` explicitly adds the
+bounded authenticated listener for extension clients; it does not route the
+native view through that socket. Both adapt to the same semantic dispatcher
+and reactive-view contract.
 
 The graduation direction adds the existing JSTorrent extension as a possible
 first-class presentation for a native desktop, Android, or Crostini backend.
@@ -388,8 +396,8 @@ profile; ChromeOS Android and Crostini remain separate backend and data
 authorities. That future product topology, handoff UX, and manual migration
 posture are recorded in
 [`product-surfaces-and-migration.md`](product-surfaces-and-migration.md). It
-does not make a production extension transport part of the currently
-implemented client surface.
+does not qualify a production extension rollout. Tactical `232` now supplies
+the first beta desktop control implementation.
 
 Tactical
 [`167`](../tactical/167-chromeos-crostini-bundled-web-launcher.md) makes one

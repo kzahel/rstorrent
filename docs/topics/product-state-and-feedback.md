@@ -2,6 +2,11 @@
 
 Topic: `product-state-and-feedback`
 
+Tactical [`232`](../tactical/232-desktop-extension-control.md) keeps desktop
+product state under its existing native owner. Native bootstrap carries no
+product metrics or persistent browser credential, and the extension receives
+no new metrics/reset bridge. Existing extension-local disclosures remain.
+
 Tactical [`230`](../tactical/230-desktop-stable-latest-update-channels.md)
 keeps update check identity under native `product.db` preference authority
 while adding a selectable desktop channel. The native candidate removes

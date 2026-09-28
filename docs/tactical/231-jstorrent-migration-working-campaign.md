@@ -62,7 +62,7 @@ SQLite and payload writes remain native. No engine runs in the extension.
 
 | ID | Work | State | Exit evidence / next action |
 | --- | --- | --- | --- |
-| M-01 | Desktop extension control | First focus; planned in [`232`](232-desktop-extension-control.md) | Installed cold/warm launch, two views, root picker, controlled transfer, detach/reconnect and joined Quit |
+| M-01 | Desktop extension control | First Linux checkpoint complete in [`232`](232-desktop-extension-control.md); full rehearsal open | Cold/warm/singleton/authentication/two-view pause-resume/Quit pass in a controlled Linux development layout. Next: extension picker, controlled transfer and installed macOS/Windows/Linux package gates. |
 | M-02 | Legacy cohort inventory and fixtures | Planned; preparation can overlap M-01 | Pin released artifacts, generate profiles through old writers, enumerate formats/features and recoverable fields |
 | M-03 | Migration preview, union import and recovery | Not implemented | Consistent snapshots of all source profiles, identity/root mapping, explicit conflict outcomes, retry/crash recovery, held activation, exact recheck and preservation |
 | M-04 | Support/report continuity | Required before user cohort | Failure-page report, bounded migration/backend context, familiar voluntary feedback journey and disclosure verification |
@@ -201,12 +201,18 @@ production routing remain separately scoped.
 
 - Completed: source survey and draft field mapping in the living topic;
   read-only Machine Control discovery/doctor checks; this campaign plan.
-- Current: desktop extension control design, Tactical `232`.
-- Next executable planning action: close Tactical `232`'s transport/bootstrap
-  contract against exact source and platform documentation, then implement its
-  first checkpoint: extension click -> one runtime -> authenticated library ->
-  pause/resume convergence. Extension-driven picker follows that checkpoint.
-- Rehearsals A/B/C: **not run**. No migration-ready or rollout-ready claim.
+- Completed first control checkpoint: Tactical `232` implements one desktop
+  owner/library, protected native bootstrap and authenticated shared React.
+  Claimed Linux VM evidence proves cold/warm launch, singleton races/repeated
+  clicks, native-root preparation, two-view pause/resume, invalid/stale token
+  refusal and Quit without resurrection. Exact source/artifact hashes, tests,
+  resource samples and cleanup are recorded in that tactical.
+- Current: full desktop control acceptance remains active in Tactical `232`.
+- Next executable action: extension-driven native picker/Cancel/focus, then
+  controlled-transfer/detach and installed package/registration Rehearsal A.
+  Windows protected IPC and macOS installed acceptance remain open.
+- Rehearsal A: **partial Linux first-checkpoint evidence only**. Rehearsals
+  B/C: **not run**. No migration-ready or rollout-ready claim.
 - Remaining campaign decisions: supported source formats, union-conflict rules,
   settings and historical counters, mixed-version bridge policy, first cohort
   delivery, compatibility baseline and rollback support duration.

@@ -2,6 +2,13 @@
 
 Topic: `application-view-api`
 
+Tactical [`232`](../tactical/232-desktop-extension-control.md) reuses existing
+commands, library views and acknowledgements for desktop extension control.
+No generated DTO changes are needed. Its hello identifies `desktop`, the sole
+`default` profile and a fresh runtime instance with `desktop_control_v1` and
+`native_window_root_acquisition`. Media capability is withheld and media-URL
+creation is rejected until that surface has its own acceptance evidence.
+
 Tactical `216`'s local support export consumes only the existing client-side
 updater snapshot and emits its own bounded allowlist. It changes no generated
 application DTO, selector, leased-view delivery, acknowledgement or Rust/native

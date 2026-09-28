@@ -2,6 +2,13 @@
 
 Topic: `download-root-acquisition`
 
+The first desktop extension checkpoint in Tactical
+[`232`](../tactical/232-desktop-extension-control.md) deliberately acquires its
+fresh controlled root through the existing native Tauri/GTK picker. Both views
+then consume the same registered root. The extension's picker adapter explains
+that the native window is required; extension-driven picker/Cancel/focus
+behavior remains the next gate.
+
 Status: Current behavior researched on 2026-08-29. Packaged desktop, local
 browser gateway, Crostini, and Linux headless use distinct platform adapters
 despite sharing the React storage UI. Windows packaged-desktop picker evidence

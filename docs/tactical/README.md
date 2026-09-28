@@ -93,6 +93,14 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`232-desktop-extension-control.md`](232-desktop-extension-control.md):
+  first Linux checkpoint complete; protected native bootstrap, one runtime and
+  library, shared React control and joined Quit. Extension picker, full
+  installed rehearsal and macOS/Windows remain open.
+- [`231-jstorrent-migration-working-campaign.md`](231-jstorrent-migration-working-campaign.md):
+  active desktop replacement campaign; control precedes legacy-profile union
+  import and production replacement rehearsal.
+
 - [`219-dependency-and-ci-maintenance.md`](219-dependency-and-ci-maintenance.md):
   complete; patched Cargo and website advisories, three-lockfile review,
   bounded Dependabot updates and security alerts, and passing hosted website,

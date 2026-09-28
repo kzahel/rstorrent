@@ -2,6 +2,15 @@
 
 Topic: `application-connection-architecture`
 
+Tactical [`232`](../tactical/232-desktop-extension-control.md) adds the desktop
+composition of this same semantic connection. The sole native service owns a
+loopback-only listener; protected same-user native bootstrap supplies an
+in-memory, per-runtime bearer to the exact beta extension. Native Tauri remains
+in-process. HTTP admission, application connections, upload and shutdown are
+bounded separately. Automatic reconnection is attach-only; explicit Start is
+the only browser action that may create the desktop owner. Linux checkpoint
+evidence does not qualify Windows IPC or macOS installed lifecycle.
+
 Status: The direct loopback application connection is implemented by Tactical
 `060`. Ordinary browser use sends typed calls, commands, view-set mutations,
 streamed `UpdateBatch` values and exact cursor acknowledgements through one

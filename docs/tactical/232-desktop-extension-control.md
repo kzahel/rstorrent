@@ -1,7 +1,7 @@
 # Tactical 232: Desktop Extension Control
 
-Status: **First Linux checkpoint in progress, 2026-09-28.** The bounded
-contract below is selected for implementation. Later platform, picker and
+Status: **First Linux checkpoint complete, 2026-09-28.** The bounded
+contract below is implemented and verified in a claimed Linux VM. Later platform, picker and
 complete Rehearsal A gates remain open.
 
 Parent: [`231-jstorrent-migration-working-campaign.md`](231-jstorrent-migration-working-campaign.md)
@@ -43,9 +43,9 @@ Maintainer accepted the simplified model during the migration discussion:
 - Both views may coexist. There is no preferred-UI setting, takeover prompt,
   automatic closing of the other view, or browser-owned data authority.
 - Desktop connection setup should be automatic through the installed approved
-  native-messaging integration, without routine code-entry pairing. Protected
-  local bootstrap and credential authentication still require the transport
-  design checkpoint; finding a port or checking Origin alone is insufficient.
+  native-messaging integration, without routine code-entry pairing. The selected
+  protected bootstrap and credential contract is recorded below; finding a
+  port or checking Origin alone is insufficient.
 - Reconnect may attach to a running/restarting owner, but must never start a
   stopped runtime on its own. Only explicit user open/start requests may launch
   it. Explicit Quit leaves the extension disconnected with a Start action.
@@ -415,3 +415,97 @@ and refusal to focus a navigated-away tab. All 34 extension tests pass; the
 fresh Chrome for Testing profile passes 12 repeated opens with one tab, both
 with and without a remembered tab ID. Unpacked artifacts are loaded into a
 fresh owned test profile after replacement to avoid stale worker code.
+
+### Linux first-checkpoint evidence (2026-09-28)
+
+Builder: Linux x86_64, Rust/Cargo 1.97.0 and Node 25.2.0, existing incremental
+cache. Guest: Ubuntu 24.04 x86_64, glibc 2.39, GTK 3.24.41, WebKitGTK 2.52.6.
+Both sides' ABI and guest `ldd` were checked before execution. Native debug
+binaries were stripped for transfer. Native source is commit `3458d66f`;
+final extension source is `b4fd802f` (later native changes are tests only).
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Desktop executable | `29063971072422fd68db5095522bfef4c10ea19f4669b04eb5ba6f753225293f` |
+| Native host executable | `bf7f54f48a89bcac9b7ddfb36febc1b70e09ef5d421f43b9ec13adacabd5ff0d` |
+| Beta extension 0.4.0 zip | `bb6291fd916f44c771c760e30d285c0d5dc8581241f0f48241ad7f97753f52db` |
+
+The guest used a task-owned development installation layout, isolated HOME/XDG
+and fresh library. Its native UI repaired registration and selected the fresh
+root through the GTK folder chooser. Chrome for Testing 151.0.7922.34
+(Playwright Chromium 1234) used only task-owned profiles. Its custom
+`NativeMessagingHosts` directory received the generated manifest, refreshed
+after the versioned native-host path changed. This is real native-messaging
+and UI evidence, **not** a deb/AppImage installer or registration-update gate.
+No ordinary host browser or personal library was used.
+
+The independently generated private torrent has one 4,096-byte piece target,
+no tracker, name `checkpoint.bin`, and infohash
+`b802168899aecc03c92baafb328d7dff1d529a72`. DHT, PEX, port mapping and listening
+were disabled before adding it through the extension's normal file input.
+There was no public swarm or byte-transfer claim.
+
+| Check | Exact observation |
+| --- | --- |
+| Cold extension open | Packaged popup bootstrap started one `--extension-background` process; zero WebKitWebProcess and no forced native main window; library loaded without code entry. |
+| Warm attach / same library | Native Open desktop window and a second isolated browser profile saw the same root, torrent ID and infohash. Runtime instance stayed fixed across warm opens; persisted IDs survived restart. |
+| Repeated opens | 12 concurrent worker opens retained one companion tab; repeated after deleting only the remembered tab ID. |
+| Singleton races | 12 independent native `start_control` calls from stopped state returned one instance; one desktop process and zero native webviews. Eight concurrent ordinary launches subsequently exited successfully into that owner and showed its native window. |
+| Pause/resume | Extension React Pause changed native AT-SPI to `Paused 1` for selected `checkpoint.bin`; native Start changed the extension row to Downloading and snapshot `desired_running=true`. Repeated with final native and extension artifacts; final library revision 11. |
+| Authentication | Exact hello identity checked before mounting; invalid token and previous-runtime token both returned authentication_failed with no hello/library disclosure. |
+| Explicit restart | After the final 35-second stopped observation, the visible Start button connected successfully to one new background process, with no WebKit native window. |
+| Quit | Real exported tray-menu Quit action, not process termination; socket removed, zero desktop processes, open extension visibly disconnected with Start after 35 seconds of automatic retries. Repeated on the final artifacts. |
+| Resource sampling | Final background process: 84,004 KiB RSS, zero WebKit webviews. With native window: 238,676 KiB process VmHWM, 35 threads. Earlier native run peak 254,764 KiB. These are bounded checkpoint samples, not sustained-load performance claims. |
+
+Reproduce browser assertions with
+`node scripts/verify-desktop-extension-checkpoint.mjs PHASE` inside a claimed
+controlled guest, setting `RSTORRENT_PLAYWRIGHT_MODULE` to its Playwright module
+and `RSTORRENT_TEST_CDP` to its owned browser if needed. Phases: `prepare`, `add`,
+`inspect`, `pause`, `resume`, `ui-running`, `native`, `clicks`, `remember`,
+`invalid`, `stopped`, `race`, `stale`, `start`. `remember`/`stale` retain the old
+credential only in page memory. Native actions use Machine Control snapshots
+and current references; tray Quit uses the observed exported dbusmenu action.
+The script never launches a controller browser.
+
+Builder validation completed:
+
+- `cargo fmt --all -- --check` and `cargo clippy --workspace -- -D warnings`.
+- `cargo test --workspace`: 1,524 pass, 18 ignored, before the final bounded
+  HTTP/reconnect refinements; subsequent focused gates below cover those edits.
+- `cargo test -p rstorrent-gateway desktop_control`: exact Host/Origin/token,
+  four-client high-water, eight HTTP slots/ninth refusal, slow-header expiry,
+  oversized-header refusal, shared library and joined idle/active shutdown.
+- `cargo test -p rstorrent-native-host`: final 12 unit + two process tests,
+  including exact beta control authority versus legacy production hello/launch
+  authority, explicit-start versus attach-only intent, protected rendezvous,
+  framing/EOF and stdout discipline.
+- `cargo test -p rstorrent-desktop --lib`: 51 pass.
+- `npm run typecheck --prefix clients/web`; `npm run test --prefix clients/web`:
+  final 407 pass, two skipped; four new reconnect ownership cases.
+- `npm test --prefix clients/extension`: final 34 pass;
+  `npm run package --prefix clients/extension`; `node scripts/check-localization.mjs`;
+  `npm run build --prefix clients/web`; desktop/native-host incremental builds.
+
+Next: implement extension-driven native picker/Cancel/focus and its disconnect
+ownership; perform full controlled-transfer/detach Rehearsal A and installed
+package/registration repair, then macOS and Windows protected-bootstrap and
+lifecycle gates. Broader browser update/suspension/discarded-tab cases,
+endurance/resource-pressure evidence, media/shell integration and bounded
+failure reports remain open. No importer, profile selector, production identity,
+route, publication or migration was added. Android transport and service
+semantics are unchanged; shared extension helper tests pass, but this Linux
+run does not close physical ChromeOS or mobile acceptance.
+
+Cleanup complete: native Quit and owned browser-unit stop left zero executables
+from the test layout. Removed the controlled library, registration, browser
+profiles/downloads and owned capture. Restored the recorded GNOME idle delay
+(300 seconds) and lock setting (enabled), verified them after reboot, returned
+the originally-off VM to off, and released the exclusive claim. The idle-lock
+recovery followed Machine Control's Linux guide; no outer UI was used.
+
+Machine Control was usable for discovery, read-only doctor, exclusive claim,
+readiness, guest transfer/administration, native semantic UI and lifecycle.
+Sibling commit `cda5fe9` repairs common `target reboot` dispatch and Linux
+capability reporting. Its 100 client tests, Linux static suite (21 tests, one
+skipped), claimed common reboot and post-reboot readiness pass. The guest was
+shut down only after that validation; no inherited application data was changed.
