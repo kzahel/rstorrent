@@ -405,3 +405,13 @@ Focused final checks pass: eight idle HTTP slots/ninth refusal, five-second
 expiry, oversized header refusal and joined Quit with an idle HTTP peer; four
 reconnect ownership tests; complete web suite (407 pass, two skipped), web
 typecheck/package, native-host tests, workspace Clippy and desktop build.
+
+Installed tab reuse exposed Chrome's redaction of `tabs.Tab.url` without the
+broad `tabs` permission. The opener now uses exact own-document
+[`runtime.getContexts`](https://developer.chrome.com/docs/extensions/reference/api/runtime#method-getContexts)
+(Chrome 116+) to find a live packaged tab, including when its remembered ID is
+lost. No broad browsing permission was added. Tests now model redacted URLs
+and refusal to focus a navigated-away tab. All 34 extension tests pass; the
+fresh Chrome for Testing profile passes 12 repeated opens with one tab, both
+with and without a remembered tab ID. Unpacked artifacts are loaded into a
+fresh owned test profile after replacement to avoid stale worker code.

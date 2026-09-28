@@ -36,6 +36,9 @@ globalThis.chrome = {
     getURL(path) {
       return `chrome-extension://gcgoepclopkgijmclmlheafaglmbjlcc/${path}`;
     },
+    async getContexts(filter) {
+      return [...tabs.values()].filter(tab => filter.documentUrls.includes(tab.url)).map(tab => ({ tabId: tab.id, documentUrl: tab.url, frameId: 0 }));
+    },
     getManifest() {
       return { version: "0.4.0" };
     },
@@ -88,7 +91,8 @@ globalThis.chrome = {
     async get(tabId) {
       const tab = tabs.get(tabId);
       if (!tab) throw new Error("No tab");
-      return { ...tab };
+      const { url: _redacted, ...visible } = tab;
+      return visible;
     },
     async update(tabId, update) {
       const tab = tabs.get(tabId);
@@ -324,4 +328,24 @@ test("automatic attachment forwards only attach intent", async () => {
   await sendInternal({ type: "nativeBootstrap", op: "attach_control" });
   assert.equal(nativeRequest.request.op, "attach_control");
   assert.equal(tabs.size, 0);
+});
+
+
+test("desktop recovers its own page without a remembered tab or URL permission", async () => {
+  tabs.set(77, { id: 77, windowId: 5, url: chrome.runtime.getURL("companion/companion.html?backend=desktop") });
+  nativeResponse = request => ({ id: request.id, protocolVersion: 1, ok: true, result: { kind: "ready" } });
+  await sendInternal({ type: "desktopBootstrap", op: "open" });
+  assert.equal(tabs.size, 1);
+  assert.equal(stored.desktopUiTabId, 77);
+  assert.equal(tabs.get(77).active, true);
+});
+
+test("desktop never focuses a remembered tab that navigated elsewhere", async () => {
+  stored.desktopUiTabId = 77;
+  tabs.set(77, { id: 77, windowId: 5, url: "https://example.com/" });
+  nativeResponse = request => ({ id: request.id, protocolVersion: 1, ok: true, result: { kind: "ready" } });
+  await sendInternal({ type: "desktopBootstrap", op: "open" });
+  assert.equal(tabs.size, 2);
+  assert.equal(tabs.get(77).active, undefined);
+  assert.notEqual(stored.desktopUiTabId, 77);
 });

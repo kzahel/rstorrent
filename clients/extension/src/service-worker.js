@@ -149,11 +149,18 @@ async function readRememberedTab(key) {
 
 async function focusOrOpenExtensionTab(key, relativeUrl) {
   const remembered = await readRememberedTab(key);
-  if (remembered !== null) {
+  // Tab URLs are redacted without the broad tabs permission. Enumerate only
+  // our own extension documents, including restored pages after worker restart.
+  const contexts = await chrome.runtime.getContexts({
+    contextTypes: ["TAB"],
+    documentUrls: [chrome.runtime.getURL(relativeUrl)],
+    frameIds: [0],
+  });
+  const existing = contexts.find((context) => context.tabId === remembered) ?? contexts[0];
+  if (existing && Number.isInteger(existing.tabId) && existing.tabId >= 0) {
     try {
-      const existing = await chrome.tabs.get(remembered);
-      if (existing.url !== chrome.runtime.getURL(relativeUrl)) throw new Error("page changed");
-      await activateTab(remembered);
+      await activateTab(existing.tabId);
+      await chrome.storage.session.set({ [key]: existing.tabId });
       return "focused";
     } catch {
       await chrome.storage.session.remove(key);
@@ -164,7 +171,7 @@ async function focusOrOpenExtensionTab(key, relativeUrl) {
     active: true,
   });
   if (!Number.isInteger(tab.id)) {
-    throw new Error("Chrome could not open the RSTorrent Android page");
+    throw new Error("Chrome could not open the RSTorrent page");
   }
   await chrome.storage.session.set({ [key]: tab.id });
   return "opened";
