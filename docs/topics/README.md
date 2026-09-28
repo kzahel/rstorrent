@@ -47,6 +47,10 @@ Topics own the current truth for a continuing concern. Tactical docs under
   authoritative Android production-replacement gates, current JSTorrent
   feature dispositions, Play/state/SAF handoff, and coordinated ChromeOS
   extension rollout.
+- [`desktop-jstorrent-replacement.md`](desktop-jstorrent-replacement.md):
+  desktop-first migration planning, legacy profile/source survey, support
+  continuity, extension ownership transition, and installed replacement
+  rehearsals through Machine Control.
 - [`runtime-configurations-and-headless-deployment.md`](runtime-configurations-and-headless-deployment.md):
   visible, background, windowless, and headless runtime compositions; explicit
   Linux service, listener, origin, authentication, and reverse-proxy policy;

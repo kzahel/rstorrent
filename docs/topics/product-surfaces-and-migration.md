@@ -2,6 +2,24 @@
 
 Topic: `product-surfaces-and-migration`
 
+Maintainer direction on 2026-09-28 starts desktop-first JSTorrent migration
+planning and test design. The source survey, proposed data/support contract,
+extension transition matrix and Machine Control rehearsal sequence now live in
+[`desktop-jstorrent-replacement.md`](desktop-jstorrent-replacement.md).
+This supersedes the historical statements below that migration planning is
+not current work. Import implementation, exact desktop transport and production
+rollout remain proposals to settle through discussion and bounded tacticals.
+Follow-up direction the same day selects familiar user-experience continuity
+as the North Star and desktop extension control as the first focus. Working
+campaign [`231`](../tactical/231-jstorrent-migration-working-campaign.md)
+tracks the rehearsals; planned slice
+[`232`](../tactical/232-desktop-extension-control.md) owns desktop control.
+Further direction the same day retires desktop multi-profile behavior:
+migration unions all legacy desktop profiles for the current OS user into one
+library. Extensions are clients of that desktop runtime, regardless of browser
+profile; no source-profile chooser or successor desktop profile switching is
+planned. The desktop replacement topic owns duplicate/conflict dispositions.
+
 Tactical [`230`](../tactical/230-desktop-stable-latest-update-channels.md)
 keeps RSTorrent's incubation app identity and updater trust root while adding
 two desktop update channels. It does not change the eventual JSTorrent
@@ -601,6 +619,13 @@ fixture, or wire contract from either sibling project.
   packaging without App Store/TestFlight publication.
 
 ## Recommended Next Work
+
+For the desktop migration campaign, start Tactical `232`'s desktop extension
+control checkpoint, tracked by Tactical `231` and
+[`desktop-jstorrent-replacement.md`](desktop-jstorrent-replacement.md).
+Legacy source-fixture/import rehearsal follows the first working control path.
+Existing independent release and platform campaigns below continue under
+their own gates.
 
 Completed Tactical `166` supplies the exact store identity and installed
 desktop bootstrap evidence; resume the beta-readiness campaign's signed

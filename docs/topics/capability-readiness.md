@@ -2,6 +2,14 @@
 
 Topic: `capability-readiness`
 
+Desktop JSTorrent migration planning is active in working campaign
+[`231`](../tactical/231-jstorrent-migration-working-campaign.md). Familiar
+extension/native user journeys are the North Star; planned Tactical
+[`232`](../tactical/232-desktop-extension-control.md) is the first focus.
+Desktop extension control remains unimplemented, with transport and lifecycle
+design checkpoints open. This adds no readiness or production-migration claim
+and does not displace independent active work.
+
 Tactical [`229`](../tactical/229-web-desktop-data-reset.md) implements local
 web and desktop restore-defaults and clear-app-data actions with distinct
 confirmations and exact-file deletion opt-in. Focused native and web checks
