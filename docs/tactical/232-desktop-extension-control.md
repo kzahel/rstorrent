@@ -278,6 +278,42 @@ path. Update the parent tracker and owning topics as each gate passes.
 
 ## First Checkpoint Contract (2026-09-28)
 
+### Next Linux and Windows checkpoint (2026-09-29)
+
+Execution is authorized on the Linux builder and claimed Linux/Windows guests;
+macOS acceptance is deferred. Preserve the first checkpoint's single runtime,
+library, exact beta origin, attach-only reconnect and ephemeral credentials.
+Implement and verify Windows bootstrap before advancing picker ownership,
+controlled transfer and real installer/registration acceptance. Legacy fixture
+preparation belongs to M-02; this tactical still does not implement an importer.
+
+Windows bootstrap uses one overlapped, byte-mode named pipe per OS user and
+native-host directory. Its name is a SHA-256 digest of that directory and the
+user SID, not a bearer secret. The server specifies its owner and a protected
+DACL granting only that SID access, rejects remote clients, and requests the
+first pipe instance with a one-instance ceiling. The handle remains open
+between connections so ownership cannot be lost during an accept loop. The
+client checks the connected pipe's owner SID before reading credentials and
+uses identification-only security QoS. Same-user arbitrary code and privileged
+administrators remain outside this boundary, as on Linux.
+
+Reuse the 4-KiB ready frame, one-second exchange deadline and explicit startup
+deadline. Windows adds a one-byte acknowledgement before server disconnect so
+buffered credentials are not discarded before the client reads them. A busy
+pipe is retried only inside the exchange deadline; it is never evidence that
+the app stopped. Cancellation closes the overlapped pipe and joins its task.
+No rendezvous file containing credentials, additional service or daemon.
+
+Official references reviewed: Microsoft [CreateNamedPipe](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createnamedpipea)
+(first-instance admission, overlapped operation, remote rejection),
+[GetSecurityInfo](https://learn.microsoft.com/en-us/windows/win32/api/aclapi/nf-aclapi-getsecurityinfo)
+(named-pipe owner queries require READ_CONTROL; returned descriptor ownership),
+and locked `tokio-1.53.1/src/net/windows/named_pipe.rs`
+(`ServerOptions`, security attributes, `ClientOptions` identification default,
+reusable disconnect). Native source tests must cover framing, timeout, busy
+admission, owner refusal, duplicate bind and joined shutdown. Installed Windows
+evidence remains open until the actual guest passes the lifecycle matrix.
+
 Chosen composition: short native messaging bootstrap, protected local Unix
 rendezvous, then the existing semantic WebSocket adapter inside the desktop
 process. No second ApplicationService. A persistent native bridge was rejected
