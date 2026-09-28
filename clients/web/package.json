@@ -33,7 +33,7 @@
     "react-aria-components": "1.20.0",
     "react-dom": "19.2.8",
     "react-intl": "10.1.25",
-    "zustand": "5.0.14"
+    "zustand": "5.0.15"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.12.1",
