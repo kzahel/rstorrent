@@ -61,8 +61,7 @@ const DESTINATIONS: readonly {
   readonly icon: IconName;
 }[] = [
   { id: "library", label: localizedMessage("inspection.components.app.library"), icon: "library" },
-  { id: "transfers", label: localizedMessage("inspection.components.app.transfers"), icon: "transfers" },
-  { id: "workbench", label: localizedMessage("inspection.components.app.workbench"), icon: "workbench" },
+  { id: "workbench", label: localizedMessage("inspection.components.app.workbench"), icon: "transfers" },
 ];
 
 function waitForTorrentRemoval(
@@ -681,7 +680,9 @@ function AppContent({
 }
 
 function destinationLabel(destination: ApplicationDestination): string {
-  return destination.slice(0, 1).toUpperCase() + destination.slice(1);
+  return destination === "workbench"
+    ? localizedMessage("inspection.components.app.workbench")
+    : destination.slice(0, 1).toUpperCase() + destination.slice(1);
 }
 
 function presentsManualUpdateResult(state: UpdaterState): boolean {

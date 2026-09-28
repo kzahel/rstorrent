@@ -126,7 +126,7 @@ test("production WebSocket UI bandwidth baseline", async ({ page }) => {
     () => page.goto(liveUrl()),
     async () => {
       await expect(
-        page.getByRole("grid", { name: "Transfer queue" }),
+        page.getByRole("grid", { name: "Torrents" }),
       ).toHaveAttribute("aria-rowcount", String(libraryRows! + 1));
       await expect.poll(() => applicationUpgrades).toBe(1);
     },
@@ -144,11 +144,11 @@ test("production WebSocket UI bandwidth baseline", async ({ page }) => {
       await input.press("Enter");
       await confirmDefaultAddOptions(page);
       await expect(
-        page.getByRole("region", { name: "Transfers" }).getByRole("status"),
+        page.getByRole("region", { name: "Torrent collection" }).getByRole("status"),
       ).toHaveText("Added");
     },
     async () => {
-      const transfers = page.getByRole("grid", { name: "Transfer queue" });
+      const transfers = page.getByRole("grid", { name: "Torrents" });
       await expect(transfers).toHaveAttribute(
         "aria-rowcount",
         String(libraryRows! + 2),
@@ -170,8 +170,8 @@ test("production WebSocket UI bandwidth baseline", async ({ page }) => {
     "workbench_peers",
     async () => {
       await activeRow!.click();
-      await primary.getByRole("button", { name: "Workbench" }).click();
-      const library = page.getByRole("grid", { name: "Torrent library" });
+      await primary.getByRole("button", { name: "Torrents" }).click();
+      const library = page.getByRole("grid", { name: "Torrents" });
       const libraryRow = library
         .getByRole("row")
         .filter({ hasText: activeName! });

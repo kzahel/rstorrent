@@ -144,7 +144,7 @@ export function LibraryDetailView({
           aria-label={localizedMessage("inspection.components.library.detail.view.open.in.workbench")}
           onClick={() => openInWorkbench(torrent.id)}
         >
-          <Icon name="workbench" />
+          <Icon name="transfers" />
           <span>{localizedMessage("inspection.components.library.detail.view.open.in.workbench")}</span>
         </button>
       </header>

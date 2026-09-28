@@ -7,16 +7,18 @@ installed_lock="$web_root/node_modules/.package-lock.json"
 data_root="${RSTORRENT_WEBUI_DATA_ROOT:-$repository_root/.local/webui}"
 web_port="${RSTORRENT_WEBUI_PORT:-4177}"
 open_browser=1
+reload=0
 
 usage() {
     printf '%s\n' \
-        "Usage: ./scripts/webui [--no-open]" \
+        "Usage: ./scripts/webui [--reload] [--no-open]" \
         "" \
-        "Build and run the live React inspection UI in a normal browser." \
+        "Run the live React inspection UI in a normal browser." \
         "State defaults to .local/webui and survives launcher restarts." \
         "No download folder is assumed; choose one when adding a torrent." \
         "" \
         "Options:" \
+        "  --reload   Serve UI source with Vite hot reload." \
         "  --no-open  Start the server without opening a browser tab." \
         "  --help     Show this help."
 }
@@ -25,6 +27,9 @@ while (($# > 0)); do
     case "$1" in
         --no-open)
             open_browser=0
+            ;;
+        --reload)
+            reload=1
             ;;
         --help|-h)
             usage
@@ -60,9 +65,11 @@ for required_command in cargo npm curl mktemp; do
 done
 
 gateway_pid=""
+vite_pid=""
 launcher_started=0
 runtime_root="$(mktemp -d "${TMPDIR:-/tmp}/rstorrent-webui.XXXXXX")"
 gateway_log="$runtime_root/gateway.log"
+vite_log="$runtime_root/vite.log"
 
 stop_process() {
     local process_id="$1"
@@ -96,8 +103,9 @@ stop_process() {
 cleanup() {
     local status=$?
     trap - EXIT INT TERM
+    stop_process "$vite_pid" INT "Vite development server"
     stop_process "$gateway_pid" INT "application gateway"
-    rm -f -- "$gateway_log"
+    rm -f -- "$gateway_log" "$vite_log"
     rmdir -- "$runtime_root" 2>/dev/null || true
     if ((launcher_started == 1)); then
         printf 'RSTorrent web UI stopped.\n'
@@ -121,11 +129,23 @@ if [[ ! -x "$web_root/node_modules/.bin/vite" ||
     )
 fi
 
-printf 'Building production web UI...\n' >&2
-(
-    cd "$web_root"
-    VITE_RSTORRENT_DEFAULT_LIVE=same-origin npm run build
-)
+if ((reload == 1)); then
+    printf 'Preparing hot-reload web UI...\n' >&2
+    (
+        cd "$web_root"
+        npm run predev
+    )
+    gateway_bind="127.0.0.1:0"
+    web_assets_root="$web_root"
+else
+    printf 'Building production web UI...\n' >&2
+    (
+        cd "$web_root"
+        VITE_RSTORRENT_DEFAULT_LIVE=same-origin npm run build
+    )
+    gateway_bind="127.0.0.1:$web_port"
+    web_assets_root="$web_root/dist"
+fi
 
 printf 'Building application gateway...\n' >&2
 (
@@ -147,9 +167,9 @@ origin="http://127.0.0.1:$web_port"
 (
     export RSTORRENT_PROFILE_ROOT="$data_root/profile"
     export RSTORRENT_GATEWAY_AUTH="unauthenticated_loopback_development"
-    export RSTORRENT_GATEWAY_BIND="127.0.0.1:$web_port"
+    export RSTORRENT_GATEWAY_BIND="$gateway_bind"
     export RSTORRENT_GATEWAY_ORIGIN="$origin"
-    export RSTORRENT_WEB_ROOT="$web_root/dist"
+    export RSTORRENT_WEB_ROOT="$web_assets_root"
     export RSTORRENT_BUILD_ID="local-webui"
     export RSTORRENT_NETWORK_POLICY="${RSTORRENT_NETWORK_POLICY:-online}"
     unset RSTORRENT_GATEWAY_TOKEN
@@ -173,10 +193,23 @@ if [[ -z "$gateway_address" ]]; then
     sed -n '1,120p' "$gateway_log" >&2
     exit 1
 fi
-if [[ "$gateway_address" != "127.0.0.1:$web_port" ]]; then
+if [[ "$gateway_address" != 127.0.0.1:* ]] ||
+    { ((reload == 0)) && [[ "$gateway_address" != "$gateway_bind" ]]; }; then
     printf 'Application gateway bound an unexpected address: %s.\n' \
         "$gateway_address" >&2
     exit 1
+fi
+
+if ((reload == 1)); then
+    (
+        cd "$web_root"
+        export VITE_RSTORRENT_DEFAULT_LIVE=same-origin
+        export RSTORRENT_WEBUI_PROXY_TARGET="http://$gateway_address"
+        export RSTORRENT_WEBUI_RELOAD=1
+        exec "$web_root/node_modules/.bin/vite" \
+            --host 127.0.0.1 --port "$web_port" --strictPort
+    ) >"$vite_log" 2>&1 &
+    vite_pid=$!
 fi
 
 application_ready=0
@@ -186,18 +219,28 @@ for ((attempt = 0; attempt < 200; attempt++)); do
         sed -n '1,120p' "$gateway_log" >&2
         exit 1
     fi
+    if ((reload == 1)) && ! kill -0 "$vite_pid" 2>/dev/null; then
+        printf 'Vite development server exited during startup.\n' >&2
+        sed -n '1,120p' "$vite_log" >&2
+        exit 1
+    fi
     if curl --silent --show-error --fail --max-time 0.25 "$origin/" \
         >/dev/null 2>&1 && \
         curl --silent --show-error --fail --max-time 0.25 "$origin/healthz" \
         >/dev/null 2>&1; then
-        application_ready=1
-        break
+        if ((reload == 0)) ||
+            curl --silent --show-error --fail --max-time 0.25 \
+                "$origin/@vite/client" >/dev/null 2>&1; then
+            application_ready=1
+            break
+        fi
     fi
     sleep 0.05
 done
 if ((application_ready == 0)); then
     printf 'Timed out waiting for the hosted web application.\n' >&2
     sed -n '1,120p' "$gateway_log" >&2
+    if ((reload == 1)); then sed -n '1,120p' "$vite_log" >&2; fi
     exit 1
 fi
 
@@ -207,6 +250,9 @@ launcher_started=1
 printf '\nRSTorrent live web UI is ready.\n'
 printf 'URL: %s\n' "$web_url"
 printf 'Data: %s\n' "$data_root"
+if ((reload == 1)); then
+    printf 'Hot reload: React and CSS source changes update this page.\n'
+fi
 printf 'Press Ctrl+C to stop the hosted application.\n\n'
 
 if ((open_browser == 1)); then
@@ -229,6 +275,13 @@ while true; do
         printf 'Application gateway exited unexpectedly with status %s.\n' \
             "${gateway_status:-0}" >&2
         sed -n '1,120p' "$gateway_log" >&2
+        exit 1
+    fi
+    if ((reload == 1)) && ! kill -0 "$vite_pid" 2>/dev/null; then
+        wait "$vite_pid" || vite_status=$?
+        printf 'Vite development server exited unexpectedly with status %s.\n' \
+            "${vite_status:-0}" >&2
+        sed -n '1,120p' "$vite_log" >&2
         exit 1
     fi
     sleep 1

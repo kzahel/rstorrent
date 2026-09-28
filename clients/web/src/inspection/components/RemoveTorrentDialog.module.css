@@ -57,6 +57,10 @@
   background: color-mix(in srgb, var(--danger) 8%, transparent);
 }
 
+.warning[data-visible="false"] {
+  visibility: hidden;
+}
+
 .note {
   color: var(--text-muted) !important;
 }
@@ -85,9 +89,32 @@
 }
 
 .actions .remove {
+  display: grid;
+  align-items: center;
+  justify-items: center;
   border-color: #a92d2d;
   color: #fff;
   background: #b83232;
+}
+
+.removeSizer,
+.removeLabel {
+  grid-area: 1 / 1;
+}
+
+.removeSizer {
+  visibility: hidden;
+}
+
+@media (max-width: 420px) {
+  .actions {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .actions button {
+    min-width: 0;
+  }
 }
 
 .actions button:disabled {

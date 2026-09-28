@@ -35,7 +35,7 @@ export interface NavigationPreferences {
   readonly workbenchCategory: TorrentCategory;
 }
 
-export const DEFAULT_DESTINATION: ApplicationDestination = "transfers";
+export const DEFAULT_DESTINATION: ApplicationDestination = "workbench";
 export const DEFAULT_LIBRARY_CATEGORY: LibraryCategory = "all";
 export const DEFAULT_TORRENT_CATEGORY: TorrentCategory = "all";
 export const NAVIGATION_STORAGE_KEY = "rstorrent.presentation.navigation";
@@ -62,18 +62,24 @@ export function loadNavigationPreferences(
     if (value.version !== NAVIGATION_VERSION) {
       return defaultNavigationPreferences();
     }
+    const wasTransfers = value.destination === "transfers";
+    const workbenchCategory = wasTransfers
+      ? value.transfersCategory
+      : value.workbenchCategory;
     return {
-      destination: isApplicationDestination(value.destination)
-        ? value.destination
-        : DEFAULT_DESTINATION,
+      destination: wasTransfers
+        ? "workbench"
+        : isApplicationDestination(value.destination)
+          ? value.destination
+          : DEFAULT_DESTINATION,
       libraryCategory: isLibraryCategory(value.libraryCategory)
         ? value.libraryCategory
         : DEFAULT_LIBRARY_CATEGORY,
       transfersCategory: isTorrentCategory(value.transfersCategory)
         ? value.transfersCategory
         : DEFAULT_TORRENT_CATEGORY,
-      workbenchCategory: isTorrentCategory(value.workbenchCategory)
-        ? value.workbenchCategory
+      workbenchCategory: isTorrentCategory(workbenchCategory)
+        ? workbenchCategory
         : DEFAULT_TORRENT_CATEGORY,
     };
   } catch {

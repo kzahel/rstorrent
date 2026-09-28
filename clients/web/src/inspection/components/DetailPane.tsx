@@ -92,7 +92,9 @@ export function DetailPane({
     <section className={styles.detail} aria-label={localizedMessage("inspection.components.detail.pane.torrent.details")}>
       <div className={styles.mobileHeading}>
         <button type="button" onClick={closeDetail}>
-          <span aria-hidden="true">←</span>{" "}{localizedMessage("inspection.components.detail.pane.torrents")}</button>
+          <span aria-hidden="true">←</span>
+          <span>{localizedMessage("inspection.components.detail.pane.torrents")}</span>
+        </button>
         <strong>{torrent?.name ?? localizedMessage("inspection.components.detail.pane.torrent.details")}</strong>
       </div>
       <div

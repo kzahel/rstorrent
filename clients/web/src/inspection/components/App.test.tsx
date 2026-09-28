@@ -144,39 +144,32 @@ describe("inspection application", () => {
     expect(document.title).toBe("RSTorrent");
   });
 
-  it("renders the typed torrent ETA in Transfers and Workbench", async () => {
-    const user = userEvent.setup();
+  it("renders the typed torrent ETA in Torrents", () => {
     renderScenario("healthy-download", 42_000);
 
-    const transfers = screen.getByRole("grid", { name: "Transfer queue" });
+    const transfers = screen.getByRole("grid", { name: "Torrents" });
     const transferEta = within(transfers).getByLabelText(
       /Estimated time remaining:/,
     );
     expect(transferEta).toHaveTextContent("55s");
-
-    await user.click(screen.getByRole("button", { name: "Workbench" }));
-    const workbench = screen.getByRole("grid", { name: "Torrent library" });
-    expect(
-      within(workbench).getByLabelText(/Estimated time remaining:/),
-    ).toHaveTextContent("55s");
   });
 
   it("gives a stalled ETA an infinite glyph and accessible explanation", () => {
     renderScenario("swarm-lifecycle", 11_000);
-    const transfers = screen.getByRole("grid", { name: "Transfer queue" });
+    const transfers = screen.getByRole("grid", { name: "Torrents" });
     expect(
       within(transfers).getByLabelText("Transfer stalled"),
     ).toHaveTextContent("∞");
   });
 
-  it("shows determinate checker progress across transfers library and details", async () => {
+  it("shows determinate checker progress across Torrents, Library and details", async () => {
     const user = userEvent.setup();
     const snapshot = checkingSnapshot("hashing");
     renderApplication(
       new RecordingLiveApplication({ type: "snapshot", snapshot }),
     );
 
-    const transfers = screen.getByRole("grid", { name: "Transfer queue" });
+    const transfers = screen.getByRole("grid", { name: "Torrents" });
     expect(within(transfers).getByText("Checked 25.0%")).toBeVisible();
     expect(
       within(transfers).getByRole("progressbar", {
@@ -192,7 +185,11 @@ describe("inspection application", () => {
       }),
     ).toHaveAttribute("aria-valuenow", "25");
 
-    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(
+      within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
+        "button", { name: "Torrents" },
+      ),
+    );
     await user.click(screen.getByRole("tab", { name: "General" }));
     const detail = screen.getByRole("region", { name: "Torrent details" });
     expect(within(detail).getByText("Current check")).toBeVisible();
@@ -212,7 +209,7 @@ describe("inspection application", () => {
       new RecordingLiveApplication({ type: "snapshot", snapshot }),
     );
 
-    const transfers = screen.getByRole("grid", { name: "Transfer queue" });
+    const transfers = screen.getByRole("grid", { name: "Torrents" });
     expect(
       within(transfers).getByText("Updating file selection"),
     ).toBeVisible();
@@ -256,7 +253,11 @@ describe("inspection application", () => {
     renderApplication(
       new RecordingLiveApplication({ type: "snapshot", snapshot }),
     );
-    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(
+      within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
+        "button", { name: "Torrents" },
+      ),
+    );
     await user.click(screen.getByRole("tab", { name: "General" }));
     const detail = screen.getByRole("region", { name: "Torrent details" });
     expect(within(detail).getByText("Status").parentElement).toHaveTextContent(
@@ -290,13 +291,17 @@ describe("inspection application", () => {
       snapshot,
     });
     renderApplication(application);
-    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(
+      within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
+        "button", { name: "Torrents" },
+      ),
+    );
     await user.click(screen.getByRole("tab", { name: "General" }));
     const detail = screen.getByRole("region", { name: "Torrent details" });
     expect(within(detail).queryByRole("spinbutton", {
       name: "Torrent upload limit in KiB per second",
     })).not.toBeInTheDocument();
-    const grid = screen.getByRole("grid", { name: "Torrent library" });
+    const grid = screen.getByRole("grid", { name: "Torrents" });
     const torrentRow = within(grid).getByRole("row", { name: /Big Buck Bunny 1080p surround/ });
     fireEvent.contextMenu(torrentRow);
     await user.click(await screen.findByRole("menuitem", { name: "Torrent settings" }));
@@ -361,7 +366,11 @@ describe("inspection application", () => {
       snapshot,
     });
     renderApplication(application);
-    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(
+      within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
+        "button", { name: "Torrents" },
+      ),
+    );
     await user.click(screen.getByRole("tab", { name: "General" }));
     await user.click(screen.getByRole("button", { name: /^More/ }));
     await user.click(await screen.findByRole("menuitem", { name: "Torrent settings" }));
@@ -411,26 +420,26 @@ describe("inspection application", () => {
     expect(within(header).queryByText(/peers/i)).not.toBeInTheDocument();
     const primary = screen.getByRole("navigation", { name: "Primary" });
     expect(
-      within(primary).getByRole("button", { name: "Transfers" }),
+      within(primary).getByRole("button", { name: "Torrents" }),
     ).toHaveAttribute("aria-current", "page");
     expect(
-      screen.getByRole("navigation", { name: "Transfer filters" }),
+      screen.getByRole("navigation", { name: "Torrent filters" }),
     ).toBeVisible();
     expect(screen.getByRole("button", { name: "Add demo" })).toBeVisible();
     expect(
       screen.queryByRole("textbox", { name: "Magnet link or torrent URL" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByRole("grid", { name: "Transfer queue" }),
+      screen.getByRole("grid", { name: "Torrents" }),
     ).toHaveAttribute("aria-rowcount", "4");
     await user.click(
-      within(primary).getByRole("button", { name: "Workbench" }),
+      within(primary).getByRole("button", { name: "Torrents" }),
     );
     expect(
-      screen.getByRole("navigation", { name: "Workbench torrent filters" }),
+      screen.getByRole("navigation", { name: "Torrent filters" }),
     ).toBeVisible();
     expect(
-      screen.getByRole("grid", { name: "Torrent library" }),
+      screen.getByRole("grid", { name: "Torrents" }),
     ).toHaveAttribute("aria-rowcount", "4");
     const peerGrid = screen.getByRole("grid", {
       name: "Active peer connections",
@@ -490,9 +499,9 @@ describe("inspection application", () => {
     const user = userEvent.setup();
     renderScenario("disk-error", 8_000);
 
-    const transfers = screen.getByRole("grid", { name: "Transfer queue" });
+    const transfers = screen.getByRole("grid", { name: "Torrents" });
     const status = within(transfers).getByRole("button", {
-      name: "Error: Write failed: destination has no free space. Open General details",
+      name: "error: Write failed: destination has no free space. Open General details",
     });
     expect(status).toHaveAttribute(
       "title",
@@ -510,7 +519,11 @@ describe("inspection application", () => {
     status.focus();
     await user.keyboard("{Enter}");
 
-    expect(screen.getByRole("button", { name: "Workbench" })).toHaveAttribute(
+    expect(
+      within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
+        "button", { name: "Torrents" },
+      ),
+    ).toHaveAttribute(
       "aria-current",
       "page",
     );
@@ -525,7 +538,7 @@ describe("inspection application", () => {
     );
     expect(error).toHaveFocus();
     expect(
-      within(screen.getByRole("grid", { name: "Torrent library" })).getByRole(
+      within(screen.getByRole("grid", { name: "Torrents" })).getByRole(
         "button",
         {
           name: "error: Write failed: destination has no free space. Open General details",
@@ -537,7 +550,11 @@ describe("inspection application", () => {
   it("renders the bounded swarm registry independently of active connections", async () => {
     const user = userEvent.setup();
     renderScenario("swarm-lifecycle", 24_000);
-    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(
+      within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
+        "button", { name: "Torrents" },
+      ),
+    );
     await user.click(screen.getByRole("tab", { name: "Swarm" }));
 
     const grid = await screen.findByRole("grid", { name: "Known swarm peers" });
@@ -571,7 +588,11 @@ describe("inspection application", () => {
   it("drives an ordered diagnostic console with separate capture controls", async () => {
     const user = userEvent.setup();
     const rendered = renderScenario("diagnostic-console", 45_000);
-    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(
+      within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
+        "button", { name: "Torrents" },
+      ),
+    );
     await user.click(screen.getByRole("tab", { name: "Logs" }));
 
     const feed = screen.getByRole("log", {
@@ -912,7 +933,11 @@ describe("inspection application", () => {
   it("switches named scenarios and advances the frozen clock", async () => {
     const user = userEvent.setup();
     renderScenario("tracker-recovery", 0);
-    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(
+      within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
+        "button", { name: "Torrents" },
+      ),
+    );
     await user.click(screen.getByRole("tab", { name: "General" }));
     expect(screen.getByText(/retry scheduled in 22 seconds/i)).toBeVisible();
     await user.click(screen.getByRole("button", { name: "+10s" }));
@@ -929,7 +954,7 @@ describe("inspection application", () => {
   it("keeps rendered rows and cards bounded for large logical collections", async () => {
     const user = userEvent.setup();
     renderScenario("large-swarm", 0);
-    const transferGrid = screen.getByRole("grid", { name: "Transfer queue" });
+    const transferGrid = screen.getByRole("grid", { name: "Torrents" });
     expect(transferGrid).toHaveAttribute("aria-rowcount", "2001");
     expect(within(transferGrid).getAllByRole("row").length).toBeLessThanOrEqual(
       100,
@@ -941,8 +966,12 @@ describe("inspection application", () => {
     });
     expect(within(library).getAllByRole("listitem").length).toBeLessThan(100);
 
-    await user.click(screen.getByRole("button", { name: "Workbench" }));
-    const torrentGrid = screen.getByRole("grid", { name: "Torrent library" });
+    await user.click(
+      within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
+        "button", { name: "Torrents" },
+      ),
+    );
+    const torrentGrid = screen.getByRole("grid", { name: "Torrents" });
     const peerGrid = screen.getByRole("grid", {
       name: "Active peer connections",
     });
@@ -959,7 +988,11 @@ describe("inspection application", () => {
   it("materializes a full file catalog only on the Files tab", async () => {
     const user = userEvent.setup();
     renderScenario("file-progress", 24_000);
-    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(
+      within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
+        "button", { name: "Torrents" },
+      ),
+    );
     expect(
       screen.queryByRole("grid", { name: "Torrent files" }),
     ).not.toBeInTheDocument();
@@ -1037,7 +1070,11 @@ describe("inspection application", () => {
       .find((row) => row?.padding === false)!;
     renderApplication(application);
 
-    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(
+      within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
+        "button", { name: "Torrents" },
+      ),
+    );
     await user.click(screen.getByRole("tab", { name: "Files" }));
     const files = screen.getByRole("grid", { name: "Torrent files" });
     await user.click(within(files).getAllByRole("row")[1]!);
@@ -1110,7 +1147,11 @@ describe("inspection application", () => {
     });
     renderApplication(application);
 
-    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(
+      within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
+        "button", { name: "Torrents" },
+      ),
+    );
     await user.click(screen.getByRole("tab", { name: "Files" }));
     const files = screen.getByRole("grid", { name: "Torrent files" });
     await user.click(within(files).getByText(file.name));
@@ -1165,7 +1206,11 @@ describe("inspection application", () => {
       remoteAccess,
     );
 
-    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(
+      within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
+        "button", { name: "Torrents" },
+      ),
+    );
     await user.click(screen.getByRole("tab", { name: "Files" }));
     await user.click(within(screen.getByRole("grid", { name: "Torrent files" })).getByText(file.name));
     await user.click(screen.getByRole("button", { name: "More file actions" }));
@@ -1198,7 +1243,11 @@ describe("inspection application", () => {
       .find((row) => row?.padding === false && row.selection === "skipped")!;
     renderApplication(application);
 
-    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(
+      within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
+        "button", { name: "Torrents" },
+      ),
+    );
     await user.click(screen.getByRole("tab", { name: "Files" }));
     const files = screen.getByRole("grid", { name: "Torrent files" });
     await user.click(within(files).getByText(skippedFile.name));
@@ -1262,7 +1311,11 @@ describe("inspection application", () => {
       .slice(0, 2);
     renderApplication(application);
 
-    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(
+      within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
+        "button", { name: "Torrents" },
+      ),
+    );
     await user.click(screen.getByRole("tab", { name: "Files" }));
     const grid = screen.getByRole("grid", { name: "Torrent files" });
     const firstRow = within(grid).getAllByRole("row")[1]!;
@@ -1302,7 +1355,11 @@ describe("inspection application", () => {
   it("materializes the global disk pipeline only on the Disk tab", async () => {
     const user = userEvent.setup();
     renderScenario("slow-disk-pressure", 20_000);
-    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(
+      within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
+        "button", { name: "Torrents" },
+      ),
+    );
     expect(
       screen.queryByRole("grid", { name: "Active storage pieces" }),
     ).not.toBeInTheDocument();
@@ -1320,7 +1377,11 @@ describe("inspection application", () => {
   it("renders a bounded accessible canvas for a 250,000-piece torrent", async () => {
     const user = userEvent.setup();
     renderScenario("large-swarm", 0);
-    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(
+      within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
+        "button", { name: "Torrents" },
+      ),
+    );
 
     await user.click(screen.getByRole("tab", { name: "Pieces" }));
 
@@ -1337,7 +1398,11 @@ describe("inspection application", () => {
   it("resizes the detail pane with pointer and keyboard input", async () => {
     const user = userEvent.setup();
     renderScenario("healthy-download", 42_000);
-    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(
+      within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
+        "button", { name: "Torrents" },
+      ),
+    );
     const splitter = screen.getByRole("separator", {
       name: "Resize torrent details",
     });
@@ -1470,17 +1535,21 @@ describe("inspection application", () => {
   it("renders truthful empty states without fabricating media details", async () => {
     const user = userEvent.setup();
     renderScenario("empty-library", 0);
-    expect(screen.getByText(/No transfers yet/i)).toBeVisible();
+    expect(screen.getByText(/No torrents yet/i)).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Library" }));
     expect(screen.getByText("No content sources yet")).toBeVisible();
     expect(
       screen.queryByRole("button", { name: /^Play / }),
     ).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(
+      within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
+        "button", { name: "Torrents" },
+      ),
+    );
     expect(screen.getByText(/Select a torrent to inspect it/i)).toBeVisible();
   });
 
-  it("shares multi-selection between Transfers and Workbench", async () => {
+  it("preserves multi-selection across Library and torrent filters", async () => {
     const user = userEvent.setup();
     renderScenario("healthy-download", 42_000);
     expect(
@@ -1496,7 +1565,13 @@ describe("inspection application", () => {
       screen.getByText("2 selected for actions (1 outside this view)"),
     ).toBeVisible();
 
-    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(screen.getByRole("button", { name: "Library" }));
+    await user.click(
+      within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
+        "button", { name: "Torrents" },
+      ),
+    );
+    await user.click(screen.getByRole("button", { name: /All torrents/ }));
     expect(
       screen.getByRole("checkbox", {
         name: "Deselect Big Buck Bunny 1080p surround",
@@ -1519,7 +1594,7 @@ describe("inspection application", () => {
       snapshot,
     });
     renderApplication(application);
-    const grid = screen.getByRole("grid", { name: "Transfer queue" });
+    const grid = screen.getByRole("grid", { name: "Torrents" });
     const sintelRow = within(grid).getByRole("row", {
       name: /Sintel 4K open movie/,
     });
@@ -1591,7 +1666,7 @@ describe("inspection application", () => {
   it("opens a torrent context menu from the keyboard for the checked selection", async () => {
     const user = userEvent.setup();
     renderScenario("healthy-download", 42_000);
-    const grid = screen.getByRole("grid", { name: "Transfer queue" });
+    const grid = screen.getByRole("grid", { name: "Torrents" });
     await user.click(
       within(grid).getByRole("checkbox", {
         name: "Select Sintel 4K open movie",
@@ -1610,10 +1685,14 @@ describe("inspection application", () => {
   it("keeps the detail row within the checked selection", async () => {
     const user = userEvent.setup();
     renderScenario("healthy-download", 42_000);
-    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(
+      within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
+        "button", { name: "Torrents" },
+      ),
+    );
     await user.click(screen.getByRole("tab", { name: "General" }));
 
-    const grid = screen.getByRole("grid", { name: "Torrent library" });
+    const grid = screen.getByRole("grid", { name: "Torrents" });
     const detail = screen.getByRole("region", { name: "Torrent details" });
     const bunny = within(grid).getByRole("row", {
       name: /Big Buck Bunny 1080p surround/,
@@ -1701,7 +1780,7 @@ describe("inspection application", () => {
       torrentId: sintel.id,
     });
 
-    fireEvent.click(screen.getByRole("grid", { name: "Transfer queue" }));
+    fireEvent.click(screen.getByRole("grid", { name: "Torrents" }));
     expect(screen.getByRole("button", { name: "Pause" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Remove" })).toBeDisabled();
   });
@@ -1794,7 +1873,7 @@ describe("inspection application", () => {
     ]);
   });
 
-  it("opens truthful Library details and hands their source to Workbench", async () => {
+  it("opens truthful Library details and hands their source to Torrents", async () => {
     const user = userEvent.setup();
     renderScenario("healthy-download", 42_000);
     await user.click(screen.getByRole("button", { name: "Library" }));
@@ -1815,8 +1894,12 @@ describe("inspection application", () => {
       "true",
     );
     expect(screen.getByText("Waiting for torrent metadata…")).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Open in Workbench" }));
-    expect(screen.getByRole("button", { name: "Workbench" })).toHaveAttribute(
+    await user.click(screen.getByRole("button", { name: "Open in Torrents" }));
+    expect(
+      within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
+        "button", { name: "Torrents" },
+      ),
+    ).toHaveAttribute(
       "aria-current",
       "page",
     );
@@ -1944,14 +2027,18 @@ describe("inspection application", () => {
     expect(screen.getAllByText("4.4 GB").length).toBeGreaterThan(0);
 
     await user.click(screen.getByRole("button", { name: "Back to Library" }));
-    await user.click(screen.getByRole("button", { name: "Transfers" }));
+    await user.click(screen.getByRole("button", { name: "Torrents" }));
     expect(
-      within(screen.getByRole("grid", { name: "Transfer queue" })).getByText(
+      within(screen.getByRole("grid", { name: "Torrents" })).getByText(
         "4.4 GB",
       ),
     ).toBeVisible();
 
-    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(
+      within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
+        "button", { name: "Torrents" },
+      ),
+    );
     await user.click(screen.getByRole("tab", { name: "General" }));
     expect(
       screen.getByText("Size", { selector: "dt" }).parentElement,
@@ -1979,7 +2066,7 @@ describe("inspection application", () => {
     expect(mountedRows).toBeLessThanOrEqual(20);
   });
 
-  it("leases detail views only while Workbench needs them", async () => {
+  it("leases detail views only while Torrents needs them", async () => {
     const user = userEvent.setup();
     const snapshot = {
       ...buildScenarioSnapshot("healthy-download", 42_000, false, 1),
@@ -1990,6 +2077,7 @@ describe("inspection application", () => {
       snapshot,
     });
     renderApplication(application);
+    await user.click(screen.getByRole("button", { name: "Library" }));
     await waitFor(() =>
       expect(application.views.at(-1)).toEqual({
         library: true,
@@ -2000,7 +2088,11 @@ describe("inspection application", () => {
       }),
     );
 
-    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(
+      within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
+        "button", { name: "Torrents" },
+      ),
+    );
     await waitFor(() =>
       expect(application.views.at(-1)).toMatchObject({
         library: true,
@@ -3317,7 +3409,7 @@ describe("inspection application", () => {
       ),
     ).toBeVisible();
 
-    fireEvent.click(screen.getByRole("grid", { name: "Transfer queue" }));
+    fireEvent.click(screen.getByRole("grid", { name: "Torrents" }));
     await user.click(more);
     expect(
       screen.getByRole("menuitem", { name: "Copy magnet links" }),
@@ -3461,7 +3553,11 @@ describe("inspection application", () => {
     expect(screen.getByRole("button", { name: "More" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Adding…" })).toBeDisabled();
     expect(draft).toHaveValue("unfinished draft");
-    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(
+      within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
+        "button", { name: "Torrents" },
+      ),
+    );
     expect(screen.getByRole("button", { name: "More" })).toBeDisabled();
     releaseFirst();
     await waitFor(() => expect(application.commands).toHaveLength(5));

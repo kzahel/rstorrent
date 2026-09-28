@@ -750,12 +750,6 @@
       "value": "Settings"
     }
   ],
-  "inspection.components.app.transfers": [
-    {
-      "type": 0,
-      "value": "Transfers"
-    }
-  ],
   "inspection.components.app.transfers.will.resume.automatically.when.one.is": [
     {
       "type": 0,
@@ -771,13 +765,13 @@
   "inspection.components.app.workbench": [
     {
       "type": 0,
-      "value": "Workbench"
+      "value": "Torrents"
     }
   ],
   "inspection.components.app.workbench.torrent.collection": [
     {
       "type": 0,
-      "value": "Workbench torrent collection"
+      "value": "Torrent collection"
     }
   ],
   "inspection.components.appearance.settings.section.always.use.the.dark.appearance": [
@@ -3585,7 +3579,7 @@
   "inspection.components.library.detail.view.open.in.workbench": [
     {
       "type": 0,
-      "value": "Open in Workbench"
+      "value": "Open in Torrents"
     }
   ],
   "inspection.components.library.detail.view.opening.this.file.for.playback": [
@@ -5457,7 +5451,7 @@
   "inspection.components.sidebar.workbench.torrent.filters": [
     {
       "type": 0,
-      "value": "Workbench torrent filters"
+      "value": "Torrent filters"
     }
   ],
   "inspection.components.speed.panel.1.hour": [
@@ -6097,7 +6091,7 @@
   "inspection.components.torrent.table.torrent.library": [
     {
       "type": 0,
-      "value": "Torrent library"
+      "value": "Torrents"
     }
   ],
   "inspection.components.torrent.table.torrent.library.is.not.requested.in.this": [

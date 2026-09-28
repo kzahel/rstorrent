@@ -70,11 +70,16 @@ filesystem API, or authorize a presentation to enumerate the backend machine.
 | Packaged Tauri desktop | Linux graphical login | The exact dependency feature set selects the `rfd` GTK3 backend | Native GTK folder picker; no Zenity or KDialog runtime dependency; installed interaction is not yet claimed |
 | Local `scripts/webui` | macOS graphical login | The gateway runs `/usr/bin/osascript` with AppleScript `choose folder` | Unparented native folder panel; source and focused tests pass, but the manual chooser/restart smoke remains open |
 | Local `scripts/webui` | Linux graphical session | The gateway launches `zenity --file-selection --directory`; only command-not-found falls through to `kdialog --getexistingdirectory` | Best effort. Cancel is clean; no helper gives an actionable error; another helper failure is an error rather than fallback |
+
 | Local gateway/browser | Windows | The native adapter is compiled as unsupported for every operating system except macOS and Linux | Clicking **Add folder...** reaches the HTTP platform route and returns `501` with “download folder picker is not implemented on this platform” |
 | ChromeOS Linux/Crostini | Linux user service, ChromeOS browser presentation | Crostini injects the same Linux native helper adapter as local WebUI | `~/Downloads` is preconfigured, so first use does not require a picker. Additional selection is conditional on a usable Linux graphical session and Zenity or KDialog; exact installed interaction is unproved |
 | Hosted Linux headless | Linux service with or without a display | `rstorrent-headless` uses the hosted gateway preparation that injects `UnavailableDownloadDirectoryPicker` | TOML supplies at least one root. The shared UI still renders native-picker add/repair controls, but those calls return `501` |
 | Android/ChromeOS Android | Android activity/foreground service | Compose and the packaged shared React presentation launch Android Storage Access Framework tree selection through one foreground owner | Tactical `194` physically proves multiple bounded grants, one current root for new downloads, durable old-torrent binding, independent repair, opaque-root-only Rust/React values, exact ARC-address extension connection, and same-LAN refusal. |
 | iOS/iPadOS | First-party iOS application | System directory picker followed by a qualified security-scoped bookmark | System picker; accepted local roots retain opaque identity and platform-owned reopening state |
+
+The `--reload` launcher mode retains this same gateway-owned picker and
+profile. Vite only serves and updates the browser presentation, forwarding
+the picker request through its API proxy.
 
 “Web UI on Windows” is ambiguous and must be qualified:
 

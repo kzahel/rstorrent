@@ -534,7 +534,6 @@ targets the stable AppImage path rather than its temporary mount.
 Signed packaging, updater rehearsals, version bumps, and tagged publication
 use the exact commands and validation gates in
 [`docs/desktop-release.md`](docs/desktop-release.md).
-
 The same runbook now documents the source-wired Stable/Latest desktop
 channels, nightly verified-source selection, and the pending hosted and
 installed acceptance gates for Tactical `230`.
@@ -834,6 +833,23 @@ the launcher opens the plain root URL in the default browser. It remains
 attached to the terminal; one `Ctrl+C` gracefully stops and joins the process.
 The browser tab itself may remain open and will reconnect after the next
 launch.
+
+For live React/CSS iteration, stop the ordinary launcher and run:
+
+```bash
+./scripts/webui --reload
+```
+
+The browser URL and `.local/webui` profile stay the same. Vite serves the
+page with hot reload while the gateway runs on a private loopback port; API,
+WebSocket, and media requests pass through the visible browser origin. The
+launcher still builds the Rust gateway at startup. Rust changes require a
+restart; UI source changes do not. `--reload --no-open` skips the browser
+opener. The ordinary launcher continues to serve a production build that
+changes only when rebuilt or restarted.
+Edits to `clients/web/src/localization/messages/en.json` still need
+`npm run generate:localization --prefix clients/web` to refresh the compiled
+catalog; Vite then reloads that generated file.
 
 Web UI state and downloads persist beneath `.local/webui`, which is separate
 from the Tauri application profile and ignored by Git. Override that location

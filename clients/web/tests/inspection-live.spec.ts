@@ -59,7 +59,7 @@ test("client settings apply live, persist, and recover bind failure", async ({
   await page.setViewportSize({ width: 1_024, height: 800 });
   await page.goto(liveUrl());
   await expect(
-    page.getByRole("grid", { name: "Transfer queue" }),
+    page.getByRole("grid", { name: "Torrents" }),
   ).toBeVisible();
 
   if (clientSettingsPhase === "configure") {
@@ -184,7 +184,7 @@ test("live torrent file picker uses one WebSocket binary attachment", async ({
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(liveUrl());
-  const transfers = page.getByRole("grid", { name: "Transfer queue" });
+  const transfers = page.getByRole("grid", { name: "Torrents" });
   await expect(transfers).toBeVisible();
   await expect.poll(() => applicationUpgrades).toBe(1);
   if (expectTorrentFileRestart) {
@@ -193,10 +193,10 @@ test("live torrent file picker uses one WebSocket binary attachment", async ({
     await row.click();
     await page
       .getByRole("navigation", { name: "Primary" })
-      .getByRole("button", { name: "Workbench" })
+      .getByRole("button", { name: "Torrents" })
       .click();
     const torrentRow = page
-      .getByRole("grid", { name: "Torrent library" })
+      .getByRole("grid", { name: "Torrents" })
       .getByRole("row")
       .filter({ hasText: torrentName! });
     await expect(torrentRow).toContainText("complete");
@@ -245,10 +245,10 @@ test("live torrent file picker uses one WebSocket binary attachment", async ({
     await row.click();
     await page
       .getByRole("navigation", { name: "Primary" })
-      .getByRole("button", { name: "Workbench" })
+      .getByRole("button", { name: "Torrents" })
       .click();
     const torrentRow = page
-      .getByRole("grid", { name: "Torrent library" })
+      .getByRole("grid", { name: "Torrents" })
       .getByRole("row")
       .filter({ hasText: torrentName! });
     await expect(torrentRow).toBeVisible();
@@ -343,7 +343,7 @@ test("live v2 magnet lifecycle uses the production application", async ({
 
   await page.setViewportSize({ width: 1_440, height: 900 });
   await page.goto(liveUrl());
-  const transfers = page.getByRole("grid", { name: "Transfer queue" });
+  const transfers = page.getByRole("grid", { name: "Torrents" });
   await expect(transfers).toBeVisible();
   await expect.poll(() => applicationUpgrades).toBe(1);
   if (v2MagnetPhase === "add") {
@@ -374,10 +374,10 @@ test("live v2 magnet lifecycle uses the production application", async ({
   await transferRow.click();
   await page
     .getByRole("navigation", { name: "Primary" })
-    .getByRole("button", { name: "Workbench" })
+    .getByRole("button", { name: "Torrents" })
     .click();
   const torrentRow = page
-    .getByRole("grid", { name: "Torrent library" })
+    .getByRole("grid", { name: "Torrents" })
     .getByRole("row")
     .filter({ hasText: torrentName! });
   await expect(torrentRow).toContainText("complete");
@@ -486,7 +486,7 @@ test("paired application transport throughput", async ({ page }) => {
       ? "/?transport=http&poll_ms=100"
       : "/";
   await page.goto(withGatewayToken(query));
-  const transfers = page.getByRole("grid", { name: "Transfer queue" });
+  const transfers = page.getByRole("grid", { name: "Torrents" });
   await expect(transfers).toBeVisible();
   const input = page
     .getByRole("form", { name: "Add torrent" })
@@ -496,7 +496,7 @@ test("paired application transport throughput", async ({ page }) => {
   await input.press("Enter");
   await confirmDefaultAddOptions(page);
   await expect(
-    page.getByRole("region", { name: "Transfers" }).getByRole("status"),
+    page.getByRole("region", { name: "Torrent collection" }).getByRole("status"),
   ).toHaveText("Added");
   const row = transfers.locator(`[data-row-id="${torrentId!}"]`);
   await expect(row).toContainText(/complete/i, { timeout: 180_000 });
@@ -648,7 +648,7 @@ test("live peer inspection follows a controlled verified transfer", async ({
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(liveUrl());
   const primary = page.getByRole("navigation", { name: "Primary" });
-  const transferGrid = page.getByRole("grid", { name: "Transfer queue" });
+  const transferGrid = page.getByRole("grid", { name: "Torrents" });
   await expect(primary).toBeVisible();
   await expect(transferGrid).toBeVisible();
   await expect.poll(() => applicationUpgrades).toBe(1);
@@ -662,15 +662,15 @@ test("live peer inspection follows a controlled verified transfer", async ({
   await torrentInput.press("Enter");
   await confirmDefaultAddOptions(page);
   await expect(
-    page.getByRole("region", { name: "Transfers" }).getByRole("status"),
+    page.getByRole("region", { name: "Torrent collection" }).getByRole("status"),
   ).toHaveText("Added");
   await expect(torrentInput).toHaveValue("");
 
   const transferRow = transferGrid.locator(`[data-row-id="${torrentId!}"]`);
   await expect(transferRow).toContainText(torrentName!, { timeout: 20_000 });
   await transferRow.click();
-  await primary.getByRole("button", { name: "Workbench" }).click();
-  const library = page.getByRole("grid", { name: "Torrent library" });
+  await primary.getByRole("button", { name: "Torrents" }).click();
+  const library = page.getByRole("grid", { name: "Torrents" });
   await expect(library).toBeVisible();
   const torrentRow = library.locator(`[data-row-id="${torrentId!}"]`);
   await expect(torrentRow).toBeVisible();
@@ -868,7 +868,7 @@ test("live Library media detail follows metadata through completion", async ({
     .uncheck();
   await addDialog.getByRole("button", { name: "Add torrent" }).click();
   await expect(
-    page.getByRole("region", { name: "Transfers" }).getByRole("status"),
+    page.getByRole("region", { name: "Torrent collection" }).getByRole("status"),
   ).toHaveText("Added");
   await primary.getByRole("button", { name: "Library" }).click();
   const card = page
@@ -901,9 +901,9 @@ test("live Library media detail follows metadata through completion", async ({
   await expect.poll(() => detailRequests.at(-1)).toBe("media");
 
   await page.getByRole("button", { name: "Back to Library" }).click();
-  await primary.getByRole("button", { name: "Workbench" }).click();
+  await primary.getByRole("button", { name: "Torrents" }).click();
   const torrentRow = page
-    .getByRole("grid", { name: "Torrent library" })
+    .getByRole("grid", { name: "Torrents" })
     .getByRole("row")
     .filter({ hasText: torrentName! });
   await torrentRow.click();
@@ -1010,9 +1010,9 @@ test("live Library media detail follows metadata through completion", async ({
   expect(payloadHash.digest("hex")).toBe(mediaPayloadSha1);
   const unrelated = path.join(storage, "unrelated.keep");
   await fs.writeFile(unrelated, "preserve");
-  await primary.getByRole("button", { name: "Workbench" }).click();
+  await primary.getByRole("button", { name: "Torrents" }).click();
   const removableTorrentRow = page
-    .getByRole("grid", { name: "Torrent library" })
+    .getByRole("grid", { name: "Torrents" })
     .getByRole("row")
     .filter({ hasText: torrentName! });
   await removableTorrentRow.click({ button: "right" });
@@ -1075,7 +1075,7 @@ test("live add-time file selection", async ({ page }) => {
   ).toHaveCount(0);
   await addDialog.getByRole("button", { name: "Continue" }).click();
   await expect(
-    page.getByRole("region", { name: "Transfers" }).locator("output"),
+    page.getByRole("region", { name: "Torrent collection" }).locator("output"),
   ).toHaveText("Added");
 
   const selection = page.getByRole("dialog").filter({
@@ -1109,7 +1109,7 @@ test("live add-time file selection", async ({ page }) => {
   expect(await fs.readdir(storage)).toEqual([]);
   await selection.getByRole("button", { name: "Download" }).click();
 
-  const transfers = page.getByRole("grid", { name: "Transfer queue" });
+  const transfers = page.getByRole("grid", { name: "Torrents" });
   const transferRow = transfers
     .locator("[role=row][data-row-id]")
     .filter({ hasText: torrentName! });
@@ -1124,10 +1124,10 @@ test("live add-time file selection", async ({ page }) => {
   await transferRow.click();
   await page
     .getByRole("navigation", { name: "Primary" })
-    .getByRole("button", { name: "Workbench" })
+    .getByRole("button", { name: "Torrents" })
     .click();
   const torrentRow = page
-    .getByRole("grid", { name: "Torrent library" })
+    .getByRole("grid", { name: "Torrents" })
     .locator(`[data-row-id="${canonicalTorrentId!}"]`);
   await expect(torrentRow).toBeVisible();
   await torrentRow.click();
@@ -1174,7 +1174,7 @@ async function addAndOpenInWorkbench(
   liveMagnet: string,
 ): Promise<Locator> {
   const primary = page.getByRole("navigation", { name: "Primary" });
-  const transfers = page.getByRole("grid", { name: "Transfer queue" });
+  const transfers = page.getByRole("grid", { name: "Torrents" });
   await expect(primary).toBeVisible();
   await expect(transfers).toBeVisible();
   const existingIds = new Set(
@@ -1192,7 +1192,7 @@ async function addAndOpenInWorkbench(
   await input.press("Enter");
   await confirmDefaultAddOptions(page);
   await expect(
-    page.getByRole("region", { name: "Transfers" }).getByRole("status"),
+    page.getByRole("region", { name: "Torrent collection" }).getByRole("status"),
   ).toHaveText("Added");
   let canonicalTorrentId: string | null = null;
   await expect
@@ -1219,9 +1219,9 @@ async function addAndOpenInWorkbench(
     `[data-row-id="${canonicalTorrentId}"]`,
   );
   await transferRow.click();
-  await primary.getByRole("button", { name: "Workbench" }).click();
+  await primary.getByRole("button", { name: "Torrents" }).click();
   const torrentRow = page
-    .getByRole("grid", { name: "Torrent library" })
+    .getByRole("grid", { name: "Torrents" })
     .locator(`[data-row-id="${canonicalTorrentId}"]`);
   await expect(torrentRow).toBeVisible({ timeout: 10_000 });
   await torrentRow.click();

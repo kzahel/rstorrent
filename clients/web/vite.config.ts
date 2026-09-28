@@ -2,15 +2,22 @@ import { resolve } from "node:path";
 import { defineConfig, loadEnv, type ProxyOptions } from "vite";
 
 const proxyTarget = process.env.RSTORRENT_WEBUI_PROXY_TARGET;
+const liveReload = process.env.RSTORRENT_WEBUI_RELOAD === "1";
 const proxy: Record<string, string | ProxyOptions> | undefined =
   proxyTarget === undefined
     ? undefined
     : {
         "/api": {
           target: proxyTarget,
-          changeOrigin: true,
+          changeOrigin: !liveReload,
           ws: true,
         },
+        ...(liveReload
+          ? {
+              "/healthz": { target: proxyTarget, changeOrigin: false },
+              "/media": { target: proxyTarget, changeOrigin: false },
+            }
+          : {}),
       };
 
 export default defineConfig(({ mode }) => {

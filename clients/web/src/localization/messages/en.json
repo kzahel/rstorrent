@@ -407,10 +407,6 @@
     "defaultMessage": "Settings",
     "description": "Product copy in inspection/components/App.tsx"
   },
-  "inspection.components.app.transfers": {
-    "defaultMessage": "Transfers",
-    "description": "Product copy in inspection/components/App.tsx"
-  },
   "inspection.components.app.transfers.will.resume.automatically.when.one.is": {
     "defaultMessage": "Transfers will resume automatically when one is usable.",
     "description": "Product copy in inspection/components/App.tsx"
@@ -420,11 +416,11 @@
     "description": "Product copy in inspection/components/App.tsx"
   },
   "inspection.components.app.workbench": {
-    "defaultMessage": "Workbench",
+    "defaultMessage": "Torrents",
     "description": "Product copy in inspection/components/App.tsx"
   },
   "inspection.components.app.workbench.torrent.collection": {
-    "defaultMessage": "Workbench torrent collection",
+    "defaultMessage": "Torrent collection",
     "description": "Product copy in inspection/components/App.tsx"
   },
   "inspection.components.appearance.settings.section.always.use.the.dark.appearance": {
@@ -2224,7 +2220,7 @@
     "description": "Product copy in inspection/components/LibraryDetailView.tsx"
   },
   "inspection.components.library.detail.view.open.in.workbench": {
-    "defaultMessage": "Open in Workbench",
+    "defaultMessage": "Open in Torrents",
     "description": "Product copy in inspection/components/LibraryDetailView.tsx"
   },
   "inspection.components.library.detail.view.opening.this.file.for.playback": {
@@ -3472,7 +3468,7 @@
     "description": "Product copy in inspection/components/Sidebar.tsx"
   },
   "inspection.components.sidebar.workbench.torrent.filters": {
-    "defaultMessage": "Workbench torrent filters",
+    "defaultMessage": "Torrent filters",
     "description": "Product copy in inspection/components/Sidebar.tsx"
   },
   "inspection.components.speed.panel.1.hour": {
@@ -3864,7 +3860,7 @@
     "description": "Product copy in inspection/components/TorrentTable.tsx"
   },
   "inspection.components.torrent.table.torrent.library": {
-    "defaultMessage": "Torrent library",
+    "defaultMessage": "Torrents",
     "description": "Product copy in inspection/components/TorrentTable.tsx"
   },
   "inspection.components.torrent.table.torrent.library.is.not.requested.in.this": {

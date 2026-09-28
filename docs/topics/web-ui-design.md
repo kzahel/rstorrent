@@ -13,6 +13,30 @@ adds a Stable/Latest selector to desktop About and Updates. It explains check
 cadence and shows when Stable must catch up after a newer Latest installation.
 The control is absent on browser/headless and package-manager surfaces.
 
+Tactical [`228`](../tactical/228-settings-category-selection-style.md)
+replaces the Settings category rail's selected edge bars with a simple
+full-item tint. The keyboard focus outline remains distinct from selection.
+
+Tactical [`227`](../tactical/227-stable-remove-dialog-controls.md) keeps the
+Remove torrents dialog and its footer controls stationary when the user
+toggles downloaded-data deletion. It reserves the conditional warning's
+space and the longest confirmation-label width while retaining the warning
+and destructive-action wording only when selected.
+
+Tactical [`226`](../tactical/226-live-webui-hot-reload.md) adds optional
+live UI hot reload to `./scripts/webui --reload`. Vite owns the visible
+loopback page and source updates; the gateway keeps the live application,
+persistent profile, and picker behind same-origin proxy routes. The ordinary
+launcher retains its production-built behavior.
+
+Tactical [`225`](../tactical/225-two-destination-torrent-navigation-first-pass.md)
+puts a Library/Torrents navigation first pass up for product review. Torrents
+uses the detailed Workbench surface and is the fresh-install default. Saved
+Transfers destinations open Torrents with their previous filter. At narrow
+widths, row activation opens detail, the checkbox stays in the list for
+batch actions, and detail has a prominent return button. The historical
+three-destination implementation record below is retained for context.
+
 Tactical [`216`](../tactical/216-local-support-diagnostics-and-release-baseline.md)
 adds the About support report with an explicit immutable preview, copy/manual
 fallback/download, and no-context issue links. The 320/1440-pixel light/dark

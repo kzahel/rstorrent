@@ -217,6 +217,11 @@ Tactical `036` introduced the production-built browser path behind
 `./scripts/webui`. Tactical `109` now gives it one fixed same-origin gateway:
 the root URL remains stable across restarts, the gateway serves both the UI
 and application transport, and the terminal owns one joined child process.
+Tactical [`226`](../tactical/226-live-webui-hot-reload.md) adds an optional
+`--reload` workflow at that same browser URL. Vite hot reloads React/CSS and
+proxies API, WebSocket, health, and media requests to a private loopback
+gateway with the same persistent profile and native folder picker. The
+ordinary launcher still serves the production bundle.
 It retains isolated persistent state, default online networking, and normal
 browser opening. Tactical `076`
 adds an explicit same-origin production build for one Basic-authenticated

@@ -286,25 +286,34 @@
     display: flex;
     align-items: center;
     gap: 0.65rem;
-    min-height: 44px;
+    min-height: calc(var(--ui-control-height) + 2 * var(--ui-space-md));
     border-bottom: 1px solid var(--border-strong);
-    padding: 0 0.55rem;
+    padding: var(--ui-space-md) var(--ui-space-lg);
   }
 
   .mobileHeading button {
     display: inline-flex;
     align-items: center;
-    gap: 0.28rem;
-    border: 0;
-    padding: 0.42rem;
-    color: var(--accent-strong);
-    background: transparent;
+    flex: none;
+    height: var(--ui-control-height);
+    gap: var(--ui-space-xs);
+    border: 1px solid var(--border-strong);
+    border-radius: 0.45rem;
+    padding: 0 var(--ui-space-md);
+    color: var(--text-primary);
+    background: var(--surface-secondary);
     font: inherit;
     font-size: var(--ui-font-small);
     font-weight: 700;
+    cursor: pointer;
+  }
+
+  .mobileHeading button:hover {
+    background: var(--surface-hover);
   }
 
   .mobileHeading strong {
+    min-width: 0;
     overflow: hidden;
     color: var(--text-primary);
     font-size: var(--ui-font-body);

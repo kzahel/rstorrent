@@ -199,7 +199,9 @@ describe("inspection store", () => {
       setItem: (key: string, value: string) => values.set(key, value),
     };
     const store = createInspectionStore(storage);
-    expect(store.getState().presentation.destination).toBe("transfers");
+    expect(store.getState().presentation.destination).toBe("workbench");
+
+    store.getState().selectDestination("transfers");
 
     store.getState().selectTorrentCategory("paused");
     store.getState().selectDestination("workbench");

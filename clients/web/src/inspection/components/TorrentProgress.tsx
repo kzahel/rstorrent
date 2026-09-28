@@ -12,6 +12,7 @@ export { torrentProgressSortValue };
 export function TorrentProgress({ row }: { readonly row: TorrentRow }) {
   const checking = row.status === "checking";
   const progress = torrentVisibleProgress(row);
+  if (!checking && progress === null) return <span>—</span>;
   const label = checking ? checkingStatusLabel(row) : formatProgress(row.progress);
   const indeterminate = checking && progress === null;
 

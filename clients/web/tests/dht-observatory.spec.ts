@@ -8,10 +8,10 @@ test("DHT observatory teaches normalized and literal routing encodings", async (
   await page.goto("/?demo=dht-observatory&at=30000&autoplay=0");
   await page
     .getByRole("navigation", { name: "Primary" })
-    .getByRole("button", { name: "Workbench" })
+    .getByRole("button", { name: "Torrents" })
     .click();
   await page
-    .getByRole("grid", { name: "Torrent library" })
+    .getByRole("grid", { name: "Torrents" })
     .getByRole("row")
     .filter({ hasText: "Big Buck Bunny" })
     .click();
@@ -60,10 +60,10 @@ test("DHT observatory keeps the complete normalized explanation on a narrow pane
   await page.goto("/?demo=dht-observatory&at=50000&autoplay=0");
   await page
     .getByRole("navigation", { name: "Primary" })
-    .getByRole("button", { name: "Workbench" })
+    .getByRole("button", { name: "Torrents" })
     .click();
   await page
-    .getByRole("grid", { name: "Torrent library" })
+    .getByRole("grid", { name: "Torrents" })
     .getByRole("row")
     .filter({ hasText: "Big Buck Bunny" })
     .click();

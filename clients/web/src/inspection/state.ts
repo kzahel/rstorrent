@@ -190,7 +190,7 @@ const EMPTY_SNAPSHOT: InspectionSnapshot = {
 };
 
 const DEFAULT_PRESENTATION: PresentationState = {
-  destination: "transfers",
+  destination: "workbench",
   libraryCategory: "all",
   transfersCategory: "all",
   workbenchCategory: "all",

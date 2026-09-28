@@ -2,12 +2,14 @@
 
 Topic: `application-interface-direction`
 
-Status: The desktop/web product-navigation direction is accepted and its
-initial presentation cross-section is implemented by Tactical `055`. Library,
-Transfers, and Workbench are distinct responsive top-level destinations.
-Workbench preserves the dense inspection surface as a first-class interface;
-Transfers is the fresh-install default; and browser-local state restores the
-last destination and each destination's filter. Library currently presents
+Status: Tactical [`225`](../tactical/225-two-destination-torrent-navigation-first-pass.md)
+places a two-destination Library/Torrents navigation in product review. Its
+Torrents destination uses the former Workbench table and detail; row
+activation opens detail at narrow widths, while the checkbox retains batch
+selection in the list. Fresh installs open Torrents, and saved Transfers
+destinations migrate to Torrents with their saved filter. The three-destination
+direction implemented by Tactical `055` remains below as historical context
+until this first pass is reviewed. Library currently presents
 truthful torrent-backed content sources. Completed Tactical `072` adds one
 responsive media-first detail for an explicitly opened source, backed by a
 derived video/episode catalog and authoritative file progress. Thumbnails,
@@ -27,7 +29,8 @@ for ordinary torrent control.
 
 This topic owns the desktop/web product information architecture:
 
-- the top-level Library, Transfers, and Workbench destinations;
+- the top-level Library and Torrents destinations, including the earlier
+  three-destination design recorded below;
 - the responsibility and vocabulary of each destination;
 - the role of contextual sidebars and inspectors;
 - continuity of selection and presentation state between destinations; and
@@ -41,7 +44,10 @@ detailed torrent observation is a product and maintainer requirement.
 [`client-surfaces.md`](client-surfaces.md) owns the browser and Tauri hosts and
 their platform lifecycle.
 
-## Accepted Application Shape
+## Previous Three-Destination Shape
+
+The following records the Tactical `055` design. Tactical `225` currently
+supersedes its primary navigation and fresh-install default for review.
 
 Use the existing top application bar for primary navigation:
 
