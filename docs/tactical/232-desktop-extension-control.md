@@ -1,8 +1,8 @@
 # Tactical 232: Desktop Extension Control
 
-Status: **Selected first focus; implementation plan, 2026-09-28.** Product
-direction is accepted; transport and platform design checkpoints below remain
-open. This is not yet a decision-complete autonomous implementation tactical.
+Status: **First Linux checkpoint in progress, 2026-09-28.** The bounded
+contract below is selected for implementation. Later platform, picker and
+complete Rehearsal A gates remain open.
 
 Parent: [`231-jstorrent-migration-working-campaign.md`](231-jstorrent-migration-working-campaign.md)
 
@@ -275,3 +275,85 @@ existing same-device boundary; Crostini remains its separate backend.
 Completion evidence: **none yet**. Next action is the transport/bootstrap and
 windowless lifecycle design checkpoint, followed by the fresh-profile control
 path. Update the parent tracker and owning topics as each gate passes.
+
+## First Checkpoint Contract (2026-09-28)
+
+Chosen composition: short native messaging bootstrap, protected local Unix
+rendezvous, then the existing semantic WebSocket adapter inside the desktop
+process. No second ApplicationService. A persistent native bridge was rejected
+for this checkpoint: Chrome's 1-MiB native response limit would require a new
+fragmentation/backpressure protocol for existing 16-MiB semantic responses and
+64-MiB metainfo attachments, and would tie transport to another process.
+
+Official sources inspected:
+
+- https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging
+  (exact origins, caller argument, native-endian framing, per-message host,
+  1-MiB output/64-MiB input; retain our smaller 64-KiB bootstrap limit).
+- https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle
+  (worker suspension; the page owns the connection, never the worker).
+- https://developer.chrome.com/docs/extensions/reference/manifest/content-security-policy
+  and https://developer.chrome.com/docs/extensions/develop/concepts/network-requests
+  (packaged code, exact loopback connect scope, host permissions).
+- Locked registry source: `tauri-plugin-single-instance-2.4.3/src/lib.rs` and
+  `src/platform_impl/linux.rs`: plugin setup claims the non-replaceable session
+  D-Bus name before user setup; secondary launches forward argv then exit.
+  The published crate contains no singleton integration tests. Repository
+  `desktop_lifecycle.rs` and native-host `tests/process.rs` provide local seams;
+  simultaneous installed launches must supply the missing runtime evidence.
+- `tauri-2.11.5/src/app.rs::setup` creates only windows with `create=true`;
+  `WebviewWindowBuilder::from_config` supports later explicit construction.
+  `tauri-plugin-dialog-2.7.2/src/lib.rs::{set_parent,pick_folder}` and
+  `rfd-0.16.0/src/backend/gtk3/file_dialog.rs` retain the native GTK picker.
+  Picker changes are explicitly deferred; use the existing native window.
+- JSTorrent `docs/contracts/native-host-contract.md` and its conformance cases
+  require profile allocation/takeover in the legacy host. Deliberate difference:
+  this host never selects/creates a profile or owns torrent state.
+
+Linux bootstrap uses a mode-0700, current-UID directory and mode-0600 Unix
+socket in the installed native-host directory. Reject symlink/non-owner/insecure
+rendezvous objects; validate peer UID. Only the singleton may remove its stale
+socket, and only after a refused connection. Bootstrap returns a typed ready
+response after the loopback listener has bound. Native messaging additionally
+allowlists the exact beta origin for control (legacy hello/launch retain their
+existing registration). Same-user arbitrary code execution is outside this
+boundary; neither paths nor Origin alone purport to contain it.
+
+The listener binds `127.0.0.1:0`, accepts the exact bound Host and beta extension
+Origin, exposes only the semantic connect route, and requires a fresh random
+256-bit runtime bearer in the first application frame. No cookie, query token,
+static assets, arbitrary HTTP API or LAN binding. Rendezvous authenticity and
+bind-before-advertise prevent port prebinding from supplying bootstrap authority.
+A stale endpoint/credential cannot authorize a new runtime; credentials rotate
+on every process start and are invalidated by joined shutdown. Credentials stay
+in native IPC and page memory, never persistent browser storage, URLs or logs.
+Windows protected IPC remains unimplemented and fails explicitly; Unix source
+sharing is not macOS installed acceptance.
+
+Bounds: four WebSocket clients, five-second application handshake, existing
+64-KiB client text, 16-MiB application response plus 4-KiB envelope, 16 pending
+calls, eight attachments per connection, 32 control messages, two reserved data
+messages, one global 64-MiB torrent upload with its 120-second deadline. Bootstrap
+responses are at most 4 KiB; each socket write/read has a one-second deadline;
+explicit startup has a ten-second readiness deadline and native host processes
+have a twenty-second lifetime ceiling. One worker open operation is coalesced;
+one page connection/reconnect loop uses capped backoff and attach-only requests.
+Authentication/protocol failure stops automatic retries and offers an explicit
+retry. No automatic path launches a stopped app.
+
+Desktop launch intent is explicit: `--extension-background` suppresses initial
+webview creation and secondary-window activation. Ordinary launch, tray and
+native actions create/focus the main window. Existing close/background policy
+is preserved; extension detachment does not decide engine lifetime. Quit closes
+bootstrap admission and control connections before the application service.
+
+Capability disposition: shared React library, semantic settings and torrent
+control use existing contracts and desktop multi-root presentation. Native root
+acquisition, media/open-file, updater and desktop shell actions stay native for
+this checkpoint; extension controls must truthfully explain unavailable actions.
+No Android trust, pairing, permission or service-lifetime change is intended.
+
+Validation sequence: native bootstrap negative/process tests and control socket
+admission/semantic tests; lifecycle tests and desktop build; web/extension tests
+and package; installed claimed Linux cold/warm/race/two-view/Quit matrix. Record
+exact commands, artifacts, peaks and cleanup below before closing the checkpoint.
