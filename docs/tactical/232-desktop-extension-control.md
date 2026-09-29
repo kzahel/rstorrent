@@ -55,6 +55,12 @@ Maintainer accepted the simplified model during the migration discussion:
   notifications and manual update checks retain their existing native routing
   initially; adding remembered presentation preference is outside this slice.
 
+Maintainer follow-up makes the launch/lifetime rules explicit in
+[Tactical 234](234-desktop-user-intent-and-background-lifecycle.md): retain the
+tray whenever the desktop runtime runs, browser closure only detaches, and
+fresh toolbar/Start/OS torrent-input intent can relaunch after Quit. Tray Open
+and OS inputs always use the native window, with no browser-profile routing.
+
 ## First Implementation Checkpoint
 
 Build one vertical path: **click extension -> ensure one desktop runtime ->

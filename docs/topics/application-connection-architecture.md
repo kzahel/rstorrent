@@ -2,13 +2,23 @@
 
 Topic: `application-connection-architecture`
 
+Tactical [`234`](../tactical/234-desktop-user-intent-and-background-lifecycle.md)
+owns the accepted desktop lifetime follow-up: retain the tray/status-bar icon
+while the runtime runs, including idle/paused states; browser closure only
+detaches. Fresh toolbar, Start, or OS torrent-input intent may relaunch after
+Quit; page restoration, worker wake and retries only attach. Tray Open and
+OS magnet/file delivery always use the native window. No preferred surface,
+browser-profile routing, icon-hiding or automatic completion shutdown is added.
+Cross-platform implementation/qualification is active; this paragraph records
+policy, not new passing evidence.
+
 Tactical [`232`](../tactical/232-desktop-extension-control.md) adds the desktop
 composition of this same semantic connection. The sole native service owns a
 loopback-only listener; protected same-user native bootstrap supplies an
 in-memory, per-runtime bearer to the exact beta extension. Native Tauri remains
 in-process. HTTP admission, application connections, upload and shutdown are
-bounded separately. Automatic reconnection is attach-only; explicit Start is
-the only browser action that may create the desktop owner. Installed Linux,
+bounded separately. Automatic reconnection is attach-only; explicit toolbar Open or Start
+may create the desktop owner. Installed Linux,
 Windows and macOS debug-package checkpoints pass. macOS uses same-user
 `getpeereid`, a private bounded startup lock to serialize LaunchServices opens,
 and a bounded ready-socket lifetime that permits client timeout setup before

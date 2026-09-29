@@ -2,6 +2,16 @@
 
 Topic: `product-surfaces-and-migration`
 
+Tactical [`234`](../tactical/234-desktop-user-intent-and-background-lifecycle.md)
+owns the accepted desktop lifetime follow-up: retain the tray/status-bar icon
+while the runtime runs, including idle/paused states; browser closure only
+detaches. Fresh toolbar, Start, or OS torrent-input intent may relaunch after
+Quit; page restoration, worker wake and retries only attach. Tray Open and
+OS magnet/file delivery always use the native window. No preferred surface,
+browser-profile routing, icon-hiding or automatic completion shutdown is added.
+Cross-platform implementation/qualification is active; this paragraph records
+policy, not new passing evidence.
+
 Maintainer direction on 2026-09-28 starts desktop-first JSTorrent migration
 planning and test design. The source survey, proposed data/support contract,
 extension transition matrix and Machine Control rehearsal sequence now live in

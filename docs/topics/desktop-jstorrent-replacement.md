@@ -2,6 +2,16 @@
 
 Topic: `desktop-jstorrent-replacement`
 
+Tactical [`234`](../tactical/234-desktop-user-intent-and-background-lifecycle.md)
+owns the accepted desktop lifetime follow-up: retain the tray/status-bar icon
+while the runtime runs, including idle/paused states; browser closure only
+detaches. Fresh toolbar, Start, or OS torrent-input intent may relaunch after
+Quit; page restoration, worker wake and retries only attach. Tray Open and
+OS magnet/file delivery always use the native window. No preferred surface,
+browser-profile routing, icon-hiding or automatic completion shutdown is added.
+Cross-platform implementation/qualification is active; this paragraph records
+policy, not new passing evidence.
+
 Tactical [232](../tactical/232-desktop-extension-control.md) records installed
 Linux, Windows and macOS extension-control checkpoints: native picking,
 controlled bytes, one runtime/library, two-view convergence, registration repair

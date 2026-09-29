@@ -2,6 +2,16 @@
 
 Topic: `web-ui-design`
 
+Tactical [`234`](../tactical/234-desktop-user-intent-and-background-lifecycle.md)
+owns the accepted desktop lifetime follow-up: retain the tray/status-bar icon
+while the runtime runs, including idle/paused states; browser closure only
+detaches. Fresh toolbar, Start, or OS torrent-input intent may relaunch after
+Quit; page restoration, worker wake and retries only attach. Tray Open and
+OS magnet/file delivery always use the native window. No preferred surface,
+browser-profile routing, icon-hiding or automatic completion shutdown is added.
+Cross-platform implementation/qualification is active; this paragraph records
+policy, not new passing evidence.
+
 Tactical [`232`](../tactical/232-desktop-extension-control.md) mounts the same
 React library in the desktop extension with portable multi-root presentation.
 Its bootstrap shows Start when the desktop is stopped and offers Open desktop

@@ -56,13 +56,17 @@ SQLite and payload writes remain native. No engine runs in the extension.
 | D-07 | Local diagnostics and bug-report continuity precede a migration cohort. | Required outcome; reporting implementation remains open |
 | D-08 | Union all legacy desktop profiles into one library; no successor multi-profile support or source-profile chooser. | Accepted 2026-09-28; duplicate/conflict rules need importer design |
 | D-09 | Explicit extension open starts/attaches in background; desktop launch shows its native window. Both views coexist without preferred-UI routing. | Accepted in follow-up discussion |
-| D-10 | Automatic reconnect attaches only; explicit Quit must not be undone by browser retries. Desktop bootstrap avoids routine code-entry pairing. | Accepted behavior; authenticated bootstrap mechanism remains to design |
+| D-10 | Automatic reconnect attaches only; explicit Quit must not be undone by browser retries. Desktop bootstrap avoids routine code-entry pairing. | Accepted; protected bootstrap implemented in 232 |
+
+| D-11 | Retain tray/status-bar icon whenever desktop runtime runs, even idle/paused; closing browser only detaches. Native close follows its existing setting. | Accepted 2026-09-29; 234 |
+| D-12 | Fresh toolbar/Start/magnet/file intent may relaunch after Quit; automatic restore/retry/worker wake may only attach. | Accepted 2026-09-29; 234 |
+| D-13 | Tray Open and OS torrent inputs use native UI; no preferred surface or browser-profile routing. | Accepted 2026-09-29; 234 |
 
 ## Work Tracker
 
 | ID | Work | State | Exit evidence / next action |
 | --- | --- | --- | --- |
-| M-01 | Desktop extension control | Linux/Windows/macOS installed checkpoint complete in [`232`](232-desktop-extension-control.md); full rehearsal partial | Protected bootstrap, native picker, controlled bytes, shared library, singleton and Quit pass. Next: broad browser update/suspension/discard and endurance cases. |
+| M-01 | Desktop extension control | Linux/Windows/macOS installed checkpoint complete in [`232`](232-desktop-extension-control.md); full rehearsal partial | Protected bootstrap, native picker, controlled bytes, shared library, singleton and Quit pass. Next: explicit intent/tray/browser lifecycle in [234](234-desktop-user-intent-and-background-lifecycle.md); update compatibility remains separate. |
 | M-02 | Legacy cohort inventory and fixtures | [233](233-legacy-desktop-fixture-cohort.md): bounded Linux/Windows v0.2.1 cohort complete | Seven profiles/eight records plus two labeled mutations per platform; closed snapshot/payload oracle passes. Broader releases, browser-store variants and macOS remain unqualified. |
 | M-03 | Migration preview, union import and recovery | Not implemented | Consistent snapshots of all source profiles, identity/root mapping, explicit conflict outcomes, retry/crash recovery, held activation, exact recheck and preservation |
 | M-04 | Support/report continuity | Required before user cohort | Failure-page report, bounded migration/backend context, familiar voluntary feedback journey and disclosure verification |

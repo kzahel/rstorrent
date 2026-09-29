@@ -2,6 +2,16 @@
 
 Topic: `runtime-configurations-and-headless-deployment`
 
+Tactical [`234`](../tactical/234-desktop-user-intent-and-background-lifecycle.md)
+owns the accepted desktop lifetime follow-up: retain the tray/status-bar icon
+while the runtime runs, including idle/paused states; browser closure only
+detaches. Fresh toolbar, Start, or OS torrent-input intent may relaunch after
+Quit; page restoration, worker wake and retries only attach. Tray Open and
+OS magnet/file delivery always use the native window. No preferred surface,
+browser-profile routing, icon-hiding or automatic completion shutdown is added.
+Cross-platform implementation/qualification is active; this paragraph records
+policy, not new passing evidence.
+
 Tactical [`232`](../tactical/232-desktop-extension-control.md) adds an explicit
 `--extension-background` intent to the ordinary singleton desktop executable.
 It retains the desktop application service, default library and close/Quit
@@ -165,11 +175,10 @@ window hides it while retaining the same process, application service, profile,
 engine, webview, subscriptions, and tray. Turning the preference off makes the
 next close perform joined shutdown.
 
-That implementation satisfies “the visible window need not remain open,” but
-not the complete windowless target. A later desktop tactical must allow startup
-without creating a visible webview, attach an extension to the incumbent
-backend, and create or restore the Tauri presentation on demand without
-starting another application service.
+Tactical 232 implements extension-first startup without a native webview and
+creates/restores the native presentation on demand on the same service.
+Tactical 234 qualifies the persistent tray and explicit-intent rules across
+browser departure, restoration and deliberate relaunch after Quit.
 
 ### Service startup and restart
 
