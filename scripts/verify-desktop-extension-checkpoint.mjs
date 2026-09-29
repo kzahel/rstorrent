@@ -17,6 +17,8 @@ try {
   if (phase === 'open') {
     const popup = await context.newPage();
     await popup.goto('chrome-extension://gcgoepclopkgijmclmlheafaglmbjlcc/popup/popup.html');
+    // A tab is deliberately not a toolbar action. Exercise its explicit button.
+    await popup.locator('#launch').click();
     await new Promise((resolve, reject) => {
       const deadline = setTimeout(() => { clearInterval(poll); reject(new Error('companion did not open')); }, 20000);
       const poll = setInterval(() => {

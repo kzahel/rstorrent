@@ -121,3 +121,21 @@ suspended and resumable. Local UTM Linux/Windows are unavailable; the existing
 remote Linux controller has a clean RSTorrent checkout at 07a23248 and a
 powered-off native Linux guest. Recheck remote Windows doctor/credentials.
 Concrete routes and claims stay outside public documentation.
+
+### First builder checkpoint
+
+Actual popup identity now gates automatic toolbar launch. A direct/restored
+popup tab may check setup but needs its Launch button; uncertain platform
+identification never auto-launches desktop. The companion now gives a cached
+page a fresh attach-only owner after its prior asynchronous mount/cleanup
+finishes. Departure releases the ownership loop even if a frozen page never
+receives the WebSocket close event. No launch state or credential is persisted.
+
+After `source ~/.profile`: `npm test --prefix clients/extension` passes 42
+cases plus package validation; `npm run typecheck --prefix clients/web` passes;
+`npm test --prefix clients/web` passes 413 cases with two skipped. Eight focused
+companion cases cover automatic retries, explicit Start/double click,
+authentication refusal, mount failure, disconnect cleanup and cached-page
+restoration including delayed mount and absent socket-close delivery.
+`npm run package --prefix clients/extension` passes. These are deterministic
+builder results; installed cross-platform evidence remains open.

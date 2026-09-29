@@ -349,3 +349,10 @@ test("desktop never focuses a remembered tab that navigated elsewhere", async ()
   assert.equal(tabs.get(77).active, undefined);
   assert.notEqual(stored.desktopUiTabId, 77);
 });
+
+test("browser startup and worker initialization do not launch desktop", async () => {
+  if (startupListener) await startupListener();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(nativeRequest, undefined);
+  assert.equal(tabs.size, 0);
+});

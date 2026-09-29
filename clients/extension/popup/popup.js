@@ -153,7 +153,12 @@ async function initializePresentation() {
   });
   if (presentation.desktop) {
     await checkDesktop();
-    if (!launchButton.disabled) launchButton.click();
+    // Only an actual toolbar popup is fresh launch intent. This document can
+    // also be opened/restored as a tab, which must not resurrect a quit app.
+    if (!presentation.chromeos && !launchButton.disabled &&
+        chrome.extension.getViews({ type: "popup" }).includes(window)) {
+      launchButton.click();
+    }
   }
 }
 
