@@ -2,18 +2,21 @@
 
 Topic: `client-surfaces`
 
-Tactical [240](../tactical/240-signed-desktop-control-qualification.md) prepares
-the requested signed current-source desktop-control release and installed
-matrix. It corrects the macOS Chrome for Testing support directory to
-`Google/Chrome for Testing`. Prior custom-profile control and configured-root
-repair tests remain valid, but did not prove discovery in that browser's actual
-default profile. The signed checkpoint must exercise standard-profile
-registration and repair without a manually copied manifest.
-Signed 0.2.701 now supplies that installed evidence, plus three-platform
-browser-closed verified transfers, shared native/extension views, picker
-cancellation/disconnection/Quit and explicit-intent relaunch. The separate
-initial-download DMG assessment caught missing outer-container notarization;
-240 is correcting delivery before claiming the signed checkpoint complete.
+Tactical [240](../tactical/240-signed-desktop-control-qualification.md) completes
+signed current-source delivery with [Latest 0.2.801](../evidence/desktop-latest-v0.2.801.md).
+Exact-source CI, five signed package lanes, public signatures/checksums and both
+macOS notarized/stapled DMGs pass. Claimed macOS arm64 and Windows/Linux x64
+installations pass native 701-to-801 updating, signed/registered helper checks,
+background control, shared views, fresh browser-closed verified transfers,
+picker cleanup, explicit/passive relaunch and bounded registration repair.
+The Mac also installs the exact public DMG and recreates its bundled host.
+Physical sleep/wake, interrupted updates, broader endurance, Intel/minimum-macOS
+installed coverage and production graduation remain open. No importer has started.
+
+240 also fixes the macOS CFT support path to `Google/Chrome for Testing`.
+Its actual default-profile discovery/repair evidence supersedes the misspelled
+configured test root in 232. The app bundles the native host and installs a
+private per-user copy; no separate user-managed helper installer is needed.
 
 Selected three-platform beta replacement, rollback and native registration
 repair pass in [236](../tactical/236-desktop-compatibility-refusal-and-recovery.md)
@@ -27,16 +30,17 @@ passive resurrection on all three, plus macOS VM suspend/resume. Linux's earlier
 lock blocker is superseded by authorized VM recreation with verified stored
 credentials. Its attempted native suspend-to-idle did not recover and required
 a supported forced stop; native sleep/wake remains unqualified. Owned test state
-is removed and claims released. Next: signed current-source delivery when
-separately available, physical sleep/wake and broader endurance. Importer work
-waits for discussion; no importer has started.
+is removed and claims released. 240 supplies signed current-source delivery.
+Next: bounded interrupted-update, physical sleep/wake and broader endurance
+evidence. Importer work waits for discussion; no importer has started.
 
 Tactical [`236`](../tactical/236-desktop-compatibility-refusal-and-recovery.md)
 adds clear terminal desktop compatibility errors and attach-only Retry
 connection. Its installed Linux beta old/new extension/runtime combinations,
 open-page replacement, credential rotation, bounded registration repair and
-same-schema rollback preserve the controlled library. The macOS/Windows beta matrices now pass in 237. Signed current-source delivery
-and original legacy replacement remain open.
+same-schema rollback preserve the controlled library. The macOS/Windows beta
+matrices now pass in 237. 240 supplies signed current-source delivery; original
+legacy replacement remains open.
 
 Tactical [`235`](../tactical/235-linux-quit-launch-handoff.md) repairs the Linux
 Quit/launch overlap. A stopping owner returns Retry; the explicit launch process
@@ -85,9 +89,9 @@ Tactical [`230`](../tactical/230-desktop-stable-latest-update-channels.md)
 adds desktop Stable/Latest source wiring. The native desktop client owns the
 saved selection and signed candidate; shared React exposes the choice only
 for app, NSIS, and AppImage installations. The signed five-target Latest
-release and production update routes pass; installed cross-channel evidence
-remains open. Android, iOS, headless, and Crostini retain
-their existing distribution policies.
+release and production update routes pass; 238 qualifies installed channel
+selection and 240 qualifies signed current-source desktop control. Android,
+iOS, headless, and Crostini retain their existing distribution policies.
 
 Completed local Tactical
 [`216`](../tactical/216-local-support-diagnostics-and-release-baseline.md)

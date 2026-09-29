@@ -1090,7 +1090,7 @@ restored readiness; neither incident is product lifecycle evidence. The second
 repair preceded the final tray-Quit assertion. No Machine Control source
 change, guest reboot, outer UI, host browser or lock-safety bypass was used.
 
-Follow-up evidence now lives in 234–239: bounded three-platform intent/tray/
+Follow-up evidence now lives in 234–240: bounded three-platform intent/tray/
 worker/discard behavior passes in 234; Linux Quit/launch overlap is fixed in
 235; selected beta mixed-version replacement/repair/rollback passes on Linux
 in 236 and macOS/Windows in 237. 238 passes native signed published-cohort
@@ -1100,7 +1100,11 @@ Linux now passes the browser/transfer/Quit and signed-channel follow-ups on an
 explicitly recreated guest with verified registry-located credentials. Its
 native suspend-to-idle attempt failed to recover; physical sleep/wake remains
 open. Final guest cleanup and released claim are recorded in 238/239.
-Native physical sleep, broader endurance, signed current-source delivery,
+240 adds signed current-source 0.2.801 delivery, both outer DMGs notarized and
+stapled, native updates, actual default-profile CFT registration/repair and a
+repeated three-platform control/transfer/picker/Quit matrix. This supersedes
+the misspelled configured Mac test root without rewriting its historical scope.
+Native physical sleep, interrupted updates, broader endurance,
 Intel/minimum-supported-macOS execution and production release readiness remain
 unqualified. Tactical 233 remains fixture context only: importer work waits
 for discussion; no personal-data migration was started.

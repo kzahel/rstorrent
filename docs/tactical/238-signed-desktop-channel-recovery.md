@@ -165,3 +165,12 @@ The bounded macOS/Windows/Linux published-cohort matrix is complete. Next gate:
 signed delivery of the current desktop-control source when separately available,
 plus interrupted replacement and broader update compatibility. Physical native
 sleep and endurance remain separate; importer work waits for discussion.
+
+## Signed Current-Source Follow-up
+
+Tactical [240](240-signed-desktop-control-qualification.md) completes the next
+signed-delivery gate with immutable Latest 0.2.801: five-target CI/public trust,
+both notarized/stapled DMGs, native 701-to-801 updates and repeated installed
+control/helper qualification on macOS arm64 and Windows/Linux x64. This does
+not change 238's older-cohort scope. Interrupted replacement, physical sleep,
+broader endurance and production migration remain open.

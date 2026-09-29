@@ -2,25 +2,25 @@
 
 Topic: `beta-release-readiness`
 
-Tactical [240](../tactical/240-signed-desktop-control-qualification.md) is active
-for the explicitly requested current-source signed Latest release and installed
-three-platform desktop-control/helper qualification. Exact-source main CI must
-pass before publication. Stable, identities and signing/update keys stay unchanged.
-Pre-publication review finds and corrects the macOS Chrome for Testing support
-directory spelling; prior custom-profile tests did not qualify default-profile
-discovery. 240 now requires actual standard-profile registration and repair.
-The same release preflight updates the sole transitive web-test Undici lock
-entry to 7.30.0 after newly reported advisories. Web type/unit/build and the
-fresh three-lockfile release-ready audit pass; the reviewed GLib source
-backport and warning policy remain unchanged.
-Public 0.2.701 passes native 501-to-701 updates and signed helper checks;
-240 records installed control/lifecycle evidence. Independent disk-image
-assessment finds the app notarized but its outer DMG only signed. A bounded
-pipeline correction adds DMG submission/stapling and the correct Gatekeeper
-open assessment before artifact hashing. A forward-only corrected Latest and
-its public/installed verification remain pending; existing published assets
-are immutable. Historical notarization claims below concern the app bundle,
-not an independently assessed outer DMG.
+Tactical [240](../tactical/240-signed-desktop-control-qualification.md) completes
+signed current-source delivery with [Latest 0.2.801](../evidence/desktop-latest-v0.2.801.md).
+Exact-source CI, five signed package lanes, public signatures/checksums and both
+macOS notarized/stapled DMGs pass. Claimed macOS arm64 and Windows/Linux x64
+installations pass native 701-to-801 updating, signed/registered helper checks,
+background control, shared views, fresh browser-closed verified transfers,
+picker cleanup, explicit/passive relaunch and bounded registration repair.
+The Mac also installs the exact public DMG and recreates its bundled host.
+Physical sleep/wake, interrupted updates, broader endurance, Intel/minimum-macOS
+installed coverage and production graduation remain open. No importer has started.
+
+Preflight corrects stale package/cancellation harness expectations, the macOS
+CFT discovery path and the transitive Undici advisory. Fresh release audits and
+exact-source main CI pass without changing the reviewed GLib warning policy.
+Independent 701 testing finds the app notarized but its outer DMG only signed;
+801 adds explicit DMG notarization, stapling and Gatekeeper open assessment
+before final artifact hashes. Historical notarization evidence below concerns
+the app bundle unless explicitly stated otherwise. Published assets remain
+immutable; Stable, product identities and signing/update keys are unchanged.
 
 Tactical [238](../tactical/238-signed-desktop-channel-recovery.md) now passes
 installed signed 0.2.301 → 0.2.501 selection/replacement/relaunch on macOS arm64
@@ -28,9 +28,10 @@ and Windows/Linux x86_64. Native Stable selection retains Latest and reports
 waiting for Stable to catch up; controlled roots and external sentinel bytes survive.
 Linux passes on the explicitly recreated guest with verified registry-located
 credentials. The selected published source predates desktop extension control,
-so signed current-source delivery and
-interrupted replacement remain unqualified. 237 separately completes selected
-macOS/Windows beta package repair/rollback, with exact inherited-state cleanup.
+so that tactical does not qualify current-source delivery; 240 supplies that
+evidence. Interrupted replacement remains unqualified. 237 separately completes
+selected macOS/Windows beta package repair/rollback, with exact inherited-state
+cleanup.
 
 Tactical [`237`](../tactical/237-macos-windows-package-recovery.md) updates
 release source guards for the platform singleton factory and macOS Opened

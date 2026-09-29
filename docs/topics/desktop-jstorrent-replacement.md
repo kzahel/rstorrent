@@ -2,6 +2,17 @@
 
 Topic: `desktop-jstorrent-replacement`
 
+Tactical [240](../tactical/240-signed-desktop-control-qualification.md) completes
+signed current-source delivery with [Latest 0.2.801](../evidence/desktop-latest-v0.2.801.md).
+Exact-source CI, five signed package lanes, public signatures/checksums and both
+macOS notarized/stapled DMGs pass. Claimed macOS arm64 and Windows/Linux x64
+installations pass native 701-to-801 updating, signed/registered helper checks,
+background control, shared views, fresh browser-closed verified transfers,
+picker cleanup, explicit/passive relaunch and bounded registration repair.
+The Mac also installs the exact public DMG and recreates its bundled host.
+Physical sleep/wake, interrupted updates, broader endurance, Intel/minimum-macOS
+installed coverage and production graduation remain open. No importer has started.
+
 Selected three-platform beta replacement, rollback and native registration
 repair pass in [236](../tactical/236-desktop-compatibility-refusal-and-recovery.md)
 and [237](../tactical/237-macos-windows-package-recovery.md).
@@ -14,17 +25,17 @@ passive resurrection on all three, plus macOS VM suspend/resume. Linux's earlier
 lock blocker is superseded by authorized VM recreation with verified stored
 credentials. Its attempted native suspend-to-idle did not recover and required
 a supported forced stop; native sleep/wake remains unqualified. Owned test state
-is removed and claims released. Next: signed current-source delivery when
-separately available, physical sleep/wake and broader endurance. Importer work
-waits for discussion; no importer has started.
+is removed and claims released. 240 supplies signed current-source delivery.
+Next: bounded interrupted-update, physical sleep/wake and broader endurance
+evidence. Importer work waits for discussion; no importer has started.
 
 Tactical [`236`](../tactical/236-desktop-compatibility-refusal-and-recovery.md)
 qualifies selected Linux beta old/new extension/runtime pairs, an already-open
 successor UI across replacement, credential rotation and same-schema rollback.
 Incompatibility offers terminal guidance and attach-only recovery. This is an
 initial Rehearsal C checkpoint, extended to macOS/Windows in 237. Original
-legacy pairs, signed current-source delivery and ChromeOS shipment gates remain
-open.
+legacy pairs and ChromeOS shipment gates remain open; 240 supplies signed
+current-source delivery.
 
 Tactical [`234`](../tactical/234-desktop-user-intent-and-background-lifecycle.md)
 owns the accepted desktop lifetime follow-up: retain the tray/status-bar icon

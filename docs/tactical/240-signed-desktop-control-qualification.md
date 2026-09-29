@@ -1,6 +1,7 @@
 # Tactical 240: Signed Desktop Control Qualification
 
-Status: **Active, 2026-09-29.** Campaign 231; follows 232–239.
+Status: **Complete, 2026-09-30.** Bounded signed checkpoint; campaign 231
+continues. Follows 232–239.
 Topics: `beta-release-readiness`, `desktop-jstorrent-replacement`,
 `client-surfaces`, `capability-readiness`.
 
@@ -431,3 +432,137 @@ manifest before normal first launch proves bundled-host installation and
 registration: browser hello succeeds and the regenerated signed copy matches
 the bundle. Gatekeeper remains enabled; this is command-driven DMG installation
 and explicit assessment, not a claimed browser-download quarantine experiment.
+
+## Final 801 Installed Matrix
+
+Repeat the full bounded matrix on the exact published 801 installations, using
+beta extension 0.4.0 (`gcgoepclopkgijmclmlheafaglmbjlcc`, unchanged package
+SHA-256 `a21fb6e52ee720a83987d0b5094a60e1a338014c024cdaa977cbcadd47538533`).
+CFT 151 is separately identified on all three guests; Mac/Linux use their actual
+default test-browser profiles. No primary host browser is launched.
+
+| Check | macOS arm64, Windows x64, Linux x64 result |
+| --- | --- |
+| Cold toolbar launch | One background owner; native window absent; tray/status item retained. Toolbar harness exercises the actual Chrome action popup, not a physical toolbar pointer click. |
+| Repeated/warm launch | 12 clicks reuse/focus one companion page; 12 concurrent launch requests resolve to one instance. A later cold race also passes on each OS. |
+| Authentication | Valid shared-library snapshot; invalid token and protocol 999 refused; credentials retained across update or Quit/relaunch are refused after rotation. |
+| Controlled background transfer | Remove only the known controlled torrent with `reset-transfer`, add fresh fixture metadata, record partial state, close the real browser, independently hash completed bytes before reopening. All three pass. |
+| Reattach | Same instance, root IDs and torrent ID after browser closure; 512 verified pieces and 33,554,432 independently verified bytes. |
+| Native UI | Normal OS launch and real tray Show expose one native window; the controlled torrent is shared. Extension Pause, native Start and extension convergence pass. |
+| Native picker | Fresh root-three selection, Cancel, page detach and outstanding-picker Quit pass; no abandoned picker helper remains. |
+| Explicit Quit | Native tray action joins runtime/helpers. 35-second stopped observation offers Start; explicit Start works and stale authentication fails. A separate 2-reload/2-worker-stop/35-second passive test does not resurrect the runtime. |
+| Registration repair | Delete only actual CFT manifest (Mac/Linux) or both Chrome/Chromium HKCU host keys (Windows); actual browser HostNotFound, then normal launch repairs and browser hello succeeds with expected helper bytes/trust. |
+
+Exact scripted phases remain reproducible through:
+
+```sh
+node scripts/verify-desktop-intent-lifecycle.mjs toolbar
+node scripts/verify-desktop-extension-checkpoint.mjs clicks
+node scripts/verify-desktop-extension-checkpoint.mjs race
+node scripts/verify-desktop-extension-checkpoint.mjs invalid
+node scripts/verify-desktop-intent-lifecycle.mjs incompatible
+node scripts/verify-desktop-extension-checkpoint.mjs prepare-limited
+node scripts/verify-desktop-extension-checkpoint.mjs reset-transfer
+node scripts/verify-desktop-extension-checkpoint.mjs transfer
+node scripts/verify-desktop-suspension-recovery.mjs record BASELINE_JSON
+node scripts/verify-desktop-intent-lifecycle.mjs browser-close
+# Independently hash PAYLOAD while the browser remains closed, then reopen CFT.
+node scripts/verify-desktop-suspension-recovery.mjs recover BASELINE_JSON
+node scripts/verify-desktop-suspension-recovery.mjs complete BASELINE_JSON PAYLOAD
+node scripts/verify-desktop-extension-checkpoint.mjs picker
+# Drive real OS selection/Cancel, or detach/Quit while picker is outstanding.
+node scripts/verify-desktop-extension-checkpoint.mjs picker-cancelled
+node scripts/verify-desktop-extension-checkpoint.mjs detach
+node scripts/verify-desktop-extension-checkpoint.mjs open
+node scripts/verify-desktop-extension-checkpoint.mjs pause
+# Native Start, observed through platform accessibility, then:
+node scripts/verify-desktop-extension-checkpoint.mjs ui-running
+node scripts/verify-desktop-extension-checkpoint.mjs remember
+# Real native tray Quit while a picker is outstanding, then:
+node scripts/verify-desktop-extension-checkpoint.mjs stopped
+node scripts/verify-desktop-extension-checkpoint.mjs start
+node scripts/verify-desktop-extension-checkpoint.mjs stale
+# A second native Quit, then:
+node scripts/verify-desktop-intent-lifecycle.mjs passive-stopped
+```
+
+Run these inside the claimed guest with its existing CFT CDP endpoint and
+`RSTORRENT_PLAYWRIGHT_MODULE`, `RSTORRENT_TEST_TORRENT_FILE` and
+`RSTORRENT_TEST_TORRENT_NAME` pointing at the controlled fixtures. OS actions
+use common Machine Control `testbed -- ui` (AX/AT-SPI), Windows native UIA and
+fresh scoped Cua references, native keyboard input for folder paths, and actual
+tray actions. Linux's tray action uses the freshly discovered exported
+StatusNotifier/DBusMenu label and ID. Delivery acknowledgments alone are not
+passes: root snapshots, cross-view state, process exits and bytes provide
+independent effects.
+
+The new transfers start from 11/512 pieces on Mac/Linux and 12/512 on Windows.
+Each uses an independent bounded 256-KiB/s seed from the pinned libtorrent
+2.0.13.0 oracle; all reach SHA-256
+`99080b09c925782f67975d36476f171ee4e8b367e2a893d07a88bd70028b3fe8`
+with the browser closed. The temporary Unix process assertion initially matches
+its own command text; switch to executable-name observation and repeat before
+browser reopening. Windows's first independent post-Quit process check arrives
+after the scripted explicit Start; repeat Quit with an outstanding picker,
+then check zero processes before the passive test. Neither harness-ordering
+error is product-failure evidence. Mac's first native Start lookup precedes
+WebView accessibility hydration; a fresh tree shows the paused controlled row,
+and the subsequent native Start plus extension observation passes. The known
+AXPress -25204 on successful picker destruction is again independently resolved
+by the added root and helper exit. Linux's explicit disposable password-store
+flag avoids the earlier keyring modal without disabling the browser sandbox.
+
+801 registered/bundled helper SHA-256:
+
+- Mac arm64: `07aa29020f8a4fe8fcd709999f10750a6eeebc846986b93a4c232e63f6cfb1ae`.
+- Windows x64: `cc0ef858eb9d5be1aeb4111db327f43096e485baf051c4ec9af2e2a267fe0292`.
+- Linux x64: `b26296df0ca4932157c740fabd7b1771a3648e422b1b2140ccae4d42bfe1ace4`.
+
+No product implementation changes follow the final installed matrix. The
+correction between 701 and 801 changes DMG delivery gating, and the two
+immutable artifact cohorts retain distinct evidence above.
+
+## Final Cleanup And Next Actions
+
+Real native Quit and CDP Browser.close leave no owned runtime, picker, native
+host or CFT processes. All six bounded fixture seeds (701 and 801 phases) are
+joined; both temporary artifact servers and their owned firewall rules are
+removed. The controller firewall returns to its seven inherited rules.
+Task captures, downloads, mounted-image work directories, fixture bytes,
+helper scripts and task roots are removed; build caches are retained.
+
+Windows restores its three inherited app/profile directories with all **315
+file hashes** and counts verified, plus **seven registry exports** compared
+after restoration. Its two inherited shortcut paths retain working targets to
+the restored app. Their copies were captured after baseline installation, so
+this is functional shortcut preservation, not pre-install shortcut-byte proof.
+The task installation/profile/browser directory is removed before shutdown.
+
+Linux removes only the added `libfuse2t64` package; the complete package/version
+inventory matches its pre-task baseline afterward. Remove the fresh product/CFT
+profiles, task handler and originally absent mimeapps file, exact owned
+captures and temporary files. Preserve inherited lock-enabled=false and
+idle-delay=0; the recreated appliance and its canonical stored credential remain.
+macOS unregisters only task-owned app/CFT bundles, removes their fresh profiles,
+preferences, caches and task files, and verifies LaunchServices handlers still
+match the inherited empty-handler export without rewriting it. Inherited apps
+and unrelated guest state remain intact.
+
+Return macOS to suspended and Windows/Linux to off, then release all claims.
+Machine Control's bounded stored-login guide correction remains committed in
+its repository as `71a0865`; no Machine Control push is performed. RSTorrent's
+release implementation/source commits are pushed as required for the authorized
+CI publication; subsequent evidence-only commits remain local.
+
+This closes the requested **signed current-source desktop-control checkpoint**.
+macOS uses the notarized DMG for initial installation and signed app archive
+for updating; its app bundles the signed native host and installs/registers a
+private per-user copy. No separate helper installer or routine code-entry
+pairing is introduced.
+
+Next independent work: bounded interrupted-update/recovery evidence, native
+physical sleep/wake and a defined broader browser/runtime endurance campaign.
+Intel/minimum-supported macOS installed coverage, original legacy replacement,
+ChromeOS coordinated shipment and production graduation remain separate gates.
+Tactical 233 is unchanged fixture context. Do not begin the importer until its
+stream is discussed; no personal migration has run.

@@ -71,7 +71,7 @@ SQLite and payload writes remain native. No engine runs in the extension.
 | M-03 | Migration preview, union import and recovery | Not implemented | Consistent snapshots of all source profiles, identity/root mapping, explicit conflict outcomes, retry/crash recovery, held activation, exact recheck and preservation |
 | M-04 | Support/report continuity | Required before user cohort | Failure-page report, bounded migration/backend context, familiar voluntary feedback journey and disclosure verification |
 | M-05 | Installed desktop replacement rehearsal | Depends on M-01/03/04 | Old installed JSTorrent -> exact candidate -> restart/repair/rollback on macOS, Windows and Linux |
-| M-06 | Extension update coordination | [236](236-desktop-compatibility-refusal-and-recovery.md)/[237](237-macos-windows-package-recovery.md): selected three-platform beta matrix passes | Terminal refusal, attach-only recovery, open-page replacement, credential rotation, repair and same-schema rollback pass. [238](238-signed-desktop-channel-recovery.md) passes three-platform signed updating of an older published cohort. Signed current-source delivery, original legacy pairs and ChromeOS shipment gates remain open. |
+| M-06 | Extension update coordination | [236](236-desktop-compatibility-refusal-and-recovery.md)/[237](237-macos-windows-package-recovery.md): selected three-platform beta matrix passes | Terminal refusal, attach-only recovery, open-page replacement, credential rotation, repair and same-schema rollback pass. [238](238-signed-desktop-channel-recovery.md) passes three-platform signed updating of an older published cohort. [240](240-signed-desktop-control-qualification.md) adds signed current-source 801 publication, native updates and installed control/helper qualification. Original legacy pairs and ChromeOS shipment gates remain open. |
 | M-07 | Opt-in cohort and graduation | Not scheduled | Explicit supported baseline, source coverage, observation window, stop thresholds and approved production operation |
 
 No entry above implies feature completion from source presence alone. Keep
@@ -237,15 +237,19 @@ production routing remain separately scoped.
   repeated independently with fresh fixture bytes. All task state is cleaned
   up, the new Linux VM is retained off with its password locator, Windows is off,
   macOS is suspended, and claims are released.
-- Next executable actions: qualify signed current-source delivery when a
-  separately authorized candidate exists, then bounded interrupted-update and
-  physical sleep/wake evidence. Broader endurance remains separate. Stop before
+- 240 completes the requested signed current-source Latest release: immutable
+  0.2.801 at fc401ecf, notarized/stapled outer DMGs, signed helper installation,
+  native 701-to-801 updates and repeated three-platform control/transfer/picker/
+  Quit/registration-repair evidence. Exact public hashes and installed limits
+  are recorded there; Stable stays 0.1.4.
+- Next executable actions: bounded interrupted-update and physical sleep/wake
+  evidence. Broader endurance remains separate. Stop before
   importer implementation and discuss that stream with the maintainer.
 - Rehearsal A: **partial; three-platform installed control and bounded
   lifecycle/transfer checkpoints complete**. Rehearsal B: **not run**;
   C: **partial, selected three-platform beta compatibility and published
-  signed-cohort updates**. No migration-ready or rollout-ready claim. Retained
-  233 fixtures support later importer discussion only; no importer or personal
+  signed-cohort and current-source updates**. No migration-ready or rollout-ready
+  claim. Retained 233 fixtures support later importer discussion only; no importer or personal
   migration was started.
 - Remaining campaign decisions: supported source formats, union-conflict rules,
   settings and historical counters, mixed-version bridge policy, first cohort

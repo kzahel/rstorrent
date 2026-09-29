@@ -30,13 +30,17 @@ checks can succeed. The native client discovers the registry and verifies the
 selected channel in the response, while old clients continue to use Stable.
 Remy's registry was deployed on 2026-09-27 and publicly advertises both
 channels. The first signed Latest release was `desktop-latest-v0.2.301`.
-The parallel-pipeline publication is `desktop-latest-v0.2.401`, and production
-Latest version checks return `0.2.401`.
+The current qualified Latest is `desktop-latest-v0.2.801` at source `fc401ecf`;
+production Latest checks offer 0.2.801. Its
+[public evidence](evidence/desktop-latest-v0.2.801.md)
+and [installed checkpoint](tactical/240-signed-desktop-control-qualification.md)
+cover outer-DMG notarization, bundled/registered helper trust and three-platform
+native updating plus extension control. Stable remains 0.1.4.
 
 The [first Latest release evidence](evidence/desktop-latest-v0.2.301.md)
 records the signed hosted workflow and all five production routes. Installed
-old-to-new acceptance remains open; hosted checks do not establish installed
-package behavior. The
+old-to-new acceptance now passes in 238/240 on macOS arm64 and Windows/Linux x64;
+hosted checks alone do not establish installed package behavior. The
 [parallel release evidence](evidence/desktop-parallel-release-2026-09-27.md)
 records overlapping signed builds, collector validation, publication, and
 production route checks.
@@ -143,7 +147,7 @@ are recorded in [`desktop-v0.1.2`](evidence/desktop-v0.1.2.md). This release
 record does not claim the still-open installed `0.1.1`-to-`0.1.2` update
 campaign.
 
-The latest published release is
+The current Stable release is
 [`desktop-v0.1.4`](https://github.com/kzahel/rstorrent/releases/tag/desktop-v0.1.4).
 Its [signed workflow](https://github.com/kzahel/rstorrent/actions/runs/36262994983)
 passed the source gate, five package jobs, and finalizer. The
