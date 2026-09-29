@@ -56,7 +56,7 @@ try {
     await page.evaluate(async () => { const response = await chrome.runtime.sendMessage({ type: 'nativeBootstrap', op: 'attach_control' }); if (!response.ok) throw new Error('attach failed'); globalThis.checkpointPreviousReady = response.result; });
     console.log(JSON.stringify({ phase, retainedOnlyInPageMemory: true }));
   } else if (phase === 'ui-running') {
-    await page.getByRole('row').filter({ hasText: fixtureName }).filter({ hasText: 'Downloading' }).waitFor();
+    await page.getByRole('row').filter({ hasText: fixtureName }).filter({ hasText: /Downloading|Complete|Seeding/ }).waitFor();
     console.log(JSON.stringify({ phase, converged: true }));
   } else if (phase === 'add') {
     const payload = Buffer.alloc(4096, 0x32);
@@ -69,7 +69,7 @@ try {
   } else if (['pause', 'resume'].includes(phase)) {
     await page.getByRole('row').filter({ hasText: fixtureName }).click();
     await page.getByRole('button', { name: phase === 'pause' ? 'Pause' : 'Start', exact: true }).click();
-    await page.getByRole('row').filter({ hasText: fixtureName }).filter({ hasText: phase === 'pause' ? 'Paused' : 'Downloading' }).waitFor();
+    await page.getByRole('row').filter({ hasText: fixtureName }).filter({ hasText: phase === 'pause' ? 'Paused' : /Downloading|Complete|Seeding/ }).waitFor();
     console.log(JSON.stringify({ phase, converged: true }));
   } else if (phase === 'native') {
     await page.getByRole('button', { name: 'Open desktop window', exact: true }).click();
@@ -84,7 +84,7 @@ try {
     console.log(JSON.stringify({ phase, requests: result.length, instances: 1, instanceId: result[0].instanceId }));
   } else if (phase === 'clicks') {
     const response = await page.evaluate(async () => Promise.all(Array.from({ length: 12 }, () => chrome.runtime.sendMessage({ type: 'desktopBootstrap', op: 'open' }))));
-    assert(response.every(value => value.ok));
+    assert(response.every(value => value.ok), JSON.stringify(response.map(value => ({ ok: value.ok, error: value.error }))));
     assert.equal(context.pages().filter(page => page.url().endsWith('companion/companion.html?backend=desktop')).length, 1);
     console.log(JSON.stringify({ phase, clicks: 12, pages: 1 }));
   } else if (phase === 'stopped') {

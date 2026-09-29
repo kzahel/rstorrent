@@ -828,3 +828,26 @@ typecheck, web tests (409 pass, two skipped), extension tests (34 pass) and
 extension packaging pass. The implementation uses already-locked objc2 0.6.4,
 objc2-app-kit 0.3.2 and libc as explicit platform dependencies; no new resolved
 package version is introduced. Installed AppKit focus/cleanup is still open.
+
+Installed picker iteration: the initial accessory-only helper displayed its
+panel, but keyboard shortcuts and AX discovery were unreliable before normal
+AppKit launch completion. Its actual five-minute deadline removed both helper
+and panel without adding a root. Call `NSApplication.finishLaunching` before
+activation: rfd enters a modal loop directly and never calls the normal
+`NSApplication.run` startup path. Apple's
+[finishLaunching contract](https://developer.apple.com/documentation/appkit/nsapplication/finishlaunching())
+identifies that startup work. Requalify panel interaction after this change;
+the first panel's visibility alone is not a success checkpoint.
+
+The launch-completion build exposes the helper's AX Open window and accepts
+native Go to Folder / Open. Selecting the second fresh controlled root advances
+the same application revision from 9 to 10; the helper is reaped and the product
+window stays absent. The final AX Open request reports `-25204` as the helper
+exits; root registration plus process disappearance and the browser result
+independently establish success. Focused desktop tests (53), package Clippy
+with `--all-targets -- -D warnings`, format check, and incremental app packaging
+pass again. The checkpoint harness now recognizes the shared UI's `Complete`
+status for a resumed verified torrent; the application snapshot independently
+confirms `desired_running: true`. Its seed version check accepts the repository's
+macOS locked libtorrent 2.0.13.0 as well as the recorded 2.0.11.0 fixture oracle;
+fixture bytes and v1 identity are unchanged.

@@ -31,8 +31,8 @@ def main():
         parser.error("bind must be one concrete private/loopback IPv4 address")
     if not 1 <= args.seconds <= 1800 or not args.root.is_absolute():
         parser.error("use an absolute new root and a 1..1800 second lifetime")
-    if not lt.version.startswith("2.0.11"):
-        raise RuntimeError("this rehearsal pins libtorrent 2.0.11")
+    if lt.version not in ("2.0.11.0", "2.0.13.0"):
+        raise RuntimeError("this rehearsal supports the recorded 2.0.11/2.0.13 oracles")
     args.root.mkdir(parents=True, exist_ok=False)
     seed_root = args.root / "seed"
     seed_root.mkdir()

@@ -203,6 +203,10 @@ pub fn run_helper_if_requested() -> bool {
                 if !app.setActivationPolicy(NSApplicationActivationPolicy::Accessory) {
                     return Err(());
                 }
+                // rfd enters a modal loop directly, rather than NSApplication::run.
+                // Complete launch before activation so AppKit finishes registering
+                // this short-lived process and routes panel input/accessibility.
+                app.finishLaunching();
                 // This helper exists only for an explicit user picker request.
                 // No product window, menu, library or event-loop owner is built.
                 #[allow(deprecated)]
