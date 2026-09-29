@@ -7321,11 +7321,14 @@ def run_product_file_selection_profile(
         torrent_ids.append(local_id)
         wait_pending_file_selection(target, local_id, metadata=True)
         wait_and_click_product_text(target, probe, "Cancel")
-        wait_product_torrent_diagnostic(
+        # Cancellation removes the row before the diagnostic snapshot is
+        # projected, so its torrent field may already be `none`. Logcat was
+        # cleared after the previous fixture's joined cleanup; this is the
+        # sole pending add. Require cancellation and joined removal separately.
+        wait_product_log(
             target,
-            local_id,
-            diagnostic="pending_add_cancelled",
-            description="pending local torrent cancellation",
+            "diagnostic=pending_add_cancelled",
+            "pending local torrent cancellation",
         )
         wait_product_log(
             target,

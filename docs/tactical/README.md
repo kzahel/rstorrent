@@ -93,6 +93,9 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`240-signed-desktop-control-qualification.md`](240-signed-desktop-control-qualification.md):
+  current-source signed Latest publication and installed native-helper/control
+  qualification on macOS, Windows and Linux.
 - [`239-desktop-suspension-browser-recovery.md`](239-desktop-suspension-browser-recovery.md):
   bounded browser restart, supported suspension and controlled-byte recovery.
 - [`238-signed-desktop-channel-recovery.md`](238-signed-desktop-channel-recovery.md):

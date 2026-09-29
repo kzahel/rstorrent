@@ -2,6 +2,11 @@
 
 Topic: `beta-release-readiness`
 
+Tactical [240](../tactical/240-signed-desktop-control-qualification.md) is active
+for the explicitly requested current-source signed Latest release and installed
+three-platform desktop-control/helper qualification. Exact-source main CI must
+pass before publication. Stable, identities and signing/update keys stay unchanged.
+
 Tactical [238](../tactical/238-signed-desktop-channel-recovery.md) now passes
 installed signed 0.2.301 → 0.2.501 selection/replacement/relaunch on macOS arm64
 and Windows/Linux x86_64. Native Stable selection retains Latest and reports
