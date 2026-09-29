@@ -10,8 +10,9 @@ Fresh bootstrap and instance identity remain mandatory after replacement.
 The selected Linux beta old/new matrix and same-schema rollback pass;
 [237](../tactical/237-macos-windows-package-recovery.md) extends that result to
 installed macOS/Windows packages. 239 also proves attach-only browser restart
-onto the same transferring owner on macOS/Windows. Signed current-source
-delivery, Linux 239 and broader endurance remain separate gates.
+onto the same transferring owner on macOS/Windows/Linux, followed by
+independently verified completion and Quit without passive resurrection. Signed
+current-source delivery and broader endurance remain separate gates.
 
 Tactical [`234`](../tactical/234-desktop-user-intent-and-background-lifecycle.md)
 owns the accepted desktop lifetime follow-up: retain the tray/status-bar icon

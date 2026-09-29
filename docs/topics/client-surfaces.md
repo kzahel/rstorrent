@@ -2,19 +2,21 @@
 
 Topic: `client-surfaces`
 
-Tactical [237](../tactical/237-macos-windows-package-recovery.md) completes
-macOS/Windows selected beta replacement, rollback and native registration repair,
-joining Linux's 236 matrix. [238](../tactical/238-signed-desktop-channel-recovery.md)
-proves native signed 0.2.301 → 0.2.501 updating and return-to-Stable without
-downgrade on macOS/Windows; that published cohort predates extension control.
+Selected three-platform beta replacement, rollback and native registration
+repair pass in [236](../tactical/236-desktop-compatibility-refusal-and-recovery.md)
+and [237](../tactical/237-macos-windows-package-recovery.md).
+[238](../tactical/238-signed-desktop-channel-recovery.md) now proves native signed
+0.2.301 → 0.2.501 updating and return-to-Stable without downgrade on all three
+platforms; that published cohort predates extension control.
 [239](../tactical/239-desktop-suspension-browser-recovery.md) proves same-runtime
-browser restart and independently verified 32-MiB completion on both platforms,
-plus macOS VM suspend/resume. Native OS sleep remains unqualified. Linux's new
-238/239 checks stop at the inherited screen lock; no authentication bypass.
-Owned guest state is cleaned up and claims released. Next: repeat those Linux
-checks in an unlocked session, then qualify signed current-source delivery
-when separately available. Broader endurance and importer work remain separate;
-no importer has started.
+browser restart, independently verified 32-MiB completion and Quit without
+passive resurrection on all three, plus macOS VM suspend/resume. Linux's earlier
+lock blocker is superseded by authorized VM recreation with verified stored
+credentials. Its attempted native suspend-to-idle did not recover and required
+a supported forced stop; native sleep/wake remains unqualified. Owned test state
+is removed and claims released. Next: signed current-source delivery when
+separately available, physical sleep/wake and broader endurance. Importer work
+waits for discussion; no importer has started.
 
 Tactical [`236`](../tactical/236-desktop-compatibility-refusal-and-recovery.md)
 adds clear terminal desktop compatibility errors and attach-only Retry

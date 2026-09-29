@@ -3,12 +3,14 @@
 Topic: `runtime-configurations-and-headless-deployment`
 
 Tactical [239](../tactical/239-desktop-suspension-browser-recovery.md) qualifies
-macOS/Windows browser closure/restart during controlled transfer, same-owner
-reattachment, independently verified completion and Quit without passive
-resurrection. macOS VM pause/resume passes separately. Both guests lack usable
-native OS sleep in this configuration; Linux execution is blocked by its
-inherited screen lock. These are bounded installed checks, not endurance or
-physical sleep/wake qualification. Owned state and claims are cleaned up.
+macOS/Windows/Linux browser closure/restart during controlled transfer,
+same-owner reattachment, independently verified completion and Quit without
+passive resurrection. macOS VM pause/resume passes separately. Native OS
+sleep remains unqualified: macOS/Windows guests lack usable sleep, and the
+recreated Linux guest failed to return from its RTC-scheduled suspend-to-idle
+attempt. Supported forced-stop/readiness recovery succeeds; this is not a
+passing sleep or crash-recovery test. Owned state and claims are cleaned up.
+These are bounded installed checks, not endurance or physical qualification.
 
 Tactical [`235`](../tactical/235-linux-quit-launch-handoff.md) repairs the Linux
 Quit/launch overlap. A stopping owner returns Retry; the explicit launch process

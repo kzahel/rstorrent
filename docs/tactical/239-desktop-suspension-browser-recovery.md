@@ -1,6 +1,6 @@
 # Tactical 239: Desktop Suspension And Browser Recovery
 
-Status: **Active; Linux installed checks blocked, 2026-09-29.** Campaign 231; follows 234/237.
+Status: **Complete bounded available-platform matrix, 2026-09-29.** Campaign 231; follows 234/237.
 Topics: `client-surfaces`, `runtime-configurations-and-headless-deployment`,
 `application-connection-architecture`, `desktop-jstorrent-replacement`.
 
@@ -63,7 +63,9 @@ The new opt-in `verify-desktop-suspension-recovery.mjs` uses attach-only
 bootstrap, bounded six-second replies and 180-second progress observations.
 It records sanitized root/torrent identities, verifies the same runtime and
 non-regressing piece counts after recovery, and independently hashes the
-32-MiB controlled payload at completion. It accepts the existing paused
+32-MiB controlled payload at completion. Its WebSocket-open promise has no harness deadline; the fresh Linux keyring
+dialog exposed that diagnostic limitation. Reply and progress bounds below
+remain enforced after connection. It accepts the existing paused
 compatibility fixture beside the active transfer. Its first live record
 found ambiguous text `connected` (connection health plus a live peer); scope
 the wait to the connection div, leaving authenticated identity checks intact.
@@ -100,7 +102,7 @@ The seed retained its fixed listening port and an established guest connection
 after resume. Native tray Show also opened the same library while the browser
 was closed in the first run. One sample was 142,256 KiB RSS; this is a sample,
 not an endurance bound. Joined Quit/browser restore and final cleanup pass
-as recorded below. Windows evidence follows; Linux remains unqualified.
+as recorded below. Windows and recreated-Linux evidence follow below.
 
 ## Windows Browser Recovery
 
@@ -134,7 +136,12 @@ setup now succeeds. No guest policy, package upgrade or Machine Control source
 change was needed; keep the earlier compositor crash in the evidence.
 
 
-## Linux Blocker And Restart
+## Earlier Linux Blocker And Restart
+
+Historical attempt, superseded by the recreated guest below. The manual-unlock
+guidance was subsequently corrected: always discover the stored credential
+through Machine Control private inventory first. A missing secret-safe Linux
+UI delivery route is a provider gap, not a prohibition on stored passwords.
 
 The recovered session reaches its inherited five-minute lock before native-root
 selection completes. Doctor explicitly reports `desktop=locked`; inherited
@@ -163,12 +170,79 @@ process and artifact absence, return the guest to its inherited off state and
 release the claim. Remove owned controller seed/server and exact temporary
 firewall rules. Incremental builder caches remain.
 
-Next executable action: claim a ready unlocked Linux guest, prepare a fresh
-root through native UI, and repeat the bounded browser/transfer matrix with a
-new fixed-port seed. Query actual power support and supported recovery before
-any sleep experiment; do not reuse expired seed endpoints. Separately run
-238's signed AppImage cohort. Native physical sleep, broader endurance and
-signed current-source delivery remain open; importer work waits for discussion.
+## Recreated Linux Guest: Browser And Transfer Evidence
+
+Explicitly authorized disposable-VM recreation follows Machine Control Tactical
+048, with official-image checksum, exact-identity claims, development bootstrap,
+portable checks, native smoke and a verified registry-located password file.
+Ubuntu 24.04.5 x86_64, glibc 2.39, GNOME 46 and WebKitGTK 2.52.6 satisfy the
+qualified DEB's architecture and `ldd` checks. Reuse the DEB hash above and
+236's beta ZIP SHA-256
+`a21fb6e52ee720a83987d0b5094a60e1a338014c024cdaa977cbcadd47538533`.
+Chrome for Testing 151.0.7922.34 (Playwright revision 1234) is a separately
+identified guest browser, with its supplied root-owned mode-4755 sandbox helper;
+no `--no-sandbox` or browser security exemption is used. The first-run GNOME
+keyring creation dialog blocks Chrome networking while native bootstrap already
+works. Cancelling that dialog restores authenticated WebSocket attachment.
+No additional password is created. Reapply cancellation after browser restart.
+
+Create the final fresh library/root using native privacy and folder-selection
+UI, with usage reporting opted out. The root is outside the boot-cleared `/tmp`
+tree. Configure private-only fixture settings with
+`verify-desktop-extension-checkpoint.mjs prepare`, then the suspension runner's `limit`, add the torrent,
+and `record`. Record **2/512** verified pieces. Close the native window through
+its real Close action and close the actual browser with the lifecycle runner's
+`browser-close`. RSTorrent's registered tray remains present; a detached sample
+is **240,392 KiB RSS / 38 threads**, not an endurance/high-water bound.
+
+Restart the same test browser with `--restore-last-session`; attach-only
+`recover` proves unchanged runtime, root, torrent identity and running intent,
+with **31/512** verified pieces. `unlimit` and `complete` finish all **512/512**
+within the 180-second runner deadline. Independent file reading verifies
+33,554,432 bytes and SHA-256
+`99080b09c925782f67975d36476f171ee4e8b367e2a893d07a88bd70028b3fe8`.
+The fixed-port seed uses libtorrent 2.0.13.0. No public swarm or personal data.
+
+Invalid authentication returns `authentication_failed` without a library;
+12 repeated clicks retain one focused extension page, and 12 concurrent start
+requests report one runtime identity. Invoke the registered native tray's
+`Quit RSTorrent` through its discovered D-Bus menu, close/restart the browser,
+then run `passive-stopped`: two page/popup reloads, two worker stops and a
+35-second observation refuse attach and leave the runtime stopped. Explicit
+`Start` then succeeds with a new instance and the same root/torrent and all
+512 verified pieces. These are fresh installed checks, distinct from builder
+source tests and the older 234/235 matrices.
+
+## Linux Sleep Attempt: Not Qualified
+
+Review [kernel sleep-state documentation](https://docs.kernel.org/admin-guide/pm/sleep-states.html),
+[`rtcwake(8)`](https://man7.org/linux/man-pages/man8/rtcwake.8.html), Tactical 165
+and the GNOME suspend-inhibitor adapter. The guest advertises `freeze mem`,
+`mem_sleep=[s2idle]`, RTC wake enabled and no pre-existing wake alarm.
+`rtcwake -m on -s 2 -u` completes its alarm precheck. A forced
+`rtcwake -m mem -s 20 -u` then loses the guest-agent transport and does not
+restore SSH or resident readiness. The provider reports running; no successful
+kernel suspend-exit receipt is available. Stop owned pending diagnostics before
+using supported exact-target `testbed -- force-stop`, then `target ensure-ready`.
+Readiness returns in 14.235 seconds, with a new resident generation, and the
+canonical stored login password still verifies. No firmware/power policy is
+changed to manufacture a pass. This is a **failed guest sleep/wake qualification**,
+not passing suspend-to-RAM, VM pause, or a diagnosed RSTorrent regression.
+
+The first browser run had already advanced 3 to 68 pieces with the same owner,
+but reboot cleared its `/tmp` payload and browser fixtures. Restaging the path
+did not provide a valid continuation receipt: the old snapshot reported awaiting
+storage and an attempted native Repair was refused as an available-root
+reselection. Discard that run as complete-transfer evidence; the final fresh
+profile and persistent-across-boot fixture directory above repeat the browser
+matrix independently. No crash/power-loss recovery claim follows from the
+forced-stop cleanup. Native physical sleep/wake and broader endurance remain
+open; do not repeat this VM sleep route without a qualified recovery path.
+
+Explicit Start exposes no native window in the AT-SPI snapshot; native tray
+Show then opens it. Final joined Quit, process/artifact absence, ready doctor,
+clean shutdown and released claim pass; see 238 for exact cleanup and the
+separate signed AppImage evidence. No importer starts.
 
 ## Reproducible Runner Sequence
 

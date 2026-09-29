@@ -71,7 +71,7 @@ SQLite and payload writes remain native. No engine runs in the extension.
 | M-03 | Migration preview, union import and recovery | Not implemented | Consistent snapshots of all source profiles, identity/root mapping, explicit conflict outcomes, retry/crash recovery, held activation, exact recheck and preservation |
 | M-04 | Support/report continuity | Required before user cohort | Failure-page report, bounded migration/backend context, familiar voluntary feedback journey and disclosure verification |
 | M-05 | Installed desktop replacement rehearsal | Depends on M-01/03/04 | Old installed JSTorrent -> exact candidate -> restart/repair/rollback on macOS, Windows and Linux |
-| M-06 | Extension update coordination | [236](236-desktop-compatibility-refusal-and-recovery.md)/[237](237-macos-windows-package-recovery.md): selected three-platform beta matrix passes | Terminal refusal, attach-only recovery, open-page replacement, credential rotation, repair and same-schema rollback pass. [238](238-signed-desktop-channel-recovery.md) passes macOS/Windows signed updating of an older published cohort. Linux signed checks, signed current-source delivery, original legacy pairs and ChromeOS shipment gates remain open. |
+| M-06 | Extension update coordination | [236](236-desktop-compatibility-refusal-and-recovery.md)/[237](237-macos-windows-package-recovery.md): selected three-platform beta matrix passes | Terminal refusal, attach-only recovery, open-page replacement, credential rotation, repair and same-schema rollback pass. [238](238-signed-desktop-channel-recovery.md) passes three-platform signed updating of an older published cohort. Signed current-source delivery, original legacy pairs and ChromeOS shipment gates remain open. |
 | M-07 | Opt-in cohort and graduation | Not scheduled | Explicit supported baseline, source coverage, observation window, stop thresholds and approved production operation |
 
 No entry above implies feature completion from source presence alone. Keep
@@ -225,24 +225,28 @@ production routing remain separately scoped.
   outcomes remain a proposal for importer design, not implemented migration.
 - Completed follow-ups: 237 extends selected beta package replacement/repair/
   rollback to macOS and Windows. 238 passes native signed 0.2.301 → 0.2.501
-  update/relaunch and Stable catch-up on both; published source predates
-  extension control, so it is not signed current-source delivery. 239 passes
-  same-owner browser restart and independently verified 32-MiB completion on
-  macOS/Windows, plus macOS VM suspend/resume. Native OS sleep is unavailable
-  on those guests and remains unqualified.
-- Next executable action: repeat 238/239's Linux checks in an unlocked claimed
-  guest. A compositor crash recovered through supported maintenance/reboot;
-  the inherited five-minute screen lock then blocked native-root preparation.
-  No authentication bypass or Linux recovery/update success is claimed. All
-  owned state is cleaned up, Linux/Windows are off, macOS is suspended and all
-  claims released. Keep physical sleep, longer endurance and signed
-  current-source delivery as separate gates.
+  update/relaunch and Stable catch-up on all three platforms; published source
+  predates extension control, so it is not signed current-source delivery.
+  239 passes same-owner browser restart and independently verified 32-MiB
+  completion on all three, plus macOS VM suspend/resume and joined Quit without
+  browser-driven resurrection. The Linux lock blocker is superseded by explicit
+  VM recreation, canonical stored credentials and a fresh native-selected root.
+- Linux native suspend-to-idle failed to recover despite an RTC alarm precheck;
+  supported forced-stop/readiness restored the disposable guest. No native sleep
+  pass or product regression is inferred. The final browser/transfer matrix was
+  repeated independently with fresh fixture bytes. All task state is cleaned
+  up, the new Linux VM is retained off with its password locator, Windows is off,
+  macOS is suspended, and claims are released.
+- Next executable actions: qualify signed current-source delivery when a
+  separately authorized candidate exists, then bounded interrupted-update and
+  physical sleep/wake evidence. Broader endurance remains separate. Stop before
+  importer implementation and discuss that stream with the maintainer.
 - Rehearsal A: **partial; three-platform installed control and bounded
-  lifecycle checkpoints complete**, with the 239 Linux follow-up still open.
-  Rehearsal B: **not run**; C: **partial, selected three-platform beta
-  compatibility and two-platform published signed-cohort updates**. No
-  migration-ready or rollout-ready claim. Retained 233 fixtures support later
-  importer discussion only; no importer or personal migration was started.
+  lifecycle/transfer checkpoints complete**. Rehearsal B: **not run**;
+  C: **partial, selected three-platform beta compatibility and published
+  signed-cohort updates**. No migration-ready or rollout-ready claim. Retained
+  233 fixtures support later importer discussion only; no importer or personal
+  migration was started.
 - Remaining campaign decisions: supported source formats, union-conflict rules,
   settings and historical counters, mixed-version bridge policy, first cohort
   delivery, compatibility baseline and rollback support duration.

@@ -1,6 +1,6 @@
 # Tactical 238: Signed Desktop Channel Recovery
 
-Status: **Active; Linux installed checks blocked, 2026-09-29.** Campaign 231; follow-up to 230/237.
+Status: **Complete bounded published-cohort matrix, 2026-09-29.** Campaign 231; follow-up to 230/237.
 Topics: `beta-release-readiness`, `client-surfaces`, `desktop-jstorrent-replacement`.
 
 ## Scope And Evidence
@@ -76,7 +76,7 @@ No production route, identity, key, release or workflow was changed.
 Real native Quit and owned browser shutdown precede cleanup. Owned app bundles,
 profiles, manifests, browser support roots and payload are removed. The saved
 LaunchServices dictionary is unchanged. The guest is returned to its initial
-suspended state and its exclusive claim is released. Windows evidence follows; Linux remains unqualified.
+suspended state and its exclusive claim is released. Windows and recreated-Linux evidence follow below.
 
 ## Windows Signed Channel Evidence
 
@@ -103,9 +103,65 @@ Final native tray Quit precedes restoration: all 319 inherited file hashes,
 eight registry keys/absence states and 1,482 builder source paths verify.
 Task-owned installation, profile and browser artifacts are removed; caches are
 retained. Windows is returned to its initial off state and its claim released.
-Linux signed execution remains blocked by the inherited screen lock, not a
-passed lane. See 239 for the compositor recovery, lock boundary and cleanup.
-Its task-only AppImage/FUSE preparation does not establish updater execution.
-Next: claim an unlocked Linux guest, use a fresh native-selected signed-cohort
-root, and repeat native Latest install/relaunch and Stable catch-up checks.
-Do not publish a current-source candidate under this tactical.
+The first Linux attempt stopped at the inherited screen lock; its AppImage/FUSE
+preparation was not updater evidence. See 239 for that historical failure and
+cleanup. The recreated-guest run below supersedes the blocker. No current-source
+candidate is published under this tactical.
+
+## Linux Signed Channel Evidence
+
+The recreated, claimed Ubuntu 24.04.5 x86_64 guest passes Machine Control's
+portable and installed resident smoke gates before product testing. Separate
+the stopped current beta profile from a fresh signed-cohort profile; never open
+the newer library with this older release. Use native privacy UI to opt out of
+usage statistics and the real native folder dialog to select a fresh root
+outside the boot-cleared temporary directory.
+
+Published 0.2.301 AppImage SHA-256 is
+`ae38f716f80c5ab2bea72449ed3ea2606560990ef0b741bafa951250b1d50d1f`.
+`file`, `--appimage-extract`, `readelf --version-info` and `ldd` verify x86_64,
+maximum required GLIBC symbol version 2.34 and all dependencies against guest
+glibc 2.39 / WebKitGTK 2.52.6. Test-only `libfuse2t64` enables the AppImage lane.
+Launch through common `desktop application launch --executable "$APPIMAGE"
+--expect-target rstorrent-desktop` on the claimed guest; use generation-bound
+AT-SPI actions for native settings and the folder chooser. Native About reports
+0.2.301, source
+`30523da4b5bef2b3609d8491585a651733557c1f`, target
+`x86_64-unknown-linux-gnu`, package **Linux AppImage**.
+
+Native **Update channel → Latest** offers **0.2.501**. Invoke **Install and
+restart**; the signed updater replaces the AppImage and a single native process
+relaunches. Its resulting AppImage SHA-256 is
+`b6ce090248313e9752b7e505a976c6d58bc6496f63c92d6dc1102f173942670f`,
+matching an independent download of the already-published 0.2.501 asset.
+Native About identifies 0.2.501 and source
+`7a4d7730920f84ed0c02374506b0cd4af1f26f2d`. Native Downloads retains the same
+default root. An independently read external sentinel preserves SHA-256
+`f869fbf0f9f7176e8baa3b1a2bf4657367aaeddc8d586724a5be609d45d2e5c0`.
+
+Select **Stable** using the native combo popup's observed table-cell Activate
+action. About shows **Waiting for Stable to catch up**, keeps 0.2.501 and offers
+no downgrade. AT-SPI delivery alone is not proof: native captures establish the
+offer/version/root/catch-up state, and process/file hashes independently verify
+replacement and preservation. No updater cancellation control is present;
+interrupted replacement is still unqualified. This older published cohort does
+not qualify signed current-source extension control. Routes, keys and release
+identities remain unchanged; nothing is published.
+
+## Final Cleanup And Next Gate
+
+Native tray Quit and real test-browser closure leave no owned runtime/helper/
+browser process. Remove the task-only DEB, FUSE and Node packages, AppImages,
+Chrome for Testing sandbox/profile, native-host registrations, handler and its
+only MIME default, both fresh product profiles and their saved test backups,
+controlled payloads, six captures and task scripts/logs. Remove the exact owned
+controller server and three temporary firewall rules; the bounded seed ends.
+The recreated VM and canonical stored credential are retained. Final doctor is
+fully ready, stored password still matches the account, common shutdown reaches
+off in 4.870 seconds, and the exclusive claim is released. Unrelated private
+inventory SSH changes remain untouched; build caches are retained.
+
+The bounded macOS/Windows/Linux published-cohort matrix is complete. Next gate:
+signed delivery of the current desktop-control source when separately available,
+plus interrupted replacement and broader update compatibility. Physical native
+sleep and endurance remain separate; importer work waits for discussion.

@@ -1094,10 +1094,12 @@ Follow-up evidence now lives in 234–239: bounded three-platform intent/tray/
 worker/discard behavior passes in 234; Linux Quit/launch overlap is fixed in
 235; selected beta mixed-version replacement/repair/rollback passes on Linux
 in 236 and macOS/Windows in 237. 238 passes native signed published-cohort
-updates on macOS/Windows, but those sources predate extension control. 239
-passes bounded browser/transfer recovery on both, plus macOS VM pause/resume.
-Its Linux follow-up and signed Linux channel checks remain blocked at the
-inherited screen lock; restart there with an unlocked claimed guest.
+updates on macOS/Windows/Linux, but those sources predate extension control. 239
+passes bounded browser/transfer recovery on all three, plus macOS VM pause/resume.
+Linux now passes the browser/transfer/Quit and signed-channel follow-ups on an
+explicitly recreated guest with verified registry-located credentials. Its
+native suspend-to-idle attempt failed to recover; physical sleep/wake remains
+open. Final guest cleanup and released claim are recorded in 238/239.
 Native physical sleep, broader endurance, signed current-source delivery,
 Intel/minimum-supported-macOS execution and production release readiness remain
 unqualified. Tactical 233 remains fixture context only: importer work waits

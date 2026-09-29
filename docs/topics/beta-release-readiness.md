@@ -4,10 +4,11 @@ Topic: `beta-release-readiness`
 
 Tactical [238](../tactical/238-signed-desktop-channel-recovery.md) now passes
 installed signed 0.2.301 → 0.2.501 selection/replacement/relaunch on macOS arm64
-and Windows x86_64. Native Stable selection retains Latest and reports waiting
-for Stable to catch up; controlled roots and external sentinel bytes survive.
-Linux remains unexecuted after its guest locked. The selected published source
-predates desktop extension control, so signed current-source delivery and
+and Windows/Linux x86_64. Native Stable selection retains Latest and reports
+waiting for Stable to catch up; controlled roots and external sentinel bytes survive.
+Linux passes on the explicitly recreated guest with verified registry-located
+credentials. The selected published source predates desktop extension control,
+so signed current-source delivery and
 interrupted replacement remain unqualified. 237 separately completes selected
 macOS/Windows beta package repair/rollback, with exact inherited-state cleanup.
 
@@ -30,9 +31,8 @@ updater routes. The parallel release pipeline then published
 [`desktop-latest-v0.2.401`](../evidence/desktop-parallel-release-2026-09-27.md)
 after five overlapping signed builds and one collector. At that checkpoint Latest resolved
 `0.2.401`; Stable remained `0.1.4` for explicit and old channel-less requests.
-238 records the September 29 live 0.2.501 offer and macOS/Windows installed
-selection, replacement/relaunch and return-to-Stable evidence; Linux remains
-open.
+238 records the September 29 live 0.2.501 offer and macOS/Windows/Linux
+installed selection, replacement/relaunch and return-to-Stable evidence.
 
 Maintenance checkpoint (2026-09-26): Tactical
 [`219`](../tactical/219-dependency-and-ci-maintenance.md) repairs the newly
@@ -347,9 +347,9 @@ Store review, and mobile beta is not implied by a desktop tag:
 
 | Lane | Intended beta channel | Current release state |
 | --- | --- | --- |
-| macOS desktop | signed/notarized DMG plus in-app updates | public `0.1.2` Developer ID-signed, notarized, and stapled app/DMG packages pass for arm64 and x86_64; its exact public arm64 DMG launches and repairs native-host registration in a bounded spot check; an exact `0.1.0`-to-`0.1.1` replacement/relaunch also passes; Intel installed testing is deliberately omitted |
-| Windows desktop | signed per-user NSIS plus in-app updates | public `0.1.2` NSIS and MSI packages contain the completed desktop repairs and have valid expected-publisher Authenticode signatures plus installed activation-registry validation; public per-user NSIS replacement/relaunch passes only for `0.1.0`-to-`0.1.1` under an automatic-loopback profile, while the repaired clean-profile update remains open |
-| Linux desktop | AppImage plus in-app updates; DEB/RPM remain package-manager channels | public `0.1.2` AppImage, DEB, and RPM packages plus updater artifacts pass for x86_64 and arm64, including extracted activation metadata; exact arm64 AppImage `0.1.0`-to-`0.1.1` replacement/relaunch and the current installed lifecycle/icon campaign pass, while x86_64 installed evidence remains absent |
+| macOS desktop | signed/notarized DMG plus in-app updates | public `0.1.2` Developer ID-signed, notarized, and stapled app/DMG packages pass for arm64 and x86_64; its exact public arm64 DMG launches and repairs native-host registration in a bounded spot check; exact arm64 `0.1.0`-to-`0.1.1` replacement/relaunch and 238's fresh-profile signed `0.2.301`-to-`0.2.501` update/Stable catch-up pass; Intel installed testing remains omitted |
+| Windows desktop | signed per-user NSIS plus in-app updates | public `0.1.2` NSIS and MSI packages contain the completed desktop repairs and have valid expected-publisher Authenticode signatures plus installed activation-registry validation; public per-user NSIS `0.1.0`-to-`0.1.1` replacement/relaunch passes under an automatic-loopback profile; 238 additionally passes fresh-profile signed x86_64 `0.2.301`-to-`0.2.501` updating and Stable catch-up |
+| Linux desktop | AppImage plus in-app updates; DEB/RPM remain package-manager channels | public `0.1.2` AppImage, DEB, and RPM packages plus updater artifacts pass for x86_64 and arm64, including extracted activation metadata; exact arm64 AppImage `0.1.0`-to-`0.1.1` replacement/relaunch and the installed lifecycle/icon campaign pass; 238 adds fresh-profile signed x86_64 `0.2.301`-to-`0.2.501` update/relaunch and Stable catch-up |
 | Linux headless | signed non-latest `headless-v*` GitHub Release plus pinned website bootstrap and explicit CLI apply | strict native x86_64/ARM64 workflow, signed manifest/bootstrap/check/apply source gates, and an exact enabled x86_64 trusted-LAN install pass; no public candidate or stable manifest is promoted, and native ARM64 install/update evidence is absent |
 | Android, including ChromeOS | signed Android App Bundle through a closed testing channel | maintained Compose/in-process Rust/SAF app and hosted dual-ABI debug/test APK gates pass; release identity, signed AAB, emulator/store, and upgrade evidence absent |
 | ChromeOS Linux | signed non-latest `crostini-v*` GitHub Release selected by the pinned website bootstrap | public `crostini-v0.1.0`, the deployed pinned bootstrap, production-key manifest, native x86_64/ARM64 packages, independent exact-asset validation, and physical x86_64 website install/Launcher/relaunch pass; physical native ARM64, full reboot, suspend, and installed update/rollback evidence remain absent |
