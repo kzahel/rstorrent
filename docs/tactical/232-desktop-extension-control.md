@@ -616,3 +616,56 @@ Sibling commit `cda5fe9` repairs common `target reboot` dispatch and Linux
 capability reporting. Its 100 client tests, Linux static suite (21 tests, one
 skipped), claimed common reboot and post-reboot readiness pass. The guest was
 shut down only after that validation; no inherited application data was changed.
+
+
+### Linux installed picker and transfer follow-up (2026-09-29)
+
+Native source `96c1c62b`, unsigned debug deb built by the existing Tauri package
+flow (including versioned sidecar and generated release notices). Fresh install
+and same-version replacement succeed; no inherited RSTorrent package existed.
+Builder/guest ABI checks and guest `ldd` pass. Artifact SHA-256:
+
+- Deb: `bc2927a5fccecf1cd38a4d717110a56628b15d8fa8fcd02d2a150632efac12b0`.
+- Installed desktop: `c5b8fba6b521c0e6f798618508158ae3996de49b2bdbbd66c7b94a1a2f4024c7`.
+- Installed native host: `aba6fa996729bd7d6b504c6cd5b8da119d9f34c097a4985b570be1ea5c9a326d`.
+
+The initial root was selected through the installed native GTK UI. Extension
+Settings/Downloads/Add folder opened the desktop-owned GTK helper. Cancel
+returned the normal UI cancellation status and readmission succeeded. Closing
+the requesting tab while picking removed the helper, retained exactly one
+runtime and added no root. Reopening attached to the same instance. A successful
+extension selection registered a second root in the same library. Tray Quit
+with a picker outstanding removed both runtime and helper and the protected
+socket. An open extension observed attach refusal and explicit Start after
+35 seconds without resurrection.
+
+`tests/interop/desktop_extension_seed.py` independently generates a private
+32-MiB single-file torrent with libtorrent 2.0.11.0. Its exact infohash is
+`5b6fd1f3a92b3661ecfef63f4412edfaea3d48c4`; expected payload SHA-256 is
+`99080b09c925782f67975d36476f171ee4e8b367e2a893d07a88bd70028b3fe8`.
+The seed/tracker used only the private VM bridge, with DHT/PEX/listening/port
+mapping disabled on the controlled RSTorrent library. A temporary firewall
+rule admitted only the two owned TCP fixture ports on that bridge and was
+removed when the seed stopped. No public swarm was used.
+
+The extension added the torrent through its ordinary file input. Extension
+Pause appeared as Paused in native AT-SPI; native Pause/Start subsequently
+converged in authenticated extension snapshots. The transfer completed after
+the extension tab closed. Guest SHA-256 exactly matched the generated payload;
+native progress and reopened extension both showed 100%/complete. After native
+Quit and stopping the seed, twelve concurrent explicit native bootstrap starts
+returned one new background instance with zero WebKit webviews. The same torrent
+and both root IDs restored, complete, and the payload hash remained unchanged.
+Invalid and previous-runtime credentials were refused without library disclosure.
+Twelve repeated opens retained one companion tab. Background RSS sample:
+84,672 KiB, 15 threads; not an endurance claim.
+
+Removing the generated Google Chrome registration manifest inside the controlled
+HOME and normally relaunching the installed app recreated byte-identical
+registration. Chrome for Testing still uses its custom-profile copy of that
+generated manifest: this qualifies deb layout/startup repair and real native
+messaging, not automatic discovery by every supported browser distribution.
+UI focus under competing GNOME windows, broad suspend/update/failure cases,
+macOS and final guest cleanup remain separately recorded gates. Windows
+installed validation is in progress. The helper/browser harness uses no host
+browser; corrected completion assertions account for CSS-capitalized status text.

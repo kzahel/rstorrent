@@ -3,18 +3,60 @@
 // Connects to an already-owned Chrome for Testing; never starts a host browser.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-const { chromium } = await import(process.env.RSTORRENT_PLAYWRIGHT_MODULE ?? '../clients/web/node_modules/playwright-core/index.mjs');
+import { pathToFileURL } from 'node:url';
+const playwrightModule = process.env.RSTORRENT_PLAYWRIGHT_MODULE
+  ? pathToFileURL(process.env.RSTORRENT_PLAYWRIGHT_MODULE).href
+  : new URL('../clients/web/node_modules/playwright-core/index.mjs', import.meta.url).href;
+const { chromium } = await import(playwrightModule);
 const phase = process.argv[2] ?? 'inspect';
+const fixtureName = process.env.RSTORRENT_TEST_TORRENT_NAME ?? 'checkpoint.bin';
 const browser = await chromium.connectOverCDP(process.env.RSTORRENT_TEST_CDP ?? 'http://127.0.0.1:9222');
 try {
   const context = browser.contexts()[0];
   let page = context.pages().find(page => page.url().endsWith('companion/companion.html?backend=desktop'));
+  if (phase === 'open') {
+    const popup = await context.newPage();
+    await popup.goto('chrome-extension://gcgoepclopkgijmclmlheafaglmbjlcc/popup/popup.html');
+    await new Promise((resolve, reject) => {
+      const deadline = setTimeout(() => { clearInterval(poll); reject(new Error('companion did not open')); }, 20000);
+      const poll = setInterval(() => {
+        page = context.pages().find(candidate => candidate.url().endsWith('companion/companion.html?backend=desktop'));
+        if (page) { clearInterval(poll); clearTimeout(deadline); resolve(); }
+      }, 100);
+    });
+    // A persistent popup tab would falsely replay explicit user intent on restart.
+    await popup.close();
+    await page.getByText('connected', { exact: true }).waitFor({ timeout: 20000 });
+    console.log(JSON.stringify({ phase, connected: true }));
+  }
   assert(page, 'open the packaged desktop companion in the owned test browser first');
-  if (phase === 'remember') {
+  if (phase === 'picker') {
+    if (!(await page.getByRole('dialog').isVisible())) await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.getByRole('tab', { name: 'Downloads', exact: true }).click();
+    await page.getByRole('button', { name: 'Add folder…', exact: true }).click();
+    console.log(JSON.stringify({ phase, requested: true }));
+  } else if (phase === 'picker-cancelled') {
+    await page.getByText('Folder selection canceled', { exact: true }).waitFor();
+    assert(await page.getByRole('button', { name: 'Add folder…', exact: true }).isEnabled());
+    console.log(JSON.stringify({ phase, cancelled: true }));
+  } else if (phase === 'close-settings') {
+    await page.getByRole('button', { name: 'Close settings', exact: true }).click();
+  } else if (phase === 'detach') {
+    await page.close();
+    console.log(JSON.stringify({ phase, detached: true }));
+  } else if (phase === 'transfer') {
+    assert(process.env.RSTORRENT_TEST_TORRENT_FILE, 'provide the controlled torrent file');
+    await page.locator('input[type="file"][accept=".torrent,application/x-bittorrent"]').setInputFiles(process.env.RSTORRENT_TEST_TORRENT_FILE);
+    await page.getByRole('row').filter({ hasText: fixtureName }).waitFor();
+    console.log(JSON.stringify({ phase, fixtureName, added: true }));
+  } else if (phase === 'complete') {
+    await page.getByRole('row').filter({ hasText: fixtureName }).filter({ hasText: /complete|seeding/i }).waitFor({ timeout: 180_000 });
+    console.log(JSON.stringify({ phase, fixtureName, completed: true }));
+  } else if (phase === 'remember') {
     await page.evaluate(async () => { const response = await chrome.runtime.sendMessage({ type: 'nativeBootstrap', op: 'attach_control' }); if (!response.ok) throw new Error('attach failed'); globalThis.checkpointPreviousReady = response.result; });
     console.log(JSON.stringify({ phase, retainedOnlyInPageMemory: true }));
   } else if (phase === 'ui-running') {
-    await page.getByRole('row', { name: /checkpoint.bin/ }).filter({ hasText: 'Downloading' }).waitFor();
+    await page.getByRole('row').filter({ hasText: fixtureName }).filter({ hasText: 'Downloading' }).waitFor();
     console.log(JSON.stringify({ phase, converged: true }));
   } else if (phase === 'add') {
     const payload = Buffer.alloc(4096, 0x32);
@@ -22,12 +64,12 @@ try {
     const info = Buffer.concat([Buffer.from('d6:lengthi4096e4:name14:checkpoint.bin12:piece lengthi16384e6:pieces20:'), digest, Buffer.from('7:privatei1ee')]);
     const torrent = Buffer.concat([Buffer.from('d4:info'), info, Buffer.from('e')]);
     await page.locator('input[type="file"][accept=".torrent,application/x-bittorrent"]').setInputFiles({ name: 'checkpoint.torrent', mimeType: 'application/x-bittorrent', buffer: torrent });
-    await page.getByRole('row', { name: /checkpoint.bin/ }).waitFor();
+    await page.getByRole('row').filter({ hasText: fixtureName }).waitFor();
     console.log(JSON.stringify({ phase, infoHash: createHash('sha1').update(info).digest('hex'), bytes: payload.length }));
   } else if (['pause', 'resume'].includes(phase)) {
-    await page.getByRole('row', { name: /checkpoint.bin/ }).click();
+    await page.getByRole('row').filter({ hasText: fixtureName }).click();
     await page.getByRole('button', { name: phase === 'pause' ? 'Pause' : 'Start', exact: true }).click();
-    await page.getByRole('row', { name: /checkpoint.bin/ }).filter({ hasText: phase === 'pause' ? 'Paused' : 'Downloading' }).waitFor();
+    await page.getByRole('row').filter({ hasText: fixtureName }).filter({ hasText: phase === 'pause' ? 'Paused' : 'Downloading' }).waitFor();
     console.log(JSON.stringify({ phase, converged: true }));
   } else if (phase === 'native') {
     await page.getByRole('button', { name: 'Open desktop window', exact: true }).click();
@@ -91,7 +133,7 @@ try {
         if (!state) throw new Error('snapshot failed');
         return { phase, backend: hello.hello.backend, revision: state.revision,
           roots: state.storage.roots.map(root => ({ id: root.root_id, availability: root.availability })),
-          torrents: state.torrents.map(torrent => ({ id: torrent.torrent_id, identities: torrent.protocol_identities, root: torrent.storage_root, state: torrent.state, running: torrent.desired_running })) };
+          torrents: state.torrents.map(torrent => ({ id: torrent.torrent_id, identities: torrent.protocol_identities, root: torrent.storage_root, state: torrent.state, running: torrent.desired_running, verifiedPieces: torrent.verified_pieces, progress: torrent.progress })) };
       } finally { socket.close(); }
     }, phase);
     if (phase === 'invalid' || phase === 'stale') { assert.equal(report.rejected, true); assert.equal(report.libraryDisclosed, false); }
