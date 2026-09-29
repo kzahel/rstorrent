@@ -669,3 +669,69 @@ UI focus under competing GNOME windows, broad suspend/update/failure cases,
 macOS and final guest cleanup remain separately recorded gates. Windows
 installed validation is in progress. The helper/browser harness uses no host
 browser; corrected completion assertions account for CSS-capitalized status text.
+
+### Windows installed follow-up and Linux foreground check (2026-09-29)
+
+The final unsigned Windows x64 debug NSIS installer has SHA-256
+`29b16ba775e613e8b7f2b539b236b2727b8a7c6424b0450ed155a834fd69d034`;
+installed desktop SHA-256
+`48893df21ead4bb25450ffa9df2b42f56ea06e72c7d975d6e5e566914d4efcdd`.
+It was built natively with Rust 1.97/MSVC on Windows 11. An initial source
+archive preserved timestamps older than cached outputs; its stale capability
+advertisement exposed that mistake. Touching the transferred changed files,
+rerunning native-host tests, and rebuilding the actual NSIS package corrected
+it. Final native bootstrap advertises desktop_control_v1 and
+desktop_root_picker_v1 only. This is debug package evidence, not release signing.
+The inherited install, profile directories, associations, registration and
+shortcuts were preserved before installing the controlled package.
+
+A fresh initial root was selected through the native UI. Chrome for Testing
+used the installed HKCU Google Chrome registration without a copied manifest
+or code-entry pairing. The extension opened a foreground Windows folder dialog;
+Cancel returned normal cancellation status, closing its tab removed the helper,
+and a later successful selection added a second root to the same runtime.
+The installed final runtime retained one instance across twelve warm starts
+and twelve repeated opens retained one companion tab.
+
+The same private 32-MiB fixture completed on Windows with the exact payload
+SHA-256 above. Extension Pause appeared in the native library; native Start
+converged to complete/running in the extension. Windows transfer completed
+before tab detachment; Linux separately proves transfer while detached. The
+Windows libtorrent wheel could not load its absent OpenSSL 1.1 dependencies,
+so the validated Linux oracle served the private VM bridge instead. The two
+owned-port firewall rule and oracle process were removed after the transfer.
+No public swarm or personal files were involved.
+
+Tray Quit while picking removed both runtime and helper. A clean repeated Quit
+observation returned attach refusal and explicit Start after 35 seconds without
+resurrection. One earlier observation was invalidated by the test operator
+starting the next explicit race before its observation interval finished; it
+is not counted as product evidence. Twelve cold starts returned one instance,
+one --extension-background process and no Tauri native window. The seed was
+offline; the same roots/torrent and exact payload hash restored. Invalid and
+previous-instance credentials disclosed no library. Deleting the controlled
+Chrome registration and normally launching the app recreated the identical
+manifest route. A working-set sample was 59,891,712 bytes and 492 handles;
+this is not endurance evidence.
+
+After controlled Linux reboot/readiness, GNOME reported unlocked and an
+extension cold launch opened the GTK picker visibly in front of the browser.
+Cancel worked and the native view subsequently showed the persisted torrent
+at 100%. This closes the obscured foreground observation from the earlier
+locked session, not arbitrary window-manager/desktop-environment coverage.
+
+Machine Control's Windows native reference action exposed a separate defect:
+it re-resolves the cached reference's label globally, so native Start selected
+the taskbar Start instead. The affected product action was repeated using
+fresh native bounds and independently verified by the application snapshot.
+That control-tool defect is tracked in the sibling repository; semantic
+delivery alone is never counted as application effect.
+
+Builder verification: cargo fmt and workspace clippy pass; the bounded
+workspace rerun with --test-threads=2 passed 1,528 tests (18 ignored). Web
+409 tests pass (2 skipped), extension 34 pass, and localization checks pass.
+The current gateway's application_lifecycle_smoke.py passes both length and
+cross_file repair cases, each repairing 32,768 bytes; an earlier stale-binary
+failure is superseded by this rebuilt run. Native-host Windows tests and
+clippy passed; no full Windows workspace or macOS acceptance is claimed.
+Guest restoration and the remaining legacy fixture preparation are ongoing.
