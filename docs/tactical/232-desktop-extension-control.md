@@ -985,3 +985,51 @@ opens generate normal Reopen events. Registration repair is byte-identical,
 and invalid/stale credentials still disclose no library. This race failure
 must be fixed before platform qualification; singleton process count alone
 is not sufficient.
+
+Mac startup serialization contract: native-host `start_control` takes one
+zero-byte, same-user 0600 regular-file lock in the existing private rendezvous
+directory before rechecking ready state. No symlinks, hard links, public modes
+or non-regular files are accepted. The inode is retained between runs; it
+contains no token/state and is never unlinked during normal operation. Standard
+[`File::try_lock`](https://doc.rust-lang.org/std/fs/struct.File.html#method.try_lock)
+provides OS-released ownership; no launcher daemon, new dependency or persistent
+PID authority is introduced. Lock contention plus startup shares the existing
+ten-second deadline, with 20-ms bounded polling. `attach_control` never acquires
+the lock, launches or waits for a pending start. The first explicit request
+alone sends `open -g --args --extension-background`; followers read the ready
+runtime after admission. Normal desktop launches retain ordinary Reopen.
+Tests cover twelve serialized waiters, contention timeout, drop/reacquisition,
+and unsafe lock paths/modes. Installed cold-race qualification is rerun next.
+
+The remaining refused replies were diagnosed as Darwin `EINVAL` from
+`UnixStream::set_read_timeout` after the server had already sent ready and
+closed. Error-kind/OS-code-only stderr diagnostics identified the boundary;
+a deterministic delayed-client test then reproduced exactly error 22 on the
+builder. Peer-UID lookup alone did not reproduce it. On macOS, keep the ready
+socket alive until client EOF (or one byte) within the existing one-second
+exchange deadline. Existing clients already close after reading; there is no
+new wire frame, version, credential rule or retry that weakens admission.
+Cancellation still interrupts the exchange and only one bootstrap socket is
+served at a time. The regression test delays client timeout setup by 50 ms.
+This is separate from the startup lock's LaunchServices Reopen fix.
+
+After both bootstrap fixes, three consecutive installed cold races each return
+12 successful replies naming one runtime, with no native AX window. A 160-
+sample process observation at approximately 100-ms intervals reports maximum
+one runtime, zero helpers and 92,144 KiB runtime RSS; no WebKit processes appear
+in the cold check. Twelve subsequent explicit opens retain one companion page.
+The removed ordinary Chrome for Testing manifest is recreated byte-for-byte;
+invalid and retained previous-instance credentials disclose no library.
+Final native-host tests pass 17 unit and two process cases, with all-target
+Clippy, format and package checks passing. The intermediate diagnostic sidecar
+is superseded by a complete rebuilt app. Final executable SHA-256 values,
+verified on builder and guest, are:
+
+- Desktop: `1e01b57fe98f40c741d599d27c2971bc180b670aa5a6985228508eec786b092f`.
+- Native host: `9737e093124c933864b25031ab1a27679e6e055c204fb29423cab3a292429000`.
+
+The custom browser profile's manifest is refreshed from the repaired stable
+manifest after each host artifact change. The installed host uses a versioned
+filename, so an old copied test-profile manifest is never sufficient evidence
+that a newly built host ran. Normal launch performs the supported registration
+refresh before the final cold-start tests.

@@ -159,9 +159,24 @@ impl DesktopLauncher for ConfiguredLauncher {
             .parent()
             .ok_or("Desktop setup is unavailable")?;
         let path = directory.join(control::SOCKET_NAME);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        #[cfg(target_os = "macos")]
+        let _start_lock = if start {
+            Some(
+                control::lock_start(directory, deadline)
+                    .map_err(|_| "Desktop startup is busy or unavailable".to_owned())?,
+            )
+        } else {
+            None
+        };
         match control::read_ready(&path) {
             Ok(ready) => return Ok(ready),
             Err(error) if !control::is_stopped(&error) => {
+                eprintln!(
+                    "RSTorrent bootstrap attach refused: kind={:?} os={:?}",
+                    error.kind(),
+                    error.raw_os_error()
+                );
                 return Err("Desktop bootstrap was refused".to_owned());
             }
             Err(_) if !start => {
@@ -169,13 +184,22 @@ impl DesktopLauncher for ConfiguredLauncher {
             }
             Err(_) => {}
         }
+        if std::time::Instant::now() >= deadline {
+            return Err("Desktop startup did not become available in time".to_owned());
+        }
         self.launch_with_intent(true)?;
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         while std::time::Instant::now() < deadline {
             match control::read_ready(&path) {
                 Ok(ready) => return Ok(ready),
                 Err(error) if control::is_stopped(&error) => {}
-                Err(_) => return Err("Desktop bootstrap was refused".to_owned()),
+                Err(error) => {
+                    eprintln!(
+                        "RSTorrent bootstrap startup refused: kind={:?} os={:?}",
+                        error.kind(),
+                        error.raw_os_error()
+                    );
+                    return Err("Desktop bootstrap was refused".to_owned());
+                }
             }
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
@@ -434,6 +458,26 @@ pub fn decode_frames(bytes: &[u8]) -> Result<Vec<Value>, HostError> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn attach_does_not_wait_for_or_launch_a_pending_start() {
+        use super::*;
+        use std::os::unix::fs::PermissionsExt;
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+        let _lock = control::lock_start(directory.path(), std::time::Instant::now()).unwrap();
+        let mut launcher = ConfiguredLauncher::for_host_executable(&directory.path().join("host"));
+        // No launch config exists: attempting any launch would return a setup
+        // error instead of the expected attach-only stopped result.
+        assert!(
+            launcher
+                .control(false)
+                .err()
+                .unwrap()
+                .contains("Desktop is stopped")
+        );
+    }
+
     use super::*;
 
     const ORIGIN: &str = "chrome-extension://dbokmlpefliilbjldladbimlcfgbolhk/";

@@ -89,6 +89,52 @@ fn check_private(path: &Path, directory: bool) -> io::Result<()> {
     Ok(())
 }
 
+/// Serialize macOS LaunchServices starts, which otherwise send Reopen to a
+/// concurrently starting app. Keep this inode: unlinking it splits the lock.
+#[cfg(target_os = "macos")]
+pub(crate) fn lock_start(
+    directory: &Path,
+    deadline: std::time::Instant,
+) -> io::Result<std::fs::File> {
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+    check_private(directory, true)?;
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(directory.join("desktop-start-v1.lock"))?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file()
+        || metadata.uid() != rustix::process::getuid().as_raw()
+        || metadata.mode() & 0o077 != 0
+        || metadata.nlink() != 1
+        || metadata.len() != 0
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "unsafe desktop launch lock",
+        ));
+    }
+    loop {
+        match file.try_lock() {
+            Ok(()) => return Ok(file),
+            Err(std::fs::TryLockError::Error(error)) => return Err(error),
+            Err(std::fs::TryLockError::WouldBlock) => {
+                if std::time::Instant::now() >= deadline {
+                    return Err(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        "desktop start busy",
+                    ));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+        }
+    }
+}
+
 #[cfg(unix)]
 fn with_socket_address<T>(
     path: &Path,
@@ -206,6 +252,8 @@ impl BootstrapServer {
     }
 
     pub async fn serve(self, cancel: tokio_util::sync::CancellationToken) -> io::Result<()> {
+        #[cfg(target_os = "macos")]
+        use tokio::io::AsyncReadExt;
         use tokio::io::AsyncWriteExt;
         let bytes = serde_json::to_vec(&self.ready).map_err(io::Error::other)?;
         if bytes.len() > MAX_READY_BYTES {
@@ -232,7 +280,16 @@ impl BootstrapServer {
                 () = cancel.cancelled() => return Ok(()),
                 _ = tokio::time::timeout(std::time::Duration::from_secs(1), async {
                     stream.write_all(&(bytes.len() as u32).to_le_bytes()).await?;
-                    stream.write_all(&bytes).await
+                    stream.write_all(&bytes).await?;
+                    #[cfg(target_os = "macos")]
+                    {
+                        // Darwin rejects SO_RCVTIMEO with EINVAL after peer
+                        // closure. Let the client configure/authenticate/read
+                        // before closing; its EOF needs no new protocol frame.
+                        // A stalled client still has the same one-second cap.
+                        let _ = stream.read(&mut [0_u8; 1]).await?;
+                    }
+                    Ok::<(), io::Error>(())
                 }) => {},
             }
         }
@@ -261,6 +318,60 @@ mod tests {
         }
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_start_lock_serializes_waiters_and_releases_on_drop() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::time::{Duration, Instant};
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+        let active = AtomicUsize::new(0);
+        std::thread::scope(|scope| {
+            for _ in 0..12 {
+                scope.spawn(|| {
+                    let _lock =
+                        lock_start(directory.path(), Instant::now() + Duration::from_secs(3))
+                            .unwrap();
+                    assert_eq!(active.fetch_add(1, Ordering::SeqCst), 0);
+                    std::thread::sleep(Duration::from_millis(2));
+                    assert_eq!(active.fetch_sub(1, Ordering::SeqCst), 1);
+                });
+            }
+        });
+        let first = lock_start(directory.path(), Instant::now()).unwrap();
+        assert_eq!(
+            lock_start(directory.path(), Instant::now())
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::TimedOut
+        );
+        drop(first);
+        assert!(lock_start(directory.path(), Instant::now()).is_ok());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_start_lock_refuses_unsafe_files_and_directories() {
+        use std::os::unix::fs::symlink;
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+        let lock_path = directory.path().join("desktop-start-v1.lock");
+        let target = directory.path().join("target");
+        std::fs::write(&target, b"").unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o600)).unwrap();
+        symlink(&target, &lock_path).unwrap();
+        assert!(lock_start(directory.path(), std::time::Instant::now()).is_err());
+        std::fs::remove_file(&lock_path).unwrap();
+        std::fs::hard_link(&target, &lock_path).unwrap();
+        assert!(lock_start(directory.path(), std::time::Instant::now()).is_err());
+        std::fs::remove_file(&lock_path).unwrap();
+        drop(lock_start(directory.path(), std::time::Instant::now()).unwrap());
+        std::fs::set_permissions(&lock_path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(lock_start(directory.path(), std::time::Instant::now()).is_err());
+        std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(lock_start(directory.path(), std::time::Instant::now()).is_err());
+    }
+
     #[tokio::test]
     async fn disconnected_probes_do_not_stop_bootstrap_admission() {
         let root = tempfile::tempdir().unwrap();
@@ -277,6 +388,40 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(actual.instance_id, ready().instance_id);
+        cancel.cancel();
+        task.await.unwrap().unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn mac_ready_peer_stays_connected_until_client_configures_timeout() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("host");
+        let server = BootstrapServer::bind(&directory, ready()).unwrap();
+        let path = directory.join(SOCKET_NAME);
+        let cancel = CancellationToken::new();
+        let task = tokio::spawn(server.serve(cancel.clone()));
+        tokio::task::spawn_blocking(move || {
+            use std::io::Read;
+            let mut stream = std::os::unix::net::UnixStream::connect(path).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(1)))
+                .unwrap();
+            check_peer_uid(&stream).unwrap();
+            let mut length = [0; 4];
+            stream.read_exact(&mut length).unwrap();
+            let mut bytes = vec![0; u32::from_le_bytes(length) as usize];
+            stream.read_exact(&mut bytes).unwrap();
+            assert_eq!(
+                serde_json::from_slice::<ControlReady>(&bytes)
+                    .unwrap()
+                    .instance_id,
+                ready().instance_id
+            );
+        })
+        .await
+        .unwrap();
         cancel.cancel();
         task.await.unwrap().unwrap();
     }

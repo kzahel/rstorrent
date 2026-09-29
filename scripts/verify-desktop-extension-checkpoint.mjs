@@ -77,9 +77,9 @@ try {
   } else if (phase === 'race') {
     const result = await page.evaluate(async () => {
       const values = await Promise.all(Array.from({ length: 12 }, (_, i) => chrome.runtime.sendNativeMessage('com.jstorrent.rstorrent.native', { id: `race-${i}`, protocolVersion: 1, op: 'start_control' })));
-      return values.map(value => ({ ok: value.ok, instanceId: value.result?.instanceId, error: value.error?.code }));
+      return values.map(value => ({ ok: value.ok, instanceId: value.result?.instanceId, error: value.error }));
     });
-    assert(result.every(value => value.ok && value.instanceId));
+    assert(result.every(value => value.ok && value.instanceId), JSON.stringify(result));
     assert.equal(new Set(result.map(value => value.instanceId)).size, 1);
     console.log(JSON.stringify({ phase, requests: result.length, instances: 1, instanceId: result[0].instanceId }));
   } else if (phase === 'clicks') {
