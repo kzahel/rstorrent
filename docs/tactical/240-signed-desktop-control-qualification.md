@@ -96,3 +96,8 @@ Official [Tauri signing](https://v2.tauri.app/distribute/sign/macos/),
 [Apple notarization](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)
 and [Chrome native messaging](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging)
 guidance was reviewed for the existing signing and registered-helper contract.
+
+The release workflow now also requires valid expected-publisher Authenticode
+signatures on both installed Windows executables, including the native host.
+Installer signatures alone do not establish this. macOS already performs deep
+strict bundle verification; guest checks additionally inspect the copied host.

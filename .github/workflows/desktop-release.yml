@@ -432,6 +432,16 @@ jobs:
             if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
               throw "Installed RSTorrent executable is missing"
             }
+            foreach ($binary in @($executable, (Join-Path $installDirectory 'rstorrent-native-host.exe'))) {
+              if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) {
+                throw "Installed signed binary is missing: $binary"
+              }
+              $signature = Get-AuthenticodeSignature -FilePath $binary
+              if ($signature.Status -ne 'Valid' -or
+                  $signature.SignerCertificate.Subject -notmatch 'CN=Kyle Graehl(?:,|$)') {
+                throw "Installed binary has an invalid or unexpected signature: $binary"
+              }
+            }
             $torrentExtension = Get-Item 'Registry::HKEY_CURRENT_USER\Software\Classes\.torrent'
             $torrentCommand = Get-Item 'Registry::HKEY_CURRENT_USER\Software\Classes\com.jstorrent.rstorrent.torrent\shell\open\command'
             $magnet = Get-Item 'Registry::HKEY_CURRENT_USER\Software\Classes\magnet'
