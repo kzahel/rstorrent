@@ -93,6 +93,9 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`237-macos-windows-package-recovery.md`](237-macos-windows-package-recovery.md):
+  installed beta package replacement, rollback and registration recovery.
+
 - [`236-desktop-compatibility-refusal-and-recovery.md`](236-desktop-compatibility-refusal-and-recovery.md):
   terminal desktop incompatibility and attach-only repair; bounded Linux beta
   old/new package matrix. Signed and broader platform update gates stay open.
