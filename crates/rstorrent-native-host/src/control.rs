@@ -72,6 +72,32 @@ fn check_private(path: &Path, directory: bool) -> io::Result<()> {
 }
 
 #[cfg(unix)]
+fn with_socket_address<T>(
+    path: &Path,
+    operation: impl FnOnce(&Path) -> io::Result<T>,
+) -> io::Result<T> {
+    // Linux sun_path is only 108 bytes. Address the same protected filesystem
+    // entry through an owned directory descriptor, without changing cwd or
+    // moving authentication into the unprotected abstract socket namespace.
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::fd::AsRawFd;
+        let directory = std::fs::File::open(
+            path.parent()
+                .ok_or_else(|| io::Error::other("missing parent"))?,
+        )?;
+        let name = path
+            .file_name()
+            .ok_or_else(|| io::Error::other("missing socket name"))?;
+        let address =
+            std::path::PathBuf::from(format!("/proc/self/fd/{}", directory.as_raw_fd())).join(name);
+        operation(&address)
+    }
+    #[cfg(not(target_os = "linux"))]
+    operation(path)
+}
+
+#[cfg(unix)]
 pub fn read_ready(path: &Path) -> io::Result<ControlReady> {
     use std::io::Read;
     check_private(
@@ -80,7 +106,9 @@ pub fn read_ready(path: &Path) -> io::Result<ControlReady> {
         true,
     )?;
     check_private(path, false)?;
-    let mut stream = std::os::unix::net::UnixStream::connect(path)?;
+    let mut stream = with_socket_address(path, |address| {
+        std::os::unix::net::UnixStream::connect(address)
+    })?;
     stream.set_read_timeout(Some(std::time::Duration::from_secs(1)))?;
     #[cfg(target_os = "linux")]
     if rustix::net::sockopt::socket_peercred(&stream)?.uid != rustix::process::getuid() {
@@ -130,7 +158,9 @@ impl BootstrapServer {
         match std::fs::symlink_metadata(&path) {
             Ok(_) => {
                 check_private(&path, false)?;
-                match std::os::unix::net::UnixStream::connect(&path) {
+                match with_socket_address(&path, |address| {
+                    std::os::unix::net::UnixStream::connect(address)
+                }) {
                     Err(error) if error.kind() == io::ErrorKind::ConnectionRefused => {
                         std::fs::remove_file(&path)?
                     }
@@ -145,7 +175,8 @@ impl BootstrapServer {
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => return Err(error),
         }
-        let listener = tokio::net::UnixListener::bind(&path)?;
+        let listener =
+            with_socket_address(&path, |address| tokio::net::UnixListener::bind(address))?;
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
         Ok(Self {
             listener,
@@ -200,6 +231,28 @@ mod tests {
             instance_id: "cd".repeat(16),
             profile_id: "default".to_owned(),
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn long_profile_path_keeps_private_socket_and_live_owner() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("profile-".repeat(20));
+        let server = BootstrapServer::bind(&directory, ready()).unwrap();
+        let path = directory.join(SOCKET_NAME);
+        check_private(&path, false).unwrap();
+        assert!(BootstrapServer::bind(&directory, ready()).is_err());
+        let cancel = CancellationToken::new();
+        let task = tokio::spawn(server.serve(cancel.clone()));
+        let read_path = path.clone();
+        let actual = tokio::task::spawn_blocking(move || read_ready(&read_path))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(actual.instance_id, ready().instance_id);
+        cancel.cancel();
+        task.await.unwrap().unwrap();
+        assert!(!path.exists());
     }
 
     #[tokio::test]

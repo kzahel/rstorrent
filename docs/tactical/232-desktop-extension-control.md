@@ -368,7 +368,7 @@ Web typecheck and suite pass (409 pass, two skipped); extension suite passes
 (34 tests), packaging and localization checks pass. Workspace Clippy passes.
 The first full workspace test run hit the existing engine corrupt-generation
 two-second peer timeout under concurrent builds; its focused rerun passes.
-A limited-concurrency full rerun is pending. An independent application lifecycle
+The full rerun with `--test-threads=2` passes: 1,528 tests, 18 ignored. An independent application lifecycle
 smoke also timed out at repair completion (two of three pieces); it is not
 claimed as passing transfer evidence. Installed acceptance follows separately.
 
@@ -509,6 +509,19 @@ and refusal to focus a navigated-away tab. All 34 extension tests pass; the
 fresh Chrome for Testing profile passes 12 repeated opens with one tab, both
 with and without a remembered tab ID. Unpacked artifacts are loaded into a
 fresh owned test profile after replacement to avoid stale worker code.
+
+### Linux long-profile startup correction (2026-09-29)
+
+The actual deb install exposed `SUN_LEN` refusal when the controlled config
+path plus socket filename exceeded Linux's 108-byte pathname field. Linux now
+binds/connects the same private filesystem socket through an owned directory
+file descriptor under `/proc/self/fd`, preserving directory/socket checks,
+peer UID admission, duplicate-owner refusal and cleanup of the original entry.
+No cwd mutation, shared temporary socket or abstract namespace was introduced.
+Reviewed [unix(7)](https://man7.org/linux/man-pages/man7/unix.7.html) and
+[proc_pid_fd(5)](https://man7.org/linux/man-pages/man5/proc_pid_fd.5.html).
+A regression exercises a long config path, private socket metadata, live-owner
+refusal, ready exchange and joined removal. Other platforms retain their paths.
 
 ### Linux first-checkpoint evidence (2026-09-28)
 
