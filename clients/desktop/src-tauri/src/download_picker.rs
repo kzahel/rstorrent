@@ -1,24 +1,24 @@
 //! A single desktop-owned dialog with observable cancellation and child reaping.
 use rstorrent_platform::{DownloadDirectoryPicker, PickerError, PickerFuture};
 use std::path::Path;
-#[cfg(any(target_os = "linux", target_os = "windows"))]
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 use std::path::PathBuf;
 use std::sync::Arc;
-#[cfg(any(target_os = "linux", target_os = "windows"))]
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 use std::time::Duration;
-#[cfg(any(target_os = "linux", target_os = "windows"))]
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-#[cfg(any(target_os = "linux", target_os = "windows"))]
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 use tokio::process::Command;
-#[cfg(any(target_os = "linux", target_os = "windows"))]
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 use tokio::sync::oneshot;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio_util::sync::CancellationToken;
 
 const HELPER_ARGUMENT: &str = "--desktop-folder-dialog";
-#[cfg(any(target_os = "linux", target_os = "windows"))]
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 const MAX_FRAME_BYTES: usize = 16 * 1024;
-#[cfg(any(target_os = "linux", target_os = "windows"))]
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 const PICKER_TIMEOUT: Duration = Duration::from_secs(300);
 
 pub struct DesktopDownloadPicker {
@@ -62,12 +62,12 @@ impl DesktopDownloadPicker {
 impl DownloadDirectoryPicker for DesktopDownloadPicker {
     fn choose<'a>(&'a self, starting_directory: &'a Path) -> PickerFuture<'a> {
         Box::pin(async move {
-            #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+            #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
             {
                 let _ = starting_directory;
                 Err(PickerError::Unsupported)
             }
-            #[cfg(any(target_os = "linux", target_os = "windows"))]
+            #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
             {
                 let permit = self.acquire()?;
                 let input = serde_json::to_vec(starting_directory)
@@ -93,7 +93,7 @@ impl DownloadDirectoryPicker for DesktopDownloadPicker {
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "windows"))]
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 async fn run_helper(
     mut command: Command,
     input: Vec<u8>,
@@ -172,7 +172,7 @@ pub fn run_helper_if_requested() -> bool {
     if std::env::args_os().nth(1).as_deref() != Some(std::ffi::OsStr::new(HELPER_ARGUMENT)) {
         return false;
     }
-    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
     {
         use std::io::{Read, Write};
         let result = (|| -> Result<(), ()> {
@@ -194,6 +194,20 @@ pub fn run_helper_if_requested() -> bool {
             if !starting.is_absolute() || !starting.is_dir() {
                 return Err(());
             }
+            #[cfg(target_os = "macos")]
+            {
+                use objc2::MainThreadMarker;
+                use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
+                let main = MainThreadMarker::new().ok_or(())?;
+                let app = NSApplication::sharedApplication(main);
+                if !app.setActivationPolicy(NSApplicationActivationPolicy::Accessory) {
+                    return Err(());
+                }
+                // This helper exists only for an explicit user picker request.
+                // No product window, menu, library or event-loop owner is built.
+                #[allow(deprecated)]
+                app.activateIgnoringOtherApps(true);
+            }
             let selected = rfd::FileDialog::new()
                 .set_title(crate::desktop_localization::text(
                     "dialog.download-folder.title",
@@ -213,7 +227,7 @@ pub fn run_helper_if_requested() -> bool {
     true
 }
 
-#[cfg(all(test, target_os = "linux"))]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
@@ -255,7 +269,14 @@ mod tests {
                 .await
                 .unwrap()
                 .unwrap();
-            assert!(!Path::new(&format!("/proc/{}", pid.trim())).exists());
+            assert!(
+                !std::process::Command::new("/bin/kill")
+                    .args(["-0", pid.trim()])
+                    .stderr(std::process::Stdio::null())
+                    .status()
+                    .unwrap()
+                    .success()
+            );
             assert_eq!(picker.permit.available_permits(), 1);
             if quit {
                 assert!(picker.acquire().is_err());

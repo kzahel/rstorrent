@@ -17,7 +17,7 @@ impl DesktopControlOwner {
     ) -> Result<Self, String> {
         let cancel = CancellationToken::new();
         let tasks = Vec::new();
-        #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+        #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
         let _ = &picker;
         #[cfg(any(unix, windows))]
         let tasks = {
@@ -35,7 +35,7 @@ impl DesktopControlOwner {
             )
             .await
             .map_err(|e| e.to_string())?;
-            #[cfg(any(target_os = "linux", target_os = "windows"))]
+            #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
             let server = server.with_download_directory_picker(picker);
             let bootstrap = BootstrapServer::bind(
                 &config_dir.join("native-host"),

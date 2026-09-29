@@ -4521,6 +4521,8 @@ dependencies = [
  "glib",
  "keepawake",
  "notify-rust",
+ "objc2",
+ "objc2-app-kit",
  "rcgen",
  "reqwest",
  "rfd",
@@ -4686,6 +4688,7 @@ dependencies = [
 name = "rstorrent-native-host"
 version = "0.1.1"
 dependencies = [
+ "libc",
  "rustix",
  "serde",
  "serde_json",

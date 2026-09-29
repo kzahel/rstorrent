@@ -51,6 +51,24 @@ pub fn is_stopped(error: &io::Error) -> bool {
     )
 }
 
+#[cfg(target_os = "macos")]
+fn check_peer_uid(stream: &impl std::os::fd::AsRawFd) -> io::Result<()> {
+    let mut uid = 0;
+    let mut gid = 0;
+    // SAFETY: the live stream owns this descriptor and both output pointers
+    // refer to initialized uid_t/gid_t values for the duration of the call.
+    if unsafe { libc::getpeereid(stream.as_raw_fd(), &mut uid, &mut gid) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    if uid != rustix::process::getuid().as_raw() {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "foreign desktop owner",
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(unix)]
 fn check_private(path: &Path, directory: bool) -> io::Result<()> {
     use std::os::unix::fs::{FileTypeExt, MetadataExt};
@@ -110,6 +128,8 @@ pub fn read_ready(path: &Path) -> io::Result<ControlReady> {
         std::os::unix::net::UnixStream::connect(address)
     })?;
     stream.set_read_timeout(Some(std::time::Duration::from_secs(1)))?;
+    #[cfg(target_os = "macos")]
+    check_peer_uid(&stream)?;
     #[cfg(target_os = "linux")]
     if rustix::net::sockopt::socket_peercred(&stream)?.uid != rustix::process::getuid() {
         return Err(io::Error::new(
@@ -197,7 +217,15 @@ impl BootstrapServer {
                 () = cancel.cancelled() => return Ok(()),
                 accepted = self.listener.accept() => accepted?,
             };
-            if stream.peer_cred()?.uid() != rustix::process::getuid().as_raw() {
+            // A vanished/invalid peer must not terminate bootstrap admission.
+            // macOS only needs getpeereid, not Tokio's additional PID query.
+            #[cfg(target_os = "macos")]
+            let admitted = check_peer_uid(&stream).is_ok();
+            #[cfg(not(target_os = "macos"))]
+            let admitted = stream
+                .peer_cred()
+                .is_ok_and(|cred| cred.uid() == rustix::process::getuid().as_raw());
+            if !admitted {
                 continue;
             }
             tokio::select! {
@@ -231,6 +259,26 @@ mod tests {
             instance_id: "cd".repeat(16),
             profile_id: "default".to_owned(),
         }
+    }
+
+    #[tokio::test]
+    async fn disconnected_probes_do_not_stop_bootstrap_admission() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("host");
+        let server = BootstrapServer::bind(&directory, ready()).unwrap();
+        let path = directory.join(SOCKET_NAME);
+        for _ in 0..12 {
+            drop(std::os::unix::net::UnixStream::connect(&path).unwrap());
+        }
+        let cancel = CancellationToken::new();
+        let task = tokio::spawn(server.serve(cancel.clone()));
+        let actual = tokio::task::spawn_blocking(move || read_ready(&path))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(actual.instance_id, ready().instance_id);
+        cancel.cancel();
+        task.await.unwrap().unwrap();
     }
 
     #[cfg(target_os = "linux")]

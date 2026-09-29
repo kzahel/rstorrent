@@ -46,7 +46,7 @@ zeroize = { workspace = true }
 [target.'cfg(unix)'.dependencies]
 rustix.workspace = true
 
-[target.'cfg(any(target_os = "linux", target_os = "windows"))'.dependencies]
+[target.'cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))'.dependencies]
 rfd = { version = "=0.16.0", default-features = false, features = ["gtk3"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -68,3 +68,7 @@ rstorrent-remote-relay = { path = "../../../crates/rstorrent-remote-relay" }
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 # Regression uses the same source-selected binding as the product GTK stack.
 glib = "=0.18.5"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "=0.6.4"
+objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSApplication", "NSRunningApplication"] }

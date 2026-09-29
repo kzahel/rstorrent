@@ -760,3 +760,71 @@ are returned to off and their claims released.
 Tactical 233 prepares pinned, closed Linux/Windows legacy writer fixtures and
 proposes deterministic union/conflict outcomes. It implements no importer and
 qualifies neither migration Rehearsal B nor production replacement Rehearsal C.
+
+### macOS checkpoint contract (2026-09-29, in progress)
+
+Resumed from clean `07a23248`. Common Machine Control discovery and read-only
+macOS doctor resolved a suspended Apple-hosted ARM64 guest. An exclusive
+ordinary claim and `target up` / `target ensure-ready` restored unlocked Aqua,
+resident semantics, capture and input with outer UI prohibited. Builder and
+guest both run macOS 26.6.2 ARM64. Preserve the inherited suspended state and
+all inherited installations/data; use fresh controlled app state and a separate
+Chrome for Testing identity inside the guest. Tactical 233 is context only.
+
+Retain the same private Unix rendezvous and exact-origin, per-runtime bearer
+contract. On macOS use `getpeereid` in both directions; an unavailable peer
+credential rejects that connection, never terminates the admission owner.
+The initial builder test exposed unexpected EOF after duplicate-owner probing:
+Tokio 1.53.1's macOS `peer_cred` additionally requests `LOCAL_PEEREPID`, while
+this contract needs only the effective UID. The socket pathname ceiling must
+also be checked against the actual installed directory before deployment.
+
+Extend the existing short-lived same-executable picker helper to macOS. Its
+main thread initializes AppKit as an accessory application and requests
+activation for the explicit picker action, then runs pinned rfd's synchronous
+NSOpenPanel. It creates no Tauri webview, singleton, application service or
+profile. Keep the existing single permit, 16-KiB private pipe frames, 4-KiB
+selected UTF-8 path, five-minute deadline, disconnect cancellation and joined
+kill/wait on Quit. macOS draws NSOpenPanel through a system process; installed
+evidence must confirm that killing/reaping the helper also dismisses its panel.
+Failure to initialize activation is an error; native Cancel remains `None`.
+Native-window selection keeps its existing parented dialog and shared permit.
+No Android or generated semantic contract change is needed.
+
+Source review: locked `rfd-0.16.0/src/backend/macos/{file_dialog.rs,
+file_dialog/panel_ffi.rs,utils.rs,utils/policy_manager.rs}` establishes main-
+thread dispatch, accessory policy for prohibited apps, modal selection and
+system panel ownership. Locked `tauri-plugin-single-instance-2.4.3/src/
+platform_impl/macos.rs` uses a temporary Unix socket and asynchronous bind;
+installed concurrent LaunchServices requests therefore need independent
+one-runtime evidence. Existing native-host `open -g --args
+--extension-background` and desktop `RunEvent::Reopen` need cold/warm evidence.
+JSTorrent `desktop/host/src/folder_picker.rs` uses AppleScript to avoid needing
+NSApplication, but collapses cancellation/errors; this implementation retains
+its existing explicit helper failure/cancellation distinction instead.
+
+Official sources reviewed: Apple's [NSOpenPanel](https://developer.apple.com/documentation/appkit/nsopenpanel),
+[setActivationPolicy](https://developer.apple.com/documentation/appkit/nsapplication/setactivationpolicy(_:)),
+[activation](https://developer.apple.com/documentation/appkit/nsapplication/activate(ignoringotherapps:)),
+and [getpeereid](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man3/getpeereid.3.html);
+Chrome's [native messaging](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging)
+and [worker lifecycle](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle);
+Tauri's [single-instance guidance](https://v2.tauri.app/plugin/single-instance/).
+Chrome 146+ separates Chrome for Testing registration from Google Chrome;
+record any test-profile manifest copy separately from ordinary installed
+registration/repair. No source or fixtures were copied from these references.
+
+Next: deterministic native bootstrap/helper checks, incremental unsigned app
+package, architecture/deployment/dependency inspection, then the installed
+Linux/Windows comparison matrix. macOS capability and acceptance remain
+unqualified until those results are recorded below.
+
+Builder checkpoint: `cargo test -p rstorrent-native-host` passes 13 unit and
+two process tests, including twelve disconnected probes followed by a valid
+ready exchange. `cargo test -p rstorrent-desktop --lib` passes 53 tests,
+including helper cancellation/reaping now exercised on macOS. Both packages'
+`cargo clippy --all-targets -- -D warnings` pass. `cargo fmt --all`, web
+typecheck, web tests (409 pass, two skipped), extension tests (34 pass) and
+extension packaging pass. The implementation uses already-locked objc2 0.6.4,
+objc2-app-kit 0.3.2 and libc as explicit platform dependencies; no new resolved
+package version is introduced. Installed AppKit focus/cleanup is still open.

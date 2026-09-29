@@ -7,7 +7,9 @@ first desktop beta-extension client using the packaged shared React application.
 Native and extension views share one default library; explicit extension open
 starts the runtime without creating a native window, while ordinary desktop
 launch shows that window. Authenticated extension requests now open a desktop-owned
-native picker on Linux/Windows; disconnect and Quit reap its helper. Media,
+native picker on Linux/Windows; disconnect and Quit reap its helper. The macOS
+helper now compiles and passes scripted ownership tests, with installed
+activation/cancellation qualification still in progress in Tactical 232. Media,
 updater and shell actions remain native. Installed debug-package/transfer
 evidence passes on both platforms; macOS and broader browser lifecycle gates
 remain recorded in the tactical.

@@ -13,6 +13,11 @@ and connection tests pass. Installed Linux/Windows focus, selection, Cancel,
 tab-detach and Quit cleanup evidence passes with fresh controlled roots. macOS remains on the
 native-window acquisition path pending its own verification.
 
+Tactical 232 now extends the owned same-executable folder helper to macOS
+AppKit accessory activation. Builder cancellation/reaping tests pass; installed
+panel success, Cancel, disconnect and Quit remain unqualified pending its
+claimed-guest checkpoint. Native-window selection retains its parented panel.
+
 Status: Current behavior researched on 2026-08-29. Packaged desktop, local
 browser gateway, Crostini, and Linux headless use distinct platform adapters
 despite sharing the React storage UI. Windows packaged-desktop picker evidence
