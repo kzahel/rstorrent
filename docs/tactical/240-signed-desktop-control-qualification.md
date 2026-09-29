@@ -175,3 +175,26 @@ Local correction gates pass: `cargo fmt --all -- --check`,
 `cargo clippy -p rstorrent-desktop --all-targets -- -D warnings` and
 `git diff --check`. This is a desktop registration adapter change; no shared
 application boundary or Android behavior changes.
+
+## Newly Reported Web Test Dependency Advisories
+
+The next normal push reports six new open Undici alerts, including a high
+TLS-validation finding. `npm ls undici --prefix clients/web` identifies the
+locked `jsdom@29.1.1 -> undici@7.29.0` test dependency. Review upstream
+[7.29.1 security fixes](https://github.com/nodejs/undici/releases/tag/v7.29.1)
+and [7.30.0 changes](https://github.com/nodejs/undici/releases/tag/v7.30.0),
+then update only that compatible transitive lock entry. Keep the existing
+three-lockfile release audit fail-closed, including the independently reviewed
+GLib backport; do not dismiss alerts or merge unrelated Dependabot changes.
+Web type, unit and production/CSP build checks and fresh audit review precede
+the next exact-source CI. This does not add a shipped Node runtime dependency.
+
+`npm update undici --prefix clients/web --ignore-scripts` changes only the
+Undici lock entry to 7.30.0 (version, URL and integrity); direct dependencies
+remain unchanged. `npm run typecheck --prefix clients/web`,
+`npm test --prefix clients/web` and `npm run build --prefix clients/web` all
+pass, including the production CSP check. Fresh Cargo, web npm and website npm
+collection followed by `scripts/review-dependency-audit.py
+--require-release-ready` reports `release_ready=True`. The separately exposed
+GitHub GLib version alert remains visible; its exact source backport review is
+unchanged. No audit exception was added.

@@ -9,6 +9,10 @@ pass before publication. Stable, identities and signing/update keys stay unchang
 Pre-publication review finds and corrects the macOS Chrome for Testing support
 directory spelling; prior custom-profile tests did not qualify default-profile
 discovery. 240 now requires actual standard-profile registration and repair.
+The same release preflight updates the sole transitive web-test Undici lock
+entry to 7.30.0 after newly reported advisories. Web type/unit/build and the
+fresh three-lockfile release-ready audit pass; the reviewed GLib source
+backport and warning policy remain unchanged.
 
 Tactical [238](../tactical/238-signed-desktop-channel-recovery.md) now passes
 installed signed 0.2.301 → 0.2.501 selection/replacement/relaunch on macOS arm64
