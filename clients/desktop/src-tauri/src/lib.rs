@@ -1817,6 +1817,41 @@ fn build_desktop_tray_menu(
     Ok((menu, background))
 }
 
+#[cfg(target_os = "macos")]
+fn install_macos_application_menu(app: &tauri::App) -> tauri::Result<()> {
+    // Muda's predefined macOS Quit sends terminate: directly to AppKit,
+    // bypassing Tauri's preventable ExitRequested and our joined shutdown.
+    // Keep the standard menu, replacing only that native termination action.
+    const QUIT_ID: &str = "rstorrent-application-quit";
+    let menu = Menu::default(app.handle())?;
+    let quit_text = PredefinedMenuItem::quit(app, None)?.text()?;
+    let quit = MenuItem::with_id(app, QUIT_ID, &quit_text, true, Some("Cmd+Q"))?;
+    let mut replaced = 0;
+    for item in menu.items()? {
+        if let Some(submenu) = item.as_submenu() {
+            for (index, item) in submenu.items()?.iter().enumerate() {
+                if let Some(predefined) = item.as_predefined_menuitem()
+                    && predefined.text()? == quit_text
+                {
+                    submenu.remove(item)?;
+                    submenu.insert(&quit, index)?;
+                    replaced += 1;
+                }
+            }
+        }
+    }
+    if replaced != 1 {
+        return Err(std::io::Error::other("expected one macOS application Quit item").into());
+    }
+    app.set_menu(menu)?;
+    app.on_menu_event(|app, event| {
+        if event.id().as_ref() == QUIT_ID {
+            request_application_shutdown(app, false);
+        }
+    });
+    Ok(())
+}
+
 fn install_desktop_tray(app: &tauri::App, menu: &Menu<tauri::Wry>) -> Result<(), String> {
     let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png"))
         .map_err(|error| format!("decode desktop tray icon: {error}"))?;
@@ -2065,6 +2100,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            install_macos_application_menu(app)?;
             let config_dir = app
                 .path()
                 .app_config_dir()

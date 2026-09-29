@@ -851,3 +851,137 @@ status for a resumed verified torrent; the application snapshot independently
 confirms `desired_running: true`. Its seed version check accepts the repository's
 macOS locked libtorrent 2.0.13.0 as well as the recorded 2.0.11.0 fixture oracle;
 fixture bytes and v1 identity are unchanged.
+
+Installed Quit iteration: Cmd-Q with an extension panel open exited the runtime
+but orphaned its helper and left the system panel visible. The existing tray
+Quit's joined shutdown was not the failing route. Locked
+`muda-0.19.3/src/platform_impl/macos/mod.rs` maps predefined Quit to AppKit
+`terminate:`; `tao-0.35.3/src/platform_impl/macos/app_delegate.rs` reports
+`applicationWillTerminate` after termination is committed. This bypasses the
+preventable Tauri `ExitRequested` path. Preserve Tauri's default menus but
+replace their predefined Quit action with a custom Cmd-Q item that requests
+the same joined shutdown as tray Quit. No alternate shutdown owner is added.
+Tauri's [custom menu event contract](https://v2.tauri.app/learn/window-menu/)
+supports this route. Requalify installed Cmd-Q with a pending picker before
+claiming macOS Quit cleanup. The owned orphan is explicitly terminated during
+this failed-run cleanup; that action is not passing product evidence.
+
+### macOS installed evidence and replay commands
+
+This checkpoint uses an exclusively claimed Apple-hosted arm64 macOS 26.6.2
+(25G83) guest, initially suspended, with no inherited RSTorrent app/library or
+Chrome profile. Machine Control's common discovery, read-only doctor, claim,
+`up` and `ensure-ready` establish actual availability. `MACVM_FORBID_OUTER_UI=true`
+keeps every UI action guest-resident. The inherited resident later exhausted
+resources (10,563 `lsof` entries and capture `EBADF`); common `maintenance audit`
+and `maintenance repair` restored its supported service without a guest reboot
+or machine-control source change. This is test infrastructure evidence, not a
+product failure. Inherited notification banners sometimes obscured controls;
+AX actions and explicitly targeted guest input avoided that ambiguity.
+
+Builder commands (after `source ~/.profile`):
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --workspace -- -D warnings
+cargo test --workspace -- --test-threads=2
+cargo test -p rstorrent-native-host
+cargo test -p rstorrent-desktop --lib
+cargo clippy -p rstorrent-native-host --all-targets -- -D warnings
+cargo clippy -p rstorrent-desktop --all-targets -- -D warnings
+npm run typecheck --prefix clients/web
+npm run test --prefix clients/web
+npm run test --prefix clients/extension
+npm run package --prefix clients/extension
+node --check scripts/verify-desktop-extension-checkpoint.mjs
+cd clients/desktop
+../web/node_modules/.bin/tauri build --debug \
+  --config src-tauri/tauri.package.conf.json --bundles app --no-sign --ci
+```
+
+The workspace run passes 1,523 tests with 18 ignored across 70 result summaries;
+web passes 409 with two skipped, extension passes 34. Native-host passes 13 unit
+and two process tests. Each subsequent macOS-only helper/menu change reruns the
+53 desktop tests, package all-target Clippy, formatting and incremental package.
+The Python fixture runner also passes `ast.parse` syntax validation. These are
+builder/scripted results; they do not establish installed picker presentation.
+No semantic application DTO or Android behavior changes; the native AppKit,
+peer-UID and macOS menu changes are inapplicable to Android.
+
+The unsigned debug app is installed at `/Applications/RSTorrent.app` only in
+the guest. `file`, `otool -l`, `otool -L` and bundle metadata establish arm64,
+desktop minimum macOS 13.0 (SDK 26.5), native host minimum 11.0 and system-only
+dynamic dependencies before transfer. Builder and guest executable SHA-256
+values are compared after installation. This does not qualify signing,
+notarization, Intel macOS, minimum-version execution or release updates.
+
+Chrome for Testing 151.0.7922.34 arm64, from the separately identified cached
+Playwright Chromium distribution, runs in the guest with:
+
+```sh
+--user-data-dir=/tmp/rstorrent-t232/browser --remote-debugging-port=9222
+--no-first-run --no-default-browser-check
+--disable-extensions-except=/tmp/rstorrent-t232/extension
+--load-extension=/tmp/rstorrent-t232/extension about:blank
+```
+
+The exact packaged beta extension remains
+`gcgoepclopkgijmclmlheafaglmbjlcc`; its ZIP SHA-256 is
+`c20f22dc1b9d5d05c7c682899c43f8568b1821ecc57416c8ae4a70596032eee4`.
+The bundled native host SHA-256 is
+`8117aaad97aaebc5135d6bd8521b96169633381ab089cb43f0cf3530012cde86`.
+The stable native-host manifest is copied into this intentionally custom
+browser profile's `NativeMessagingHosts`; that explicit test-profile setup is
+not claimed as automatic discovery. The ordinary Chrome for Testing root is
+created separately to exercise installed registration and bounded repair.
+
+Guest browser phases run through the common claimed `os --` transport:
+
+```sh
+node /tmp/rstorrent-t232/scripts/verify-desktop-extension-checkpoint.mjs PHASE
+```
+
+`open`, `prepare`, `inspect`, `invalid`, `remember`, `stale`, `clicks`, `picker`,
+`picker-cancelled`, `detach`, `close-settings`, `stopped`, `race` and `start`
+use the same harness as Linux/Windows. Transfer phases additionally set
+`RSTORRENT_TEST_TORRENT_FILE=/tmp/rstorrent-t232/checkpoint-transfer.torrent`
+and `RSTORRENT_TEST_TORRENT_NAME=checkpoint-transfer.bin`.
+Native UI uses common guest `desktop` capture/input and `testbed -- ui`
+AX discovery/actions; normal launch is guest `open /Applications/RSTorrent.app`.
+Use `--depth 12` for React AX controls and `--depth 4 --limit 500` for panel
+controls. Target the observed helper PID when both processes share the bundle
+identity. AX Open/Cancel can report `-25204` during successful helper exit;
+require the independent browser result, root revision and process cleanup.
+
+The native Settings → Downloads → Add folder flow first selects a new
+`/tmp/rstorrent-t232/root-one`; native Go to Folder and Open register it. The
+extension subsequently selects `root-two` through its owned native helper.
+The private 32-MiB seed runs on the builder's guest-reachable private interface:
+
+```sh
+uv run --project tests/interop --locked python \
+  tests/interop/desktop_extension_seed.py \
+  --root /tmp/rstorrent-t232-seed --bind "$CONTROLLED_SEED_ADDRESS" --seconds 1800
+```
+
+The locked macOS oracle is libtorrent 2.0.13.0. DHT, PEX, product listening and
+port mapping are disabled by `prepare`; only the private controlled tracker
+and seed are used. The extension adds `checkpoint-transfer.bin` into the
+native-selected root. Its 33,554,432 bytes independently hash in the guest to
+`99080b09c925782f67975d36476f171ee4e8b367e2a893d07a88bd70028b3fe8`, matching
+the seed; v1 identity is `5b6fd1f3a92b3661ecfef63f4412edfaea3d48c4`.
+Extension Pause appears in the native AX row and snapshot (`running: false`);
+native Start advances the shared revision and produces Complete at 100% with
+`running: true` in the authenticated extension snapshot. No legacy data or
+importer is involved.
+
+The custom Cmd-Q installed retry closes both helper and system panel, exits the
+runtime and remains stopped during the full 35-second reconnect observation.
+Its desktop executable SHA-256 is
+`289dc647446ac96829bf00857460f03d3a05fd96633e672696e1fa4742ce5546`.
+The subsequent twelve-request cold race samples exactly one runtime but fails
+some replies and creates a native window: repeated LaunchServices background
+opens generate normal Reopen events. Registration repair is byte-identical,
+and invalid/stale credentials still disclose no library. This race failure
+must be fixed before platform qualification; singleton process count alone
+is not sufficient.

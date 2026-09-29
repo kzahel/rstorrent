@@ -56,7 +56,7 @@ try {
     await page.evaluate(async () => { const response = await chrome.runtime.sendMessage({ type: 'nativeBootstrap', op: 'attach_control' }); if (!response.ok) throw new Error('attach failed'); globalThis.checkpointPreviousReady = response.result; });
     console.log(JSON.stringify({ phase, retainedOnlyInPageMemory: true }));
   } else if (phase === 'ui-running') {
-    await page.getByRole('row').filter({ hasText: fixtureName }).filter({ hasText: /Downloading|Complete|Seeding/ }).waitFor();
+    await page.getByRole('row').filter({ hasText: fixtureName }).filter({ hasText: /downloading|complete|seeding/i }).waitFor();
     console.log(JSON.stringify({ phase, converged: true }));
   } else if (phase === 'add') {
     const payload = Buffer.alloc(4096, 0x32);
@@ -69,7 +69,7 @@ try {
   } else if (['pause', 'resume'].includes(phase)) {
     await page.getByRole('row').filter({ hasText: fixtureName }).click();
     await page.getByRole('button', { name: phase === 'pause' ? 'Pause' : 'Start', exact: true }).click();
-    await page.getByRole('row').filter({ hasText: fixtureName }).filter({ hasText: phase === 'pause' ? 'Paused' : /Downloading|Complete|Seeding/ }).waitFor();
+    await page.getByRole('row').filter({ hasText: fixtureName }).filter({ hasText: phase === 'pause' ? 'Paused' : /downloading|complete|seeding/i }).waitFor();
     console.log(JSON.stringify({ phase, converged: true }));
   } else if (phase === 'native') {
     await page.getByRole('button', { name: 'Open desktop window', exact: true }).click();
