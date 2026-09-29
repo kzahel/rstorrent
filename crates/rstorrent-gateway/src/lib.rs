@@ -1680,7 +1680,7 @@ async fn choose_download_root(
 }
 
 fn home_directory() -> Option<PathBuf> {
-    std::env::var_os("HOME")
+    std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
         .map(PathBuf::from)
         .filter(|path| path.is_dir())
 }

@@ -154,6 +154,10 @@ export function decodeApplicationServerFrame(
     ),
   );
   switch (value.type) {
+    case "download_root_chosen":
+      connectionIdentifier(value.call_id, "call ID");
+      if (value.response.root !== null) validateStorageRoot(value.response.root);
+      break;
     case "connected":
       if (value.api_version !== 1 || value.encoding !== "json") {
         throw new ContractError("unsupported application connection contract");

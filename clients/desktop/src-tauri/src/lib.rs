@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 mod desktop_control;
+mod download_picker;
 
 use std::collections::BTreeMap;
 use std::io::Read as _;
@@ -104,6 +105,7 @@ const HEADER_SELECTION: &str = "x-rstorrent-selection";
 const HEADER_WANTED_RANGES: &str = "x-rstorrent-wanted-ranges";
 
 struct DesktopState {
+    download_picker: Arc<download_picker::DesktopDownloadPicker>,
     service: Arc<Mutex<ApplicationService>>,
     product_state: ProductStateOwner,
     remote_runtime: Option<Arc<RemoteApplicationRuntime>>,
@@ -915,6 +917,10 @@ async fn choose_download_root(
     state: State<'_, DesktopState>,
     repair_root: Option<String>,
 ) -> Result<Option<StorageRootSnapshot>, String> {
+    let _permit = state
+        .download_picker
+        .acquire()
+        .map_err(|error| error.to_string())?;
     let suggested = state
         .service
         .lock()
@@ -929,7 +935,11 @@ async fn choose_download_root(
             .home_dir()
             .map_err(|error| format!("resolve folder-picker home directory: {error}"))?,
     };
-    let selected = pick_download_directory(&window, &starting_directory).await?;
+    let selected = tokio::select! {
+        biased;
+        () = state.download_picker.cancelled() => return Err("desktop is shutting down".into()),
+        selected = pick_download_directory(&window, &starting_directory) => selected?,
+    };
     let mut service = state.service.lock().await;
     register_download_root_selection(&mut service, repair_root.as_deref(), selected)
 }
@@ -1504,6 +1514,7 @@ async fn wait_for_application_shutdown(state: &DesktopState) -> Result<(), Strin
 
 async fn perform_application_shutdown(app: AppHandle) {
     let state = app.state::<DesktopState>();
+    state.download_picker.shutdown().await;
     let control_result = match state.desktop_control.lock().await.take() {
         Some(owner) => owner.shutdown().await,
         None => Ok(()),
@@ -2025,6 +2036,9 @@ async fn open_configured_desktop_remote_runtime(
 }
 
 pub fn run() {
+    if download_picker::run_helper_if_requested() {
+        return;
+    }
     let application = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(
             |app, arguments, _cwd| {
@@ -2138,10 +2152,15 @@ pub fn run() {
                     .power
                     .prevent_sleep_during_active_downloads,
             );
-            let control_owner = tauri::async_runtime::block_on(
-                desktop_control::DesktopControlOwner::open(&config_dir, service.clone()),
-            )?;
+            let download_picker = Arc::new(download_picker::DesktopDownloadPicker::new());
+            let control_owner =
+                tauri::async_runtime::block_on(desktop_control::DesktopControlOwner::open(
+                    &config_dir,
+                    service.clone(),
+                    download_picker.clone(),
+                ))?;
             let state = DesktopState {
+                download_picker,
                 desktop_control: Mutex::new(Some(control_owner)),
                 service,
                 product_state,

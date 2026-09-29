@@ -43,15 +43,16 @@ pub const TORRENT_UPLOAD_TIMEOUT_MILLIS: u64 = 120_000;
 
 const VIEW_STREAM_WAIT_MILLIS: u32 = 20_000;
 const DATA_RESERVATIONS: usize = 2;
-const CLIENT_FRAME_FAMILIES: [&str; 6] = [
+const CLIENT_FRAME_FAMILIES: [&str; 7] = [
     "connect",
     "call",
     "begin_torrent_upload",
     "attach",
     "ack",
     "detach",
+    "choose_download_root",
 ];
-const SERVER_FRAME_FAMILIES: [&str; 9] = [
+const SERVER_FRAME_FAMILIES: [&str; 10] = [
     "connected",
     "result",
     "call_error",
@@ -61,6 +62,7 @@ const SERVER_FRAME_FAMILIES: [&str; 9] = [
     "stream_error",
     "detached",
     "connection_error",
+    "download_root_chosen",
 ];
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
@@ -118,8 +120,8 @@ struct ApplicationConnectionMetricAtoms {
     handshake_micros_max: AtomicU64,
     pending_calls_high_water: AtomicUsize,
     attachments_high_water: AtomicUsize,
-    client_frames: [FrameMetricAtoms; 6],
-    server_frames: [FrameMetricAtoms; 9],
+    client_frames: [FrameMetricAtoms; CLIENT_FRAME_FAMILIES.len()],
+    server_frames: [FrameMetricAtoms; SERVER_FRAME_FAMILIES.len()],
     view_batches: AtomicU64,
     empty_view_batches: AtomicU64,
     acknowledgements: AtomicU64,
@@ -260,6 +262,7 @@ impl ApplicationConnectionMetrics {
             ApplicationClientFrame::Attach { .. } => 3,
             ApplicationClientFrame::Ack { .. } => 4,
             ApplicationClientFrame::Detach { .. } => 5,
+            ApplicationClientFrame::ChooseDownloadRoot { .. } => 6,
         };
         record_frame(&self.inner.client_frames[index], bytes);
         if matches!(frame, ApplicationClientFrame::Ack { .. }) {
@@ -289,6 +292,7 @@ impl ApplicationConnectionMetrics {
             }
             ApplicationServerFrame::Detached { .. } => 7,
             ApplicationServerFrame::ConnectionError { .. } => 8,
+            ApplicationServerFrame::DownloadRootChosen { .. } => 9,
         };
         record_frame(&self.inner.server_frames[index], bytes);
         observe_high_water(&self.inner.outbound_message_bytes_high_water, bytes);
@@ -371,6 +375,10 @@ impl Default for ApplicationConnectionLimits {
 #[derive(Clone, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ApplicationClientFrame {
+    ChooseDownloadRoot {
+        call_id: String,
+        request: super::ChooseDownloadRootRequest,
+    },
     Connect {
         api_version: u16,
         encoding: ApiEncoding,
@@ -406,6 +414,10 @@ pub enum ApplicationClientFrame {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ApplicationServerFrame {
+    DownloadRootChosen {
+        call_id: String,
+        response: super::ChooseDownloadRootResponse,
+    },
     Connected {
         api_version: u16,
         encoding: ApiEncoding,
@@ -1244,6 +1256,40 @@ async fn serve_application_connection(
     finish_writer(control, data, writer).await;
 }
 
+async fn choose_desktop_root(
+    state: &GatewayState,
+    request: super::ChooseDownloadRootRequest,
+    cancellation: &CancellationToken,
+) -> Result<Option<rstorrent_session::StorageRootSnapshot>, String> {
+    let starting = state
+        .service
+        .lock()
+        .await
+        .suggested_storage_root_path(request.repair_root.as_deref())
+        .map_err(|error| error.to_string())?
+        .or_else(super::home_directory)
+        .ok_or("no usable folder-picker starting directory is available")?;
+    let selected = state
+        .download_directory_picker
+        .choose(&starting)
+        .await
+        .map_err(|error| error.to_string())?;
+    let Some(selected) = selected else {
+        return Ok(None);
+    };
+    let mut service = state.service.lock().await;
+    if cancellation.is_cancelled() || state.gateway_shutdown.is_cancelled() {
+        return Err("folder request owner closed".into());
+    }
+    if let Some(root) = request.repair_root.as_deref() {
+        service.repair_path_storage_root(root, &selected)
+    } else {
+        service.install_path_storage_root(&selected)
+    }
+    .map(Some)
+    .map_err(|error| error.to_string())
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn handle_client_frame(
     frame: ApplicationClientFrame,
@@ -1260,6 +1306,63 @@ async fn handle_client_frame(
     connection_cancel: &CancellationToken,
 ) {
     match frame {
+        ApplicationClientFrame::ChooseDownloadRoot { call_id, request } => {
+            let supported = state.hello_backend.as_ref().is_some_and(|backend| {
+                backend.kind == "desktop"
+                    && backend
+                        .capability_profile
+                        .iter()
+                        .any(|c| c == "desktop_root_picker_v1")
+            });
+            if !supported
+                || !valid_identifier(&call_id)
+                || request
+                    .repair_root
+                    .as_ref()
+                    .is_some_and(|id| id.len() > 128)
+            {
+                send_call_error(
+                    control,
+                    call_id,
+                    ApplicationConnectionErrorCode::InvalidCall,
+                    "native folder acquisition is unavailable or invalid",
+                )
+                .await;
+                return;
+            }
+            if !insert_pending(pending_ids, &call_id) {
+                send_call_error(
+                    control,
+                    call_id,
+                    ApplicationConnectionErrorCode::ResourceLimit,
+                    "call ID is pending or the pending call limit was reached",
+                )
+                .await;
+                return;
+            }
+            let state = state.clone();
+            let control = control.clone();
+            let pending_ids = pending_ids.clone();
+            let cancellation = connection_cancel.clone();
+            calls.spawn(async move {
+                let result = choose_desktop_root(&state, request, &cancellation).await;
+                let frame = match result {
+                    Ok(root) => ApplicationServerFrame::DownloadRootChosen {
+                        call_id: call_id.clone(),
+                        response: super::ChooseDownloadRootResponse { root },
+                    },
+                    Err(message) => ApplicationServerFrame::CallError {
+                        call_id: call_id.clone(),
+                        error: ApplicationConnectionError::new(
+                            ApplicationConnectionErrorCode::InvalidCall,
+                            message,
+                        ),
+                    },
+                };
+                let _ = send_control(&control, frame, None).await;
+                remove_pending(&pending_ids, &call_id);
+            });
+        }
         ApplicationClientFrame::Call { call_id, operation } => {
             if !valid_identifier(&call_id) {
                 send_call_error(

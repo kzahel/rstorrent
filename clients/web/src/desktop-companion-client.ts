@@ -50,6 +50,7 @@ export async function connectDesktopCompanion(signal: AbortSignal): Promise<{
   let disconnected!: () => void;
   const closed = new Promise<void>((resolve) => { disconnected = resolve; });
   const socket = new WebSocketApplicationViewClient(ready.endpoint, ready.credential, undefined, undefined, {
+    desktopRootPicker: true,
     platformClient: {
       async chooseDownloadRoot() { throw new Error(message("desktop.companion.native-folder")); },
       async close() {},

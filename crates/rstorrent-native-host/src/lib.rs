@@ -131,6 +131,13 @@ impl ConfiguredLauncher {
             use std::os::unix::process::CommandExt;
             command.process_group(0);
         }
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            // Native UI is created by Tauri; a debug executable must not add
+            // a console window to an extension's background launch.
+            command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+        }
         command
             .stdin(Stdio::null())
             .stdout(Stdio::null())

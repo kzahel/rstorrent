@@ -2,13 +2,16 @@
 
 Topic: `desktop-jstorrent-replacement`
 
-Status: **First desktop control checkpoint implemented, 2026-09-28.**
+Status: **Linux/Windows follow-up in progress, 2026-09-29.**
 The working campaign is Tactical
 [`231`](../tactical/231-jstorrent-migration-working-campaign.md); Tactical
 [`232`](../tactical/232-desktop-extension-control.md) records the selected
 protected native bootstrap, authenticated semantic connection and Linux
-validation. Extension-driven picking, full installed cross-platform rehearsal,
-legacy importer, production identity and rollout remain separate open gates.
+validation. Windows protected bootstrap passes native guest tests. Extension
+picking is implemented for Linux/Windows with bounded, cancellable dialog
+ownership; installed picker and full transfer rehearsal are in progress.
+macOS verification is deferred. Legacy importer, production identity and
+rollout remain separate open gates.
 
 ## Outcome And Scope
 

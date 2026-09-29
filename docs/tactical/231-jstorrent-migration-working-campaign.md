@@ -208,9 +208,13 @@ production routing remain separately scoped.
   refusal and Quit without resurrection. Exact source/artifact hashes, tests,
   resource samples and cleanup are recorded in that tactical.
 - Current: full desktop control acceptance remains active in Tactical `232`.
-- Next executable action: extension-driven native picker/Cancel/focus, then
-  controlled-transfer/detach and installed package/registration Rehearsal A.
-  Windows protected IPC and macOS installed acceptance remain open.
+- Current implementation: Windows protected-pipe bootstrap passes native guest
+  tests; extension picker ownership and its platform connection pass scripted
+  Linux/web checks. Native Windows/browser and installed picker gates remain
+  in progress. The current session covers Linux and Windows; macOS verification
+  is explicitly deferred.
+- Next executable action: installed picker/Cancel/focus, then controlled
+  transfer/detach and package/registration Rehearsal A on Linux and Windows.
 - Rehearsal A: **partial Linux first-checkpoint evidence only**. Rehearsals
   B/C: **not run**. No migration-ready or rollout-ready claim.
 - Remaining campaign decisions: supported source formats, union-conflict rules,

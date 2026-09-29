@@ -8,7 +8,10 @@ extension/native user journeys are the North Star; Tactical
 [`232`](../tactical/232-desktop-extension-control.md) is the first focus.
 Its first Linux desktop-control checkpoint implements protected native bootstrap,
 authenticated shared React/library access and attach-only reconnection. Full
-Rehearsal A, extension picker, macOS/Windows and production migration remain
+Rehearsal A and installed package gates remain open. Linux/Windows extension
+picker ownership is implemented with scripted cancellation tests; Windows
+protected bootstrap passes native guest tests. Installed Linux/Windows
+validation is in progress and macOS is deferred. Production migration remains
 open; independent active work is unchanged.
 
 Tactical [`229`](../tactical/229-web-desktop-data-reset.md) implements local

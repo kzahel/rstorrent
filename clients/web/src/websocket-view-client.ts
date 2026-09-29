@@ -1,3 +1,4 @@
+import { message } from "./localization/runtime";
 import type {
   AddTorrentBytesRequest,
   ApiHello,
@@ -63,6 +64,7 @@ export interface ApplicationWebSocketPlatformClient {
 export interface ApplicationWebSocketClientOptions {
   readonly connectPath?: string;
   readonly platformClient?: ApplicationWebSocketPlatformClient;
+  readonly desktopRootPicker?: boolean;
   readonly onConnectionState?: (connected: boolean) => void;
 }
 
@@ -220,6 +222,22 @@ export class WebSocketApplicationViewClient
     signal?: AbortSignal,
   ): Promise<StorageRootSnapshot | null> {
     this.ensureOpen();
+    if (this.options.desktopRootPicker) {
+      await this.ensureConnected(signal);
+      if (!this.connectedHello?.backend?.capability_profile.includes("desktop_root_picker_v1")) {
+        throw new ApplicationViewError("invalid_call", message("desktop.companion.native-folder"));
+      }
+      const callId = this.allocateCallId();
+      // Aborting this platform request closes its connection owner. OS Cancel
+      // is an ordinary null result and leaves the connection intact.
+      const abort = () => this.socket?.close(1000, "folder request aborted");
+      signal?.addEventListener("abort", abort, { once: true });
+      try {
+        const frame = await this.correlate(callId, { type: "choose_download_root", call_id: callId, request }, signal);
+        if (frame.type !== "download_root_chosen") throw new ContractError("folder selection returned the wrong result type");
+        return frame.response.root;
+      } finally { signal?.removeEventListener("abort", abort); }
+    }
     return this.platformClient.chooseDownloadRoot(request, signal);
   }
 
@@ -565,6 +583,7 @@ export class WebSocketApplicationViewClient
       }
       case "attached":
       case "detached":
+      case "download_root_chosen":
         this.resolveCorrelation(frame.call_id, frame);
         break;
       case "call_error":

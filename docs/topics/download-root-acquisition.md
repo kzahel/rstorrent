@@ -2,12 +2,15 @@
 
 Topic: `download-root-acquisition`
 
-The first desktop extension checkpoint in Tactical
-[`232`](../tactical/232-desktop-extension-control.md) deliberately acquires its
-fresh controlled root through the existing native Tauri/GTK picker. Both views
-then consume the same registered root. The extension's picker adapter explains
-that the native window is required; extension-driven picker/Cancel/focus
-behavior remains the next gate.
+Tactical [`232`](../tactical/232-desktop-extension-control.md) now implements
+extension-triggered native picking for Linux and Windows. An authenticated
+desktop platform frame carries only an optional opaque repair-root ID; a
+desktop-owned, short-lived dialog helper runs the existing native `rfd` backend
+without creating the main webview or another application service. A single
+permit covers both views. Disconnect, deadline and Quit close and reap the
+helper before releasing admission; Cancel returns no root. Scripted lifecycle
+and connection tests pass. Installed focus/selection/Cancel evidence is in
+progress; macOS remains on the native-window acquisition path.
 
 Status: Current behavior researched on 2026-08-29. Packaged desktop, local
 browser gateway, Crostini, and Linux headless use distinct platform adapters

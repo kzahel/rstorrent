@@ -1,8 +1,10 @@
 # Tactical 232: Desktop Extension Control
 
-Status: **First Linux checkpoint complete, 2026-09-28.** The bounded
-contract below is implemented and verified in a claimed Linux VM. Later platform, picker and
-complete Rehearsal A gates remain open.
+Status: **Linux and Windows follow-up in progress, 2026-09-29.** The first
+Linux checkpoint is complete. Windows protected bootstrap passes native guest
+tests; picker implementation and scripted checks are recorded below. Installed
+picker/package and complete Rehearsal A gates remain open. macOS verification
+is explicitly deferred to a later session.
 
 Parent: [`231-jstorrent-migration-working-campaign.md`](231-jstorrent-migration-working-campaign.md)
 
@@ -172,10 +174,9 @@ inheriting Android's no-media capability profile is not desktop parity.
 
 ## Transport Design Checkpoint
 
-Preferred candidate for investigation: a thin native-messaging bootstrap plus
+Selected composition (detailed contract and evidence below): a thin native-messaging bootstrap plus
 an authenticated loopback semantic connection hosted by the existing desktop
-process, reusing the WebSocket application client. This is a proposal, not an
-accepted listener/security contract. It must not instantiate a second gateway
+process, reusing the WebSocket application client. It must not instantiate a second gateway
 application service or reuse the media-only listener as ambient control access.
 
 Compare with carrying semantic frames over a persistent native-messaging
@@ -263,7 +264,8 @@ Planned baseline: `cargo fmt --all -- --check`,
 `cargo clippy --workspace -- -D warnings`, `cargo test --workspace`, web
 typecheck/tests and applicable browser E2E, extension tests/package, and native
 desktop builds. Run the narrower harnesses first; record exact commands and
-results as execution occurs. No implementation tests ran for this plan.
+results as execution occurs; the execution records below supersede the original
+plan's untested status.
 
 ## Non-Goals And Completion Record
 
@@ -272,9 +274,9 @@ remote/LAN control, browser-owned engine, raw IO daemon or separate desktop
 service. Public remote authentication work is independent. Android keeps its
 existing same-device boundary; Crostini remains its separate backend.
 
-Completion evidence: **none yet**. Next action is the transport/bootstrap and
-windowless lifecycle design checkpoint, followed by the fresh-profile control
-path. Update the parent tracker and owning topics as each gate passes.
+Completion evidence: the first Linux control checkpoint is verified below.
+Continue installed picker/package and controlled-transfer evidence on Linux
+and Windows, keeping macOS and broader campaign gates open.
 
 ## First Checkpoint Contract (2026-09-28)
 
@@ -355,6 +357,20 @@ the selected UTF-8 path retains the platform's 4-KiB bound. A failed helper is
 an error, not a successful Cancel. Linux uses the existing GTK3 backend;
 Windows uses the existing Common Item Dialog. macOS helper activation and
 focus remain unadvertised until its future acceptance session.
+
+Picker implementation builder evidence (2026-09-29): desktop helper tests
+prove disconnect/Quit kill and reap the owned child before readmission, and
+reject malformed output, nonzero exit and deadline expiry. Authenticated gateway
+tests cover selection, Cancel, healthy-root repair refusal and disconnect
+without root installation. Web tests cover platform capability refusal, normal
+Cancel retaining the connection and abort closing the requesting connection.
+Web typecheck and suite pass (409 pass, two skipped); extension suite passes
+(34 tests), packaging and localization checks pass. Workspace Clippy passes.
+The first full workspace test run hit the existing engine corrupt-generation
+two-second peer timeout under concurrent builds; its focused rerun passes.
+A limited-concurrency full rerun is pending. An independent application lifecycle
+smoke also timed out at repair completion (two of three pieces); it is not
+claimed as passing transfer evidence. Installed acceptance follows separately.
 
 Chosen composition: short native messaging bootstrap, protected local Unix
 rendezvous, then the existing semantic WebSocket adapter inside the desktop

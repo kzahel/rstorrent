@@ -13,10 +13,13 @@ impl DesktopControlOwner {
     pub async fn open(
         config_dir: &Path,
         service: Arc<Mutex<ApplicationService>>,
+        picker: Arc<crate::download_picker::DesktopDownloadPicker>,
     ) -> Result<Self, String> {
         let cancel = CancellationToken::new();
         let tasks = Vec::new();
-        #[cfg(unix)]
+        #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+        let _ = &picker;
+        #[cfg(any(unix, windows))]
         let tasks = {
             use rstorrent_gateway::desktop_control::DesktopControlServer;
             use rstorrent_native_host::control::{BootstrapServer, ControlReady};
@@ -32,6 +35,8 @@ impl DesktopControlOwner {
             )
             .await
             .map_err(|e| e.to_string())?;
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
+            let server = server.with_download_directory_picker(picker);
             let bootstrap = BootstrapServer::bind(
                 &config_dir.join("native-host"),
                 ControlReady {
@@ -59,7 +64,7 @@ impl DesktopControlOwner {
             }));
             tasks
         };
-        #[cfg(not(unix))]
+        #[cfg(not(any(unix, windows)))]
         let _ = (config_dir, service);
         Ok(Self { cancel, tasks })
     }

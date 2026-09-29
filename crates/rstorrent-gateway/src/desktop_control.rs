@@ -70,6 +70,26 @@ impl DesktopControlServer {
     pub fn local_addr(&self) -> std::net::SocketAddr {
         self.listener.local_addr().expect("bound desktop listener")
     }
+
+    pub fn with_download_directory_picker(
+        mut self,
+        picker: Arc<dyn rstorrent_platform::DownloadDirectoryPicker>,
+    ) -> Self {
+        self.state.download_directory_picker = picker;
+        self.state
+            .hello_backend
+            .as_mut()
+            .expect("desktop identity")
+            .capability_profile
+            .retain(|capability| capability != "native_window_root_acquisition");
+        self.state
+            .hello_backend
+            .as_mut()
+            .expect("desktop identity")
+            .capability_profile
+            .push("desktop_root_picker_v1".into());
+        self
+    }
     pub fn metrics(&self) -> ApplicationConnectionMetrics {
         self.state.connection_metrics.clone()
     }
@@ -151,6 +171,144 @@ mod tests {
         connect_async,
         tungstenite::{Message, client::IntoClientRequest},
     };
+
+    struct ControlledPicker(
+        tokio::sync::mpsc::UnboundedSender<tokio::sync::oneshot::Sender<Option<PathBuf>>>,
+    );
+    impl rstorrent_platform::DownloadDirectoryPicker for ControlledPicker {
+        fn choose<'a>(
+            &'a self,
+            _starting: &'a std::path::Path,
+        ) -> rstorrent_platform::PickerFuture<'a> {
+            Box::pin(async move {
+                let (sender, receiver) = tokio::sync::oneshot::channel();
+                self.0.send(sender).unwrap();
+                Ok(receiver.await.unwrap())
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn authenticated_picker_selection_cancel_repair_refusal_and_disconnect() {
+        let root = std::env::temp_dir().join(format!("rstorrent-picker-{}", std::process::id()));
+        let first = root.join("first");
+        let second = root.join("second");
+        std::fs::create_dir_all(&first).unwrap();
+        std::fs::create_dir_all(&second).unwrap();
+        let service = Arc::new(Mutex::new(
+            ApplicationService::open(rstorrent_session::ApplicationConfig::new(
+                root.join("profile"),
+                "default".into(),
+                Vec::new(),
+                rstorrent_session::NetworkConfig::new(
+                    rstorrent_session::NetworkPolicy::LoopbackOnly,
+                    Duration::from_secs(1),
+                    Duration::from_secs(1),
+                ),
+            ))
+            .await
+            .unwrap(),
+        ));
+        let (picker, mut requests) = tokio::sync::mpsc::unbounded_channel();
+        let token = "aa".repeat(32);
+        let server = DesktopControlServer::bind(
+            service.clone(),
+            token.clone(),
+            "bb".repeat(16),
+            "test".into(),
+        )
+        .await
+        .unwrap()
+        .with_download_directory_picker(Arc::new(ControlledPicker(picker)));
+        let mut request = format!("ws://{}/api/v1/connect", server.local_addr())
+            .into_client_request()
+            .unwrap();
+        request.headers_mut().insert(
+            "Origin",
+            chromeos_companion::BETA_EXTENSION_ORIGIN.parse().unwrap(),
+        );
+        let cancel = CancellationToken::new();
+        let task = tokio::spawn(server.serve(cancel.clone()));
+        let (mut client, _) = connect_async(request).await.unwrap();
+        client.send(Message::Text(json!({"type":"connect","api_version":1,"encoding":"json","client_instance_id":"00".repeat(16),"token":token}).to_string().into())).await.unwrap();
+        assert!(
+            client
+                .next()
+                .await
+                .unwrap()
+                .unwrap()
+                .into_text()
+                .unwrap()
+                .contains("desktop_root_picker_v1")
+        );
+        let mut root_id = None;
+        for selected in [Some(first), None] {
+            client
+                .send(Message::Text(
+                    json!({"type":"choose_download_root","call_id":"picker","request":{}})
+                        .to_string()
+                        .into(),
+                ))
+                .await
+                .unwrap();
+            let response = tokio::time::timeout(Duration::from_secs(2), requests.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            let cancelled = selected.is_none();
+            response.send(selected).unwrap();
+            let frame: Value =
+                serde_json::from_str(&client.next().await.unwrap().unwrap().into_text().unwrap())
+                    .unwrap();
+            assert_eq!(frame["type"], "download_root_chosen", "{frame}");
+            if cancelled {
+                assert!(frame["response"]["root"].is_null());
+            } else {
+                let id = frame["response"]["root"]["root_id"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned();
+                if let Some(previous) = root_id {
+                    assert_eq!(id, previous);
+                }
+                root_id = Some(id);
+            }
+        }
+        client.send(Message::Text(json!({"type":"choose_download_root","call_id":"repair","request":{"repair_root":root_id}}).to_string().into())).await.unwrap();
+        let refusal: Value =
+            serde_json::from_str(&client.next().await.unwrap().unwrap().into_text().unwrap())
+                .unwrap();
+        assert_eq!(refusal["type"], "call_error");
+        assert!(requests.try_recv().is_err());
+        assert_eq!(
+            service.lock().await.storage_snapshot().unwrap().roots.len(),
+            1
+        );
+        client
+            .send(Message::Text(
+                json!({"type":"choose_download_root","call_id":"orphan","request":{}})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .unwrap();
+        let mut response = requests.recv().await.unwrap();
+        client.close(None).await.unwrap();
+        drop(client);
+        tokio::time::timeout(Duration::from_secs(2), response.closed())
+            .await
+            .unwrap();
+        assert!(response.send(Some(second)).is_err());
+        assert_eq!(
+            service.lock().await.storage_snapshot().unwrap().roots.len(),
+            1
+        );
+        cancel.cancel();
+        task.await.unwrap().unwrap();
+        service.lock().await.shutdown().await.unwrap();
+        drop(service);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[tokio::test]
     async fn exact_admission_identity_shared_library_limits_and_joined_shutdown() {
@@ -267,6 +425,11 @@ mod tests {
             assert_eq!(frame["hello"]["backend"]["kind"], "desktop");
             assert_eq!(frame["hello"]["backend"]["profile_id"], "default");
             assert_eq!(frame["hello"]["backend"]["instance_id"], "cd".repeat(16));
+            client.send(Message::Text(json!({"type":"choose_download_root","call_id":"unsupported-picker","request":{}}).to_string().into())).await.unwrap();
+            let refusal: Value =
+                serde_json::from_str(&client.next().await.unwrap().unwrap().into_text().unwrap())
+                    .unwrap();
+            assert_eq!(refusal["error"]["code"], "invalid_call");
             assert!(
                 !frame["hello"]["capabilities"]
                     .as_array()

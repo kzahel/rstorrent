@@ -9,7 +9,14 @@ in-memory, per-runtime bearer to the exact beta extension. Native Tauri remains
 in-process. HTTP admission, application connections, upload and shutdown are
 bounded separately. Automatic reconnection is attach-only; explicit Start is
 the only browser action that may create the desktop owner. Linux checkpoint
-evidence does not qualify Windows IPC or macOS installed lifecycle.
+evidence does not qualify macOS installed lifecycle. Windows protected-pipe
+bootstrap now passes native guest tests; installed browser integration remains
+open. The capability-gated `choose_download_root` / `download_root_chosen`
+platform frames reuse this authenticated connection only for the desktop
+picker. Connection termination cancels the request; an aborted browser picker
+call closes its connection owner. Native Cancel preserves the connection.
+Other backend compositions refuse the operation; Android's existing platform
+route and authority remain unchanged.
 
 Status: The direct loopback application connection is implemented by Tactical
 `060`. Ordinary browser use sends typed calls, commands, view-set mutations,

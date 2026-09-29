@@ -22,6 +22,7 @@ rstorrent-session = { path = "../../../crates/rstorrent-session" }
 rstorrent-media = { path = "../../../crates/rstorrent-media" }
 rstorrent-gateway = { path = "../../../crates/rstorrent-gateway" }
 rstorrent-native-host = { path = "../../../crates/rstorrent-native-host" }
+rstorrent-platform = { path = "../../../crates/rstorrent-platform" }
 rstorrent-remote-host = { path = "../../../crates/rstorrent-remote-host" }
 getrandom.workspace = true
 reqwest = { workspace = true }
@@ -36,7 +37,7 @@ tauri-plugin-notification = "=2.3.3"
 tauri-plugin-single-instance = { version = "=2.4.3", features = ["deep-link"] }
 tauri-plugin-updater = { version = "=2.10.1", default-features = false, features = ["native-tls", "zip"] }
 tempfile = "3.27.0"
-tokio = { workspace = true, features = ["net", "rt", "sync"] }
+tokio = { workspace = true, features = ["net", "rt", "sync", "process", "io-util", "time"] }
 tokio-util = { workspace = true }
 url = { workspace = true }
 uuid = { workspace = true }
@@ -44,6 +45,9 @@ zeroize = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 rustix.workspace = true
+
+[target.'cfg(any(target_os = "linux", target_os = "windows"))'.dependencies]
+rfd = { version = "=0.16.0", default-features = false, features = ["gtk3"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 futures-util = { workspace = true }

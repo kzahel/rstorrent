@@ -972,6 +972,26 @@
       "oneOf": [
         {
           "properties": {
+            "call_id": {
+              "type": "string"
+            },
+            "request": {
+              "$ref": "#/$defs/ChooseDownloadRootRequest"
+            },
+            "type": {
+              "const": "choose_download_root",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "call_id",
+            "request"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
             "api_version": {
               "format": "uint16",
               "maximum": 65535,
@@ -1252,6 +1272,26 @@
     },
     "ApplicationServerFrame": {
       "oneOf": [
+        {
+          "properties": {
+            "call_id": {
+              "type": "string"
+            },
+            "response": {
+              "$ref": "#/$defs/ChooseDownloadRootResponse"
+            },
+            "type": {
+              "const": "download_root_chosen",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "call_id",
+            "response"
+          ],
+          "type": "object"
+        },
         {
           "properties": {
             "api_version": {

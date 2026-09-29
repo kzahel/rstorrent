@@ -84,6 +84,53 @@ class FakeWebSocket implements ApplicationWebSocket {
 }
 
 describe("multiplexed application WebSocket adapter", () => {
+  it("keeps native Cancel connected and closes an aborted desktop picker owner", async () => {
+    let socket!: FakeWebSocket;
+    let cancelNormally = true;
+    const client = new WebSocketApplicationViewClient("http://127.0.0.1:3030", "token", (url) => {
+      socket = new FakeWebSocket(url, (frame, active) => queueMicrotask(() => {
+        if (frame.type === "connect") {
+          const greeting = connected();
+          if (greeting.type !== "connected") throw new Error("fixture");
+          greeting.hello.backend = { kind: "desktop", instance_id: "ab".repeat(16), profile_id: "default", product_version: "test", capability_profile: ["desktop_root_picker_v1"] };
+          active.server(greeting);
+        } else if (frame.type === "choose_download_root" && cancelNormally) {
+          active.server({ type: "download_root_chosen", call_id: frame.call_id, response: { root: null } });
+        }
+      }));
+      return socket;
+    }, clientInstanceId, { desktopRootPicker: true });
+    const selection = client.chooseDownloadRoot({});
+    socket.open();
+    expect(await selection).toBeNull();
+    expect(socket.closeEvents).toEqual([]);
+    cancelNormally = false;
+    const controller = new AbortController();
+    const interrupted = client.chooseDownloadRoot({ repair_root: "root-1" }, controller.signal);
+    const rejected = expect(interrupted).rejects.toThrow();
+    await Promise.resolve();
+    controller.abort();
+    await rejected;
+    expect(socket.closeEvents).toContainEqual({ code: 1000, reason: "folder request aborted" });
+    await client.close();
+  });
+
+  it("refuses the desktop picker when the backend has not advertised it", async () => {
+    let socket!: FakeWebSocket;
+    const client = new WebSocketApplicationViewClient("http://127.0.0.1:3030", "token", (url) => {
+      socket = new FakeWebSocket(url, (frame, active) => {
+        if (frame.type === "connect") queueMicrotask(() => active.server(connected()));
+      });
+      return socket;
+    }, clientInstanceId, { desktopRootPicker: true });
+    const selection = client.chooseDownloadRoot({});
+    const rejected = expect(selection).rejects.toThrow();
+    socket.open();
+    await rejected;
+    expect(socket.sent.some((frame) => frame.type === "choose_download_root")).toBe(false);
+    await client.close();
+  });
+
   it("creates an ephemeral media URL through the application call", async () => {
     let socket: FakeWebSocket | undefined;
     const factory: ApplicationWebSocketFactory = (url) => {
