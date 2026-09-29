@@ -2,7 +2,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApplicationViewError } from "./api/client";
 const mock = vi.hoisted(() => ({ connect: vi.fn(), mount: vi.fn(), send: vi.fn() }));
-vi.mock("./desktop-companion-client", () => ({
+vi.mock("./desktop-companion-client", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./desktop-companion-client")>(),
   connectDesktopCompanion: mock.connect,
   desktopRuntime: () => ({ sendMessage: mock.send }),
 }));
@@ -105,6 +106,39 @@ describe("desktop companion connection ownership", () => {
     await vi.advanceTimersByTimeAsync(90_000);
     expect(mock.connect).toHaveBeenCalledOnce();
     expect(mock.send).not.toHaveBeenCalled();
+  });
+  it.each(["invalid_version", "authentication_failed"])("offers attach-only retry after %s", async (code) => {
+    mock.connect.mockRejectedValueOnce(new ApplicationViewError(code, "repair required"));
+    mock.connect.mockRejectedValue(new Error("stopped"));
+    await startDesktopCompanion();
+    const button = document.getElementById("companion-cancel") as HTMLButtonElement;
+    expect(button.textContent).toBe("desktop.companion.retry");
+    expect(document.getElementById("companion-status")!.textContent).toBe(
+      code === "invalid_version" ? "desktop.companion.incompatible" : "desktop.companion.identity-changed",
+    );
+    await vi.advanceTimersByTimeAsync(90_000);
+    expect(mock.connect).toHaveBeenCalledOnce();
+    button.click();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mock.connect).toHaveBeenCalledTimes(2);
+    expect(mock.send).not.toHaveBeenCalled();
+    expect(button.textContent).toBe("desktop.companion.start");
+    expect(button.disabled).toBe(false);
+  });
+  it("keeps a Start-time version refusal terminal until an attach-only retry", async () => {
+    mock.connect.mockRejectedValue(new Error("stopped"));
+    mock.send.mockResolvedValue({ ok: false, error: { code: "unsupported_protocol" } });
+    await startDesktopCompanion();
+    const button = document.getElementById("companion-cancel") as HTMLButtonElement;
+    button.click();
+    await vi.advanceTimersByTimeAsync(90_000);
+    expect(mock.connect).toHaveBeenCalledOnce();
+    expect(button.textContent).toBe("desktop.companion.retry");
+    expect(button.disabled).toBe(false);
+    button.click();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mock.connect).toHaveBeenCalledTimes(2);
+    expect(mock.send).toHaveBeenCalledExactlyOnceWith({ type: "nativeBootstrap", op: "start_control" });
   });
   it("unmounts a disconnected view before another attachment", async () => {
     let disconnect!: () => void;

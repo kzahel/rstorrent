@@ -66,12 +66,12 @@ SQLite and payload writes remain native. No engine runs in the extension.
 
 | ID | Work | State | Exit evidence / next action |
 | --- | --- | --- | --- |
-| M-01 | Desktop extension control | Linux/Windows/macOS installed checkpoint complete in [`232`](232-desktop-extension-control.md); full rehearsal partial | Protected bootstrap, native picker, controlled bytes, shared library, singleton and Quit pass. Bounded intent/tray/browser lifecycle passes in [234](234-desktop-user-intent-and-background-lifecycle.md), including 64 reload/worker-stop cycles per guest and prompt view cleanup. Broader endurance/update compatibility remains separate. |
+| M-01 | Desktop extension control | Linux/Windows/macOS installed checkpoint complete in [`232`](232-desktop-extension-control.md); full rehearsal partial | Protected bootstrap, native picker, controlled bytes, shared library, singleton and Quit pass. Bounded intent/tray/browser lifecycle passes in [234](234-desktop-user-intent-and-background-lifecycle.md), including 64 reload/worker-stop cycles per guest and prompt view cleanup. Linux Quit/launch overlap is repaired in [235](235-linux-quit-launch-handoff.md). Broader endurance remains separate. |
 | M-02 | Legacy cohort inventory and fixtures | [233](233-legacy-desktop-fixture-cohort.md): bounded Linux/Windows v0.2.1 cohort complete | Seven profiles/eight records plus two labeled mutations per platform; closed snapshot/payload oracle passes. Broader releases, browser-store variants and macOS remain unqualified. |
 | M-03 | Migration preview, union import and recovery | Not implemented | Consistent snapshots of all source profiles, identity/root mapping, explicit conflict outcomes, retry/crash recovery, held activation, exact recheck and preservation |
 | M-04 | Support/report continuity | Required before user cohort | Failure-page report, bounded migration/backend context, familiar voluntary feedback journey and disclosure verification |
 | M-05 | Installed desktop replacement rehearsal | Depends on M-01/03/04 | Old installed JSTorrent -> exact candidate -> restart/repair/rollback on macOS, Windows and Linux |
-| M-06 | Extension update coordination | Design open | Old/new extension and desktop combinations, already-open old pages, ChromeOS non-regression and registration repair |
+| M-06 | Extension update coordination | [236](236-desktop-compatibility-refusal-and-recovery.md): bounded Linux beta matrix passes | Terminal incompatibility, attach-only recovery, old/new beta combinations, open-page runtime replacement, stale credentials, repair and same-schema rollback pass. Signed updates, original legacy combinations, macOS/Windows package matrices and ChromeOS shipment gates remain open. |
 | M-07 | Opt-in cohort and graduation | Not scheduled | Explicit supported baseline, source coverage, observation window, stop thresholds and approved production operation |
 
 No entry above implies feature completion from source presence alone. Keep
@@ -223,15 +223,15 @@ production routing remain separately scoped.
   generates seven legacy profiles on each guest, and verifies closed SQLite,
   torrent identities, bitfields and payload pieces independently. Its union
   outcomes remain a proposal for importer design, not implemented migration.
-- Next executable action: finish [235](235-linux-quit-launch-handoff.md)'s
-  Linux Quit/launch overlap repair, then qualify bounded desktop extension/
-  runtime update compatibility in a separate tactical. Longer browser/OS
-  suspension and resource endurance remain separate. Retained legacy fixtures
-  support later importer preview/held-state/recovery design only. Tactical `234` closes the bounded 64-cycle
-  view-retention failure and qualifies explicit-intent/background lifetime.
+- Next executable action: use [236](236-desktop-compatibility-refusal-and-recovery.md)
+  as the checklist for a separate bounded macOS/Windows beta package
+  replacement/repair/rollback tactical, then select a signed update-path rehearsal. Linux Quit/launch overlap
+  is fixed in 235; bounded Linux beta compatibility and terminal recovery pass
+  in 236. Longer suspension/endurance and production legacy replacement remain
+  separate. Retained legacy fixtures support later importer design only.
   No importer implementation is authorized by this checkpoint.
 - Rehearsal A: **partial; Linux/Windows/macOS installed checkpoints complete**.
-  Rehearsals B/C: **not run**. No migration-ready or rollout-ready claim. Linux/Windows guests were restored and powered off; the macOS guest
+  Rehearsal B: **not run**; C: **partial, Linux beta compatibility only**. No migration-ready or rollout-ready claim. Linux/Windows guests were restored and powered off; the macOS guest
   was restored to its inherited suspended state after owned-artifact cleanup.
   All exclusive guest claims are released.
 - Remaining campaign decisions: supported source formats, union-conflict rules,

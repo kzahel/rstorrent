@@ -2,6 +2,13 @@
 
 Topic: `client-surfaces`
 
+Tactical [`236`](../tactical/236-desktop-compatibility-refusal-and-recovery.md)
+adds clear terminal desktop compatibility errors and attach-only Retry
+connection. Its installed Linux beta old/new extension/runtime combinations,
+open-page replacement, credential rotation, bounded registration repair and
+same-schema rollback preserve the controlled library. Signed update delivery,
+legacy replacement and installed macOS/Windows update matrices remain open.
+
 Tactical [`235`](../tactical/235-linux-quit-launch-handoff.md) repairs the Linux
 Quit/launch overlap. A stopping owner returns Retry; the explicit launch process
 retains its arguments and waits within a bounded deadline before claiming the

@@ -2,6 +2,12 @@
 
 Topic: `application-view-api`
 
+Tactical [`236`](../tactical/236-desktop-compatibility-refusal-and-recovery.md)
+reuses existing version/schema and desktop capability checks without changing
+DTOs or protocol versions. Incompatible desktop hello/schema failures close the
+connection and stop automatic page retries; manual recovery only attaches.
+Product-version strings are not used as a compatibility guarantee.
+
 Tactical [`232`](../tactical/232-desktop-extension-control.md) reuses existing
 commands, library views and acknowledgements for desktop extension control.
 No generated DTO changes are needed. Its hello identifies `desktop`, the sole

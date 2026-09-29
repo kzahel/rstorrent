@@ -1,6 +1,6 @@
 # Tactical 235: Linux Quit / Launch Handoff
 
-Status: **Active, 2026-09-29.** Parent campaign [231](231-jstorrent-migration-working-campaign.md);
+Status: **Complete, 2026-09-29.** Parent campaign [231](231-jstorrent-migration-working-campaign.md);
 follow-up to [234](234-desktop-user-intent-and-background-lifecycle.md).
 Topics: `client-surfaces`, `runtime-configurations-and-headless-deployment`.
 
@@ -189,6 +189,8 @@ Older launchers still ignore error replies; an already-running old desktop
 cannot gain the new shutdown response through a new caller alone. Full
 extension/runtime and signed installer/update compatibility remains separate.
 This fixes the isolated Linux boundary, not broader OS/browser endurance or
-release readiness. The guest currently has no owned running application;
-installation, task files, initial idle/lock policy and powered-off state must
-be restored and the claim released at the end of this combined work session.
+release readiness. At the end of the combined 235/236 session, the installed
+package and owned processes, profiles, fixtures and captures were removed.
+Initial idle-delay (300 seconds), screen locking and powered-off state were
+restored; the exclusive claim was released. No Machine Control changes were
+needed.

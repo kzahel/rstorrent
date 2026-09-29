@@ -5149,14 +5149,14 @@
   },
   "desktop.companion.title": {"defaultMessage": "RSTorrent Desktop", "description": "Desktop extension connection"},
   "desktop.companion.open-window": {"defaultMessage": "Open desktop window", "description": "Desktop extension connection"},
+  "desktop.companion.retry": {"defaultMessage": "Retry connection", "description": "Attach again after a desktop version or authentication failure without launching it"},
   "desktop.companion.start": {"defaultMessage": "Start", "description": "Desktop extension connection"},
-  "desktop.companion.start-failed": {"defaultMessage": "Desktop could not start.", "description": "Desktop extension connection"},
   "desktop.companion.connecting": {"defaultMessage": "Connecting to RSTorrent Desktop…", "description": "Desktop extension connection"},
   "desktop.companion.disconnected": {"defaultMessage": "Desktop disconnected. Reconnecting if it is running…", "description": "Desktop extension connection"},
   "desktop.companion.unavailable": {"defaultMessage": "Desktop is unavailable.", "description": "Desktop extension connection"},
   "desktop.companion.extension-only": {"defaultMessage": "Open this page from the JSTorrent Beta extension.", "description": "Desktop extension connection"},
-  "desktop.companion.incompatible": {"defaultMessage": "RSTorrent returned an incompatible desktop connection.", "description": "Desktop extension connection"},
+  "desktop.companion.incompatible": {"defaultMessage": "RSTorrent Desktop and this extension are incompatible. Update them, then retry the connection.", "description": "Desktop extension connection"},
   "desktop.companion.stopped": {"defaultMessage": "Desktop is stopped. Select Start to open it.", "description": "Desktop extension connection"},
   "desktop.companion.native-folder": {"defaultMessage": "Open the desktop window to choose or repair a download folder.", "description": "Desktop extension connection"},
-  "desktop.companion.identity-changed": {"defaultMessage": "The desktop identity changed. Select Start to reconnect.", "description": "Desktop extension connection"}
+  "desktop.companion.identity-changed": {"defaultMessage": "The desktop identity changed. Retry the connection.", "description": "Desktop extension connection"}
 }

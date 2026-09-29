@@ -1059,9 +1059,10 @@ hosted repeats.
 
 ### Active
 
-- Complete **Tactical `235`**'s Linux Quit/launch admission repair and isolated
-  installed qualification; then scope desktop extension/runtime update
-  compatibility separately. Legacy importer work is not part of this slice.
+- Extend desktop update qualification after **Tacticals `235`/`236`**: Linux
+  Quit/launch repair and bounded beta compatibility/refusal/recovery pass.
+  Installed macOS/Windows package matrices and selected signed update paths
+  remain; legacy importer work is separate and not implemented.
 
 - Complete **Tactical `214`**'s native platform notice and source-delivery
   review for the package lanes to be declared. Tactical `218` adopts and

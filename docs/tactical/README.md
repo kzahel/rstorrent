@@ -93,6 +93,10 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`236-desktop-compatibility-refusal-and-recovery.md`](236-desktop-compatibility-refusal-and-recovery.md):
+  terminal desktop incompatibility and attach-only repair; bounded Linux beta
+  old/new package matrix. Signed and broader platform update gates stay open.
+
 - [`235-linux-quit-launch-handoff.md`](235-linux-quit-launch-handoff.md):
   bounded Linux admission retry closes the installed Quit/launch overlap;
   real native/background/magnet/file and concurrent-launch checks pass.

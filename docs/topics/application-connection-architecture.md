@@ -2,6 +2,14 @@
 
 Topic: `application-connection-architecture`
 
+Tactical [`236`](../tactical/236-desktop-compatibility-refusal-and-recovery.md)
+classifies desktop bootstrap version/operation/response and handshake-schema
+failures as terminal. The page hides/unmounts its application, stops retries
+and offers attach-only Retry connection; a stopped runtime still offers Start.
+Fresh bootstrap and instance identity remain mandatory after replacement.
+The selected Linux beta old/new matrix and same-schema rollback pass; signed
+updating and installed macOS/Windows update matrices remain separate gates.
+
 Tactical [`234`](../tactical/234-desktop-user-intent-and-background-lifecycle.md)
 owns the accepted desktop lifetime follow-up: retain the tray/status-bar icon
 while the runtime runs, including idle/paused states; browser closure only

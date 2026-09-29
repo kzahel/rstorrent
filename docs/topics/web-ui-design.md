@@ -2,6 +2,14 @@
 
 Topic: `web-ui-design`
 
+Tactical [`236`](../tactical/236-desktop-compatibility-refusal-and-recovery.md)
+shows update guidance and Retry connection after an incompatible desktop
+bootstrap/handshake. Authentication failures also require manual attach-only
+retry. Automatic retries stop, stale application controls are hidden/unmounted,
+and no internal error-code prefix appears. A stopped runtime still offers Start.
+The packaged Linux browser refusal/repair and beta compatibility matrix pass;
+this is not a signed installer or store-update qualification.
+
 Tactical [`234`](../tactical/234-desktop-user-intent-and-background-lifecycle.md)
 owns the accepted desktop lifetime follow-up: retain the tray/status-bar icon
 while the runtime runs, including idle/paused states; browser closure only

@@ -2,6 +2,13 @@
 
 Topic: `desktop-jstorrent-replacement`
 
+Tactical [`236`](../tactical/236-desktop-compatibility-refusal-and-recovery.md)
+qualifies selected Linux beta old/new extension/runtime pairs, an already-open
+successor UI across replacement, credential rotation and same-schema rollback.
+Incompatibility offers terminal guidance and attach-only recovery. This is an
+initial Rehearsal C checkpoint; original legacy pairs, signed delivery,
+macOS/Windows installer matrices and ChromeOS shipment gates remain open.
+
 Tactical [`234`](../tactical/234-desktop-user-intent-and-background-lifecycle.md)
 owns the accepted desktop lifetime follow-up: retain the tray/status-bar icon
 while the runtime runs, including idle/paused states; browser closure only

@@ -235,13 +235,13 @@
   "desktop.companion.identity-changed": [
     {
       "type": 0,
-      "value": "The desktop identity changed. Select Start to reconnect."
+      "value": "The desktop identity changed. Retry the connection."
     }
   ],
   "desktop.companion.incompatible": [
     {
       "type": 0,
-      "value": "RSTorrent returned an incompatible desktop connection."
+      "value": "RSTorrent Desktop and this extension are incompatible. Update them, then retry the connection."
     }
   ],
   "desktop.companion.native-folder": [
@@ -256,16 +256,16 @@
       "value": "Open desktop window"
     }
   ],
+  "desktop.companion.retry": [
+    {
+      "type": 0,
+      "value": "Retry connection"
+    }
+  ],
   "desktop.companion.start": [
     {
       "type": 0,
       "value": "Start"
-    }
-  ],
-  "desktop.companion.start-failed": [
-    {
-      "type": 0,
-      "value": "Desktop could not start."
     }
   ],
   "desktop.companion.stopped": [

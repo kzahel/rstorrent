@@ -1,6 +1,7 @@
 import { message } from "./localization/runtime";
 import { ApplicationViewError, type ApplicationViewClient } from "./api/client";
 import type { ApiHello } from "./api/generated/v1";
+import { ContractError } from "./validation";
 import { WebSocketApplicationViewClient } from "./websocket-view-client";
 
 interface Ready {
@@ -13,7 +14,7 @@ interface Ready {
 interface BootstrapResponse {
   ok: boolean;
   result?: unknown;
-  error?: { message?: string };
+  error?: { code?: string; message?: string };
 }
 interface ChromeRuntime {
   sendMessage(message: unknown): Promise<BootstrapResponse>;
@@ -38,13 +39,20 @@ export function validateDesktopReady(value: unknown): Ready {
   return ready as Ready;
 }
 
+export function desktopBootstrapFailure(response: BootstrapResponse): Error {
+  if (["unsupported_protocol", "unsupported_operation", "invalid_native_response"].includes(response.error?.code ?? "")) {
+    return new ApplicationViewError("invalid_version", message("desktop.companion.incompatible"));
+  }
+  return new Error(response.error?.message ?? message("desktop.companion.stopped"));
+}
+
 export async function connectDesktopCompanion(signal: AbortSignal): Promise<{
   client: ApplicationViewClient; hello: ApiHello; disconnected: Promise<void>;
 }> {
   // Always attach-only. Only the separate user Open/Start action can launch.
   const response = await desktopRuntime().sendMessage({ type: "nativeBootstrap", op: "attach_control" });
   if (signal.aborted) throw signal.reason;
-  if (!response.ok) throw new Error(response.error?.message ?? message("desktop.companion.stopped"));
+  if (!response.ok) throw desktopBootstrapFailure(response);
   const ready = validateDesktopReady(response.result);
   let wasConnected = false;
   let disconnected!: () => void;
@@ -72,9 +80,18 @@ export async function connectDesktopCompanion(signal: AbortSignal): Promise<{
   try {
     const hello = await client.hello(signal);
     if (hello.backend?.kind !== "desktop" || hello.backend.instance_id !== ready.instanceId ||
-        hello.backend.profile_id !== ready.profileId || !hello.backend.capability_profile.includes("desktop_control_v1")) {
+        hello.backend.profile_id !== ready.profileId) {
       throw new ApplicationViewError("authentication_failed", message("desktop.companion.identity-changed"));
     }
+    if (!hello.backend.capability_profile.includes("desktop_control_v1")) {
+      throw new ApplicationViewError("invalid_version", message("desktop.companion.incompatible"));
+    }
     return { client, hello, disconnected: closed };
-  } catch (error) { await client.close(); throw error; }
+  } catch (error) {
+    await client.close();
+    if (error instanceof ContractError) {
+      throw new ApplicationViewError("invalid_version", message("desktop.companion.incompatible"));
+    }
+    throw error;
+  }
 }

@@ -1,6 +1,6 @@
 import { ApplicationViewError } from "./api/client";
 import { message } from "./localization/runtime";
-import { connectDesktopCompanion, desktopRuntime } from "./desktop-companion-client";
+import { connectDesktopCompanion, desktopBootstrapFailure, desktopRuntime } from "./desktop-companion-client";
 import { startCompanionInspection } from "./inspection/companion-bootstrap";
 
 export async function startDesktopCompanion(): Promise<void> {
@@ -17,6 +17,7 @@ export async function startDesktopCompanion(): Promise<void> {
   let connectionTask: Promise<void> | undefined;
   let closeInspection: (() => Promise<void>) | undefined;
   let attempt = 0;
+  let retryOnly = false;
   let connecting = false;
   let closeConnection: (() => Promise<void>) | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -26,21 +27,32 @@ export async function startDesktopCompanion(): Promise<void> {
   identity.replaceChildren(openNative);
   identity.hidden = false;
   start.textContent = message("desktop.companion.start");
+  function showFailure(error: unknown): void {
+    retryOnly = error instanceof ApplicationViewError && ["authentication_failed", "invalid_version"].includes(error.code);
+    start.textContent = retryOnly ? message("desktop.companion.retry") : message("desktop.companion.start");
+    status.textContent = error instanceof ApplicationViewError && error.code === "invalid_version"
+      ? message("desktop.companion.incompatible")
+      : error instanceof ApplicationViewError && error.code === "authentication_failed"
+        ? message("desktop.companion.identity-changed")
+        : error instanceof Error ? error.message : message("desktop.companion.unavailable");
+  }
   start.onclick = async () => {
     if (!pageActive || start.disabled) return;
     start.disabled = true;
     if (timer) clearTimeout(timer);
     try {
-      const response = await desktopRuntime().sendMessage({ type: "nativeBootstrap", op: "start_control" });
-      if (!response.ok) {
-        status.textContent = response.error?.message ?? message("desktop.companion.start-failed");
+      if (retryOnly) {
+        // Version/authentication recovery must not create runtime launch intent.
+        await connect();
         return;
       }
+      const response = await desktopRuntime().sendMessage({ type: "nativeBootstrap", op: "start_control" });
+      if (!response.ok) throw desktopBootstrapFailure(response);
       if (!pageActive) return;
       attempt = 0;
       void connect();
-    } catch {
-      status.textContent = message("desktop.companion.start-failed");
+    } catch (error) {
+      showFailure(error);
     } finally {
       start.disabled = false;
     }
@@ -62,6 +74,8 @@ export async function startDesktopCompanion(): Promise<void> {
       closeConnection = () => connection.client.close();
       closeInspection = await startCompanionInspection(connection.client, false);
       if (abort.signal.aborted) return;
+      retryOnly = false;
+      start.textContent = message("desktop.companion.start");
       bootstrap.hidden = true;
       app.hidden = false;
       attempt = 0;
@@ -71,8 +85,8 @@ export async function startDesktopCompanion(): Promise<void> {
       status.textContent = message("desktop.companion.disconnected");
     } catch (error) {
       if (abort.signal.aborted) return;
-      status.textContent = error instanceof Error ? error.message : message("desktop.companion.unavailable");
-      if ((error instanceof ApplicationViewError && ["authentication_failed", "invalid_version"].includes(error.code))) return;
+      showFailure(error);
+      if (retryOnly) return;
     } finally {
       abort.signal.removeEventListener("abort", departed);
       await closeInspection?.();
