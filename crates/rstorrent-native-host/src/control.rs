@@ -1,7 +1,13 @@
 //! Bounded same-user bootstrap. This owns no application or torrent state.
 use serde::{Deserialize, Serialize};
 use std::io;
+#[cfg(not(windows))]
 use std::path::Path;
+
+#[cfg(windows)]
+mod windows;
+#[cfg(windows)]
+pub use windows::{BootstrapServer, read_ready};
 
 pub const BACKGROUND_ARGUMENT: &str = "--extension-background";
 pub const SOCKET_NAME: &str = "desktop-control-v1.sock";
@@ -96,7 +102,7 @@ pub fn read_ready(path: &Path) -> io::Result<ControlReady> {
     Ok(ready)
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 pub fn read_ready(_path: &Path) -> io::Result<ControlReady> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,

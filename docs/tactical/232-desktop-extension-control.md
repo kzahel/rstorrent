@@ -291,8 +291,10 @@ Windows bootstrap uses one overlapped, byte-mode named pipe per OS user and
 native-host directory. Its name is a SHA-256 digest of that directory and the
 user SID, not a bearer secret. The server specifies its owner and a protected
 DACL granting only that SID access, rejects remote clients, and requests the
-first pipe instance with a one-instance ceiling. The handle remains open
-between connections so ownership cannot be lost during an accept loop. The
+first pipe instance with a two-instance ceiling: one exchange and one pending
+accept. A replacement is created before the previous handle closes, preserving
+name ownership. Replacement retries a busy kernel slot within one second while
+IOCP completes destruction of the previous handle. The
 client checks the connected pipe's owner SID before reading credentials and
 uses identification-only security QoS. Same-user arbitrary code and privileged
 administrators remain outside this boundary, as on Linux.
@@ -310,9 +312,49 @@ Official references reviewed: Microsoft [CreateNamedPipe](https://learn.microsof
 (named-pipe owner queries require READ_CONTROL; returned descriptor ownership),
 and locked `tokio-1.53.1/src/net/windows/named_pipe.rs`
 (`ServerOptions`, security attributes, `ClientOptions` identification default,
-reusable disconnect). Native source tests must cover framing, timeout, busy
+disconnect). Native Windows races exposed retained overlapped-read state when
+reusing a handle and delayed kernel-instance retirement after closing it. Use
+fresh handles, wait for client EOF after the acknowledgement, and bound
+replacement retries. Native source tests cover framing, timeout, busy
 admission, owner refusal, duplicate bind and joined shutdown. Installed Windows
 evidence remains open until the actual guest passes the lifecycle matrix.
+
+Windows native-host evidence (2026-09-29): the claimed Windows 11 x64 guest
+passes `cargo test -p rstorrent-native-host` (12 unit, two process tests),
+including 12 simultaneous bootstrap callers, duplicate-owner refusal, owner
+SID mismatch, busy/timeout handling, oversized frames and joined shutdown.
+Native guest Clippy with tests and `-D warnings` passes. Linux native-host
+tests (12 unit, two process) and Windows cross-target Clippy also pass.
+This qualifies the bootstrap primitive; desktop/browser installation and
+lifecycle integration remain the next evidence gate.
+
+Picker contract: use a desktop-only platform frame on the authenticated semantic
+connection, containing a call ID and optional opaque repair-root ID. It is not
+an engine command and cannot supply a path. Return only the existing root
+snapshot or Cancel. Other runtime compositions refuse this frame. No Android
+pairing, permission, picker or service behavior changes.
+
+The desktop owns one picker permit across native and extension views. Repeated
+or concurrent requests return busy rather than queueing hidden dialogs. The
+extension picker uses a short-lived child invocation of the same executable,
+before singleton/Tauri/application setup, exclusively to run the pinned native
+`rfd 0.16.0` folder dialog. This is a dialog helper, not another runtime, service
+or data owner. Its private standard pipes carry a bounded starting-directory
+request and selected path; neither reaches JavaScript. Keep the native view's
+existing parented dialog while sharing admission with the extension picker.
+
+This process boundary is deliberate: locked `rfd` GTK `GtkDialogFuture` and
+Windows `ThreadFuture`/`IDialog::show` do not close their dialog when the caller
+drops its future, and Tauri's callback API exposes no cancellation handle.
+The helper lets the parent close and reap exactly its dialog on connection
+loss, cancellation, a five-minute deadline or Quit, without platform-specific
+cross-thread window destruction. No child is detached; the permit is retained
+until the child exits and is reaped. Quit closes admission and joins picker
+ownership before application shutdown. Input and output are capped at 16 KiB;
+the selected UTF-8 path retains the platform's 4-KiB bound. A failed helper is
+an error, not a successful Cancel. Linux uses the existing GTK3 backend;
+Windows uses the existing Common Item Dialog. macOS helper activation and
+focus remain unadvertised until its future acceptance session.
 
 Chosen composition: short native messaging bootstrap, protected local Unix
 rendezvous, then the existing semantic WebSocket adapter inside the desktop

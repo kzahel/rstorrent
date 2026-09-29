@@ -319,7 +319,7 @@ fn dispatch<L: DesktopLauncher>(
                 minimum_protocol_version: MINIMUM_PROTOCOL_VERSION,
                 current_protocol_version: PROTOCOL_VERSION,
                 caller_origin: caller_origin.to_owned(),
-                capabilities: if cfg!(unix) {
+                capabilities: if cfg!(any(unix, windows)) {
                     vec!["launch_desktop", "desktop_control_v1"]
                 } else {
                     vec!["launch_desktop"]
