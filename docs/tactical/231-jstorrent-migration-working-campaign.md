@@ -62,8 +62,8 @@ SQLite and payload writes remain native. No engine runs in the extension.
 
 | ID | Work | State | Exit evidence / next action |
 | --- | --- | --- | --- |
-| M-01 | Desktop extension control | First Linux checkpoint complete in [`232`](232-desktop-extension-control.md); full rehearsal open | Cold/warm/singleton/authentication/two-view pause-resume/Quit pass in a controlled Linux development layout. Next: extension picker, controlled transfer and installed macOS/Windows/Linux package gates. |
-| M-02 | Legacy cohort inventory and fixtures | Planned; preparation can overlap M-01 | Pin released artifacts, generate profiles through old writers, enumerate formats/features and recoverable fields |
+| M-01 | Desktop extension control | Linux/Windows installed checkpoint complete in [`232`](232-desktop-extension-control.md); full rehearsal partial | Protected bootstrap, native picker, controlled bytes, shared library, singleton and Quit pass. Next: macOS, broad browser update/suspension/discard and endurance cases. |
+| M-02 | Legacy cohort inventory and fixtures | [233](233-legacy-desktop-fixture-cohort.md): bounded Linux/Windows v0.2.1 cohort complete | Seven profiles/eight records plus two labeled mutations per platform; closed snapshot/payload oracle passes. Broader releases, browser-store variants and macOS remain unqualified. |
 | M-03 | Migration preview, union import and recovery | Not implemented | Consistent snapshots of all source profiles, identity/root mapping, explicit conflict outcomes, retry/crash recovery, held activation, exact recheck and preservation |
 | M-04 | Support/report continuity | Required before user cohort | Failure-page report, bounded migration/backend context, familiar voluntary feedback journey and disclosure verification |
 | M-05 | Installed desktop replacement rehearsal | Depends on M-01/03/04 | Old installed JSTorrent -> exact candidate -> restart/repair/rollback on macOS, Windows and Linux |
@@ -208,15 +208,20 @@ production routing remain separately scoped.
   refusal and Quit without resurrection. Exact source/artifact hashes, tests,
   resource samples and cleanup are recorded in that tactical.
 - Current: full desktop control acceptance remains active in Tactical `232`.
-- Current implementation: Windows protected-pipe bootstrap passes native guest
-  tests; extension picker ownership and its platform connection pass scripted
-  Linux/web checks. Native Windows/browser and installed picker gates remain
-  in progress. The current session covers Linux and Windows; macOS verification
-  is explicitly deferred.
-- Next executable action: installed picker/Cancel/focus, then controlled
-  transfer/detach and package/registration Rehearsal A on Linux and Windows.
-- Rehearsal A: **partial Linux first-checkpoint evidence only**. Rehearsals
-  B/C: **not run**. No migration-ready or rollout-ready claim.
+- Installed Linux and Windows follow-up: native bootstrap, picker
+  selection/Cancel/detach/Quit, exact private 32-MiB transfer, two-view
+  convergence, source-offline restart and registration repair pass. Linux
+  also proves transfer while detached. macOS is deferred to a later session.
+- M-02 preparation: Tactical 233 pins released desktop/extension artifacts,
+  generates seven legacy profiles on each guest, and verifies closed SQLite,
+  torrent identities, bitfields and payload pieces independently. Its union
+  outcomes remain a proposal for importer design, not implemented migration.
+- Next executable action: use the retained fixtures to finalize a bounded
+  importer preview/held-state/recovery tactical; separately complete macOS
+  control acceptance and browser lifecycle/resource-pressure cases.
+- Rehearsal A: **partial across platforms; Linux/Windows installed checkpoint
+  complete**. Rehearsals B/C: **not run**. No migration-ready or rollout-ready
+  claim. Guests restored, powered off and claims released after the run.
 - Remaining campaign decisions: supported source formats, union-conflict rules,
   settings and historical counters, mixed-version bridge policy, first cohort
   delivery, compatibility baseline and rollback support duration.

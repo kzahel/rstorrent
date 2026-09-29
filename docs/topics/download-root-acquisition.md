@@ -9,8 +9,9 @@ desktop-owned, short-lived dialog helper runs the existing native `rfd` backend
 without creating the main webview or another application service. A single
 permit covers both views. Disconnect, deadline and Quit close and reap the
 helper before releasing admission; Cancel returns no root. Scripted lifecycle
-and connection tests pass. Installed focus/selection/Cancel evidence is in
-progress; macOS remains on the native-window acquisition path.
+and connection tests pass. Installed Linux/Windows focus, selection, Cancel,
+tab-detach and Quit cleanup evidence passes with fresh controlled roots. macOS remains on the
+native-window acquisition path pending its own verification.
 
 Status: Current behavior researched on 2026-08-29. Packaged desktop, local
 browser gateway, Crostini, and Linux headless use distinct platform adapters

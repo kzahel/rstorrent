@@ -93,10 +93,12 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`233-legacy-desktop-fixture-cohort.md`](233-legacy-desktop-fixture-cohort.md):
+  completed bounded Linux/Windows released-writer cohort, closed snapshot and
+  piece oracle, and proposed profile-union conflict outcomes; no importer.
 - [`232-desktop-extension-control.md`](232-desktop-extension-control.md):
-  first Linux checkpoint complete; protected native bootstrap, one runtime and
-  library, shared React control and joined Quit. Extension picker, full
-  installed rehearsal and macOS/Windows remain open.
+  installed Linux/Windows protected bootstrap, shared React control, native
+  picker, controlled transfer and Quit evidence; macOS/broader lifecycle open.
 - [`231-jstorrent-migration-working-campaign.md`](231-jstorrent-migration-working-campaign.md):
   active desktop replacement campaign; control precedes legacy-profile union
   import and production replacement rehearsal.

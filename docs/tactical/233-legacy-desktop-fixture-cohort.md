@@ -164,7 +164,10 @@ checks and no imported content is claimed verified.
 
 This is one released desktop writer cohort. The separately pinned extension
 release is downloaded/provenance-checked but its browser storage/profile writer
-has not been executed. Additional installed versions, browser persistence
+has not been executed. Roots are retained in the closed portable manifest; raw
+runtime discovery (including authority) is deliberately absent. A future
+importer discovery/parser fixture must preserve that separate schema with
+explicit authority redaction before claiming discovery-file compatibility. Additional installed versions, browser persistence
 variants, unsupported settings/history mappings, old packaged GUI journeys and
 macOS need their own evidence before claiming supported migration coverage.
 

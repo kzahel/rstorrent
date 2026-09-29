@@ -2,16 +2,21 @@
 
 Topic: `desktop-jstorrent-replacement`
 
-Status: **Linux/Windows follow-up in progress, 2026-09-29.**
-The working campaign is Tactical
-[`231`](../tactical/231-jstorrent-migration-working-campaign.md); Tactical
-[`232`](../tactical/232-desktop-extension-control.md) records the selected
-protected native bootstrap, authenticated semantic connection and Linux
-validation. Windows protected bootstrap passes native guest tests. Extension
-picking is implemented for Linux/Windows with bounded, cancellable dialog
-ownership; installed picker and full transfer rehearsal are in progress.
-macOS verification is deferred. Legacy importer, production identity and
-rollout remain separate open gates.
+Tacticals [232](../tactical/232-desktop-extension-control.md) and
+[233](../tactical/233-legacy-desktop-fixture-cohort.md) now record installed
+Linux/Windows extension control and a pinned released legacy fixture cohort.
+Extension picking, controlled bytes, single-runtime lifetime and registration
+repair pass in claimed guests. Seven generated legacy profiles per platform
+cover duplicate/conflicting roots and intent, partial/complete bytes, pending
+magnets and selective Unicode content, with closed SQLite/identity/piece
+validation. The union rules remain proposed importer design; no importer,
+production identity change or personal migration has run. macOS is deferred.
+
+Status: **Linux/Windows installed control and fixture preparation complete,
+2026-09-29; migration campaign active.** Tactical
+[`231`](../tactical/231-jstorrent-migration-working-campaign.md) tracks the next
+bounded importer design and remaining platform/browser acceptance. macOS,
+importer implementation, production identity and rollout remain separate gates.
 
 ## Outcome And Scope
 

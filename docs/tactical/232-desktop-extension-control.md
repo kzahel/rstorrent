@@ -1,10 +1,10 @@
 # Tactical 232: Desktop Extension Control
 
-Status: **Linux and Windows follow-up in progress, 2026-09-29.** The first
-Linux checkpoint is complete. Windows protected bootstrap passes native guest
-tests; picker implementation and scripted checks are recorded below. Installed
-picker/package and complete Rehearsal A gates remain open. macOS verification
-is explicitly deferred to a later session.
+Status: **Linux/Windows installed checkpoint complete, 2026-09-29.** Protected
+bootstrap, extension-owned native picking, controlled transfer, shared library,
+singleton and Quit evidence pass on both platforms. Full cross-platform
+Rehearsal A remains partial: macOS is explicitly deferred; broader browser
+suspension/update/discard and endurance cases remain open.
 
 Parent: [`231-jstorrent-migration-working-campaign.md`](231-jstorrent-migration-working-campaign.md)
 
@@ -735,3 +735,28 @@ cross_file repair cases, each repairing 32,768 bytes; an earlier stale-binary
 failure is superseded by this rebuilt run. Native-host Windows tests and
 clippy passed; no full Windows workspace or macOS acceptance is claimed.
 Guest restoration and the remaining legacy fixture preparation are ongoing.
+
+### Final cleanup and follow-up boundaries
+
+The Windows native-reference defect is fixed and installed in Machine Control
+commits `224febe` and `7e01b8c`; duplicate button/value effects, removed-element
+refusal, generation fencing and real product Start converge. The installed
+facade passed the same fixture after the common runtime bootstrap.
+
+Windows inherited app/profile directories were restored with 315 matching file
+hashes, seven registration/association entries with exact export readback, and
+both original shortcuts with matching hashes. The owned browser closed through
+CDP and no test runtime/helper remained. The final post-evidence app cleanup
+used process termination after an unrelated Windows update prompt prevented
+tray-menu access; the separately recorded real-Quit acceptance remains valid.
+Build tools and the identified source/target build cache remain for future
+incremental builds. Linux's test package, controlled HOME/library/browser and
+owned captures were removed; its idle delay 300 and lock enabled were restored.
+Windows applied an already-pending OS update during the first shutdown and
+rebooted to Winlogon. Protected semantics and the installed controller returned;
+a second common shutdown restored the off state. Both originally-off guests
+are returned to off and their claims released.
+
+Tactical 233 prepares pinned, closed Linux/Windows legacy writer fixtures and
+proposes deterministic union/conflict outcomes. It implements no importer and
+qualifies neither migration Rehearsal B nor production replacement Rehearsal C.
