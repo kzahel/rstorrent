@@ -9,9 +9,11 @@ detaches. Fresh toolbar, Start, or OS torrent-input intent may relaunch after
 Quit; page restoration, worker wake and retries only attach. Tray Open and
 OS magnet/file delivery always use the native window. No preferred surface,
 browser-profile routing, icon-hiding or automatic completion shutdown is added.
-Cross-platform implementation/qualification is active; this paragraph records
-policy, not complete cross-platform evidence. Its installed macOS magnet
-regression found and fixes a Tauri plugin-lock reentry: macOS URL intake now
+Installed macOS/Windows/Linux debug builds pass the bounded browser-close,
+64 reload/worker-stop, discard and explicit/passive relaunch checkpoint.
+Desktop disconnect retires abandoned client views without disturbing native
+views. Broader endurance and installer/update compatibility remain open.
+Its macOS magnet regression found a Tauri plugin-lock reentry. URL intake now
 runs in the application Opened callback, after plugin dispatch, so a
 background owner can create its first native window without deadlocking.
 

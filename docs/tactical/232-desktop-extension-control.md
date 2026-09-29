@@ -3,8 +3,10 @@
 Status: **Linux/Windows/macOS installed checkpoint complete, 2026-09-29.**
 Protected bootstrap, extension-owned native picking, controlled transfer, shared
 library, singleton and joined Quit pass on all three installed debug packages.
-Full Rehearsal A remains partial: broader browser suspension/discard, endurance
-and update compatibility remain open. This is not production release readiness.
+Tactical [234](234-desktop-user-intent-and-background-lifecycle.md) adds the
+bounded cross-platform intent/tray, detached-transfer, reload/worker/discard
+and subscription-cleanup checkpoint. Full Rehearsal A remains partial: broader
+endurance, OS/browser suspension and update compatibility remain open. This is not production release readiness.
 
 Parent: [`231-jstorrent-migration-working-campaign.md`](231-jstorrent-migration-working-campaign.md)
 

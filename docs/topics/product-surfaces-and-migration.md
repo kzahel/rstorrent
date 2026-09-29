@@ -9,8 +9,12 @@ detaches. Fresh toolbar, Start, or OS torrent-input intent may relaunch after
 Quit; page restoration, worker wake and retries only attach. Tray Open and
 OS magnet/file delivery always use the native window. No preferred surface,
 browser-profile routing, icon-hiding or automatic completion shutdown is added.
-Cross-platform implementation/qualification is active; this paragraph records
-policy, not new passing evidence.
+Installed macOS/Windows/Linux debug builds pass the bounded lifecycle
+checkpoint: browser closure during a verified transfer, 64 reload/worker-stop
+cycles, actual tab discard, explicit relaunch and passive no-resurrection.
+Desktop disconnect retires only that client's abandoned view sets before
+admitting a replacement; native views and other transports retain their owners.
+Broader endurance and installer/update compatibility remain open.
 
 Maintainer direction on 2026-09-28 starts desktop-first JSTorrent migration
 planning and test design. The source survey, proposed data/support contract,

@@ -66,7 +66,7 @@ SQLite and payload writes remain native. No engine runs in the extension.
 
 | ID | Work | State | Exit evidence / next action |
 | --- | --- | --- | --- |
-| M-01 | Desktop extension control | Linux/Windows/macOS installed checkpoint complete in [`232`](232-desktop-extension-control.md); full rehearsal partial | Protected bootstrap, native picker, controlled bytes, shared library, singleton and Quit pass. Next: explicit intent/tray/browser lifecycle in [234](234-desktop-user-intent-and-background-lifecycle.md); update compatibility remains separate. |
+| M-01 | Desktop extension control | Linux/Windows/macOS installed checkpoint complete in [`232`](232-desktop-extension-control.md); full rehearsal partial | Protected bootstrap, native picker, controlled bytes, shared library, singleton and Quit pass. Bounded intent/tray/browser lifecycle passes in [234](234-desktop-user-intent-and-background-lifecycle.md), including 64 reload/worker-stop cycles per guest and prompt view cleanup. Broader endurance/update compatibility remains separate. |
 | M-02 | Legacy cohort inventory and fixtures | [233](233-legacy-desktop-fixture-cohort.md): bounded Linux/Windows v0.2.1 cohort complete | Seven profiles/eight records plus two labeled mutations per platform; closed snapshot/payload oracle passes. Broader releases, browser-store variants and macOS remain unqualified. |
 | M-03 | Migration preview, union import and recovery | Not implemented | Consistent snapshots of all source profiles, identity/root mapping, explicit conflict outcomes, retry/crash recovery, held activation, exact recheck and preservation |
 | M-04 | Support/report continuity | Required before user cohort | Failure-page report, bounded migration/backend context, familiar voluntary feedback journey and disclosure verification |
@@ -211,7 +211,8 @@ production routing remain separately scoped.
   clicks, native-root preparation, two-view pause/resume, invalid/stale token
   refusal and Quit without resurrection. Exact source/artifact hashes, tests,
   resource samples and cleanup are recorded in that tactical.
-- Current: full desktop control acceptance remains active in Tactical `232`.
+- Current: `232` installed control and `234` bounded desktop lifecycle pass;
+  full campaign rehearsal remains partial.
 - Installed Linux and Windows follow-up: native bootstrap, picker
   selection/Cancel/detach/Quit, exact private 32-MiB transfer, two-view
   convergence, source-offline restart and registration repair pass. Linux
@@ -223,8 +224,10 @@ production routing remain separately scoped.
   torrent identities, bitfields and payload pieces independently. Its union
   outcomes remain a proposal for importer design, not implemented migration.
 - Next executable action: use the retained fixtures to finalize a bounded
-  importer preview/held-state/recovery tactical; separately continue Tactical
-  `232` browser lifecycle/resource-pressure and update-compatibility cases.
+  importer preview/held-state/recovery tactical; separately qualify
+  longer browser/OS suspension, resource endurance and mixed-version
+  installer/update compatibility. Tactical `234` closes the bounded 64-cycle
+  view-retention failure and qualifies explicit-intent/background lifetime.
   No importer implementation is authorized by this checkpoint.
 - Rehearsal A: **partial; Linux/Windows/macOS installed checkpoints complete**.
   Rehearsals B/C: **not run**. No migration-ready or rollout-ready claim. Linux/Windows guests were restored and powered off; the macOS guest

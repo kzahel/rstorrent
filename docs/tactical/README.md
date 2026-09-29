@@ -94,15 +94,17 @@ that scope and its cleanup or compatibility rules explicitly.
 ## Current Tacticals
 
 - [`234-desktop-user-intent-and-background-lifecycle.md`](234-desktop-user-intent-and-background-lifecycle.md):
-  active; explicit relaunch intent, persistent desktop tray, native routing and
-  browser detach/restore qualification on macOS, Windows and Linux.
+  bounded installed macOS/Windows/Linux lifecycle checkpoint: explicit relaunch,
+  persistent tray, native routing, detached transfer, reload/worker/discard
+  recovery and prompt retired-client subscription cleanup.
 - [`233-legacy-desktop-fixture-cohort.md`](233-legacy-desktop-fixture-cohort.md):
   completed bounded Linux/Windows released-writer cohort, closed snapshot and
   piece oracle, and proposed profile-union conflict outcomes; no importer.
 - [`232-desktop-extension-control.md`](232-desktop-extension-control.md):
   installed Linux/Windows protected bootstrap, shared React control, native
   picker, controlled transfer and Quit evidence on all three platforms; broader
-  lifecycle work continues in 234 and update compatibility remains open.
+  bounded lifecycle qualification is recorded in 234; broader endurance and
+  update compatibility remain open.
 - [`231-jstorrent-migration-working-campaign.md`](231-jstorrent-migration-working-campaign.md):
   active desktop replacement campaign; control precedes legacy-profile union
   import and production replacement rehearsal.

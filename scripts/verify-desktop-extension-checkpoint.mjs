@@ -26,7 +26,7 @@ try {
         if (page) { clearInterval(poll); clearTimeout(deadline); resolve(); }
       }, 100);
     });
-    // A persistent popup tab would falsely replay explicit user intent on restart.
+    // The launcher tab is no longer needed after its explicit action.
     await popup.close();
     await page.getByText('connected', { exact: true }).waitFor({ timeout: 20000 });
     console.log(JSON.stringify({ phase, connected: true }));
@@ -129,17 +129,25 @@ try {
           if (reply.type !== 'result') throw new Error(JSON.stringify(reply));
           return reply.result;
         };
-        if (phase === 'prepare') {
-          await dispatch({ type: 'update_client_settings', patch: { dht_enabled: false, peer_exchange_enabled: false, port_mapping: 'disabled', listener: { type: 'disabled' } } });
+        if (phase === 'prepare' || phase === 'prepare-limited') {
+          await dispatch({ type: 'update_client_settings', patch: { dht_enabled: false, peer_exchange_enabled: false, port_mapping: 'disabled', listener: { type: 'disabled' }, download_rate_limit: phase === 'prepare-limited' ? { type: 'limited', bytes_per_second: 262144 } : { type: 'unlimited' } } });
           await dispatch({ type: 'set_show_add_options', show: false });
           await dispatch({ type: 'set_show_file_selection', show: false });
         }
         const snapshot = await dispatch({ type: 'snapshot' });
         const state = snapshot.response?.snapshot;
         if (!state) throw new Error('snapshot failed');
+        if (phase === 'reset-transfer') {
+          // Refuse any library except the one independently generated fixture.
+          if (state.torrents.length !== 1 || !JSON.stringify(state.torrents[0].protocol_identities).includes('5b6fd1f3a92b3661ecfef63f4412edfaea3d48c4')) throw new Error('not the controlled transfer library');
+          const removed = await dispatch({ type: 'remove_torrent', torrent_id: state.torrents[0].torrent_id, data: 'delete_data' });
+          if (removed.error) throw new Error(JSON.stringify(removed));
+          return { phase, removed: true };
+        }
+        if (phase === 'partial-transfer' && !(state.torrents.length === 1 && state.torrents[0].verified_piece_count > 0 && state.torrents[0].verified_piece_count < state.torrents[0].piece_count)) throw new Error('transfer must be partially verified before detaching');
         return { phase, backend: hello.hello.backend, revision: state.revision,
           roots: state.storage.roots.map(root => ({ id: root.root_id, availability: root.availability })),
-          torrents: state.torrents.map(torrent => ({ id: torrent.torrent_id, identities: torrent.protocol_identities, root: torrent.storage_root, state: torrent.state, running: torrent.desired_running, verifiedPieces: torrent.verified_pieces, progress: torrent.progress })) };
+          torrents: state.torrents.map(torrent => ({ id: torrent.torrent_id, identities: torrent.protocol_identities, root: torrent.storage_root, state: torrent.state, running: torrent.desired_running, verifiedPieces: torrent.verified_piece_count, pieces: torrent.piece_count })) };
       } finally { socket.close(); }
     }, phase);
     if (phase === 'invalid' || phase === 'stale') { assert.equal(report.rejected, true); assert.equal(report.libraryDisclosed, false); }
