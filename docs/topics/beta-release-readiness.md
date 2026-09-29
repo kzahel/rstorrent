@@ -13,6 +13,14 @@ The same release preflight updates the sole transitive web-test Undici lock
 entry to 7.30.0 after newly reported advisories. Web type/unit/build and the
 fresh three-lockfile release-ready audit pass; the reviewed GLib source
 backport and warning policy remain unchanged.
+Public 0.2.701 passes native 501-to-701 updates and signed helper checks;
+240 records installed control/lifecycle evidence. Independent disk-image
+assessment finds the app notarized but its outer DMG only signed. A bounded
+pipeline correction adds DMG submission/stapling and the correct Gatekeeper
+open assessment before artifact hashing. A forward-only corrected Latest and
+its public/installed verification remain pending; existing published assets
+are immutable. Historical notarization claims below concern the app bundle,
+not an independently assessed outer DMG.
 
 Tactical [238](../tactical/238-signed-desktop-channel-recovery.md) now passes
 installed signed 0.2.301 → 0.2.501 selection/replacement/relaunch on macOS arm64

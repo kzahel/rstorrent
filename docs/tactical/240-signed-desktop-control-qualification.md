@@ -265,3 +265,103 @@ Correction checks: `actionlint .github/workflows/desktop-release.yml`,
 `git diff --check` pass. Local `xcrun notarytool submit --help` confirms the
 team-key arguments, JSON result and bounded wait syntax. Actual notarization
 and disk-image trust remain signed CI/public-artifact gates, not mocked claims.
+
+## Installed 701 Behavioral Evidence (Before DMG Correction)
+
+Correction commit `fc401ecf72936b073d0825644c94971b44718247` is pushed
+normally; main CI run `36636558577` is in progress. It changes release gating,
+not desktop behavior. Keep 701 behavioral evidence distinct from the future
+corrected outer-container artifact.
+
+Installed public package hashes:
+
+| Payload | SHA-256 |
+| --- | --- |
+| macOS arm64 DMG (outer notarization fails) | `28eb18c52030e7be3d3e64309de1b110d3a3245f9832467d902bb888b8511cef` |
+| macOS arm64 updater app archive | `41de9f572acd5087d5a885c21236f5b3d2463970efa4113c2058c8bae5f443b0` |
+| Windows x64 NSIS | `67a33ebe970a6fff2148577f9a4538d4173cc83c0b463f6846e8c0dbfe7dd307` |
+| Linux x64 AppImage | `dab4a701f33f417499d4310462a52010c44c72e47d87b3bbf7fe00919400213e` |
+
+Architecture inspection precedes guest use: macOS app arm64/minimum 13.0,
+helper arm64/minimum 11.0, installed on arm64 macOS 26.6.2; NSIS has an expected
+32-bit bootstrap containing two AMD64 executables on Windows x64; Linux app
+and helper are ELF x86_64, maximum required GLIBC 2.34 against Ubuntu 24.04.5
+GLIBC 2.39. The Mac DMG and updater archive contain identical signed app/helper
+bytes. Mac copied helper SHA-256 is
+`8931f28ca68612bcd9a0f204e01a498cae0307a99801c8eea507685fadd6c953`;
+Windows copied/bundled helper is
+`6e9eefa1aea17517bbebddb9ba873838c496e6dc556d1d03d7e86ed95a7b07b5`;
+Linux copied/bundled helper is
+`b26296df0ca4932157c740fabd7b1771a3648e422b1b2140ccae4d42bfe1ace4`.
+
+Use `scripts/verify-desktop-intent-lifecycle.mjs toolbar` against real Chrome
+action popups, then `verify-desktop-extension-checkpoint.mjs clicks`, `invalid`,
+`race`, and `prepare-limited`, and intent `incompatible`. All three pass:
+12 repeated clicks leave one focused companion; 12 launch requests share one
+instance; bad credentials disclose no library and protocol 999 is refused.
+Independent native window/process/tray observations show one background owner
+and no native product window before explicit desktop opening.
+
+Three independent private seeds use current
+`tests/interop/desktop_extension_seed.py --root TASK_ROOT --bind PRIVATE_GATEWAY
+--seconds 1800`, the locked libtorrent 2.0.13.0 oracle and 256-KiB/s limits.
+Add each torrent with checkpoint `transfer`, record the partial state with
+`verify-desktop-suspension-recovery.mjs record BASELINE_JSON`, then issue real
+CDP `Browser.close` via intent `browser-close`. Partial snapshots are Mac
+194/512, Windows 12/512, Linux 11/512 pieces. The first Mac record invocation
+omitted BASELINE_JSON and failed after checking partial state; repeat with the
+required path before the recorded browser closure. No product change follows
+that harness invocation error.
+
+All three external files reach 33,554,432 bytes and SHA-256
+`99080b09c925782f67975d36476f171ee4e8b367e2a893d07a88bd70028b3fe8`
+**while their browsers remain closed**. Windows reads with `FileShare.ReadWrite`;
+Mac/Linux use `shasum -a 256`/`sha256sum`. Reopen the same browser profile,
+then `recover BASELINE_JSON` and `complete BASELINE_JSON PAYLOAD` pass with
+identical instance/root/torrent IDs and all 512 verified pieces. Native windows
+remain unopened during the detached interval. Sampled background RSS is Mac
+103,712 KiB, Linux 88,724 KiB, Windows 36,253,696 bytes/249 handles; these are
+samples, not endurance high-water bounds. Stop all three seeds and remove
+only their owned firewall rule afterward.
+
+Linux's first restarted-browser recovery waits behind GNOME's “Choose password
+for new keyring” dialog: native attach succeeds while browser WebSockets have
+no connection. Independent capture identifies the modal; Cancel dismisses it
+without creating/changing a keyring, after which passive recovery passes with
+the original runtime. Record this test-browser setup interruption, not a
+runtime restart or a silently ignored timeout.
+
+Native picker selection adds fresh `root-two`; Mac and Linux also pass Cancel
+and extension-tab detach with helper termination and unchanged owner. Windows
+Cancel/detach pass; selection passes after fixing the temporary UI driver to
+use `text` for `set.value` and native global snapshot references (window-scoped
+Cua references are rejected by the native ValuePattern route). Mac AXPress
+reports -25204 when a successfully clicked panel destroys itself; independent
+root addition/cancel UI and process exit establish the action's effect.
+
+Normal OS launches expose the native view of the same completed torrent.
+Extension Pause followed by native Start converges on all three platforms.
+Mac tray Open also exposes the native UI after a cold 12-request launch race.
+Mac Quit during an outstanding picker removes runtime/helper; checkpoint
+`stopped` observes 35 seconds, explicit `start` works, and `stale` refuses the
+previous in-page credential. A second Quit followed by intent `passive-stopped`
+passes two page reloads, two service-worker stops and 35 seconds without
+resurrection. Mac actual default-profile manifest deletion produces browser
+HostNotFound; normal desktop launch repairs it and browser hello succeeds with
+byte-identical signed host. Windows and Linux also pass outstanding-picker Quit, 35-second stopped
+observation, explicit Start, stale refusal, then a second Quit and the full
+passive-stopped test. Independent Windows process enumeration reports zero
+runtime/native-host processes after Quit. Their subsequent cold 12-request
+races each produce one background owner; real tray Open exposes the native UI.
+Linux default manifest deletion/HostNotFound/normal-launch repair preserves
+host bytes. Windows Chrome falls back to the Chromium registration when only
+the Chrome key is deleted; removing both task registrations produces
+HostNotFound, and normal desktop launch repairs both. Do not mistake successful
+fallback for failed repair. Native Windows Downloads independently shows both
+controlled roots and the same completed torrent.
+
+Public read-only route probes for all five target/architecture pairs at this
+checkpoint: current 701 with `?channel=latest` returns 204; an older version
+with `?channel=stable` or no channel returns Stable 0.1.4. Earlier 501 Latest
+requests offer 701 with the exact immutable signed payload URL. Stable and
+legacy channel-less routing remain unchanged.

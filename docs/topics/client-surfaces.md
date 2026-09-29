@@ -9,6 +9,11 @@ matrix. It corrects the macOS Chrome for Testing support directory to
 repair tests remain valid, but did not prove discovery in that browser's actual
 default profile. The signed checkpoint must exercise standard-profile
 registration and repair without a manually copied manifest.
+Signed 0.2.701 now supplies that installed evidence, plus three-platform
+browser-closed verified transfers, shared native/extension views, picker
+cancellation/disconnection/Quit and explicit-intent relaunch. The separate
+initial-download DMG assessment caught missing outer-container notarization;
+240 is correcting delivery before claiming the signed checkpoint complete.
 
 Selected three-platform beta replacement, rollback and native registration
 repair pass in [236](../tactical/236-desktop-compatibility-refusal-and-recovery.md)
