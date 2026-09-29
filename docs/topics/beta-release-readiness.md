@@ -2,6 +2,13 @@
 
 Topic: `beta-release-readiness`
 
+Tactical [`237`](../tactical/237-macos-windows-package-recovery.md) updates
+release source guards for the platform singleton factory and macOS Opened
+handoff introduced by 234/235. All 21 release/package/input tests and checked
+source validation pass; ordering, missing singleton and dropped OS-input
+negative fixtures remain enforced. Installed package/update evidence is tracked
+separately in that tactical.
+
 Desktop channel publication checkpoint (2026-09-27): Tactical
 [`230`](../tactical/230-desktop-stable-latest-update-channels.md) adds a
 Stable/Latest product registry, native-owned selection and candidate lifecycle,

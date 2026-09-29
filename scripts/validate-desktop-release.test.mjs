@@ -146,6 +146,16 @@ test("rejects desktop association and command-quoting drift", () => {
     /must quote the executable and input path/,
   );
 
+  const openedFixture = repositoryFixture();
+  openedFixture.desktopSource = openedFixture.desktopSource.replace(
+    "handle_external_activation_values(handle, urls.iter().map(url::Url::as_str));",
+    "// dropped OS inputs",
+  );
+  assert.throws(
+    () => validateDesktopReleaseConfiguration(openedFixture),
+    /desktop external activation integration is missing/,
+  );
+
   const linuxFixture = repositoryFixture();
   linuxFixture.linuxDesktop = linuxFixture.linuxDesktop.replace(" %U", "");
   assert.throws(
@@ -162,10 +172,19 @@ test("rejects incompatible plugin registration", () => {
     /single-instance dependency must use its compatible deep-link integration/,
   );
 
+  const missingFixture = repositoryFixture();
+  missingFixture.desktopSource = missingFixture.desktopSource.replace(
+    ".plugin(single_instance_plugin())", "",
+  );
+  assert.throws(
+    () => validateDesktopReleaseConfiguration(missingFixture),
+    /single-instance must be registered before the deep-link plugin/,
+  );
+
   const orderFixture = repositoryFixture();
   orderFixture.desktopSource = orderFixture.desktopSource.replace(
-    ".plugin(tauri_plugin_single_instance::init(",
-    ".plugin(tauri_plugin_deep_link::init())\n        .plugin(tauri_plugin_single_instance::init(",
+    ".plugin(single_instance_plugin())",
+    ".plugin(tauri_plugin_deep_link::init())\n        .plugin(single_instance_plugin())",
   );
   assert.throws(
     () => validateDesktopReleaseConfiguration(orderFixture),

@@ -247,7 +247,7 @@ export function validateDesktopReleaseConfiguration({
     fail("release desktop binary must use the Windows GUI subsystem");
   }
   const singleInstancePlugin = desktopSource.indexOf(
-    ".plugin(tauri_plugin_single_instance::init(",
+    ".plugin(single_instance_plugin())",
   );
   const deepLinkPlugin = desktopSource.indexOf(
     ".plugin(tauri_plugin_deep_link::init())",
@@ -317,7 +317,7 @@ export function validateDesktopReleaseConfiguration({
     ".deep_link()\n                    .register_all()",
     "RunEvent::Opened { urls }",
     'url.scheme().eq_ignore_ascii_case("magnet")',
-    'url.scheme().eq_ignore_ascii_case("file")',
+    "handle_external_activation_values(handle, urls.iter().map(url::Url::as_str));",
   ]) {
     if (!desktopSource.includes(requiredSource)) {
       fail(`desktop external activation integration is missing ${requiredSource}`);

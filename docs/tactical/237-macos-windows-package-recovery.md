@@ -68,3 +68,26 @@ compatibility handling. Retained macOS old executable matches 234's SHA-256
 Current extension matches 236's `a21fb6e52ee720a83987d0b5094a60e1a338014c024cdaa977cbcadd47538533`.
 macOS doctor reports an available suspended guest and unlocked host resume
 precondition; no guest mutation yet. Recheck Windows availability independently.
+
+## Builder Finding: Singleton Source Gate
+
+The installed-artifact preparation runs the release configuration tests too.
+Their checked-source case fails because 235 moved singleton creation behind
+`single_instance_plugin()`, while the guard still searches for an inline
+Tauri call. Update the guard to the actual platform factory, retain the
+singleton-before-deep-link requirement, and add removal/reordering regressions.
+This is a release-validation repair, not a runtime or dependency change.
+
+The next assertion also assumed 234's retired inline macOS file-URL filter.
+Check the current application `RunEvent::Opened` forwarding call instead,
+which delivers all URLs to the existing bounded classifier after plugin
+delivery. Add a dropped-input negative fixture. Both corrections retain the
+release safety invariants while matching the installed-qualified code shape.
+
+After the fixes, `node --test scripts/validate-desktop-release.test.mjs
+scripts/validate-desktop-package.test.mjs scripts/desktop-release-input.test.mjs`
+passes all 21 tests. `node scripts/validate-desktop-release.mjs` and
+`node scripts/validate-desktop-package.mjs --mac-app
+target/debug/bundle/macos/RSTorrent.app` pass. macOS desktop library tests pass
+53 cases and incremental unsigned app packaging succeeds. Runtime production
+source remains `cee8ff04`; validation-only edits do not change that artifact.
