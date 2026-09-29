@@ -139,3 +139,32 @@ authentication refusal, mount failure, disconnect cleanup and cached-page
 restoration including delayed mount and absent socket-close delivery.
 `npm run package --prefix clients/extension` passes. These are deterministic
 builder results; installed cross-platform evidence remains open.
+
+### Installed macOS activation finding
+
+An OS magnet delivered to a background owner with no native window deadlocked
+its main thread before creating that window. A guest `sample` shows
+`tauri-plugin-deep-link::on_event -> emit -> on_open_url ->
+restore_main_window -> prepare_pending_webview -> plugins.lock`. Tauri 2.11.5
+holds its plugin-store lock during plugin event delivery; webview creation
+needs that same lock. `run_on_main_thread` executes inline on the main thread,
+so wrapping the callback with it would retain the deadlock.
+
+Handle macOS file and magnet URLs in the application's `RunEvent::Opened`
+callback, after Tauri finishes plugin delivery and releases that lock. Keep
+the deep-link callback on Windows/Linux, where the single-instance plugin
+forwards URL events outside this macOS plugin dispatch. This adds no task,
+queue, browser-routing state or retry. Installed regression must start without
+a native window, deliver the OS magnet, then prove native presentation,
+responsive commands, same owner and joined Quit; repeat cold file/magnet intake.
+
+The macOS correction passes `cargo test -p rstorrent-desktop --lib` (53),
+`cargo clippy -p rstorrent-desktop --all-targets -- -D warnings`, and formatting.
+The rebuilt unsigned debug desktop SHA-256 is
+`4c57171f2be1ff89e130612e8cca5ecb06525149536ea0e7333603b5b258b409`.
+Installed reproduction now passes: cold extension toolbar -> absent native
+window -> OS `open 'magnet:?xt=urn:btih:<fixture-hash>'` -> native window and
+Already in your session, with the same runtime/library and responsive snapshot.
+Native Cmd-Q then cold OS `open <fixture.torrent>` starts a new owner and native
+window, restoring the same verified 512-piece fixture. The hung pre-fix test
+process required targeted termination; it is not counted as Quit evidence.

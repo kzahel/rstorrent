@@ -10,7 +10,10 @@ Quit; page restoration, worker wake and retries only attach. Tray Open and
 OS magnet/file delivery always use the native window. No preferred surface,
 browser-profile routing, icon-hiding or automatic completion shutdown is added.
 Cross-platform implementation/qualification is active; this paragraph records
-policy, not new passing evidence.
+policy, not complete cross-platform evidence. Its installed macOS magnet
+regression found and fixes a Tauri plugin-lock reentry: macOS URL intake now
+runs in the application Opened callback, after plugin dispatch, so a
+background owner can create its first native window without deadlocking.
 
 Tactical [`232`](../tactical/232-desktop-extension-control.md) implements the
 first desktop beta-extension client using the packaged shared React application.

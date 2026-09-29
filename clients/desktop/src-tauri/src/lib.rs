@@ -2230,16 +2230,22 @@ pub fn run() {
             ) {
                 restore_main_window(app.handle())?;
             }
-            let external_handle = app.handle().clone();
-            app.deep_link().on_open_url(move |event| {
-                let urls = event.urls();
-                handle_external_activation_values(
-                    &external_handle,
-                    urls.iter()
-                        .filter(|url| url.scheme().eq_ignore_ascii_case("magnet"))
-                        .map(url::Url::as_str),
-                );
-            });
+            // On macOS plugin callbacks run under Tauri's plugin-store lock.
+            // Creating the first window there reenters that lock. Opened below
+            // handles both URL kinds after plugin event delivery has finished.
+            #[cfg(not(target_os = "macos"))]
+            {
+                let external_handle = app.handle().clone();
+                app.deep_link().on_open_url(move |event| {
+                    let urls = event.urls();
+                    handle_external_activation_values(
+                        &external_handle,
+                        urls.iter()
+                            .filter(|url| url.scheme().eq_ignore_ascii_case("magnet"))
+                            .map(url::Url::as_str),
+                    );
+                });
+            }
             #[cfg(target_os = "linux")]
             if app.env().appimage.is_some() {
                 app.deep_link()
@@ -2336,12 +2342,7 @@ pub fn run() {
         }
         #[cfg(target_os = "macos")]
         RunEvent::Opened { urls } => {
-            handle_external_activation_values(
-                handle,
-                urls.iter()
-                    .filter(|url| url.scheme().eq_ignore_ascii_case("file"))
-                    .map(url::Url::as_str),
-            );
+            handle_external_activation_values(handle, urls.iter().map(url::Url::as_str));
         }
         _ => {}
     });
