@@ -2,6 +2,13 @@
 
 Topic: `client-persistence`
 
+Tactical [`233`](../tactical/233-legacy-desktop-fixture-cohort.md) prepares
+closed, nonpersonal legacy desktop v0.2.1 writer fixtures on Linux/Windows.
+Actual version-2 session JSON/binary encoding and released SQLite KV writers
+are preserved in checked-in JSON exports; an independent oracle checks
+identities and bytes. This is importer input coverage, not successor restore
+or migration support. All source completion remains subject to re-verification.
+
 Tactical [`229`](../tactical/229-web-desktop-data-reset.md) adds explicit
 local browser and desktop profile clearing. After all torrent removals join,
 the application closes the durable session and removes only validated fixed
