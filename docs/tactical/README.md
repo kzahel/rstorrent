@@ -93,6 +93,10 @@ that scope and its cleanup or compatibility rules explicitly.
 
 ## Current Tacticals
 
+- [`235-linux-quit-launch-handoff.md`](235-linux-quit-launch-handoff.md):
+  bounded Linux admission retry closes the installed Quit/launch overlap;
+  real native/background/magnet/file and concurrent-launch checks pass.
+
 - [`234-desktop-user-intent-and-background-lifecycle.md`](234-desktop-user-intent-and-background-lifecycle.md):
   bounded installed macOS/Windows/Linux lifecycle checkpoint: explicit relaunch,
   persistent tray, native routing, detached transfer, reload/worker/discard

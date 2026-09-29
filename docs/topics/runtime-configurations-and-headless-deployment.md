@@ -2,6 +2,14 @@
 
 Topic: `runtime-configurations-and-headless-deployment`
 
+Tactical [`235`](../tactical/235-linux-quit-launch-handoff.md) repairs the Linux
+Quit/launch overlap. A stopping owner returns Retry; the explicit launch process
+retains its arguments and waits within a bounded deadline before claiming the
+vacated singleton name. Passive activity never creates that launcher. Installed
+tray-Quit, native/background launch, actual magnet/file associations and a
+12-launch race pass. macOS/Windows retain their existing plugin; old Linux
+binaries retain the old race. Update compatibility remains a separate gate.
+
 Tactical [`234`](../tactical/234-desktop-user-intent-and-background-lifecycle.md)
 owns the accepted desktop lifetime follow-up: retain the tray/status-bar icon
 while the runtime runs, including idle/paused states; browser closure only

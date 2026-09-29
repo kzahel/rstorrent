@@ -45,6 +45,8 @@ mod desktop_localization;
 mod desktop_notifications;
 mod desktop_power;
 mod external_intake;
+#[cfg(target_os = "linux")]
+mod linux_single_instance;
 mod native_host_registration;
 mod update_channels;
 mod updater;
@@ -1992,6 +1994,7 @@ fn emit_external_intake_signal(app: &AppHandle, generation: u64) {
     }
 }
 
+#[cfg(not(target_os = "linux"))]
 fn is_magnet_argument(value: &str) -> bool {
     value
         .get(.."magnet:".len())
@@ -2070,32 +2073,64 @@ async fn open_configured_desktop_remote_runtime(
     .map_err(|error| format!("start remote access validation owner: {error}"))
 }
 
+#[cfg(not(target_os = "linux"))]
+fn single_instance_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri_plugin_single_instance::init(|app, arguments, _cwd| {
+        handle_external_activation_values(
+            app,
+            arguments
+                .iter()
+                .filter(|argument| !is_magnet_argument(argument)),
+        );
+        if !desktop_control::background_launch(arguments.iter().map(String::as_str)) {
+            // Platform activation callbacks can arrive on a non-main thread.
+            let handle = app.clone();
+            let _ = app.run_on_main_thread(move || {
+                if let Err(error) = restore_main_window(&handle) {
+                    eprintln!("failed to restore desktop window for second launch: {error}");
+                }
+            });
+        }
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn single_instance_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    linux_single_instance::init()
+}
+
+#[cfg(target_os = "linux")]
+fn admit_linux_launch(
+    app: &AppHandle,
+    arguments: Vec<String>,
+    permit: tokio::sync::OwnedSemaphorePermit,
+) -> Result<(), linux_single_instance::AdmissionError> {
+    use linux_single_instance::AdmissionError;
+    linux_single_instance::check_phase(
+        app.try_state::<DesktopState>()
+            .map(|state| state.shutdown.phase()),
+    )?;
+    // This observation orders admission before a later Quit. Only that later
+    // explicit Quit may supersede the queued presentation; stopped owners retry.
+    let handle = app.clone();
+    app.run_on_main_thread(move || {
+        let _permit = permit;
+        handle_external_activation_values(&handle, &arguments);
+        if !desktop_control::background_launch(arguments.iter().map(String::as_str))
+            && let Err(error) = restore_main_window(&handle)
+        {
+            eprintln!("failed to restore desktop window for second launch: {error}");
+        }
+    })
+    .map_err(|_| AdmissionError::Refused("desktop launch could not be queued".into()))
+}
+
 pub fn run() {
     if download_picker::run_helper_if_requested() {
         return;
     }
     let application = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(
-            |app, arguments, _cwd| {
-                handle_external_activation_values(
-                    app,
-                    arguments
-                        .iter()
-                        .filter(|argument| !is_magnet_argument(argument)),
-                );
-                if !desktop_control::background_launch(arguments.iter().map(String::as_str)) {
-                    // D-Bus callbacks can arrive on a non-main thread.
-                    let handle = app.clone();
-                    let _ = app.run_on_main_thread(move || {
-                        if let Err(error) = restore_main_window(&handle) {
-                            eprintln!(
-                                "failed to restore desktop window for second launch: {error}"
-                            );
-                        }
-                    });
-                }
-            },
-        ))
+        .plugin(single_instance_plugin())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())

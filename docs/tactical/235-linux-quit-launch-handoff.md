@@ -86,8 +86,9 @@ already-present zbus dependency. Retain the exact Tauri D-Bus name, object path,
 interface, method and successful empty reply for old/new warm interoperability.
 Return a named retry error while setup is incomplete or shutdown is stopping;
 reject failed shutdown. New launchers retry name acquisition or delivery for
-at most eight seconds, sleeping 25 ms between retry responses, with one-second
-IPC call deadlines. Timeout/unknown/malformed replies fail closed, without
+an eight-second retry budget, sleeping 25 ms between retry responses, with
+one-second IPC call deadlines. Two in-flight calls can extend the last
+iteration by at most two seconds. Timeout/unknown/malformed replies fail closed, without
 starting an engine or reporting successful delivery. Bus-owner disappearance
 may retry acquisition; no forced replacement or queued name ownership.
 
@@ -96,8 +97,9 @@ keep the name through joined service shutdown, and release on the terminal
 Exit event. Waiting secondary processes own their original arguments and no
 engine, tray, service, profile or helper. Terminating the launcher cancels its
 wait. There is no persisted restart request. Bound each call to 64 arguments,
-512 KiB aggregate argument bytes and 64 KiB cwd; existing intake limits still
-apply. IPC errors never print caller contents. These are same-user session-bus
+512 KiB aggregate argument bytes and 64 KiB cwd. A 16-permit main-thread
+delivery bound caps queued argument payloads at 8 MiB; saturation replies Retry.
+Existing intake limits still apply. IPC errors never print caller contents. These are same-user session-bus
 activation semantics, not extension authentication or a cross-user boundary.
 
 Admission checks the atomic shutdown phase before queuing main-thread delivery;
@@ -112,3 +114,81 @@ Required builder tests use an owned private D-Bus daemon and real message
 exchange, covering warm delivery, startup/stop retry, owner disappearance,
 concurrent arbitration, argument bounds, deadline and unavailable bus. No
 installed product UI or host browser is used for those tests.
+
+### Implemented Checkpoint
+
+The selected adapter is `clients/desktop/src-tauri/src/linux_single_instance.rs`.
+It preserves warm Tauri wire compatibility, refuses startup/stopping admission
+with Retry, and fails closed on failed shutdown, malformed acknowledgement,
+unavailable bus or ambiguous delivery timeout. The last case is deliberately
+not replayed: the existing owner may already have accepted the request.
+Only ServiceUnknown/NameHasNoOwner and the explicit Retry error are retryable.
+The official [D-Bus specification](https://dbus.freedesktop.org/doc/dbus-specification.html#bus-messages-request-name)
+confirms exclusive name ownership and DoNotQueue semantics. Pinned zbus 5.19.0
+`connection::request_name_with_flags` maps Exists to NameTaken; its blocking
+builder supplies the per-call deadline. No dependency or copied source added.
+
+Builder validation (source `~/.profile`, and the Linux Node environment for
+packaging):
+
+```sh
+cargo fmt --all -- --check
+cargo test -p rstorrent-desktop --lib
+cargo clippy -p rstorrent-desktop --all-targets -- -D warnings
+# Linux builder, from clients/desktop:
+../web/node_modules/.bin/tauri build --debug \
+  --config src-tauri/tauri.package.conf.json --bundles deb --no-sign --ci
+```
+
+macOS desktop tests: 53 passed; Clippy passed. Linux final full suite: 62
+passed, including nine Linux admission tests. Linux Clippy passed; pre-existing vendored GLib
+warnings remain dependency warnings. This is no Windows installed regression
+claim: that platform's plugin behavior and code body are unchanged.
+
+Installed reusable runner (inside the claimed guest's ordinary desktop session):
+
+```sh
+python3 scripts/verify-linux-launch-handoff.py \
+  --executable /usr/bin/rstorrent-desktop --work-dir "$OWNED_TEST_ROOT"
+# Use --baseline with the Tactical 234 package to record prior behaviour.
+```
+
+The runner uses task-owned HOME/XDG directories, real tray D-Bus menu Quit,
+process exit status, the actual singleton owner's PID, and AT-SPI visible
+window enumeration. It refuses an inherited runtime. No test browser is needed.
+
+- Baseline runner: 12/12 post-Quit IPC requests acknowledged and lost.
+- Candidate runner: 12/12 receive Retry. The first candidate run proved this
+  but a cached Python BusName invalidated its second controlled fixture; the
+  corrected runner explicitly reacquires its test name before proceeding.
+- Real installed launcher against a scripted stopping owner: three Retry
+  replies, then one windowless runtime after release.
+- Deliberately held owner: launcher exits nonzero after 8.056 seconds and
+  300 replies; no tray/second runtime. Its bounded diagnostic reports timeout.
+- Real tray Quit followed immediately by ordinary, background, magnet and
+  file executable launches: one replacement; one native window for native/
+  magnet/file, zero for background.
+- Actual `xdg-open` magnet and `.torrent` delivery immediately after Quit:
+  both create a replacement native window. No torrent is admitted to transfer;
+  test inputs only exercise intake presentation.
+- Twelve concurrent background launch processes: one surviving owner and
+  eleven acknowledged exits, no native window. A subsequent normal launch
+  reuses that owner and shows its native window.
+- Final real Quit, followed by 35 seconds without new intent: no owner/tray.
+
+Final installed DEB SHA-256:
+`f797456de043dd7002f5f4bb3d0c537b18f04c7e55ed0efef83d99f3b6c5576c`.
+Installed executable SHA-256:
+`7c8b9a823702ee7c3d9050597c51a6070c412c1776f6e166fb784db45e689232`.
+The installed production source includes the final admission bound; the later
+additional regression only adds test code. No importer or payload migration ran.
+
+### Remaining Scope
+
+Older launchers still ignore error replies; an already-running old desktop
+cannot gain the new shutdown response through a new caller alone. Full
+extension/runtime and signed installer/update compatibility remains separate.
+This fixes the isolated Linux boundary, not broader OS/browser endurance or
+release readiness. The guest currently has no owned running application;
+installation, task files, initial idle/lock policy and powered-off state must
+be restored and the claim released at the end of this combined work session.
