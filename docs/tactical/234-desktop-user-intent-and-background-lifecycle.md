@@ -168,3 +168,26 @@ Already in your session, with the same runtime/library and responsive snapshot.
 Native Cmd-Q then cold OS `open <fixture.torrent>` starts a new owner and native
 window, restoring the same verified 512-piece fixture. The hung pre-fix test
 process required targeted termination; it is not counted as Quit evidence.
+
+### Desktop connection resource contract
+
+Rapid installed Linux reloads exhausted the global 32 view-set limit: each
+new page creates a fresh client identity, and departed sets remain leased for
+five minutes. This is bounded retention, not an unbounded memory leak, but it
+makes repeated desktop UI reopening unavailable. The companion deliberately
+rebuilds its view on reconnect and cannot resume a departed page's view set.
+
+Desktop-control disconnect therefore retires that authenticated connection
+owner's view sets after joining calls and attachment pumps, before releasing
+its registry generation. Same-client takeover waits for this cleanup. Other
+owners (including the native UI) remain intact. Ordinary headless/remote and
+ChromeOS connections retain their existing resumable leases; no wire change,
+engine change or Android policy change is needed. Resource limits stay 32
+sets globally/eight per owner and four desktop connections. Validate more than
+32 create/drop cycles, an unattached set, same-client takeover, unaffected
+second-owner state and waiter termination before repeating installed cycles.
+
+The focused owner-retirement and 64-client desktop WebSocket regressions pass
+on the macOS builder (`cargo test -p rstorrent-session retiring_one_owner`
+and `cargo test -p rstorrent-gateway departed_pages_and_takeover`). Full
+session/gateway suites and final installed rebuilds remain in progress.

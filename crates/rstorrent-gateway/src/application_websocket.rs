@@ -609,7 +609,7 @@ impl ApplicationConnectionRegistry {
     }
 }
 
-fn desktop_control_without_media(state: &GatewayState) -> bool {
+fn desktop_control_connection(state: &GatewayState) -> bool {
     state
         .hello_backend
         .as_ref()
@@ -837,7 +837,7 @@ async fn serve_application_connection(
     if matches!(
         state.authentication.as_ref(),
         GatewayAuthentication::ChromeOsCompanion(_)
-    ) || desktop_control_without_media(&state)
+    ) || desktop_control_connection(&state)
     {
         hello
             .capabilities
@@ -1236,6 +1236,13 @@ async fn serve_application_connection(
     calls.abort_all();
     while calls.join_next().await.is_some() {}
     while uploads.join_next().await.is_some() {}
+    // Desktop companion pages rebuild their views on attachment. A departed
+    // page cannot resume them, including sets whose open response was lost.
+    // Finish before connection_done permits a same-client replacement to open
+    // its sets. Headless/remote and ChromeOS retain their resumable leases.
+    if desktop_control_connection(&state) {
+        state.service.lock().await.close_owner_view_sets(&owner);
+    }
     state
         .connection_registry
         .release_connection(&owner_key, connection_generation)
@@ -1388,7 +1395,7 @@ async fn handle_client_frame(
                 && (matches!(
                     state.authentication.as_ref(),
                     GatewayAuthentication::ChromeOsCompanion(_)
-                ) || desktop_control_without_media(state))
+                ) || desktop_control_connection(state))
             {
                 send_call_error(
                     control,

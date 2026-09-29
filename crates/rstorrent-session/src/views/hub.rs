@@ -2447,6 +2447,21 @@ impl ViewHub {
         self.speed_interest.notify_one();
     }
 
+    /// Retire a non-resumable presentation owner after its callers have joined.
+    pub fn close_owner_view_sets(&self, owner: &ViewSetOwner) {
+        if let Ok(mut hub) = self.inner.lock() {
+            hub.view_sets.retain(|_, view_set| {
+                if view_set.owner_matches(owner) {
+                    view_set.close();
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+        self.speed_interest.notify_one();
+    }
+
     pub(crate) fn reap_expired_view_sets(&self) -> usize {
         let Ok(mut hub) = self.inner.lock() else {
             return 0;

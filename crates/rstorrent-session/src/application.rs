@@ -3252,6 +3252,10 @@ impl ApplicationService {
         self.views.close_all_view_sets();
     }
 
+    pub fn close_owner_view_sets(&self, owner: &ViewSetOwner) {
+        self.views.close_owner_view_sets(owner);
+    }
+
     pub async fn platform_file_plan(
         &mut self,
         torrent_id: &str,

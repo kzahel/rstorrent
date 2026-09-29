@@ -311,6 +311,164 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn departed_pages_and_takeover_retire_only_their_view_sets() {
+        use rstorrent_session::{ViewSetError, ViewSetOwner};
+        let root =
+            std::env::temp_dir().join(format!("rstorrent-desktop-views-{}", std::process::id()));
+        let service = Arc::new(Mutex::new(
+            ApplicationService::open(rstorrent_session::ApplicationConfig::new(
+                root.join("profile"),
+                "default".into(),
+                Vec::new(),
+                rstorrent_session::NetworkConfig::new(
+                    rstorrent_session::NetworkPolicy::LoopbackOnly,
+                    Duration::from_secs(1),
+                    Duration::from_secs(1),
+                ),
+            ))
+            .await
+            .unwrap(),
+        ));
+        let token = "ef".repeat(32);
+        let server = DesktopControlServer::bind(
+            service.clone(),
+            token.clone(),
+            "01".repeat(16),
+            "test".into(),
+        )
+        .await
+        .unwrap();
+        let namespace = server.state.http_owner_namespace;
+        let address = server.local_addr();
+        let request = || {
+            let mut request = format!("ws://{address}/api/v1/connect")
+                .into_client_request()
+                .unwrap();
+            request.headers_mut().insert(
+                "Origin",
+                chromeos_companion::BETA_EXTENSION_ORIGIN.parse().unwrap(),
+            );
+            request
+        };
+        let owner =
+            |id: usize| ViewSetOwner::trusted(format!("gateway-client-{namespace}-{id:032x}"));
+        let open = json!({"type":"call","call_id":"view","operation":{"type":"open_view_set","request":{"views":[{"type":"torrent_list","view_id":"library","delivery":{"kind":"immediate"}}],"options":{}}}});
+        let cancel = CancellationToken::new();
+        let task = tokio::spawn(server.serve(cancel.clone()));
+        let connect = |id: usize| json!({"type":"connect","api_version":1,"encoding":"json","client_instance_id":format!("{id:032x}"),"token":token});
+        let (mut retained, _) = connect_async(request()).await.unwrap();
+        retained
+            .send(Message::Text(connect(0).to_string().into()))
+            .await
+            .unwrap();
+        retained.next().await.unwrap().unwrap();
+        retained
+            .send(Message::Text(open.to_string().into()))
+            .await
+            .unwrap();
+        let frame: Value =
+            serde_json::from_str(&retained.next().await.unwrap().unwrap().into_text().unwrap())
+                .unwrap();
+        let retained_id = frame["result"]["response"]["view_set_id"]
+            .as_str()
+            .expect("opened set")
+            .to_owned();
+        // More than the global set limit, well before the five-minute lease.
+        for id in 1..=64 {
+            let (mut page, _) = connect_async(request()).await.unwrap();
+            page.send(Message::Text(connect(id).to_string().into()))
+                .await
+                .unwrap();
+            page.next().await.unwrap().unwrap();
+            page.send(Message::Text(open.to_string().into()))
+                .await
+                .unwrap();
+            let frame: Value =
+                serde_json::from_str(&page.next().await.unwrap().unwrap().into_text().unwrap())
+                    .unwrap();
+            assert_eq!(frame["type"], "result", "{frame}");
+            let mut set_id = frame["result"]["response"]["view_set_id"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+            if id == 1 {
+                // A replacement waits for old-owner cleanup before admission.
+                let (mut replacement, _) = connect_async(request()).await.unwrap();
+                replacement
+                    .send(Message::Text(connect(id).to_string().into()))
+                    .await
+                    .unwrap();
+                let hello = replacement
+                    .next()
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .into_text()
+                    .unwrap();
+                assert!(hello.contains("connected"));
+                assert!(matches!(
+                    service.lock().await.view_set(&owner(id), &set_id),
+                    Err(ViewSetError::UnknownViewSet)
+                ));
+                replacement
+                    .send(Message::Text(open.to_string().into()))
+                    .await
+                    .unwrap();
+                let replacement_frame: Value = serde_json::from_str(
+                    &replacement
+                        .next()
+                        .await
+                        .unwrap()
+                        .unwrap()
+                        .into_text()
+                        .unwrap(),
+                )
+                .unwrap();
+                let replacement_id = replacement_frame["result"]["response"]["view_set_id"]
+                    .as_str()
+                    .unwrap();
+                assert!(
+                    service
+                        .lock()
+                        .await
+                        .view_set(&owner(id), replacement_id)
+                        .is_ok()
+                );
+                set_id = replacement_id.to_owned();
+                drop(replacement);
+            }
+            // No detach or close-view-set; also covers unattached sets.
+            drop(page);
+            tokio::time::timeout(Duration::from_secs(2), async {
+                loop {
+                    if matches!(
+                        service.lock().await.view_set(&owner(id), &set_id),
+                        Err(ViewSetError::UnknownViewSet)
+                    ) {
+                        break;
+                    }
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            assert!(
+                service
+                    .lock()
+                    .await
+                    .view_set(&owner(0), &retained_id)
+                    .is_ok()
+            );
+        }
+        drop(retained);
+        cancel.cancel();
+        task.await.unwrap().unwrap();
+        service.lock().await.shutdown().await.unwrap();
+        drop(service);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
     async fn exact_admission_identity_shared_library_limits_and_joined_shutdown() {
         let root =
             std::env::temp_dir().join(format!("rstorrent-desktop-control-{}", std::process::id()));

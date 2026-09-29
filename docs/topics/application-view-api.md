@@ -10,6 +10,16 @@ No generated DTO changes are needed. Its hello identifies `desktop`, the sole
 Media capability is withheld and media-URL
 creation is rejected until that surface has its own acceptance evidence.
 
+Tactical [`234`](../tactical/234-desktop-user-intent-and-background-lifecycle.md)
+retires desktop-control view sets when their authenticated connection ends,
+after joining calls and attachment pumps and before admitting a same-client
+replacement. Desktop pages rebuild views on attachment; retaining abandoned
+sets for the five-minute lease exhausted the global limit during rapid reloads.
+Cleanup includes unattached sets and affects only the departed owner. Other
+transports retain resumable leases, and native-window views remain independent.
+The 32-set global/eight-set owner limits and application wire contract do not
+change.
+
 Tactical `216`'s local support export consumes only the existing client-side
 updater snapshot and emits its own bounded allowlist. It changes no generated
 application DTO, selector, leased-view delivery, acknowledgement or Rust/native

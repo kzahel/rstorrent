@@ -1,6 +1,7 @@
 use super::super::*;
 use super::*;
 use crate::diagnostics::{MAX_DIAGNOSTIC_PATCH_EVENTS, category};
+use crate::views::contract::MAX_VIEW_SETS_PER_OWNER;
 use crate::{
     DiagnosticCategory, DiagnosticEvent, DiagnosticFilter, DiagnosticRetention, DiagnosticSeverity,
     FileCatalogState, FileSelectionView, FileView, MediaCatalogState, MediaFileAvailability,
@@ -1037,6 +1038,51 @@ async fn close_wakes_a_waiting_long_poll() {
         .expect("waiter timed out")
         .expect("waiter task");
     assert_eq!(result, Err(ViewSetError::Closed));
+}
+
+#[tokio::test]
+async fn retiring_one_owner_reclaims_all_sets_and_wakes_only_its_waiter() {
+    let hub = ViewHub::new(&service_snapshot(0, 0)).unwrap();
+    let owner = ViewSetOwner::trusted("departed page");
+    let other = ViewSetOwner::trusted("native window");
+    let retained = hub
+        .open_view_set(other.clone(), open_request(vec![spec()]))
+        .unwrap();
+    let mut opened = Vec::new();
+    for _ in 0..MAX_VIEW_SETS_PER_OWNER {
+        opened.push(
+            hub.open_view_set(owner.clone(), open_request(vec![spec()]))
+                .unwrap(),
+        );
+    }
+    let handle = hub.view_set(&owner, &opened[0].view_set_id).unwrap();
+    let waiting = handle.clone();
+    let cursor = opened[0].initial.cursor.clone();
+    let waiter = tokio::spawn(async move { waiting.next_updates(&cursor, 20_000).await });
+    while !handle.inner.polling.load(Ordering::Acquire) {
+        tokio::task::yield_now().await;
+    }
+    hub.close_owner_view_sets(&owner);
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(1), waiter)
+            .await
+            .unwrap()
+            .unwrap(),
+        Err(ViewSetError::Closed)
+    );
+    for set in opened {
+        assert!(matches!(
+            hub.view_set(&owner, &set.view_set_id),
+            Err(ViewSetError::UnknownViewSet)
+        ));
+    }
+    assert!(hub.view_set(&other, &retained.view_set_id).is_ok());
+    // Repeated cleanup cannot retire another owner, and capacity is immediate.
+    hub.close_owner_view_sets(&owner);
+    for _ in 0..MAX_VIEW_SETS_PER_OWNER {
+        hub.open_view_set(owner.clone(), open_request(vec![spec()]))
+            .unwrap();
+    }
 }
 
 #[tokio::test]
