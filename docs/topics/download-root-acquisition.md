@@ -2,21 +2,20 @@
 
 Topic: `download-root-acquisition`
 
-Tactical [`232`](../tactical/232-desktop-extension-control.md) now implements
-extension-triggered native picking for Linux and Windows. An authenticated
-desktop platform frame carries only an optional opaque repair-root ID; a
-desktop-owned, short-lived dialog helper runs the existing native `rfd` backend
-without creating the main webview or another application service. A single
-permit covers both views. Disconnect, deadline and Quit close and reap the
-helper before releasing admission; Cancel returns no root. Scripted lifecycle
-and connection tests pass. Installed Linux/Windows focus, selection, Cancel,
-tab-detach and Quit cleanup evidence passes with fresh controlled roots. macOS remains on the
-native-window acquisition path pending its own verification.
+Tactical [`232`](../tactical/232-desktop-extension-control.md) implements
+extension-triggered native picking for Linux, Windows and macOS. An authenticated
+platform frame carries only an optional opaque repair-root ID. A desktop-owned,
+short-lived helper runs the native `rfd` backend without creating a webview or
+another application service. A single permit covers both views; bounded pipes,
+a five-minute deadline and joined kill/wait retain explicit ownership.
 
-Tactical 232 now extends the owned same-executable folder helper to macOS
-AppKit accessory activation. Builder cancellation/reaping tests pass; installed
-panel success, Cancel, disconnect and Quit remain unqualified pending its
-claimed-guest checkpoint. Native-window selection retains its parented panel.
+Installed claimed-guest selection, Cancel, tab-disconnect and Quit cleanup pass
+with fresh controlled roots on all three platforms. macOS completes AppKit
+accessory launch before activating NSOpenPanel; helper termination dismisses
+the system-hosted panel. Native-window selection retains its parented panel.
+The macOS application Quit menu uses the existing joined shutdown owner instead
+of AppKit's immediate predefined termination action. Broader browser lifecycle
+and update compatibility remain Tactical 232 gates.
 
 Status: Current behavior researched on 2026-08-29. Packaged desktop, local
 browser gateway, Crostini, and Linux headless use distinct platform adapters

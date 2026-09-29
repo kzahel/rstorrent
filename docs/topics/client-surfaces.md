@@ -4,15 +4,16 @@ Topic: `client-surfaces`
 
 Tactical [`232`](../tactical/232-desktop-extension-control.md) implements the
 first desktop beta-extension client using the packaged shared React application.
-Native and extension views share one default library; explicit extension open
-starts the runtime without creating a native window, while ordinary desktop
-launch shows that window. Authenticated extension requests now open a desktop-owned
-native picker on Linux/Windows; disconnect and Quit reap its helper. The macOS
-helper now compiles and passes scripted ownership tests, with installed
-activation/cancellation qualification still in progress in Tactical 232. Media,
-updater and shell actions remain native. Installed debug-package/transfer
-evidence passes on both platforms; macOS and broader browser lifecycle gates
-remain recorded in the tactical.
+Native and extension views share one default library. Explicit extension open
+starts the runtime without creating a native window; ordinary desktop launch
+shows that window. Authenticated extension requests open a desktop-owned native
+picker on Linux, Windows and macOS; disconnect and Quit reap its helper. macOS
+completes AppKit accessory launch before panel activation and routes the
+application menu's Cmd-Q through the same joined shutdown as tray Quit.
+Installed unsigned debug-package, controlled transfer and lifecycle checkpoints
+pass on all three platforms. Media, updater and shell actions remain native;
+broader browser endurance, update compatibility and production readiness remain
+separate gates recorded in the tactical.
 
 Tactical [`229`](../tactical/229-web-desktop-data-reset.md) brings the reset
 and clear choices to shared React Settings for local browser and desktop

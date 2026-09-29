@@ -62,7 +62,7 @@ SQLite and payload writes remain native. No engine runs in the extension.
 
 | ID | Work | State | Exit evidence / next action |
 | --- | --- | --- | --- |
-| M-01 | Desktop extension control | Linux/Windows installed checkpoint complete in [`232`](232-desktop-extension-control.md); full rehearsal partial | Protected bootstrap, native picker, controlled bytes, shared library, singleton and Quit pass. Next: macOS, broad browser update/suspension/discard and endurance cases. |
+| M-01 | Desktop extension control | Linux/Windows/macOS installed checkpoint complete in [`232`](232-desktop-extension-control.md); full rehearsal partial | Protected bootstrap, native picker, controlled bytes, shared library, singleton and Quit pass. Next: broad browser update/suspension/discard and endurance cases. |
 | M-02 | Legacy cohort inventory and fixtures | [233](233-legacy-desktop-fixture-cohort.md): bounded Linux/Windows v0.2.1 cohort complete | Seven profiles/eight records plus two labeled mutations per platform; closed snapshot/payload oracle passes. Broader releases, browser-store variants and macOS remain unqualified. |
 | M-03 | Migration preview, union import and recovery | Not implemented | Consistent snapshots of all source profiles, identity/root mapping, explicit conflict outcomes, retry/crash recovery, held activation, exact recheck and preservation |
 | M-04 | Support/report continuity | Required before user cohort | Failure-page report, bounded migration/backend context, familiar voluntary feedback journey and disclosure verification |
@@ -211,17 +211,21 @@ production routing remain separately scoped.
 - Installed Linux and Windows follow-up: native bootstrap, picker
   selection/Cancel/detach/Quit, exact private 32-MiB transfer, two-view
   convergence, source-offline restart and registration repair pass. Linux
-  also proves transfer while detached. macOS is deferred to a later session.
+  also proves transfer while detached. The macOS installed counterpart now passes
+  with owned AppKit picking, same-UID bootstrap, serialized cold starts and
+  joined menu/tray shutdown; exact commands and artifact hashes are in `232`.
 - M-02 preparation: Tactical 233 pins released desktop/extension artifacts,
   generates seven legacy profiles on each guest, and verifies closed SQLite,
   torrent identities, bitfields and payload pieces independently. Its union
   outcomes remain a proposal for importer design, not implemented migration.
 - Next executable action: use the retained fixtures to finalize a bounded
-  importer preview/held-state/recovery tactical; separately complete macOS
-  control acceptance and browser lifecycle/resource-pressure cases.
-- Rehearsal A: **partial across platforms; Linux/Windows installed checkpoint
-  complete**. Rehearsals B/C: **not run**. No migration-ready or rollout-ready
-  claim. Guests restored, powered off and claims released after the run.
+  importer preview/held-state/recovery tactical; separately continue Tactical
+  `232` browser lifecycle/resource-pressure and update-compatibility cases.
+  No importer implementation is authorized by this checkpoint.
+- Rehearsal A: **partial; Linux/Windows/macOS installed checkpoints complete**.
+  Rehearsals B/C: **not run**. No migration-ready or rollout-ready claim. Linux/Windows guests were restored and powered off; the macOS guest
+  was restored to its inherited suspended state after owned-artifact cleanup.
+  All exclusive guest claims are released.
 - Remaining campaign decisions: supported source formats, union-conflict rules,
   settings and historical counters, mixed-version bridge policy, first cohort
   delivery, compatibility baseline and rollback support duration.

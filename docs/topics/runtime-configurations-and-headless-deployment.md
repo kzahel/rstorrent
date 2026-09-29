@@ -7,7 +7,12 @@ Tactical [`232`](../tactical/232-desktop-extension-control.md) adds an explicit
 It retains the desktop application service, default library and close/Quit
 policy while deferring webview creation until a native-window action. It is
 not a configured headless-service mode. The native host owns bootstrap only;
-closing an extension client does not transfer runtime ownership.
+closing an extension client does not transfer runtime ownership. macOS native
+bootstrap serializes explicit starts with a private OS-released file lock,
+rechecks readiness and sends only one LaunchServices background open. The
+application menu and tray Quit use the same joined shutdown owner. Installed
+macOS, Windows and Linux checkpoints pass; this is not browser endurance or
+update-compatibility qualification.
 
 Status: Configured Linux headless-service Tactical
 [`170`](../tactical/170-configured-linux-headless-service.md) and signed

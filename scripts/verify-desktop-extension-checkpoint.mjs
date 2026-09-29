@@ -86,7 +86,11 @@ try {
     const response = await page.evaluate(async () => Promise.all(Array.from({ length: 12 }, () => chrome.runtime.sendMessage({ type: 'desktopBootstrap', op: 'open' }))));
     assert(response.every(value => value.ok), JSON.stringify(response.map(value => ({ ok: value.ok, error: value.error }))));
     assert.equal(context.pages().filter(page => page.url().endsWith('companion/companion.html?backend=desktop')).length, 1);
-    console.log(JSON.stringify({ phase, clicks: 12, pages: 1 }));
+    await page.waitForFunction(async () => {
+      const tab = await chrome.tabs.getCurrent();
+      return tab.active && (await chrome.windows.get(tab.windowId)).focused;
+    });
+    console.log(JSON.stringify({ phase, clicks: 12, pages: 1, activeTab: true, focusedWindow: true }));
   } else if (phase === 'stopped') {
     await page.waitForTimeout(35_000);
     const result = await page.evaluate(() => chrome.runtime.sendMessage({ type: 'nativeBootstrap', op: 'attach_control' }));

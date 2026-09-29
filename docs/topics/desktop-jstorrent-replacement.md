@@ -2,21 +2,22 @@
 
 Topic: `desktop-jstorrent-replacement`
 
-Tacticals [232](../tactical/232-desktop-extension-control.md) and
-[233](../tactical/233-legacy-desktop-fixture-cohort.md) now record installed
-Linux/Windows extension control and a pinned released legacy fixture cohort.
-Extension picking, controlled bytes, single-runtime lifetime and registration
-repair pass in claimed guests. Seven generated legacy profiles per platform
-cover duplicate/conflicting roots and intent, partial/complete bytes, pending
-magnets and selective Unicode content, with closed SQLite/identity/piece
-validation. The union rules remain proposed importer design; no importer,
-production identity change or personal migration has run. macOS is deferred.
+Tactical [232](../tactical/232-desktop-extension-control.md) records installed
+Linux, Windows and macOS extension-control checkpoints: native picking,
+controlled bytes, one runtime/library, two-view convergence, registration repair
+and joined Quit in claimed guests. Tactical
+[233](../tactical/233-legacy-desktop-fixture-cohort.md) separately records a
+pinned released legacy fixture cohort on Linux/Windows only. Seven generated
+profiles per fixture platform cover conflicting roots/intent, partial/complete
+bytes, pending magnets and selective Unicode content, with independent closed
+SQLite/identity/piece validation. Union rules remain proposed importer design;
+no importer, production identity change or personal migration has run.
 
-Status: **Linux/Windows installed control and fixture preparation complete,
-2026-09-29; migration campaign active.** Tactical
-[`231`](../tactical/231-jstorrent-migration-working-campaign.md) tracks the next
-bounded importer design and remaining platform/browser acceptance. macOS,
-importer implementation, production identity and rollout remain separate gates.
+Status: **Three-platform installed control checkpoint complete, 2026-09-29;
+migration campaign active.** Tactical
+[`231`](../tactical/231-jstorrent-migration-working-campaign.md) tracks broader
+browser lifecycle/endurance and update compatibility, separately from bounded
+importer design, production identity and rollout gates.
 
 ## Outcome And Scope
 

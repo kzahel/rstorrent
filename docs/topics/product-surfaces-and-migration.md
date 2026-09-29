@@ -620,11 +620,12 @@ fixture, or wire contract from either sibling project.
 
 ## Recommended Next Work
 
-For the desktop migration campaign, continue Tactical `232` from its first
-Linux control checkpoint to extension picker and full installed Rehearsal A,
-tracked by Tactical `231` and
-[`desktop-jstorrent-replacement.md`](desktop-jstorrent-replacement.md).
-Legacy source-fixture/import rehearsal follows the first working control path.
+For the desktop migration campaign, Tactical `232` now has installed Linux,
+Windows and macOS control checkpoints. Continue its broader browser lifecycle,
+endurance and mixed-version/update-compatibility gates, tracked by Tactical
+`231` and [`desktop-jstorrent-replacement.md`](desktop-jstorrent-replacement.md).
+Tactical `233` retains Linux/Windows legacy fixtures for a separately bounded
+importer design and rehearsal; no importer or personal migration is implemented.
 Existing independent release and platform campaigns below continue under
 their own gates.
 

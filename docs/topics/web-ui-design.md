@@ -6,8 +6,10 @@ Tactical [`232`](../tactical/232-desktop-extension-control.md) mounts the same
 React library in the desktop extension with portable multi-root presentation.
 Its bootstrap shows Start when the desktop is stopped and offers Open desktop
 window. Reconnection only attaches; a disconnected application is unmounted
-and hidden so stale rows cannot accept actions. Native folder selection remains
-the first-checkpoint route; the extension explains that limitation.
+and hidden so stale rows cannot accept actions. Qualified Linux, Windows and
+macOS builds expose the authenticated desktop-owned folder picker in this same
+UI. Cancellation adds no root; disconnect and Quit cancel its owned helper.
+The platform frame carries an optional opaque repair-root ID, never a path.
 
 Tactical [`229`](../tactical/229-web-desktop-data-reset.md) adds a Data & reset
 Settings category with separate confirmations for restoring default preferences
