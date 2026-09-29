@@ -127,7 +127,7 @@ assert-same-runtime/assert`, and checkpoint `remember/stale/start/stopped`:
   manual Retry adds exactly one attach, no start. Restoring the owned manifest
   and Retry attaches to the unchanged runtime/library;
 - roll forward current desktop, remove only its owned versioned host and
-  standard ChromeForTesting registration, then normal desktop launch: both
+  configured ChromeForTesting registration, then normal desktop launch: both
   are repaired with unchanged host hash; native UI independently shows the
   same paused fixture. Custom-profile manifest setup is separate fixture
   wiring, not evidence of standard-path discovery.

@@ -2,6 +2,14 @@
 
 Topic: `client-surfaces`
 
+Tactical [240](../tactical/240-signed-desktop-control-qualification.md) prepares
+the requested signed current-source desktop-control release and installed
+matrix. It corrects the macOS Chrome for Testing support directory to
+`Google/Chrome for Testing`. Prior custom-profile control and configured-root
+repair tests remain valid, but did not prove discovery in that browser's actual
+default profile. The signed checkpoint must exercise standard-profile
+registration and repair without a manually copied manifest.
+
 Selected three-platform beta replacement, rollback and native registration
 repair pass in [236](../tactical/236-desktop-compatibility-refusal-and-recovery.md)
 and [237](../tactical/237-macos-windows-package-recovery.md).

@@ -280,7 +280,7 @@ fn browser_profile_roots(platform: Platform, home_dir: &Path) -> Vec<PathBuf> {
             let application_support = home_dir.join("Library/Application Support");
             vec![
                 application_support.join("Google/Chrome"),
-                application_support.join("Google/ChromeForTesting"),
+                application_support.join("Google/Chrome for Testing"),
                 application_support.join("Chromium"),
             ]
         }
@@ -370,7 +370,7 @@ mod tests {
         let home = Path::new("/home/tester");
         let mac = browser_profile_roots(Platform::MacOS, home);
         assert!(mac.contains(&home.join("Library/Application Support/Google/Chrome")));
-        assert!(mac.contains(&home.join("Library/Application Support/Google/ChromeForTesting")));
+        assert!(mac.contains(&home.join("Library/Application Support/Google/Chrome for Testing")));
         assert!(
             !mac.iter()
                 .any(|path| path.to_string_lossy().contains("Edge"))
@@ -413,6 +413,38 @@ mod tests {
         )
         .unwrap();
         assert_eq!(launch, LaunchConfig::executable(desktop));
+    }
+
+    #[test]
+    fn mac_testing_browser_registration_repairs_its_actual_support_directory() {
+        let directory = tempfile::tempdir().unwrap();
+        // Chromium's GOOGLE_CHROME_FOR_TESTING_BRANDING fallback in
+        // chrome/common/chrome_paths_mac.mm includes both spaces.
+        let browser = directory
+            .path()
+            .join("Library/Application Support/Google/Chrome for Testing");
+        fs::create_dir_all(&browser).unwrap();
+        let manifest = browser
+            .join("NativeMessagingHosts")
+            .join(HOST_MANIFEST_FILENAME);
+        let bytes = manifest_bytes(&directory.path().join("native-host")).unwrap();
+        assert_eq!(
+            install_browser_manifests(Platform::MacOS, directory.path(), &bytes).unwrap(),
+            1
+        );
+        assert_eq!(fs::read(&manifest).unwrap(), bytes);
+        fs::remove_file(&manifest).unwrap();
+        assert_eq!(
+            install_browser_manifests(Platform::MacOS, directory.path(), &bytes).unwrap(),
+            1
+        );
+        assert_eq!(fs::read(manifest).unwrap(), bytes);
+        assert!(
+            !directory
+                .path()
+                .join("Library/Application Support/Google/Chrome")
+                .exists()
+        );
     }
 
     #[test]
