@@ -2,6 +2,15 @@
 
 Topic: `desktop-jstorrent-replacement`
 
+Tactical [237](../tactical/237-macos-windows-package-recovery.md) now records
+macOS selected beta package replacement/rollback and native registration repair;
+Windows is in progress. [239](../tactical/239-desktop-suspension-browser-recovery.md)
+records same-runtime macOS VM resume/browser restart and an independently
+verified 32-MiB transfer after correcting a stale-port seed fixture. Native OS
+sleep and broader endurance remain unqualified; final cleanup is pending.
+Signed channel qualification is separately planned in 238. Importer work has
+not started.
+
 Tactical [`236`](../tactical/236-desktop-compatibility-refusal-and-recovery.md)
 qualifies selected Linux beta old/new extension/runtime pairs, an already-open
 successor UI across replacement, credential rotation and same-schema rollback.

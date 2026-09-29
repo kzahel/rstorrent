@@ -40,8 +40,15 @@ def main():
     block = bytes((index * 17 + index // 13) & 255 for index in range(65536))
     payload = block * 512
     (seed_root / name).write_bytes(payload)
+    # Keep the advertised port across interface refreshes (for example when
+    # resuming a VM changes its host-side network interface). Port zero would
+    # allow libtorrent to silently reopen on a different ephemeral port.
+    with socket.socket() as reservation:
+        reservation.bind((str(address), 0))
+        listen_port = reservation.getsockname()[1]
     session = lt.session({
-        "listen_interfaces": f"{address}:0", "enable_dht": False,
+        "listen_interfaces": f"{address}:{listen_port}", "enable_dht": False,
+        "listen_system_port_fallback": False, "max_retry_port_bind": 0,
         "enable_lsd": False, "enable_upnp": False, "enable_natpmp": False,
         "enable_incoming_utp": False, "enable_outgoing_utp": False,
         "enable_incoming_tcp": True, "enable_outgoing_tcp": True,
@@ -51,9 +58,8 @@ def main():
     deadline = time.monotonic() + 10
     while not session.listen_port() and time.monotonic() < deadline:
         time.sleep(0.02)
-    if not session.listen_port():
+    if session.listen_port() != listen_port:
         raise RuntimeError("seed listener did not become ready")
-    compact_peer = socket.inet_aton(str(address)) + struct.pack("!H", session.listen_port())
 
     class Tracker(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -64,6 +70,11 @@ def main():
             if query.get("info_hash", [""])[0].encode("latin1").hex() != info_hash:
                 self.send_error(400)
                 return
+            port = session.listen_port()
+            if port != listen_port:
+                self.send_error(503, "controlled seed listener unavailable")
+                return
+            compact_peer = socket.inet_aton(str(address)) + struct.pack("!H", port)
             body = bytes(lt.bencode({b"interval": 10, b"peers": compact_peer}))
             self.send_response(200)
             self.send_header("Content-Length", str(len(body)))
@@ -105,7 +116,8 @@ def main():
     thread = threading.Thread(target=tracker.serve_forever, daemon=True)
     thread.start()
     report = {"name": name, "bytes": len(payload), "sha256": hashlib.sha256(payload).hexdigest(),
-              "infoHash": info_hash, "torrent": str(torrent_path), "libtorrent": lt.version}
+              "infoHash": info_hash, "torrent": str(torrent_path), "libtorrent": lt.version,
+              "listenPort": listen_port, "trackerPort": tracker.server_port}
     (args.root / "ready.json").write_text(json.dumps(report) + "\n")
     print(json.dumps(report), flush=True)
     try:

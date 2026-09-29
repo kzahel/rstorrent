@@ -91,3 +91,55 @@ passes all 21 tests. `node scripts/validate-desktop-release.mjs` and
 target/debug/bundle/macos/RSTorrent.app` pass. macOS desktop library tests pass
 53 cases and incremental unsigned app packaging succeeds. Runtime production
 source remains `cee8ff04`; validation-only edits do not change that artifact.
+
+## macOS Installed Matrix (Cleanup Pending)
+
+Claimed macOS 26.6.2 arm64 guest, inherited suspended. Normal native launch and
+Settings > Downloads > Add folder selected a fresh controlled root. The old
+package desktop hash is recorded above; current debug desktop SHA-256 is
+`dcc8899f38ea0abe94f8d64556e22782ef508746ca0cea2e71b622d74b7958e2`.
+Both use the bundled native host SHA-256
+`9737e093124c933864b25031ab1a27679e6e055c204fb29423cab3a292429000`.
+Desktop minimum macOS 13.0, host minimum 11.0; arm64 and system dependency
+inspection precede transfer. The guest satisfies both. Separately identified
+Chrome for Testing 151.0.7922.34 is sandboxed with a task-owned profile.
+
+Old extension rebuilt from `662c55f1` reproduces 234's exact archive SHA-256
+`3b05241b4a8d59abb3e62443137756672bf6d059e3da9d1464e74f8254d7a0be`;
+new extension is 236's frozen artifact above. The paused 4,096-byte no-peer
+fixture retains its torrent/root identities and zero verified pieces in every
+combination. An independent 37-byte root sentinel retains SHA-256
+`850b2892d2dc35b290bde732f7465acc0e57f99de0869448f3b60e225cb9a1f0`.
+
+Using `verify-desktop-update-compatibility.mjs record/assert-open-page/
+assert-same-runtime/assert`, and checkpoint `remember/stale/start/stopped`:
+
+- old extension/old desktop: native-created controlled library recorded;
+- old extension/new desktop: joined Quit, local app replacement, explicit Start;
+  the old page's document marker and library survive, runtime identity changes
+  and retained old credentials fail without library disclosure;
+- new extension/new desktop: real extension reload keeps the same runtime and
+  library (developer mode enabled only in the owned test browser);
+- new extension/old desktop: joined same-schema rollback changes runtime
+  identity, preserves the library/sentinel and refuses stale authority;
+- controlled unsupported-protocol native-host response: exactly one attach
+  attempt across eight seconds, hidden application and actionable Retry;
+  manual Retry adds exactly one attach, no start. Restoring the owned manifest
+  and Retry attaches to the unchanged runtime/library;
+- roll forward current desktop, remove only its owned versioned host and
+  standard ChromeForTesting registration, then normal desktop launch: both
+  are repaired with unchanged host hash; native UI independently shows the
+  same paused fixture. Custom-profile manifest setup is separate fixture
+  wiring, not evidence of standard-path discovery.
+
+No signed update or legacy replacement is inferred. The fresh library is
+reused by 239 before cleanup. Windows old installer SHA-256 is
+`7a4d6d19ba858a5435efce23ae484e86e8d6ff4e52ab68be37be592e3dbe8fc9`;
+its installed desktop matches 234's
+`92eebfa23ded6c694a28f70838de8043dc09fc6c6db67c1e5c07767100ca8c9a`.
+The cached Windows builder passes 50 desktop library tests. Packaging first
+stops on missing cargo-about; restoring pinned 0.9.2 to a task-only PATH lets
+incremental NSIS packaging pass. New installer SHA-256 is
+`54dab7e62ba6b47a56550688fb506f86c407352f6ab72e68db92f5ace34affae`.
+Inherited installation/profile/registry and source-overlay receipts remain
+preserved until the Windows installed matrix and final restoration finish.
