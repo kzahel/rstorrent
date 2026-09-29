@@ -223,10 +223,11 @@ production routing remain separately scoped.
   generates seven legacy profiles on each guest, and verifies closed SQLite,
   torrent identities, bitfields and payload pieces independently. Its union
   outcomes remain a proposal for importer design, not implemented migration.
-- Next executable action: use the retained fixtures to finalize a bounded
-  importer preview/held-state/recovery tactical; separately qualify
-  longer browser/OS suspension, resource endurance and mixed-version
-  installer/update compatibility. Tactical `234` closes the bounded 64-cycle
+- Next executable action: finish [235](235-linux-quit-launch-handoff.md)'s
+  Linux Quit/launch overlap repair, then qualify bounded desktop extension/
+  runtime update compatibility in a separate tactical. Longer browser/OS
+  suspension and resource endurance remain separate. Retained legacy fixtures
+  support later importer preview/held-state/recovery design only. Tactical `234` closes the bounded 64-cycle
   view-retention failure and qualifies explicit-intent/background lifetime.
   No importer implementation is authorized by this checkpoint.
 - Rehearsal A: **partial; Linux/Windows/macOS installed checkpoints complete**.

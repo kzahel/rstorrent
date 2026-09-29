@@ -1059,6 +1059,10 @@ hosted repeats.
 
 ### Active
 
+- Complete **Tactical `235`**'s Linux Quit/launch admission repair and isolated
+  installed qualification; then scope desktop extension/runtime update
+  compatibility separately. Legacy importer work is not part of this slice.
+
 - Complete **Tactical `214`**'s native platform notice and source-delivery
   review for the package lanes to be declared. Tactical `218` adopts and
   qualifies the approved GLib backport; fresh advisory and exact source
