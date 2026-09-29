@@ -1,6 +1,6 @@
 # Tactical 239: Desktop Suspension And Browser Recovery
 
-Status: **Active, 2026-09-29.** Campaign 231; follows 234/237.
+Status: **Active; Linux installed checks blocked, 2026-09-29.** Campaign 231; follows 234/237.
 Topics: `client-surfaces`, `runtime-configurations-and-headless-deployment`,
 `application-connection-architecture`, `desktop-jstorrent-replacement`.
 
@@ -99,5 +99,98 @@ Independent file read verified 33,554,432 bytes and SHA-256
 The seed retained its fixed listening port and an established guest connection
 after resume. Native tray Show also opened the same library while the browser
 was closed in the first run. One sample was 142,256 KiB RSS; this is a sample,
-not an endurance bound. Joined Quit/browser restore checks and final cleanup
-are still pending. Windows/Linux recovery remains pending.
+not an endurance bound. Joined Quit/browser restore and final cleanup pass
+as recorded below. Windows evidence follows; Linux remains unqualified.
+
+## Windows Browser Recovery
+
+The fixed-listener private seed uses libtorrent 2.0.13.0. Record 3/512 verified
+pieces, close the actual test browser and native window, then reopen the test
+browser with session restoration. Attach-only recovery observes the same
+runtime/root/torrent and 104 pieces. Remove the temporary 64-KiB/s limit;
+completion reaches 512/512 and independent SHA-256 verifies the exact 32-MiB
+payload above. A detached sample is 54,579,200 bytes working set / 486 handles.
+Joined tray Quit, browser restart, two passive reload/worker-stop cycles and
+35 seconds do not resurrect; explicit Start succeeds. No Windows native sleep
+or provider pause is claimed. Inherited-state restoration passes all 319 file
+hashes, eight registry states and 1,482 source-overlay paths; guest is off and
+claim released. macOS cleanup restores its inherited suspended state and
+releases its claim; no owned browser/runtime/helper remains.
+
+macOS also passes joined Quit plus browser restart, two reload/worker-stop
+cycles and 35 seconds without resurrection, followed by explicit Start.
+
+Linux initial readiness passed, but GNOME Shell segfaulted in
+`libgobject-2.0.so.0.8000.0` at 16:22:22 UTC during initial native UI setup.
+Wayland disconnected and the product exited with broken-display-pipe errors.
+Doctor then reports missing desktop/resident, with guest administration intact;
+`ensure-ready` directs a read-only maintenance audit. Recovery follows below.
+This is neither passing suspension evidence nor a diagnosed product regression.
+
+Linux read-only maintenance audit finds a healthy package/guest-agent baseline
+but unavailable resident after the compositor failure. Common `target reboot`
+and `target ensure-ready` restore an unlocked, fully ready desktop. Native UI
+setup now succeeds. No guest policy, package upgrade or Machine Control source
+change was needed; keep the earlier compositor crash in the evidence.
+
+
+## Linux Blocker And Restart
+
+The recovered session reaches its inherited five-minute lock before native-root
+selection completes. Doctor explicitly reports `desktop=locked`; inherited
+`lock-enabled=true` and `idle-delay=300` remain unchanged. Stop interactive
+work and request direct user unlock. No password, lock bypass or reboot to
+avoid authentication is used. A later doctor still reports locked. No Linux
+239 transfer/browser/sleep result or 238 signed updater result is claimed.
+The native app had started and displayed its folder dialog; no root/torrent was
+added and no test browser was launched. `/sys/power/state` offers `freeze mem`,
+with `[s2idle]`; no native sleep or RTC wake event was attempted.
+
+The installed debug DEB is 235's qualified x86_64 artifact, SHA-256
+`f797456de043dd7002f5f4bb3d0c537b18f04c7e55ed0efef83d99f3b6c5576c`.
+Before installation, ELF architecture and all `ldd` dependencies are checked
+against Ubuntu 24.04.4 x86_64 / glibc 2.39 / WebKitGTK 2.52.6. For the planned
+AppImage lane, apt simulation and installation add only `libfuse2t64`
+2.9.9-8.1build1, following the official AppImage Ubuntu guidance; this is test
+preparation, not installed signed-update evidence.
+
+With no unlocked session available, cleanup stops the exact owned systemd user
+unit through guest administration. This is cleanup termination, not native
+Quit evidence. Remove only the newly installed `rs-torrent` and `libfuse2t64`
+packages, fresh product profile, task directory and owned screenshot; no
+`autoremove`, policy change or inherited data deletion. Verify owned executable,
+process and artifact absence, return the guest to its inherited off state and
+release the claim. Remove owned controller seed/server and exact temporary
+firewall rules. Incremental builder caches remain.
+
+Next executable action: claim a ready unlocked Linux guest, prepare a fresh
+root through native UI, and repeat the bounded browser/transfer matrix with a
+new fixed-port seed. Query actual power support and supported recovery before
+any sleep experiment; do not reuse expired seed endpoints. Separately run
+238's signed AppImage cohort. Native physical sleep, broader endurance and
+signed current-source delivery remain open; importer work waits for discussion.
+
+## Reproducible Runner Sequence
+
+Run the fixture on the builder with `uv run --project tests/interop --locked
+python tests/interop/desktop_extension_seed.py --root "$FIXTURE_ROOT"
+--bind "$GUEST_REACHABLE_ADDRESS" --seconds 1800`. Copy only its generated
+metainfo and the runner into the claimed guest. Use the native-selected root
+and guest-owned Chrome for Testing CDP endpoint; preserve credentials in memory.
+
+```sh
+node scripts/verify-desktop-suspension-recovery.mjs limit
+node scripts/verify-desktop-suspension-recovery.mjs record "$BASELINE"
+# Supported VM suspend/resume, or real browser close and session restoration.
+node scripts/verify-desktop-suspension-recovery.mjs recover "$BASELINE"
+node scripts/verify-desktop-suspension-recovery.mjs unlimit
+node scripts/verify-desktop-suspension-recovery.mjs complete "$BASELINE" "$PAYLOAD"
+```
+
+Set `RSTORRENT_PLAYWRIGHT_MODULE` to the guest's installed Playwright module;
+use the runner's CDP override when its default differs. Final source validation:
+21 release/package/input Node tests pass, macOS desktop library 53 tests and
+Windows desktop library 50 tests pass, Node syntax and Python compile checks
+pass. Runtime production code is unchanged in this slice; these are not full
+workspace Clippy/test claims. Installed observations above are separate from
+scripted assertions and single resource samples are not high-water bounds.

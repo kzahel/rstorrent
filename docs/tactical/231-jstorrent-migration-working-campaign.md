@@ -1,6 +1,6 @@
 # Tactical 231: JSTorrent Migration Working Campaign
 
-Status: **Active planning, 2026-09-28.** This is the working tracker for
+Status: **Active planning, 2026-09-29.** This is the working tracker for
 “ripping the Band-Aid off.” Maintainer direction selects desktop extension
 control as the first implementation focus and user-experience continuity as
 the North Star. No migration implementation or production rollout has run.
@@ -71,7 +71,7 @@ SQLite and payload writes remain native. No engine runs in the extension.
 | M-03 | Migration preview, union import and recovery | Not implemented | Consistent snapshots of all source profiles, identity/root mapping, explicit conflict outcomes, retry/crash recovery, held activation, exact recheck and preservation |
 | M-04 | Support/report continuity | Required before user cohort | Failure-page report, bounded migration/backend context, familiar voluntary feedback journey and disclosure verification |
 | M-05 | Installed desktop replacement rehearsal | Depends on M-01/03/04 | Old installed JSTorrent -> exact candidate -> restart/repair/rollback on macOS, Windows and Linux |
-| M-06 | Extension update coordination | [236](236-desktop-compatibility-refusal-and-recovery.md): bounded Linux beta matrix passes | Terminal incompatibility, attach-only recovery, old/new beta combinations, open-page runtime replacement, stale credentials, repair and same-schema rollback pass. Signed updates, original legacy combinations, macOS/Windows package matrices and ChromeOS shipment gates remain open. |
+| M-06 | Extension update coordination | [236](236-desktop-compatibility-refusal-and-recovery.md)/[237](237-macos-windows-package-recovery.md): selected three-platform beta matrix passes | Terminal refusal, attach-only recovery, open-page replacement, credential rotation, repair and same-schema rollback pass. [238](238-signed-desktop-channel-recovery.md) passes macOS/Windows signed updating of an older published cohort. Linux signed checks, signed current-source delivery, original legacy pairs and ChromeOS shipment gates remain open. |
 | M-07 | Opt-in cohort and graduation | Not scheduled | Explicit supported baseline, source coverage, observation window, stop thresholds and approved production operation |
 
 No entry above implies feature completion from source presence alone. Keep
@@ -223,17 +223,26 @@ production routing remain separately scoped.
   generates seven legacy profiles on each guest, and verifies closed SQLite,
   torrent identities, bitfields and payload pieces independently. Its union
   outcomes remain a proposal for importer design, not implemented migration.
-- Next executable action: use [236](236-desktop-compatibility-refusal-and-recovery.md)
-  as the checklist for a separate bounded macOS/Windows beta package
-  replacement/repair/rollback tactical, then select a signed update-path rehearsal. Linux Quit/launch overlap
-  is fixed in 235; bounded Linux beta compatibility and terminal recovery pass
-  in 236. Longer suspension/endurance and production legacy replacement remain
-  separate. Retained legacy fixtures support later importer design only.
-  No importer implementation is authorized by this checkpoint.
-- Rehearsal A: **partial; Linux/Windows/macOS installed checkpoints complete**.
-  Rehearsal B: **not run**; C: **partial, Linux beta compatibility only**. No migration-ready or rollout-ready claim. Linux/Windows guests were restored and powered off; the macOS guest
-  was restored to its inherited suspended state after owned-artifact cleanup.
-  All exclusive guest claims are released.
+- Completed follow-ups: 237 extends selected beta package replacement/repair/
+  rollback to macOS and Windows. 238 passes native signed 0.2.301 → 0.2.501
+  update/relaunch and Stable catch-up on both; published source predates
+  extension control, so it is not signed current-source delivery. 239 passes
+  same-owner browser restart and independently verified 32-MiB completion on
+  macOS/Windows, plus macOS VM suspend/resume. Native OS sleep is unavailable
+  on those guests and remains unqualified.
+- Next executable action: repeat 238/239's Linux checks in an unlocked claimed
+  guest. A compositor crash recovered through supported maintenance/reboot;
+  the inherited five-minute screen lock then blocked native-root preparation.
+  No authentication bypass or Linux recovery/update success is claimed. All
+  owned state is cleaned up, Linux/Windows are off, macOS is suspended and all
+  claims released. Keep physical sleep, longer endurance and signed
+  current-source delivery as separate gates.
+- Rehearsal A: **partial; three-platform installed control and bounded
+  lifecycle checkpoints complete**, with the 239 Linux follow-up still open.
+  Rehearsal B: **not run**; C: **partial, selected three-platform beta
+  compatibility and two-platform published signed-cohort updates**. No
+  migration-ready or rollout-ready claim. Retained 233 fixtures support later
+  importer discussion only; no importer or personal migration was started.
 - Remaining campaign decisions: supported source formats, union-conflict rules,
   settings and historical counters, mixed-version bridge policy, first cohort
   delivery, compatibility baseline and rollback support duration.

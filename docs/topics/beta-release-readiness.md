@@ -2,6 +2,15 @@
 
 Topic: `beta-release-readiness`
 
+Tactical [238](../tactical/238-signed-desktop-channel-recovery.md) now passes
+installed signed 0.2.301 → 0.2.501 selection/replacement/relaunch on macOS arm64
+and Windows x86_64. Native Stable selection retains Latest and reports waiting
+for Stable to catch up; controlled roots and external sentinel bytes survive.
+Linux remains unexecuted after its guest locked. The selected published source
+predates desktop extension control, so signed current-source delivery and
+interrupted replacement remain unqualified. 237 separately completes selected
+macOS/Windows beta package repair/rollback, with exact inherited-state cleanup.
+
 Tactical [`237`](../tactical/237-macos-windows-package-recovery.md) updates
 release source guards for the platform singleton factory and macOS Opened
 handoff introduced by 234/235. All 21 release/package/input tests and checked
@@ -19,10 +28,11 @@ channels. The first signed Latest prerelease
 exact-source main CI, source/build/finalizer gates, and all five production
 updater routes. The parallel release pipeline then published
 [`desktop-latest-v0.2.401`](../evidence/desktop-parallel-release-2026-09-27.md)
-after five overlapping signed builds and one collector. Latest now resolves
-`0.2.401`; Stable remains `0.1.4` for
-explicit and old channel-less requests. Installed old-to-new selection,
-replacement/relaunch, and return-to-Stable behavior remain open.
+after five overlapping signed builds and one collector. At that checkpoint Latest resolved
+`0.2.401`; Stable remained `0.1.4` for explicit and old channel-less requests.
+238 records the September 29 live 0.2.501 offer and macOS/Windows installed
+selection, replacement/relaunch and return-to-Stable evidence; Linux remains
+open.
 
 Maintenance checkpoint (2026-09-26): Tactical
 [`219`](../tactical/219-dependency-and-ci-maintenance.md) repairs the newly

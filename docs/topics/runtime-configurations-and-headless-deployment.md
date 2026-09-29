@@ -2,6 +2,14 @@
 
 Topic: `runtime-configurations-and-headless-deployment`
 
+Tactical [239](../tactical/239-desktop-suspension-browser-recovery.md) qualifies
+macOS/Windows browser closure/restart during controlled transfer, same-owner
+reattachment, independently verified completion and Quit without passive
+resurrection. macOS VM pause/resume passes separately. Both guests lack usable
+native OS sleep in this configuration; Linux execution is blocked by its
+inherited screen lock. These are bounded installed checks, not endurance or
+physical sleep/wake qualification. Owned state and claims are cleaned up.
+
 Tactical [`235`](../tactical/235-linux-quit-launch-handoff.md) repairs the Linux
 Quit/launch overlap. A stopping owner returns Retry; the explicit launch process
 retains its arguments and waits within a bounded deadline before claiming the

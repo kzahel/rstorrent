@@ -1,6 +1,6 @@
 # Tactical 237: macOS And Windows Package Recovery
 
-Status: **Active, 2026-09-29.** Campaign [231](231-jstorrent-migration-working-campaign.md).
+Status: **Complete, 2026-09-29.** Campaign [231](231-jstorrent-migration-working-campaign.md).
 Topics: `client-surfaces`, `application-connection-architecture`,
 `desktop-jstorrent-replacement`, `beta-release-readiness`.
 
@@ -60,7 +60,7 @@ are explicit fixture setup, distinct from installed standard registration.
 5. Quit, check passive no-resurrection, reap owned browser/helpers, restore
    inherited installation/registration/state, remove scratch, park and release.
 
-## Restart Checkpoint
+## Starting Checkpoint
 
 Clean source `cee8ff04` includes Linux repair `26c50e2f` and final extension
 compatibility handling. Retained macOS old executable matches 234's SHA-256
@@ -92,7 +92,7 @@ target/debug/bundle/macos/RSTorrent.app` pass. macOS desktop library tests pass
 53 cases and incremental unsigned app packaging succeeds. Runtime production
 source remains `cee8ff04`; validation-only edits do not change that artifact.
 
-## macOS Installed Matrix (Cleanup Pending)
+## macOS Installed Matrix
 
 Claimed macOS 26.6.2 arm64 guest, inherited suspended. Normal native launch and
 Settings > Downloads > Add folder selected a fresh controlled root. The old
@@ -143,3 +143,45 @@ incremental NSIS packaging pass. New installer SHA-256 is
 `54dab7e62ba6b47a56550688fb506f86c407352f6ab72e68db92f5ace34affae`.
 Inherited installation/profile/registry and source-overlay receipts remain
 preserved until the Windows installed matrix and final restoration finish.
+
+## Windows Installed Matrix
+
+Windows 11 x86_64 build 26200 was inherited off. Exclusive claim and supported
+readiness/login succeeded. Before installation, preserve five inherited paths,
+319 inherited file hashes, eight registry keys (including manufacturer install
+location), and 1,482 source-overlay receipts in task-only storage.
+
+Old/new desktop and extension combinations pass using the same semantic
+runners as macOS. Old extension/new desktop preserves its already-open page;
+new extension/new desktop attaches to that same owner; joined rollback to old
+desktop retains the paused torrent/root and refuses the former credential.
+Explicit unsupported bootstrap protocol is refused without replacing the owner.
+An unpacked extension reload initially becomes disabled because developer mode
+is off; enabling it in the owned Chrome for Testing profile and restarting
+that browser loads the new extension and attaches to the unchanged owner.
+This is test-browser setup, not a product update failure.
+
+Current installed desktop SHA-256:
+`2f4d6399a50b67b7e99048996d096b743c9696c196a5532c5a296049ad97d8cf`.
+After joined Quit and roll-forward, remove the owned registered host/manifest
+and both HKCU Chrome/Chromium native-host keys. Normal native launch recreates
+them and preserves the library. The versioned host matches the newly installed
+bundle SHA-256
+`b179d8910330fcc11f86fa527d3fe11f5ddbf04d3118d19ecde83e8c4b32fa3d`.
+Do not compare this with the deleted old package's versioned host: repair
+correctly selects the new bundled content. Controlled sentinel SHA-256 remains
+`bda73628456f4dbce1281d1ec2efa6a5d91c6e15da70e6b3bd2d0d3f49cda256`.
+
+Native tray Quit, 35-second stopped observation, real browser close/restart,
+two passive page reloads/worker stops and another 35-second observation leave
+no runtime. Explicit Start succeeds. The same owned library is used for 239's
+verified transfer, then moved aside for 238's separate signed cohort. Original
+inherited state is restored after the signed cohort: all 319 file hashes, eight
+registry exports/absence states and 1,482 source-overlay paths verify. Owned
+processes and the task directory are absent. Incremental build caches remain.
+
+macOS final cleanup is complete after 238/239: no owned runtime/browser/helper
+remains; owned bundles, manifests, profiles and payload are removed. Inherited
+LaunchServices dictionary matches its backup. Guest is suspended and its claim
+is released. Windows restoration passes the exact receipts above; the guest
+is returned to its initial off state and its claim is released.

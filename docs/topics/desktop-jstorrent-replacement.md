@@ -2,21 +2,27 @@
 
 Topic: `desktop-jstorrent-replacement`
 
-Tactical [237](../tactical/237-macos-windows-package-recovery.md) now records
-macOS selected beta package replacement/rollback and native registration repair;
-Windows is in progress. [239](../tactical/239-desktop-suspension-browser-recovery.md)
-records same-runtime macOS VM resume/browser restart and an independently
-verified 32-MiB transfer after correcting a stale-port seed fixture. Native OS
-sleep and broader endurance remain unqualified; final cleanup is pending.
-Signed channel qualification is separately planned in 238. Importer work has
-not started.
+Tactical [237](../tactical/237-macos-windows-package-recovery.md) completes
+macOS/Windows selected beta replacement, rollback and native registration repair,
+joining Linux's 236 matrix. [238](../tactical/238-signed-desktop-channel-recovery.md)
+proves native signed 0.2.301 → 0.2.501 updating and return-to-Stable without
+downgrade on macOS/Windows; that published cohort predates extension control.
+[239](../tactical/239-desktop-suspension-browser-recovery.md) proves same-runtime
+browser restart and independently verified 32-MiB completion on both platforms,
+plus macOS VM suspend/resume. Native OS sleep remains unqualified. Linux's new
+238/239 checks stop at the inherited screen lock; no authentication bypass.
+Owned guest state is cleaned up and claims released. Next: repeat those Linux
+checks in an unlocked session, then qualify signed current-source delivery
+when separately available. Broader endurance and importer work remain separate;
+no importer has started.
 
 Tactical [`236`](../tactical/236-desktop-compatibility-refusal-and-recovery.md)
 qualifies selected Linux beta old/new extension/runtime pairs, an already-open
 successor UI across replacement, credential rotation and same-schema rollback.
 Incompatibility offers terminal guidance and attach-only recovery. This is an
-initial Rehearsal C checkpoint; original legacy pairs, signed delivery,
-macOS/Windows installer matrices and ChromeOS shipment gates remain open.
+initial Rehearsal C checkpoint, extended to macOS/Windows in 237. Original
+legacy pairs, signed current-source delivery and ChromeOS shipment gates remain
+open.
 
 Tactical [`234`](../tactical/234-desktop-user-intent-and-background-lifecycle.md)
 owns the accepted desktop lifetime follow-up: retain the tray/status-bar icon
