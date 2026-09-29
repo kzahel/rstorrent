@@ -365,3 +365,69 @@ checkpoint: current 701 with `?channel=latest` returns 204; an older version
 with `?channel=stable` or no channel returns Stable 0.1.4. Earlier 501 Latest
 requests offer 701 with the exact immutable signed payload URL. Stable and
 legacy channel-less routing remain unchanged.
+
+## Corrected Release Dispatch
+
+Main CI [36636558577](https://github.com/kzahel/rstorrent/actions/runs/36636558577)
+passes all ten required jobs at correction source
+`fc401ecf72936b073d0825644c94971b44718247`. Recheck the remote main SHA,
+then dispatch `gh workflow run nightly-desktop.yml --ref main -f force=true`.
+Corrected Nightly [36640704946](https://github.com/kzahel/rstorrent/actions/runs/36640704946)
+starts at that source. Local evidence-only commit `8ec85e76` is not pushed and
+does not replace the verified release source. Publication and downloaded
+outer-container verification remain pending at this checkpoint.
+
+Before the signed-build wait, native Quit and CDP Browser.close stop owned
+apps/helpers/browsers. Park the guests (macOS suspended; Windows/Linux off)
+and release the first claims. Controlled task-only libraries/backups remain
+for the next installed phase; this is not final cleanup. Take fresh claims
+and recheck those files/state before continuing. Independent backup audit
+verifies all 315 preserved Windows file hashes; Linux inherited lock=false
+and idle-delay=0 remain unchanged.
+
+Selector job 109652044937 chooses desktop-latest-v0.2.801 from exact
+fc401ecf. First-phase parking succeeds with zero owned processes:
+macOS reaches suspended, Windows/Linux off; all three claims are released.
+No inherited library is removed. Final qualification starts with fresh claims.
+
+For the subsequent disposable Linux browser run, explicitly select
+`--password-store=basic`, as documented in pinned Chromium 151.0.7922.34
+[`docs/linux/password_storage.md`](https://raw.githubusercontent.com/chromium/chromium/151.0.7922.34/docs/linux/password_storage.md).
+This test-only profile stores no user passwords; the flag makes the fallback
+used after Cancel explicit and avoids creating an OS keyring. Keep Chromium's
+sandbox enabled and the VM credential in Machine Control's canonical registry
+file. This is test-browser setup, not a product or normal-browser policy.
+
+## Corrected Public Release And Native Updating
+
+Corrected Nightly 36640704946 completes successfully and publishes immutable
+Latest 0.2.801 from fc401ecf at 23:19:13 UTC. Independent public checks and
+all package hashes are in [the release evidence](../evidence/desktop-latest-v0.2.801.md).
+Both macOS outer DMGs now pass notarization/stapling and Gatekeeper open
+assessment, alongside their apps and bundled signed helpers. All ten updater
+payload signatures and all 14 GitHub asset digests pass. Latest briefly returns
+701 immediately after publication; subsequent ordinary checks offer 801 on all
+five routes. Stable/channel-less requests remain 0.1.4.
+
+Fresh read-only doctors confirm macOS suspended and Windows/Linux off. New
+exclusive claims and `target ensure-ready` restore the sessions; Windows uses
+its registry-located stored credential through common `testbed -- login`.
+Native About/Check/Install and restart completes **701 → 801** on all three,
+with existing extension pages reattaching to new owners and stale prior
+credentials refused. Both root IDs, the completed fixture, schema and sentinel
+survive. The native-host private directories remain 0700 and copied Unix
+executables 0755; browser-default registrations match app-owned manifests.
+Windows app, bundled host and versioned copied host all report Authenticode
+Valid for the expected publisher. Architecture inspection precedes guest
+installation: Windows inner executables AMD64; Linux app/helper ELF x86_64 with
+maximum GLIBC 2.34, below guest 2.39; macOS app arm64/minimum 13.0 and helper
+arm64/minimum 11.0.
+
+The claimed Mac also validates the exact downloaded DMG ticket/open assessment,
+mounts it read-only, quits the updater-installed app, and copies its app to
+Applications with `ditto`. App/helper bytes compare identical to the updater
+installation. Removing only task-owned native-host state and the actual CFT
+manifest before normal first launch proves bundled-host installation and
+registration: browser hello succeeds and the regenerated signed copy matches
+the bundle. Gatekeeper remains enabled; this is command-driven DMG installation
+and explicit assessment, not a claimed browser-download quarantine experiment.
