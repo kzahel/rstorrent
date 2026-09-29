@@ -57,7 +57,14 @@ Actions artifacts retained for 14 days. One collect job assembles and checks
 the same complete updater manifest used for publication, retaining private
 manifest evidence. A rehearsal creates no tag or GitHub Release. Check the job
 assertions for both macOS notarization/stapling and Windows Authenticode
-validation before using a rehearsal package.
+validation before using a rehearsal package. The app and outer DMG each need
+notarization and a stapled ticket. Tauri 2.11.4 notarizes the app but only signs
+the DMG; our post-build gate submits the DMG, requires Accepted with no issues,
+staples it, and runs `spctl --assess --type open --context
+context:primary-signature` before staging final hashes. Notary submission/log
+JSON is retained for 14 days. A valid app ticket alone does not qualify the
+DMG download. Tactical 240 records the omission found in Latest 0.2.701 and
+its forward correction.
 
 The latest proven rehearsal is GitHub Actions run
 [`36341433008`](https://github.com/kzahel/rstorrent/actions/runs/36341433008)
@@ -65,7 +72,8 @@ at commit `80b0446860909eb7a754c1319631fc288127560a`. Its source gate and all
 five signed release legs passed on 2026-09-27. The five package jobs overlapped,
 and the sole collector retained a private 23-asset inventory and 15-key updater
 manifest. It created no tag or GitHub Release. The platform checks include
-macOS Developer ID, Gatekeeper and notarization/stapling, Windows installer
+macOS app Developer ID, Gatekeeper and notarization/stapling (the outer DMG
+was only signature-checked in that historical run), Windows installer
 Authenticode, and Linux AppImage/DEB/RPM packages.
 
 ## Cut A Release

@@ -198,3 +198,70 @@ collection followed by `scripts/review-dependency-audit.py
 --require-release-ready` reports `release_ready=True`. The separately exposed
 GitHub GLib version alert remains visible; its exact source backport review is
 unchanged. No audit exception was added.
+
+## Exact-Source CI And Release Dispatch
+
+Main CI [`36623804397`](https://github.com/kzahel/rstorrent/actions/runs/36623804397)
+passes all ten required jobs at
+`ef5e2f31279b899aa8cee9b48e6ce5b85f67fd67`: Rust/workspace/controlled interop,
+web browser tests, extension packaging, workflow tools, Android owned storage
+lifecycle, iOS simulator/archive, and all four desktop package checks. The two
+manual-only jobs are skipped by design. Windows installer compilation is the
+last gate; no gate is bypassed or accepted from an older source.
+
+```sh
+gh run view 36623804397 --json status,conclusion,headSha,jobs
+gh workflow run nightly-desktop.yml --ref main -f force=true
+gh api repos/kzahel/rstorrent/actions/jobs/109617116848/logs
+npm run package --prefix clients/extension
+shasum -a 256 target/extension/jstorrent-beta-0.4.0.zip
+```
+
+Forced Nightly run
+[`36630173322`](https://github.com/kzahel/rstorrent/actions/runs/36630173322),
+dispatched 2026-09-29 at 20:59:06 UTC, selects that exact source and
+`desktop-latest-v0.2.701`. The independently rebuilt beta extension remains
+byte-identical to the staged ZIP above. Signing, publication and installed
+qualification are still pending at this checkpoint; selection alone is not
+release evidence.
+
+## Published 701 And Outermost DMG Correction
+
+Run 36630173322 publishes `desktop-latest-v0.2.701` at 2026-09-29
+21:41:08 UTC from `ef5e2f31`. All five package legs and collector pass.
+Independent public download verification checks all 13 SHA256SUMS entries,
+GitHub asset digests, the immutable tag source, and all ten unique updater
+payload signatures using the checked-in public key and `minisign -V`.
+The manifest has 15 platform aliases. Native About/updates installs 701 over
+signed 501 on all three guests; Mac/Linux sentinel and native-host bundle/copy
+hashes match, correct default Chrome for Testing manifests appear, and host
+directories become mode 0700. Windows installed app and both helper copies
+have valid Kyle Graehl Authenticode signatures. Full lifecycle qualification
+remains in progress.
+
+An independent outer-container check catches a release pipeline omission:
+`xcrun stapler validate RSTorrent_0.2.701_aarch64.dmg` has no ticket, and
+`spctl --assess --type open --context context:primary-signature --verbose=4`
+rejects it as `Unnotarized Developer ID`. The app inside passes deep/strict
+code signing, execute assessment and stapled-ticket validation. The identical
+app in the signed updater archive is also notarized. Do not confuse an app's
+ticket with a DMG's ticket, or replace published 701 assets in place.
+
+Apple's [packaging guidance](https://developer.apple.com/documentation/xcode/packaging-mac-software-for-distribution)
+and [custom workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow)
+require submission of the distributed outer container; [TN2206](https://developer.apple.com/library/archive/technotes/tn2206/)
+specifies the disk-image assessment context. Inspect pinned Tauri CLI 2.11.4
+`crates/tauri-bundler/src/bundle/macos/app.rs` (notarizes/staples app) and
+`macos/dmg/mod.rs` (signs DMG without notarizing). Add explicit bounded
+20-minute DMG submission using existing App Store Connect credentials, require
+Accepted with no reported issues, retain submission/log JSON for 14 days,
+staple/validate, and require the correct Gatekeeper assessment. This occurs
+before final hashes/staging; the updater archive and its signature are
+unchanged. Publish a new immutable Latest only after exact-source CI passes.
+
+Correction checks: `actionlint .github/workflows/desktop-release.yml`,
+`node --test scripts/validate-desktop-release.test.mjs
+.github/scripts/desktop-release-artifacts.test.mjs` (17 tests), and
+`git diff --check` pass. Local `xcrun notarytool submit --help` confirms the
+team-key arguments, JSON result and bounded wait syntax. Actual notarization
+and disk-image trust remain signed CI/public-artifact gates, not mocked claims.

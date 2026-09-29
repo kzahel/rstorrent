@@ -390,6 +390,31 @@ jobs:
           DMG_PATH=$(find "target/${{ matrix.rust_target }}/release/bundle/dmg" -maxdepth 1 -type f -name '*.dmg' -print -quit)
           test -n "$DMG_PATH"
           codesign --verify --verbose=2 "$DMG_PATH"
+          # Tauri notarizes/staples the app, but only signs the outer DMG.
+          # Submit the actual download before staging its final hash.
+          mkdir -p artifacts/notarization
+          xcrun notarytool submit "$DMG_PATH" \
+            --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" \
+            --issuer "$APPLE_API_ISSUER" --wait --timeout 20m \
+            --output-format json > artifacts/notarization/dmg-submit.json
+          SUBMISSION_ID=$(jq -er '.id' artifacts/notarization/dmg-submit.json)
+          xcrun notarytool log "$SUBMISSION_ID" \
+            --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" \
+            --issuer "$APPLE_API_ISSUER" artifacts/notarization/dmg-log.json
+          jq -e '.status == "Accepted"' artifacts/notarization/dmg-submit.json
+          jq -e '.status == "Accepted" and ((.issues // []) | length == 0)' artifacts/notarization/dmg-log.json
+          xcrun stapler staple "$DMG_PATH"
+          xcrun stapler validate "$DMG_PATH"
+          codesign --verify --verbose=2 "$DMG_PATH"
+          spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG_PATH"
+
+      - name: Retain macOS notarization results
+        if: always() && runner.os == 'macOS'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: notarization-${{ matrix.lane }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/notarization/*.json
+          retention-days: 14
 
       - name: Verify Windows Authenticode signatures
         if: runner.os == 'Windows'
