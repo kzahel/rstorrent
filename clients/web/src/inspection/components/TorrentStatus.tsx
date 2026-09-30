@@ -1,3 +1,4 @@
+import { message as localizedMessage } from "../../localization/runtime";
 import { useInspectionStore } from "../context";
 import type { TorrentRow } from "../model";
 import styles from "./TorrentTable.module.css";
@@ -12,11 +13,15 @@ export function TorrentStatus({
   const openTorrentErrorDetail = useInspectionStore(
     (state) => state.openTorrentErrorDetail,
   );
+  const statusLabel =
+    row.progressReason === "waiting for storage"
+      ? localizedMessage("inspection.components.torrent.status.storage.unavailable")
+      : label;
 
   if (row.error === null) {
     return (
       <span className={styles.status} data-status={row.status}>
-        {label}
+        {statusLabel}
       </span>
     );
   }
@@ -27,14 +32,14 @@ export function TorrentStatus({
       className={`${styles.status} ${styles.statusButton}`}
       data-status={row.status}
       title={`${row.error}\nOpen General details.`}
-      aria-label={`${label}: ${row.error}. Open General details`}
+      aria-label={`${statusLabel}: ${row.error}. Open General details`}
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => {
         event.stopPropagation();
         openTorrentErrorDetail(row.id);
       }}
     >
-      <span>{label}</span>
+      <span>{statusLabel}</span>
       <span aria-hidden="true">↗</span>
     </button>
   );

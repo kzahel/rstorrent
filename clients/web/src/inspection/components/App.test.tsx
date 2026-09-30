@@ -495,6 +495,39 @@ describe("inspection application", () => {
     ).toBeVisible();
   });
 
+  it("shows unavailable storage in Needs attention without counting it active", async () => {
+    const user = userEvent.setup();
+    const snapshot = buildScenarioSnapshot("healthy-download", 42_000, false, 1);
+    const torrent = snapshot.torrents[DEMO_PRIMARY_TORRENT_ID]!;
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot: {
+        ...snapshot,
+        demo: null,
+        torrentOrder: [torrent.id],
+        torrents: {
+          [torrent.id]: {
+            ...torrent,
+            status: "error",
+            operationalState: "paused",
+            progressReason: "waiting for storage",
+            progress: 0,
+            error: null,
+          },
+        },
+      },
+    });
+    renderApplication(application);
+    const filters = screen.getByRole("navigation", { name: "Torrent filters" });
+    expect(within(filters).getByRole("button", { name: /^Active\s*0$/ })).toBeVisible();
+    expect(within(filters).getByRole("button", { name: /^Downloading\s*0$/ })).toBeVisible();
+    await user.click(within(filters).getByRole("button", { name: /^Needs attention\s*1$/ }));
+    const grid = screen.getByRole("grid", { name: "Torrents" });
+    expect(within(grid).getByText("Storage unavailable")).toBeVisible();
+    expect(within(grid).queryByText("downloading")).not.toBeInTheDocument();
+    expect(application.commands).toHaveLength(0);
+  });
+
   it("explains and opens torrent errors from status", async () => {
     const user = userEvent.setup();
     renderScenario("disk-error", 8_000);

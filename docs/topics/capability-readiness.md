@@ -19,7 +19,9 @@ the atomic importer with local fixture/crash/checker evidence. Tactical
 old-host fencing and a generated installed macOS replacement checkpoint.
 [243](../tactical/243-windows-linux-legacy-replacement.md) adds installed
 Windows/Linux replacement and repairs Windows private-snapshot syncing.
-Unavailable-root presentation and production graduation remain open.
+[244](../tactical/244-unavailable-storage-presentation.md) corrects the shared
+React blocked-storage label and Needs attention membership; production
+graduation remains open.
 
 Tactical [240](../tactical/240-signed-desktop-control-qualification.md) completes
 signed current-source delivery with [Latest 0.2.801](../evidence/desktop-latest-v0.2.801.md).
@@ -47,8 +49,8 @@ lock blocker is superseded by authorized VM recreation with verified stored
 credentials. Its attempted native suspend-to-idle did not recover and required
 a supported forced stop; native sleep/wake remains unqualified. Owned test state
 is removed and claims released. 240 supplies signed current-source delivery.
-Next: unavailable-root presentation and production/privacy/support
-qualification after 242/243's managed-route fencing and three-platform checkpoints.
+Next: production/privacy/support qualification after 242/243's managed-route
+fencing and three-platform checkpoints and 244's deterministic UI repair.
 Interrupted-update, physical sleep/wake and broader endurance evidence remain
 independent. These bounded checkpoints do not qualify production graduation.
 
@@ -1119,8 +1121,8 @@ hosted repeats.
   preservation, process-crash and ordinary-checker evidence. **242** implements
   managed legacy host fencing and passes a bounded installed macOS replacement.
   **243** adds installed Windows/Linux replacement and native snapshot repair.
-  Unavailable-root presentation, production/privacy/support qualification and
-  rollout remain open.
+  **244** corrects shared React blocked-storage presentation with deterministic
+  evidence. Production/privacy/support qualification and rollout remain open.
 
 - Complete **Tactical `214`**'s native platform notice and source-delivery
   review for the package lanes to be declared. Tactical `218` adopts and

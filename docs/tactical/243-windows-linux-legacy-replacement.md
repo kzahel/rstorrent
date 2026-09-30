@@ -262,3 +262,10 @@ work is the unavailable-root application/view presentation gap, then the
 separately scoped production branding, settings/privacy/support and store/update
 qualification in campaign 231. Rehearsal B remains partial, and there is no
 personal migration, signed production or rollout-ready claim.
+
+## Presentation Follow-Up
+
+Tactical [244](244-unavailable-storage-presentation.md) corrects the shared
+React unavailable-root label and filter membership using deterministic
+adapter/component and migration regressions. The installed observations above
+remain evidence of the original defect; no corrected guest rerun is claimed.

@@ -21,8 +21,9 @@ companion implementation. Exact release/store order remains open. The
 Tacticals 241/242/243 implement atomic desktop import and production-only
 retirement of managed legacy native-host routes, with bounded installed macOS,
 Windows NSIS and Linux AppImage checkpoints. Incubation identities remain
-separate. Unavailable-root presentation, signed
-production delivery and settings/privacy/support dispositions are graduation
+separate. Tactical [244](../tactical/244-unavailable-storage-presentation.md)
+corrects blocked-storage presentation in shared React with deterministic
+evidence. Signed production delivery and settings/privacy/support dispositions are graduation
 work; no personal migration or production rollout has run.
 
 Tactical [`234`](../tactical/234-desktop-user-intent-and-background-lifecycle.md)
@@ -667,7 +668,8 @@ endurance and mixed-version/update-compatibility gates, tracked by Tactical
 Tactical `241` implements atomic import against `233`'s Linux/Windows exports
 with local crash, preservation and checker evidence. Tacticals 242/243 qualify
 managed old-host fencing and bounded installed three-platform replacement.
-Next resolve unavailable-root presentation and support/privacy continuity.
+244 resolves shared React unavailable-root presentation. Next resolve
+support/privacy continuity.
 No personal migration has run.
 Existing independent release and platform campaigns below continue under
 their own gates.

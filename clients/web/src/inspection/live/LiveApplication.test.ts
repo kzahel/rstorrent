@@ -22,6 +22,7 @@ import type { ApplicationViewClient, MediaOpenTarget } from "../../api/client";
 import { HttpApiError } from "../../api/client";
 import type { InspectionSnapshot } from "../model";
 import { LiveApplication } from "./LiveApplication";
+import { torrentMatchesCategory } from "../state";
 import {
   clientSettingsFixture,
   clientSettingsRuntimeFixture,
@@ -260,6 +261,63 @@ class FakeLiveClient implements ApplicationViewClient {
 }
 
 describe("LiveApplication", () => {
+  it.each(["paused", "error"] as const)(
+    "classifies blocked storage as needing attention with %s operational state",
+    async (operationalState) => {
+      const client = new FakeLiveClient({
+        ...torrent(),
+        state: "awaiting_storage",
+        storage_state: "unavailable",
+        operational_state: operationalState,
+        progress: {
+          disposition: "blocked",
+          phase: "storage",
+          reason: "waiting_for_storage",
+          actions: ["select_storage"],
+        },
+      });
+      const application = await LiveApplication.open(client);
+      const snapshots: InspectionSnapshot[] = [];
+      application.subscribe((update) => {
+        if (update.type === "snapshot") snapshots.push(update.snapshot);
+      });
+      const row = snapshots.at(-1)!.torrents[TORRENT_ID]!;
+      expect(row).toMatchObject({
+        status: "error",
+        operationalState,
+        progressReason: "waiting for storage",
+      });
+      expect(torrentMatchesCategory(row, "errors")).toBe(true);
+      expect(torrentMatchesCategory(row, "active")).toBe(false);
+      expect(torrentMatchesCategory(row, "downloading")).toBe(false);
+      expect(client.requests).toHaveLength(0);
+      await application.close();
+    },
+  );
+
+  it("keeps active storage preparation in the active category", async () => {
+    const client = new FakeLiveClient({
+      ...torrent(),
+      state: "awaiting_storage",
+      operational_state: "starting",
+      progress: {
+        disposition: "active",
+        phase: "storage",
+        reason: "preparing_storage",
+        actions: [],
+      },
+    });
+    const application = await LiveApplication.open(client);
+    const snapshots: InspectionSnapshot[] = [];
+    application.subscribe((update) => {
+      if (update.type === "snapshot") snapshots.push(update.snapshot);
+    });
+    const row = snapshots.at(-1)!.torrents[TORRENT_ID]!;
+    expect(torrentMatchesCategory(row, "errors")).toBe(false);
+    expect(torrentMatchesCategory(row, "active")).toBe(true);
+    await application.close();
+  });
+
   it("creates and opens an ephemeral URL outside the durable command path", async () => {
     const client = new FakeLiveClient();
     const application = await LiveApplication.open(client);

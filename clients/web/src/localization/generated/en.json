@@ -6088,6 +6088,12 @@
       "value": "Torrent settings"
     }
   ],
+  "inspection.components.torrent.status.storage.unavailable": [
+    {
+      "type": 0,
+      "value": "Storage unavailable"
+    }
+  ],
   "inspection.components.torrent.table.done": [
     {
       "type": 0,

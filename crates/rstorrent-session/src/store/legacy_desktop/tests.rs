@@ -393,7 +393,17 @@ async fn missing_imported_root_is_not_created_at_application_startup() {
     .await
     .unwrap();
     assert!(!root.exists());
-    assert_eq!(snapshot(&mut service).await.torrents.len(), 1);
+    let snapshot = snapshot(&mut service).await;
+    assert_eq!(snapshot.torrents.len(), 1);
+    let torrent = &snapshot.torrents[0];
+    assert_eq!(torrent.state, crate::TorrentState::AwaitingStorage);
+    assert_eq!(torrent.storage_state, crate::StorageState::Unavailable);
+    assert!(!torrent.desired_running);
+    assert_eq!(torrent.verified_piece_count, 0);
+    assert_eq!(
+        crate::views::assess_progress(torrent, crate::ProgressInputs::default()).reason,
+        crate::ProgressReason::WaitingForStorage
+    );
     service.shutdown().await.unwrap();
     assert!(!root.exists());
 }

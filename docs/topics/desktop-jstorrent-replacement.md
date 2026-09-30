@@ -27,9 +27,13 @@ protocol. Native Windows execution exposed and repaired read-only snapshot
 syncing that had silently skipped valid profiles; 18 migration tests pass on
 each native platform.
 
-The missing-root row currently displays Downloading despite persisted paused
-intent; its path stays absent and no peer is active. Correct unavailable-root
-presentation remains a concrete follow-up. Local candidates are unsigned and
+243 observed the missing-root row displaying Downloading despite paused
+intent. [244](../tactical/244-unavailable-storage-presentation.md) corrects the
+shared React adapter: blocked storage shows Storage unavailable and belongs
+to Needs attention, while active storage preparation retains active membership.
+Paused operational state and backend storage/checker behavior remain unchanged.
+Deterministic adapter, component and migration checks pass; the corrected UI
+has not been requalified in installed guests. Local candidates are unsigned and
 unpublished. Actual production extension pairs, signed production delivery,
 privacy/support continuity and full branding remain open; Rehearsal B is partial.
 
@@ -123,8 +127,7 @@ credentials. Its attempted native suspend-to-idle did not recover and required
 a supported forced stop; native sleep/wake remains unqualified. Owned test state
 is removed and claims released. 240 supplies signed current-source delivery.
 242 fences managed old-host relaunch and qualifies a local macOS replacement.
-Next: unavailable-root presentation and production/privacy/support
-qualification. Interrupted-update, physical
+Next: production/privacy/support qualification after 244's shared UI repair. Interrupted-update, physical
 sleep/wake and broader endurance evidence remain independent.
 
 Tactical [`236`](../tactical/236-desktop-compatibility-refusal-and-recovery.md)

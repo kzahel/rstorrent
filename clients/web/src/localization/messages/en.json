@@ -1,4 +1,5 @@
 {
+  "inspection.components.torrent.status.storage.unavailable": { "defaultMessage": "Storage unavailable", "description": "Torrent status when progress is blocked waiting for its download storage" },
   "inspection.components.data.reset.app.data.cleared": { "defaultMessage": "App data cleared.", "description": "Clear app data completion" },
   "inspection.components.data.reset.cancel": { "defaultMessage": "Cancel", "description": "Cancel reset confirmation" },
   "inspection.components.data.reset.category": { "defaultMessage": "Data & reset", "description": "Settings category for data management" },

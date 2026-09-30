@@ -88,7 +88,7 @@ SQLite and payload writes remain native. No engine runs in the extension.
 | --- | --- | --- | --- |
 | M-01 | Desktop extension control | Linux/Windows/macOS installed checkpoint complete in [`232`](232-desktop-extension-control.md); full rehearsal partial | Protected bootstrap, native picker, controlled bytes, shared library, singleton and Quit pass. Bounded intent/tray/browser lifecycle passes in [234](234-desktop-user-intent-and-background-lifecycle.md), including 64 reload/worker-stop cycles per guest and prompt view cleanup. Linux Quit/launch overlap is repaired in [235](235-linux-quit-launch-handoff.md). Broader endurance remains separate. |
 | M-02 | Legacy cohort inventory and fixtures | [233](233-legacy-desktop-fixture-cohort.md): bounded Linux/Windows v0.2.1 cohort complete | Seven profiles/eight records plus two labeled mutations per platform; closed snapshot/payload oracle passes. Broader releases, browser-store variants and macOS remain unqualified. |
-| M-03 | Legacy import and recovery | [241](241-atomic-legacy-desktop-import.md): local implementation complete; [242](242-legacy-desktop-handoff-rehearsal.md)/[243](243-windows-linux-legacy-replacement.md): bounded installed three-platform handoff complete | Atomic import/current-destination preservation, retry/crash/checker evidence plus managed old-host fencing, idle-host/registration failure, four-record installed import, missing roots, restart and source/payload preservation. Unavailable-root presentation and production/privacy/support qualification remain open. |
+| M-03 | Legacy import and recovery | [241](241-atomic-legacy-desktop-import.md): local implementation complete; [242](242-legacy-desktop-handoff-rehearsal.md)/[243](243-windows-linux-legacy-replacement.md): bounded installed three-platform handoff complete | Atomic import/current-destination preservation, retry/crash/checker evidence plus managed old-host fencing, idle-host/registration failure, four-record installed import, missing roots, restart and source/payload preservation. [244](244-unavailable-storage-presentation.md) corrects shared React unavailable-root presentation with deterministic evidence; production/privacy/support qualification remains open. |
 | M-04 | Support/report continuity | Required before user cohort | Failure-page report, bounded migration/backend context, familiar voluntary feedback journey and disclosure verification |
 | M-05 | Installed desktop replacement rehearsal | Depends on M-01/03/04 | Old installed JSTorrent -> exact candidate -> restart/repair/rollback on macOS, Windows and Linux |
 | M-06 | Extension update coordination | [236](236-desktop-compatibility-refusal-and-recovery.md)/[237](237-macos-windows-package-recovery.md): selected three-platform beta matrix passes | Terminal refusal, attach-only recovery, open-page replacement, credential rotation, repair and same-schema rollback pass. [238](238-signed-desktop-channel-recovery.md) passes three-platform signed updating of an older published cohort. [240](240-signed-desktop-control-qualification.md) adds signed current-source 801 publication, native updates and installed control/helper qualification. Original legacy pairs and ChromeOS shipment gates remain open. |
@@ -291,9 +291,10 @@ production routing remain separately scoped.
   joined restart and four persisted paused imports. Native Windows tests expose
   and repair read-only private-snapshot syncing; 18 migration tests pass on
   Windows, Linux and macOS. The unavailable-root row still displays Downloading
-  despite paused intent; presentation needs a focused follow-up.
-- Next executable actions: unavailable-root presentation and production
-  packaging, support/privacy/settings dispositions, branding and
+  despite paused intent; 244 corrects the shared React mapping with deterministic
+  adapter/component and backend migration evidence, without an installed rerun.
+- Next executable actions: production packaging, support/privacy/settings
+  dispositions, branding and
   extension/store coordination before graduation.
   Interrupted-update, physical sleep/wake
   and broader endurance evidence remain independent work.

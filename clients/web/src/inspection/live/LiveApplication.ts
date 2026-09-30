@@ -1299,7 +1299,7 @@ function mapTorrent(torrent: TorrentView): TorrentRow {
       torrent.display_name ??
       torrent.source_display_name ??
       `Torrent ${torrent.torrent_id.slice(0, 12)}`,
-    status: mapTorrentState(torrent.state),
+    status: mapTorrentState(torrent.state, torrent.progress),
     operationalState: torrent.operational_state,
     queuePosition: torrent.download_queue_position ?? null,
     transferLimits: torrent.transfer_limits,
@@ -1437,7 +1437,10 @@ function mapStorageRoot(root: StorageRootSnapshot): DownloadRoot {
   };
 }
 
-function mapTorrentState(state: TorrentState): TorrentRow["status"] {
+function mapTorrentState(
+  state: TorrentState,
+  progress: TorrentView["progress"],
+): TorrentRow["status"] {
   switch (state) {
     case "awaiting_metadata":
       return "metadata";
@@ -1451,6 +1454,7 @@ function mapTorrentState(state: TorrentState): TorrentRow["status"] {
     case "error":
       return "error";
     case "awaiting_storage":
+      return progress.disposition === "blocked" ? "error" : "downloading";
     case "downloading":
       return "downloading";
   }

@@ -16,7 +16,9 @@ implements atomic local import; [242](../tactical/242-legacy-desktop-handoff-reh
 adds production-only old-host fencing and a bounded installed macOS replacement
 checkpoint with generated state. [243](../tactical/243-windows-linux-legacy-replacement.md)
 adds installed Windows NSIS/Linux AppImage checkpoints and repairs Windows
-snapshot syncing. Unavailable-root presentation, signed production delivery,
+snapshot syncing. [244](../tactical/244-unavailable-storage-presentation.md)
+corrects shared React blocked-storage labels and Needs attention membership
+with deterministic evidence. Signed production delivery,
 privacy/support continuity and full branding remain open.
 
 240 also fixes the macOS CFT support path to `Google/Chrome for Testing`.

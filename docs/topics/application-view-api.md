@@ -2,6 +2,14 @@
 
 Topic: `application-view-api`
 
+Tactical [244](../tactical/244-unavailable-storage-presentation.md) corrects
+shared React adaptation of `awaiting_storage`: blocked progress becomes Needs
+attention with a Storage unavailable table label; active storage preparation
+retains active membership. Existing typed progress and operational state remain
+authoritative. Application DTOs, persisted run intent, root health and checker
+behavior are unchanged. Adapter/category/component and migration regressions
+pass; Android Compose uses operational state and does not share this mapping.
+
 Tactical [`236`](../tactical/236-desktop-compatibility-refusal-and-recovery.md)
 reuses existing version/schema and desktop capability checks without changing
 DTOs or protocol versions. Incompatible desktop hello/schema failures close the
