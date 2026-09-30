@@ -1248,8 +1248,11 @@ existing direct-path/full-check gate for desktop legacy conversion. It changes
 no engine/checker semantics: exact source authentication, empty have evidence
 and pending verification commit before an engine exists. Local source-offline
 valid/corrupt payload tests pass; Android import is inapplicable to this desktop
-KV/path format. The next campaign action is installed legacy host fencing and
-replacement qualification, not a checker rewrite.
+KV/path format. Tacticals 242/243 qualify managed host fencing and bounded
+installed macOS/Windows/Linux replacement. 243 repairs Windows syncing of the
+private SQLite backup without opening the legacy source for write; 18 migration
+tests pass on each native platform. Next resolve unavailable-root presentation
+and production qualification; checker semantics are unchanged.
 
 Completed Tactical
 [`191`](../tactical/191-direct-filesystem-storage.md) is the current

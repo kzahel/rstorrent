@@ -874,3 +874,26 @@ fn process_exit_before_and_after_commit_has_one_atomic_outcome() {
         );
     }
 }
+
+#[test]
+fn read_only_source_snapshot_is_durable_without_changing_legacy_bytes() {
+    let owned = tempfile::tempdir().unwrap();
+    let source_path = owned.path().join("data.db");
+    let target_path = owned.path().join("snapshot.db");
+    let source = Connection::open(&source_path).unwrap();
+    source
+        .execute_batch("CREATE TABLE kv(key TEXT PRIMARY KEY, value TEXT NOT NULL); INSERT INTO kv VALUES ('session:torrents', 'unchanged')")
+        .unwrap();
+    source.close().unwrap();
+    let before = fs::read(&source_path).unwrap();
+    let original_permissions = fs::metadata(&source_path).unwrap().permissions();
+    let mut read_only = original_permissions.clone();
+    read_only.set_readonly(true);
+    fs::set_permissions(&source_path, read_only).unwrap();
+    let result = snapshot_database(&source_path, &target_path);
+    // Restore before asserting so Windows can remove the controlled fixture.
+    fs::set_permissions(&source_path, original_permissions).unwrap();
+    assert_eq!(fs::read(&source_path).unwrap(), before);
+    let snapshot = result.unwrap();
+    assert_eq!(read_kv(&snapshot).unwrap()["session:torrents"], "unchanged");
+}

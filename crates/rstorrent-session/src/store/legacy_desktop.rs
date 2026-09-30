@@ -930,7 +930,11 @@ fn snapshot_database(path: &Path, target: &Path) -> Result<Connection, StoreErro
     snapshot
         .close()
         .map_err(|(_, error)| StoreError::Sqlite(error))?;
-    File::open(target)
+    // Windows FlushFileBuffers requires write access. This is our private
+    // SQLite snapshot; the legacy source remains opened read-only above.
+    fs::OpenOptions::new()
+        .write(true)
+        .open(target)
         .and_then(|file| file.sync_all())
         .map_err(|e| io_error("sync source snapshot", e))?;
     Ok(Connection::open_with_flags(

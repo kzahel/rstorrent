@@ -18,8 +18,19 @@ failure, four-record import, valid/corrupt rechecking, missing-root preservation
 nine registered refusal routes, joined Quit/restart and unchanged source data
 and payload. Source comparison permits empty WAL creation and transient SHM
 bookkeeping.
-The local candidate is unsigned and unpublished. Windows/Linux installed
-replacement, actual production extension pairs, signed production delivery,
+
+[243](../tactical/243-windows-linux-legacy-replacement.md) extends this bounded
+checkpoint to Windows x64 NSIS and Linux x64 AppImage: four imports, ordinary
+checking, missing-root preservation, source/payload preservation and restart
+pass. Eight Windows registry-view routes and six Linux routes refuse the old
+protocol. Native Windows execution exposed and repaired read-only snapshot
+syncing that had silently skipped valid profiles; 18 migration tests pass on
+each native platform.
+
+The missing-root row currently displays Downloading despite persisted paused
+intent; its path stays absent and no peer is active. Correct unavailable-root
+presentation remains a concrete follow-up. Local candidates are unsigned and
+unpublished. Actual production extension pairs, signed production delivery,
 privacy/support continuity and full branding remain open; Rehearsal B is partial.
 
 ## Atomic Import Implementation, 2026-09-30
@@ -42,11 +53,10 @@ copied nor deleted. Unsupported settings/history are outside the closed mapping.
 
 Desktop startup invokes this only for the future `com.jstorrent.desktop`
 identifier before opening the engine. Current incubation builds do not inspect
-personal legacy state. A reachable old host refuses import; 242 adds managed
-relaunch fencing and a bounded installed macOS checkpoint. Production
-packaging/branding, privacy/support continuity and remaining installed platform
-qualification remain open. Android and
-extension rollout are separate. Local fixture evidence is not a rollout claim.
+personal legacy state. A reachable old host refuses import; 242/243 add managed
+relaunch fencing and bounded installed three-platform checkpoints. Production
+packaging/branding, privacy/support continuity and other package/architecture
+qualification remain open. Android and extension rollout are separate. Local fixture evidence is not a rollout claim.
 
 ## Selected Simplifications, 2026-09-30
 
@@ -96,7 +106,8 @@ picker cleanup, explicit/passive relaunch and bounded registration repair.
 The Mac also installs the exact public DMG and recreates its bundled host.
 Physical sleep/wake, interrupted updates, broader endurance, Intel/minimum-macOS
 installed coverage and production graduation remain open. Tactical 241 supplies
-local importer evidence; 242 adds the bounded installed macOS replacement.
+local importer evidence; 242/243 add bounded installed replacement on all three
+platforms.
 
 Selected three-platform beta replacement, rollback and native registration
 repair pass in [236](../tactical/236-desktop-compatibility-refusal-and-recovery.md)
@@ -112,7 +123,7 @@ credentials. Its attempted native suspend-to-idle did not recover and required
 a supported forced stop; native sleep/wake remains unqualified. Owned test state
 is removed and claims released. 240 supplies signed current-source delivery.
 242 fences managed old-host relaunch and qualifies a local macOS replacement.
-Next: remaining installed platforms and production/privacy/support
+Next: unavailable-root presentation and production/privacy/support
 qualification. Interrupted-update, physical
 sleep/wake and broader endurance evidence remain independent.
 

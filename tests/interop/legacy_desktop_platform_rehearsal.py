@@ -1,0 +1,506 @@
+#!/usr/bin/env python3
+"""Installed Windows/Linux legacy replacement, ONLY in a claimed test guest.
+
+Run this Python driver through Machine Control's interactive-session launch.
+Use native Quit at legacy-ui/migrated/restarted and dismiss the startup errors
+at idle-host-blocked/registration-blocked. phase.json/result.json are bounded
+coordination/evidence files. No browser, public swarm or personal data is used.
+Windows requires pinned NSIS installers; Linux requires pinned AppImages and
+uses their supported extract-and-run route (no guest FUSE package change).
+"""
+import argparse
+import base64
+import csv
+import hashlib
+import json
+import os
+import pickle
+from pathlib import Path
+import shutil
+import signal
+import sqlite3
+import subprocess
+import sys
+import time
+import traceback
+
+from legacy_desktop_fixture_cohort import Host, digest, BINARIES
+from legacy_desktop_replacement_rehearsal import bencode, closed_copy, wait_until
+
+PACKAGES = {
+    "windows": "55ce6c119e3ada6b66da3f706e4659aa50f0550fea84d56757ba7180f51047c3",
+    "linux": "1c35bb7dd5bdefcd780c19fc09e160dc7b0e6a5a2ada35f07007089d85e180df",
+}
+# AppImage helpers differ from the deb helpers pinned by the fixture cohort.
+APPIMAGE_BINARIES = (
+    "e7b93708c0c9f9218a2402efae373ce5c56b9d00463ae5c7944bbad15e9dfd63",
+    "eaf386835af15b140ff5f9c91680af198554cf9deb9480e571ed60ad2bf8bce1",
+)
+BROWSERS = ("google-chrome", "google-chrome-for-testing", "chromium",
+            "BraveSoftware/Brave-Browser", "microsoft-edge")
+WIN_BROWSERS = (r"Google\Chrome", "Chromium", r"BraveSoftware\Brave-Browser", r"Microsoft\Edge")
+
+
+def process_names():
+    if os.name == "nt":
+        user = os.environ["USERDOMAIN"] + "\\" + os.environ["USERNAME"]
+        output = subprocess.check_output(["tasklist.exe", "/FO", "CSV", "/NH",
+                                          "/FI", "USERNAME eq " + user], timeout=10)
+        return [row[0].lower().removesuffix(".exe") for row in
+                csv.reader(output.decode().splitlines()) if len(row) == 5]
+    output = subprocess.check_output(["/bin/ps", "-U", str(os.getuid()), "-o", "comm="], timeout=10)
+    return [Path(line.strip()).name.lower() for line in output.decode().splitlines()]
+
+
+def old_running():
+    names = {"jstorrent", "jstorrent.exe", "jstorrent-desktop", "jstorrent-deskt",
+             "jstorrent-host", "jstorrent-io-daemon", "jstorrent-io-da"}
+    return bool(names.intersection(process_names()))
+
+
+class Registry:
+    """Save/restore only installation/association/native-host HKCU scopes."""
+    def __init__(self):
+        import winreg
+        self.api = winreg
+        self.saved = []
+        self.parents = []
+        keys = [r"Software\jstorrent", r"Software\RSTorrent",
+                r"Software\Microsoft\Windows\CurrentVersion\Uninstall\JSTorrent",
+                r"Software\Microsoft\Windows\CurrentVersion\Uninstall\RSTorrent"]
+        keys += ["Software\\Classes\\" + name for name in (
+            "magnet", "jstorrent", ".torrent", "torrent", "torrentfile", "JSTorrent.torrent", "RSTorrent.torrent",
+            "com.jstorrent.rstorrent.torrent", r"Applications\JSTorrent.exe", r"Applications\jstorrent-desktop.exe",
+            r"Applications\rstorrent-desktop.exe")]
+        for browser in WIN_BROWSERS:
+            keys += [rf"Software\{browser}\NativeMessagingHosts\{name}" for name in
+                     ("com.jstorrent.native", "com.jstorrent.rstorrent.native")]
+        for view in (winreg.KEY_WOW64_32KEY, winreg.KEY_WOW64_64KEY):
+            for key in keys:
+                self.saved.append((key, view, self.read(key, view)))
+            parents = {"\\".join(key.split("\\")[:depth]) for key in keys
+                       for depth in range(1, len(key.split("\\")))}
+            for path in sorted(parents, key=lambda path: path.count("\\"), reverse=True):
+                try:
+                    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, path, 0, winreg.KEY_READ | view):
+                        pass
+                except FileNotFoundError:
+                    self.parents.append((path, view))
+
+    def isolate_installation(self):
+        # Never let an NSIS reinstall follow inherited uninstaller paths.
+        w = self.api
+        for view in (w.KEY_WOW64_32KEY, w.KEY_WOW64_64KEY):
+            for path in (r"Software\jstorrent\JSTorrent",
+                         r"Software\Microsoft\Windows\CurrentVersion\Uninstall\JSTorrent"):
+                try:
+                    with w.OpenKey(w.HKEY_LOCAL_MACHINE, path, 0, w.KEY_READ | view):
+                        raise RuntimeError("machine-wide legacy installation requires a separate rehearsal")
+                except FileNotFoundError:
+                    pass
+        for view in (w.KEY_WOW64_32KEY, w.KEY_WOW64_64KEY):
+            self.delete(r"Software\jstorrent\JSTorrent", view)
+            self.delete(r"Software\Microsoft\Windows\CurrentVersion\Uninstall\JSTorrent", view)
+
+    def read(self, path, view):
+        w = self.api
+        try:
+            with w.OpenKey(w.HKEY_CURRENT_USER, path, 0, w.KEY_READ | view) as key:
+                subkeys, values, _ = w.QueryInfoKey(key)
+                return ([w.EnumValue(key, i) for i in range(values)],
+                        {w.EnumKey(key, i): self.read(path + "\\" + w.EnumKey(key, i), view)
+                         for i in range(subkeys)})
+        except FileNotFoundError:
+            return None
+
+    def delete(self, path, view):
+        w = self.api
+        try:
+            with w.OpenKey(w.HKEY_CURRENT_USER, path, 0, w.KEY_READ | view) as key:
+                children = [w.EnumKey(key, i) for i in range(w.QueryInfoKey(key)[0])]
+            for child in children:
+                self.delete(path + "\\" + child, view)
+            w.DeleteKeyEx(w.HKEY_CURRENT_USER, path, view)
+        except FileNotFoundError:
+            pass
+
+    def write(self, path, view, state):
+        if state is None:
+            return
+        w = self.api
+        values, children = state
+        with w.CreateKeyEx(w.HKEY_CURRENT_USER, path, 0, w.KEY_WRITE | view) as key:
+            for name, value, kind in values:
+                w.SetValueEx(key, name, 0, kind, value)
+        for name, child in children.items():
+            self.write(path + "\\" + name, view, child)
+
+    def restore(self):
+        # The 32/64 views share some HKCU keys; restore both before comparing.
+        for path, view, state in self.saved:
+            self.delete(path, view)
+            self.write(path, view, state)
+        assert all(self.read(path, view) == state for path, view, state in self.saved)
+        for path, view in self.parents:
+            try:
+                with self.api.OpenKey(self.api.HKEY_CURRENT_USER, path, 0,
+                                      self.api.KEY_READ | view) as key:
+                    subkeys, values, _ = self.api.QueryInfoKey(key)
+                    assert subkeys == values == 0, "new registry parent contains unexpected state"
+                self.api.DeleteKeyEx(self.api.HKEY_CURRENT_USER, path, view)
+            except FileNotFoundError:
+                pass
+
+    def manifests(self):
+        w = self.api
+        for view in (w.KEY_WOW64_32KEY, w.KEY_WOW64_64KEY):
+            for browser in WIN_BROWSERS:
+                path = rf"Software\{browser}\NativeMessagingHosts\com.jstorrent.native"
+                with w.OpenKey(w.HKEY_CURRENT_USER, path, 0, w.KEY_READ | view) as key:
+                    yield Path(w.QueryValueEx(key, "")[0])
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--isolated-guest", action="store_true", required=True)
+    parser.add_argument("--root", type=Path, required=True)
+    parser.add_argument("--legacy", type=Path, required=True)
+    parser.add_argument("--candidate", type=Path, required=True)
+    parser.add_argument("--candidate-sha256", required=True)
+    args = parser.parse_args()
+    platform = "windows" if os.name == "nt" else "linux" if sys.platform == "linux" else None
+    if platform is None or not args.root.is_absolute() or args.root.exists():
+        parser.error("requires Windows/Linux and a new absolute controlled root")
+    assert digest(args.legacy) == PACKAGES[platform]
+    assert digest(args.candidate) == args.candidate_sha256
+    assert not old_running() and "rstorrent-desktop" not in process_names()
+    args.root.mkdir(parents=True)
+    sys.stdout = sys.stderr = (args.root / "driver.log").open("w", encoding="utf-8", buffering=1)
+    root, home = args.root, Path.home()
+    if platform == "windows":
+        config, data = Path(os.environ["APPDATA"]), Path(os.environ["APPDATA"])
+        local = Path(os.environ["LOCALAPPDATA"])
+        app = local / "Programs/JSTorrent"
+        scopes = (app, config / "jstorrent-native", config / "com.jstorrent.desktop",
+                  local / "com.jstorrent.desktop",
+                  config / "Microsoft/Windows/Start Menu/Programs/JSTorrent.lnk",
+                  home / "Desktop/JSTorrent.lnk")
+    else:
+        # Match the product's standard config/data discovery, never redirect it.
+        assert not os.environ.get("XDG_CONFIG_HOME") and not os.environ.get("XDG_DATA_HOME")
+        config, data = home / ".config", home / ".local/share"
+        app = home / "Applications/JSTorrent.AppImage"
+        scopes = (app, config / "jstorrent-native", config / "com.jstorrent.desktop",
+                  data / "com.jstorrent.desktop", home / ".local/lib/jstorrent")
+    native, product = config / "jstorrent-native", data / "com.jstorrent.desktop"
+    children, logs, saved, created = [], [], [], []
+    registry = None
+    results = {"platform": platform, "legacyPackageSha256": PACKAGES[platform],
+               "candidatePackageSha256": args.candidate_sha256, "checks": []}
+
+    def phase(name):
+        (root / "phase.json").write_text(json.dumps({"phase": name, "pid": os.getpid()}), encoding="utf-8")
+
+    def receipt():
+        # Task-only recovery evidence, retained until restoration is verified.
+        state = dict(saved=[(str(path), str(backup), existed) for path, backup, existed in saved],
+                     created=[str(path) for path in created])
+        pending = root / "restoration.pending"
+        pending.write_text(json.dumps(state, indent=2), encoding="utf-8")
+        pending.replace(root / "restoration.json")
+
+    def preserve(path):
+        backup = root / "inherited" / str(len(saved))
+        backup.parent.mkdir(exist_ok=True)
+        existed = path.exists() or path.is_symlink()
+        saved.append((path, backup, existed))
+        receipt()
+        if existed:
+            path.rename(backup)
+
+    def ensure_dir(path):
+        if not path.exists():
+            ensure_dir(path.parent)
+            created.append(path)
+            receipt()
+            path.mkdir()
+
+    def install(package):
+        ensure_dir(app.parent)
+        if platform == "windows":
+            # /D must be the final NSIS argument, without embedded quotes.
+            reply = subprocess.run([str(package), "/S", "/D=" + str(app)], timeout=120)
+            assert reply.returncode == 0, "NSIS install failed"
+        else:
+            shutil.copyfile(package, app)
+            app.chmod(0o700)
+        assert app.exists()
+
+    def launch(name, arguments=()):
+        log = (root / (name + ".log")).open("wb")
+        logs.append(log)
+        if platform == "windows":
+            binary = app / ("jstorrent-desktop.exe" if name == "legacy" else "rstorrent-desktop.exe")
+            command = [str(binary), *arguments]
+        else:
+            command = [str(app), "--appimage-extract-and-run", *arguments]
+        child = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+                                 start_new_session=platform == "linux")
+        children.append(child)
+        return child
+
+    def joined(child, success=True):
+        wait_until(lambda: child.poll() is not None, seconds=600)
+        if success:
+            assert child.wait() == 0, "native Quit failed"
+
+    def snapshot():
+        result = {"discovery": digest(native / "rpc-info.json"), "profiles": {}, "files": {}}
+        for db in sorted(native.glob("profiles/*/data.db")):
+            with closed_copy(db, root) as source:
+                result["profiles"][db.parent.name] = dict(source.execute("SELECT key,value FROM kv"))
+            for suffix in ("", "-wal"):
+                path = db.with_name(db.name + suffix)
+                if path.exists() and (suffix != "-wal" or path.stat().st_size > 0):
+                    result["files"][str(path.relative_to(native))] = digest(path)
+        return result
+
+    def catalog(previous=None):
+        with closed_copy(product / "profile/session.db", root) as connection:
+            connection.row_factory = sqlite3.Row
+            reports = list(connection.execute("SELECT report_json FROM legacy_desktop_import"))
+            assert len(reports) == 1
+            report = json.loads(reports[0][0])
+            assert (report["imported"], report["skipped"], report["already_present"]) == (4, 0, 0)
+            rows = list(connection.execute("SELECT t.*, lower(hex(i.full_hash)) AS identity FROM torrents t JOIN torrent_identities i USING(torrent_id)"))
+            assert len(rows) == 4 and all(row["desired_state"] == "paused" for row in rows)
+            ids = {row["identity"]: bytes(row["torrent_id"]).hex() for row in rows}
+            assert set(ids) == set(expected) and (previous is None or ids == previous)
+            for row in rows:
+                kind = expected[row["identity"]]
+                if kind == "magnet":
+                    assert row["raw_info"] is None and row["have_state"] is None
+                    continue
+                have = bytes(row["have_state"])
+                assert have[:10] == b"RSTHAVE\0\0\x02" and len(have) == 63
+                assert have[10:26] == bytes(row["torrent_id"]) and int.from_bytes(have[58:62], "big") == 1
+                assert have[62] == (128 if kind == "good" else 0)
+                if kind != "missing":
+                    assert row["verification_requested"] == row["verification_completed"] > 0
+            return ids
+
+    def remove_scope(path):
+        # WebView2 can release its owned profile handles shortly after native
+        # Quit. Retry only this preserved scope, with a fixed cleanup deadline.
+        deadline = time.monotonic() + 30
+        while True:
+            try:
+                if path.is_dir() and not path.is_symlink():
+                    shutil.rmtree(path)
+                elif path.exists() or path.is_symlink():
+                    path.unlink()
+                return
+            except PermissionError:
+                if platform != "windows" or time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.25)
+
+    expected, payload_hashes, profiles = {}, {}, []
+    try:
+        if platform == "windows":
+            registry = Registry()
+            # Binary registry values require a binary receipt. Never load this
+            # private pickle from an untrusted source; it is operator recovery.
+            with (root / "registry-before.pickle").open("wb") as saved_registry:
+                pickle.dump((registry.saved, registry.parents), saved_registry)
+            command = "Get-NetFirewallRule | Select-Object -ExpandProperty Name | ConvertTo-Json"
+            firewall = subprocess.check_output(["powershell.exe", "-NoProfile", "-Command", command], timeout=30)
+            (root / "firewall-before.json").write_bytes(firewall)
+        for path in scopes:
+            preserve(path)
+        if registry:
+            registry.isolate_installation()
+        if platform == "linux":
+            for browser in BROWSERS:
+                directory = config / browser
+                ensure_dir(directory)
+                preserve(directory / "NativeMessagingHosts")
+        install(args.legacy)
+        # Extract only to obtain the exact released host for pre-handshake and
+        # fixture writes. Normal GUI execution still uses the installed package.
+        if platform == "linux":
+            old_tree = root / "old"
+            old_tree.mkdir()
+            subprocess.run([str(app), "--appimage-extract"], cwd=old_tree,
+                           stdout=subprocess.DEVNULL, check=True, timeout=60)
+            old_bin = old_tree / "squashfs-root/usr/bin"
+            host_path = old_bin / "jstorrent-host"
+        else:
+            old_bin = root / "old"
+            old_bin.mkdir()
+            for source in app.glob("jstorrent-*.exe"):
+                shutil.copy2(source, old_bin / source.name)
+            host_path = next(old_bin.glob("jstorrent-host*.exe"))
+        binary_pins = BINARIES[platform] if platform == "windows" else APPIMAGE_BINARIES
+        assert digest(host_path) == binary_pins[0]
+        daemon = next(old_bin.glob("jstorrent-io-daemon*"))
+        assert digest(daemon) == binary_pins[1]
+        results["legacyBinaries"] = binary_pins
+        for kinds in (("good", "corrupt", "magnet"), ("missing",)):
+            payload = root / ("missing-root" if kinds == ("missing",) else "payload")
+            payload.mkdir()
+            host = Host(host_path, config, root / (kinds[0] + ".host.log"))
+            try:
+                hello = host.call("handshake", extensionId="isolated-rehearsal", clientType="tauri")
+                profiles.append(hello["profileId"])
+                storage = host.call("registerDownloadRoot", path=str(payload))["root"]["key"]
+                entries = []
+                for kind in kinds:
+                    content = bytes([37]) * 16384
+                    info = bencode({b"length": len(content), b"name": (kind + ".bin").encode(),
+                                    b"piece length": len(content), b"pieces": hashlib.sha1(content).digest(), b"private": 1})
+                    identity = hashlib.sha1(info).hexdigest() if kind != "magnet" else "11" * 20
+                    expected[identity] = kind
+                    entry = dict(infoHash=identity, source="magnet" if kind == "magnet" else "file", addedAt=1)
+                    if kind == "magnet":
+                        entry["magnetUri"] = "magnet:?xt=urn:btih:" + identity
+                    else:
+                        path = payload / (kind + ".bin")
+                        path.write_bytes(content)
+                        payload_hashes[str(path)] = digest(path)
+                        host.call("kvSet", key=f"session:torrent:{identity}:torrentfile",
+                                  value=json.dumps(base64.b64encode(b"d4:info" + info + b"e").decode()))
+                    state = dict(userState="stopped", storageKey=storage, uploaded=0, downloaded=0, updatedAt=1)
+                    if kind != "magnet":
+                        state.update(bitfield="80", pieceCount=1, filePriorities=[0])
+                    host.call("kvSet", key=f"session:torrent:{identity}:state", value=json.dumps(state))
+                    entries.append(entry)
+                host.call("kvSet", key="session:torrents", value=json.dumps(dict(version=2, torrents=entries)))
+                host.call("kvSet", key="config:dhtEnabled", value="false")
+                host.call("kvSet", key="config:pexEnabled", value="false")
+            finally:
+                host.close()
+        old = launch("legacy", ("--force-desktop", "--profile", profiles[0]))
+        phase("legacy-ui")
+        joined(old)
+        wait_until(lambda: not old_running(), seconds=30)
+        corrupt = root / "payload/corrupt.bin"
+        corrupt.write_bytes(bytes([38]) * 16384)
+        payload_hashes[str(corrupt)] = digest(corrupt)
+        (root / "missing-root").rename(root / "missing-offline")
+        payload_hashes[str(root / "missing-offline/missing.bin")] = payload_hashes.pop(str(root / "missing-root/missing.bin"))
+        before = snapshot()
+        (root / "source-before.json").write_text(json.dumps(before, indent=2), encoding="utf-8")
+        install(args.candidate)
+        idle_log = (root / "idle-host.log").open("wb")
+        logs.append(idle_log)
+        idle = subprocess.Popen([str(host_path), "--launcher", "tauri"], stdin=subprocess.PIPE,
+                                stdout=idle_log, stderr=idle_log,
+                                start_new_session=platform == "linux")
+        children.append(idle)
+        time.sleep(1)
+        assert idle.poll() is None and snapshot() == before
+        blocked = launch("idle-blocked")
+        phase("idle-host-blocked")
+        joined(blocked, False)
+        assert not (product / "profile").exists() and snapshot() == before
+        results["checks"].append("pre-handshake-host-blocks-before-catalog")
+        idle.stdin.close()
+        assert idle.wait(timeout=20) == 0
+        # Deterministic filesystem failure covers registration ordering on both
+        # platforms; Windows also independently probes every registry route.
+        failure = config / "com.jstorrent.desktop/native-host"
+        if failure.exists():
+            shutil.rmtree(failure)
+        failure.write_text("controlled registration failure", encoding="utf-8")
+        blocked = launch("registration-blocked")
+        phase("registration-blocked")
+        joined(blocked, False)
+        assert not (product / "profile").exists() and snapshot() == before
+        failure.unlink()
+        results["checks"].append("registration-failure-blocks-before-catalog")
+        migrated = launch("migrated")
+        wait_until(lambda: (product / "profile/session.db").exists())
+        phase("migrated")
+        manifests = list(registry.manifests()) if registry else [
+            config / browser / "NativeMessagingHosts/com.jstorrent.native.json" for browser in BROWSERS]
+        paths = []
+        for path in manifests:
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+            assert manifest["name"] == "com.jstorrent.native"
+            paths.append((manifest["path"], manifest["allowed_origins"][0]))
+        if platform == "linux":
+            paths.append((str(home / ".local/lib/jstorrent/jstorrent-host"), paths[0][1]))
+        for binary, origin in paths:
+            body = json.dumps(dict(id="probe", op="handshake")).encode()
+            reply = subprocess.run([binary, origin], input=len(body).to_bytes(4, "little") + body,
+                                   capture_output=True, check=True, timeout=10)
+            assert len(reply.stdout) == 4 + int.from_bytes(reply.stdout[:4], "little")
+            result = json.loads(reply.stdout[4:])
+            assert set(result) == {"id", "ok", "error", "type"}
+            assert result["id"] == "probe" and result["ok"] is False and result["type"] == "Empty"
+            assert "Update the JSTorrent extension" in result["error"]
+        results["refusalRoutes"] = len(paths)
+        joined(migrated)
+        identities = catalog()
+        restarted = launch("restarted")
+        time.sleep(2)
+        assert restarted.poll() is None
+        phase("restarted")
+        joined(restarted)
+        assert catalog(identities)
+        after = snapshot()
+        (root / "source-after.json").write_text(json.dumps(after, indent=2), encoding="utf-8")
+        assert after == before
+        assert all(digest(Path(path)) == sha for path, sha in payload_hashes.items())
+        assert not (root / "missing-root").exists()
+        results["checks"] += ["four-record-import-and-paused-intent", "valid-and-corrupt-reverification",
+                              "missing-root-not-created", "installed-refusal-routes",
+                              "restart-identities-and-single-marker", "source-and-payload-preserved"]
+        results.update(imported=4, status="passed")
+    except BaseException:
+        results.update(status="failed", error=traceback.format_exc())
+        (root / "result.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
+        raise
+    finally:
+        phase("restoring")
+        print("Restoring owned children, files and registry", flush=True)
+        for child in reversed(children):
+            if child.poll() is None:
+                if platform == "linux":
+                    os.killpg(child.pid, signal.SIGTERM)
+                else:
+                    subprocess.run(["taskkill.exe", "/PID", str(child.pid), "/T", "/F"],
+                                   capture_output=True, timeout=15)
+                try:
+                    child.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    if platform == "linux":
+                        os.killpg(child.pid, signal.SIGKILL)
+                    else:
+                        child.kill()
+                    child.wait(timeout=5)
+            if child.stdin is not None and not child.stdin.closed:
+                child.stdin.close()
+        for log in logs:
+            log.close()
+        for path, backup, existed in reversed(saved):
+            remove_scope(path)
+            if existed:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                backup.rename(path)
+        if registry:
+            print("Restoring registry", flush=True)
+            registry.restore()
+        for path in reversed(created):
+            if path.exists():
+                path.rmdir()
+        results["restoration"] = "passed"
+        (root / "result.json").write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
+        phase("finished")
+    print(json.dumps(results))
+
+
+if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
+    main()

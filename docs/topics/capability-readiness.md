@@ -17,7 +17,9 @@ Tactical [241](../tactical/241-atomic-legacy-desktop-import.md) now implements
 the atomic importer with local fixture/crash/checker evidence. Tactical
 [242](../tactical/242-legacy-desktop-handoff-rehearsal.md) adds production-only
 old-host fencing and a generated installed macOS replacement checkpoint.
-Windows/Linux installed replacement and production graduation remain open.
+[243](../tactical/243-windows-linux-legacy-replacement.md) adds installed
+Windows/Linux replacement and repairs Windows private-snapshot syncing.
+Unavailable-root presentation and production graduation remain open.
 
 Tactical [240](../tactical/240-signed-desktop-control-qualification.md) completes
 signed current-source delivery with [Latest 0.2.801](../evidence/desktop-latest-v0.2.801.md).
@@ -29,7 +31,8 @@ picker cleanup, explicit/passive relaunch and bounded registration repair.
 The Mac also installs the exact public DMG and recreates its bundled host.
 Physical sleep/wake, interrupted updates, broader endurance, Intel/minimum-macOS
 installed coverage and production graduation remain open. 241 supplies local
-importer evidence; 242 supplies bounded installed macOS handoff evidence.
+importer evidence; 242/243 supply bounded installed three-platform handoff
+evidence.
 
 Selected three-platform beta replacement, rollback and native registration
 repair pass in [236](../tactical/236-desktop-compatibility-refusal-and-recovery.md)
@@ -44,10 +47,10 @@ lock blocker is superseded by authorized VM recreation with verified stored
 credentials. Its attempted native suspend-to-idle did not recover and required
 a supported forced stop; native sleep/wake remains unqualified. Owned test state
 is removed and claims released. 240 supplies signed current-source delivery.
-Next: Windows/Linux installed legacy replacement and production/privacy/support
-qualification after 242's managed-route fencing and macOS checkpoint.
+Next: unavailable-root presentation and production/privacy/support
+qualification after 242/243's managed-route fencing and three-platform checkpoints.
 Interrupted-update, physical sleep/wake and broader endurance evidence remain
-independent. The macOS checkpoint does not qualify production graduation.
+independent. These bounded checkpoints do not qualify production graduation.
 
 Tactical [`234`](../tactical/234-desktop-user-intent-and-background-lifecycle.md)
 owns the accepted desktop lifetime follow-up: retain the tray/status-bar icon
@@ -1115,8 +1118,9 @@ hosted repeats.
   Tactical **241** implements atomic desktop import with current-destination
   preservation, process-crash and ordinary-checker evidence. **242** implements
   managed legacy host fencing and passes a bounded installed macOS replacement.
-  Windows/Linux installed replacement, production/privacy/support qualification
-  and rollout remain open.
+  **243** adds installed Windows/Linux replacement and native snapshot repair.
+  Unavailable-root presentation, production/privacy/support qualification and
+  rollout remain open.
 
 - Complete **Tactical `214`**'s native platform notice and source-delivery
   review for the package lanes to be declared. Tactical `218` adopts and

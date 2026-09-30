@@ -14,8 +14,10 @@ Physical sleep/wake, interrupted updates, broader endurance, Intel/minimum-macOS
 installed coverage and production graduation remain open. Tactical 241
 implements atomic local import; [242](../tactical/242-legacy-desktop-handoff-rehearsal.md)
 adds production-only old-host fencing and a bounded installed macOS replacement
-checkpoint with generated state. Remaining installed platforms, signed
-production delivery, privacy/support continuity and full branding remain open.
+checkpoint with generated state. [243](../tactical/243-windows-linux-legacy-replacement.md)
+adds installed Windows NSIS/Linux AppImage checkpoints and repairs Windows
+snapshot syncing. Unavailable-root presentation, signed production delivery,
+privacy/support continuity and full branding remain open.
 
 240 also fixes the macOS CFT support path to `Google/Chrome for Testing`.
 Its actual default-profile discovery/repair evidence supersedes the misspelled
@@ -36,8 +38,8 @@ credentials. Its attempted native suspend-to-idle did not recover and required
 a supported forced stop; native sleep/wake remains unqualified. Owned test state
 is removed and claims released. 240 supplies signed current-source delivery.
 Next: bounded interrupted-update, physical sleep/wake and broader endurance
-evidence. Importer implementation and the macOS handoff checkpoint are recorded
-in 241/242; production qualification remains separate.
+evidence. Importer implementation and three-platform handoff checkpoints are
+recorded in 241/242/243; production qualification remains separate.
 
 Tactical [`236`](../tactical/236-desktop-compatibility-refusal-and-recovery.md)
 adds clear terminal desktop compatibility errors and attach-only Retry
@@ -45,7 +47,8 @@ connection. Its installed Linux beta old/new extension/runtime combinations,
 open-page replacement, credential rotation, bounded registration repair and
 same-schema rollback preserve the controlled library. The macOS/Windows beta
 matrices now pass in 237. 240 supplies signed current-source delivery; original
-legacy browser-store pairs and Windows/Linux installed replacement remain open.
+legacy browser-store pairs remain open. 243 adds the bounded Windows/Linux
+installed legacy migration checkpoint.
 
 Tactical [`235`](../tactical/235-linux-quit-launch-handoff.md) repairs the Linux
 Quit/launch overlap. A stopping owner returns Retry; the explicit launch process

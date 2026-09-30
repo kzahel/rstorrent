@@ -18,9 +18,10 @@ rollout gate, while retaining the native-owner architecture and the existing
 companion implementation. Exact release/store order remains open. The
 [desktop replacement topic](desktop-jstorrent-replacement.md) owns the contract.
 
-Tacticals 241/242 implement atomic desktop import and production-only retirement
-of managed legacy native-host routes, with a bounded installed macOS checkpoint.
-Incubation identities remain separate. Remaining installed platforms, signed
+Tacticals 241/242/243 implement atomic desktop import and production-only
+retirement of managed legacy native-host routes, with bounded installed macOS,
+Windows NSIS and Linux AppImage checkpoints. Incubation identities remain
+separate. Unavailable-root presentation, signed
 production delivery and settings/privacy/support dispositions are graduation
 work; no personal migration or production rollout has run.
 
@@ -664,8 +665,9 @@ Windows and macOS control checkpoints. Continue its broader browser lifecycle,
 endurance and mixed-version/update-compatibility gates, tracked by Tactical
 `231` and [`desktop-jstorrent-replacement.md`](desktop-jstorrent-replacement.md).
 Tactical `241` implements atomic import against `233`'s Linux/Windows exports
-with local crash, preservation and checker evidence. Next qualify installed
-legacy replacement, old-host relaunch fencing and support/privacy continuity.
+with local crash, preservation and checker evidence. Tacticals 242/243 qualify
+managed old-host fencing and bounded installed three-platform replacement.
+Next resolve unavailable-root presentation and support/privacy continuity.
 No personal migration has run.
 Existing independent release and platform campaigns below continue under
 their own gates.
