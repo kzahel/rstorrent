@@ -27,11 +27,11 @@ use rstorrent_protocol::identity::V1InfoHash;
 use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo};
 use rstorrent_session::{
     AddTorrentBytesRequest, ApplicationConfig, ApplicationNetworkPrerequisite, ApplicationService,
-    ConfiguredStorageRoot, MAX_STORAGE_ROOTS, MediaUrlResponse, NetworkPrerequisiteHandle,
-    PlatformRemovalPlan, ProductFeedbackEnvironment, ProductFeedbackPreview, ProductStateOwner,
-    ProductSummary, RequestEnvelope, ResponseEnvelope, StorageRootSnapshot,
-    StorageSettingsSnapshot, SubscriptionSpec, ViewSubscription, ViewUpdate,
-    build_product_feedback_preview,
+    ConfiguredStorageRoot, LegacyAndroidRootBinding, MAX_STORAGE_ROOTS, MediaUrlResponse,
+    NetworkPrerequisiteHandle, PathRootStartupPolicy, PlatformRemovalPlan,
+    ProductFeedbackEnvironment, ProductFeedbackPreview, ProductStateOwner, ProductSummary,
+    RequestEnvelope, ResponseEnvelope, SessionStore, StorageRootSnapshot, StorageSettingsSnapshot,
+    SubscriptionSpec, ViewSubscription, ViewUpdate, build_product_feedback_preview,
 };
 use sha1::{Digest, Sha1};
 use tokio::sync::{Mutex as AsyncMutex, watch};
@@ -63,6 +63,35 @@ pub extern "system" fn Java_org_rstorrent_bootstrap_PlatformTrustBootstrap_initi
     unowned_env
         .with_env(|env| rustls_platform_verifier::android::init_with_env(env, context))
         .resolve::<jni::errors::ThrowRuntimeExAndDefault>();
+}
+
+/// Private startup boundary, before any engine/session owner exists.
+#[uniffi::export]
+pub fn migrate_legacy_android(
+    profile_root: String,
+    source_database: String,
+    source_files: String,
+    snapshot_directory: String,
+    preferences_json: String,
+    current_bindings_json: String,
+) -> Result<String, AndroidClientError> {
+    if current_bindings_json.len() > 1024 * 1024 {
+        return Err(AndroidClientError::message("legacy bindings exceed bound"));
+    }
+    let bindings: Vec<LegacyAndroidRootBinding> = serde_json::from_str(&current_bindings_json)
+        .map_err(|_| AndroidClientError::message("invalid legacy bindings"))?;
+    let result = SessionStore::migrate_legacy_android(
+        &android_path(profile_root, "profile root")?,
+        "default",
+        &android_path(source_database, "source database")?,
+        &android_path(source_files, "source files")?,
+        &android_path(snapshot_directory, "snapshot directory")?,
+        &preferences_json,
+        &bindings,
+    )
+    .map_err(|error| AndroidClientError::message(error.to_string()))?;
+    serde_json::to_string(&result)
+        .map_err(|_| AndroidClientError::message("invalid migration result"))
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -1120,6 +1149,10 @@ fn validate_application_config(
         });
     if network_policy == NetworkPolicy::Online {
         application = application.with_fresh_profile_defaults();
+    }
+    if config.platform_storage {
+        application =
+            application.with_path_root_startup_policy(PathRootStartupPolicy::PreserveUnavailable);
     }
     application.download_resource_limits = DownloadResourceLimits::ANDROID;
     application.active_download_cap = Some(2);

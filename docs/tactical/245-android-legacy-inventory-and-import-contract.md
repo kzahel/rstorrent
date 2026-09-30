@@ -2,6 +2,11 @@
 
 Status: Complete inventory checkpoint, 2026-09-30.
 
+Follow-up: [246](246-android-legacy-import-and-installed-upgrade.md) owns actual
+implementation and installed upgrade evidence. Subsequent explicit maintainer
+direction retires the proposed VPN/battery review holds: drop unsupported
+settings and record potential cutover investments instead.
+
 ## Authorized Slice And Stopping Condition
 
 Start Android migration by inventorying a pinned released app's stored

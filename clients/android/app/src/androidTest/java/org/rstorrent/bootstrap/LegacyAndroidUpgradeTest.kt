@@ -1,0 +1,187 @@
+package org.rstorrent.bootstrap
+
+import android.content.Context
+import android.content.Intent
+import android.database.sqlite.SQLiteDatabase
+import android.net.Uri
+import android.os.Process
+import android.provider.DocumentsContract
+import androidx.test.platform.app.InstrumentationRegistry
+import java.io.File
+import java.security.MessageDigest
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import org.junit.Assert.*
+import org.junit.Test
+
+/** Invoked in explicit phases by run-legacy-upgrade.py, never ordinary suites. */
+class LegacyAndroidUpgradeTest {
+    private val context: Context get() = InstrumentationRegistry.getInstrumentation().targetContext
+    private val enabled: Boolean get() = InstrumentationRegistry.getArguments().getString("legacyUpgrade") == "true"
+    private fun hex(bytes: ByteArray) = bytes.joinToString("") { "%02x".format(it) }
+
+    @Test fun verifyReplacement() = runBlocking {
+        org.junit.Assume.assumeTrue("requires owned upgrade runner", enabled)
+        assertEquals(25L, context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode)
+        assertEquals(File(context.filesDir, "legacy-upgrade-uid").readText(), Process.myUid().toString())
+        assertEquals(File(context.filesDir,"legacy-upgrade-db-hash").readText(), hex(MessageDigest.getInstance("SHA-256").digest(context.getDatabasePath("jstorrent_kv.db").readBytes())))
+        assertEquals(File(context.filesDir,"legacy-upgrade-roots-hash").readText(), hex(MessageDigest.getInstance("SHA-256").digest(File(context.filesDir,"roots.json").readBytes())))
+        ProductInteractionRegistry.setActivityVisible(true)
+        if (android.os.Build.VERSION.SDK_INT >= 33) InstrumentationRegistry.getInstrumentation().uiAutomation.grantRuntimePermission(context.packageName, "android.permission.POST_NOTIFICATIONS")
+        val serviceRule = androidx.test.rule.ServiceTestRule.withTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        context.startForegroundService(Intent(context, ProductEngineService::class.java))
+        val service = (serviceRule.bindService(Intent(context, ProductEngineService::class.java)) as ProductEngineService.LocalBinder).service
+        try {
+            val state = withTimeout(60000) { service.state.first { it.ready && it.torrents.size == 5 && it.clientSettings != null } }
+            assertTrue(ProductNetworkPreference.read(context))
+            assertFalse(ProductPowerPreference.read(context))
+            assertTrue(ProductLifecyclePreferenceStore(context).read().keepSeedingEnabled)
+            val settings = state.clientSettings!!.configured
+            assertFalse(settings.dhtEnabled); assertFalse(settings.peerExchangeEnabled)
+            assertEquals(77U, settings.peerConnectionLimit); assertEquals(3.toUShort(), settings.activeDownloads)
+            assertEquals(org.rstorrent.session.uniffi.EncryptionPolicy.REQUIRED, settings.encryption)
+            assertEquals(org.rstorrent.session.uniffi.ActiveSeedLimit.Limited(4.toUShort()), settings.activeSeeds)
+            assertEquals(org.rstorrent.session.uniffi.TransferRateLimit.Limited(12345U), settings.uploadRateLimit)
+            assertEquals(org.rstorrent.session.uniffi.TransferRateLimit.Limited(23456U), settings.downloadRateLimit)
+            assertFalse(state.storage!!.showFileSelection)
+            SQLiteDatabase.openDatabase(File(context.filesDir,"product-profile/session.db").absolutePath, null, SQLiteDatabase.OPEN_READONLY).use { database ->
+                database.rawQuery("SELECT count(*) FROM torrents WHERE desired_state != 'paused'", null).use { rows -> assertTrue(rows.moveToFirst()); assertEquals(0, rows.getInt(0)) }
+                database.rawQuery("SELECT count(*) FROM legacy_android_import", null).use { rows -> assertTrue(rows.moveToFirst()); assertEquals(1, rows.getInt(0)) }
+                database.rawQuery("SELECT download_queue_position, selection_default FROM torrents WHERE raw_info IS NULL", null).use { rows -> assertTrue(rows.moveToFirst()); assertTrue(rows.isNull(0)); assertEquals("skipped", rows.getString(1)) }
+            }
+            assertEquals(1, ProductSafRootRegistry.load(context).roots.size)
+            val retainedRoot = File(context.filesDir,"legacy-upgrade-root-id")
+            if (retainedRoot.exists()) assertEquals(retainedRoot.readText(), ProductSafRootRegistry.load(context).roots.single().rootId)
+            assertEquals(1, context.contentResolver.persistedUriPermissions.count { it.isReadPermission && it.isWritePermission })
+            assertEquals(1, state.torrents.values.count { !it.metadataAvailable })
+            assertEquals(1, state.torrents.values.count { it.awaitingFileSelection })
+            assertTrue(state.torrents.values.all { it.operationalState != org.rstorrent.session.uniffi.TorrentOperationalState.DOWNLOADING })
+            withTimeout(60000) {
+                while (true) {
+                    val pending = SQLiteDatabase.openDatabase(File(context.filesDir,"product-profile/session.db").absolutePath, null, SQLiteDatabase.OPEN_READONLY).use { database ->
+                        database.rawQuery("SELECT count(*) FROM torrents WHERE raw_info IS NOT NULL AND awaiting_file_selection=0 AND verification_completed != verification_requested", null).use { rows -> rows.moveToFirst(); rows.getInt(0) }
+                    }
+                    if (pending == 0) break
+                    delay(50)
+                }
+            }
+            val checked = withTimeout(60000) { service.state.first { current -> current.torrents.values.count { it.verifiedPieceCount > 0U } >= 2 } }
+            val intact = checked.torrents.values.single { it.displayName == "intact.bin" }; assertEquals(1U, intact.verifiedPieceCount)
+            val private = checked.torrents.values.single { it.displayName == "private.bin" }; assertEquals(1U, private.verifiedPieceCount)
+            val corrupt = checked.torrents.values.single { it.displayName == "corrupt.bin" }; assertEquals(0U, corrupt.verifiedPieceCount)
+            val root = ProductSafRootRegistry.load(context).roots.single()
+            val tree = Uri.parse(root.treeUri)
+            val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+            val digests = mutableMapOf<String, String>()
+            context.contentResolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)!!.use { rows ->
+                while (rows.moveToNext()) {
+                    val name = rows.getString(1)
+                    if (name in listOf("intact.bin", "corrupt.bin")) {
+                        val uri = DocumentsContract.buildDocumentUriUsingTree(tree, rows.getString(0))
+                        val bytes = context.contentResolver.openInputStream(uri)!!.use { it.readBytes() }
+                        assertEquals(16384, bytes.size)
+                        digests[name] = hex(MessageDigest.getInstance("SHA-256").digest(bytes))
+                    }
+                }
+            }
+            assertEquals(hex(MessageDigest.getInstance("SHA-256").digest(ByteArray(16384) { 37 })), digests["intact.bin"])
+            assertEquals(hex(MessageDigest.getInstance("SHA-256").digest(ByteArray(16384) { 38 })), digests["corrupt.bin"])
+            assertArrayEquals(ByteArray(16384) { 37 }, File(context.filesDir,"downloads/private.bin").readBytes())
+        } finally { serviceRule.unbindService(); context.stopService(Intent(context, ProductEngineService::class.java)); ProductInteractionRegistry.setActivityVisible(false) }
+    }
+    @Test fun revokeGrant() {
+        org.junit.Assume.assumeTrue("requires owned upgrade runner", enabled)
+        val root = ProductSafRootRegistry.load(context).roots.single()
+        context.contentResolver.releasePersistableUriPermission(Uri.parse(root.treeUri), Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        assertFalse(ProductSafDocuments.hasGrant(context, Uri.parse(root.treeUri)))
+        File(context.filesDir,"legacy-upgrade-root-id").writeText(root.rootId)
+    }
+
+    @Test fun verifyRevoked() = runBlocking {
+        org.junit.Assume.assumeTrue("requires owned upgrade runner", enabled)
+        ProductInteractionRegistry.setActivityVisible(true)
+        val rule = androidx.test.rule.ServiceTestRule.withTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        context.startForegroundService(Intent(context, ProductEngineService::class.java))
+        val service = (rule.bindService(Intent(context, ProductEngineService::class.java)) as ProductEngineService.LocalBinder).service
+        try {
+            val rootId = File(context.filesDir,"legacy-upgrade-root-id").readText()
+            val state = withTimeout(60000) { service.state.first { current -> current.ready && current.torrents.size == 5 && current.storage?.roots?.any { it.rootId == rootId && it.availability == org.rstorrent.session.uniffi.StorageRootAvailability.UNAVAILABLE } == true } }
+            assertEquals(5, state.torrents.size)
+            assertEquals(rootId, ProductSafRootRegistry.load(context).roots.single().rootId)
+            assertFalse(ProductSafDocuments.hasGrant(context, Uri.parse(ProductSafRootRegistry.load(context).roots.single().treeUri)))
+            // Root health is authoritative even for paused/pending torrent views.
+            assertFalse(state.storageRootReady)
+            assertTrue(state.torrents.values.all { it.activePeerConnections == 0U })
+        } finally { rule.unbindService(); context.stopService(Intent(context, ProductEngineService::class.java)); ProductInteractionRegistry.setActivityVisible(false) }
+    }
+
+    @Test fun verifyClearDoesNotReimport() = runBlocking {
+        org.junit.Assume.assumeTrue("requires owned upgrade runner", enabled)
+        // Exercise the same fixed private-profile primitive as the clear workflow.
+        ProductPrivateProfileReset.reset(context.filesDir)
+        ProductSafRootRegistry.clearForTest(context)
+        ProductNetworkPreference.reset(context)
+        ProductPowerPreference.reset(context)
+        ProductLifecyclePreferenceStore(context).reset()
+        ProductInteractionRegistry.setActivityVisible(true)
+        val rule = androidx.test.rule.ServiceTestRule.withTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        context.startForegroundService(Intent(context, ProductEngineService::class.java))
+        val service = (rule.bindService(Intent(context, ProductEngineService::class.java)) as ProductEngineService.LocalBinder).service
+        try {
+            val state = withTimeout(60000) { service.state.first { it.ready && it.storage != null && it.clientSettings != null } }
+            assertTrue(state.storage!!.roots.isEmpty())
+            assertTrue(state.torrents.isEmpty())
+            SQLiteDatabase.openDatabase(File(context.filesDir,"product-profile/session.db").absolutePath, null, SQLiteDatabase.OPEN_READONLY).use { database ->
+                database.rawQuery("SELECT count(*) FROM torrents", null).use { rows -> assertTrue(rows.moveToFirst()); assertEquals(0, rows.getInt(0)) }
+                database.rawQuery("SELECT count(*) FROM sqlite_master WHERE name='legacy_android_import'", null).use { rows -> assertTrue(rows.moveToFirst()); assertEquals(0, rows.getInt(0)) }
+            }
+            assertFalse(ProductNetworkPreference.read(context))
+            assertArrayEquals(ByteArray(16384) { 37 }, File(context.filesDir,"downloads/private.bin").readBytes())
+            assertEquals(File(context.filesDir,"legacy-upgrade-db-hash").readText(), hex(MessageDigest.getInstance("SHA-256").digest(context.getDatabasePath("jstorrent_kv.db").readBytes())))
+        } finally { rule.unbindService(); context.stopService(Intent(context, ProductEngineService::class.java)); ProductInteractionRegistry.setActivityVisible(false) }
+    }
+
+    @Test fun verifyRootOnlyMigration() = runBlocking {
+        org.junit.Assume.assumeTrue("requires owned upgrade runner", enabled)
+        context.deleteDatabase("jstorrent_kv.db")
+        resetFixtureBootstrap()
+        verifyEmptyStartup(expectedRoots = 1, expectedUnmetered = true)
+    }
+
+    @Test fun verifyFreshInstall() = runBlocking {
+        org.junit.Assume.assumeTrue("requires owned upgrade runner", enabled)
+        File(context.filesDir,"roots.json").delete()
+        check(context.getSharedPreferences("jstorrent_settings", Context.MODE_PRIVATE).edit().clear().commit())
+        resetFixtureBootstrap()
+        verifyEmptyStartup(expectedRoots = 0, expectedUnmetered = false)
+    }
+
+    private fun resetFixtureBootstrap() {
+        ProductPrivateProfileReset.reset(context.filesDir)
+        ProductSafRootRegistry.clearForTest(context)
+        ProductNetworkPreference.reset(context)
+        check(context.getSharedPreferences("product-legacy-bootstrap", Context.MODE_PRIVATE).edit().clear().commit())
+    }
+
+    private suspend fun verifyEmptyStartup(expectedRoots: Int, expectedUnmetered: Boolean) {
+        ProductInteractionRegistry.setActivityVisible(true)
+        val rule = androidx.test.rule.ServiceTestRule.withTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        context.startForegroundService(Intent(context, ProductEngineService::class.java))
+        val service = (rule.bindService(Intent(context, ProductEngineService::class.java)) as ProductEngineService.LocalBinder).service
+        try {
+            val state = withTimeout(60000) { service.state.first { it.ready && it.storage != null && it.clientSettings != null } }
+            assertEquals(expectedRoots, state.storage!!.roots.size)
+            assertTrue(state.torrents.isEmpty())
+            assertEquals(expectedUnmetered, ProductNetworkPreference.read(context))
+            assertTrue(context.getSharedPreferences("product-legacy-bootstrap", Context.MODE_PRIVATE).getBoolean("complete",false))
+            SQLiteDatabase.openDatabase(File(context.filesDir,"product-profile/session.db").absolutePath,null,SQLiteDatabase.OPEN_READONLY).use { database ->
+                database.rawQuery("SELECT count(*) FROM torrents",null).use { rows -> assertTrue(rows.moveToFirst()); assertEquals(0,rows.getInt(0)) }
+                if (expectedRoots == 0) database.rawQuery("SELECT count(*) FROM sqlite_master WHERE name='legacy_android_import'",null).use { rows -> assertTrue(rows.moveToFirst()); assertEquals(0,rows.getInt(0)) }
+            }
+            assertFalse(context.getDatabasePath("jstorrent_kv.db").exists())
+        } finally { rule.unbindService(); context.stopService(Intent(context, ProductEngineService::class.java)); ProductInteractionRegistry.setActivityVisible(false) }
+    }
+
+}

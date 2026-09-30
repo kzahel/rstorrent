@@ -1312,6 +1312,30 @@ python3 clients/android/run_bootstrap.py \
   --profile product-incomplete-duplex --no-build
 ```
 
+The bounded Android legacy upgrade rehearsal owns fresh API 28/35 emulators
+and temporary APKs/certificates. It downloads and verifies the pinned public
+JSTorrent 1.0.24 APK, makes a real released-app SAF selection, seeds controlled
+source-format torrent/settings data, and replaces it with the new debug APK
+under `com.jstorrent.app`. No production key or attached physical device is
+used. Run serially after generating both native ABIs/bindings:
+
+```bash
+source ~/.profile
+clients/android/build.sh
+PYTHONDONTWRITEBYTECODE=1 python3 clients/android/scripts/run-legacy-upgrade.py --api 28
+PYTHONDONTWRITEBYTECODE=1 python3 clients/android/scripts/run-legacy-upgrade.py --api 35
+```
+
+The runner checks retained UID/source data/grants, mapped settings and selection,
+ordinary intact/corrupt/private payload checking, restart, revocation/regrant
+and no resurrection after private-profile clearing. It deletes its emulator,
+AVD, APKs and disposable key, then restores ordinary incubation build identity.
+The platform-only `legacy-upgrade-fixture` module exists because the minified
+released APK cannot provide the current test runner's Kotlin dependencies.
+Only the source seed uses it; successor assertions use ordinary instrumentation.
+This qualifies the controlled old APK/source format, not Play signing or every
+historical profile. The replacement topic owns cutover gaps and wider gates.
+
 Tactical `003`'s self-contained Android probe builds both supported native
 ABIs and targets only an explicitly verified environment:
 

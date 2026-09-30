@@ -2,12 +2,19 @@
 
 Topic: `product-surfaces-and-migration`
 
+Tactical [246](../tactical/246-android-legacy-import-and-installed-upgrade.md)
+implements Android best-effort import and a controlled installed replacement
+runner using the actual pinned released APK, a disposable shared certificate
+and real SAF selection. Unsupported VPN/battery/plugin settings are dropped
+by explicit maintainer direction; gaps remain recorded for cutover planning.
+Production signing/branding/store delivery and extension rollout remain separate.
+
 Tactical [245](../tactical/245-android-legacy-inventory-and-import-contract.md)
 starts Android migration with a pinned Android 1.0.24 APK/source inventory,
 13 generated format cases and the importer/upgrade contract in
 [android-jstorrent-replacement](android-jstorrent-replacement.md). There is
 one Android source session, with SAF and explicit private-download bindings.
-Importer implementation and real package/grant upgrade remain unqualified;
+Tactical 246 now owns importer and controlled package/grant upgrade evidence;
 the accepted temporary ChromeOS extension-control gap remains separate.
 
 Maintainer direction on 2026-09-30 simplifies the production transition:

@@ -4495,6 +4495,7 @@ dependencies = [
  "rstorrent-protocol",
  "rstorrent-session",
  "rustls-platform-verifier",
+ "serde_json",
  "sha1",
  "tokio",
  "tokio-util",

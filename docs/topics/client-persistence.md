@@ -2,13 +2,22 @@
 
 Topic: `client-persistence`
 
+Tactical [246](../tactical/246-android-legacy-import-and-installed-upgrade.md)
+adds Android import to the same validated conversion and transaction owner.
+The schema-26 optional `legacy_android_import` singleton commits counts, private
+root/preference bootstrap and completion with the catalog. No per-record ledger;
+source/WAL snapshots are read-only. Existing latest-profile owners win. Adapter
+bootstrap is idempotent before engine open and retains current preference keys.
+An installation flag retires the migration boundary on successful import or a
+source-free first start; explicit profile clearing cannot reimport old data.
+
 Tactical [245](../tactical/245-android-legacy-inventory-and-import-contract.md)
 pins Android 1.0.24's one-session, version-1 nullable SQLite KV source and
 version-2 torrent index. Its generated WAL audit and importer contract add no
 destination schema or migration writer. Proposed Android conversion commits
 catalog state plus initial private root bindings and one report atomically;
 Kotlin derives missing registry entries before engine startup. Actual importer,
-crash/upgrade and persisted-grant evidence remain separate.
+crash/upgrade and persisted-grant evidence is now in 246.
 
 Tactical [241](../tactical/241-atomic-legacy-desktop-import.md) implements a
 strict current-schema desktop legacy import. A fresh schema, mapped settings,

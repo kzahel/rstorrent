@@ -40,6 +40,9 @@ android {
         debug {
             isDebuggable = true
             isPseudoLocalesEnabled = true
+            if (providers.gradleProperty("legacyUpgradeTestPackage").isPresent) {
+                versionNameSuffix = "-upgrade-test"
+            }
         }
         release {
             signingConfig = signingConfigs.getByName("release")
@@ -68,7 +71,10 @@ android {
 
 androidComponents {
     onVariants(selector().withBuildType("debug")) { variant ->
-        variant.applicationId.set("org.rstorrent.bootstrap")
+        val upgradePackage = providers.gradleProperty("legacyUpgradeTestPackage").orNull
+        require(upgradePackage == null || upgradePackage == "com.jstorrent.app") { "unsupported upgrade test identity" }
+        variant.applicationId.set(upgradePackage ?: "org.rstorrent.bootstrap")
+        if (upgradePackage != null) variant.outputs.forEach { it.versionCode.set(25) }
     }
 }
 
@@ -128,6 +134,7 @@ dependencies {
 // AGP otherwise permits an unsigned release when no storeFile is configured.
 val requireReleaseSigning by tasks.registering {
     doLast {
+        require(!providers.gradleProperty("legacyUpgradeTestPackage").isPresent) { "upgrade test properties are debug-only" }
         for (name in listOf("UPLOAD_KEYSTORE_PATH", "UPLOAD_KEYSTORE_PASSWORD", "UPLOAD_KEY_ALIAS", "UPLOAD_KEY_PASSWORD")) {
             require(!providers.environmentVariable(name).orNull.isNullOrBlank()) {
                 "Release builds require $name; unsigned/debug-key fallback is disabled"

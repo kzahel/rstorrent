@@ -1,4 +1,5 @@
-//! One-shot desktop KV conversion. No runtime, engine, or payload writer exists here.
+//! Shared legacy conversion/atomic commit with desktop discovery and an Android adapter.
+//! No runtime, engine, or payload writer exists here.
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::Read;
@@ -22,7 +23,28 @@ const MAX_METAINFO_BYTES: usize = 8 * 1024 * 1024;
 const MAX_PREPARED_BYTES: usize = 64 * 1024 * 1024;
 const MAX_VALUE_BYTES: usize = 12 * 1024 * 1024;
 const MAX_REPORT_BYTES: usize = 1024 * 1024;
-const MARKER_TABLE: &str = "legacy_desktop_import";
+mod android;
+pub use android::{LegacyAndroidBootstrap, LegacyAndroidRootBinding};
+
+#[derive(Clone, Copy)]
+enum ImportKind {
+    Desktop,
+    Android,
+}
+impl ImportKind {
+    fn table(self) -> &'static str {
+        match self {
+            Self::Desktop => "legacy_desktop_import",
+            Self::Android => "legacy_android_import",
+        }
+    }
+    fn backup_name(self) -> &'static str {
+        match self {
+            Self::Desktop => "legacy-desktop-backup",
+            Self::Android => "legacy-android-backup",
+        }
+    }
+}
 
 /// Counts and ordinal outcomes only: no paths, tokens, names, or torrent hashes.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -93,11 +115,22 @@ struct State {
     queue_position: Option<u64>,
 }
 
+#[derive(Clone, Debug)]
+enum LegacyRootLocation {
+    Path(PathBuf),
+    Platform(String),
+}
+#[derive(Clone)]
+struct PlannedRoot {
+    display_name: String,
+    location: LegacyRootLocation,
+}
+
 struct PlannedRecord {
     profile: usize,
     record: usize,
     identity: FullInfoHash,
-    root: Root,
+    root: PlannedRoot,
     running: bool,
     awaiting_selection: bool,
     queue_position: u64,
@@ -111,6 +144,7 @@ struct Plan {
     report: LegacyDesktopImportReport,
     settings: Option<ClientSettings>,
     backup: TempDir,
+    android: Option<LegacyAndroidBootstrap>,
 }
 
 impl SessionStore {
@@ -192,7 +226,9 @@ impl SessionStore {
                 pending_reconciliations: Vec::new(),
             }
         };
-        store.apply_legacy_plan(plan, existing).map(Some)
+        store
+            .apply_legacy_plan(plan, existing, ImportKind::Desktop)
+            .map(Some)
     }
 
     /// Completion survives removal of imported torrents: never resurrect on startup.
@@ -206,6 +242,7 @@ impl SessionStore {
         &mut self,
         mut plan: Plan,
         existing: bool,
+        kind: ImportKind,
     ) -> Result<LegacyDesktopImportReport, StoreError> {
         let transaction = self
             .connection
@@ -218,7 +255,7 @@ impl SessionStore {
                 None,
             )?;
         }
-        if let Some(mut report) = completed_report(&transaction)? {
+        if let Some(mut report) = completed_report_for(&transaction, kind)? {
             report.already_completed = true;
             return Ok(report);
         }
@@ -230,6 +267,32 @@ impl SessionStore {
         if !existing && let Some(settings) = &plan.settings {
             replace_client_settings(&transaction, settings)?;
         }
+        if let Some(bootstrap) = &plan.android {
+            if !existing
+                && let Some(value) = bootstrap
+                    .preferences
+                    .get("show_file_selection")
+                    .and_then(Value::as_bool)
+            {
+                transaction.execute(
+                    "UPDATE storage_settings SET show_file_selection = ?1",
+                    [value],
+                )?;
+            }
+            for binding in &bootstrap.roots {
+                install_root(
+                    &transaction,
+                    &PlannedRoot {
+                        display_name: binding.label.clone(),
+                        location: LegacyRootLocation::Platform(binding.root_id.clone()),
+                    },
+                    &mut plan.report,
+                )?;
+            }
+            if !existing && let Some(default) = &bootstrap.default_root {
+                transaction.execute("UPDATE storage_settings SET default_root = ?1 WHERE EXISTS(SELECT 1 FROM storage_roots WHERE root_id = ?1)", [default])?;
+            }
+        }
         // Decide conflicts among legacy copies before insertion; current owners win.
         let mut signatures: BTreeMap<FullInfoHash, BTreeSet<String>> = BTreeMap::new();
         for record in &plan.records {
@@ -238,7 +301,10 @@ impl SessionStore {
                 .or_default()
                 .insert(format!(
                     "{:?}/{}/{}/{:?}",
-                    record.root.path, record.running, record.awaiting_selection, record.selection,
+                    record.root.location,
+                    record.running,
+                    record.awaiting_selection,
+                    record.selection,
                 ));
         }
         plan.records
@@ -378,7 +444,7 @@ impl SessionStore {
             .as_ref()
             .and_then(|path| path.parent())
             .ok_or_else(|| invalid("legacy import requires a durable destination"))?;
-        let backup_name = "legacy-desktop-backup";
+        let backup_name = kind.backup_name();
         let backup_path = profile_root.join(backup_name);
         if backup_path
             .try_exists()
@@ -432,16 +498,26 @@ impl SessionStore {
             .file_name()
             .and_then(|name| name.to_str())
             .ok_or_else(|| invalid("invalid migration snapshot name"))?;
-        transaction.execute_batch(
-            "CREATE TABLE legacy_desktop_import (
+        transaction.execute_batch(&format!(
+            "CREATE TABLE {} (
              singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
              report_json TEXT NOT NULL CHECK(length(report_json) <= 1048576),
-             backup_directory TEXT NOT NULL CHECK(length(backup_directory) <= 128)
+             backup_directory TEXT NOT NULL CHECK(length(backup_directory) <= 128),
+             bootstrap_json TEXT CHECK(length(bootstrap_json) <= 1048576)
              );",
-        )?;
+            kind.table()
+        ))?;
+        if let Some(bootstrap) = &mut plan.android {
+            bootstrap.report = plan.report.clone();
+        }
+        let bootstrap_json = plan
+            .android
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()?;
         transaction.execute(
-            "INSERT INTO legacy_desktop_import VALUES (1, ?1, ?2)",
-            params![report_json, backup_directory],
+            &format!("INSERT INTO {} VALUES (1, ?1, ?2, ?3)", kind.table()),
+            params![report_json, backup_directory, bootstrap_json],
         )?;
         #[cfg(test)]
         tests::commit_boundary("before_commit");
@@ -477,15 +553,28 @@ fn existing_owner(
 fn completed_report(
     connection: &Connection,
 ) -> Result<Option<LegacyDesktopImportReport>, StoreError> {
+    completed_report_for(connection, ImportKind::Desktop)
+}
+
+fn completed_report_for(
+    connection: &Connection,
+    kind: ImportKind,
+) -> Result<Option<LegacyDesktopImportReport>, StoreError> {
     if !connection.query_row(
         "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name = ?1)",
-        [MARKER_TABLE],
+        [kind.table()],
         |row| row.get::<_, bool>(0),
     )? {
         return Ok(None);
     }
-    let json: String = connection.query_row("SELECT report_json FROM legacy_desktop_import WHERE singleton = 1 AND length(report_json) <= ?1",
-        [MAX_REPORT_BYTES as i64], |row| row.get(0))?;
+    let json: String = connection.query_row(
+        &format!(
+            "SELECT report_json FROM {} WHERE singleton = 1 AND length(report_json) <= ?1",
+            kind.table()
+        ),
+        [MAX_REPORT_BYTES as i64],
+        |row| row.get(0),
+    )?;
     Ok(Some(serde_json::from_str(&json)?))
 }
 
@@ -511,6 +600,7 @@ fn prepare_plan(legacy_root: &Path) -> Result<Plan, StoreError> {
             ..Default::default()
         },
         settings: None,
+        android: None,
         backup: tempfile::tempdir().map_err(|e| io_error("create source snapshots", e))?,
     };
     let mut seen_profiles = BTreeSet::new();
@@ -610,8 +700,7 @@ fn plan_record(
     kv: &BTreeMap<String, String>,
 ) -> Result<PlannedRecord, StoreError> {
     let entry: Entry = serde_json::from_value(entry)?;
-    let digest: [u8; 20] = decode_hex_hash(&entry.info_hash)?;
-    let identity = FullInfoHash::V1(V1InfoHash::new(digest));
+    decode_hex_hash(&entry.info_hash)?;
     let prefix = format!("session:torrent:{}", entry.info_hash);
     let state: State = serde_json::from_str(
         kv.get(&format!("{prefix}:state"))
@@ -640,6 +729,35 @@ fn plan_record(
     {
         return Err(invalid("non-normal legacy root path"));
     }
+    plan_record_with_root(
+        profile_index,
+        record_index,
+        entry,
+        state,
+        kv,
+        PlannedRoot {
+            display_name: root.display_name,
+            location: LegacyRootLocation::Path(root.path),
+        },
+    )
+}
+
+fn plan_record_with_root(
+    profile_index: usize,
+    record_index: usize,
+    entry: Entry,
+    state: State,
+    kv: &BTreeMap<String, String>,
+    root: PlannedRoot,
+) -> Result<PlannedRecord, StoreError> {
+    if !matches!(
+        state.user_state.as_str(),
+        "active" | "stopped" | "queued" | "awaitingFileSelection"
+    ) {
+        return Err(invalid("unknown legacy run intent"));
+    }
+    let identity = FullInfoHash::V1(V1InfoHash::new(decode_hex_hash(&entry.info_hash)?));
+    let prefix = format!("session:torrent:{}", entry.info_hash);
     let magnet = if entry.source == "magnet" {
         let source = entry
             .magnet_uri
@@ -809,32 +927,53 @@ fn bytes_request(
 
 fn install_root(
     transaction: &Transaction<'_>,
-    root: &Root,
+    root: &PlannedRoot,
     report: &mut LegacyDesktopImportReport,
 ) -> Result<Option<String>, StoreError> {
-    let path = root
-        .path
-        .to_str()
-        .ok_or_else(|| invalid("invalid root path"))?;
-    if let Some(id) = transaction
-        .query_row(
-            "SELECT root_id FROM storage_roots WHERE kind = 'path' AND locator = ?1",
-            [path],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()?
-    {
-        return Ok(Some(id));
-    }
+    let (id, kind, locator) = match &root.location {
+        LegacyRootLocation::Path(path) => {
+            let path = path.to_str().ok_or_else(|| invalid("invalid root path"))?;
+            if let Some(id) = transaction
+                .query_row(
+                    "SELECT root_id FROM storage_roots WHERE kind = 'path' AND locator = ?1",
+                    [path],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()?
+            {
+                return Ok(Some(id));
+            }
+            (
+                format!("legacy-{}", uuid::Uuid::new_v4().simple()),
+                "path",
+                Some(path),
+            )
+        }
+        LegacyRootLocation::Platform(id) => {
+            if let Some(kind) = transaction
+                .query_row(
+                    "SELECT kind FROM storage_roots WHERE root_id = ?1",
+                    [id],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()?
+            {
+                if kind != "platform" {
+                    return Err(invalid("legacy platform root ID conflict"));
+                }
+                return Ok(Some(id.clone()));
+            }
+            (id.clone(), "platform", Some("platform-capability:"))
+        }
+    };
     let count: i64 =
         transaction.query_row("SELECT count(*) FROM storage_roots", [], |row| row.get(0))?;
     if count >= MAX_STORAGE_ROOTS as i64 {
         return Ok(None);
     }
-    let id = format!("legacy-{}", uuid::Uuid::new_v4().simple());
     transaction.execute(
-        "INSERT INTO storage_roots VALUES (?1, ?2, 'path', ?3)",
-        params![id, root.display_name, path],
+        "INSERT INTO storage_roots VALUES (?1, ?2, ?3, ?4)",
+        params![id, root.display_name, kind, locator],
     )?;
     transaction.execute(
         "UPDATE storage_settings SET default_root = ?1 WHERE default_root IS NULL",
@@ -887,7 +1026,12 @@ fn snapshot_database(path: &Path, target: &Path) -> Result<Connection, StoreErro
         return Err(invalid("legacy database file exceeds bound"));
     }
     for suffix in ["-wal", "-shm"] {
-        let auxiliary = path.with_file_name(format!("data.db{suffix}"));
+        let auxiliary = path.with_file_name(format!(
+            "{}{suffix}",
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .ok_or_else(|| invalid("invalid source database name"))?
+        ));
         if auxiliary
             .try_exists()
             .map_err(|e| io_error("inspect source auxiliary", e))?
@@ -959,7 +1103,9 @@ fn read_kv(connection: &Connection) -> Result<BTreeMap<String, String>, StoreErr
         if row.get::<_, i64>(3)? > 256 {
             return Err(invalid("legacy KV key exceeds bound"));
         }
-        let length: i64 = row.get(1)?;
+        let Some(length) = row.get::<_, Option<i64>>(1)? else {
+            continue;
+        };
         let key: String = row.get(0)?;
         if key.len() > 256 {
             return Err(invalid("legacy KV key exceeds bound"));
@@ -1104,8 +1250,17 @@ fn decode_binary(value: &str) -> Result<Vec<u8>, StoreError> {
     if base64.len() > MAX_METAINFO_BYTES.div_ceil(3) * 4 {
         return Err(invalid("decoded source exceeds bound"));
     }
+    let normalized: String = base64
+        .chars()
+        .filter(|c| !c.is_ascii_whitespace())
+        .map(|c| match c {
+            '-' => '+',
+            '_' => '/',
+            _ => c,
+        })
+        .collect();
     let bytes = base64::engine::general_purpose::STANDARD
-        .decode(base64)
+        .decode(normalized)
         .map_err(|_| invalid("invalid source base64"))?;
     if bytes.len() > MAX_METAINFO_BYTES {
         return Err(invalid("decoded source exceeds bound"));

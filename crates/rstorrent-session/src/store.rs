@@ -56,7 +56,10 @@ pub const MAX_STORAGE_ROOT_LOCATOR_LENGTH: usize = 4096;
 const BUSY_TIMEOUT: Duration = Duration::from_secs(2);
 
 mod legacy_desktop;
-pub use legacy_desktop::{LegacyDesktopImportReport, LegacyDesktopRecordOutcome};
+pub use legacy_desktop::{
+    LegacyAndroidBootstrap, LegacyAndroidRootBinding, LegacyDesktopImportReport,
+    LegacyDesktopRecordOutcome,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConfiguredStorageRoot {

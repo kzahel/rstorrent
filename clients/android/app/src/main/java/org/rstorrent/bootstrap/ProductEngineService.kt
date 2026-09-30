@@ -40,6 +40,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -298,72 +299,78 @@ class ProductEngineService : Service() {
         }
         registerNotificationBlockReceiver()
         lifecycleCoordinator.start()
-        val safRegistry = ProductSafRootRegistry.load(this)
-        val unmeteredNetworksOnly = ProductNetworkPreference.read(this)
-        defaultNetworkObserver =
-            AndroidDefaultNetworkObserver(this, unmeteredNetworksOnly) observer@{ networkState ->
-                if (
-                    desiredNetworkPrerequisite(networkState) ==
-                        AndroidApplicationNetworkPrerequisite.WAITING_FOR_UNMETERED_NETWORK &&
-                        clientOpen
-                ) {
-                    runCatching { client.closeNetworkPrerequisite() }.onFailure { error ->
-                        Log.e(TAG, "synchronous network prerequisite close failed", error)
-                        mutableState.update {
-                            it.copy(
-                                network =
-                                    it.network.copy(
-                                        runtimeError =
-                                            ProductError.Technical(
-                                                error.message ?: error.toString(),
-                                            ),
-                                    ),
-                            )
-                        }
-                        requestStop("network_prerequisite_close_failed")
-                        return@observer
-                    }
-                }
-                mutableState.update {
-                    it.copy(
-                        network =
-                            it.network.copy(
-                                unmeteredNetworksOnly = networkState.unmeteredNetworksOnly,
-                                eligibility = networkState.eligibility,
-                                observationRevision = networkState.revision,
-                            ),
-                    )
-                }
-                networkConvergenceWake.trySend(Unit)
-            }
-        val callbackRegistered = defaultNetworkObserver.start()
-        val initialNetworkState = defaultNetworkObserver.snapshot()
-        mutableState.update {
-            it.copy(
-                storageRootReady = false,
-                storageRootLabel = safRegistry.roots.singleOrNull()?.label,
-                preventSleepDuringActiveDownloads = ProductPowerPreference.read(this),
-                network =
-                    ProductNetworkState(
-                        unmeteredNetworksOnly = unmeteredNetworksOnly,
-                        eligibility = initialNetworkState.eligibility,
-                        observationRevision = initialNetworkState.revision,
-                        callbackRegistered = callbackRegistered,
-                    ),
-            )
-        }
         initializationJob = scope.launch {
             try {
                 val stickyRecovery =
                     withTimeout(PRODUCT_LIFETIME_STARTUP_MILLIS) {
                         firstStartCommand.await()
                     }
+                recoveryNetworkGateClosed.set(stickyRecovery)
+                ProductLegacyAndroidMigration.run(this@ProductEngineService)
+                ensureActive()
+                lifecyclePreferences = lifecyclePreferenceStore.read()
+                lifecycleCoordinator.updatePreferences(lifecyclePreferences)
+                publishLifecyclePreferences(initialNotificationEligibility)
                 if (stickyRecovery && !stickyRecoveryAllowed()) {
                     Log.i(TAG, "lifecycle_recovery admitted=false")
                     requestStop("sticky_recovery_ineligible")
                     return@launch
                 }
-                recoveryNetworkGateClosed.set(stickyRecovery)
+                val safRegistry = ProductSafRootRegistry.load(this@ProductEngineService)
+                val unmeteredNetworksOnly = ProductNetworkPreference.read(this@ProductEngineService)
+                defaultNetworkObserver =
+                    AndroidDefaultNetworkObserver(this@ProductEngineService, unmeteredNetworksOnly) observer@{ networkState ->
+                        if (
+                            desiredNetworkPrerequisite(networkState) ==
+                                AndroidApplicationNetworkPrerequisite.WAITING_FOR_UNMETERED_NETWORK &&
+                                clientOpen
+                        ) {
+                            runCatching { client.closeNetworkPrerequisite() }.onFailure { error ->
+                                Log.e(TAG, "synchronous network prerequisite close failed", error)
+                                mutableState.update {
+                                    it.copy(
+                                        network =
+                                            it.network.copy(
+                                                runtimeError =
+                                                    ProductError.Technical(
+                                                        error.message ?: error.toString(),
+                                                    ),
+                                            ),
+                                    )
+                                }
+                                requestStop("network_prerequisite_close_failed")
+                                return@observer
+                            }
+                        }
+                        mutableState.update {
+                            it.copy(
+                                network =
+                                    it.network.copy(
+                                        unmeteredNetworksOnly = networkState.unmeteredNetworksOnly,
+                                        eligibility = networkState.eligibility,
+                                        observationRevision = networkState.revision,
+                                    ),
+                            )
+                        }
+                        networkConvergenceWake.trySend(Unit)
+                    }
+                val callbackRegistered = defaultNetworkObserver.start()
+                val initialNetworkState = defaultNetworkObserver.snapshot()
+                mutableState.update {
+                    it.copy(
+                        storageRootReady = false,
+                        storageRootLabel = safRegistry.roots.singleOrNull()?.label,
+                        preventSleepDuringActiveDownloads = ProductPowerPreference.read(this@ProductEngineService),
+                        network =
+                            ProductNetworkState(
+                                unmeteredNetworksOnly = unmeteredNetworksOnly,
+                                eligibility = initialNetworkState.eligibility,
+                                observationRevision = initialNetworkState.revision,
+                                callbackRegistered = callbackRegistered,
+                            ),
+                    )
+                }
+
                 PlatformTrustBootstrap.ensureInitialized(applicationContext)
                 observePowerAndNotification()
                 if (recoveredDataReset.isFailure) return@launch
@@ -4701,12 +4708,12 @@ class ProductEngineService : Service() {
         }
         Log.i(TAG, "product_shutdown_begin reason=$reason")
         try {
+            initializationJob?.cancelAndJoin()
             lifecycleCoordinator.close()
             if (::defaultNetworkObserver.isInitialized) defaultNetworkObserver.close()
             unregisterNotificationBlockReceiver()
             ProductInteractionRegistry.detach()
             interactionLeases.clear()
-            initializationJob?.cancelAndJoin()
             dataResetJob?.cancelAndJoin()
             networkConvergenceJob?.cancelAndJoin()
             powerNotificationJob?.cancelAndJoin()

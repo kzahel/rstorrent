@@ -2,6 +2,13 @@
 
 Topic: `android-saf-storage`
 
+Tactical [246](../tactical/246-android-legacy-import-and-installed-upgrade.md)
+commits stable platform-root IDs and a private old-tree binding manifest with
+Android catalog migration. Startup bootstraps missing registry entries before
+engine open; existing repaired bindings win and removed catalog roots are
+filtered. Persisted read/write permission and real provider access, rather than
+legacy healthy hints, decide availability. Missing grants remain repairable.
+
 Tactical [245](../tactical/245-android-legacy-inventory-and-import-contract.md)
 pins the Android 1.0.24 root format and generated inventory fixtures. Its
 proposed handoff keeps runtime persisted read/write grants authoritative,

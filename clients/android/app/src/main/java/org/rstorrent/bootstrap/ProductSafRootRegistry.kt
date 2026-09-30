@@ -141,6 +141,20 @@ internal object ProductSafRootRegistry {
         return migrated
     }
 
+    @Synchronized
+    fun restoreLegacyBindings(context: Context, bindings: List<ProductSafRootGrant>) {
+        val current = load(context)
+        val merged = current.roots.toMutableList()
+        for (binding in bindings) {
+            // Current bindings and repairs always win. Grant health is checked by
+            // the ordinary broker; a missing grant remains visible and repairable.
+            if (merged.none { it.rootId == binding.rootId || it.treeUri == binding.treeUri } && merged.size < MAX_ROOTS) {
+                merged.add(binding)
+            }
+        }
+        persist(context, current.copy(roots = merged))
+    }
+
     internal fun initialState(
         encodedRegistry: String?,
         legacyTreeUri: String?,

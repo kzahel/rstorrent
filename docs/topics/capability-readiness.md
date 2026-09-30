@@ -2,6 +2,15 @@
 
 Topic: `capability-readiness`
 
+Tactical [246](../tactical/246-android-legacy-import-and-installed-upgrade.md)
+implements Android best-effort legacy conversion, startup bootstrap and the
+controlled released-APK/same-package upgrade runner. API 28/35 upgrade, restart,
+revocation/regrant and no resurrection after clear pass, along with both native
+ABIs, generated Kotlin and existing startup/reset regression evidence. Supported settings and
+torrent intent carry; unsupported VPN/battery/plugin behavior is dropped and
+tracked as potential cutover investment. This does not graduate Play signing,
+production branding/component routes, API 26/27 or extension rollout.
+
 Tactical [245](../tactical/245-android-legacy-inventory-and-import-contract.md)
 completes Android legacy source/artifact inventory and generated format
 validation: 13 cases and 10 Python tests. It scopes the one-transaction importer,

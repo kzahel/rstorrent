@@ -103,10 +103,11 @@ pub use speed::{
     SpeedSeriesAppend, SpeedSeriesView,
 };
 pub use store::{
-    ConfiguredStorageRoot, LegacyDesktopImportReport, LegacyDesktopRecordOutcome,
-    MAX_STORAGE_ROOT_LOCATOR_LENGTH, MAX_STORAGE_ROOTS, RemovalRecord, ResumeRecord, SessionStore,
-    StorageRootLocation, StoreError, StoredStorageRoot, StoredTracker, StoredTrackerSource,
-    StoredTrackerTransport, TorrentAccounting,
+    ConfiguredStorageRoot, LegacyAndroidBootstrap, LegacyAndroidRootBinding,
+    LegacyDesktopImportReport, LegacyDesktopRecordOutcome, MAX_STORAGE_ROOT_LOCATOR_LENGTH,
+    MAX_STORAGE_ROOTS, RemovalRecord, ResumeRecord, SessionStore, StorageRootLocation, StoreError,
+    StoredStorageRoot, StoredTracker, StoredTrackerSource, StoredTrackerTransport,
+    TorrentAccounting,
 };
 pub use tracker_views::{
     TrackerAnnounceEventView, TrackerCatalogState, TrackerConnectionFamilyView,

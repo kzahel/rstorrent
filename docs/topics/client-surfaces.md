@@ -2,6 +2,13 @@
 
 Topic: `client-surfaces`
 
+Tactical [246](../tactical/246-android-legacy-import-and-installed-upgrade.md)
+implements Android legacy migration before the native application opens.
+Unmetered, lifecycle, wake and selection preferences use existing product
+semantics; unsupported settings are dropped. Incubation identities remain
+separate; only the same-package production identity runs migration, with an
+explicit debug-only package override for emulator qualification.
+
 Tactical [245](../tactical/245-android-legacy-inventory-and-import-contract.md)
 completes the pinned Android legacy inventory/format checkpoint and scopes its
 importer and same-package upgrade matrix. Thirteen generated cases and ten

@@ -2,13 +2,23 @@
 
 Topic: `oracle-driven-engine-campaign`
 
+Tactical [246](../tactical/246-android-legacy-import-and-installed-upgrade.md)
+composes the existing validated intake and ordinary checker for Android
+legacy state; no new engine protocol or foreign resume authority. The pinned
+libtorrent resume/checking implementation and tests are re-inspected. Restart
+checkpoint: 246 is complete with API 28/35 upgrade/regrant/clear evidence, both
+native ABIs, generated Kotlin and Rust baseline checks. Next scope broader
+cutover qualification from the Android replacement topic. Unsupported VPN/battery
+settings are dropped by explicit direction, superseding 245's proposed hold.
+
 Android migration inventory checkpoint
 [245](../tactical/245-android-legacy-inventory-and-import-contract.md) pins
 Android 1.0.24 formats and inspects the same checker/resume oracle without
 changing engine behavior. Thirteen generated format cases/ten Python tests
-pass. Next create its bounded Android importer/real-SAF upgrade tactical from
+pass. Tactical 246 now implements its bounded Android importer/real-SAF upgrade
+checkpoint from
 [android-jstorrent-replacement](android-jstorrent-replacement.md); preserve
-source intent, fail closed on unsupported safety policies, and use ordinary
+source intent and use ordinary
 checking instead of foreign resume evidence. No Android importer ran in 245.
 
 Work-selection policy: this runbook may track multiple independent active

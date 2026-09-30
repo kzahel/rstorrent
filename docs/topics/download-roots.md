@@ -2,6 +2,12 @@
 
 Topic: `download-roots`
 
+Tactical [246](../tactical/246-android-legacy-import-and-installed-upgrade.md)
+maps Android root keys to stable SAF root IDs and preserves the pinned private
+`files/downloads` fallback as an existing path root. It never creates that old
+payload directory during discovery. Default roots carry where supported; current
+latest-profile choices win. Unknown/ambiguous bindings skip their records.
+
 Tactical [245](../tactical/245-android-legacy-inventory-and-import-contract.md)
 records Android's one-session root mapping: exact SAF keys/URIs and actual OS
 grants, plus the explicit private `files/downloads` fallback. Copied locators

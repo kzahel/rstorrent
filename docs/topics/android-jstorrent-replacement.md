@@ -8,7 +8,8 @@ Tactical [245](../tactical/245-android-legacy-inventory-and-import-contract.md)
 pins and inspects the GitHub-released `android-v1.0.24` APK and source, adds
 13 independently authored format fixtures and a temporary SQLite/WAL audit,
 and scopes the importer and installed upgrade matrix below. This completes an
-inventory checkpoint, not the importer, an Android upgrade, or `JAR-004`.
+inventory checkpoint. Tactical [246](../tactical/246-android-legacy-import-and-installed-upgrade.md)
+now owns the importer and installed upgrade implementation/evidence below.
 No personal profile, device, production key or extension has been changed.
 
 ### Pinned Source And Artifact
@@ -46,7 +47,7 @@ filesystem bypass or transfer of grant strings supplies that authority.
 | Foreign state evidence | bitfield, piece count, transferred totals, timestamps and peer caches | Import no trusted have state or counters; known metadata enters ordinary full checking. Preserve payload independently. |
 | `files/roots.json` | `roots[]`: opaque 16-hex key, URI, `display_name`, stale health/removable/volume hints | Bind each torrent to its exact source root. Import supported tree locators into the platform registry under stable destination IDs; verify real retained read/write grants and provider health. Lost access retains a repairable root. |
 | OS persisted URI permissions | Runtime `ContentResolver.persistedUriPermissions` | Reuse only actual retained read/write grants after the same-package upgrade. Never infer access from JSON, `last_stat_ok`, a copied URI, or backup restoration. |
-| `files/downloads` | Native `FileBindings::resolveRoot` explicitly maps empty or `default` root keys here | Preserve this app-private payload. Scope an exact path-backed handoff separately from SAF; absent/unknown keys must not be guessed into it. Never create a missing old root during discovery. |
+| `files/downloads` | Native `FileBindings::resolveRoot` explicitly maps empty or `default` root keys here | Preserve this app-private payload. The importer uses an exact path-backed handoff distinct from SAF; absent/unknown keys must not be guessed into it. Never create a missing old root during discovery. |
 | `config:*` in KV | JSON engine settings plus `defaultRootKey` | Reuse the desktop closed mapping where semantics match; preserve a latest-format destination's settings/default. Explicitly classify Android-only or unsupported controls; no blind preference copy. |
 | `shared_prefs/jstorrent_settings.xml` | Android-only booleans/strings, including networking and lifecycle | Read a closed, bounded allowlist before engine admission. Treat malformed safety values as review-required. See the policy mapping below. |
 | `shared_prefs/jstorrent_auth.xml` | Legacy raw-I/O pairing and standalone tokens, extension/install IDs and mode preferences | Preserve source for recovery; import no legacy credentials into the semantic companion. Require fresh pairing when browser control returns. The temporary ChromeOS gap is accepted. |
@@ -67,27 +68,24 @@ The proposed import mapping is narrow:
   `NetworkRestrictionEnforcer::computeRestrictionStatus` already tests
   `isUnmetered`, despite the old Wi-Fi label. Establish the initial prerequisite
   before any metadata/discovery/peer owner; preserve it across restart.
-- Enabled `vpn_only_enabled` requires review because RSTorrent has no qualified
-  VPN-bound networking. Preserve its source value and fail closed before
-  network startup. A paused torrent alone is insufficient: metadata acquisition,
-  DHT and listener generations also need to remain blocked. The implementation
-  tactical must define the visible acknowledgement/continuation contract; this
-  inventory does not authorize silently retiring that privacy restriction.
+- Unsupported `vpn_only_enabled` is dropped by explicit maintainer direction
+  on 2026-09-30. It adds no acknowledgement screen or startup hold. VPN support
+  remains a potential pre-cutover investment, rather than claimed parity.
 - `background_downloads_enabled` and `when_downloads_complete` have existing
   lifecycle equivalents. Preserve explicit opt-in and stop/close versus
   keep-seeding choice within their current permission/admission rules.
   `cpu_wake_lock_enabled` maps to the existing active-work preference.
 - `show_file_selection` maps to the catalog add-selection preference. Theme
   may map only supported values. Unsupported language/plugin/battery behavior
-  needs the existing release disposition, not silent claims of parity.
-  Enabled low-battery shutdown is another review-required safety setting.
+  is dropped and recorded as a cutover gap. Low-battery shutdown similarly
+  adds no importer hold; implementing it remains a separate product decision.
 - Do not migrate old notification-prompt suppression, companion tokens/timers,
   install IDs, metrics, or review state. Retained OS notification permissions
   and new channel visibility are runtime facts to inspect.
 
 ### Importer Boundary And Commit Point
 
-The next bounded implementation uses the common validated torrent/selection/
+Tactical 246 implements the common validated torrent/selection/
 settings conversion, with a dedicated Android source adapter. Desktop path
 discovery, profile union and native-host fencing are inapplicable. Do not fake
 a desktop `rpc-info.json`, turn a tree URI into a filesystem path, or replay
@@ -123,20 +121,71 @@ ordinary add commands one at a time as a partially committed migration.
 This dependency direction stays Kotlin platform adapter -> Rust session/store
 conversion -> deterministic protocol/intake validation. Platform URIs and OS
 grant facts remain private native state rather than shared public view DTOs.
-The generated native import boundary and both Android ABIs require validation
-when implementation lands.
+The native bootstrap bridge returns a private bounded JSON manifest; no shared
+application DTO changes. Both ABIs and generated Kotlin are validated in 246.
+
+### Controlled Installed Upgrade Checkpoint
+
+Completed Tactical 246 proves the same-package upgrade on fresh ARM64 Android
+9/API 28 and Android 15/API 35 emulators: supported settings, five torrent
+records/selection/run intent, retained UID, real SAF permission, existing private
+payload, intact/corrupt checking, restart, revoked-root repair and no import
+resurrection after explicit profile clearing. Roots/preferences without a native
+DB and source-free first starts also pass. Old source DB/roots and independently
+hashed payload remain unchanged. Both native ABIs/generated Kotlin, 1570 Rust
+workspace tests, 113 Kotlin unit tests and five existing network/lifecycle/reset
+instrumentation tests pass. The exact commands and bounds are in the tactical.
+This is a controlled released-APK/source-format checkpoint, not Play delivery or
+qualification of every historical profile/ordinary old writer.
+
+### Implemented Mapping And Cutover Gaps
+
+Tactical 246 carries explicit valid DHT/PEX toggles, global peer limit, upload
+slots, encryption, upload/download rates, active download/seed limits and UPnP.
+Android's effective two-download cap still applies to the preserved configured
+limit. It carries Wi-Fi/unmetered, background and completion policy, active-work
+wake and show-file-selection preferences. Invalid individual settings retain
+new defaults; current latest-format profiles keep their settings and owners.
+No credentials, metric identity, plugins or foreign completion authority carry.
+
+The startup job completes catalog conversion before engine open, using the
+platform-provided private cache directory for bounded source snapshots. The
+catalog, stable root IDs, private bootstrap and one report commit together.
+Preference/registry bootstrap retries idempotently if startup stops after that
+commit. Its installation-scoped completion preference then bypasses legacy
+input on ordinary starts and after explicit private-profile clearing. This
+prevents old data resurrecting after the normal clear workflow and lets later
+successor schema handling remain with ordinary session open. It is not a
+per-record progress ledger. Shutdown cancels/joins initialization before closing
+resources initialization may create.
+
+Potential investment before cutover (unsupported settings are dropped):
+
+| Gap | Current disposition / remaining decision |
+| --- | --- |
+| VPN-only routing and low-battery shutdown | Not implemented; no migration gate. Decide whether to invest before replacing users relying on these restrictions. |
+| Search plugins, old locale/theme overrides, companion timers and extension pairing | Drop unsupported preferences/credentials; retain original private source files. Re-pair through the current companion model when enabled. Temporary extension-control loss remains accepted. |
+| Browser-owned legacy sessions | Android imports the native SQLite session; old extension/browser-owned torrent metadata needs its own migration strategy. Roots/preferences still carry without a native DB. |
+| Per-torrent peer limits, old custom listening-port policy and other unmapped engine knobs | Drop unmapped knobs. Audit user demand and add only equivalent mappings or qualified capabilities in a follow-up. |
+| Private fallback file actions / root management | Existing payload and engine checking carry as a path root; broader Compose open/share/remove/clear/delete journeys for that imported path root still need qualification. |
+| API 26/27 | Old APK supports them; current app requires 28. Decide the supported cutover cohort explicitly. |
+| Production delivery | Play-delivered signing continuity, branding, old components/deep links/notification routes and coordinated extension guidance remain release work. |
+| Migration feedback | Counts and ordinal outcomes are retained privately; qualify a user-facing skipped-record summary and recovery/support journey before production. |
+| Wider profile/device qualification | More historical captures, active old engine at replacement, multiple/removable roots, reboot/provider failure and complete clear/delete UI scenarios remain broader evidence. |
 
 ### Installed Upgrade Matrix And Remaining Gates
 
-First use a task-owned same-package old-format writer and successor debug
-candidate signed by the **same disposable test key**, with no production key
-use. Make real SAF selections, write the source DB/preferences, and produce
-known payload through normal provider access. Install the successor with data
-retained; no uninstall/clear-data between versions. This proves a controlled
-source-format upgrade, not an actual old-app or Play update.
+Tactical 246's runner installs the hash-pinned released APK re-signed with a
+**disposable test key**. The released `AddRootActivity` selects a real SAF tree,
+retains permission and writes RootStore. Instrumentation seeds independently
+authored torrent/settings records in its private source-format store and writes
+known payload through the real provider. It then installs the new debug APK
+with the same package/signature and higher version; no uninstall or clear data.
+This exercises the actual old APK and Android replacement, but is not a Play
+update or evidence that every seeded value came from ordinary old UI writers.
 
-Then qualify the exact old release and actual release signing/update lane in
-a separately authorized campaign. The public GitHub APK certificate does not
+Qualify the actual release signing/update lane and broader installed source
+cohorts in a separately authorized campaign. The public GitHub APK certificate does not
 by itself establish the Play-delivered certificate. Current RSTorrent minimum
 API 28 differs from the old APK's API 26: explicitly account for API 26/27 users
 before declaring the supported production replacement cohort.
@@ -159,8 +208,8 @@ torrent-intake outcomes. No legacy raw-I/O backend is retained. APK inspection
 shows no custom process names for these old owners; installed replacement still
 needs process-quiescence evidence.
 
-`JAR-004`, `JAR-005` and `JAR-010` remain open. Android importer implementation,
-actual grant/package upgrade, production branding/component compatibility,
+`JAR-004`, `JAR-005` and `JAR-010` remain open. Tactical 246 owns Android importer and controlled grant/package upgrade
+evidence. Production branding/component compatibility,
 privacy/support feature dispositions, signed Play continuity and extension
 rollout have not been proved by the generated audit.
 
