@@ -6,7 +6,7 @@
     if (status !== null) {
       status.setAttribute("role", "alert");
       status.textContent =
-        "RSTorrent could not start. Reload this page to fetch the current application files.";
+        "JSTorrent could not start. Reload this page to fetch the current application files.";
     }
   }
 

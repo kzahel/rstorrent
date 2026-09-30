@@ -20,14 +20,10 @@
 }
 
 .brand {
-  display: grid;
+  display: block;
+  object-fit: contain;
   inline-size: 2.5rem;
   block-size: 2.5rem;
-  place-items: center;
-  border-radius: 0.65rem;
-  color: white;
-  background: var(--accent);
-  font-weight: 800;
 }
 
 .eyebrow {

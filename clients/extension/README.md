@@ -1,28 +1,41 @@
-# JSTorrent Beta Extension
+# JSTorrent Extension
+
+Tactical [249](../../docs/tactical/249-jstorrent-brand-and-extension-refresh.md)
+restores JSTorrent branding and the original icons, with a compact light/dark
+popup and app-oriented connection screens. Android is the primary Chromebook
+choice; the separate Linux preview remains available in an expandable option.
+First-use privacy disclosure remains visible; returning users can expand
+Privacy & feedback. Metrics policy, permissions and connection ownership do
+not change.
+
+The manifest still pins the separate incubation store item below, and desktop
+control still uses `com.jstorrent.rstorrent.native`. The production cutover will
+update the existing JSTorrent Web Store item, with identity/origin and signed
+native update qualification in a separate slice. The archive name retains its
+`jstorrent-beta-` prefix to identify this staging delivery lane.
 
 This Manifest V3 extension retains the bounded desktop and Crostini bootstrap
 surfaces from Tactical
 [`166`](../../docs/tactical/166-desktop-native-bootstrap-and-extension-scaffold.md).
 It checks for the distinct `com.jstorrent.rstorrent.native` host and can ask
-the installed RSTorrent desktop app to open. Tactical
+the installed successor desktop app to open. Tactical
 [`167`](../../docs/tactical/167-chromeos-crostini-bundled-web-launcher.md) also
 lets the exact local `penguin.linux.test:3030` handoff page wake the worker and
 reuse its tab for the backend-served React UI.
 
 Tactical [`194`](../../docs/tactical/194-chromeos-android-extension-control.md)
 adds an explicit ChromeOS Android connection. The extension packages the
-shared React product application, pairs with the RSTorrent Android foreground
+shared React product application, pairs with the successor Android foreground
 service, and uses only the typed application WebSocket plus the authenticated
 SAF folder-picker capability. The engine, profile, payload IO, hashing, and SAF
 grants stay in Android. The extension does not run remote code or replace the
 current production JSTorrent extension.
 
-The popup is platform-aware. Desktop Chrome shows only the RSTorrent native
-bootstrap. ChromeOS shows explicit Android-companion and ChromeOS Linux
-controls, with separate-library guidance and a link to the current published
-JSTorrent Android app. Unknown platforms show both surfaces as a recovery
-fallback. The listing link does not claim that Google Play is enabled or that
-the RSTorrent Android preview is installed.
+The popup is platform-aware. Desktop Chrome opens the shared torrent library;
+ChromeOS presents Android connection and the optional separate Linux preview.
+Unknown platforms show both as a recovery fallback. The exact Google Play link
+opens the existing JSTorrent listing; it does not establish Play availability or
+prove that a production successor APK has shipped.
 
 ## Validate And Package
 

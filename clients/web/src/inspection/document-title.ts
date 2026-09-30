@@ -2,7 +2,7 @@ import type { DataUnits } from "./appearance";
 import { formatBytes } from "./format";
 import type { SessionSummary } from "./model";
 
-export const APPLICATION_TITLE = "RSTorrent";
+export const APPLICATION_TITLE = "JSTorrent";
 export const TITLE_UPDATE_INTERVAL_MILLIS = 1_000;
 
 export class DocumentTitleThrottle {

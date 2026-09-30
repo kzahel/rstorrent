@@ -10,7 +10,7 @@
   "app": {
     "windows": [
       {
-        "title": "RSTorrent",
+        "title": "JSTorrent",
         "label": "main",
         "create": false,
         "width": 1180,

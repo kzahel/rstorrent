@@ -28,17 +28,11 @@
   gap: 0.48rem;
 }
 
-.brand > span {
-  display: grid;
+.brand > img {
   width: clamp(1.75rem, calc(var(--ui-control-height) - 0.25rem), 2.25rem);
   height: clamp(1.75rem, calc(var(--ui-control-height) - 0.25rem), 2.25rem);
-  place-items: center;
-  border-radius: 0.48rem;
-  color: #fff;
-  background: #216bb8;
-  font-size: var(--ui-font-caption);
-  font-weight: 850;
-  letter-spacing: -0.02em;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 
 .brand strong {

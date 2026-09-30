@@ -59,7 +59,7 @@ describe("notification settings", () => {
     );
 
     const focused = screen.getByRole("checkbox", {
-      name: /Notify while RSTorrent is focused/,
+      name: /Notify while JSTorrent is focused/,
     });
     await user.click(focused);
 

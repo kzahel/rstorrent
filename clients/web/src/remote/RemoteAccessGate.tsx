@@ -1,3 +1,4 @@
+import jstorrentIcon from "../assets/jstorrent.png";
 import { message as localizedMessage } from "../localization/runtime";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
@@ -61,7 +62,7 @@ export function RemoteAccessGate({
     if (terminal === "host_identity_changed") {
       setMessage(
         "This route now presents a different authenticated host identity. " +
-          "RSTorrent will not send your password until you explicitly clear the old trust record.",
+          "JSTorrent will not send your password until you explicitly clear the old trust record.",
       );
       setPhase("identity_changed");
       return () => {
@@ -251,7 +252,7 @@ export function RemoteAccessGate({
       if (!mounted.current) return;
       setMessage(
         "This route presents a different authenticated host identity. " +
-          "RSTorrent did not send your password.",
+          "JSTorrent did not send your password.",
       );
       setPhase("identity_changed");
       return;
@@ -294,9 +295,7 @@ export function RemoteAccessGate({
   return (
     <main className={styles.shell}>
       <section className={styles.card} aria-labelledby="remote-title">
-        <div className={styles.brand} aria-hidden="true">
-          R
-        </div>
+        <img className={styles.brand} src={jstorrentIcon} width="42" height="42" alt="" />
         <p className={styles.eyebrow}>{localizedMessage("remote.remote.access.gate.rstorrent.remote.access")}</p>
         <h1 id="remote-title">{localizedMessage("remote.remote.access.gate.your.torrents.from.this.browser")}</h1>
         <p className={styles.intro}>{localizedMessage("remote.remote.access.gate.the.relay.can.route.encrypted.bytes.but")}</p>

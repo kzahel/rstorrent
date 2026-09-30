@@ -2,7 +2,7 @@
   "android.companion.client.approve.the.jstorrent.beta.pairing.request.in": [
     {
       "type": 0,
-      "value": "Approve the JSTorrent Beta pairing request in the Android app."
+      "value": "Approve the JSTorrent pairing request in the Android app."
     }
   ],
   "android.companion.client.the.saved.pairing.is.no.longer.accepted": [
@@ -229,7 +229,7 @@
   "desktop.companion.connecting": [
     {
       "type": 0,
-      "value": "Connecting to RSTorrent Desktop…"
+      "value": "Connecting to JSTorrent Desktop…"
     }
   ],
   "desktop.companion.disconnected": [
@@ -241,7 +241,7 @@
   "desktop.companion.extension-only": [
     {
       "type": 0,
-      "value": "Open this page from the JSTorrent Beta extension."
+      "value": "Open this page from the JSTorrent extension."
     }
   ],
   "desktop.companion.identity-changed": [
@@ -253,7 +253,7 @@
   "desktop.companion.incompatible": [
     {
       "type": 0,
-      "value": "RSTorrent Desktop and this extension are incompatible. Update them, then retry the connection."
+      "value": "JSTorrent Desktop and this extension are incompatible. Update them, then retry the connection."
     }
   ],
   "desktop.companion.native-folder": [
@@ -289,7 +289,7 @@
   "desktop.companion.title": [
     {
       "type": 0,
-      "value": "RSTorrent Desktop"
+      "value": "JSTorrent Desktop"
     }
   ],
   "desktop.companion.unavailable": [
@@ -361,13 +361,13 @@
   "inspection.components.about.updates.settings.section.checks.latest.schedule": [
     {
       "type": 0,
-      "value": "RSTorrent checks for Latest updates after startup and every 30 minutes."
+      "value": "JSTorrent checks for Latest updates after startup and every 30 minutes."
     }
   ],
   "inspection.components.about.updates.settings.section.contacting.the.rstorrent.update.service": [
     {
       "type": 0,
-      "value": "Contacting the RSTorrent update service."
+      "value": "Contacting the JSTorrent update service."
     }
   ],
   "inspection.components.about.updates.settings.section.development.build": [
@@ -463,19 +463,19 @@
   "inspection.components.about.updates.settings.section.rstorrent.checks.automatically.after.startup.and.about": [
     {
       "type": 0,
-      "value": "RSTorrent checks automatically after startup and about once per day."
+      "value": "JSTorrent checks automatically after startup and about once per day."
     }
   ],
   "inspection.components.about.updates.settings.section.rstorrent.is.up.to.date": [
     {
       "type": 0,
-      "value": "RSTorrent is up to date"
+      "value": "JSTorrent is up to date"
     }
   ],
   "inspection.components.about.updates.settings.section.rstorrent.will.relaunch.after.installation.succeeds": [
     {
       "type": 0,
-      "value": "RSTorrent will relaunch after installation succeeds."
+      "value": "JSTorrent will relaunch after installation succeeds."
     }
   ],
   "inspection.components.about.updates.settings.section.stable": [
@@ -487,7 +487,7 @@
   "inspection.components.about.updates.settings.section.stable.description": [
     {
       "type": 0,
-      "value": "Stable offers deliberate RSTorrent desktop incubation releases."
+      "value": "Stable offers deliberate desktop preview releases."
     }
   ],
   "inspection.components.about.updates.settings.section.target": [
@@ -523,7 +523,7 @@
   "inspection.components.about.updates.settings.section.waiting.for.stable.description": [
     {
       "type": 0,
-      "value": "This installed build is newer than Stable. RSTorrent will keep it until a newer Stable release is available."
+      "value": "This installed build is newer than Stable. JSTorrent will keep it until a newer Stable release is available."
     }
   ],
   "inspection.components.about.updates.settings.section.windows.msi": [
@@ -541,7 +541,7 @@
   "inspection.components.add.torrent.dialog.a.download.folder.is.required.before.rstorrent": [
     {
       "type": 0,
-      "value": "A download folder is required before RSTorrent can add this torrent."
+      "value": "A download folder is required before JSTorrent can add this torrent."
     }
   ],
   "inspection.components.add.torrent.dialog.add.torrent": [
@@ -661,7 +661,7 @@
   "inspection.components.add.torrent.dialog.rstorrent.will.load.metadata.without.downloading.content": [
     {
       "type": 0,
-      "value": "RSTorrent will load metadata without downloading content, then show a Normal/Skip checklist."
+      "value": "JSTorrent will load metadata without downloading content, then show a Normal/Skip checklist."
     }
   ],
   "inspection.components.add.torrent.dialog.sample.batch.description": [
@@ -810,16 +810,10 @@
       "value": "Review update"
     }
   ],
-  "inspection.components.app.rs": [
-    {
-      "type": 0,
-      "value": "RS"
-    }
-  ],
   "inspection.components.app.rstorrent": [
     {
       "type": 0,
-      "value": "RSTorrent"
+      "value": "JSTorrent"
     }
   ],
   "inspection.components.app.session.transfer.rates": [
@@ -2049,7 +2043,7 @@
   "inspection.components.crostini.storage.help.return.to.rstorrent.and.choose": [
     {
       "type": 0,
-      "value": "Return to RSTorrent and choose"
+      "value": "Return to JSTorrent and choose"
     }
   ],
   "inspection.components.crostini.storage.help.right.click": [
@@ -4197,7 +4191,7 @@
   "inspection.components.notifications.settings.section.notify.while.rstorrent.is.focused": [
     {
       "type": 0,
-      "value": "Notify while RSTorrent is focused"
+      "value": "Notify while JSTorrent is focused"
     }
   ],
   "inspection.components.peer.table.active.peer.connections": [
@@ -4461,7 +4455,7 @@
   "inspection.components.power.settings.section.rstorrent.can.prevent.automatic.system.sleep.during": [
     {
       "type": 0,
-      "value": "RSTorrent can prevent automatic system sleep during active download and verification work. Your display may still turn off normally."
+      "value": "JSTorrent can prevent automatic system sleep during active download and verification work. Your display may still turn off normally."
     }
   ],
   "inspection.components.preparation.progress.16.kib.per.block": [
@@ -5247,7 +5241,7 @@
   "inspection.components.remove.torrent.dialog.from.rstorrent": [
     {
       "type": 0,
-      "value": "from RSTorrent."
+      "value": "from JSTorrent."
     }
   ],
   "inspection.components.remove.torrent.dialog.more": [
@@ -5277,7 +5271,7 @@
   "inspection.components.remove.torrent.dialog.remove.the.selected.torrents.from.rstorrent": [
     {
       "type": 0,
-      "value": "Remove the selected torrents from RSTorrent."
+      "value": "Remove the selected torrents from JSTorrent."
     }
   ],
   "inspection.components.remove.torrent.dialog.remove.torrent": [
@@ -6571,7 +6565,7 @@
   "inspection.components.web.access.settings.section.any.browser.on.this.computer.can.use": [
     {
       "type": 0,
-      "value": "Any browser on this computer can use this loopback RSTorrent service."
+      "value": "Any browser on this computer can use this loopback JSTorrent service."
     }
   ],
   "inspection.components.web.access.settings.section.approve.another.browser": [
@@ -6727,7 +6721,7 @@
   "inspection.components.web.auth.gate.any.browser.on.this.computer.can.open": [
     {
       "type": 0,
-      "value": "Any browser on this computer can open RSTorrent."
+      "value": "Any browser on this computer can open JSTorrent."
     }
   ],
   "inspection.components.web.auth.gate.approve.this.browser": [
@@ -6799,7 +6793,7 @@
   "inspection.components.web.auth.gate.initial.setup.was.available.for.10.minutes": [
     {
       "type": 0,
-      "value": "Initial setup was available for 10 minutes and has now closed. Restart RSTorrent with the same profile to open a new 10-minute setup window."
+      "value": "Initial setup was available for 10 minutes and has now closed. Restart JSTorrent with the same profile to open a new 10-minute setup window."
     }
   ],
   "inspection.components.web.auth.gate.keep.localhost.open": [
@@ -6838,16 +6832,10 @@
       "value": "Restart to finish setup"
     }
   ],
-  "inspection.components.web.auth.gate.rs": [
-    {
-      "type": 0,
-      "value": "RS"
-    }
-  ],
   "inspection.components.web.auth.gate.rstorrent.was.restarted.with.browser.pairing.enabled": [
     {
       "type": 0,
-      "value": "RSTorrent was restarted with browser pairing enabled. This window closes in"
+      "value": "JSTorrent was restarted with browser pairing enabled. This window closes in"
     }
   ],
   "inspection.components.web.auth.gate.setup.closed": [
@@ -7765,7 +7753,7 @@
   "product.privacy.disclosure.summary": [
     {
       "type": 0,
-      "value": "RSTorrent keeps a random resettable installation identifier and coarse counts of additions, completed downloads, and foreground sessions. When enabled, the identifier may be used for update counting and these values may be offered with feedback. No torrent names, hashes, paths, peers, trackers, logs, or error text are included."
+      "value": "JSTorrent keeps a random resettable installation identifier and coarse counts of additions, completed downloads, and foreground sessions. When enabled, the identifier may be used for update counting and these values may be offered with feedback. No torrent names, hashes, paths, peers, trackers, logs, or error text are included."
     }
   ],
   "product.privacy.disclosure.title": [
@@ -7849,7 +7837,7 @@
   "remote.remote.access.gate.authenticating.the.host.and.opening.rstorrent": [
     {
       "type": 0,
-      "value": "Authenticating the host and opening RSTorrent…"
+      "value": "Authenticating the host and opening JSTorrent…"
     }
   ],
   "remote.remote.access.gate.browser.name.shown.to.the.operator": [
@@ -7879,7 +7867,7 @@
   "remote.remote.access.gate.only.continue.if.the.rstorrent.operator.intentionally": [
     {
       "type": 0,
-      "value": "Only continue if the RSTorrent operator intentionally disabled, reset, or restored this host."
+      "value": "Only continue if the JSTorrent operator intentionally disabled, reset, or restored this host."
     }
   ],
   "remote.remote.access.gate.password": [
@@ -7915,7 +7903,7 @@
   "remote.remote.access.gate.rstorrent.remote.access": [
     {
       "type": 0,
-      "value": "RSTorrent remote access"
+      "value": "JSTorrent remote access"
     }
   ],
   "remote.remote.access.gate.shared": [
@@ -7957,31 +7945,31 @@
   "shell.app.load-failed": [
     {
       "type": 0,
-      "value": "RSTorrent could not start. Reload this page to fetch the current application files."
+      "value": "JSTorrent could not start. Reload this page to fetch the current application files."
     }
   ],
   "shell.app.loading": [
     {
       "type": 0,
-      "value": "Loading RSTorrent…"
+      "value": "Loading JSTorrent…"
     }
   ],
   "shell.app.requires-javascript": [
     {
       "type": 0,
-      "value": "RSTorrent requires JavaScript in this browser."
+      "value": "JSTorrent requires JavaScript in this browser."
     }
   ],
   "shell.app.start-failed": [
     {
       "type": 0,
-      "value": "Unable to start RSTorrent"
+      "value": "Unable to start JSTorrent"
     }
   ],
   "shell.app.title": [
     {
       "type": 0,
-      "value": "RSTorrent"
+      "value": "JSTorrent"
     }
   ],
   "shell.companion.cancel": [
@@ -8011,7 +7999,7 @@
   "shell.companion.title": [
     {
       "type": 0,
-      "value": "RSTorrent Android"
+      "value": "JSTorrent Android"
     }
   ],
   "shell.remote.loading": [
@@ -8029,7 +8017,7 @@
   "shell.remote.title": [
     {
       "type": 0,
-      "value": "RSTorrent remote access"
+      "value": "JSTorrent remote access"
     }
   ],
   "support.diagnostics.copied": [

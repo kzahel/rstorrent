@@ -1,0 +1,56 @@
+/* Local packaged connection UI shares the product's appearance variables. */
+body:has(#companion-bootstrap) {
+  margin: 0;
+  color: var(--text-primary);
+  background: var(--surface-secondary);
+}
+
+#companion-bootstrap {
+  width: min(28rem, calc(100% - 2rem));
+  margin: clamp(2rem, 12vh, 7rem) auto;
+  padding: 2rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.75rem;
+  background: var(--surface-primary);
+}
+
+#companion-bootstrap .companion-logo { object-fit: contain; }
+#companion-bootstrap h1 { margin: 1rem 0 0.75rem; font-size: 1.5rem; }
+#companion-status { color: var(--text-secondary); line-height: 1.6; overflow-wrap: anywhere; }
+#companion-bootstrap button,
+#companion-update-android {
+  display: block;
+  width: 100%;
+  margin-top: 1rem;
+  padding: 0.65rem 1rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.35rem;
+  background: var(--surface-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: center;
+}
+#companion-update-android { background: var(--accent-action); color: #fff; text-decoration: none; }
+#companion-bootstrap button:not(:disabled) { cursor: pointer; }
+#companion-identity {
+  display: flex;
+  height: 40px;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 0.8rem;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--surface-primary);
+  color: var(--text-secondary);
+  font-size: var(--ui-font-small);
+}
+#companion-identity button {
+  padding: 0.3rem 0.65rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.3rem;
+  color: var(--text-primary);
+  background: var(--surface-primary);
+  font: inherit;
+  cursor: pointer;
+}
+#companion-bootstrap [hidden], #companion-identity[hidden] { display: none; }
+body:has(#companion-identity:not([hidden])) #app > div { height: calc(100dvh - 40px); }

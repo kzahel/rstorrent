@@ -11,10 +11,12 @@ export const companionPackagedFiles = Object.freeze([
   "companion/companion.html",
   "companion/assets/companion.css",
   "companion/assets/companion.js",
+  "companion/assets/companion.png",
 ]);
 
 export const packagedFiles = Object.freeze([
   "manifest.json",
+  "LICENSE.jstorrent.txt",
   "icons/icon-32.png",
   "icons/icon-128.png",
   "popup/popup.html",
@@ -55,8 +57,8 @@ export function extensionIdFromPublicKey(publicKey) {
 
 export function validateSource() {
   const manifest = JSON.parse(readFileSync(path.join(extensionRoot, "manifest.json"), "utf8"));
-  if (manifest.manifest_version !== 3 || manifest.name !== "JSTorrent Beta") {
-    fail("expected the reviewed JSTorrent Beta Manifest V3 identity");
+  if (manifest.manifest_version !== 3 || manifest.name !== "JSTorrent") {
+    fail("expected the reviewed JSTorrent Manifest V3 identity");
   }
   const derivedExtensionId = extensionIdFromPublicKey(manifest.key);
   if (derivedExtensionId !== storeExtensionId) {
@@ -155,7 +157,7 @@ export function validateSource() {
 }
 
 export function validateCompanionBuild(companionRoot) {
-  const expected = ["assets/companion.css", "assets/companion.js", "companion.html"];
+  const expected = ["assets/companion.css", "assets/companion.js", "assets/companion.png", "companion.html"];
   const actual = listFiles(companionRoot);
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     fail(`companion build file set drifted: ${actual.join(", ")}`);
@@ -229,5 +231,5 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     }
     validateArchive(path.resolve(archivePath));
   }
-  console.log("JSTorrent Beta extension validation passed.");
+  console.log("JSTorrent extension validation passed.");
 }

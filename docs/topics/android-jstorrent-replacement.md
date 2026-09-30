@@ -2,6 +2,16 @@
 
 Topic: `android-jstorrent-replacement`
 
+Tactical [249](../tactical/249-jstorrent-brand-and-extension-refresh.md) restores
+JSTorrent Android display text and original adaptive/launcher/store icons.
+Debug assembly, 113 JVM tests and packaged attribution checks pass. This is
+branding preparation for the existing `com.jstorrent.app` Play app update;
+application IDs, minimum API, versionCode and signing configuration are unchanged.
+Play signing/version continuity and a physical ChromeOS installed replacement
+remain explicit gates. Canary store copy still describes its separate existing
+incubation distribution; production listing copy belongs to the cutover slice.
+
+
 Tactical [248](../tactical/248-chromeos-staggered-upgrade.md) implements the
 accepted independently staggered ChromeOS update contract and passes controlled
 API 28/35 installed rehearsals using the released extension's actual

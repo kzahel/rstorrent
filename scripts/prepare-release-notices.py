@@ -28,6 +28,13 @@ def read_text(path):
     return data.decode('utf-8-sig')
 
 
+def branding_notice():
+    return ('# JSTorrent branding assets\n\n'
+            'Original first-party icons from kzahel/jstorrent, revision\n'
+            '25e4b701433fd815398ba89526546f5e4f072e3f, used without modification.\n\n'
+            + read_text(ROOT / 'distribution/branding/JSTorrent-LICENSE.txt'))
+
+
 def license_files(root):
     files = []
     for entry in sorted(root.iterdir()):
@@ -192,7 +199,7 @@ def main():
             'Native system libraries require the platform package inventory separately.\n\n'
             'MPL-covered source is available from the exact source-package URLs below.\n'
             'Dependencies are unmodified except where a package explicitly records a backport.\n\n'
-            + '\n\n'.join(rust + npm) + '\n')
+            + branding_notice() + '\n\n' + '\n\n'.join(rust + npm) + '\n')
     if len(text.encode()) > 16 * 1024 * 1024:
         raise ValueError('notice bundle exceeds 16 MiB')
     manifest = {'schema': 1, 'target': target, 'generator': version,

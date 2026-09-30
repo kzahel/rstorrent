@@ -1376,7 +1376,7 @@ async fn deliver_desktop_notification(
     }
     let mut native = notify_rust::Notification::new();
     native
-        .appname("RSTorrent")
+        .appname("JSTorrent")
         .summary(notification.title)
         .body(&notification.body)
         .icon("rstorrent-desktop")

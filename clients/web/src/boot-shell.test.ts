@@ -12,7 +12,7 @@ describe("production boot shell", () => {
 
     expect(document).toContain(guard);
     expect(document).toContain('id="rstorrent-boot-status"');
-    expect(document).toContain("RSTorrent requires JavaScript in this browser.");
+    expect(document).toContain("JSTorrent requires JavaScript in this browser.");
     expect(document.indexOf(guard)).toBeLessThan(document.indexOf(application));
   });
 

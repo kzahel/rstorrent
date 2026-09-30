@@ -656,13 +656,13 @@ Maintainer direction on 2026-08-22 selects RSTorrent as the public product name
 for the historical incubation line. The production replacement decision above
 supersedes that earlier foreseeable-product policy.
 Direction on 2026-08-23 selects
-`com.jstorrent.rstorrent` as its current desktop identifier. A later
-graduation should not discard JSTorrent's installed application or extension
-audience merely to make the engine rewrite visible. Maintainer direction on
+`com.jstorrent.rstorrent` as its current desktop identifier. The selected production
+graduation retains JSTorrent's installed application and extension audience
+while replacing the engine. Maintainer direction on
 2026-08-27 nevertheless makes every `0.1.x` identifier and installation
 disposable incubation state rather than a compatibility obligation for the
-first supported release. The current value remains the operational default;
-changing it still requires an explicit product decision.
+first supported release. That value remains the incubation operational default; production package
+configuration follows the explicit replacement decision above.
 
 ## Existing Distribution And Coexistence
 
@@ -670,8 +670,8 @@ The existing JSTorrent desktop and extension identities and their installed
 audiences are important assets. The selected production graduation will update
 those products to use the proven Rust application contract instead of
 launching unrelated replacement identities. RSTorrent remains independently
-released during incubation. Exact extension, store, coexistence, and retirement
-mechanics are deliberately deferred until graduation work is authorized.
+released during incubation. Exact production extension/store delivery and retirement mechanics now require
+a bounded qualification slice under the selected graduation campaign.
 Preserving a familiar product capability does not require preserving its old
 storage schema, JavaScript owner, Chrome-sync use, or unsafe privacy wording.
 

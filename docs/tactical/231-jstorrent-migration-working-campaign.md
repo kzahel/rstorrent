@@ -84,8 +84,8 @@ SQLite and payload writes remain native. No engine runs in the extension.
 
 2026-09-30 follow-up selects near-term production replacement across desktop,
 Android and extension, with JSTorrent branding/original icons before cutover.
-Tactical [249](249-jstorrent-brand-and-extension-refresh.md) starts branding and
-the extension refresh. Android continuity means the existing Play app update,
+Tactical [249](249-jstorrent-brand-and-extension-refresh.md) completes the bounded
+original-icon/display-branding and extension popup/connection refresh. Android continuity means the existing Play app update,
 not a new desktop-style updater. Production identities/signing/launch routes
 remain an explicit installed qualification slice before shipment.
 

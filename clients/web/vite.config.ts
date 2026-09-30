@@ -37,6 +37,7 @@ export default defineConfig(({ mode }) => {
     }
   }
   return {
+    build: { assetsInlineLimit: 0 },
     server: { proxy },
     preview: { proxy },
     ...(companion
@@ -44,6 +45,7 @@ export default defineConfig(({ mode }) => {
           base: "./",
           publicDir: false,
           build: {
+            assetsInlineLimit: 0,
             outDir: "dist/companion",
             emptyOutDir: true,
             rollupOptions: {
@@ -70,6 +72,7 @@ export default defineConfig(({ mode }) => {
             },
           },
           build: {
+            assetsInlineLimit: 0,
             outDir: "dist/remote",
             rollupOptions: {
               input: resolve(process.cwd(), "remote.html"),

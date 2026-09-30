@@ -206,7 +206,7 @@ def generate(graph, output):
             f"Variant: {graph['variant']}\n"
             'Scope: resolved Maven/AAR runtime artifacts and the locked default-feature Rust graph for both shipped ABIs, including build dependencies.\n'
             'Original notices and manifest-only declarations are distinguished below.\n'
-            'Exact Rust source-package URLs identify upstream source; they are not a separate corresponding-source offer.\n\n' + '\n\n'.join(maven + rust_texts) + '\n')
+            'Exact Rust source-package URLs identify upstream source; they are not a separate corresponding-source offer.\n\n' + rust.branding_notice() + '\n\n' + '\n\n'.join(maven + rust_texts) + '\n')
     encoded = text.encode('utf-8')
     if len(encoded) > MAX_OUTPUT:
         raise ValueError('Android notice bundle exceeds bound')

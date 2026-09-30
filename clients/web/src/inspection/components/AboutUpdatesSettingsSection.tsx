@@ -135,13 +135,13 @@ function statusTitle(state: UpdaterState): string {
     case "waiting-for-stable":
       return localizedMessage("inspection.components.about.updates.settings.section.waiting.for.stable");
     case "available":
-      return `RSTorrent ${state.version} is available`;
+      return `JSTorrent ${state.version} is available`;
     case "manual-install":
       return localizedMessage("inspection.components.about.updates.settings.section.manual.update.required");
     case "downloading":
-      return `Downloading RSTorrent ${state.version}`;
+      return `Downloading JSTorrent ${state.version}`;
     case "installing":
-      return `Installing RSTorrent ${state.version}`;
+      return `Installing JSTorrent ${state.version}`;
     case "error":
       return state.operation === "check"
         ? "Update check failed"

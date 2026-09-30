@@ -2,6 +2,14 @@
 
 Topic: `capability-readiness`
 
+Tactical [249](../tactical/249-jstorrent-brand-and-extension-refresh.md) completes
+bounded JSTorrent brand preparation and an extension popup/connection refresh:
+original icon provenance/notices, display names, web/unit/build checks, Android
+resource/debug/JVM checks and isolated responsive/accessibility evidence pass.
+Production package/store identities, signing/update continuity and installed
+launch qualification remain open; this is no publication or graduation claim.
+
+
 Tactical [248](../tactical/248-chromeos-staggered-upgrade.md) completes the
 bounded ChromeOS staggered-update presentation and controlled extension-driven
 installed rehearsal. Released extension/Android ordinary writers, supported

@@ -4,7 +4,7 @@ import { connectDesktopCompanion, desktopBootstrapFailure, desktopRuntime } from
 import { startCompanionInspection } from "./inspection/companion-bootstrap";
 
 export async function startDesktopCompanion(): Promise<void> {
-  document.title = "RSTorrent";
+  document.title = "JSTorrent";
   const bootstrap = document.getElementById("companion-bootstrap")!;
   bootstrap.querySelector("h1")!.textContent = message("desktop.companion.title");
   const status = document.getElementById("companion-status")!;

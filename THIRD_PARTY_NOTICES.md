@@ -101,3 +101,15 @@ corresponding-source obligations remain separate review items. Distribution revi
 reconcile those platform components against the saved package inventories
 before a supported release. See `distribution/dependency-review.json` for
 currently unresolved advisory blockers and its expiring review date.
+
+## JSTorrent Brand Assets
+
+Original desktop, Android adaptive/launcher/store, extension and shared web icon
+assets are copied unchanged from `kzahel/jstorrent` revision
+`25e4b701433fd815398ba89526546f5e4f072e3f` under its MIT license, copyright
+2025 Kyle Graehl. Reuse preserves the established first-party product identity
+for in-place succession. `distribution/branding/jstorrent-assets.json` records
+each exact source path, destination and SHA-256; the original permission and
+copyright text lives in `distribution/branding/JSTorrent-LICENSE.txt`. Desktop
+and Android generated binary notices include that text, and the extension
+packages it as `LICENSE.jstorrent.txt`. No third-party logo is substituted.

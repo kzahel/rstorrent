@@ -879,7 +879,7 @@ class ProductNavigationTest {
         compose.onNodeWithText("Notifications").performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("Background activity blocked").assertIsDisplayed()
         compose.onNodeWithText(
-            "RSTorrent works while Android is visible. Leaving Android stops background work.",
+            "JSTorrent works while Android is visible. Leaving Android stops background work.",
         ).assertIsDisplayed()
     }
 

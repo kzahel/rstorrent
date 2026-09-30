@@ -1,3 +1,4 @@
+import "./companion-shell.css";
 import { startDesktopCompanion } from "./desktop-companion-main";
 import { AndroidCompanionUpdateRequired, connectAndroidCompanion } from "./android-companion-client";
 import { startCompanionInspection } from "./inspection/companion-bootstrap";
@@ -27,7 +28,7 @@ void connectAndroidCompanion(
   },
   abort.signal,
 )
-  .then(async ({ client, hello, endpoint, disconnected }) => {
+  .then(async ({ client, hello, disconnected }) => {
     const backend = hello.backend;
     if (backend === undefined || backend === null) {
       throw new Error("Android backend identity is unavailable");
@@ -35,10 +36,7 @@ void connectAndroidCompanion(
     requiredElement("companion-bootstrap").hidden = true;
     const identity = requiredElement("companion-identity");
     identity.hidden = false;
-    identity.textContent =
-      `Android · profile ${backend.profile_id} · instance ${backend.instance_id} · ` +
-      `RSTorrent ${backend.product_version} · protocol ${hello.api.minimum}–${hello.api.current} · ` +
-      endpoint;
+    identity.textContent = message("shell.companion.title");
     const closeInspection = await startCompanionInspection(client);
     void disconnected.then(async () => {
       await closeInspection().catch(() => {});

@@ -22,15 +22,11 @@
 }
 
 .brand {
-  display: grid;
-  place-items: center;
+  display: block;
+  object-fit: contain;
   width: 42px;
   height: 42px;
   margin-bottom: 24px;
-  border-radius: 12px;
-  color: #07131b;
-  background: #75dfc5;
-  font-size: 21px;
   font-weight: 800;
 }
 

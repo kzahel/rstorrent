@@ -25,7 +25,7 @@
   "inspection.components.data.reset.restore.warning": { "defaultMessage": "Your torrents, folders, files, access, and privacy choices will be kept.", "description": "Preference reset preservation" },
   "inspection.components.data.reset.working": { "defaultMessage": "Working…", "description": "Reset operation in progress" },
   "android.companion.client.approve.the.jstorrent.beta.pairing.request.in": {
-    "defaultMessage": "Approve the JSTorrent Beta pairing request in the Android app.",
+    "defaultMessage": "Approve the JSTorrent pairing request in the Android app.",
     "description": "Product copy in android-companion-client.ts"
   },
   "android.companion.client.the.saved.pairing.is.no.longer.accepted": {
@@ -85,7 +85,7 @@
     "description": "Product copy in inspection/components/AboutUpdatesSettingsSection.tsx"
   },
   "inspection.components.about.updates.settings.section.checks.latest.schedule": {
-    "defaultMessage": "RSTorrent checks for Latest updates after startup and every 30 minutes.",
+    "defaultMessage": "JSTorrent checks for Latest updates after startup and every 30 minutes.",
     "description": "Latest channel automatic check schedule"
   },
   "inspection.components.about.updates.settings.section.checks.follow.the.usage.statistics.preference": {
@@ -97,7 +97,7 @@
     "description": "Product copy in inspection/components/AboutUpdatesSettingsSection.tsx"
   },
   "inspection.components.about.updates.settings.section.contacting.the.rstorrent.update.service": {
-    "defaultMessage": "Contacting the RSTorrent update service.",
+    "defaultMessage": "Contacting the JSTorrent update service.",
     "description": "Product copy in inspection/components/AboutUpdatesSettingsSection.tsx"
   },
   "inspection.components.about.updates.settings.section.development.build": {
@@ -161,15 +161,15 @@
     "description": "Product copy in inspection/components/AboutUpdatesSettingsSection.tsx"
   },
   "inspection.components.about.updates.settings.section.rstorrent.checks.automatically.after.startup.and.about": {
-    "defaultMessage": "RSTorrent checks automatically after startup and about once per day.",
+    "defaultMessage": "JSTorrent checks automatically after startup and about once per day.",
     "description": "Product copy in inspection/components/AboutUpdatesSettingsSection.tsx"
   },
   "inspection.components.about.updates.settings.section.rstorrent.is.up.to.date": {
-    "defaultMessage": "RSTorrent is up to date",
+    "defaultMessage": "JSTorrent is up to date",
     "description": "Product copy in inspection/components/AboutUpdatesSettingsSection.tsx"
   },
   "inspection.components.about.updates.settings.section.rstorrent.will.relaunch.after.installation.succeeds": {
-    "defaultMessage": "RSTorrent will relaunch after installation succeeds.",
+    "defaultMessage": "JSTorrent will relaunch after installation succeeds.",
     "description": "Product copy in inspection/components/AboutUpdatesSettingsSection.tsx"
   },
   "inspection.components.about.updates.settings.section.stable": {
@@ -177,7 +177,7 @@
     "description": "Stable desktop update channel"
   },
   "inspection.components.about.updates.settings.section.stable.description": {
-    "defaultMessage": "Stable offers deliberate RSTorrent desktop incubation releases.",
+    "defaultMessage": "Stable offers deliberate desktop preview releases.",
     "description": "Stable desktop update channel guidance"
   },
   "inspection.components.about.updates.settings.section.target": {
@@ -197,7 +197,7 @@
     "description": "A newer Latest build remains installed after selecting Stable"
   },
   "inspection.components.about.updates.settings.section.waiting.for.stable.description": {
-    "defaultMessage": "This installed build is newer than Stable. RSTorrent will keep it until a newer Stable release is available.",
+    "defaultMessage": "This installed build is newer than Stable. JSTorrent will keep it until a newer Stable release is available.",
     "description": "No automatic downgrade after switching from Latest to Stable"
   },
   "inspection.components.about.updates.settings.section.version": {
@@ -213,7 +213,7 @@
     "description": "Product copy in inspection/components/AboutUpdatesSettingsSection.tsx"
   },
   "inspection.components.add.torrent.dialog.a.download.folder.is.required.before.rstorrent": {
-    "defaultMessage": "A download folder is required before RSTorrent can add this torrent.",
+    "defaultMessage": "A download folder is required before JSTorrent can add this torrent.",
     "description": "Product copy in inspection/components/AddTorrentDialog.tsx"
   },
   "inspection.components.add.torrent.dialog.add.torrent": {
@@ -297,7 +297,7 @@
     "description": "Product copy in inspection/components/AddTorrentDialog.tsx"
   },
   "inspection.components.add.torrent.dialog.rstorrent.will.load.metadata.without.downloading.content": {
-    "defaultMessage": "RSTorrent will load metadata without downloading content, then show a Normal/Skip checklist.",
+    "defaultMessage": "JSTorrent will load metadata without downloading content, then show a Normal/Skip checklist.",
     "description": "Product copy in inspection/components/AddTorrentDialog.tsx"
   },
   "inspection.components.add.torrent.dialog.start.downloading.files.when.metadata.is.available": {
@@ -388,12 +388,8 @@
     "defaultMessage": "Review update",
     "description": "Product copy in inspection/components/App.tsx"
   },
-  "inspection.components.app.rs": {
-    "defaultMessage": "RS",
-    "description": "Product copy in inspection/components/App.tsx"
-  },
   "inspection.components.app.rstorrent": {
-    "defaultMessage": "RSTorrent",
+    "defaultMessage": "JSTorrent",
     "description": "Product copy in inspection/components/App.tsx"
   },
   "inspection.components.app.session.transfer.rates": {
@@ -1213,7 +1209,7 @@
     "description": "Product copy in inspection/components/CrostiniStorageHelp.tsx"
   },
   "inspection.components.crostini.storage.help.return.to.rstorrent.and.choose": {
-    "defaultMessage": "Return to RSTorrent and choose",
+    "defaultMessage": "Return to JSTorrent and choose",
     "description": "Product copy in inspection/components/CrostiniStorageHelp.tsx"
   },
   "inspection.components.crostini.storage.help.right.click": {
@@ -2573,7 +2569,7 @@
     "description": "Product copy in inspection/components/NotificationsSettingsSection.tsx"
   },
   "inspection.components.notifications.settings.section.notify.while.rstorrent.is.focused": {
-    "defaultMessage": "Notify while RSTorrent is focused",
+    "defaultMessage": "Notify while JSTorrent is focused",
     "description": "Product copy in inspection/components/NotificationsSettingsSection.tsx"
   },
   "inspection.components.peer.table.active.peer.connections": {
@@ -2749,7 +2745,7 @@
     "description": "Product copy in inspection/components/PowerSettingsSection.tsx"
   },
   "inspection.components.power.settings.section.rstorrent.can.prevent.automatic.system.sleep.during": {
-    "defaultMessage": "RSTorrent can prevent automatic system sleep during active download and verification work. Your display may still turn off normally.",
+    "defaultMessage": "JSTorrent can prevent automatic system sleep during active download and verification work. Your display may still turn off normally.",
     "description": "Product copy in inspection/components/PowerSettingsSection.tsx"
   },
   "inspection.components.preparation.progress.16.kib.per.block": {
@@ -3273,7 +3269,7 @@
     "description": "Product copy in inspection/components/RemoveTorrentDialog.tsx"
   },
   "inspection.components.remove.torrent.dialog.from.rstorrent": {
-    "defaultMessage": "from RSTorrent.",
+    "defaultMessage": "from JSTorrent.",
     "description": "Product copy in inspection/components/RemoveTorrentDialog.tsx"
   },
   "inspection.components.remove.torrent.dialog.more": {
@@ -3293,7 +3289,7 @@
     "description": "Product copy in inspection/components/RemoveTorrentDialog.tsx"
   },
   "inspection.components.remove.torrent.dialog.remove.the.selected.torrents.from.rstorrent": {
-    "defaultMessage": "Remove the selected torrents from RSTorrent.",
+    "defaultMessage": "Remove the selected torrents from JSTorrent.",
     "description": "Product copy in inspection/components/RemoveTorrentDialog.tsx"
   },
   "inspection.components.remove.torrent.dialog.remove.torrent": {
@@ -4117,7 +4113,7 @@
     "description": "Product copy in inspection/components/WebAccessSettingsSection.tsx"
   },
   "inspection.components.web.access.settings.section.any.browser.on.this.computer.can.use": {
-    "defaultMessage": "Any browser on this computer can use this loopback RSTorrent service.",
+    "defaultMessage": "Any browser on this computer can use this loopback JSTorrent service.",
     "description": "Product copy in inspection/components/WebAccessSettingsSection.tsx"
   },
   "inspection.components.web.access.settings.section.approve.another.browser": {
@@ -4221,7 +4217,7 @@
     "description": "Product copy in inspection/components/WebAuthGate.tsx"
   },
   "inspection.components.web.auth.gate.any.browser.on.this.computer.can.open": {
-    "defaultMessage": "Any browser on this computer can open RSTorrent.",
+    "defaultMessage": "Any browser on this computer can open JSTorrent.",
     "description": "Product copy in inspection/components/WebAuthGate.tsx"
   },
   "inspection.components.web.auth.gate.approve.this.browser": {
@@ -4269,7 +4265,7 @@
     "description": "Product copy in inspection/components/WebAuthGate.tsx"
   },
   "inspection.components.web.auth.gate.initial.setup.was.available.for.10.minutes": {
-    "defaultMessage": "Initial setup was available for 10 minutes and has now closed. Restart RSTorrent with the same profile to open a new 10-minute setup window.",
+    "defaultMessage": "Initial setup was available for 10 minutes and has now closed. Restart JSTorrent with the same profile to open a new 10-minute setup window.",
     "description": "Product copy in inspection/components/WebAuthGate.tsx"
   },
   "inspection.components.web.auth.gate.keep.localhost.open": {
@@ -4296,12 +4292,8 @@
     "defaultMessage": "Restart to finish setup",
     "description": "Product copy in inspection/components/WebAuthGate.tsx"
   },
-  "inspection.components.web.auth.gate.rs": {
-    "defaultMessage": "RS",
-    "description": "Product copy in inspection/components/WebAuthGate.tsx"
-  },
   "inspection.components.web.auth.gate.rstorrent.was.restarted.with.browser.pairing.enabled": {
-    "defaultMessage": "RSTorrent was restarted with browser pairing enabled. This window closes in",
+    "defaultMessage": "JSTorrent was restarted with browser pairing enabled. This window closes in",
     "description": "Product copy in inspection/components/WebAuthGate.tsx"
   },
   "inspection.components.web.auth.gate.setup.closed": {
@@ -4913,7 +4905,7 @@
     "description": "Product summary age label"
   },
   "product.privacy.disclosure.summary": {
-    "defaultMessage": "RSTorrent keeps a random resettable installation identifier and coarse counts of additions, completed downloads, and foreground sessions. When enabled, the identifier may be used for update counting and these values may be offered with feedback. No torrent names, hashes, paths, peers, trackers, logs, or error text are included.",
+    "defaultMessage": "JSTorrent keeps a random resettable installation identifier and coarse counts of additions, completed downloads, and foreground sessions. When enabled, the identifier may be used for update counting and these values may be offered with feedback. No torrent names, hashes, paths, peers, trackers, logs, or error text are included.",
     "description": "Initial product statistics disclosure"
   },
   "product.privacy.disclosure.title": {
@@ -4969,7 +4961,7 @@
     "description": "Product copy in remote/RemoteAccessGate.tsx"
   },
   "remote.remote.access.gate.authenticating.the.host.and.opening.rstorrent": {
-    "defaultMessage": "Authenticating the host and opening RSTorrent…",
+    "defaultMessage": "Authenticating the host and opening JSTorrent…",
     "description": "Product copy in remote/RemoteAccessGate.tsx"
   },
   "remote.remote.access.gate.browser.name.shown.to.the.operator": {
@@ -4989,7 +4981,7 @@
     "description": "Product copy in remote/RemoteAccessGate.tsx"
   },
   "remote.remote.access.gate.only.continue.if.the.rstorrent.operator.intentionally": {
-    "defaultMessage": "Only continue if the RSTorrent operator intentionally disabled, reset, or restored this host.",
+    "defaultMessage": "Only continue if the JSTorrent operator intentionally disabled, reset, or restored this host.",
     "description": "Product copy in remote/RemoteAccessGate.tsx"
   },
   "remote.remote.access.gate.password": {
@@ -5013,7 +5005,7 @@
     "description": "Product copy in remote/RemoteAccessGate.tsx"
   },
   "remote.remote.access.gate.rstorrent.remote.access": {
-    "defaultMessage": "RSTorrent remote access",
+    "defaultMessage": "JSTorrent remote access",
     "description": "Product copy in remote/RemoteAccessGate.tsx"
   },
   "remote.remote.access.gate.shared": {
@@ -5041,23 +5033,23 @@
     "description": "Product copy in remote/RemoteAccessGate.tsx"
   },
   "shell.app.load-failed": {
-    "defaultMessage": "RSTorrent could not start. Reload this page to fetch the current application files.",
+    "defaultMessage": "JSTorrent could not start. Reload this page to fetch the current application files.",
     "description": "Bounded boot failure shown when the application bundle cannot start"
   },
   "shell.app.loading": {
-    "defaultMessage": "Loading RSTorrent…",
+    "defaultMessage": "Loading JSTorrent…",
     "description": "Initial browser and desktop application loading status"
   },
   "shell.app.requires-javascript": {
-    "defaultMessage": "RSTorrent requires JavaScript in this browser.",
+    "defaultMessage": "JSTorrent requires JavaScript in this browser.",
     "description": "No-script fallback for the web application"
   },
   "shell.app.start-failed": {
-    "defaultMessage": "Unable to start RSTorrent",
+    "defaultMessage": "Unable to start JSTorrent",
     "description": "Summary shown before a bounded technical startup error"
   },
   "shell.app.title": {
-    "defaultMessage": "RSTorrent",
+    "defaultMessage": "JSTorrent",
     "description": "Browser and desktop application title"
   },
   "shell.companion.cancel": {
@@ -5077,7 +5069,7 @@
     "description": "Initial ChromeOS companion connection status"
   },
   "shell.companion.title": {
-    "defaultMessage": "RSTorrent Android",
+    "defaultMessage": "JSTorrent Android",
     "description": "ChromeOS companion window title and heading"
   },
   "shell.remote.loading": {
@@ -5089,7 +5081,7 @@
     "description": "Summary shown before a bounded technical remote startup error"
   },
   "shell.remote.title": {
-    "defaultMessage": "RSTorrent remote access",
+    "defaultMessage": "JSTorrent remote access",
     "description": "Remote product browser title"
   },
   "support.diagnostics.copied": {
@@ -5144,15 +5136,15 @@
     "defaultMessage": "Report a problem",
     "description": "Local support report and privacy guidance in About settings"
   },
-  "desktop.companion.title": {"defaultMessage": "RSTorrent Desktop", "description": "Desktop extension connection"},
+  "desktop.companion.title": {"defaultMessage": "JSTorrent Desktop", "description": "Desktop extension connection"},
   "desktop.companion.open-window": {"defaultMessage": "Open desktop window", "description": "Desktop extension connection"},
   "desktop.companion.retry": {"defaultMessage": "Retry connection", "description": "Attach again after a desktop version or authentication failure without launching it"},
   "desktop.companion.start": {"defaultMessage": "Start", "description": "Desktop extension connection"},
-  "desktop.companion.connecting": {"defaultMessage": "Connecting to RSTorrent Desktop…", "description": "Desktop extension connection"},
+  "desktop.companion.connecting": {"defaultMessage": "Connecting to JSTorrent Desktop…", "description": "Desktop extension connection"},
   "desktop.companion.disconnected": {"defaultMessage": "Desktop disconnected. Reconnecting if it is running…", "description": "Desktop extension connection"},
   "desktop.companion.unavailable": {"defaultMessage": "Desktop is unavailable.", "description": "Desktop extension connection"},
-  "desktop.companion.extension-only": {"defaultMessage": "Open this page from the JSTorrent Beta extension.", "description": "Desktop extension connection"},
-  "desktop.companion.incompatible": {"defaultMessage": "RSTorrent Desktop and this extension are incompatible. Update them, then retry the connection.", "description": "Desktop extension connection"},
+  "desktop.companion.extension-only": {"defaultMessage": "Open this page from the JSTorrent extension.", "description": "Desktop extension connection"},
+  "desktop.companion.incompatible": {"defaultMessage": "JSTorrent Desktop and this extension are incompatible. Update them, then retry the connection.", "description": "Desktop extension connection"},
   "desktop.companion.stopped": {"defaultMessage": "Desktop is stopped. Select Start to open it.", "description": "Desktop extension connection"},
   "desktop.companion.native-folder": {"defaultMessage": "Open the desktop window to choose or repair a download folder.", "description": "Desktop extension connection"},
   "desktop.companion.identity-changed": {"defaultMessage": "The desktop identity changed. Retry the connection.", "description": "Desktop extension connection"}

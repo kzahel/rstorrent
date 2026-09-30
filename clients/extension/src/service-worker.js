@@ -32,7 +32,7 @@ function sendNativeOperation(op) {
           error: {
             code: "native_host_unavailable",
             message:
-              "RSTorrent Desktop is unavailable. Install it and open it once to finish setup.",
+              "JSTorrent Desktop is unavailable. Install it and open it once to finish setup.",
           },
         });
         return;
@@ -42,7 +42,7 @@ function sendNativeOperation(op) {
           ok: false,
           error: {
             code: "invalid_native_response",
-            message: "RSTorrent Desktop returned an invalid bootstrap response.",
+            message: "JSTorrent Desktop returned an invalid bootstrap response.",
           },
         });
         return;
@@ -171,7 +171,7 @@ async function focusOrOpenExtensionTab(key, relativeUrl) {
     active: true,
   });
   if (!Number.isInteger(tab.id)) {
-    throw new Error("Chrome could not open the RSTorrent page");
+    throw new Error("Chrome could not open the JSTorrent page");
   }
   await chrome.storage.session.set({ [key]: tab.id });
   return "opened";
@@ -259,7 +259,7 @@ async function focusOrOpenCrostiniTab(handoffTabId = null) {
       ok: false,
       error: {
         code: "crostini_tab_unavailable",
-        message: "Chrome could not open the RSTorrent Linux page.",
+        message: "Chrome could not open the JSTorrent Linux page.",
       },
     };
   }

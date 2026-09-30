@@ -1,3 +1,4 @@
+import jstorrentIcon from "../../assets/jstorrent.png";
 import { message as localizedMessage } from "../../localization/runtime";
 import {
   useEffect,
@@ -342,7 +343,7 @@ function AppContent({
           <Icon name="menu" />
         </button>
         <div className={styles.brand}>
-          <span aria-hidden="true">{localizedMessage("inspection.components.app.rs")}</span>
+          <img src={jstorrentIcon} width="32" height="32" alt="" />
           <strong>{localizedMessage("inspection.components.app.rstorrent")}</strong>
         </div>
         <nav className={styles.primaryNavigation} aria-label={localizedMessage("inspection.components.app.primary")}>

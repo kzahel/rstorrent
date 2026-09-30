@@ -33,8 +33,8 @@ For maintainer-specific cross-project context, see
 ## Current Product Direction
 
 RSTorrent is a new implementation with a first-party Rust BitTorrent engine
-and is the likely incubation path for a future generation of the JSTorrent
-product. It is not a line-by-line port and does not inherit JSTorrent feature
+and is the selected implementation for a near-term in-place JSTorrent
+replacement. It is not a line-by-line port and does not inherit JSTorrent feature
 parity as an initial requirement.
 
 Preserve these starting constraints unless the user explicitly changes them or
@@ -68,12 +68,15 @@ a living topic records an accepted replacement:
 - A future JSTorrent extension is expected to control and integrate with the
   native engine rather than carry peer or file hot paths. This vision does not
   authorize extension or IPC work in an unrelated tactical.
-- Incubation beta releases remain a separate RSTorrent product with the
-  `com.jstorrent.rstorrent` desktop identifier, RSTorrent update route, and a
-  per-app updater key. A later production graduation is expected to ship as a
-  normal JSTorrent update retaining `com.jstorrent.desktop`, JSTorrent
-  branding, and JSTorrent's existing updater trust root. Best-effort legacy
-  state migration is scoped later and is not a beta-readiness requirement.
+- Production succession is selected: ship as a normal JSTorrent desktop update
+  retaining `com.jstorrent.desktop`, JSTorrent branding/icons and its existing
+  updater trust root; update the existing `com.jstorrent.app` Play app and the
+  existing production extension item. Their updates may arrive independently
+  under `docs/topics/product-surfaces-and-migration.md`. Best-effort migration
+  and branding have bounded implementation slices. Separate incubation/test
+  identifiers, RSTorrent desktop update route and per-app key remain until
+  production packaging/signing/store continuity is qualified. Do not switch
+  them merely as part of a display-name or icon edit.
 - Engine and product-client work both proceed, each under its own numbered
   tactical. Neither is globally paused in favor of the other, and neither is
   standing authorization to start implementing without one.

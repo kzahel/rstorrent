@@ -2,6 +2,18 @@
 
 Topic: `web-ui-design`
 
+Tactical [249](../tactical/249-jstorrent-brand-and-extension-refresh.md) restores
+JSTorrent display names and the original blue-box icon in the shared header,
+authentication gates, browser favicons and packaged connection screen. The
+extension popup uses blue accents, system light/dark appearance, a primary
+Android Chromebook choice and an expandable separate Linux preview. Returning
+users expand privacy settings; first-use disclosure stays visible. Torrent list,
+detail/navigation structure, appearance preferences, commands and consent policy
+remain unchanged. Twelve isolated popup platform/theme/privacy states and four
+existing shared responsive/accessibility/appearance browser tests pass. A broader
+JSTorrent library/detail/settings design review remains a follow-up.
+
+
 Tactical [248](../tactical/248-chromeos-staggered-upgrade.md) adds actionable
 ChromeOS mixed-version guidance: an old Android service requires an app update
 with Google Play and Retry; an incompatible new protocol requires an extension

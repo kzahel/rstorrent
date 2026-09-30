@@ -2,6 +2,17 @@
 
 Topic: `desktop-jstorrent-replacement`
 
+## Branding Preparation, 2026-09-30
+
+Tactical [249](../tactical/249-jstorrent-brand-and-extension-refresh.md) restores
+original desktop/tray icons and JSTorrent shared UI, window and notification
+identity. The near-term production update retains `com.jstorrent.desktop` and
+JSTorrent's established Tauri updater trust root. Incubation bundle names,
+package identity and updater route/key remain during preparation. Qualified
+production packaging, signing, helper origin admission and installed OS launch
+continuity are the next delivery slice; branding does not prove an update.
+
+
 ## Managed Legacy Handoff, 2026-09-30
 
 Completed bounded slice [242](../tactical/242-legacy-desktop-handoff-rehearsal.md)

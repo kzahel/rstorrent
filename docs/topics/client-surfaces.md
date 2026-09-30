@@ -2,6 +2,16 @@
 
 Topic: `client-surfaces`
 
+Tactical [249](../tactical/249-jstorrent-brand-and-extension-refresh.md) starts
+production branding: shared React/desktop window and Android presentation use
+JSTorrent; original desktop/tray, Android adaptive/launcher/store and extension
+icons are restored with exact MIT provenance and packaged notices. The extension
+popup and connection screen are refreshed. Desktop incubation bundle names,
+Android test/incubation IDs and the extension incubation Web Store key remain;
+this does not qualify production identity, signing, launch or store continuity.
+iOS and website branding are outside this three-surface slice.
+
+
 Tactical [248](../tactical/248-chromeos-staggered-upgrade.md) adds terminal
 Android-update and extension-update guidance to the packaged companion page,
 manual Retry and a Google Play action. Current compatible service discovery

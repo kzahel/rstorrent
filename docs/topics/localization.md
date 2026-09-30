@@ -2,6 +2,13 @@
 
 Topic: `localization`
 
+Tactical [249](../tactical/249-jstorrent-brand-and-extension-refresh.md) changes
+shared React and Android presentation to JSTorrent, retaining semantic message
+IDs and all persistence/wire names. Two obsolete text lettermarks are replaced
+by the original icon and their messages removed. All four platform catalog
+checks pass; supported locales and the separate iOS branding remain unchanged.
+
+
 Tactical `216` adds thirteen English messages for the local support preview,
 copy/download and public-report guidance. Machine-readable report keys remain
 verbatim diagnostics. All web, desktop, Android and iOS catalog checks pass;

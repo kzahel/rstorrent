@@ -1,3 +1,4 @@
+import jstorrentIcon from "../../assets/jstorrent.png";
 import { message as localizedMessage } from "../../localization/runtime";
 import { useEffect, useState, type FormEvent } from "react";
 
@@ -66,7 +67,7 @@ export function WebAuthGate({
   return (
     <main className={styles.page}>
       <section className={styles.card} aria-labelledby="web-auth-title">
-        <div className={styles.brand} aria-hidden="true">{localizedMessage("inspection.components.web.auth.gate.rs")}</div>
+        <img className={styles.brand} src={jstorrentIcon} width="40" height="40" alt="" />
         {status.state === "initial_window_open" ? (
           <>
             <p className={styles.eyebrow}>{localizedMessage("inspection.components.web.auth.gate.first.launch")}</p>

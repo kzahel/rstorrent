@@ -28,6 +28,7 @@ function companionFixture(t, extraSource) {
   const root = mkdtempSync(path.join(os.tmpdir(), "rstorrent-companion-validation-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(path.join(root, "assets"));
+  writeFileSync(path.join(root, "assets/companion.png"), "local PNG fixture");
   writeFileSync(path.join(root, "companion.html"), '<script src="assets/companion.js"></script>');
   writeFileSync(path.join(root, "assets/companion.css"), "");
   writeFileSync(

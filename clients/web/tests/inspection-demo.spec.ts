@@ -51,9 +51,9 @@ test("checker progress stays truthful across every shared surface", async ({ pag
 test("primary destinations preserve shared source state", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/?demo=healthy-download&at=42000&autoplay=0");
-  await expect(page.getByText("RSTorrent", { exact: true })).toBeVisible();
+  await expect(page.getByText("JSTorrent", { exact: true })).toBeVisible();
   await expect(page).toHaveTitle(
-    /^RSTorrent - ↓[\d.]+ [kMGT]?B\/s ↑[\d.]+ [kMGT]?B\/s$/,
+    /^JSTorrent - ↓[\d.]+ [kMGT]?B\/s ↑[\d.]+ [kMGT]?B\/s$/,
   );
 
   const primary = page.getByRole("navigation", { name: "Primary" });
@@ -1138,7 +1138,7 @@ test("color themes follow or override system appearance and persist", async ({
   });
   await page.emulateMedia({ colorScheme: "light" });
   await page.reload();
-  await expect(page.getByText("RSTorrent", { exact: true })).toBeVisible();
+  await expect(page.getByText("JSTorrent", { exact: true })).toBeVisible();
   await expect(root).toHaveAttribute("data-color-theme", "dark");
   await expect(page.locator('meta[name="color-scheme"]')).toHaveAttribute(
     "content",
@@ -2004,7 +2004,7 @@ async function openScenario(
   autoplay = false,
 ) {
   await page.goto(`/?demo=${scenario}&at=${at}&autoplay=${autoplay ? 1 : 0}`);
-  await expect(page.getByText("RSTorrent", { exact: true })).toBeVisible();
+  await expect(page.getByText("JSTorrent", { exact: true })).toBeVisible();
   await expect(page.getByText("Demo data", { exact: true })).toBeVisible();
   await page
     .getByRole("navigation", { name: "Primary" })

@@ -136,12 +136,12 @@ describe("inspection application", () => {
 
     await waitFor(() => {
       expect(document.title).toMatch(
-        /^RSTorrent - ↓[\d.]+ [kMGT]?B\/s ↑[\d.]+ [kMGT]?B\/s$/,
+        /^JSTorrent - ↓[\d.]+ [kMGT]?B\/s ↑[\d.]+ [kMGT]?B\/s$/,
       );
     });
 
     rendered.unmount();
-    expect(document.title).toBe("RSTorrent");
+    expect(document.title).toBe("JSTorrent");
   });
 
   it("renders the typed torrent ETA in Torrents", () => {

@@ -159,7 +159,7 @@ class AndroidNotificationInstrumentationTest {
             attention.notification.extras.getCharSequence(Notification.EXTRA_TITLE),
         )
         assertEquals(
-            "Fixture torrent · Open RSTorrent for details",
+            "Fixture torrent · Open JSTorrent for details",
             attention.notification.extras.getCharSequence(Notification.EXTRA_TEXT),
         )
         assertEquals(context.packageName, attention.notification.contentIntent.creatorPackage)
