@@ -82,6 +82,13 @@ SQLite and payload writes remain native. No engine runs in the extension.
 | D-16 | Temporary Chromebook extension-control loss for Rust Android is acceptable with clear standalone-app guidance; restoration does not block desktop migration. | Accepted 2026-09-30 |
 | D-17 | One atomic catalog transaction includes fresh schema/settings/imports and one completion marker; no per-record migration ledger. | Implemented in 241, 2026-09-30 |
 
+2026-09-30 follow-up selects near-term production replacement across desktop,
+Android and extension, with JSTorrent branding/original icons before cutover.
+Tactical [249](249-jstorrent-brand-and-extension-refresh.md) starts branding and
+the extension refresh. Android continuity means the existing Play app update,
+not a new desktop-style updater. Production identities/signing/launch routes
+remain an explicit installed qualification slice before shipment.
+
 ## Work Tracker
 
 | ID | Work | State | Exit evidence / next action |
@@ -92,7 +99,7 @@ SQLite and payload writes remain native. No engine runs in the extension.
 | M-04 | Support/report continuity | Required before user cohort | Failure-page report, bounded migration/backend context, familiar voluntary feedback journey and disclosure verification |
 | M-05 | Installed desktop replacement rehearsal | Depends on M-01/03/04 | Old installed JSTorrent -> exact candidate -> restart/repair/rollback on macOS, Windows and Linux |
 | M-06 | Extension update coordination | [236](236-desktop-compatibility-refusal-and-recovery.md)/[237](237-macos-windows-package-recovery.md): selected three-platform beta matrix passes | Terminal refusal, attach-only recovery, open-page replacement, credential rotation, repair and same-schema rollback pass. [238](238-signed-desktop-channel-recovery.md) passes three-platform signed updating of an older published cohort. [240](240-signed-desktop-control-qualification.md) adds signed current-source 801 publication, native updates and installed control/helper qualification. Original legacy pairs and ChromeOS shipment gates remain open. |
-| M-07 | JSTorrent replacement cohort and graduation | Not scheduled | Existing branding/identity/updater trust, explicit source baseline, observation window, stop thresholds and approved production operation; no synchronized Android-control gate |
+| M-07 | JSTorrent replacement cohort and graduation | Near-term direction selected; branding in [249](249-jstorrent-brand-and-extension-refresh.md), publication not scheduled | Existing branding/identity/updater trust, explicit source baseline, observation window, stop thresholds and approved production operation; no synchronized Android-control gate |
 
 No entry above implies feature completion from source presence alone. Keep
 unrelated release and engine campaigns running under their own ownership.

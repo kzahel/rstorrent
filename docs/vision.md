@@ -1,25 +1,22 @@
 # Product Vision: JSTorrent Rebuilt Around A Native Engine
 
-Status: directional long-term vision; RSTorrent is the accepted foreseeable
-public identity and current incubation beta, while any later JSTorrent
-graduation timing remains open.
+Status: JSTorrent succession accepted; near-term in-place desktop, Android and
+extension replacement selected on 2026-09-30, with qualification still required.
 
 ## Thesis
 
-RSTorrent is the public product identity for the foreseeable release line,
-beginning with the current incubation beta. It also remains a likely incubation
-path for a later generation of JSTorrent, but that graduation is separate work
-rather than a near-term rename.
+RSTorrent is the independent Rust implementation behind the selected next
+generation of JSTorrent. The successor will ship under the JSTorrent name with
+its existing icons, preserving familiar workflows while refreshing presentation.
+This supersedes the earlier foreseeable independent RSTorrent release direction.
 
-The implementation is independent because the engine needs a clean
-architecture, not because the existing product identity should be discarded.
-Once the native engine and its clients are demonstrably ready, they may
-graduate into the JSTorrent product and replace the current TypeScript engine
-under the hood. The intended desktop result is a normal JSTorrent update that
-retains JSTorrent's public name, `com.jstorrent.desktop` application identity,
-and existing updater trust root. The independent RSTorrent beta keeps its own
-identifier, update route, and updater key until such a graduation is actually
-planned.
+The intended desktop result is a normal JSTorrent update retaining
+`com.jstorrent.desktop` and its existing updater trust root. Android updates the
+existing `com.jstorrent.app` Play app with package/signing continuity. The
+extension updates the existing production Web Store item using this repository's
+implementation. Their updates may arrive independently. Incubation packages
+retain separate identities/routes until production qualification is complete;
+repository, crate and protocol names are internal implementation details.
 
 The `JS` in JSTorrent describes the project's origin, not necessarily a
 permanent implementation constraint or a promise users depend on. The durable
@@ -127,7 +124,7 @@ than assumed.
 
 ## What This Vision Does Not Require
 
-- Renaming the repository or preview client now.
+- Renaming the repository or internal crate and protocol names.
 - Concealing an experimental engine behind the stable JSTorrent release.
 - Reproducing the current TypeScript module graph or process topology.
 - Removing TypeScript, Kotlin, or other appropriate UI and integration code.
@@ -141,7 +138,7 @@ than assumed.
 
 ## Open Product Questions
 
-- When the implementation is mature enough to carry the JSTorrent name.
+- The qualified production cutover date and rollout/stop criteria.
 - Which legacy settings and torrent state are valuable and practical enough to
   migrate on a best-effort basis.
 - How an existing extension discovers, authenticates, and coordinates with the

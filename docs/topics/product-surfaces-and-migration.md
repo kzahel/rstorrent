@@ -2,6 +2,27 @@
 
 Topic: `product-surfaces-and-migration`
 
+## Production Replacement And Branding
+
+Maintainer direction on 2026-09-30 selects a near-term in-place JSTorrent
+replacement, superseding the earlier foreseeable independent RSTorrent product
+line. The production desktop retains `com.jstorrent.desktop`, JSTorrent's Tauri
+updater public trust root and update channel; the existing private signing key
+is supplied through release infrastructure, never source control. Android ships
+as an update to the existing `com.jstorrent.app` Google Play app with signing
+continuity and a higher versionCode. The successor extension updates the existing
+production Web Store item, preserving its ID and backend origin admission.
+These are three independently delivered updates under the staggered contract
+below, rather than a required synchronized release.
+
+The successor uses the JSTorrent name and established blue-box icons before
+cutover. A focused design refresh preserves familiar torrent lists, details,
+folder selection and extension/native views of one library. Tactical
+[249](../tactical/249-jstorrent-brand-and-extension-refresh.md) starts that work.
+Internal crate/protocol names and separate incubation package IDs need not be
+renamed. Signing/store continuity and exact production packaging remain release
+qualification gates; source branding alone does not prove an installed update.
+
 ## ChromeOS Android Cutover Contract
 
 Maintainer direction on 2026-09-30 accepts independently staggered extension
@@ -632,7 +653,8 @@ this product context. `KTorrent` is not a practical alternative because it is
 already the established KDE client name.
 
 Maintainer direction on 2026-08-22 selects RSTorrent as the public product name
-for the foreseeable release line, beginning with the incubation beta.
+for the historical incubation line. The production replacement decision above
+supersedes that earlier foreseeable-product policy.
 Direction on 2026-08-23 selects
 `com.jstorrent.rstorrent` as its current desktop identifier. A later
 graduation should not discard JSTorrent's installed application or extension
@@ -645,7 +667,7 @@ changing it still requires an explicit product decision.
 ## Existing Distribution And Coexistence
 
 The existing JSTorrent desktop and extension identities and their installed
-audiences are important assets. A later graduation should normally update
+audiences are important assets. The selected production graduation will update
 those products to use the proven Rust application contract instead of
 launching unrelated replacement identities. RSTorrent remains independently
 released during incubation. Exact extension, store, coexistence, and retirement

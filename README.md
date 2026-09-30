@@ -106,14 +106,14 @@ CLI are not included.
 
 ## Intended Product And Deployment
 
-**RSTorrent** is the public product identity for the foreseeable release line,
-not merely a temporary beta label. A later, separately planned graduation into
-the next generation of **JSTorrent** may ship as an ordinary JSTorrent update:
-it would retain JSTorrent's existing public name, desktop application identity,
-and updater trust root while replacing the engine and related internals. Any
-legacy-state migration will be best effort and scoped when that work begins.
-That future direction is not part of the incubation beta and does not change
-current RSTorrent package, route, or updater identity implicitly.
+The selected production direction is a near-term **JSTorrent** replacement
+update using this Rust implementation. Desktop retains JSTorrent's existing
+application identity and updater trust root, Android updates the existing Play
+app, and this repo's extension replaces the existing production extension.
+The successor adopts JSTorrent branding and original icons with a focused UI
+refresh before cutover. Independent update ordering and best-effort legacy
+migration are recorded in the deployment plan below. Separate incubation/test
+identities remain while production delivery is qualified.
 
 Desktop, Android, ChromeOS, and the maintained iOS client use or are intended
 to use the same first-party Rust engine. A future JSTorrent browser extension

@@ -60,19 +60,18 @@ tacticals and executable acceptance evidence.
 
 ## Accepted Initial Decisions
 
-### Independent RSTorrent product, possible later successor
+### JSTorrent production successor
 
-RSTorrent is implemented and released independently from the current JSTorrent
-engine and may coexist with it for the foreseeable product line. Maintainer
-direction on 2026-08-22 selects RSTorrent as the public identity rather than a
-temporary preview label. It may later graduate into a new generation of the
-JSTorrent product once evidence supports replacement. Maintainer direction on
-2026-08-23 clarifies that the expected desktop graduation is a normal
-JSTorrent update retaining the `com.jstorrent.desktop` application identity,
-JSTorrent branding, and its existing updater trust root while adopting the
-Rust engine and refreshed product surface. Legacy-state migration is best
-effort and scoped later. The incubation beta remains independent and does not
-begin with migration or parity obligations.
+Maintainer direction on 2026-09-30 selects a near-term in-place replacement of
+JSTorrent using this implementation, with JSTorrent branding and original icons.
+This supersedes the 2026-08-22 foreseeable independent RSTorrent product policy.
+Desktop retains `com.jstorrent.desktop` and its updater trust root, Android updates
+the existing `com.jstorrent.app` Play app, and this repo's extension updates the
+existing production Web Store item. Independent delivery and best-effort legacy
+migration follow [product-surfaces-and-migration](product-surfaces-and-migration.md).
+Separate incubation/test identities remain during qualification. Tactical
+[249](../tactical/249-jstorrent-brand-and-extension-refresh.md) starts branding and
+a focused extension refresh; production publication remains separate work.
 
 ### Disposable incubation line
 
